@@ -409,4 +409,15 @@ final class CompanionModelsTests: XCTestCase {
         XCTAssertEqual(LiveActivityPayload.topic(bundleID: "nl.imdigital.nook.companion"), "nl.imdigital.nook.companion.push-type.liveactivity")
         XCTAssertEqual(LiveActivityPayload.pushType, "liveactivity")
     }
+
+    /// Steering from the phone is offered to phones that may operate, and a plain message carries no `steer` key, so a
+    /// Mac that predates it reads it as before.
+    func testSteerIsOfferedWithOperateAndOptional() throws {
+        XCTAssertTrue(CompanionFeature.all.contains(CompanionFeature.steer))
+        XCTAssertEqual(CompanionScopes.featureScopes[CompanionFeature.steer], .operate)
+        let plain = String(decoding: try JSONEncoder().encode(CompanionRequest(op: .send, session: "S", text: "Go")), as: UTF8.self)
+        XCTAssertFalse(plain.contains("steer"))
+        let steered = try JSONEncoder().encode(CompanionRequest(op: .send, session: "S", text: "Go", steer: true))
+        XCTAssertEqual(try JSONDecoder().decode(CompanionRequest.self, from: steered).steer, true)
+    }
 }

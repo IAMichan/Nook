@@ -18,6 +18,12 @@ disappears; the Agents tab's New session button does the same.
 In **Chats**, *Can answer* lists the chats Nook writes in for you; a chat you can only read says so in the list (*Read
 only*) and, at its end, how to link its app in Nook › Settings › Chats to answer it from the phone.
 
+While a session Nook runs works, its composer offers **Steer now** (into the running turn, as the Mac's composer
+steers) or **After this turn** (in line); the choice is remembered (`CompanionRequest.steer`, `SessionDigest.canSteer`,
+`CompanionFeature.steer`). An approval or a question is docked right above the composer, in sight however far up you
+read. The Agents list has search and a project filter, and touching and holding the app's icon offers New session, Ask
+Nook, Answer a chat and the two sessions that need you most (`AppShortcut`). These follow phone app.
+
 A notification that an agent's turn finished, failed or hit a limit has a **Reply** field: what you type goes to that
 session as a message (through the outbox), without opening the app.
 
@@ -72,7 +78,7 @@ Each paired phone has its own **scopes** (`CompanionScope`, `packages/protocol/S
 - **Replay & rate protection (`RequestGuard`):** Every request carries a timestamp (max 60 s skew) and a unique nonce. The Mac rejects stale or replayed requests and enforces a limit of 120 requests/minute per device, up to 8 concurrent connections, 256 KB max message size, and a 30 s connection timeout.
 - **Least-privilege policy (`CompanionPolicy`):** Denying a tool call is always permitted from the phone; **allowing a tool call from the phone is restricted to low-risk operations** (reading/editing files or shell commands classified as safe by `CommandRisk`). High-risk or unknown commands, web actions, and MCP tools must be approved on the Mac itself.
 - **Starting sessions is narrowed:** the phone can only start an agent with a connected account in a folder from the Mac's recent projects (never an arbitrary path), and a session started from the phone never uses *allow everything* (`bypass`): it falls back to *accept edits*, so risky actions still wait for approval. A folder another session works in is refused, as in the composer.
-- **Full audit trail:** Every action taken from the phone is recorded in the local SQLite audit log (`companion_allow`, `companion_deny`, `companion_answer`, `companion_send`, `companion_stop`, `companion_start`, `companion_ask`, `companion_chat_stop`, `companion_music`, `companion_chat_send`, `companion_chat_read`, `companion_chat_unread`, `companion_update_request`, `companion_paired`); a message sent to a chat is also logged as `whatsapp_send`, as from the Mac.
+- **Full audit trail:** Every action taken from the phone is recorded in the local SQLite audit log (`companion_allow`, `companion_deny`, `companion_answer`, `companion_send`, `companion_steer`, `companion_stop`, `companion_start`, `companion_ask`, `companion_chat_stop`, `companion_music`, `companion_chat_send`, `companion_chat_read`, `companion_chat_unread`, `companion_update_request`, `companion_paired`); a message sent to a chat is also logged as `whatsapp_send`, as from the Mac.
 
 ## Staying Connected
 

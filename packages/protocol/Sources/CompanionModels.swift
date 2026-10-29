@@ -159,7 +159,10 @@ enum CompanionFeature {
     static let relay = "relay"
     /// The Mac takes `requestUpdate`: it opens its update panel when the phone asks.
     static let requestUpdate = "requestUpdate"
-    static let all = [start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate]
+    /// A message to a working session can steer its turn instead of waiting for it (`CompanionRequest.steer`).
+    static let steer = "steer"
+    static let all = [start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate,
+                      steer]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -222,13 +225,17 @@ struct CompanionRequest: Codable, Equatable, Sendable {
     /// phone that predates versions.
     var protocolVersion: Int?
     var appVersion: String?
+    /// With `send` to a session that works: true takes the message into the running turn now (steering it, as the Mac's
+    /// composer does), false or nil puts it in line for after the turn (`CompanionFeature.steer`).
+    var steer: Bool?
 
     init(id: String = UUID().uuidString, sent: Double = Date().timeIntervalSince1970, op: CompanionOp, session: String? = nil,
          item: String? = nil, text: String? = nil, allow: Bool? = nil, conversation: String? = nil, launch: LaunchRequest? = nil,
-         replyTo: String? = nil, live: LiveActivityRegistration? = nil, protocolVersion: Int? = nil, appVersion: String? = nil) {
+         replyTo: String? = nil, live: LiveActivityRegistration? = nil, protocolVersion: Int? = nil, appVersion: String? = nil,
+         steer: Bool? = nil) {
         self.id = id; self.sent = sent; self.op = op; self.session = session; self.item = item; self.text = text; self.allow = allow
         self.conversation = conversation; self.launch = launch; self.replyTo = replyTo; self.live = live
-        self.protocolVersion = protocolVersion; self.appVersion = appVersion
+        self.protocolVersion = protocolVersion; self.appVersion = appVersion; self.steer = steer
     }
 
     /// A request that says which versions this side speaks: `hello`, `list` and `subscribe` carry them.
@@ -314,6 +321,9 @@ struct SessionDigest: Codable, Equatable, Identifiable, Sendable {
     var model: String? = nil
     /// `SessionAction` raw values the phone may take on this session; nil from a Mac without `CompanionFeature.manage`.
     var actions: [String]? = nil
+    /// The running turn can take a message right now (`CompanionRequest.steer`); nil from a Mac without
+    /// `CompanionFeature.steer`, false while it cannot (idle, waiting on you, or an agent that cannot be steered).
+    var canSteer: Bool? = nil
 }
 
 extension LiveActivitySnapshot {

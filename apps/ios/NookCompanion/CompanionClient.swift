@@ -29,6 +29,8 @@ final class CompanionClient: ObservableObject {
     var visibleSession: String?
     /// A `nook://prompt` link that was opened: the New session sheet shows with its text.
     @Published var pendingPrompt: PromptLink?
+    /// A quick action from the app's icon, for `RootView` to act on once (`AppShortcut`).
+    @Published var pendingShortcut: AppShortcut?
     /// Whether the Mac has push set up (answer to the last `register`), nil while unknown.
     @Published private(set) var macPushReady: Bool?
     /// `CompanionFeature` values the Mac understands; empty for a Mac that only answers what waits.
@@ -682,13 +684,15 @@ final class CompanionClient: ObservableObject {
 
     /// A message to a session. With a Mac that answers repeats once (`CompanionFeature.retry`) it goes through the
     /// outbox: kept on the phone until the Mac took it, so it is not lost when the Mac cannot be reached right now.
-    func send(_ session: SessionDigest, text: String) async {
-        await send(sessionID: session.id, text: text)
+    func send(_ session: SessionDigest, text: String, steer: Bool = false) async {
+        await send(sessionID: session.id, text: text, steer: steer)
     }
 
-    /// A message to a session by its id, as a reply typed in a notification sends it.
-    func send(sessionID: String, text: String) async {
-        let request = CompanionRequest(op: .send, session: sessionID, text: text)
+    /// A message to a session by its id, as a reply typed in a notification sends it. `steer`: into the running turn now
+    /// rather than after it (a Mac without `CompanionFeature.steer` puts it in line either way).
+    func send(sessionID: String, text: String, steer: Bool = false) async {
+        let request = CompanionRequest(op: .send, session: sessionID, text: text,
+                                       steer: steer && can(CompanionFeature.steer) ? true : nil)
         guard can(CompanionFeature.retry), outbox.enqueue(request, now: Date()) else {
             await perform(request)
             return

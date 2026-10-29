@@ -76,6 +76,35 @@ struct RootView: View {
         .onChange(of: client.pendingPrompt) { _, prompt in
             if prompt != nil { tab = .sessions }
         }
+        // A quick action on the app's icon: start, ask, answer, or open a session.
+        .onChange(of: client.pendingShortcut, initial: true) { _, shortcut in
+            guard let shortcut else { return }
+            client.pendingShortcut = nil
+            switch shortcut {
+            case .newSession:
+                sessionPath = []
+                tab = .sessions
+                newSessionRequested = true
+            case .askNook:
+                if let blocked = QuickActionBlock.nook(client) {
+                    client.notice = blocked
+                } else {
+                    chatPath = [.new(UUID(), "")]
+                    tab = .nook
+                }
+            case .chats:
+                if let blocked = QuickActionBlock.chats(client) {
+                    client.notice = blocked
+                } else {
+                    inboxPath = []
+                    tab = .chats
+                }
+            case .session(let id):
+                client.openSession = id
+            }
+        }
+        // The icon's quick actions follow the sessions: the ones that need you, then the newest.
+        .onChange(of: client.sessions, initial: true) { _, sessions in AppShortcut.update(sessions: sessions) }
         // A tapped notification opens its session.
         .onChange(of: client.openSession) { _, id in
             guard let id else { return }
@@ -231,8 +260,25 @@ struct SessionListView: View {
     @State private var diagnosing = false
     /// The prompt link the open New session sheet was opened for.
     @State private var link: PromptLink?
+    /// Words to find a session by (its title, folder, branch or agent), and the one project the list keeps to.
+    @State private var query = ""
+    @State private var project: String?
 
-    private var ordered: [SessionDigest] { client.sessions.sorted { $0.updated > $1.updated } }
+    /// Folders with sessions, the busiest first: the project filter's choices.
+    private var projects: [String] {
+        Dictionary(grouping: client.sessions, by: \.folder).sorted { $0.value.count > $1.value.count }.map(\.key)
+    }
+
+    private var ordered: [SessionDigest] {
+        let words = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return client.sessions
+            .filter { project == nil || $0.folder == project }
+            .filter { session in
+                words.isEmpty || [session.title, session.folder, session.branch ?? "", session.agent]
+                    .contains { $0.localizedCaseInsensitiveContains(words) }
+            }
+            .sorted { $0.updated > $1.updated }
+    }
     private var needsYou: [SessionDigest] { ordered.filter(Self.needsYou) }
     private var working: [SessionDigest] { ordered.filter { !Self.needsYou($0) && $0.attention == "working" } }
     private var rest: [SessionDigest] { ordered.filter { !Self.needsYou($0) && $0.attention != "working" } }
@@ -285,6 +331,26 @@ struct SessionListView: View {
                 .buttonStyle(.borderless)
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     ConnectionLine()
+                    // Finding one among many: words, and the project as chips.
+                    if client.sessions.count > 4 {
+                        NookSearchField(prompt: "Search sessions", text: $query)
+                        if projects.count > 1 {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: Theme.Spacing.md) {
+                                    FilterChip(title: "All", selected: project == nil) { project = nil }
+                                    ForEach(projects, id: \.self) { folder in
+                                        FilterChip(title: LocalizedStringKey(folder), count: client.sessions.filter { $0.folder == folder }.count,
+                                                   selected: project == folder) { project = project == folder ? nil : folder }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if ordered.isEmpty, !client.sessions.isEmpty {
+                        Text("No session matches.")
+                            .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary)
+                            .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xxl)
+                    }
                     if client.macPushReady == false {
                         Banner(text: String(localized: "Push notifications are not ready on your Mac yet (Settings › iPhone companion)."),
                                symbol: "bell.slash.fill", color: Theme.textSecondary)

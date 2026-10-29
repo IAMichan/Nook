@@ -15,6 +15,9 @@ struct SessionDetailView: View {
     @State private var newName = ""
     /// Whether the newest message is in sight; scrolled up, an arrow brings you back.
     @State private var atEnd = true
+    /// While the agent works, what a message does: steer the running turn now, or wait in line for after it. Remembered,
+    /// as the Mac's "While the agent works" setting.
+    @AppStorage("nook.companion.steerByDefault") private var steerByDefault = false
 
     private var session: SessionDigest? { client.sessions.first { $0.id == sessionID } }
     private var entries: [TimelineEntry] { client.timelines[sessionID] ?? [] }
@@ -30,9 +33,6 @@ struct SessionDetailView: View {
                         } else if !session.excerpt.isEmpty {
                             SectionHeader(title: "Latest reply")
                             MessageBubble(text: session.excerpt, mine: false)
-                        }
-                        ForEach(session.items) { item in
-                            ItemView(session: session, item: item)
                         }
                         // Messages that wait in the outbox until the Mac takes them.
                         let waiting = client.outbox.waiting(for: session.id)
@@ -64,25 +64,35 @@ struct SessionDetailView: View {
                         withAnimation(Theme.reveal) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
                     }
                 // An agent in a terminal on the Mac keeps its conversation there; the phone only decides its approvals.
+                // What waits on you, docked right above the composer (as docks its approval card), so it stays in
+                // sight however far up you read; while it waits it takes the composer's place.
+                if let item = session.items.first {
+                    PendingItemDock(session: session, item: item, more: session.items.count - 1)
+                } else {
                 ComposerDock {
                     if !client.allows(.operate) {
                         Label("Sending messages is turned off for this iPhone in Nook on your Mac.", systemImage: "lock.fill")
                             .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
                             .card(padding: Theme.Spacing.lg)
                     } else if session.canSend != false {
-                        // The Mac's composer: send, or stop while the agent works and nothing is typed.
-                        SessionComposer(text: $message, prompt: "Message to the agent", busy: stoppable(session),
-                                        onStop: canStop(session) ? { confirmStop = true } : nil) {
-                            let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
-                            message = ""
-                            Haptics.tap()
-                            Task { await client.send(session, text: text) }
+                        // The Mac's composer: send, or stop while the agent works and nothing is typed. While it works and
+                        // the turn can take a message, a choice under the text says whether it steers now or waits.
+                        if steerable(session) {
+                            SessionComposer(text: $message, prompt: steerByDefault ? "Steer the agent" : "Message for after this turn",
+                                            busy: stoppable(session), onStop: canStop(session) ? { confirmStop = true } : nil,
+                                            onSend: { send(session) }) {
+                                steerMenu
+                            }
+                        } else {
+                            SessionComposer(text: $message, prompt: "Message to the agent", busy: stoppable(session),
+                                            onStop: canStop(session) ? { confirmStop = true } : nil) { send(session) }
                         }
                     } else {
                         Label("This agent runs in a terminal on your Mac; answer it there.", systemImage: "terminal")
                             .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
                             .card(padding: Theme.Spacing.lg)
                     }
+                }
                 }
                 }
                 }
@@ -129,6 +139,38 @@ struct SessionDetailView: View {
     }
 
     private static let bottom = "bottom"
+
+    /// Sends the message: into the running turn when steering is chosen and possible, else as the Mac decides (now when
+    /// the agent rests, after the turn while it works).
+    private func send(_ session: SessionDigest) {
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        message = ""
+        Haptics.tap()
+        let steer = steerable(session) && steerByDefault
+        Task { await client.send(session, text: text, steer: steer) }
+    }
+
+    /// The agent works and its turn can take a message now (a Mac that says so, `CompanionFeature.steer`).
+    private func steerable(_ session: SessionDigest) -> Bool {
+        client.can(CompanionFeature.steer) && session.canSteer == true && session.attention == "working"
+    }
+
+    /// "Steer now" or "After this turn", as a quiet choice under the text and the Mac's composer offer it.
+    private var steerMenu: some View {
+        Menu {
+            Button { steerByDefault = true } label: {
+                Label("Steer now", systemImage: steerByDefault ? "checkmark" : "arrow.turn.down.right")
+            }
+            Button { steerByDefault = false } label: {
+                Label("After this turn", systemImage: steerByDefault ? "list.bullet" : "checkmark")
+            }
+        } label: {
+            ComposerPill(symbol: steerByDefault ? "arrow.turn.down.right" : "list.bullet",
+                         text: steerByDefault ? String(localized: "Steer now") : String(localized: "After this turn"))
+        }
+        .accessibilityLabel("While the agent works")
+    }
 
     private func stoppable(_ session: SessionDigest) -> Bool {
         ["working", "approval", "input"].contains(session.attention)
@@ -233,6 +275,33 @@ private struct MetaChip: View {
         }
         .font(Theme.TextStyle.label)
         .lineLimit(1)
+    }
+}
+
+/// The first thing that waits on you, docked over the end of the conversation: the card itself, in a short scroll of its
+/// own when it is tall, and how many more wait after it.
+private struct PendingItemDock: View {
+    let session: SessionDigest
+    let item: SessionDigest.Item
+    let more: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            ScrollView {
+                ItemView(session: session, item: item)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(maxHeight: 360)
+            .fixedSize(horizontal: false, vertical: true)
+            if more > 0 {
+                Text("\(more) more wait after this one")
+                    .font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
+                    .padding(.horizontal, Theme.Spacing.xs)
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.bottom, Theme.Spacing.md)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 }
 

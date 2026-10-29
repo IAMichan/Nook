@@ -463,9 +463,20 @@ final class CompanionServer: ObservableObject {
                 return .failure(request.id, .unknownSession)
             }
             guard let text = CompanionPolicy.cleanMessage(request.text ?? "") else { return .failure(request.id, .badRequest) }
-            if run.status.isActive { workspace.enqueue(runID, text: text) } else { workspace.send(runID, text: text) }
-            audit("send", run.title)
-            return CompanionResponse(id: request.id, ok: true, sessions: digests(app), message: run.status.isActive ? "queued" : "sent")
+            // While it works: into the running turn when the phone asks to steer and the turn can take it (as the Mac's
+            // composer steers), else in line for after the turn.
+            let outcome: String
+            if !run.status.isActive {
+                workspace.send(runID, text: text)
+                outcome = "sent"
+            } else if request.steer == true, workspace.canSteer(runID), workspace.steer(runID, text: text) {
+                outcome = "steered"
+            } else {
+                workspace.enqueue(runID, text: text)
+                outcome = "queued"
+            }
+            audit(outcome == "steered" ? "steer" : "send", run.title)
+            return CompanionResponse(id: request.id, ok: true, sessions: digests(app), message: outcome)
         case .stop:
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), let run = workspace.run(runID) else {
                 return .failure(request.id, .unknownSession)
@@ -552,7 +563,8 @@ final class CompanionServer: ObservableObject {
                                  folder: URL(fileURLWithPath: run.workingDirectory).lastPathComponent, branch: run.branch,
                                  updated: run.updatedAt.timeIntervalSince1970, excerpt: CompanionPolicy.excerpt(lastAnswer), items: items,
                                  model: (run.resolvedModel ?? run.model).isEmpty ? nil : CompanionPolicy.excerpt(run.resolvedModel ?? run.model),
-                                 actions: Self.actions(run, now: now).map(\.rawValue))
+                                 actions: Self.actions(run, now: now).map(\.rawValue),
+                                 canSteer: workspace.canSteer(run.id))
         }
     }
 }
