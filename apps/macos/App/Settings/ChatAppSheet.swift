@@ -462,15 +462,8 @@ struct ChatOwnLinkSteps: View {
         let app = capture.snapchatBridge.app
         SetupStep(number: 1, title: tr("chats.own.snapchat.step"), done: snapchat.isSignedIn) {
             if snapchat.isSignedIn {
-                let problem = capture.bridgeProblems[app]
-                StatusRow(title: tr("chats.snapchat.connected"), detail: problem ?? tr("chats.snapchat.connectedDetail"),
-                          state: problem == nil ? .done : .error) {
-                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", "Snapchat")) {
-                        snapchat.signOut()
-                        capture.snapchatBridge.reset()
-                        capture.bridgeChanged(app)
-                    }
-                }
+                ChatLinkedAccountRow(app: app, title: tr("chats.snapchat.connected"), detail: tr("chats.snapchat.connectedDetail"),
+                                     signOut: { capture.signOutSnapchat() })
             } else {
                 detail(tr("chats.snapchat.signInDetail"))
                 SettingNote(tr("chats.link.risk", "Snapchat"), tone: .warning)
@@ -521,7 +514,6 @@ struct ChatOwnAccounts: View {
     @ObservedObject private var capture = ChatCaptureService.shared
     @ObservedObject private var telegram = ChatCaptureService.shared.telegramBridge
     @ObservedObject private var teams = ChatCaptureService.shared.teamsBridge
-    @ObservedObject private var snapchat = SnapchatWebSession.shared
 
     var body: some View {
         switch app {
@@ -534,18 +526,10 @@ struct ChatOwnAccounts: View {
         case capture.slackBridge.app:
             SlackSettingsRows(setCollecting: setCollecting, showsToken: false)
         case capture.messagesBridge.app:
-            ChatAccountRow(app: app, title: tr("chats.manage.thisMac"), detail: tr("chats.link.ownWay.messagesDone")) { EmptyView() }
+            ChatLinkedAccountRow(app: app, title: tr("chats.manage.thisMac"), detail: tr("chats.link.ownWay.messagesDone"))
         case capture.snapchatBridge.app:
-            let problem = capture.bridgeProblems[app]
-            ChatAccountRow(app: app, title: tr("chats.snapchat.connected"), detail: problem ?? tr("chats.snapchat.connectedDetail"),
-                           status: problem == nil ? .connected : .unreachable, detailIsError: problem != nil) {
-                ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", "Snapchat")) {
-                    snapchat.signOut()
-                    capture.snapchatBridge.reset()
-                    capture.bridgeChanged(app)
-                }
-                .controlSize(.small)
-            }
+            ChatLinkedAccountRow(app: app, title: tr("chats.snapchat.connected"), detail: tr("chats.snapchat.connectedDetail"),
+                                 signOut: { capture.signOutSnapchat() })
             SettingNote(tr("chats.snapchat.howItReads"))
         default:
             EmptyView()

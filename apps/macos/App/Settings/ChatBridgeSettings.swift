@@ -62,11 +62,9 @@ struct TelegramSettingsRows: View {
                 loginError
             }
         case .ready:
-            ChatAccountRow(app: telegram.app, title: telegram.account ?? "Telegram", detail: tr("chats.telegram.connectedDetail")) {
-                ConfirmedButton(tr("chats.telegram.logOut"), question: tr("confirm.logout", "Telegram")) { telegram.logOut() }
-                    .controlSize(.small)
-            }
-            .onAppear(perform: onReady)
+            ChatLinkedAccountRow(app: telegram.app, title: telegram.account ?? "Telegram", detail: tr("chats.telegram.connectedDetail"),
+                                 signOut: { telegram.logOut() })
+                .onAppear(perform: onReady)
         case .loggingOut, .closed:
             Text(tr("chats.telegram.loggingOut")).foregroundStyle(NookTheme.textSecondary)
         case .parameters, .encryptionKey:
@@ -155,28 +153,17 @@ struct TeamsSettingsRows: View {
         ForEach(web.accounts) { account in
             let title = account.label.isEmpty ? "Teams" : account.label
             let detail = account.session.email.flatMap { $0 == title ? nil : $0 } ?? tr("chats.teams.web.connectedDetail")
-            let why = teams.problems[TeamsBridge.webID(account.id)]
-            ChatAccountRow(app: teams.app, title: title, detail: why ?? detail, status: why == nil ? .connected : .expired,
-                           detailIsError: why != nil) {
-                if why != nil {
-                    Button(tr("chats.teams.signInAgainButton")) { signInOnWeb(account.id) }.controlSize(.small)
-                }
-                ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { web.signOut(account.id) }
-                    .controlSize(.small)
-            }
+            let id = TeamsBridge.webID(account.id)
+            ChatLinkedAccountRow(app: teams.app, title: title, detail: detail, problem: teams.problems[id],
+                                 signedOut: teams.signedOutAccounts.contains(id),
+                                 signInAgain: { signInOnWeb(account.id) }, signOut: { web.signOut(account.id) })
         }
         ForEach(teams.accounts) { account in
             let title = account.name.isEmpty ? (account.email.isEmpty ? "Teams" : account.email) : account.name
-            let why = teams.problems[account.id]
             let detail = account.email.isEmpty || account.email == title ? tr("chats.teams.connectedDetail") : account.email
-            ChatAccountRow(app: teams.app, title: title, detail: why ?? detail, status: why == nil ? .connected : .expired,
-                           detailIsError: why != nil) {
-                if why != nil {
-                    Button(tr("chats.teams.signInAgainButton")) { teams.signIn() }.controlSize(.small)
-                }
-                ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { teams.signOut(account.id) }
-                    .controlSize(.small)
-            }
+            ChatLinkedAccountRow(app: teams.app, title: title, detail: detail, problem: teams.problems[account.id],
+                                 signedOut: teams.signedOutAccounts.contains(account.id),
+                                 signInAgain: { teams.signIn() }, signOut: { teams.signOut(account.id) })
         }
         if let problem, teams.problems.isEmpty, !teams.accounts.isEmpty {
             StatusRow(title: tr("chats.teams.problem"), detail: problem, state: .error) { EmptyView() }
@@ -260,25 +247,12 @@ struct SlackSettingsRows: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             if let auth = web.auth {
-                let title = auth.team.isEmpty ? "Slack" : auth.team
-                let problem = capture.bridgeProblems[capture.slackBridge.app]
-                ChatAccountRow(app: capture.slackBridge.app, title: title,
-                               detail: problem ?? (capture.enabled ? tr("chats.slack.web.connectedDetail") : tr("chats.slack.collectOff")),
-                               status: problem != nil ? .unreachable : (capture.enabled ? .connected : .off),
-                               detailIsError: problem != nil) {
-                    if problem != nil {
-                        Button(tr("chats.teams.signInAgainButton")) { signIn() }.controlSize(.small)
-                    }
-                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { signOut() }
-                        .controlSize(.small)
-                }
+                ChatLinkedAccountRow(app: capture.slackBridge.app, title: auth.team.isEmpty ? "Slack" : auth.team,
+                                     detail: tr("chats.slack.web.connectedDetail"), signInAgain: { signIn() }, signOut: { signOut() })
             } else if SlackBridge.token != nil, !showsToken {
-                // Linked with a token of your own: the token itself is under Advanced.
-                let problem = capture.bridgeProblems[capture.slackBridge.app]
-                ChatAccountRow(app: capture.slackBridge.app, title: tr("chats.slack.connected"),
-                               detail: problem ?? (capture.enabled ? tr("chats.slack.connectedDetail") : tr("chats.slack.collectOff")),
-                               status: problem != nil ? .unreachable : (capture.enabled ? .connected : .off),
-                               detailIsError: problem != nil) { EmptyView() }
+                // Linked with a token of your own: the token itself is under Advanced, where a new one mends a lost one.
+                ChatLinkedAccountRow(app: capture.slackBridge.app, title: tr("chats.slack.connected"),
+                                     detail: tr("chats.slack.connectedDetail"))
             } else if SlackBridge.token == nil {
                 HStack {
                     SettingLabel(tr("chats.slack.web.signIn"), detail: tr("chats.slack.web.signInDetail"))

@@ -49,6 +49,25 @@ final class ChatContractTests: XCTestCase {
         XCTAssertEqual(ChatAction.Refusal.notMine.rawValue, "chat.action.notMine")
     }
 
+    func testOnlyTelegramDeletesForYouInTheAppItself() {
+        XCTAssertFalse(ChatAbilities().deleteForMe, "elsewhere \"delete for me\" hides the message in Nook only")
+        XCTAssertTrue(ChatAbilities(deleteForMe: true).deleteForMe)
+    }
+
+    func testEveryLinkedAccountStandsByOneRule() {
+        XCTAssertEqual(ChatAccountHealth.of(collecting: true, shown: true, problem: nil, signedOut: false), .working)
+        XCTAssertEqual(ChatAccountHealth.of(collecting: false, shown: true, problem: nil, signedOut: false), .off)
+        XCTAssertEqual(ChatAccountHealth.of(collecting: true, shown: false, problem: nil, signedOut: false), .off)
+        XCTAssertEqual(ChatAccountHealth.of(collecting: true, shown: true, problem: "HTTP 503", signedOut: false), .failing("HTTP 503"))
+        XCTAssertEqual(ChatAccountHealth.of(collecting: false, shown: true, problem: "Sign in again", signedOut: true),
+                       .signedOut("Sign in again"), "a problem shows also while the app is off")
+        XCTAssertEqual(ChatAccountHealth.working.detail(working: "Reads", off: "Off"), "Reads")
+        XCTAssertEqual(ChatAccountHealth.off.detail(working: "Reads", off: "Off"), "Off")
+        XCTAssertEqual(ChatAccountHealth.failing("busy").detail(working: "Reads", off: "Off"), "busy")
+        XCTAssertTrue(ChatAccountHealth.signedOut("x").isProblem)
+        XCTAssertFalse(ChatAccountHealth.off.isProblem)
+    }
+
     func testAFailingReadWaitsLongerEachTimeUpToAQuarterOfAnHour() {
         XCTAssertEqual(ChatBackoff.delay(interval: 2, failures: 1), 60, "a quick bridge waits a minute at first")
         XCTAssertEqual(ChatBackoff.delay(interval: 2, failures: 2), 120)

@@ -91,6 +91,16 @@ gateways push their changes themselves), and the action is logged under one name
 "Mark as read in <app>" reads the chat in Nook at once, and counts it as read in the app (and logs it so) only once the
 app took it. When the app refuses, a toast says why.
 
+An open chat is the same for every app too (`App/AppModel+ChatOpen.swift`): opening it reads it from its app, the
+pointer resting on it fetches what the click needs, scrolling back asks its app for older messages, a file opens from this
+Mac or its app, and the chat is online where its app needs that to say who types (WhatsApp). The Chats tab never asks
+where a chat came from.
+
+In Settings › Chats every linked account is a `ChatLinkedAccountRow`: one rule (`ChatAccountHealth`) says whether it
+reads, is off in Nook, fails for a passing reason, or is signed out (`ChatCaptureService.bridgeSignedOut`, per account
+for Teams), and only the last offers "Sign in again". WhatsApp's accounts keep their own list (`WhatsAppAccountList`):
+a linked phone's state is the gateway's, not a read's.
+
 ### One way for every read
 
 Every bridge reads on its own turn, side by side (`ChatCaptureService.pollBridges`): a slow web service never holds up

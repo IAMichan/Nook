@@ -27,6 +27,17 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
     @Published private(set) var accounts: [TeamsData.Account] = []
     /// Accounts whose sign-in Microsoft no longer accepts, or whose last read failed, with why.
     @Published private(set) var problems: [String: String] = [:]
+    /// The accounts in `problems` whose sign-in is gone, which only signing in again mends (else the failure passes).
+    @Published private(set) var signedOutAccounts: Set<String> = []
+
+    /// Notes why an account's read failed (nil: it works again), and whether that was its sign-in.
+    private func note(_ id: String, _ problem: String?, signedOut: Bool = false) {
+        problems[id] = problem
+        let lost = problem != nil && signedOut
+        if lost != signedOutAccounts.contains(id) {
+            if lost { signedOutAccounts.insert(id) } else { signedOutAccounts.remove(id) }
+        }
+    }
 
     static let clientAccount = "chats.teams.clientID"
     private static let accountsKey = "chats.teams.accounts.v1"
@@ -148,7 +159,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         accounts.removeAll { $0.id == id }
         saveAccounts()
         sessions[id] = nil
-        problems[id] = nil
+        note(id, nil)
         if accounts.isEmpty { isWorking = false }
     }
 
@@ -197,7 +208,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         session.access = (token, expires)
         session.me = profile?.id
         sessions[account.id] = session
-        problems[account.id] = nil
+        note(account.id, nil)
     }
 
     /// A valid access token for an account: the one kept, or a new one from its refresh token (which Microsoft then
@@ -226,16 +237,16 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         var failure: Error?
         let linked = TeamsWebSession.shared.accounts
         for key in problems.keys where key.hasPrefix(Self.webID("")) && !linked.contains(where: { Self.webID($0.id) == key }) {
-            problems[key] = nil
+            note(key, nil)
         }
         // Every account's chat list first: a chat name two accounts share is told apart before anything is read.
         var lists: [(account: TeamsWebData.Account, chats: [TeamsData.Chat])] = []
         for account in linked {
             do {
                 lists.append(try await listWeb(account))
-                problems[Self.webID(account.id)] = nil
+                note(Self.webID(account.id), nil)
             } catch {
-                problems[Self.webID(account.id)] = error.localizedDescription
+                note(Self.webID(account.id), error.localizedDescription, signedOut: ConnectorErrorKind.classify(error) == .auth)
                 failure = failure ?? error
             }
         }
@@ -259,14 +270,14 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
                 let me = try await profile(account, bearer: bearer)
                 let list = try await chats(bearer: bearer, me: me, myName: account.name)
                 listed.append((account, bearer, list))
-                problems[account.id] = nil
+                note(account.id, nil)
             } catch {
-                problems[account.id] = error.localizedDescription
+                note(account.id, error.localizedDescription, signedOut: ConnectorErrorKind.classify(error) == .auth)
                 failure = failure ?? error
             }
         }
         for account in accounts where CloudHelp.secret(account.refreshAccount) == nil {
-            problems[account.id] = tr("chats.teams.signInAgain")
+            note(account.id, tr("chats.teams.signInAgain"), signedOut: true)
         }
         if listed.isEmpty, result.isEmpty, let failure {
             isWorking = false

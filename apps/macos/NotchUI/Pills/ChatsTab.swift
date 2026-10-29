@@ -1005,6 +1005,8 @@ private struct ChatsRow: View {
     var rowAction: ChatsRowAction? = nil
     let action: () -> Void
     @State private var hovering = false
+    /// What the pointer resting here fetches. The row asks `AppModel.shared` without observing it, so it does not redraw
+    /// with every change of the app model.
     @State private var prefetch: Task<Void, Never>?
     /// Someone typing here shows in place of the newest message, as in WhatsApp's own list.
     @ObservedObject private var typing = ChatTypingCenter.shared
@@ -1039,25 +1041,20 @@ private struct ChatsRow: View {
                     .accessibilityHidden(true)
             }
         }
-        .onAppear {
-            // A chat on the phone with no message here yet: its newest one is fetched for the line under its name.
-            if entry.preview.isEmpty, case .whatsApp(let key) = entry.origin {
-                let (link, jid) = WhatsAppAccounts.shared.route(key)
-                link.loadLine(jid)
-            }
-        }
+        // A row without a line under its name gets its newest message fetched.
+        .onAppear { AppModel.shared.loadChatLine(entry) }
         .onHover { inside in
             hovering = inside
-            // Fetch a WhatsApp chat's messages once the pointer rests on it, so the click opens it filled; passing over
-            // the list on the way elsewhere fetches nothing.
+            // What the click needs is fetched once the pointer rests on the chat, so it opens filled; passing over the
+            // list on the way elsewhere fetches nothing.
             prefetch?.cancel()
             prefetch = nil
-            if inside, case .whatsApp(let jid) = entry.origin {
+            if inside {
+                let entry = self.entry
                 prefetch = Task {
                     try? await Task.sleep(for: .milliseconds(120))
                     guard !Task.isCancelled else { return }
-                    let (link, chat) = WhatsAppAccounts.shared.route(jid)
-                    _ = await link.loadHistory(chat)
+                    await AppModel.shared.prefetchChat(entry)
                 }
             }
         }
@@ -1323,7 +1320,7 @@ private struct ChatsDetail: View {
     /// What the choice says each way does, in this chat's app.
     private func deleteDetail(_ bubble: ChatBubble) -> String {
         var forMe: String
-        if case .telegram = route { forMe = tr("chat.delete.forMe.app", appName) } else { forMe = tr("chat.delete.forMe.local", appName) }
+        forMe = abilities.deleteForMe ? tr("chat.delete.forMe.app", appName) : tr("chat.delete.forMe.local", appName)
         if canDeleteForEveryone(bubble) { forMe += "\n\n" + tr("chat.delete.forEveryone.detail", appName) }
         return forMe
     }
@@ -1379,17 +1376,16 @@ private struct ChatsDetail: View {
         }
         .task(id: entry.id) {
             // Every app the same: an opened chat is read from its app now, so it shows the newest messages at once.
-            if case .captured(let id) = entry.origin { capture.refresh(id) }
             landNew()
-            await loadWhatsApp()
+            await app.openedChat(entry)
             landNew()
         }
-        // While a WhatsApp chat is open Nook is online there, as WhatsApp Web is: only then does WhatsApp say who types.
-        .onAppear { whatsApp.setOnline(whatsAppChat) }
-        .onDisappear { whatsApp.setOnline(nil) }
+        // While a chat is open Nook is online in it where its app needs that to say who types (WhatsApp).
+        .onAppear { app.setChatOnline(entry) }
+        .onDisappear { app.setChatOnline(nil) }
         // Nothing waiting for one chat goes to the next.
         .onChange(of: entry.id) { _, id in
-            whatsApp.setOnline(whatsAppChat)
+            app.setChatOnline(entry)
             composer.reset()
             editing = nil
             reply = ComposerDraftStore.shared.draft(for: Self.draftKey(id)) ?? ""
@@ -1466,8 +1462,7 @@ private struct ChatsDetail: View {
     /// Your emoji on a message, after your own click (the same one again takes it back); the chat shows it at once.
     private func react(_ bubble: ChatBubble, _ emoji: String) {
         guard let route else { return }
-        let thread: String?
-        if case .captured(let id) = entry.origin { thread = id } else { thread = nil }
+        let thread = app.chatThread(entry)
         Task { @MainActor in
             do {
                 try await app.reactInChat(emoji, to: bubble, route: route, thread: thread, name: entry.name)
@@ -1639,17 +1634,15 @@ private struct ChatsDetail: View {
                 if abilities.archive {
                     Button(tr("chats.archiveInApp", appName)) {
                         change {
-                            let thread: String?
-                            if case .captured(let id) = entry.origin { thread = id } else { thread = nil }
-                            try await app.archiveChat(route: route, thread: thread, name: entry.name)
+                            try await app.archiveChat(route: route, thread: app.chatThread(entry), name: entry.name)
                             onClose()
                         }
                     }
                 }
             }
-            if case .captured(let id) = entry.origin {
+            if let thread = app.chatThread(entry) {
                 Divider()
-                Button(tr("chats.remove"), role: .destructive) { removing = id }
+                Button(tr("chats.remove"), role: .destructive) { removing = thread }
             }
         } label: {
             Image(systemName: "ellipsis")
@@ -1821,59 +1814,22 @@ private struct ChatsDetail: View {
         app.openChatApp(entry.app)
     }
 
-    /// A file opens in Quick Look: from this Mac when Nook has it, from the gateway for WhatsApp, else in its app.
+    /// A file opens in Quick Look, the same for every app (`AppModel.openChatFile`): from this Mac when Nook has it,
+    /// else fetched or opened in its app; the chat says so while it is fetched, and why when it cannot.
     private func open(_ bubble: ChatBubble) {
-        // A file Nook already has opens from this Mac, whichever app it came from.
-        if let file = bubble.file {
-            if !FilePreviewWindow.shared.show(file, title: bubble.attachment ?? file.lastPathComponent), !NSWorkspace.shared.open(file) {
-                notice = tr("whatsapp.file.noApp")
-            }
-            return
-        }
-        guard let chat = entry.whatsAppChat else {
-            // Not fetched (yet): the chat's own app has it.
-            if bubble.attachment != nil { app.openChatApp(entry.app) }
-            return
-        }
-        guard bubble.attachment != nil else { return }
-        notice = tr("whatsapp.file.opening", bubble.attachment ?? "")
+        if bubble.file == nil, let name = bubble.attachment { notice = tr("whatsapp.file.opening", name) }
         Task { @MainActor in
             do {
-                try await app.openWhatsAppFile(bubble, chat: chat)
-                notice = nil
+                try await app.openChatFile(bubble, in: entry)
+                if bubble.file == nil, bubble.attachment != nil { notice = nil }
             } catch {
                 notice = error.localizedDescription
             }
         }
     }
 
-    /// A WhatsApp chat that is full and may have older messages at the gateway, or a chat the chat helper brings in,
-    /// which fetches older ones from the app as you scroll back (as Beeper does).
-    private var canLoadOlder: Bool {
-        switch entry.origin {
-        case .whatsApp: return whatsAppChat.flatMap { whatsApp.inbox.conversations[$0]?.canLoadOlder } ?? false
-        case .captured(let id): return capture.canLoadOlder(id)
-        }
-    }
+    /// Whether the chat may have older messages to scroll back to, as its app keeps them.
+    private var canLoadOlder: Bool { app.canLoadOlderChat(entry) }
 
-    private func loadOlder() async -> Bool {
-        switch entry.origin {
-        case .whatsApp:
-            guard let chat = whatsAppChat else { return false }
-            return await whatsApp.loadOlder(chat)
-        case .captured(let id): return await capture.loadOlder(id)
-        }
-    }
-
-    /// Older messages and the newest photos of a WhatsApp chat, as its card fetches them.
-    private func loadWhatsApp() async {
-        guard let chat = whatsAppChat else { return }
-        _ = await whatsApp.loadHistory(chat)
-        // A group's people: its header lists them, and your messages' info says who does not have them yet.
-        await whatsApp.loadMembers(chat)
-        guard let conversation = whatsApp.inbox.conversations[chat] else { return }
-        let wanted = conversation.messages.filter { AppModel.whatsAppPreviews($0.media) }.suffix(AppModel.whatsAppPreviewCount)
-            .filter { whatsApp.preview($0.id) == nil }.map(\.id)
-        if !wanted.isEmpty { _ = await whatsApp.loadPreviews(wanted, chat: chat) }
-    }
+    private func loadOlder() async -> Bool { await app.loadOlderChat(entry) }
 }

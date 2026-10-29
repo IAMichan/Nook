@@ -73,10 +73,14 @@ final class ChatCaptureService: ObservableObject {
         bridgeFailures[app] = nil
         bridged.remove(app)
         bridgeProblems[app] = nil
+        bridgeSignedOut.remove(app)
         Task { await pollBridges() }
     }
     /// Why a bridge could not read, per app; empty while all of them work.
     @Published private(set) var bridgeProblems: [String: String] = [:]
+    /// The apps whose last read failed because the sign-in is gone (`ConnectorErrorKind.auth`): only signing in again
+    /// helps, and Settings offers it for every app the same way (`ChatAccountHealth`).
+    @Published private(set) var bridgeSignedOut: Set<String> = []
     /// The apps whose bridge read at least once: their chats come in with history, not only from notifications.
     @Published private(set) var bridged: Set<String> = []
     /// Chats the helper has nothing older of (scrolled back to their start).
@@ -321,6 +325,7 @@ final class ChatCaptureService: ObservableObject {
                 // This runs every second for every bridge that is off: write only on a change, since each write to a
                 // published property redraws every view that watches the inbox.
                 if bridgeProblems[bridge.app] != nil { bridgeProblems[bridge.app] = nil }
+                if bridgeSignedOut.contains(bridge.app) { bridgeSignedOut.remove(bridge.app) }
                 if bridged.contains(bridge.app) { bridged.remove(bridge.app) }
                 // Signed in again later, it starts fresh instead of waiting out an old backoff.
                 bridgeFailures[bridge.app] = nil
@@ -360,6 +365,7 @@ final class ChatCaptureService: ObservableObject {
                 announce(since: before)
             }
             if bridgeProblems[bridge.app] != nil { bridgeProblems[bridge.app] = nil }
+            if bridgeSignedOut.contains(bridge.app) { bridgeSignedOut.remove(bridge.app) }
             bridgeFailures[bridge.app] = nil
             // The chat helper reads several apps: each one it brought in is bridged.
             let apps: Set<String> = bridge === serviceBridge ? serviceBridge.covered.union([bridge.app]) : [bridge.app]
@@ -368,6 +374,10 @@ final class ChatCaptureService: ObservableObject {
             guard started == generation else { return }
             let problem = error.localizedDescription
             if bridgeProblems[bridge.app] != problem { bridgeProblems[bridge.app] = problem }
+            let signedOut = ConnectorErrorKind.classify(error) == .auth
+            if signedOut != bridgeSignedOut.contains(bridge.app) {
+                if signedOut { bridgeSignedOut.insert(bridge.app) } else { bridgeSignedOut.remove(bridge.app) }
+            }
             // Try again later, and later still each time it fails again: a minute, two, four… up to a quarter of an hour.
             let failures = (bridgeFailures[bridge.app] ?? 0) + 1
             bridgeFailures[bridge.app] = failures
@@ -394,6 +404,14 @@ final class ChatCaptureService: ObservableObject {
         let fresh = ChatInbox.fresh(before: before, after: inbox, since: Date().addingTimeInterval(-Self.newsWindow))
             .filter { inbox.threads[$0].map { sources.isOn($0.app) } ?? false }
         if !fresh.isEmpty { onFresh(fresh) }
+    }
+
+    /// Signs out of Snapchat for Web, after your own confirmation: what was read is forgotten and its row offers to sign
+    /// in again.
+    func signOutSnapchat() {
+        SnapchatWebSession.shared.signOut()
+        snapchatBridge.reset()
+        bridgeChanged(snapchatBridge.app)
     }
 
     /// The Slack token changed in Settings: read Slack again from the start.

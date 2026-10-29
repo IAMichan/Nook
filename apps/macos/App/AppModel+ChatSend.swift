@@ -51,7 +51,7 @@ extension AppModel {
             let telegram = capture.telegramBridge
             return ChatAbilities(send: true, sends: ChatOutgoing.Kind.everything, reply: true, react: true, edit: true, delete: true,
                                  markRead: true, pin: true, mute: true, archive: true,
-                                 pinned: telegram.isPinned(id), muted: telegram.isMuted(id), vote: true)
+                                 pinned: telegram.isPinned(id), muted: telegram.isMuted(id), vote: true, deleteForMe: true)
         case .teams:
             // Teams' website session takes text, answers, emoji, edits, deletions and read marks; not files, and it
             // has no pinning, muting or archiving Nook can reach.
@@ -274,9 +274,12 @@ extension AppModel {
     }
 
     /// Deletes a message for you alone, after you chose it: the chat no longer shows it in Nook (in every app), and an
-    /// app that can delete for one person (Telegram, on all your devices) does so too. `chat` is the Chats tab's chat id.
+    /// app that can delete for one person (`ChatAbilities.deleteForMe`: Telegram, on all your devices) does so too.
+    /// `chat` is the Chats tab's chat id.
     func deleteInChatForMe(_ bubble: ChatBubble, route: ChatRoute?, chat: String, name: String) {
-        if case .telegram = route { try? ChatCaptureService.shared.telegramBridge.delete(bubble.id, forEveryone: false) }
+        if chatAbilities(route).deleteForMe, case .telegram = route {
+            try? ChatCaptureService.shared.telegramBridge.delete(bubble.id, forEveryone: false)
+        }
         ChatHiddenMessages.shared.hide(bubble.id, in: chat)
         store.audit(tool: "chat_delete_for_me", args: name, result: "verwijderd voor mij")
     }

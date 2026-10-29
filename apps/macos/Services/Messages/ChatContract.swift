@@ -28,6 +28,8 @@ struct ChatAbilities: Equatable {
     var muted = false
     /// A poll in the chat can be voted on from Nook.
     var vote = false
+    /// "Delete for me" also deletes the message in the app itself, for you on all your devices (else only in Nook).
+    var deleteForMe = false
 
     /// Whether the chat's app takes this action from Nook.
     func allows(_ action: ChatAction) -> Bool {
@@ -104,6 +106,39 @@ enum ChatAction: Equatable {
             break
         }
         return nil
+    }
+}
+
+/// Where a linked chat app's account stands, the same for every app in Settings › Chats (`ChatLinkedAccountRow`):
+/// reading, switched off in Nook, failing for a passing reason (the service busy, no network), or signed out, which only
+/// signing in again mends.
+enum ChatAccountHealth: Equatable {
+    case working
+    case off
+    case failing(String)
+    case signedOut(String)
+
+    /// `collecting`: chats are collected at all; `shown`: this app's chats are on; `problem`: why its last read failed;
+    /// `signedOut`: that failure was a lost sign-in.
+    static func of(collecting: Bool, shown: Bool, problem: String?, signedOut: Bool) -> ChatAccountHealth {
+        if let problem { return signedOut ? .signedOut(problem) : .failing(problem) }
+        return collecting && shown ? .working : .off
+    }
+
+    /// The account's line under its name: what is wrong when something is, else `working` (or `off`).
+    func detail(working: String, off: String) -> String {
+        switch self {
+        case .working: return working
+        case .off: return off
+        case .failing(let why), .signedOut(let why): return why
+        }
+    }
+
+    var isProblem: Bool {
+        switch self {
+        case .failing, .signedOut: return true
+        case .working, .off: return false
+        }
     }
 }
 
