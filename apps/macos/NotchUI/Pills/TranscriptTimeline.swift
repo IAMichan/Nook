@@ -632,7 +632,9 @@ struct TranscriptUserBubble: View {
                             .foregroundStyle(NookTheme.textSecondary)
                         }
                     }
-                    .padding(NookTheme.Spacing.md)
+                    // Room enough that a second line keeps clear of the round corners.
+                    .padding(.horizontal, NookTheme.Spacing.xl)
+                    .padding(.vertical, NookTheme.Spacing.lg)
                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.bubble, style: .continuous).fill(NookTheme.bubble))
                 }
             }
