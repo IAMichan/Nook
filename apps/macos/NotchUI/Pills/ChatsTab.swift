@@ -69,12 +69,14 @@ extension ChatsEntry {
         // WhatsApp comes from one place only: the chat helper once it links it (as Beeper did), else the phone's link.
         let helperWhatsApp = ChatHelper.linked("whatsapp")
         let linkedWhatsApp = whatsApp.isConnected && !helperWhatsApp
+        // A message you deleted for yourself is no chat's newest line either.
+        let hidden = ChatHiddenMessages.shared
         if linkedWhatsApp {
             for conversation in whatsApp.inbox.sorted where !whatsApp.filters.ignored.contains(conversation.id) {
                 // Who is who by your Contacts and the phone's: names instead of numbers.
                 var names = conversation.isGroup ? whatsApp.memberIndex(conversation) : nil
-                let preview = conversation.messages.last.map { line($0, sender: $0.fromMe ? "" : names?.name($0.sender) ?? "") } ?? ""
-                let newest = conversation.messages.last
+                let newest = hidden.visible(conversation.messages, in: "wa|" + conversation.id) { $0.id }.last
+                let preview = newest.map { line($0, sender: $0.fromMe ? "" : names?.name($0.sender) ?? "") } ?? ""
                 let receipts = ChatReceipts.filled(conversation.messages.map { ($0.fromMe, $0.receipt) },
                                                    private: !conversation.isGroup)
                 let ticks = receipts.last.flatMap { $0 }.map(BubbleTicks.init)
@@ -114,8 +116,8 @@ extension ChatsEntry {
         }
         for thread in threads where capture.sources.isOn(thread.app) {
             if let id = thread.messages.last?.id, keeper[thread.app + "|" + id]?.id != thread.id { continue }
-            let preview = thread.messages.last.map(line) ?? ""
-            let newest = thread.messages.last
+            let newest = hidden.visible(thread.messages, in: thread.id) { $0.id }.last
+            let preview = newest.map(line) ?? ""
             let receipts = ChatReceipts.filled(thread.messages.map { ($0.isMine, $0.receipt) }, private: thread.isPrivate)
             let ticks = receipts.last.flatMap { $0 }.map(BubbleTicks.init)
             entries.append(ChatsEntry(id: thread.id, origin: .captured(thread.id), app: thread.app, name: thread.name,
@@ -215,7 +217,7 @@ final class ChatsEntryMemo {
         if watching.isEmpty {
             let changes: [ObservableObjectPublisher] = [
                 whatsApp.objectWillChange, capture.objectWillChange, ChatHelper.shared.objectWillChange,
-                ChatLinker.shared.objectWillChange, I18n.shared.objectWillChange,
+                ChatLinker.shared.objectWillChange, I18n.shared.objectWillChange, ChatHiddenMessages.shared.objectWillChange,
             ]
             watching = changes.map { $0.sink { [weak self] _ in MainActor.assumeIsolated { self?.entries = nil } } }
         }
@@ -1121,8 +1123,10 @@ private struct ChatsDetail: View {
     @State private var replyingTo: ChatBubble?
     /// Your message whose text the field changes, shown above it until the change goes or is let go.
     @State private var editing: ChatBubble?
-    /// Your message waiting for "Delete for everyone" to be confirmed.
+    /// The message whose deletion waits for your choice: for you, or for everyone.
     @State private var deleting: ChatBubble?
+    /// Messages you deleted for yourself, which this chat no longer shows.
+    @ObservedObject private var hiddenMessages = ChatHiddenMessages.shared
     @State private var bubblesMemo = ChatBubblesMemo()
     /// Who is typing in this chat, under its last message.
     @ObservedObject private var typing = ChatTypingCenter.shared
@@ -1204,14 +1208,27 @@ private struct ChatsDetail: View {
     }
 
     private var bubbles: [ChatBubble] {
+        let all: [ChatBubble]
         switch entry.origin {
         case .whatsApp(let jid):
-            return bubblesMemo.whatsApp(whatsApp.inbox.conversations[jid], previews: whatsApp.previewRevision)
+            all = bubblesMemo.whatsApp(whatsApp.inbox.conversations[jid], previews: whatsApp.previewRevision)
         case .captured(let id):
-            return bubblesMemo.captured(capture.inbox.threads[id]) { thread in
+            all = bubblesMemo.captured(capture.inbox.threads[id]) { thread in
                 thread.map { ChatBubble.bubbles($0) { Self.time.string(from: $0) } } ?? []
             }
         }
+        return hiddenMessages.visible(all, in: entry.id) { $0.id }
+    }
+
+    /// "For everyone" is offered for your own message in an app that takes it; "for me" for every message.
+    private func canDeleteForEveryone(_ bubble: ChatBubble) -> Bool { bubble.fromMe && abilities.delete && route != nil }
+
+    /// What the choice says each way does, in this chat's app.
+    private func deleteDetail(_ bubble: ChatBubble) -> String {
+        var forMe: String
+        if case .telegram = route { forMe = tr("chat.delete.forMe.app", appName) } else { forMe = tr("chat.delete.forMe.local", appName) }
+        if canDeleteForEveryone(bubble) { forMe += "\n\n" + tr("chat.delete.forEveryone.detail", appName) }
+        return forMe
     }
 
     var body: some View {
@@ -1228,7 +1245,7 @@ private struct ChatsDetail: View {
                                onReply: abilities.reply ? quote : nil,
                                onReact: abilities.react ? react : nil,
                                onEdit: abilities.edit ? edit : nil,
-                               onDelete: abilities.delete ? { deleting = $0 } : nil,
+                               onDelete: { deleting = $0 },
                                onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil,
                                typing: typing.line(entry.id), newFrom: newFrom)
                     .padding(.horizontal, NookTheme.Spacing.xs)
@@ -1246,8 +1263,23 @@ private struct ChatsDetail: View {
                     .transition(.opacity)
             }
         }
-        .confirmDelete($deleting, question: { _ in tr("chat.delete.question") }, detail: tr("chat.delete.detail", appName),
-                       confirmTitle: tr("chat.delete")) { delete($0) }
+        // Deleting asks how: for you (every app; it leaves Nook on this Mac, and Telegram for you), or for everyone (your
+        // own message, in an app that takes it).
+        .confirmationDialog(tr("chat.delete.choose"),
+                            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible, presenting: deleting) { bubble in
+            if canDeleteForEveryone(bubble) {
+                Button(tr("chat.delete"), role: .destructive) { delete(bubble) }
+            }
+            Button(tr("chat.delete.forMe"), role: .destructive) {
+                withAnimation(NookTheme.reveal) {
+                    app.deleteInChatForMe(bubble, route: route, chat: entry.id, name: entry.name)
+                }
+            }
+            Button(tr("button.cancel"), role: .cancel) {}
+        } message: { bubble in
+            Text(deleteDetail(bubble))
+        }
         .task(id: entry.id) {
             // Every app the same: an opened chat is read from its app now, so it shows the newest messages at once.
             if case .captured(let id) = entry.origin { capture.refresh(id) }

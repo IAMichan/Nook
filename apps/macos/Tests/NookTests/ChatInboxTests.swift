@@ -356,6 +356,18 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertFalse(ChatFormat.isVideoPage(URL(string: "https://www.instagram.com/p/C1/")!))
     }
 
+    @MainActor
+    func testMessagesDeletedForMeStayGone() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("hidden-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let store = ChatHiddenMessages(file: file)
+        store.hide("m2", in: "instagram|anna")
+        let messages = ["m1", "m2", "m3"]
+        XCTAssertEqual(store.visible(messages, in: "instagram|anna") { $0 }, ["m1", "m3"])
+        XCTAssertEqual(store.visible(messages, in: "telegram|jan") { $0 }, messages, "only that chat")
+        XCTAssertEqual(ChatHiddenMessages(file: file).ids(in: "instagram|anna"), ["m2"], "a restart does not bring it back")
+    }
+
     func testChatMovedBeforeItsMessageIsReadAgain() {
         let moved = Date(timeIntervalSince1970: 1_000)
         let chat = ChatServiceData.Chat(id: "!i", app: "instagram", title: "Anna", isGroup: false, unread: 1, last: moved)

@@ -587,9 +587,9 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
     }
 
     /// Deletes your message (its id in Nook) for everyone; the chat drops it once Telegram did (`updateDeleteMessages`).
-    func delete(_ id: String) throws {
+    func delete(_ id: String, forEveryone: Bool = true) throws {
         guard let ids = TelegramData.ids(id) else { throw NookError(tr("chat.compose.telegramOff")) }
-        try act(TelegramData.deleteMessages(chat: ids.chat, messages: [ids.message]), chat: ids.chat)
+        try act(TelegramData.deleteMessages(chat: ids.chat, messages: [ids.message], revoke: forEveryone), chat: ids.chat)
     }
 
     /// Sends a chat action to TDLib, with an `@extra` so a refusal shows as a toast.
