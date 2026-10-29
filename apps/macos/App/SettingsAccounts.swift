@@ -19,8 +19,8 @@ struct AccountsSettingsSection: View {
                     }
                 }
 
-                if kind == .gemini || kind == .antigravity {
-                    SettingNote(tr(kind == .gemini ? "accounts.geminiSingle" : "accounts.antigravitySingle"))
+                if let note = kind.singleAccountNote {
+                    SettingNote(tr(note))
                 } else if kind.supportsProfiles {
                     Button {
                         adding = kind
@@ -388,18 +388,20 @@ private struct AddAccountSheet: View {
                         .textFieldStyle(.roundedBorder)
                 }
 
-                SetupStep(number: 2, title: tr("accounts.method"), done: true) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Picker("", selection: $method) {
-                            Text(tr("accounts.method.cli")).tag(AgentAuthMethod.cli)
-                            Text(tr("accounts.method.apiKey")).tag(AgentAuthMethod.apiKey)
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
+                if kind.takesAPIKeyAccounts {
+                    SetupStep(number: 2, title: tr("accounts.method"), done: true) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Picker("", selection: $method) {
+                                Text(tr("accounts.method.cli")).tag(AgentAuthMethod.cli)
+                                Text(tr("accounts.method.apiKey")).tag(AgentAuthMethod.apiKey)
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
 
-                        if method == .apiKey {
-                            SecureField(tr("accounts.keyPlaceholder"), text: $key)
-                                .textFieldStyle(.roundedBorder)
+                            if method == .apiKey {
+                                SecureField(tr("accounts.keyPlaceholder"), text: $key)
+                                    .textFieldStyle(.roundedBorder)
+                            }
                         }
                     }
                 }

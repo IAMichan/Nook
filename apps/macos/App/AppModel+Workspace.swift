@@ -531,7 +531,7 @@ extension AgentProfile {
     /// Only the account directory prefix (no key), used for login and logout commands.
     var environmentPrefixOnly: String {
         guard let home, let variable = kind.homeVariable else { return "" }
-        return "\(variable)=\(AgentProfile.shellPath(home)) "
+        return "\(variable)=\(AgentProfile.shellPath(kind.homeValue(home))) "
     }
 }
 
