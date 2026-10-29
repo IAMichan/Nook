@@ -199,22 +199,12 @@ struct FilePreviewPanel: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
+    /// The side panel's own header (`SidePanelHeader`), on the right of the conversation.
     private var header: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "doc.text").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
-            Text(URL(fileURLWithPath: path).lastPathComponent)
-                .font(NookTheme.TextStyle.strong)
-                .foregroundStyle(NookTheme.paper)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(AgentPathFormat.tilde(path))
-            Spacer(minLength: 4)
-            ToolbarIconButton(wide ? "arrow.right.to.line" : "arrow.left.to.line", tr(wide ? "ws.outputs.narrow" : "ws.outputs.widen")) {
-                withAnimation(NookTheme.reveal) { wide.toggle() }
-            }
-            ToolbarIconButton("xmark", tr("ws.outputs.close"), close)
+        SidePanelHeader(edge: .trailing, closeHelp: tr("ws.outputs.close"), wide: $wide, close: close) {
+            SidePanelTitle(symbol: "doc.text", title: URL(fileURLWithPath: path).lastPathComponent,
+                           help: AgentPathFormat.tilde(path))
         }
-        .frame(height: 30)
     }
 
     @ViewBuilder

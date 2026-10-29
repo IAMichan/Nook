@@ -183,8 +183,9 @@ struct TurnDiffPanel: View {
         .onChange(of: selection.turn) { _, _ in expanded = selection.file.map { [$0] } ?? [] }
     }
 
+    /// The side panel's own header (`SidePanelHeader`): the turn to show and how many files it changed.
     private func header(_ current: TurnDiff, files: [StackedDiffFile]) -> some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
+        SidePanelHeader(edge: .trailing, closeHelp: tr("ws.outputs.close"), wide: $wide, close: close) {
             ComposerDropdown(width: 240) {
                 HStack(spacing: NookTheme.Spacing.xs) {
                     Text(selection.turn == TurnDiffSelection.all ? tr("agents.diff.allTurns") : title(current))
@@ -213,15 +214,9 @@ struct TurnDiffPanel: View {
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
                 .lineLimit(1)
-            Spacer(minLength: 4)
+        } actions: {
             StackedDiffToolbar(files: files, expanded: $expanded, showsTree: $showFiles)
-            ToolbarIconButton(wide ? "arrow.right.to.line" : "arrow.left.to.line", tr(wide ? "ws.outputs.narrow" : "ws.outputs.widen")) {
-                withAnimation(NookTheme.reveal) { wide.toggle() }
-            }
-            ToolbarIconButton("xmark", tr("ws.outputs.close"), close)
         }
-        .padding(.horizontal, NookTheme.Spacing.xs)
-        .frame(height: 36)
     }
 
     /// "Turn 3", or "Latest turn" for the last one.

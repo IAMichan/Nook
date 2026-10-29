@@ -51,20 +51,18 @@ struct CommandConsolePanel: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
+    /// The side panel's own header (`SidePanelHeader`), on the left of the conversation.
     private var header: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "terminal").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
-            Text(tr("ws.console.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
+        SidePanelHeader(edge: .leading, closeHelp: tr("ws.console.close"), close: close) {
+            SidePanelTitle(symbol: "terminal", title: tr("ws.console.title"))
             status
-            Spacer(minLength: 4)
+        } actions: {
             ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", tr("ws.console.copy")) {
                 Pasteboard.copy("$ " + command + (output.isEmpty ? "" : "\n" + output))
                 copied = true
                 Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
             }
-            ToolbarIconButton("xmark", tr("ws.console.close"), close)
         }
-        .frame(height: 30)
     }
 
     @ViewBuilder

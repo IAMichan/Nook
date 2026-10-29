@@ -11,6 +11,9 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- The session list on the left of the Agents tab can be put away beside a session, with the button at the end of its
+  title row or the new left toggle in the session's header; it is remembered.
+
 - Downloaded builds (the release .dmg/.zip) update themselves from GitHub Releases through the footer's Update
   button: Nook downloads the release's .zip, checks its Ed25519 signature against the key it carries, and installs it
   (`docs/UPDATES.md`, "Release builds"). The release workflow signs the .zip when `NOOK_UPDATE_SIGNING_KEY` is set.
@@ -53,6 +56,10 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Changed
 
+- Every panel beside a conversation in the Agents tab (the session list, a command's terminal, the tool panel, a
+  turn's diff, a file) is one shared side panel: the same drag line, header height and close button, whose mark is the
+  side it sits on. The right side shows one panel at a time, so a diff or file and the tool panel take turns instead
+  of stacking, and the docked session panel steps aside while either is open.
 - A pull request opens beside the list opens one: half the page, its edge dragged wider or
   narrower (remembered), and a button on its tab line that makes it fill the page.
 - A pull request's page looks: a one-line title, segmented tabs, its tabs as `#number` whose mark turns

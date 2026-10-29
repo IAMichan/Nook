@@ -5,6 +5,8 @@ import AppKit
 /// right the session you picked, or, after the new-session button, the place to start one. A row shows the folder and
 /// how long the session has been going, its name, and its branch with the agent's logo; the badge on the logo says
 /// whether it runs under a personal or a work account. Finished sessions wait folded away at the bottom.
+/// The list is a side panel like the ones on the right (`SidePanel.swift`): drag its line to resize it, and beside a
+/// session put it away with the button at the end of its title row or the left toggle in the session's header.
 struct AgentsTab: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
@@ -13,6 +15,8 @@ struct AgentsTab: View {
     @State private var palette = false
     /// How wide the session list is: drag the line beside it, double-click it to reset. Remembered.
     @AppStorage("nook.agents.listWidth") private var listWidth = PanelLayout.agentsList
+    /// The list is put away beside a session, for more room for the conversation. Remembered.
+    @AppStorage(AgentsListVisibility.hiddenKey) private var listHidden = false
     @State private var totalWidth: Double = 0
     /// The folder picked for a new session: its terminal, browser and changes open beside the composer.
     @State private var newDirectory = ""
@@ -49,23 +53,26 @@ struct AgentsTab: View {
         // the conversation and the panel side by side for as long as it can.
         let besideRoom = workbench(selection) && viewModel.sessionTool != .conversation
             ? PanelLayout.minimumPanel + PanelSplit.handle + NookTheme.Spacing.sm + 10 : 0
+        // Only a session can do without the list: the pages of the footer (pull requests, usage, the tools) are reached
+        // from the list, so it stays there.
+        let listShown = !listHidden || !workbench(selection)
         HStack(alignment: .top, spacing: 0) {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                listHeader(selection)
-                sessionList(live: live, past: past, transcripts: transcripts, selection: selection)
-                if !app.demoMode {
-                    PanelFooter(selected: selectedID(selection), open: { viewModel.selectedAgentID = $0 },
-                                openSettings: { app.openSettings() }, history: app.history,
-                                onBack: { viewModel.selectedAgentID = beforePullRequests },
-                                openCloud: showsCloudLink ? {
-                                    if let url = URL(string: "https://claude.ai/code") { NSWorkspace.shared.open(url) }
-                                } : nil)
+            if listShown {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                    listHeader(selection)
+                    sessionList(live: live, past: past, transcripts: transcripts, selection: selection)
+                    if !app.demoMode {
+                        PanelFooter(selected: selectedID(selection), open: { viewModel.selectedAgentID = $0 },
+                                    openSettings: { app.openSettings() }, history: app.history,
+                                    onBack: { viewModel.selectedAgentID = beforePullRequests },
+                                    openCloud: showsCloudLink ? {
+                                        if let url = URL(string: "https://claude.ai/code") { NSWorkspace.shared.open(url) }
+                                    } : nil)
+                    }
                 }
+                .sidePanel(.leading, width: $listWidth, defaultWidth: PanelLayout.agentsList, minimum: PanelLayout.minimumList,
+                           available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle + besideRoom)
             }
-            .padding(.trailing, NookTheme.Spacing.xs)
-            .resizablePanel(width: $listWidth, defaultWidth: PanelLayout.agentsList, minimum: PanelLayout.minimumList,
-                            available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle + besideRoom,
-                            edge: .trailing, divider: true)
 
             Group {
                 switch selection {
@@ -110,8 +117,16 @@ struct AgentsTab: View {
                     }
                 }
             }
-            .padding(.leading, 10)
+            .padding(.leading, listShown ? 10 : 0)
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .animation(NookTheme.reveal, value: listShown)
+        // Looking at a session counts as having seen what it finished, also with the list put away.
+        // Leaving a session counts too: what finished while you watched it is not "new".
+        .onAppear { visits.visit(selectedID(selection)) }
+        .onChange(of: selectedID(selection)) { old, new in
+            visits.visit(old)
+            visits.visit(new)
         }
         // Exactly the width it is given, however wide a row inside wants to be: measuring a row that runs past the window
         // would hand the panels more room than there is and push everything off both sides.
@@ -146,12 +161,18 @@ struct AgentsTab: View {
 
     // MARK: List header
 
-    /// "Agents" with the button that starts a new session.
+    /// "Agents" with the button that starts a new session, and beside a session the one that puts the list away
+    /// (the same close button every side panel ends with).
     private func listHeader(_ selection: Selection) -> some View {
         let isNew: Bool = { if case .new = selection { return true }; return false }()
         return PanelListHeader(tr("tab.agents")) {
             if !app.demoMode {
                 PanelNewButton(label: tr("agents.newSession"), active: isNew) { viewModel.selectedAgentID = "new" }
+            }
+            if workbench(selection) {
+                SidePanelCloseButton(edge: .leading, help: tr("agents.list.hide")) {
+                    withAnimation(NookTheme.reveal) { listHidden = true }
+                }
             }
         }
         .padding(.bottom, NookTheme.Spacing.xs)
@@ -229,16 +250,7 @@ struct AgentsTab: View {
         // The agent works in a chat you had marked as finished: it is not finished after all,
         // unless you marked it during this very busy spell.
         .onChange(of: busyKeys) { _, keys in finishedMarks.reconcile(busy: keys) }
-        .onAppear {
-            finishedMarks.reconcile(busy: busyKeys)
-            visits.visit(current)
-        }
-        // Looking at a session counts as having seen what it finished.
-        // Leaving a session counts too: what finished while you watched it is not "new".
-        .onChange(of: current) { old, new in
-            visits.visit(old)
-            visits.visit(new)
-        }
+        .onAppear { finishedMarks.reconcile(busy: busyKeys) }
     }
 
     /// Gives a session another one spawned (Claude desktop's suggested tasks) that one as its parent, so the list shows it
@@ -409,6 +421,12 @@ struct AgentsTab: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
+}
+
+/// Whether the session list on the left of the Agents tab is put away; shared by the tab and the toggle in a
+/// session's header (`SessionToolSwitch`).
+enum AgentsListVisibility {
+    static let hiddenKey = "nook.agents.listHidden"
 }
 
 // MARK: Session row
