@@ -78,7 +78,8 @@ extension AppModel {
                       strip: { [weak self] in
                           self?.viewModel.notify(conversation.name + ": " + line, button: tr("notices.openChat"), action: open)
                       },
-                      open: open)
+                      open: open,
+                      window: { [weak self] in self?.showChats(ChatsFocus(chat: "wa|" + chat)) })
     }
 
     /// The card of a WhatsApp chat (by its key across accounts), with a field to answer; redrawn when it is on screen

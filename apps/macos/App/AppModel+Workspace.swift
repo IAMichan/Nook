@@ -314,7 +314,7 @@ extension AppModel {
             self?.viewModel.notify(message, button: tr("ws.notice.open")) { [weak self] in self?.openWorkspace(run: runID) }
         }
         deliverNotice(.agents, app: run.provider.rawValue, id: "wsquestion-" + runID.uuidString, title: message,
-                      sound: .attention, card: show, strip: show, open: { [weak self] in self?.openWorkspace(run: runID) })
+                      sound: .attention, kind: .warning, card: show, strip: show, open: { [weak self] in self?.openWorkspace(run: runID) })
     }
 
     private func workspaceTurnFinished(_ run: WorkspaceRun) {
@@ -337,6 +337,7 @@ extension AppModel {
         let runID = run.id
         deliverNotice(.agents, app: run.provider.rawValue, id: "agentstatus-ws-" + UUID().uuidString, title: title,
                       subtitle: context, body: failed ? (run.statusDetail ?? "") : "", sound: failed ? .error : .done,
+                      kind: failed ? .error : .success,
                       card: { [weak self] in self?.showTurnNotice(run, compact: false) },
                       strip: { [weak self] in self?.showTurnNotice(run, compact: true) },
                       open: { [weak self] in self?.openWorkspace(run: runID) })
