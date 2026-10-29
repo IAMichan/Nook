@@ -1,8 +1,9 @@
 import Foundation
 
 // A turn that failed because the agent's login ran out ("OAuth session expired and could not be refreshed", "Invalid API
-// key · Please run /login"). The failed turn's banner then offers to sign in again, in the same Terminal window the
-// account settings open. Pure decisions, Foundation only, so it is tested on its own.
+// key · Please run /login"). The failed turn's banner then offers to sign in again: in your browser where the agent's
+// login allows it, else in the Terminal window the account settings open. Pure decisions, Foundation only, so it is
+// tested on its own.
 
 enum AgentSignInFailure {
     /// What agents say when their login no longer works, lowercased. Kept narrow: a word like "token" alone also
