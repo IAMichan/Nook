@@ -256,6 +256,7 @@ targets:
       - path: Services/Messages/OggOpus.swift
       - path: Services/Messages/Giphy.swift
       - path: Services/WhatsApp/WhatsAppSend.swift
+      - path: Services/WhatsApp/WhatsAppExport.swift
       - path: NotchUI/Window/NotchResize.swift
       - path: Brain/Research.swift
       - path: Brain/QueryPlan.swift
