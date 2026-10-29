@@ -61,7 +61,10 @@ extension AppModel {
 
         let detail: CardDetail
         let height: CGFloat
-        if approval.diff.isEmpty {
+        if approval.prose {
+            detail = .prose(approval.command, note: approval.note)
+            height = 214
+        } else if approval.diff.isEmpty {
             detail = .command(approval.command, note: approval.note)
             height = 214
         } else {
