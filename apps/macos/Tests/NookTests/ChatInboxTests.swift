@@ -944,6 +944,55 @@ final class ChatInboxTests: XCTestCase {
                        "a deletion already shown changes nothing")
     }
 
+    /// Someone's new emoji on your message is the chat's line until something newer is written; yours, one already
+    /// there, and one taken back are not.
+    func testANewReactionIsTheChatsLineUntilANewerMessage() {
+        var inbox = ChatInbox()
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let mine = InboxMessage(id: "m1", text: "Ja lijkt me sluw", date: date, fromMe: true)
+        var liked = mine
+        liked.reactions = [InboxReaction(emoji: "👍", count: 1, mine: false, people: ["Daan"])]
+        // Already on it the first time Nook sees the message: old news.
+        inbox.merge(BridgedChat(app: "telegram", name: "Daan", messages: [liked], unread: 0), now: date)
+        let key = ChatInbox.key(app: "telegram", chat: "Daan")
+        XCTAssertNil(inbox.threads[key]?.newestReaction)
+
+        var hearts = liked
+        hearts.reactions = [InboxReaction(emoji: "👍", count: 1, mine: false, people: ["Daan"]),
+                            InboxReaction(emoji: "❤️", count: 1, mine: true)]
+        inbox.merge(BridgedChat(app: "telegram", name: "Daan", messages: [hearts], unread: 0), now: date.addingTimeInterval(10))
+        XCTAssertNil(inbox.threads[key]?.newestReaction, "your own emoji is no news")
+
+        var again = hearts
+        again.reactions = [InboxReaction(emoji: "❤️", count: 2, mine: true, people: ["Daan"]),
+                           InboxReaction(emoji: "👍", count: 1, mine: false, people: ["Daan"])]
+        inbox.merge(BridgedChat(app: "telegram", name: "Daan", messages: [again], unread: 0), now: date.addingTimeInterval(20))
+        let note = try! XCTUnwrap(inbox.threads[key]?.newestReaction)
+        XCTAssertEqual(note.emoji, "❤️")
+        XCTAssertEqual(note.person, "Daan")
+        XCTAssertEqual(note.message, "m1")
+        XCTAssertEqual(note.text, "Ja lijkt me sluw")
+        XCTAssertEqual(note.date, date.addingTimeInterval(20))
+
+        // Taken back: the line is the message again.
+        inbox.merge(BridgedChat(app: "telegram", name: "Daan", messages: [hearts], unread: 0), now: date.addingTimeInterval(30))
+        XCTAssertNil(inbox.threads[key]?.reaction)
+
+        inbox.merge(BridgedChat(app: "telegram", name: "Daan", messages: [again], unread: 0), now: date.addingTimeInterval(40))
+        XCTAssertNotNil(inbox.threads[key]?.newestReaction)
+        let answer = InboxMessage(id: "m2", text: "Haha", date: date.addingTimeInterval(50))
+        inbox.merge(BridgedChat(app: "telegram", name: "Daan", messages: [again, answer], unread: nil), now: date.addingTimeInterval(50))
+        XCTAssertNil(inbox.threads[key]?.newestReaction, "a newer message is the line again")
+
+        // A notification's reaction says the same, dated when it came.
+        let notified = date.addingTimeInterval(60)
+        XCTAssertTrue(inbox.add(ChatNotice(app: "telegram", chat: "Daan", sender: "",
+                                           text: "Reageerde met 😂 op Ja lijkt me", date: notified), id: "n1"))
+        XCTAssertEqual(inbox.threads[key]?.newestReaction?.emoji, "😂")
+        XCTAssertEqual(inbox.threads[key]?.newestReaction?.message, "m1")
+        XCTAssertEqual(inbox.threads[key]?.newestReaction?.date, notified)
+    }
+
     func testChatJSONHelpers() {
         XCTAssertEqual(ChatJSON.object(Data(#"{"a": 1}"#.utf8))?["a"] as? Int, 1)
         XCTAssertNil(ChatJSON.object(Data("[1]".utf8)), "a list is not an object")

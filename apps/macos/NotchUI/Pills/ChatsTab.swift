@@ -81,14 +81,24 @@ extension ChatsEntry {
                 // Who is who by your Contacts and the phone's: names instead of numbers.
                 var names = conversation.isGroup ? whatsApp.memberIndex(conversation) : nil
                 let newest = hidden.visible(conversation.messages, in: "wa|" + key) { $0.id }.last
-                let preview = newest.map { line($0, sender: $0.fromMe ? "" : names?.name($0.sender) ?? "") } ?? ""
+                // Someone's emoji on your message after it says more than the message itself.
+                let reacted = conversation.newestReaction.flatMap { note in
+                    conversation.messages.first { $0.id == note.message }.map { message -> String in
+                        var shown = note
+                        shown.text = text(message)
+                        return shown.line(who: conversation.isGroup ? shortSender(names?.name(note.person) ?? "") : "")
+                    }
+                }
+                let preview = reacted ?? newest.map { line($0, sender: $0.fromMe ? "" : names?.name($0.sender) ?? "") } ?? ""
                 let receipts = ChatReceipts.filled(conversation.messages.map { ($0.fromMe, $0.receipt) },
                                                    private: !conversation.isGroup)
                 let ticks = ChatReceipts.newest(receipts, ids: conversation.messages.map(\.id), shown: newest?.id)
                     .map(BubbleTicks.init)
                 entries.append(ChatsEntry(id: "wa|" + key, origin: .whatsApp(key), app: "whatsapp",
-                                          name: conversation.name, preview: preview, last: conversation.lastActivity,
-                                          read: whatsApp.readState(conversation.id), lastIsMine: newest?.fromMe ?? false,
+                                          name: conversation.name, preview: preview,
+                                          last: max(conversation.lastActivity, conversation.newestReaction?.date ?? .distantPast),
+                                          read: whatsApp.readState(conversation.id),
+                                          lastIsMine: reacted == nil && newest?.fromMe ?? false,
                                           readKnown: whatsApp.readIsKnown(conversation.id),
                                           ticks: ticks, members: conversation.members == nil ? nil : names?.all,
                                           handle: handle(conversation.id), avatar: whatsApp.avatars[conversation.id],
@@ -125,12 +135,15 @@ extension ChatsEntry {
         for thread in threads where capture.sources.isOn(thread.app) {
             if let id = thread.messages.last?.id, keeper[thread.app + "|" + id]?.id != thread.id { continue }
             let newest = hidden.visible(thread.messages, in: thread.id) { $0.id }.last
-            let preview = newest.map(line) ?? ""
+            // Someone's emoji on a message after the newest one says more than that message itself.
+            let reaction = thread.newestReaction
+            let preview = reaction.map { $0.line(who: thread.isGroup ? shortSender($0.person) : "") } ?? newest.map(line) ?? ""
             let receipts = ChatReceipts.filled(thread.messages.map { ($0.isMine, $0.receipt) }, private: thread.isPrivate)
-            let ticks = ChatReceipts.newest(receipts, ids: thread.messages.map(\.id), shown: newest?.id).map(BubbleTicks.init)
+            let ticks = reaction != nil ? nil
+                : ChatReceipts.newest(receipts, ids: thread.messages.map(\.id), shown: newest?.id).map(BubbleTicks.init)
             entries.append(ChatsEntry(id: thread.id, origin: .captured(thread.id), app: thread.app, name: thread.name,
-                                      preview: preview, last: thread.last, read: thread.readState,
-                                      lastIsMine: newest?.isMine ?? false, ticks: ticks,
+                                      preview: preview, last: max(thread.last, reaction?.date ?? .distantPast),
+                                      read: thread.readState, lastIsMine: reaction == nil && newest?.isMine ?? false, ticks: ticks,
                                       members: thread.members, avatar: thread.avatar))
         }
         return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
@@ -148,13 +161,19 @@ extension ChatsEntry {
     /// document says what came with it: its caption when it has one ("You: on the beach"), else its kind ("You: Photo").
     @MainActor
     static func line(_ message: WAMessage, sender: String) -> String {
+        let text = text(message)
+        let who = message.fromMe ? tr("chat.you") : shortSender(sender)
+        return who.isEmpty ? text : "\(who): \(text)"
+    }
+
+    /// What a WhatsApp message says in the list, without who wrote it: its caption, else its kind, a call, or its text.
+    @MainActor
+    static func text(_ message: WAMessage) -> String {
         let caption = ChatFormat.plain(message.text)
         let file = AppModel.whatsAppFileLabel(message.media)
         let whole = AppModel.whatsAppText(message)
-        let text = file.map { ChatFormat.isBlank(caption) ? $0 : caption }
+        return file.map { ChatFormat.isBlank(caption) ? $0 : caption }
             ?? ChatFormat.call(whole).map { $0.summary(mine: message.fromMe) } ?? ChatFormat.plain(whole)
-        let who = message.fromMe ? tr("chat.you") : shortSender(sender)
-        return who.isEmpty ? text : "\(who): \(text)"
     }
 
     /// Who wrote in a group, as a chat list says it: the first name ("Henco" for "Henco Hendriksen"), so the message
