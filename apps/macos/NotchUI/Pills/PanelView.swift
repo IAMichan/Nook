@@ -139,12 +139,14 @@ struct PanelView: View {
         HStack(spacing: 0) {
             if inWindow {
                 // Empty header space moves the window, as a title bar does. Its height is fixed: a clear color takes all
-                // the height it is offered, and left free it stretched the header to half the window.
+                // the height it is offered, and left free it stretched the header to half the window. A double-click
+                // toggles full screen, as the green button does.
                 Color.clear
                     .frame(minWidth: 8, maxWidth: .infinity)
                     .frame(height: Self.headerHeight)
                     .contentShape(Rectangle())
                     .gesture(WindowDragGesture())
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { NSApp.keyWindow?.toggleFullScreen(nil) })
             } else {
                 Spacer()
             }
