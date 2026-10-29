@@ -251,12 +251,14 @@ are not kept there.
 | `HoverActionsRow` | `SettingsBlocks.swift` | A row whose buttons show under the pointer; at rest a small symbol says its state (memory rows) |
 | `SettingsTile`, `HealthPill`, `SetupStep`, `GalleryCard`, `IntroCard` | `SettingsStyle.swift` | Tiles, health pills, setup steps |
 | `ServiceRowLayout`, `ServiceStatusLabel` | `ServiceRows.swift` | The one row shape of every connected service (icon, name with state, one line, actions) |
+| `ChatAccountRow` | `ServiceRows.swift` | One account of a chat app in its sheet (WhatsApp, Telegram, Teams, Slack, Messages, Snapchat, the chat service's apps): a `ServiceRowLayout` with the app's icon |
 | `GalleryCard`, `GalleryGrid`, `ConnectMethodBadge` | `SettingsStyle.swift`, `ServiceRows.swift` | The one card shape of everything you can add; the badge says how (sign in, a key, MCP) |
 | `ServiceCategoryChips` | `ServiceRows.swift` | The category filter under the connections search field |
 | `OneClickServiceCard`, `GitHubSignInCard`, `MCPServiceRow` | `ServiceRows.swift` | Services that sign in on their own page |
 | `GitLabCard`, `GitLabHostRow`, `GitLabSetupSheet` | `GitLabSettings.swift` | GitLab in the same card, row, and setup-sheet shapes |
 | `MCPPresetCard`, `MCPCustomCard`, `MCPServerCardRow`, `AddMCPServerWizardSheet` | `MCPSettingsSection.swift` | MCP servers in the same shapes |
 | `SetupSheet`, `SetupStep` | `SettingsStyle.swift` | Every setup flow: icon and title on top, numbered steps, one clear button below |
+| `SheetPart` | `SettingsStyle.swift` | A part of a sheet for something already set up: its name and its rows. A linked chat app's sheet is always Accounts, In Nook, then Advanced folded away |
 
 Settings › Connections is one page in one layout: search and category chips, what needs you, your connections (rows),
 the apps on this Mac (switches), and one catalogue of everything you can add (cards). A new service gets a row and a

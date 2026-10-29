@@ -322,9 +322,8 @@ private struct WhatsAppAccountRow: View {
     }
 
     var body: some View {
-        ServiceRowLayout(domain: "whatsapp.com", symbol: "person.crop.circle", tint: NookTheme.mint,
-                         title: accounts.name(of: link), detail: detail, status: link.serviceStatus,
-                         detailIsError: link.link == .unauthorized, source: "whatsapp") {
+        ChatAccountRow(app: "whatsapp", title: accounts.name(of: link), detail: detail, status: link.serviceStatus,
+                       detailIsError: link.link == .unauthorized) {
             if link.link == .unreachable || link.link == .unauthorized {
                 Button(tr("whatsapp.settings.retry")) { isFirst ? accounts.settingsChanged() : link.settingsChanged() }
                     .controlSize(.small)
