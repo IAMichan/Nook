@@ -1256,7 +1256,7 @@ private struct ChatsDetail: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .overlay {
-            if let zoomed, case .photo(let url) = zoomed.media, let image = zoomed.image {
+            if let zoomed, case .photo(let url) = zoomed.media, let image = zoomed.image ?? ChatMediaImages.image(url) {
                 ChatPhotoZoom(url: url, preview: image, name: zoomed.attachment ?? "",
                               onClose: { withAnimation(NookTheme.reveal) { self.zoomed = nil } },
                               onOpen: { self.zoomed = nil; open(zoomed) })
@@ -1341,7 +1341,7 @@ private struct ChatsDetail: View {
 
     /// A photo enlarges over the chat, inside Nook; a photo Nook does not have yet opens as any file does.
     private func zoom(_ bubble: ChatBubble) {
-        guard case .photo = bubble.media, bubble.image != nil else { return open(bubble) }
+        guard case .photo(let url) = bubble.media, bubble.image ?? ChatMediaImages.image(url) != nil else { return open(bubble) }
         withAnimation(NookTheme.reveal) { zoomed = bubble }
     }
 
