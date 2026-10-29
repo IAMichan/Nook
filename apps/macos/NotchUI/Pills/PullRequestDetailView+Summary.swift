@@ -18,6 +18,16 @@ extension PullRequestDetailView {
                 if let readiness = PullRequestReadiness(detail) {
                     metaRow(symbol: "checklist", title: tr("agents.pr.status.state")) { readinessLine(readiness, detail: detail) }
                 }
+                // Auto-merge belongs with the Status line: both say when it will merge.
+                if let auto = detail.autoMerge, detail.isOpen {
+                    metaRow(symbol: "bolt", title: tr("agents.pr.status.autoMerge")) {
+                        Text([auto.method.map { tr($0.titleKey) }, tr("agents.pr.autoMerge.by", "@" + auto.enabledBy)]
+                            .compactMap { $0 }.joined(separator: " · "))
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textStrong)
+                            .lineLimit(1)
+                    }
+                }
                 metaRow(symbol: "person.2", title: tr("agents.pr.status.reviewers")) { reviewers(detail) }
                 // The lines below only show when GitHub has something to say, so a plain pull request stays short.
                 if !detail.assignees.isEmpty {
@@ -43,15 +53,6 @@ extension PullRequestDetailView {
                 if detail.locked {
                     metaRow(symbol: "lock", title: tr("agents.pr.status.conversation")) {
                         Text([tr("agents.pr.locked"), detail.lockReason.map { lockReason($0) }].compactMap { $0 }.joined(separator: " · "))
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textStrong)
-                            .lineLimit(1)
-                    }
-                }
-                if let auto = detail.autoMerge, detail.isOpen {
-                    metaRow(symbol: "bolt", title: tr("agents.pr.status.autoMerge")) {
-                        Text([auto.method.map { tr($0.titleKey) }, tr("agents.pr.autoMerge.by", "@" + auto.enabledBy)]
-                            .compactMap { $0 }.joined(separator: " · "))
                             .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textStrong)
                             .lineLimit(1)
