@@ -275,6 +275,8 @@ struct CardView: View {
             EventDetail(top: top, big: big, line: line, subline: subline)
         case .command(let command, let note):
             CommandDetail(command: command, note: note)
+        case .prose(let text, let note):
+            ProseDetail(text: text, note: note)
         case .waveform:
             WaveformDetail()
         case .steps(let steps):
@@ -454,6 +456,30 @@ private struct CommandDetail: View {
             }
             .frame(maxHeight: command.count > 140 ? 120 : nil)
             .font(NookTheme.mono(13))
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
+
+            Text(note)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
+        }
+    }
+}
+
+/// What an agent wrote for you to approve (a pull request, a brief), formatted, in the same well as a command.
+private struct ProseDetail: View {
+    let text: String
+    let note: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            ScrollView(.vertical) {
+                MarkdownView(text: text, size: 13)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxHeight: 120)
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)

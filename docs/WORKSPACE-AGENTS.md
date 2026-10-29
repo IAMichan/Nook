@@ -7,7 +7,7 @@ Agents connect through a lightweight local MCP server (`nook-mcp`) that forwards
 ## Core Principles
 
 1. **Always Visible.** Anything an agent starts or opens via Nook appears right beside its session in the **Agents** tab: its terminal (badged with the agent's icon) and the workspace browser (*"Opened by Claude Code"*).
-2. **Nook Is the Gatekeeper.** An agent's own CLI flags never bypass Nook's policy. Read-only operations run immediately; commands that are not provably harmless and all pull requests wait for your explicit **Allow**; dangerous commands are always refused (`CommandRisk`). Sessions in **Plan** mode are strictly read-only.
+2. **Nook Is the Gatekeeper.** An agent's own CLI flags never bypass Nook's policy. Read-only operations run immediately; commands that are not provably harmless and pull requests wait for your explicit **Allow**, unless the session runs with **Allow everything**; dangerous commands are always refused (`CommandRisk`). Sessions in **Plan** mode are strictly read-only.
 3. **Unified Approval Flow.** Requests appear in the exact same approval card as every other agent prompt (`ApprovalCenter`, `ApprovalView`), both in the notch and inline in the session view, and are recorded in the SQLite audit log (`agent_terminal_run`, `agent_pull_request_create`, …).
 4. **Zero External Dependencies.** Like `nook-hook`, `nook-mcp` is a self-contained Perl script (pre-installed on every Mac) communicating over a `0600` Unix domain socket (`bridge.sock`). If Nook is not running, the script responds as an empty MCP server so your agent continues uninterrupted.
 
@@ -56,7 +56,7 @@ codex mcp add nook -- ~/.nook/nook-mcp --agent codex
 | `browser_open` | Opens a URL in Nook's workspace browser and waits for load completion. Allows `https://` and local `http://` (`localhost`, `127.0.0.1`, `*.localhost`). | Immediate |
 | `browser_read` | Returns page title, URL, visible text, and console errors/warnings since page load. | Immediate |
 | `browser_screenshot` | Captures a JPEG screenshot of the page for layout verification. | Immediate |
-| `pull_request_create` | Pushes the branch and opens a pull request via your connected GitHub account (or opens the GitHub compare URL). | Always requires approval |
+| `pull_request_create` | Pushes the branch and opens a pull request via your connected GitHub account (or opens the GitHub compare URL). | Requires approval, unless the session runs with **Allow everything** |
 | `orchestrator_capabilities` | Lists which agents Nook can spawn for delegated subtasks, available models, and current session permissions. | Immediate |
 | `delegate_task` | Delegates a focused subtask (`research`, `review`, `design`, `test`, `implementation`) to a child agent session visible beside the parent. | Requires approval (unless session has full access); disabled in Plan mode |
 | `task_status` | Returns status (`queued`, `running`, `waiting`, `completed`, `failed`, `cancelled`) and latest output of a delegated task. | Immediate |
