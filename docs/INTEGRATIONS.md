@@ -118,7 +118,8 @@ check the agent's protocol before you write `–`.
 | Resume a past session | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (`session/load`) |
 | Several accounts side by side | ✓ (`CLAUDE_CONFIG_DIR`) | ✓ (`CODEX_HOME`) | – (no home variable) | – (same) | – (same) | – (same) | – (same) | – (same) |
 | Subscription limits | ✓ | ✓ | – | ✓ | – | – | – | – |
-| A turn that failed on an expired login offers to sign in again (`AgentSignInFailure`) | ✓ (`claude /login`) | ✓ (`codex login`) | ✓ | ✓ (in your browser) | ✓ (`opencode auth login`) | ✓ (`cursor-agent login`) | ✓ | – (signs in itself, in its next session) |
+| A turn that failed on an expired login offers to sign in again (`AgentSignInFailure`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (signs in itself, in its next session) |
+| Signing in happens in your browser, without a Terminal window, and the failed turn runs again afterwards (`AgentKind.browserLoginArguments`) | ✓ (`claude auth login`) | ✓ (`codex login`) | – (Terminal: `gemini` only signs in in its interactive screen) | ✓ (over ACP) | – (Terminal: `opencode auth login` asks which provider) | ✓ (`cursor-agent login`) | – (Terminal: `grok` only signs in in its interactive screen) | – (signs in itself, in its next session) |
 
 ## Coding agent timeline
 

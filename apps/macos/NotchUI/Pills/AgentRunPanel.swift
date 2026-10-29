@@ -810,12 +810,16 @@ struct AgentRunPanel: View {
                 }
             }
             NookGhostButton(title: tr("ws.action.retry")) { workspace.retry(runID) }
-            // The login ran out: sign in again in a Terminal window, then Retry picks the turn up.
+            // The login ran out: sign in again in the browser, and the turn runs again once you are back.
             if run.status == .failed, AgentSignInFailure.needsSignIn(run.statusDetail),
                AgentSignInFailure.canSignInAgain(run.provider) {
-                NookPrimaryButton(title: tr("accounts.reauth"), symbol: "person.badge.key") {
-                    app.reauthenticate(app.profiles.profile(id: run.profileID) ?? .defaultProfile(run.provider.kind))
+                let profile = app.profiles.profile(id: run.profileID) ?? .defaultProfile(run.provider.kind)
+                let signingIn = app.agentConnect[profile.id]?.isBusy == true
+                NookPrimaryButton(title: signingIn ? tr("accounts.reauthWaiting") : tr("accounts.reauth"),
+                                  symbol: "person.badge.key") {
+                    app.reauthenticate(profile) { workspace.retry(runID) }
                 }
+                .disabled(signingIn)
             }
         }
         .padding(10)

@@ -128,6 +128,18 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    /// Arguments for a login that opens your browser by itself and quits once you signed in, so Nook runs it without a
+    /// Terminal window. Nil for agents whose login only works in their interactive screen (Gemini CLI, OpenCode, Grok)
+    /// and for Antigravity, which Nook signs in over ACP.
+    var browserLoginArguments: [String]? {
+        switch self {
+        case .claude: return ["auth", "login"]
+        case .codex: return ["login"]
+        case .cursor: return ["login"]
+        case .gemini, .antigravity, .opencode, .grok, .acp: return nil
+        }
+    }
+
     /// Candidate paths for the agent, in addition to what your shell finds.
     var executableCandidates: [String] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path

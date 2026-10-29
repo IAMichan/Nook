@@ -382,8 +382,10 @@ extension AppModel {
 
     // MARK: - Accounts
 
-    /// Reauthenticates this account in its own Terminal window. Other accounts and active sessions remain unaffected.
-    func reauthenticate(_ profile: AgentProfile) {
+    /// Reauthenticates this account: in your browser where the agent's login allows it (then Nook comes back and runs
+    /// `then`), else in its own Terminal window. Other accounts and active sessions remain unaffected.
+    func reauthenticate(_ profile: AgentProfile, then: (() -> Void)? = nil) {
+        if signInInBrowser(profile, then: then) { return }
         let command: String
         switch profile.kind {
         case .claude: command = profile.environmentPrefixOnly + "claude /login"

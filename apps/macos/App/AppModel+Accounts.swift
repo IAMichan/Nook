@@ -164,6 +164,12 @@ extension AppModel {
             finishConnect(profile)
             return
         }
+        // Installed but signed out: the agent's own browser login, without a Terminal window, where it has one.
+        if hasProgram {
+            agentConnect[profile.id] = nil
+            if signInInBrowser(profile) { return }
+            agentConnect[profile.id] = .working(tr("app.connect.working"))
+        }
 
         let who = profile.isDefault ? kind.name : "\(kind.name) (\(profile.label))"
         var steps = ["echo " + TerminalLauncher.shellQuote(tr("app.connect.intro", who) + " " + (hasProgram
@@ -228,6 +234,59 @@ extension AppModel {
                 self.finishConnect(profile)
             }
         }
+    }
+
+    /// Signs this account in through the agent's own browser login, without a Terminal window: the agent opens the sign-in
+    /// page, waits for it, and quits. Nook then comes back to the front and runs `then`. False when the agent has no such
+    /// login or is not installed, so the caller falls back to the Terminal.
+    @discardableResult
+    func signInInBrowser(_ profile: AgentProfile, then: (() -> Void)? = nil) -> Bool {
+        guard let arguments = profile.kind.browserLoginArguments,
+              let executable = history.executables[profile.kind] else { return false }
+        if agentConnect[profile.id]?.isBusy == true { return true }
+        agentConnect[profile.id] = .waitingForLogin(tr("app.connect.browserLogin", profile.kind.name))
+        let environment = AgentCommand.environment(base: ProcessInfo.processInfo.environment, executable: executable,
+                                                   extra: profile.environment)
+        Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) {
+                Self.runBrowserLogin(executable, arguments: arguments, environment: environment)
+            }.value
+            guard let self else { return }
+            if let failure = result {
+                self.agentConnect[profile.id] = .failed(failure)
+                ToastCenter.shared.error(failure)
+                return
+            }
+            self.finishConnect(profile)
+            NSApp.activate(ignoringOtherApps: true)
+            then?()
+        }
+        return true
+    }
+
+    /// Runs a browser login to its end (at most fifteen minutes). Nil when it succeeded, else what went wrong.
+    private nonisolated static func runBrowserLogin(_ executable: String, arguments: [String],
+                                                    environment: [String: String]) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        process.environment = environment
+        process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+        let output = Pipe()
+        // No stdin: the agent cannot ask for a pasted code and waits for the browser instead.
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = output
+        process.standardError = output
+        do { try process.run() } catch { return tr("app.connect.browserLoginFailed", error.localizedDescription) }
+        let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 15 * 60, execute: timeout)
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        timeout.cancel()
+        guard process.terminationStatus != 0 else { return nil }
+        if process.terminationReason == .uncaughtSignal { return tr("app.connect.browserLoginTimeout") }
+        let last = String(decoding: data, as: UTF8.self).split(separator: "\n").last.map(String.init) ?? ""
+        return tr("app.connect.browserLoginFailed", String(last.prefix(200)))
     }
 
     func finishConnect(_ profile: AgentProfile) {
