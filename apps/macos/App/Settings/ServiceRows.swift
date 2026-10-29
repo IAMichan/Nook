@@ -168,6 +168,23 @@ struct ServiceRowLayout<Actions: View>: View {
     }
 }
 
+/// One account of a chat app in its sheet, the same row for every app: the app's icon, the account, its state, one line,
+/// and what can be done (sign in again, sign out, remove).
+struct ChatAccountRow<Actions: View>: View {
+    let app: String
+    let title: String
+    let detail: String
+    var status: ServiceStatus = .connected
+    var detailIsError = false
+    @ViewBuilder var actions: () -> Actions
+
+    var body: some View {
+        ServiceRowLayout(domain: MessagingApps.app(id: app)?.site, symbol: "person.crop.circle", tint: NookTheme.iris,
+                         title: title, detail: detail, status: status, detailIsError: detailIsError, source: app,
+                         actions: actions)
+    }
+}
+
 /// A service connected through its official MCP server and OAuth: Connect opens the service's own sign-in page and
 /// brings you back here, with the state shown at once.
 struct MCPServiceRow: View {

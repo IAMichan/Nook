@@ -17,6 +17,7 @@ struct ChatAppSheet: View {
     @ObservedObject private var linked = ChatCaptureService.shared.serviceBridge
     @State private var unlinking: ChatLinkData.Account?
     @State private var showService = false
+    @State private var showAdvanced = false
 
     private var name: String { MessagingApps.app(id: app)?.name ?? app }
     private var site: String? { MessagingApps.app(id: app)?.site }
@@ -24,44 +25,14 @@ struct ChatAppSheet: View {
     private var ownWay: Bool { ChatAppsCatalog.ownWay.contains(app) }
     /// A login through the chat service of this app is under way.
     private var isLinking: Bool { linker.linking?.app == app && linker.session != nil }
+    /// Linked: the sheet manages it in parts instead of walking through the steps that link it.
+    private var isLinked: Bool { ChatAppStates.state(app)?.linked == true }
 
     var body: some View {
         SetupSheet(title: name, subtitle: subtitle) {
             ServiceTile(domain: site, fallback: "bubble.left.and.bubble.right.fill", tint: NookTheme.iris, size: 48, source: app)
         } content: {
-            if ownWay {
-                ChatOwnLinkSteps(app: app, setCollecting: setCollecting)
-            }
-            if let network, !network.accounts.isEmpty {
-                if ownWay { NookDivider() }
-                accounts(network)
-            }
-            if linker.serviceRuns {
-                if ownWay {
-                    NookDivider()
-                    DisclosureGroup(isExpanded: $showService) {
-                        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) { serviceSteps }
-                            .padding(.top, NookTheme.Spacing.sm)
-                    } label: {
-                        SettingLabel(tr("chats.link.viaService"), detail: tr("chats.link.viaServiceDetail", name))
-                    }
-                } else {
-                    serviceSteps
-                }
-            } else if !ownWay, ChatHelper.apps.contains(app), !ChatHelper.isBuilt {
-                SettingNote(tr("chats.link.helperMissing", name))
-            } else if !ownWay {
-                SettingNote(tr("chats.link.notYet", name, name))
-            }
-            // Until it is linked, its chats come in by its notifications: switched here, as the overview shows no row.
-            if ChatAppStates.state(app)?.linked != true, capture.sources.apps.contains(where: { $0.id == app }) {
-                NookDivider()
-                SettingToggle(tr("chats.link.notifications"), detail: tr("chats.settings.collectDetail"),
-                              isOn: Binding(get: { capture.enabled && capture.sources.isOn(app) }, set: { on in
-                                  capture.setSource(app, on: on)
-                                  if on, !capture.enabled { setCollecting(true) }
-                              }))
-            }
+            if isLinked { manageParts } else { linkSteps }
         } footer: {
             if isLinking {
                 Button(tr("chats.link.stop")) { Task { await linker.cancel() } }
@@ -88,6 +59,82 @@ struct ChatAppSheet: View {
         }
     }
 
+    // MARK: Managing a linked app
+
+    /// Every linked app the same way: its accounts, what it does in Nook, then what is rarely needed, folded away.
+    @ViewBuilder
+    private var manageParts: some View {
+        SheetPart(tr("chats.manage.accounts")) {
+            if ownWay { ChatOwnAccounts(app: app, setCollecting: setCollecting) }
+            if let network, !network.accounts.isEmpty {
+                accounts(network)
+                if isLinking {
+                    ChatLinkSteps(network: network)
+                } else if network.canLink {
+                    Button(tr("chats.link.another")) { Task { await linker.link(network) } }
+                }
+            }
+        }
+        NookDivider()
+        SheetPart(tr("chats.manage.inNook")) { ChatAppNoticeRows(app: app, setCollecting: setCollecting) }
+        if ChatOwnAdvanced.has(app) || (ownWay && linker.serviceRuns) {
+            NookDivider()
+            DisclosureGroup(isExpanded: $showAdvanced) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                    ChatOwnAdvanced(app: app, setCollecting: setCollecting)
+                    // Nook links it in its own way; the chat service on this Mac is the other way.
+                    if ownWay, linker.serviceRuns {
+                        SettingLabel(tr("chats.link.viaService"), detail: tr("chats.link.viaServiceDetail", name))
+                        serviceSteps
+                    }
+                }
+                .padding(.top, NookTheme.Spacing.sm)
+            } label: {
+                SettingLabel(tr("chats.manage.advanced"), detail: tr("chats.manage.advancedDetail"))
+            }
+        }
+    }
+
+    // MARK: Linking an app
+
+    /// The steps that link it, Nook's own first, then the chat service; until then its notifications can bring its chats.
+    @ViewBuilder
+    private var linkSteps: some View {
+        if ownWay {
+            ChatOwnLinkSteps(app: app, setCollecting: setCollecting)
+        }
+        if let network, !network.accounts.isEmpty {
+            if ownWay { NookDivider() }
+            accounts(network)
+        }
+        if linker.serviceRuns {
+            if ownWay {
+                NookDivider()
+                DisclosureGroup(isExpanded: $showService) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) { serviceSteps }
+                        .padding(.top, NookTheme.Spacing.sm)
+                } label: {
+                    SettingLabel(tr("chats.link.viaService"), detail: tr("chats.link.viaServiceDetail", name))
+                }
+            } else {
+                serviceSteps
+            }
+        } else if !ownWay, ChatHelper.apps.contains(app), !ChatHelper.isBuilt {
+            SettingNote(tr("chats.link.helperMissing", name))
+        } else if !ownWay {
+            SettingNote(tr("chats.link.notYet", name, name))
+        }
+        // Until it is linked, its chats come in by its notifications: switched here, as the overview shows no row.
+        if capture.sources.apps.contains(where: { $0.id == app }) {
+            NookDivider()
+            SettingToggle(tr("chats.link.notifications"), detail: tr("chats.settings.collectDetail"),
+                          isOn: Binding(get: { capture.enabled && capture.sources.isOn(app) }, set: { on in
+                              capture.setSource(app, on: on)
+                              if on, !capture.enabled { setCollecting(true) }
+                          }))
+        }
+    }
+
     private var subtitle: String {
         ChatAppStates.state(app)?.linked == true ? tr("chats.link.subtitleLinked", name) : tr("chats.link.subtitle", name)
     }
@@ -97,10 +144,10 @@ struct ChatAppSheet: View {
     @ViewBuilder
     private func accounts(_ network: ChatLinkData.Network) -> some View {
         ForEach(network.accounts) { account in
-            ServiceRowLayout(domain: site, symbol: "person.crop.circle", tint: NookTheme.iris, title: account.name,
-                             detail: account.isConnected ? (linked.isLive ? tr("chats.linked.liveDetail") : tr("chats.service.connectedDetail"))
-                                 : (account.status ?? tr("chats.apps.reconnect")),
-                             status: account.isConnected ? .connected : .expired, source: app) {
+            ChatAccountRow(app: app, title: account.name,
+                           detail: account.isConnected ? (linked.isLive ? tr("chats.linked.liveDetail") : tr("chats.service.connectedDetail"))
+                               : (account.status ?? tr("chats.apps.reconnect")),
+                           status: account.isConnected ? .connected : .expired) {
                 if !account.isConnected, network.canLink {
                     Button(tr("chats.apps.reconnect")) { Task { await linker.link(network) } }.controlSize(.small)
                 }
@@ -342,8 +389,22 @@ struct ChatOwnLinkSteps: View {
     private var usesOwnLink: Bool { WhatsAppSettings.gateway == .gowa }
     private var installed: Bool { !usesOwnLink || WhatsAppGOWAInstaller.isInstalled }
 
+    /// WhatsApp not linked yet: the two steps that link it, with the gateway folded away below them. Once linked, the
+    /// sheet manages it in parts (`ChatOwnAccounts`, `ChatAppNoticeRows`, `ChatOwnAdvanced`).
     @ViewBuilder
     private var whatsAppSteps: some View {
+        whatsAppLinkSteps
+        NookDivider()
+        DisclosureGroup(isExpanded: $whatsAppOptions) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) { WhatsAppGatewayRows() }
+                .padding(.top, NookTheme.Spacing.sm)
+        } label: {
+            SettingLabel(tr("chats.manage.advanced"), detail: tr("chats.manage.advancedDetail"))
+        }
+    }
+
+    @ViewBuilder
+    private var whatsAppLinkSteps: some View {
         SetupStep(number: 1, title: tr("chats.own.whatsapp.install"), done: installed && !installer.busy) {
             if installed && !installer.busy {
                 detail(tr("chats.own.whatsapp.installed"))
@@ -361,10 +422,8 @@ struct ChatOwnLinkSteps: View {
                 if case .failed(let why) = installer.step { SettingNote(why, tone: .error) }
             }
         }
-        SetupStep(number: 2, title: tr("chats.own.whatsapp.scan"), done: whatsApp.isConnected) {
-            if whatsApp.isConnected {
-                detail(whatsApp.statusLine)
-            } else if !WhatsAppSettings.enabled {
+        SetupStep(number: 2, title: tr("chats.own.whatsapp.scan"), done: false) {
+            if !WhatsAppSettings.enabled {
                 detail(tr("chats.own.whatsapp.scanDetail"))
                 Button(tr("chats.own.whatsapp.showQR")) {
                     whatsAppAccounts.setEnabled(true)
@@ -384,24 +443,6 @@ struct ChatOwnLinkSteps: View {
                     Button(tr("whatsapp.settings.retry")) { whatsAppAccounts.settingsChanged() }
                 }
             }
-        }
-        // Another account (a business number, a second phone), once the first is linked; it can wait.
-        if whatsApp.isConnected {
-            SetupStep(number: 3, title: tr("whatsapp.accounts.step"), done: whatsAppAccounts.links.count > 1) {
-                detail(tr("whatsapp.accounts.stepDetail"))
-                Form { WhatsAppAccountRows() }
-                    .formStyle(.grouped)
-                    .scrollContentBackground(.hidden)
-            }
-        }
-        // The rest of WhatsApp's link: which notifications reach you, reading, another gateway.
-        DisclosureGroup(isExpanded: $whatsAppOptions) {
-            Form { WhatsAppLinkSection() }
-                .formStyle(.grouped)
-                .scrollContentBackground(.hidden)
-                .frame(height: 420)
-        } label: {
-            SettingLabel(tr("chats.own.whatsapp.options"), detail: tr("chats.own.whatsapp.optionsDetail"))
         }
     }
 
@@ -469,5 +510,105 @@ struct ChatOwnLinkSteps: View {
             .font(NookTheme.TextStyle.body)
             .foregroundStyle(NookTheme.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// The accounts of an app Nook links in its own way, once it is linked: one `ChatAccountRow` each, and adding another
+/// where the app has more than one (WhatsApp, Teams).
+struct ChatOwnAccounts: View {
+    let app: String
+    let setCollecting: (Bool) -> Void
+    @ObservedObject private var capture = ChatCaptureService.shared
+    @ObservedObject private var telegram = ChatCaptureService.shared.telegramBridge
+    @ObservedObject private var teams = ChatCaptureService.shared.teamsBridge
+    @ObservedObject private var snapchat = SnapchatWebSession.shared
+
+    var body: some View {
+        switch app {
+        case "whatsapp":
+            WhatsAppAccountList()
+        case telegram.app:
+            TelegramSettingsRows(telegram: telegram) { capture.loggedIn(telegram.app) }
+        case teams.app:
+            TeamsSettingsRows(teams: teams, problem: capture.bridgeProblems[teams.app]) { capture.loggedIn(teams.app) }
+        case capture.slackBridge.app:
+            SlackSettingsRows(setCollecting: setCollecting, showsToken: false)
+        case capture.messagesBridge.app:
+            ChatAccountRow(app: app, title: tr("chats.manage.thisMac"), detail: tr("chats.link.ownWay.messagesDone")) { EmptyView() }
+        case capture.snapchatBridge.app:
+            let problem = capture.bridgeProblems[app]
+            ChatAccountRow(app: app, title: tr("chats.snapchat.connected"), detail: problem ?? tr("chats.snapchat.connectedDetail"),
+                           status: problem == nil ? .connected : .unreachable, detailIsError: problem != nil) {
+                ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", "Snapchat")) {
+                    snapchat.signOut()
+                    capture.snapchatBridge.reset()
+                    capture.bridgeChanged(app)
+                }
+                .controlSize(.small)
+            }
+            SettingNote(tr("chats.snapchat.howItReads"))
+        default:
+            EmptyView()
+        }
+    }
+}
+
+/// What a linked app does in Nook, the same for every app: its chats in the Chats tab, and its new messages in the
+/// notch. WhatsApp adds its own rules (per kind of chat, per chat, reading when you answer).
+struct ChatAppNoticeRows: View {
+    let app: String
+    let setCollecting: (Bool) -> Void
+    @ObservedObject private var capture = ChatCaptureService.shared
+    @ObservedObject private var settings = AppSettings.shared
+
+    private var name: String { MessagingApps.app(id: app)?.name ?? app }
+
+    var body: some View {
+        if app == "whatsapp" {
+            // A linked phone brings WhatsApp's chats by itself: only what reaches you is to choose.
+            WhatsAppNoticeRows()
+        } else {
+            SettingToggle(tr("chats.apps.showInChats", name), detail: tr("chats.manage.showDetail"),
+                          isOn: Binding(get: { capture.enabled && capture.sources.isOn(app) }, set: { on in
+                              capture.setSource(app, on: on)
+                              if on, !capture.enabled { setCollecting(true) }
+                          }))
+            SettingToggle(tr("chats.manage.notify"), detail: tr("chats.manage.notifyDetail", name),
+                          isOn: Binding(get: { settings.noticeRules.isOn(.chats, app: app) },
+                                        set: { settings.noticeRules.set(.chats, app: app, on: $0) }))
+        }
+    }
+}
+
+/// What a linked app has that is rarely needed, under Advanced: WhatsApp's gateway, Slack's token of an app of your own,
+/// Telegram's keys from my.telegram.org.
+struct ChatOwnAdvanced: View {
+    let app: String
+    let setCollecting: (Bool) -> Void
+    @ObservedObject private var telegram = ChatCaptureService.shared.telegramBridge
+
+    /// Whether the app has anything here.
+    @MainActor
+    static func has(_ app: String) -> Bool {
+        let capture = ChatCaptureService.shared
+        return ["whatsapp", capture.slackBridge.app, capture.telegramBridge.app].contains(app)
+    }
+
+    var body: some View {
+        let capture = ChatCaptureService.shared
+        switch app {
+        case "whatsapp":
+            WhatsAppGatewayRows()
+        case capture.slackBridge.app:
+            SlackTokenRows(setCollecting: setCollecting)
+        case telegram.app:
+            HStack {
+                SettingLabel(tr("chats.telegram.keys"), detail: tr("chats.telegram.keysDetail"))
+                Spacer()
+                TelegramKeysButton(telegram: telegram)
+            }
+        default:
+            EmptyView()
+        }
     }
 }

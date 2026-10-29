@@ -261,6 +261,25 @@ struct IntroCard: View {
 }
 
 /// Sheet chrome shared by every setup sheet: big icon and title on top, content, and one clear button at the bottom.
+/// One part of a sheet for something already set up ("Accounts", "In Nook"): its name, then its rows. A sheet of parts
+/// keeps them in the same order everywhere, with a `NookDivider` between them and anything rarely needed folded away last.
+struct SheetPart<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: () -> Content
+
+    init(_ title: String, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            NookSectionLabel(title, inset: 0)
+            content()
+        }
+    }
+}
+
 struct SetupSheet<Icon: View, Content: View, Footer: View>: View {
     let title: String
     let subtitle: String
