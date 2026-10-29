@@ -60,6 +60,10 @@ user or contributor notices, add a line under **Unreleased**. At release time th
   panel, a turn's diff or a file, a pull request beside its list, an artifact beside its app and the docked session
   panel get the same line, gap, 32 pt header and cross to close. A diff or file and the tool panel take turns instead
   of stacking, and the docked session panel moved to the far right so the panel toggles above it keep their place.
+- What the side panel's tabs show lines up: each starts with the same 34 pt bar (browser, terminal, changes, local
+  servers, file), a tab with nothing in it (plans, file, artifact) says what to do instead of staying blank, a pull
+  request goes back to the list from its own top bar instead of an extra row, and a session's changes can be read
+  again like a folder's.
 - A pull request opens beside the list opens one: half the page, its edge dragged wider or
   narrower (remembered), and a button on its tab line that makes it fill the page.
 - A pull request's page looks: a one-line title, segmented tabs, its tabs as `#number` whose mark turns

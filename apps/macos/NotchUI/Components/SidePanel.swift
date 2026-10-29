@@ -9,6 +9,9 @@ import SwiftUI
 //   (`.fixedSidePanel(width:)`). Each slides in from its own edge.
 // - Each starts with a header of the same height (`SidePanelHeader`, or `SidePanelTabBar` for the tool panel) that
 //   ends in the same close button: a cross (`SidePanelCloseButton`).
+// - What a tab shows starts with one bar of the same height under that header (`SidePanelToolbar`): the browser's
+//   address, the terminal's folder, the changes' counts, a file's name. A tab with nothing to show says so with a
+//   `WSEmptyState`, never an empty pane.
 // - A session's header has one toggle per side (`SidePanelToggle`): the list on the left, the bottom panel, the side
 //   panel on the right, each with the mark of its side (`Edge.panelSymbol`), lit while it is open.
 // - The tool panel and a diff or file the conversation opens take turns on the right instead of stacking
@@ -28,6 +31,8 @@ extension Edge {
 enum SidePanelMetrics {
     /// Every side panel's header (a title row or a tab row) is this tall, so what they show starts on one line.
     static let header: CGFloat = 32
+    /// The bar of what a tab shows, under the header (`SidePanelToolbar`).
+    static let toolbar: CGFloat = 34
     /// Room between a panel and the drag line on the conversation's side.
     static let gap: CGFloat = NookTheme.Spacing.sm
 }
@@ -91,6 +96,23 @@ extension SidePanelHeader where Actions == EmptyView {
     init(closeHelp: String, wide: Binding<Bool>? = nil, close: @escaping () -> Void,
          @ViewBuilder leading: () -> Leading) {
         self.init(closeHelp: closeHelp, wide: wide, close: close, leading: leading) { EmptyView() }
+    }
+}
+
+/// The bar of what a tab shows, right under the panel's header or tabs: the same height and inset in every tab, with
+/// the line under it (`divider`), so switching tabs never moves the content up or down.
+struct SidePanelToolbar<Content: View>: View {
+    var divider = true
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: NookTheme.Spacing.xs) { content() }
+                .padding(.horizontal, NookTheme.Spacing.sm)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: SidePanelMetrics.toolbar)
+            if divider { NookDivider() }
+        }
     }
 }
 

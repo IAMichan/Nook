@@ -516,8 +516,8 @@ private struct SessionToolPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            if tool == .terminal { subheader { terminalBar } }
-            if tool == .browser, !directory.isEmpty { DevServerStrip(directory: directory).padding(.bottom, NookTheme.Spacing.sm) }
+            if tool == .terminal { SidePanelToolbar { terminalBar } }
+            if tool == .browser, !directory.isEmpty { DevServerStrip(directory: directory) }
             Group {
                 switch tool {
                 case .picker:
@@ -532,17 +532,12 @@ private struct SessionToolPanel: View {
                     }
                 case .pullRequest:
                     if let pullRequest {
-                        // One column, so the back button keeps its own height and the pull request takes the rest.
-                        VStack(alignment: .leading, spacing: 0) {
-                            // Back to the list to pick another, as the + of the tab does.
-                            NookGhostButton(title: tr("agents.pr.back"), symbol: "chevron.left", compact: true, height: 26,
-                                            action: showPullRequestList)
-                                .help(tr("agents.pr.back"))
-                            PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item, onUpdate: { updated in
-                                updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
-                            })
-                                .id(pullRequest.account + " " + pullRequest.item.id)
-                        }
+                        // The page's own top bar starts with the arrow back to the list to pick another, so there is no
+                        // extra row above it.
+                        PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item, onUpdate: { updated in
+                            updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
+                        }, onBack: showPullRequestList)
+                            .id(pullRequest.account + " " + pullRequest.item.id)
                     } else {
                         SidePanelPullRequestPicker(directory: directory) { openPullRequest($0) }
                     }
@@ -624,28 +619,20 @@ private struct SessionToolPanel: View {
         }
     }
 
-    /// A tool's own bar under the tabs (the terminal's folder and actions), ruled off from what it shows.
-    private func subheader<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        VStack(spacing: 0) {
-            content()
-                .frame(height: 32)
-            NookDivider()
-        }
-    }
-
     /// Under the tabs, so they keep the panel's full width: the terminal's folder and its actions.
+    @ViewBuilder
     private var terminalBar: some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
-            Text(AgentPathFormat.tilde(directory))
-                .font(NookTheme.mono(11))
-                .foregroundStyle(NookTheme.textTertiary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(directory)
-            Spacer(minLength: 8)
-            SessionTerminalActions(directory: directory).id(directory)
-        }
-        .padding(.horizontal, NookTheme.Spacing.xs)
+        Image(systemName: "folder")
+            .font(NookTheme.font(10, .medium))
+            .foregroundStyle(NookTheme.textTertiary)
+        Text(AgentPathFormat.tilde(directory))
+            .font(NookTheme.mono(11))
+            .foregroundStyle(NookTheme.textTertiary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .help(directory)
+        Spacer(minLength: NookTheme.Spacing.md)
+        SessionTerminalActions(directory: directory).id(directory)
     }
 
     /// + : the tools to open, each in its own tab (or the tab it already has), in Nook's own dropdown panel.
@@ -734,8 +721,8 @@ struct AgentsToolPage<Content: View>: View {
     }
 }
 
-/// The local servers this session's folder runs, as small buttons
-/// above the browser: one tap opens it. Checked every few seconds while the browser is open.
+/// The local servers this session's folder runs, as small buttons in a bar above the browser (`SidePanelToolbar`):
+/// one tap opens it. Checked every few seconds while the browser is open; without any there is no bar.
 struct DevServerStrip: View {
     let directory: String
     @State private var servers: [DevServer] = []
@@ -745,27 +732,29 @@ struct DevServerStrip: View {
         // A VStack, not a Group: it exists while still empty, so the scan below starts.
         VStack(alignment: .leading, spacing: 0) {
             if !servers.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: NookTheme.Spacing.sm) {
-                        Image(systemName: "dot.radiowaves.left.and.right")
-                            .font(NookTheme.font(10, .semibold))
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .help(tr("agents.servers.help"))
-                        ForEach(servers) { server in
-                            // `address` is published, unlike the web view's own URL.
-                            let open = URL(string: browser.address)?.port == server.port
-                            Button {
-                                browser.go(server.url.absoluteString)
-                            } label: {
-                                Text("\(server.command) — :\(server.port)")
-                                    .font(NookTheme.TextStyle.label)
-                                    .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
-                                    .padding(.horizontal, 9)
-                                    .frame(height: 22)
-                                    .background(Capsule().fill(open ? NookTheme.smoke : NookTheme.field))
+                SidePanelToolbar {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: NookTheme.Spacing.sm) {
+                            Image(systemName: "dot.radiowaves.left.and.right")
+                                .font(NookTheme.font(10, .semibold))
+                                .foregroundStyle(NookTheme.textTertiary)
+                                .help(tr("agents.servers.help"))
+                            ForEach(servers) { server in
+                                // `address` is published, unlike the web view's own URL.
+                                let open = URL(string: browser.address)?.port == server.port
+                                Button {
+                                    browser.go(server.url.absoluteString)
+                                } label: {
+                                    Text("\(server.command) — :\(server.port)")
+                                        .font(NookTheme.TextStyle.label)
+                                        .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
+                                        .padding(.horizontal, 9)
+                                        .frame(height: 22)
+                                        .background(Capsule().fill(open ? NookTheme.smoke : NookTheme.field))
+                                }
+                                .buttonStyle(.plain)
+                                .help(server.url.absoluteString)
                             }
-                            .buttonStyle(.plain)
-                            .help(server.url.absoluteString)
                         }
                     }
                 }

@@ -16,15 +16,8 @@ struct SessionOutputsPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             if outputs.isEmpty {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                    Text(tr("ws.outputs.empty.title")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
-                    Text(tr("ws.outputs.empty.body"))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(NookTheme.Spacing.lg)
-                Spacer(minLength: 0)
+                WSEmptyState(symbol: SessionTool.outputs.symbol, title: tr("ws.outputs.empty.title"),
+                             message: tr("ws.outputs.empty.body"))
             } else {
                 if outputs.count > 1 { list }
                 if let current {
