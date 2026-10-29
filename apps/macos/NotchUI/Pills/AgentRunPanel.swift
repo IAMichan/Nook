@@ -1087,8 +1087,11 @@ struct AgentRunPanel: View {
     /// The tray above the box, when there is something to show in it.
     @ViewBuilder
     private func aboveBox(watch: PullRequestWatch?, waiting: MessageQueue) -> some View {
-        // The watched pull request, or the session's open one you stopped watching (or never watched).
-        let pullRequest = watch.flatMap { URL(string: $0.url) } ?? watchablePullRequest()
+        // The watched pull request, the session's open one you stopped watching (or never watched), else the one that
+        // merged or closed: its state stays in view. Only one that can still change can be watched.
+        let watchable = watchablePullRequest()
+        let pullRequest = watch.flatMap { URL(string: $0.url) } ?? watchable ?? PullRequestLink.shown(in: PullRequestSync.shared.links[runID] ?? [])
+        let canWatch = watch != nil || watchable != nil
         if pullRequest != nil || !waiting.isEmpty || !quotes.isEmpty {
             ComposerTray(edge: .top) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -1097,9 +1100,9 @@ struct AgentRunPanel: View {
                         if pullRequest != nil || !waiting.isEmpty { ComposerTrayDivider() }
                     }
                     if let pullRequest {
-                        PullRequestWatchStrip(url: pullRequest, watch: watch) {
+                        PullRequestWatchStrip(url: pullRequest, watch: watch, toggle: canWatch ? {
                             workspace.watchPullRequest(runID, url: watch == nil ? pullRequest : nil)
-                        }
+                        } : nil)
                     }
                     if pullRequest != nil && !waiting.isEmpty { ComposerTrayDivider() }
                     if !waiting.isEmpty {
@@ -1202,8 +1205,24 @@ private final class RunTimelineDerived {
         turns = TurnDiff.collect(events: all)
         outputs = SessionOutputs.collect(all, tasks: run.tasks, directory: run.workingDirectory)
         runningCommand = CommandConsole.running(all)?.id
-        createdPullRequest = all.last { $0.kind == .assistant && $0.text.contains("/pull/") }
-            .flatMap { MarkdownBlock.lastGitHubPullRequest(in: $0.text) }
+        createdPullRequest = all.reversed().lazy.compactMap(Self.pullRequest(in:)).first
         return self
+    }
+
+    /// The last pull request link an event carries: the agent's words, or what a tool that made or showed one printed
+    /// (`gh pr create` prints its link, and the agent does not always repeat it).
+    private static func pullRequest(in event: RunEvent) -> URL? {
+        switch event.kind {
+        case .assistant:
+            return MarkdownBlock.lastGitHubPullRequest(in: event.text)
+        case .tool:
+            guard let output = event.output else { return nil }
+            let call = [event.tool, event.text, event.detail].compactMap { $0 }.joined(separator: " ").lowercased()
+            guard call.contains("pr create") || call.contains("pr view") || call.contains("pull_request")
+                    || call.contains("pullrequest") else { return nil }
+            return MarkdownBlock.lastGitHubPullRequest(in: output)
+        default:
+            return nil
+        }
     }
 }
