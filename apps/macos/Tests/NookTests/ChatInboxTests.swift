@@ -1141,6 +1141,34 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(TelegramData.request(["@type": "getMe"]), #"{"@type":"getMe"}"#)
     }
 
+    // MARK: Reactions from notifications
+
+    func testReactionNoticesGoOnTheirMessage() {
+        XCTAssertEqual(ChatCapture.reaction("\u{200E}Reageerde met 👍🏼 op Komt gord")?.emoji, "👍🏼")
+        XCTAssertEqual(ChatCapture.reaction("Reageerde met 👍🏼 op Komt gord")?.target, "Komt gord")
+        XCTAssertEqual(ChatCapture.reaction("Reacted ❤️ to: “See you at eight”")?.target, "See you at eight")
+        XCTAssertEqual(ChatCapture.reaction("Hat mit 😂 auf „Bis dann“ reagiert")?.target, "Bis dann")
+        XCTAssertNil(ChatCapture.reaction("Reacted 😂 to your message")?.target)
+        XCTAssertNil(ChatCapture.reaction("I reacted 😂 to that"), "a message about reacting is a message")
+        XCTAssertNil(ChatCapture.reaction("Reageerde snel"), "no emoji, no reaction")
+        XCTAssertEqual(ChatInbox.key(app: "whatsapp", chat: "\u{200E}Mijn Schat❤️"), ChatInbox.key(app: "whatsapp", chat: "Mijn Schat❤️"))
+
+        let now = Date()
+        var inbox = ChatInbox()
+        inbox.merge(BridgedChat(app: "whatsapp", name: "Mijn Schat", messages: [
+            InboxMessage(id: "1", text: "Komt goed", date: now.addingTimeInterval(-60), fromMe: true),
+            InboxMessage(id: "2", text: "Top", date: now.addingTimeInterval(-30), fromMe: true),
+        ], unread: 0))
+        let key = ChatInbox.key(app: "whatsapp", chat: "Mijn Schat")
+        XCTAssertTrue(inbox.add(ChatNotice(app: "whatsapp", chat: "\u{200E}Mijn Schat", sender: "",
+                                           text: "\u{200E}Reageerde met 👍🏼 op Komt goed", date: now), id: "n1"))
+        XCTAssertEqual(inbox.threads.count, 1, "the reaction makes no chat of its own")
+        XCTAssertEqual(inbox.threads[key]?.messages.count, 2, "nor a message")
+        XCTAssertEqual(inbox.threads[key]?.messages.first?.reactions, [InboxReaction(emoji: "👍🏼", count: 1, mine: false)])
+        XCTAssertFalse(inbox.add(ChatNotice(app: "whatsapp", chat: "Mijn Schat", sender: "",
+                                            text: "Reageerde met 👍🏼 op Komt goed", date: now), id: "n2"), "shown once")
+    }
+
     // MARK: Calls
 
     func testCallLinesReadAsCalls() {
@@ -1477,6 +1505,8 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(filled, [.read, nil, .read, .read, .read, .delivered, .failed, .sent],
                        "older ones go as far as a later one did; theirs have none; a red mark stays; the newest unknown has one tick")
         XCTAssertEqual(ChatReceipts.filled([(true, .pending), (true, nil)]), [.pending, .sent], "a clock stays a clock")
+        XCTAssertEqual(ChatReceipts.filled([(true, .pending), (true, .read)]), [.read, .read],
+                       "a clock before a message that went out is one its app never took back")
     }
 
     func testAMemberWhoWroteLaterHasReadYourMessage() {

@@ -506,9 +506,9 @@ enum ChatCapture {
         }
         guard let app else { return nil }
 
-        var title = notification.title
+        var title = unmarked(notification.title)
         // A browser puts the site in the subtitle; it says which app, not who.
-        var subtitle = fromBrowser && looksLikeSite(notification.subtitle) ? "" : notification.subtitle
+        var subtitle = fromBrowser && looksLikeSite(notification.subtitle) ? "" : unmarked(notification.subtitle)
         var text = notification.body
         if fromBrowser, title.lowercased().hasSuffix(" - " + app.name.lowercased()) {
             title = String(title.dropLast(app.name.count + 3))
@@ -568,6 +568,46 @@ enum ChatCapture {
         return (name, rest)
     }
 
+    /// A name without the invisible marks an app puts around it for right-to-left text (WhatsApp starts some with
+    /// U+200E): the same chat by any app's spelling of it.
+    static func unmarked(_ text: String) -> String {
+        guard text.unicodeScalars.contains(where: { $0.properties.generalCategory == .format && !$0.properties.isEmojiPresentation
+            && $0.value != 0x200D }) else { return text }
+        var scalars = String.UnicodeScalarView()
+        scalars.append(contentsOf: text.unicodeScalars.filter { $0.properties.generalCategory != .format || $0.value == 0x200D })
+        return String(scalars).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Someone's emoji on a message, as a notification says it ("Reacted 👍 to: “See you”", "Reageerde met 👍🏼 op
+    /// Komt goed", "Hat mit 👍 auf „Bis dann“ reagiert"): the emoji, and the message's text when it quotes it (nil for
+    /// "your message"). Nil for anything else.
+    static func reaction(_ text: String) -> (emoji: String, target: String?)? {
+        let plain = unmarked(text)
+        let lower = plain.lowercased()
+        guard plain.count <= 400,
+              ["reacted", "reageerde", "heeft gereageerd", "gereageerd", "a réagi", "reaccionó", "reacciono", "reagierte"]
+                .contains(where: lower.hasPrefix) || (lower.hasPrefix("hat ") && lower.contains("reagiert")),
+              let emojiIndex = plain.firstIndex(where: isEmoji) else { return nil }
+        let emoji = String(plain[emojiIndex])
+        var rest = plain[plain.index(after: emojiIndex)...].trimmingCharacters(in: .whitespaces)
+        for word in ["to", "op", "auf", "à", "a"] {
+            let prefix = word + " "
+            if rest.lowercased().hasPrefix(prefix) { rest = String(rest.dropFirst(prefix.count)); break }
+            if rest.lowercased().hasPrefix(word + ":") { rest = String(rest.dropFirst(word.count + 1)); break }
+        }
+        if rest.lowercased().hasSuffix(" reagiert") { rest = String(rest.dropLast(" reagiert".count)) }
+        let target = rest.trimmingCharacters(in: CharacterSet(charactersIn: " :\"'“”„«»‘’‚"))
+        let generic = ["your message", "a message", "je bericht", "jouw bericht", "een bericht", "deine nachricht",
+                       "votre message", "ton message", "tu mensaje", "your story", "je verhaal"]
+        return (emoji, target.isEmpty || generic.contains(target.lowercased()) ? nil : target)
+    }
+
+    private static func isEmoji(_ character: Character) -> Bool {
+        guard let first = character.unicodeScalars.first else { return false }
+        return first.properties.isEmojiPresentation || (first.properties.isEmoji && first.value > 0x238C)
+            || character.unicodeScalars.contains { $0.value == 0xFE0F }
+    }
+
     private static func looksLikeSite(_ text: String) -> Bool {
         !text.isEmpty && !text.contains(" ") && text.contains(".")
     }
@@ -611,7 +651,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
     }
 
     static func key(app: String, chat: String) -> String {
-        app + "|" + chat.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+        app + "|" + ChatCapture.unmarked(chat).folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
             .split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
@@ -623,6 +663,8 @@ struct ChatInbox: Codable, Equatable, Sendable {
         let key = Self.key(app: notice.app, chat: notice.chat)
         // A chat you removed comes back with what is newer, not with the notifications it already had.
         if let gone = removed?[key], notice.date <= gone { return false }
+        // Someone's emoji on a message goes on that message, not into the chat as a message of its own.
+        if let reaction = ChatCapture.reaction(notice.text) { return react(reaction, in: key) }
         var thread = threads[key] ?? InboxThread(id: key, app: notice.app, name: notice.chat)
         if thread.messages.contains(where: {
             $0.id == id || (!$0.isMine && $0.text == notice.text && abs($0.date.timeIntervalSince(notice.date)) < Self.sameMessageWindow)
@@ -637,6 +679,25 @@ struct ChatInbox: Codable, Equatable, Sendable {
         threads[key] = thread
         regroup()
         dropQuietest()
+        return true
+    }
+
+    /// Puts someone's emoji from a notification on the message it is on: the one whose text it quotes, else your newest
+    /// (what people react to). False when the chat has no such message or already shows that emoji there.
+    mutating func react(_ reaction: (emoji: String, target: String?), in key: String) -> Bool {
+        guard let messages = threads[key]?.messages else { return false }
+        let target = reaction.target.map { ChatFormat.plain($0).trimmingCharacters(in: CharacterSet(charactersIn: "…. ")) }
+        let index = target.flatMap { target in
+            messages.lastIndex { message in
+                let text = ChatFormat.plain(message.summary)
+                return !target.isEmpty && (text.hasPrefix(target) || target.hasPrefix(text) && !text.isEmpty)
+            }
+        } ?? messages.lastIndex { $0.isMine } ?? messages.indices.last
+        guard let index else { return false }
+        var chips = messages[index].reactions ?? []
+        guard !chips.contains(where: { $0.emoji == reaction.emoji }) else { return false }
+        chips.append(InboxReaction(emoji: reaction.emoji, count: 1, mine: false))
+        threads[key]?.messages[index].reactions = chips
         return true
     }
 
@@ -856,6 +917,15 @@ struct ChatInbox: Codable, Equatable, Sendable {
     /// Drops chats with nothing new for `maxAge`, then the quietest beyond `maxThreads`. A chat its app still lists
     /// stays either way.
     mutating func trim(now: Date = Date()) {
+        // A reaction an earlier version kept as a message goes on the message it is on, in the chat it belongs to (its
+        // name without the marks that kept it apart).
+        for (key, thread) in threads {
+            let reactions = thread.messages.filter { !$0.isMine && ChatCapture.reaction($0.text) != nil }
+            guard !reactions.isEmpty else { continue }
+            threads[key]?.messages.removeAll { message in reactions.contains { $0.id == message.id } }
+            let home = Self.key(app: thread.app, chat: thread.name)
+            for message in reactions { if let reaction = ChatCapture.reaction(message.text) { _ = react(reaction, in: home) } }
+        }
         // Messages with nothing to show (a reaction an earlier version kept as one) go; then the chats they leave empty.
         for (key, thread) in threads {
             let shown = thread.messages.filter { !ChatFormat.isBlank($0.text) || $0.media != nil || $0.poll != nil }

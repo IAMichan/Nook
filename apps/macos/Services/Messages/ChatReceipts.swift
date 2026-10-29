@@ -63,10 +63,12 @@ enum ChatReceipts {
     /// Your messages' ticks as a chat shows them, oldest first, given whether each message is yours and what its app
     /// says of it. An older message of yours often comes without a word on it (a chat's history keeps none): it is in the
     /// chat, so it has at least one tick, and it got as far as a later one of yours did, since reading a chat reads what
-    /// came before. In a private chat (`private`), a message they wrote after yours says it reached them. A clock or a
-    /// red mark stays as it is; their messages have none (nil).
+    /// came before. In a private chat (`private`), a message they wrote after yours says it reached them. A clock stays
+    /// only while no later message of yours is said to have gone out; a red mark stays as it is; their messages have none (nil).
     static func filled(_ messages: [(mine: Bool, receipt: ChatReceipt?)], private: Bool = false) -> [ChatReceipt?] {
         var later: ChatReceipt?
+        /// A later message of yours that its app says went out.
+        var laterWentOut = false
         var theirsLater = false
         var out = [ChatReceipt?](repeating: nil, count: messages.count)
         for index in messages.indices.reversed() {
@@ -76,9 +78,13 @@ enum ChatReceipts {
                 continue
             }
             var receipt = message.receipt ?? .sent
+            // A later message of yours went out, so this one did too: apps send in order. A clock left on it is one the
+            // app never took back (WhatsApp keeps some at "waiting" for good).
+            if receipt == .pending, laterWentOut { receipt = .sent }
             if receipt >= .sent, let later, later > receipt { receipt = later }
             if receipt == .sent, `private`, theirsLater { receipt = .delivered }
             if receipt >= .sent { later = max(later ?? receipt, receipt) }
+            if let said = message.receipt, said >= .sent { laterWentOut = true }
             out[index] = receipt
         }
         return out
