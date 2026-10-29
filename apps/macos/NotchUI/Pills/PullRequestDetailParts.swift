@@ -93,36 +93,68 @@ struct PullRequestTimelineMarker: View {
     }
 }
 
-/// One commit on the timeline: the message in bold (lit under the pointer), the short hash and when under it.
+/// One commit on the timeline: the subject in bold (lit under the pointer; a click opens it on GitHub), the short hash and
+/// when under it. A commit with more to say than its subject gets a quiet "…" that unfolds the rest of its message.
 struct PullRequestCommitEntry: View {
     let sha: String
     let message: String
+    /// The message under the subject; empty for a one-line commit.
+    var details = ""
     let time: String?
     let date: Date?
     let open: () -> Void
     @State private var hovering = false
+    @State private var expanded = false
 
     var body: some View {
-        Button(action: open) {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-                Text(message.isEmpty ? tr("agents.pr.timeline.pushedOne") : message)
-                    .font(NookTheme.font(12, .semibold))
-                    .foregroundStyle(hovering ? NookTheme.iris : NookTheme.paper)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    Text(String(sha.prefix(7))).font(NookTheme.mono(10.5))
-                    if let time { Text(time).font(NookTheme.font(10.5)).monospacedDigit() }
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Button(action: open) {
+                    Text(message.isEmpty ? tr("agents.pr.timeline.pushedOne") : message)
+                        .font(NookTheme.font(12, .semibold))
+                        .foregroundStyle(hovering ? NookTheme.iris : NookTheme.paper)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .contentShape(Rectangle())
                 }
-                .foregroundStyle(NookTheme.textTertiary)
+                .buttonStyle(.plain)
+                .onHover { hovering = $0 }
+                .help(date?.formatted(date: .abbreviated, time: .shortened) ?? "")
+                if !details.isEmpty {
+                    Button {
+                        withAnimation(NookTheme.reveal) { expanded.toggle() }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(NookTheme.font(9, .bold))
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .frame(width: 20, height: 14)
+                            .background(Capsule().fill(expanded ? NookTheme.rowSelected : NookTheme.rowHover))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help(tr("agents.pr.timeline.commitDetails"))
+                    .accessibilityLabel(tr("agents.pr.timeline.commitDetails"))
+                    .accessibilityValue(expanded ? tr("compose.queue.expanded") : "")
+                }
+                Spacer(minLength: 0)
             }
-            .padding(.vertical, NookTheme.Spacing.sm)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Text(String(sha.prefix(7))).font(NookTheme.mono(10.5))
+                if let time { Text(time).font(NookTheme.font(10.5)).monospacedDigit() }
+            }
+            .foregroundStyle(NookTheme.textTertiary)
+            if expanded {
+                Text(details)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .padding(.top, NookTheme.Spacing.xxs)
+                    .transition(.opacity)
+            }
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help(date?.formatted(date: .abbreviated, time: .shortened) ?? "")
+        .padding(.vertical, NookTheme.Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

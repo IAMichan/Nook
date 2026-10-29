@@ -220,6 +220,52 @@ final class PullRequestDetailTests: XCTestCase {
         XCTAssertNil(try XCTUnwrap(PullRequestDetailParser.detail(pull: object)).headOwner)
     }
 
+    func testParsesALockedConversation() throws {
+        XCTAssertFalse(try XCTUnwrap(PullRequestDetailParser.detail(pull: try json(pull))).locked)
+        var object = try json(pull)
+        object["locked"] = true
+        object["active_lock_reason"] = "too heated"
+        let detail = try XCTUnwrap(PullRequestDetailParser.detail(pull: object))
+        XCTAssertTrue(detail.locked)
+        XCTAssertEqual(detail.lockReason, "too heated")
+    }
+
+    func testParsesLinkedIssues() {
+        let answer: [String: Any] = ["data": ["repository": ["pullRequest": ["closingIssuesReferences": ["nodes": [
+            ["number": 7, "title": "Crash on launch", "state": "OPEN", "url": "https://github.com/acme/app/issues/7",
+             "repository": ["nameWithOwner": "acme/app"]] as [String: Any],
+            ["number": 3, "title": "Docs", "state": "CLOSED", "repository": ["nameWithOwner": "acme/docs"]] as [String: Any],
+            ["title": "No number"] as [String: Any],
+        ]]]]]]
+        let issues = PullRequestDetailParser.linkedIssues(answer)
+        XCTAssertEqual(issues.map(\.id), ["acme/app#7", "acme/docs#3"])
+        XCTAssertEqual(issues.map(\.open), [true, false])
+        XCTAssertEqual(issues.first?.url?.absoluteString, "https://github.com/acme/app/issues/7")
+        XCTAssertEqual(PullRequestDetailParser.linkedIssues(nil), [])
+        XCTAssertNotNil(PullRequestDetailParser.linkedIssuesBody(repo: "acme/app", number: 12))
+        XCTAssertNil(PullRequestDetailParser.linkedIssuesBody(repo: "nope", number: 12))
+    }
+
+    func testLinkedIssuesStayUntilTheNextActivity() {
+        var old = PullRequestDetail(repo: "acme/app", number: 1, title: "T", body: "", url: nil, author: "ada", state: .open,
+                                    baseBranch: "main", headBranch: "f", headSHA: "a", additions: 0, deletions: 0,
+                                    changedFiles: 0, created: nil, updated: nil, mergeable: true, mergeState: "clean")
+        let issue = PullRequestLinkedIssue(repo: "acme/app", number: 7, title: "Crash", open: true, url: nil)
+        old.apply(PullRequestActivity(issues: [issue]))
+        var fresh = old
+        fresh.activityLoaded = false
+        fresh.linkedIssues = []
+        XCTAssertEqual(fresh.keepingActivity(of: old).linkedIssues, [issue])
+    }
+
+    func testACommitsDetailsAreItsMessageUnderTheSubject() {
+        let commit = PullRequestCommit(sha: "abc", message: "Fix the crash\n\nThe list was read twice.\nNow once.\n",
+                                       author: "ada", date: nil)
+        XCTAssertEqual(commit.subject, "Fix the crash")
+        XCTAssertEqual(commit.details, "The list was read twice.\nNow once.")
+        XCTAssertEqual(PullRequestCommit(sha: "b", message: "One line", author: "ada", date: nil).details, "")
+    }
+
     func testReviewerCandidatesLeaveOutAuthorBotsAndThoseAsked() throws {
         var object = try json(pull)
         object["requested_reviewers"] = [["login": "Bob"]]

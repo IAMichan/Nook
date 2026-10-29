@@ -32,9 +32,20 @@ extension PullRequestDetailView {
                         }
                     }
                 }
+                if !detail.linkedIssues.isEmpty {
+                    metaRow(symbol: "smallcircle.filled.circle", title: tr("agents.pr.status.issues")) { linkedIssues(detail) }
+                }
                 if let milestone = detail.milestone {
                     metaRow(symbol: "flag", title: tr("agents.pr.status.milestone")) {
                         Text(milestone).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textStrong).lineLimit(1)
+                    }
+                }
+                if detail.locked {
+                    metaRow(symbol: "lock", title: tr("agents.pr.status.conversation")) {
+                        Text([tr("agents.pr.locked"), detail.lockReason.map { lockReason($0) }].compactMap { $0 }.joined(separator: " · "))
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textStrong)
+                            .lineLimit(1)
                     }
                 }
                 if let auto = detail.autoMerge, detail.isOpen {
@@ -288,6 +299,49 @@ extension PullRequestDetailView {
             .padding(2)
             .overlay(Circle().strokeBorder(NookTheme.line2, lineWidth: 1.5))
             .help(tr("agents.pr.reviews.waiting", name))
+    }
+
+    /// The issues this pull request closes, one per line: open or closed in the state's color, the number (with its
+    /// repository when it lives elsewhere) and the title; a click opens it on GitHub.
+    func linkedIssues(_ detail: PullRequestDetail) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+            ForEach(detail.linkedIssues) { issue in
+                Button {
+                    if let url = issue.url { NSWorkspace.shared.open(url) }
+                } label: {
+                    HStack(spacing: NookTheme.Spacing.xs) {
+                        Image(systemName: issue.open ? "smallcircle.filled.circle" : "checkmark.circle")
+                            .font(NookTheme.font(11, .semibold))
+                            .foregroundStyle(issue.open ? PullRequestIcon.tint(.open) : PullRequestIcon.tint(.merged))
+                        Text((issue.repo.isEmpty || issue.repo.lowercased() == detail.repo.lowercased() ? "" : issue.repo) + "#\(issue.number)")
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .monospacedDigit()
+                            .fixedSize()
+                        Text(issue.title)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textStrong)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(issue.url == nil)
+                .help(issue.title)
+            }
+        }
+    }
+
+    /// GitHub's reason for a lock, in words.
+    func lockReason(_ reason: String) -> String {
+        switch reason {
+        case "off-topic": tr("agents.pr.lockReason.offTopic")
+        case "too heated": tr("agents.pr.lockReason.tooHeated")
+        case "resolved": tr("agents.pr.lockReason.resolved")
+        case "spam": tr("agents.pr.lockReason.spam")
+        default: reason
+        }
     }
 
     /// People by picture and login, for the Assignees line.
