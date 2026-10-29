@@ -254,8 +254,11 @@ struct PastSession: Identifiable, Equatable, Codable {
 
     /// Where to continue: the folder the session ended in, unless that is gone or off limits (then the one it started in).
     /// Nook never runs an agent in the home folder, so a session that began there continues in the project it moved to.
+    /// A scratch folder outside any repository it stepped into last does not count: it continues in its project, with
+    /// that project's branch and changes (see `SessionFolder`).
     var resumeFolder: String {
-        for candidate in [lastCwd, cwd] where !candidate.isEmpty {
+        let last = lastCwd.isEmpty ? "" : SessionFolder.follow(current: cwd, reported: lastCwd)
+        for candidate in [last, cwd] where !candidate.isEmpty {
             if WorkspacePathPolicy.verdict(for: candidate) == .ok { return candidate }
         }
         return cwd

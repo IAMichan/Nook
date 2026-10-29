@@ -636,9 +636,21 @@ final class WorkspaceManager: ObservableObject {
 
         var repoRoot: String?
         var branch: String?
+        var baseBranch: String?
         if let git = gitService {
             repoRoot = await Task.detached { git.repositoryRoot(for: projectPath) }.value
-            if repoRoot != nil { branch = await Task.detached { git.currentBranch(projectPath) }.value }
+            if repoRoot != nil {
+                branch = await Task.detached { git.currentBranch(projectPath) }.value
+                // A feature branch (a Claude app worktree, say) compares against the default branch, as a session Nook
+                // started in a worktree does: how far ahead and behind it is, and where its pull request goes.
+                let current = branch
+                baseBranch = await Task.detached { () -> String? in
+                    let remotes = git.remotes(projectPath)
+                    let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
+                    guard let current, let main = git.defaultBranch(projectPath, remote: remote), main != current else { return nil }
+                    return git.comparisonBase(projectPath, base: main, remote: remote)
+                }.value
+            }
         }
         let id = UUID()
         let now = Date()
@@ -661,7 +673,7 @@ final class WorkspaceManager: ObservableObject {
             workingDirectory: projectPath,
             repoRoot: repoRoot,
             branch: branch,
-            baseBranch: nil,
+            baseBranch: baseBranch,
             worktreePath: nil,
             instructions: "",
             status: .completed,
