@@ -65,6 +65,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         case PushCategory.actionAllow, PushCategory.actionDeny:
             guard let session, let item else { return }
             await CompanionClient.shared.decide(sessionID: session, itemID: item, allow: response.actionIdentifier == PushCategory.actionAllow)
+        case PushCategory.actionReply:
+            // Your words to the agent, typed in the notification; nothing goes out empty.
+            let text = (response as? UNTextInputNotificationResponse)?.userText.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard let session, !text.isEmpty else { return }
+            await CompanionClient.shared.send(sessionID: session, text: text)
         default:
             if let session { await MainActor.run { CompanionClient.shared.openSession = session } }
         }

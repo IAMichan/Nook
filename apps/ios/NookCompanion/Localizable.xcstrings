@@ -9018,6 +9018,258 @@
           }
         }
       }
+    },
+    "Starting sessions is turned off for this iPhone in Nook on your Mac." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sitzungen starten ist für dieses iPhone in Nook auf deinem Mac ausgeschaltet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciar sesiones está desactivado para este iPhone en Nook en tu Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le démarrage des sessions est désactivé pour cet iPhone dans Nook sur votre Mac."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sessies starten staat uit voor deze iPhone in Nook op je Mac."
+          }
+        }
+      }
+    },
+    "Chatting with Nook is turned off for this iPhone in Nook on your Mac." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chatten mit Nook ist für dieses iPhone in Nook auf deinem Mac ausgeschaltet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chatear con Nook está desactivado para este iPhone en Nook en tu Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discuter avec Nook est désactivé pour cet iPhone dans Nook sur votre Mac."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chatten met Nook staat uit voor deze iPhone in Nook op je Mac."
+          }
+        }
+      }
+    },
+    "Chats are turned off for this iPhone in Nook on your Mac." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chats sind für dieses iPhone in Nook auf deinem Mac ausgeschaltet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los chats están desactivados para este iPhone en Nook en tu Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les discussions sont désactivées pour cet iPhone dans Nook sur votre Mac."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chats staan uit voor deze iPhone in Nook op je Mac."
+          }
+        }
+      }
+    },
+    "%lld working" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld in Arbeit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld en curso"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld en cours"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld bezig"
+          }
+        }
+      }
+    },
+    "Answer a chat" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chat beantworten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Responder un chat"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Répondre à une discussion"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chat beantwoorden"
+          }
+        }
+      }
+    },
+    "Can answer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beantwortbar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se puede responder"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réponse possible"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kan beantwoorden"
+          }
+        }
+      }
+    },
+    "Read only" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nur lesen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo lectura"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lecture seule"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alleen lezen"
+          }
+        }
+      }
+    },
+    "No chat you can answer from here yet. Link your chat apps in Nook › Settings › Chats on your Mac." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch kein Chat, den du hier beantworten kannst. Verbinde deine Chat-Apps in Nook › Einstellungen › Chats auf deinem Mac."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay ningún chat que puedas responder desde aquí. Vincula tus apps de chat en Nook › Ajustes › Chats en tu Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune discussion à laquelle répondre d’ici pour l’instant. Associez vos apps de discussion dans Nook › Réglages › Discussions sur votre Mac."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nog geen chat die je hier kunt beantwoorden. Koppel je chatapps in Nook › Instellingen › Chats op je Mac."
+          }
+        }
+      }
+    },
+    "To answer from your phone, link %@ in Nook › Settings › Chats on your Mac." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbinde %@ in Nook › Einstellungen › Chats auf deinem Mac, um vom Telefon aus zu antworten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para responder desde tu teléfono, vincula %@ en Nook › Ajustes › Chats en tu Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pour répondre depuis votre téléphone, associez %@ dans Nook › Réglages › Discussions sur votre Mac."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Koppel %@ in Nook › Instellingen › Chats op je Mac om vanaf je telefoon te antwoorden."
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

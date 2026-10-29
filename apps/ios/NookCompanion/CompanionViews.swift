@@ -9,6 +9,8 @@ struct RootView: View {
     @State private var sessionPath: [String] = []
     @State private var chatPath: [ChatRoute] = []
     @State private var inboxPath: [String] = []
+    /// A quick action asked for a new session: the Agents tab opens its New session sheet.
+    @State private var newSessionRequested = false
 
     enum Tab { case today, sessions, chats, nook, usage }
 
@@ -24,12 +26,19 @@ struct RootView: View {
                         TodayView(openChat: { prompt in
                             chatPath = [.new(UUID(), prompt)]
                             tab = .nook
-                        }, openUsage: { tab = .usage })
+                        }, openUsage: { tab = .usage }, newSession: {
+                            sessionPath = []
+                            tab = .sessions
+                            newSessionRequested = true
+                        }, openChats: {
+                            inboxPath = []
+                            tab = .chats
+                        })
                     }
                     .tabItem { Label("Today", systemImage: "house.fill") }
                     .tag(Tab.today)
                     NavigationStack(path: $sessionPath) {
-                        SessionListView(path: $sessionPath)
+                        SessionListView(path: $sessionPath, newSessionRequested: $newSessionRequested)
                     }
                     .tabItem { Label("Agents", systemImage: "square.stack.3d.up.fill") }
                     .badge(client.sessions.needingYou)
@@ -216,6 +225,8 @@ struct SessionListView: View {
     @EnvironmentObject private var client: CompanionClient
     @ObservedObject private var live = LiveActivities.shared
     @Binding var path: [String]
+    /// Set by a quick action elsewhere: open the New session sheet once.
+    @Binding var newSessionRequested: Bool
     @State private var composing = false
     @State private var diagnosing = false
     /// The prompt link the open New session sheet was opened for.
@@ -268,9 +279,8 @@ struct SessionListView: View {
                         Button("Unpair from this Mac", role: .destructive) { client.unpair() }
                     } label: { NookIconLabel(symbol: "ellipsis") }
                     .accessibilityLabel("More")
-                    if client.can(CompanionFeature.start) {
-                        NookIconButton(symbol: "square.and.pencil", label: "New session") { composing = true }
-                    }
+                    // Always in sight: a Mac that does not allow it (yet) says why instead.
+                    NookIconButton(symbol: "square.and.pencil", label: "New session") { newSession() }
                 }
                 .buttonStyle(.borderless)
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
@@ -288,10 +298,8 @@ struct SessionListView: View {
                 if client.sessions.isEmpty, client.phase == .connected {
                     EmptyState(symbol: "square.stack.3d.up", title: "No sessions",
                                message: "Sessions of your coding agents on your Mac show up here.") {
-                        if client.can(CompanionFeature.start) {
-                            Button { composing = true } label: { Label("New session", systemImage: "plus") }
-                                .buttonStyle(PrimaryButtonStyle())
-                        }
+                        Button { newSession() } label: { Label("New session", systemImage: "plus") }
+                            .buttonStyle(PrimaryButtonStyle())
                     }
                 }
                 Color.clear.frame(height: Theme.Spacing.xxl)
@@ -307,6 +315,11 @@ struct SessionListView: View {
             NewSessionView(link: link) { id in path.append(id) }
         }
         .sheet(isPresented: $diagnosing) { DiagnosisSheet() }
+        .onChange(of: newSessionRequested, initial: true) { _, requested in
+            guard requested else { return }
+            newSessionRequested = false
+            newSession()
+        }
         // An opened nook://prompt link: the New session sheet with its text, never started by itself.
         .onChange(of: client.pendingPrompt, initial: true) { _, prompt in
             guard let prompt else { return }
@@ -320,6 +333,15 @@ struct SessionListView: View {
             client.pendingPrompt = nil
         }
         .screen()
+    }
+
+    /// The New session sheet, or why this Mac does not let the phone start one.
+    private func newSession() {
+        if let blocked = QuickActionBlock.session(client) {
+            client.notice = blocked
+        } else {
+            composing = true
+        }
     }
 
     /// The sessions of every other paired Mac, under its name: what waits there first. A tap makes that Mac the active

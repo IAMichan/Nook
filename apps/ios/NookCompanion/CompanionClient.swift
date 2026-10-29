@@ -683,7 +683,12 @@ final class CompanionClient: ObservableObject {
     /// A message to a session. With a Mac that answers repeats once (`CompanionFeature.retry`) it goes through the
     /// outbox: kept on the phone until the Mac took it, so it is not lost when the Mac cannot be reached right now.
     func send(_ session: SessionDigest, text: String) async {
-        let request = CompanionRequest(op: .send, session: session.id, text: text)
+        await send(sessionID: session.id, text: text)
+    }
+
+    /// A message to a session by its id, as a reply typed in a notification sends it.
+    func send(sessionID: String, text: String) async {
+        let request = CompanionRequest(op: .send, session: sessionID, text: text)
         guard can(CompanionFeature.retry), outbox.enqueue(request, now: Date()) else {
             await perform(request)
             return
@@ -1178,12 +1183,16 @@ enum Notifications {
     static func registerCategories() {
         let deny = UNNotificationAction(identifier: PushCategory.actionDeny, title: String(localized: "Deny"), options: [.destructive])
         let allow = UNNotificationAction(identifier: PushCategory.actionAllow, title: String(localized: "Allow"), options: [])
+        // Answer the agent right from a notification that its turn ended, without opening the app.
+        let reply = UNTextInputNotificationAction(identifier: PushCategory.actionReply, title: String(localized: "Reply"), options: [],
+                                                  textInputButtonTitle: String(localized: "Send"),
+                                                  textInputPlaceholder: String(localized: "Message to the agent"))
         let center = UNUserNotificationCenter.current()
         center.setNotificationCategories([
             UNNotificationCategory(identifier: PushCategory.approvalDeny, actions: [deny], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: PushCategory.approvalAllow, actions: [deny, allow], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: PushCategory.question, actions: [], intentIdentifiers: [], options: []),
-            UNNotificationCategory(identifier: PushCategory.info, actions: [], intentIdentifiers: [], options: [])
+            UNNotificationCategory(identifier: PushCategory.info, actions: [reply], intentIdentifiers: [], options: [])
         ])
     }
 

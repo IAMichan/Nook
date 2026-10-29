@@ -7,6 +7,20 @@ The phone sees two kinds of sessions:
 - **Sessions Nook runs (Workspace):** approve or deny, answer questions, send messages, and stop them.
 - **Agents running in a terminal on your Mac** (through their hooks, e.g. Claude Code in Terminal or iTerm) and requests through Nook's workspace bridge: they appear in the list and send push notifications for approvals, questions, and finished or failed turns. Approvals can be denied, and low-risk ones allowed, from the phone or straight from the notification; questions and messages are answered in the terminal (`apps/macos/Services/Companion/CompanionAgents.swift`).
 
+## Starting from the phone
+
+**Today** opens with three quick actions: **New session** (a coding agent, the New session sheet on the Agents tab),
+**Ask Nook** (a new chat with Nook) and **Answer a chat** (the Chats tab), each with what is going on there (sessions at
+work, unread chats). An action the Mac does not allow this phone, or that the Mac is too old for, stays in sight dimmed
+with a lock and says why and what to change when tapped (`QuickActionBlock`), so nothing you look for quietly
+disappears; the Agents tab's New session button does the same.
+
+In **Chats**, *Can answer* lists the chats Nook writes in for you; a chat you can only read says so in the list (*Read
+only*) and, at its end, how to link its app in Nook › Settings › Chats to answer it from the phone.
+
+A notification that an agent's turn finished, failed or hit a limit has a **Reply** field: what you type goes to that
+session as a message (through the outbox), without opening the app.
+
 ## Pairing
 
 1. **On your Mac:** Go to **Settings › Devices**, enable **iPhone Companion**, and click **Pair an iPhone**. Nook displays a one-time QR code (and a `nook://pair?…` link) valid for 5 minutes.
