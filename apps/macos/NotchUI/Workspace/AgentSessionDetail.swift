@@ -297,7 +297,7 @@ struct AgentSessionDetail: View {
         let canSend = app.canReply(to: session)
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty, canSend else { return }
+            guard composerModel.hasContent(text), canSend else { return }
             let outgoing = composerModel.outgoing(text).send
             let picked = choice
             let settings = turnSettings
@@ -580,7 +580,7 @@ struct AgentSessionDetail: View {
         let canContinue = app.canReply(to: session)
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty, canContinue else { return }
+            guard composerModel.hasContent(text), canContinue else { return }
             let outgoing = composerModel.outgoing(text).send
             let picked = choice
             let settings = turnSettings

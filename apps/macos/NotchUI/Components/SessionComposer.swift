@@ -439,11 +439,18 @@ struct SessionComposer<Controls: View>: View {
         }
     }
 
-    /// Sends. For agents the pictures first become paths below the text, so the caller's own send sees one text. The
-    /// paths are only there for that moment: when the caller keeps the text in the box (it starts a session in the
-    /// background, or could not send), the box gets back your words and the pictures instead of the paths.
+    /// Sends. For agents the pictures go out as paths below the text. A rich composer hands them to its model, whose
+    /// `outgoing` adds the paths to what is sent: the box never shows them, and keeps your words and the pictures while a
+    /// session starts in the background. The caller clears the pictures once the message went out. A plain composer has no
+    /// model, so the paths go into the text for the moment of the send.
     private func fire(_ action: () -> Void) {
         guard imagesAsPaths, let imagesBinding, !imagesBinding.wrappedValue.isEmpty else { return action() }
+        if let extras {
+            extras.model.pictures = imagesBinding.wrappedValue
+            action()
+            extras.model.pictures = []
+            return
+        }
         let typed = text
         let pictures = imagesBinding.wrappedValue
         let outgoing = ImageAttachment.appendingPaths(of: pictures, to: typed)
