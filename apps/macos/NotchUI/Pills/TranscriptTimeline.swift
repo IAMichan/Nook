@@ -272,14 +272,14 @@ struct TranscriptConversation: View {
     private func flatRow(_ row: TranscriptRow, answerable: String?, cards: [String: TurnDiff] = [:]) -> some View {
         switch row {
         case .user(let message):
-            // Space above your message: each turn starts as its own block.
-            TranscriptUserBubble(message: message)
-                .padding(.top, NookTheme.Spacing.lg)
+            // Space above your message: each turn starts as its own block, as in the Nook chat.
+            TranscriptUserMessage(text: message.text, date: message.date, steered: message.queued)
+                .padding(.top, TranscriptStyle.turnGap - NookTheme.Spacing.sm)
                 .padding(.bottom, NookTheme.Spacing.xxs)
         case .assistant(let message, let isFinal):
-            VStack(alignment: .leading, spacing: 0) {
-                TranscriptAnswer(message: message, isFinal: isFinal,
-                                 onChoose: message.id == answerable ? onReply : nil)
+            // Only the final answer of a turn has the footer (copy and time).
+            TranscriptReply(text: message.text, date: message.updated ?? message.date, footer: isFinal,
+                            onChoose: message.id == answerable ? onReply : nil) {
                 // What the turn changed, under its answer: a click opens the diff beside the conversation.
                 if let turn = cards[message.id] {
                     TurnChangesCard(turn: turn, directory: directory) { file in
@@ -594,155 +594,8 @@ private struct PromptCard: View {
 
 // MARK: Messages
 
-/// What you wrote: a soft bubble on the right, at most four fifths wide. A long message folds to its first lines;
-/// on hover its time and a copy button appear under it.
-struct TranscriptUserBubble: View {
-    let message: AgentChatMessage
-    @State private var expanded = false
-    @State private var hovering = false
-
-    /// The words, without the paths of the pictures sent along; those show as pictures above the bubble.
-    private var parts: (text: String, images: [URL]) { ImageAttachment.splittingPaths(from: message.text) }
-
-    private var long: Bool {
-        let text = parts.text
-        return text.count > 600 || text.split(separator: "\n", omittingEmptySubsequences: false).count > 8
-    }
-
-    var body: some View {
-        let parts = parts
-        VStack(alignment: .trailing, spacing: NookTheme.Spacing.xs) {
-            // Sent while the agent was working: it changed course mid-turn (a steer mark).
-            if message.queued {
-                HStack(spacing: NookTheme.Spacing.xs) {
-                    Image(systemName: "arrow.turn.down.right")
-                    Text(tr("agents.message.steered"))
-                }
-                .font(NookTheme.TextStyle.caption)
-                .foregroundStyle(NookTheme.textTertiary)
-            }
-            if !parts.images.isEmpty {
-                MessagePictures(urls: parts.images)
-            }
-            if !parts.text.isEmpty {
-                HStack(spacing: 0) {
-                    Spacer(minLength: 64)
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                        text(parts.text)
-                        if long {
-                            Button(expanded ? tr("agents.message.showLess") : tr("agents.message.showFull")) {
-                                withAnimation(NookTheme.reveal) { expanded.toggle() }
-                            }
-                            .buttonStyle(.plain)
-                            .font(NookTheme.TextStyle.label)
-                            .foregroundStyle(NookTheme.textSecondary)
-                        }
-                    }
-                    // Room enough that a second line keeps clear of the round corners.
-                    .padding(.horizontal, NookTheme.Spacing.xl)
-                    .padding(.vertical, NookTheme.Spacing.lg)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.bubble, style: .continuous).fill(NookTheme.bubble))
-                }
-            }
-            HStack(spacing: NookTheme.Spacing.md) {
-                if let date = message.date { TranscriptTime(date: date) }
-                TranscriptCopyButton(text: message.text)
-            }
-            .opacity(hovering ? 1 : 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .trailing)
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-    }
-
-    @ViewBuilder
-    private func text(_ string: String) -> some View {
-        let label = Text(string)
-            .font(NookTheme.TextStyle.body)
-            .foregroundStyle(NookTheme.paper)
-            .lineSpacing(2)
-            .fixedSize(horizontal: false, vertical: true)
-            .textSelection(.enabled)
-        if long && !expanded {
-            label
-                .frame(maxHeight: 176, alignment: .top)
-                .clipped()
-                .mask {
-                    VStack(spacing: 0) {
-                        Rectangle()
-                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: 28)
-                    }
-                }
-        } else {
-            label
-        }
-    }
-}
-
-/// The agent's answer: formatted text on the left without a bubble. The final answer of a turn shows its copy button
-/// and time on hover.
-struct TranscriptAnswer: View {
-    let message: AgentChatMessage
-    let isFinal: Bool
-    var onChoose: ((String) -> Void)? = nil
-    @State private var hovering = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            MarkdownView(text: message.text, size: 13, onChoose: onChoose)
-            if isFinal {
-                HStack(spacing: NookTheme.Spacing.md) {
-                    TranscriptCopyButton(text: message.text)
-                    if let date = message.updated ?? message.date { TranscriptTime(date: date) }
-                }
-                .opacity(hovering ? 1 : 0)
-            }
-        }
-        .padding(.horizontal, NookTheme.Spacing.xxs)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-    }
-}
-
-/// "14:03" today, "12 Oct 14:03" before; the full date on hover.
-struct TranscriptTime: View {
-    let date: Date
-
-    var body: some View {
-        let text = Calendar.current.isDateInToday(date)
-            ? date.formatted(date: .omitted, time: .shortened)
-            : date.formatted(.dateTime.day().month(.abbreviated).hour().minute())
-        Text(text)
-            .font(NookTheme.TextStyle.detail)
-            .foregroundStyle(NookTheme.textTertiary)
-            .monospacedDigit()
-            .help(date.formatted(date: .complete, time: .shortened))
-    }
-}
-
-/// Copies a message; the icon turns into a check for a moment.
-struct TranscriptCopyButton: View {
-    let text: String
-    @State private var copied = false
-
-    var body: some View {
-        Button {
-            Pasteboard.copy(text)
-            copied = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
-        } label: {
-            Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(NookTheme.font(10.5, .semibold))
-                .foregroundStyle(copied ? NookTheme.mint : NookTheme.textTertiary)
-                .frame(width: 18, height: 18)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(tr("button.copy"))
-        .accessibilityLabel(tr("button.copy"))
-    }
-}
+// Your messages and the agent's answers are the shared `TranscriptUserMessage` and `TranscriptReply`
+// (NotchUI/Components/TranscriptMessage.swift), the same as in the Nook chat.
 
 // MARK: Work
 

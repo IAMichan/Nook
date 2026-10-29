@@ -577,17 +577,17 @@ struct AgentRunPanel: View {
         let current = findIndex.flatMap { found.matches.indices.contains($0) ? found.matches[$0].eventID : nil }
         return ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                     if events.isEmpty {
                         ListEmptyNote(tr("agents.run.empty"))
                     }
                     // Finished turns fold to "Worked for …", tool calls in a row to one sentence.
                     ForEach(blocks) { block in
-                        VStack(alignment: .leading, spacing: 14) {
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                             if block.id == newSince { TimelineNewDivider() }
                             TimelineBlockView(block: block, expanded: openBlocks, toggle: toggleBlock) { event in
                                 AnyView(
-                                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                                    VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                                         eventRow(event)
                                         // What the turn changed (its card): a file or Open diff opens the diff beside it.
                                         if let turn = cards[event.id.uuidString] {

@@ -17,14 +17,14 @@ struct EventRow: View {
     var body: some View {
         switch event.kind {
         case .user:
-            ConversationMessage(fromUser: true, text: event.text)
-                .padding(.top, NookTheme.Spacing.sm)
+            // Each turn starts as its own block, as in the Nook chat and an agent's transcript.
+            TranscriptUserMessage(text: event.text, date: event.date)
+                .padding(.top, TranscriptStyle.turnGap - NookTheme.Spacing.lg)
 
         case .assistant:
             let background = BackgroundWork.notice(event.text)
             if background.isEmpty {
-                ConversationMessage(fromUser: false, text: event.text)
-                    .padding(.horizontal, NookTheme.Spacing.xxs)
+                TranscriptReply(text: event.text, date: event.date)
             } else {
                 // "task-148 has been launched in the background…": a quiet line, as a command is.
                 HStack(spacing: NookTheme.Spacing.sm) {

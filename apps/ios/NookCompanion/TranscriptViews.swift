@@ -117,10 +117,10 @@ struct TranscriptConversation: View {
     private func row(_ row: TranscriptRow) -> some View {
         switch row {
         case .user(let entry):
-            TranscriptUserBubble(entry: entry)
+            TranscriptUserMessage(text: entry.text)
                 .padding(.top, Theme.Spacing.lg)
         case .answer(let entry, let isFinal):
-            TranscriptAnswer(entry: entry, isFinal: isFinal)
+            TranscriptReply(text: entry.text, date: Date(timeIntervalSince1970: entry.date), failed: entry.failed, footer: isFinal)
                 .padding(.bottom, isFinal ? Theme.Spacing.lg : Theme.Spacing.xxs)
         case .work(let id, let steps):
             work(id: id, steps: steps)
@@ -154,8 +154,8 @@ struct TranscriptConversation: View {
     @ViewBuilder
     private func flat(_ row: TranscriptRow) -> some View {
         switch row {
-        case .user(let entry): TranscriptUserBubble(entry: entry)
-        case .answer(let entry, let isFinal): TranscriptAnswer(entry: entry, isFinal: isFinal)
+        case .user(let entry): TranscriptUserMessage(text: entry.text)
+        case .answer(let entry, let isFinal): TranscriptReply(text: entry.text, date: Date(timeIntervalSince1970: entry.date), failed: entry.failed, footer: isFinal)
         case .work(let id, let steps): work(id: id, steps: steps)
         default: EmptyView()
         }
@@ -208,21 +208,21 @@ struct TranscriptConversation: View {
 
 // MARK: Messages
 
-/// What you wrote, the Mac's `TranscriptUserBubble`: a soft bubble on the right, at most four fifths wide. A long
-/// message folds to its first lines; a tap opens the whole of it, a long press copies it.
-struct TranscriptUserBubble: View {
-    let entry: TimelineEntry
+/// What you wrote, the Mac's `TranscriptUserMessage`, in every conversation (an agent's and the Nook chat): a soft
+/// bubble on the right. A long message folds to its first lines; a tap opens the whole of it, a long press copies it.
+struct TranscriptUserMessage: View {
+    let text: String
     @State private var expanded = false
 
     private var long: Bool {
-        entry.text.count > 600 || entry.text.split(separator: "\n", omittingEmptySubsequences: false).count > 8
+        text.count > 600 || text.split(separator: "\n", omittingEmptySubsequences: false).count > 8
     }
 
     var body: some View {
         HStack(spacing: 0) {
             Spacer(minLength: 56)
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                Text(verbatim: entry.text)
+                Text(verbatim: text)
                     .font(Theme.TextStyle.body)
                     .foregroundStyle(Theme.text)
                     .lineSpacing(2)
@@ -250,33 +250,44 @@ struct TranscriptUserBubble: View {
             }
             .padding(Theme.Spacing.lg)
             .background(Theme.bubble, in: RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous))
-            .contextMenu { CopyButton(text: entry.text) }
+            .contextMenu { CopyButton(text: text) }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
 }
 
-/// The agent's answer, the Mac's `TranscriptAnswer`: formatted text on the left without a bubble; the final answer of a
-/// turn shows its time under it. A long press copies it.
-struct TranscriptAnswer: View {
-    let entry: TimelineEntry
-    let isFinal: Bool
+/// The answer, the Mac's `TranscriptReply`, in every conversation (an agent's and the Nook chat): formatted text on the
+/// left without a bubble, then what came with it (`extras`), and its time under a final answer. A long press copies it.
+struct TranscriptReply<Extras: View>: View {
+    let text: String
+    var date: Date? = nil
+    var failed = false
+    /// The time under the answer; only the final answer of a turn has it.
+    var footer = true
+    @ViewBuilder var extras: () -> Extras
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Markdown.text(entry.text)
+            Markdown.text(text)
                 .font(Theme.TextStyle.body)
-                .foregroundStyle(entry.failed ? Theme.coral : Theme.textStrong)
+                .foregroundStyle(failed ? Theme.coral : Theme.textStrong)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
-            if isFinal {
-                TranscriptTime(date: Date(timeIntervalSince1970: entry.date))
+            extras()
+            if footer, let date {
+                TranscriptTime(date: date)
             }
         }
         .padding(.horizontal, Theme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .contextMenu { CopyButton(text: entry.text) }
+        .contextMenu { CopyButton(text: text) }
+    }
+}
+
+extension TranscriptReply where Extras == EmptyView {
+    init(text: String, date: Date? = nil, failed: Bool = false, footer: Bool = true) {
+        self.init(text: text, date: date, failed: failed, footer: footer) { EmptyView() }
     }
 }
 

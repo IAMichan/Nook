@@ -60,6 +60,10 @@ and a selected row stands a full step above a hovered one with a `selectionMark`
   the round send button 8 pt from the corner (a one-line box is a 48 pt capsule). Your own message is a soft
   `NookTheme.bubble` with `Radius.bubble` and no edge; the agent's answer has no bubble, its running text in
   `textStrong` (a step under the headings in `paper`) with relaxed line spacing.
+- **One message component.** Every conversation (the Nook chat, a session Nook runs, an agent's own transcript, and
+  the iPhone's chat and transcripts) draws its messages with `TranscriptUserMessage` and `TranscriptReply`: the same
+  14 pt text, the same `TranscriptStyle.turnGap` above each of your messages, and the same footer (time and copy, plus
+  an answer's own actions such as try again) on hover. Never draw a message bubble or an answer of your own.
 
 ## Keeping it one design
 
@@ -148,6 +152,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | --- | --- | --- |
 | `NookPrimaryButton`, `SmallPrimaryButton`, `NookGhostButton`, `SmallGhostButton` | `NookButtons.swift` | Text buttons on cards, in chat, and in the panel's own forms (optional SF Symbol before the title). They dim by themselves when `.disabled`; do not add an `.opacity` for it. Inside the panel use these, not `.borderedProminent` |
 | `NookNotice`, `NookNoticeEnd`, `NoticeClock` | `NookNotice.swift` | The one shape of every short notice: the strips under the notch (result, suggestion, moment), `PanelNoticeBar` and the toast. Mark, message and line, its actions, and with `countdown` the OK with its ring. `NookNoticeEnd` is that end (actions + OK with ring) on its own, shared by `NookNotice`, the compact agent notice in the notch's row and a card with an OK; `NoticeClock` runs the same time out and holds while the pointer is on the notice |
+| `TranscriptUserMessage`, `TranscriptReply`, `TranscriptMessageFooter`, `TranscriptTime`, `TranscriptStyle` | `TranscriptMessage.swift` | The messages of every conversation: yours as a bubble on the right (pictures above it, a long one folded, a steer mark), the answer as Markdown on the left with what came with it in `extras` (a chart, a mail, a turn's changed files) and its own `actions` in the hover footer. Used by `ChatMessageView` (Nook chat), `EventRow` (a session Nook runs) and `TranscriptConversation` (an agent's transcript); the iPhone has the same two views in `TranscriptViews.swift` |
 | `NookAcknowledgeButton`, `CountdownRing` | `NookButtons.swift` | The white "OK" that closes a notice at once, with a ring counting down until it closes by itself (card `acknowledge` + `countdown`, compact strip) |
 | `NookActionBar` | `NookButtons.swift` | A notice's own actions (`NookNoticeAction`) in one dark bar with thin dividers, next to its OK; drawn by `NookNoticeEnd`, never placed by hand |
 | `NookNoticeActions`, `NookNoticeAction` | `NookNoticeActions.swift` | The button row at the bottom of every notification (cards, approvals, questions, panel notices): main action and its "not now" in one pill (`NookSplitButton`), muted extras, rarer actions in a "…" menu (`NookMoreMenu`), optional mic. Use it for any new notification instead of loose buttons |
