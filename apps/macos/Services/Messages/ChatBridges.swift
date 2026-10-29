@@ -159,7 +159,7 @@ final class MessagesBridge: ChatHistoryBridge {
         }
         var messages: [String: [InboxMessage]] = [:]
         var newest = lastRow ?? 0
-        let retapped = try await tapped()
+        let (retapped, tapbackCursor) = try await tapped()
         let unnamed = try await groupNames(rows, contacts: contacts)
         let files = try await attachments(rows)
         let extra = try await extras(rows, contacts: contacts)
@@ -226,7 +226,10 @@ final class MessagesBridge: ChatHistoryBridge {
         var unread: [String: Int] = [:]
         for row in unreadRows { unread[AppData.string(row["chat"])] = Int(AppData.number(row["unread"]) ?? 0) }
 
+        // Both cursors move only now that the whole read worked: a query that fails halfway (a locked database) reads
+        // the same messages and tapbacks again next time, instead of losing them.
         lastRow = newest
+        lastTapback = tapbackCursor
         lastChange = change
         isWorking = true
         // An iMessage and an sms conversation with the same person are one chat in Nook, with both their counts.
@@ -355,27 +358,27 @@ final class MessagesBridge: ChatHistoryBridge {
         }
     }
 
-    /// The messages read earlier (by guid) that got a tapback, or lost one, since the last look. The first read only
-    /// marks where to look from: the tapbacks until then come with its own messages.
-    private func tapped() async throws -> Set<String> {
+    /// The messages read earlier (by guid) that got a tapback, or lost one, since the last look, and where the next look
+    /// starts (kept by `read` once all of it worked). The first read only marks where to look from: the tapbacks until
+    /// then come with its own messages.
+    private func tapped() async throws -> (targets: Set<String>, cursor: Int64) {
         guard let lastTapback else {
             let top = try await query("SELECT COALESCE(MAX(ROWID), 0) AS top FROM message")
-            self.lastTapback = top.first.flatMap { NotificationRecord.integer($0["top"]) } ?? 0
-            return []
+            return ([], top.first.flatMap { NotificationRecord.integer($0["top"]) } ?? 0)
         }
         let rows = try await query("""
         SELECT ROWID AS id, associated_message_guid AS target FROM message
         WHERE ROWID > \(lastTapback) AND associated_message_type BETWEEN 2000 AND 3999 ORDER BY ROWID
         """)
-        self.lastTapback = rows.compactMap { NotificationRecord.integer($0["id"]) }.max() ?? lastTapback
-        return Set(rows.compactMap { AppData.Tapback.target(AppData.string($0["target"])) }.filter { seen[$0] != nil })
+        let cursor = rows.compactMap { NotificationRecord.integer($0["id"]) }.max() ?? lastTapback
+        return (Set(rows.compactMap { AppData.Tapback.target(AppData.string($0["target"])) }.filter { seen[$0] != nil }), cursor)
     }
 
     // MARK: Sending
 
     /// Your text to the chat `name`, through the Messages app.
     func send(text: String, to name: String) async throws {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
         try await deliver([.text(text)], to: name)
     }
 
@@ -1249,7 +1252,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await ConnectorHTTP.session.data(for: request)
+            (data, response) = try await ConnectorHTTP.session(timeout: timeout).data(for: request)
         } catch {
             throw NookError(plain ? failure : tr("chats.service.unreachable"))
         }
@@ -1321,6 +1324,8 @@ final class SlackBridge: ChatHistoryBridge {
     private static let perRead = 12
     private static let rotating = 4
     private static let firstHistory = 30
+    /// Pages of newer messages one later read follows at most per conversation (30 each).
+    private static let catchUpPages = 5
 
     private var me: String?
     private var users: [String: String] = [:]
@@ -1386,11 +1391,15 @@ final class SlackBridge: ChatHistoryBridge {
             for conversation in pick() {
                 var parameters = ["channel": conversation.id, "limit": String(Self.firstHistory)]
                 if let ts = newest[conversation.id] { parameters["oldest"] = ts }
-                let json: [String: Any]
+                var listed: [[String: Any]] = []
                 var read: [InboxMessage]
                 do {
-                    json = try await call("conversations.history", parameters, auth: auth)
-                    read = SlackData.messages(json, conversation: conversation, users: users, me: me)
+                    // After the first read every page newer than the last one read comes in, not only the newest 30: a
+                    // busy conversation would otherwise skip what came between two reads for good.
+                    let jsons = try await pages("conversations.history", parameters, auth: auth,
+                                                maxPages: newest[conversation.id] == nil ? 1 : Self.catchUpPages)
+                    listed = jsons.flatMap { $0["messages"] as? [[String: Any]] ?? [] }
+                    read = jsons.flatMap { SlackData.messages($0, conversation: conversation, users: users, me: me) }
                     for ts in stale[conversation.id] ?? [] {
                         let again = try await call("conversations.history", [
                             "channel": conversation.id, "oldest": ts, "latest": ts, "inclusive": "true", "limit": "1",
@@ -1409,7 +1418,7 @@ final class SlackBridge: ChatHistoryBridge {
                 }
                 stale[conversation.id] = nil
                 let messages = await withFiles(read.sorted { $0.date < $1.date }, auth: auth)
-                if let last = (json["messages"] as? [[String: Any]])?.compactMap({ $0["ts"] as? String })
+                if let last = listed.compactMap({ $0["ts"] as? String })
                     .max(by: { (Double($0) ?? 0) < (Double($1) ?? 0) }) {
                     newest[conversation.id] = last
                     active[conversation.id] = max(active[conversation.id] ?? 0, Double(last) ?? 0)
@@ -1576,7 +1585,10 @@ final class SlackBridge: ChatHistoryBridge {
         let (data, response) = try await ConnectorHTTP.session.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         if code == 429 { throw NookError(tr("chats.slack.rateLimited"), kind: .rateLimited) }
+        if code == 401 { throw NookError(tr("chats.slack.signInAgain"), kind: .auth) }
         guard (200..<300).contains(code), let json = ChatJSON.object(data) else { throw NookError("Slack: HTTP \(code)") }
+        // A lost sign-in says so as one, as Teams and Snapchat do: the read stops at once and Settings asks to sign in.
+        if SlackData.signedOut(json) { throw NookError(tr("chats.slack.signInAgain"), kind: .auth) }
         if let error = SlackData.error(json), !ignoring.contains((json["error"] as? String) ?? "") {
             throw NookError(tr("chats.slack.refused", error))
         }
@@ -1629,7 +1641,7 @@ final class SlackBridge: ChatHistoryBridge {
         request.setValue(file.mimeType, forHTTPHeaderField: "Content-Type")
         request.setValue("Nook", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 120
-        let (_, response) = try await ConnectorHTTP.session.data(for: request)
+        let (_, response) = try await ConnectorHTTP.session(timeout: request.timeoutInterval).data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         if code == 429 { throw NookError(tr("chats.slack.rateLimited"), kind: .rateLimited) }
         guard (200..<300).contains(code) else { throw NookError(tr("chats.slack.refused", "HTTP \(code)")) }

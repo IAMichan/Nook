@@ -209,7 +209,8 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
             "grant_type": "refresh_token", "client_id": client, "refresh_token": refresh, "scope": TeamsData.scopes,
         ])
         guard case .token(let token, let newRefresh, let expires) = TeamsData.token(json) else {
-            // The refresh token was revoked or expired: only signing in again helps.
+            // The refresh token was revoked or expired: only signing in again helps. A passing refusal keeps it.
+            guard TeamsData.signInGone(json) else { throw NookError(tr("chats.teams.failed")) }
             Keychain.remove(account.refreshAccount)
             throw NookError(tr("chats.teams.signInAgain"), kind: .auth)
         }
@@ -648,7 +649,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         request.setValue("skypetoken=" + token, forHTTPHeaderField: "Authentication")
         request.setValue("redirectAs404", forHTTPHeaderField: "BehaviorOverride")
         request.timeoutInterval = 30
-        let (_, response) = try await ConnectorHTTP.session.data(for: request)
+        let (_, response) = try await ConnectorHTTP.session(timeout: request.timeoutInterval).data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401 {
             TeamsWebSession.shared.expire(account)

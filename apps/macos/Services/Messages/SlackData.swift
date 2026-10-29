@@ -56,6 +56,15 @@ enum SlackData {
         return error
     }
 
+    /// Slack's reasons that mean the sign-in itself is gone (signed out on the website, a revoked or expired token, a
+    /// deactivated account): no read or send works until you sign in again, so reading stops instead of retrying.
+    static let signedOutErrors: Set<String> = ["invalid_auth", "not_authed", "token_revoked", "token_expired", "account_inactive"]
+
+    /// Whether Slack's answer says the sign-in is gone (`signedOutErrors`).
+    static func signedOut(_ json: [String: Any]) -> Bool {
+        (json["ok"] as? Bool) != true && signedOutErrors.contains((json["error"] as? String) ?? "")
+    }
+
     /// The cursor of the next page, nil on the last.
     static func nextCursor(_ json: [String: Any]) -> String? {
         let cursor = ((json["response_metadata"] as? [String: Any])?["next_cursor"] as? String) ?? ""

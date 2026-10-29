@@ -122,6 +122,21 @@ enum ConnectorHTTP {
         return URLSession(configuration: configuration)
     }()
 
+    /// For uploads and long fetches that are meant to take a while (a file sent to a chat, a chat helper's scroll back
+    /// that asks the phone): `session` ends every request after 20 seconds, whatever the request's own timeout says.
+    static let transferSession: URLSession = {
+        let configuration = uncached()
+        configuration.timeoutIntervalForRequest = 60
+        configuration.timeoutIntervalForResource = 300
+        configuration.waitsForConnectivity = false
+        return URLSession(configuration: configuration)
+    }()
+
+    /// The session that lets a request run for `timeout`: `session` for a quick one, `transferSession` for a longer one.
+    static func session(timeout: TimeInterval) -> URLSession {
+        timeout > 20 ? transferSession : session
+    }
+
     /// Ephemeral still keeps an in-memory cache, and GitHub marks its answers `max-age=60`: a pull request merged a
     /// moment ago then read back as open for up to a minute. Every refresh here wants what the service says now.
     private static func uncached() -> URLSessionConfiguration {

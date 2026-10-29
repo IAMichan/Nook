@@ -70,6 +70,7 @@ final class ChatCaptureService: ObservableObject {
     /// A bridge's sign-in changed (Telegram logged in, Teams signed in): read it now instead of at its next turn.
     func bridgeChanged(_ app: String) {
         bridgeDue[app] = nil
+        bridgeFailures[app] = nil
         bridged.remove(app)
         bridgeProblems[app] = nil
         Task { await pollBridges() }
@@ -84,6 +85,8 @@ final class ChatCaptureService: ObservableObject {
     /// Quick reads still owed to a bridge after one of its app's notifications: the app's own server can list the
     /// message a few seconds after it notified, so one read right away may still miss it.
     private var bridgeNudges: [String: Int] = [:]
+    /// Reads in a row that failed, per app: each one waits longer before the next try (`ChatBackoff`).
+    private var bridgeFailures: [String: Int] = [:]
 
     /// How often the database is looked at. Only a database that changed is read, so looking is cheap; looking often
     /// matters because Slack and Teams take a notification back as soon as you read the message elsewhere.
@@ -114,7 +117,7 @@ final class ChatCaptureService: ObservableObject {
         enabled = ConnectorToggle.isOn(ChatInboxConnector.sourceID, default: false)
         serviceBridge.skips = { [weak self] app in
             guard let self else { return false }
-            return self.bridges.contains { $0.app == app && $0.isWorking && $0 !== self.serviceBridge }
+            return self.bridges.contains { $0.app == app && $0.isReady && $0.isWorking && $0 !== self.serviceBridge }
         }
         // A chat changed there this moment (its live line said so): read it at the next tick, not at its next turn.
         serviceBridge.onChange = { [weak self] in
@@ -283,8 +286,11 @@ final class ChatCaptureService: ObservableObject {
     // MARK: Bridges
 
     /// A working bridge brings this app's messages itself: its notifications would only repeat them.
+    /// A bridge counts only while it can read: one that worked and then lost its sign-in (or whose app the chat helper
+    /// took over) keeps its last `isWorking` until its next read, which never comes while it is not ready.
     private func isBridged(_ app: String) -> Bool {
-        bridges.contains { $0.app == app && $0.isWorking } || (serviceBridge.isWorking && serviceBridge.covered.contains(app))
+        bridges.contains { $0.app == app && $0.isReady && $0.isWorking }
+            || (serviceBridge.isReady && serviceBridge.isWorking && serviceBridge.covered.contains(app))
     }
 
     /// Time between the quick reads after a bridged app's notification.
@@ -296,6 +302,8 @@ final class ChatCaptureService: ObservableObject {
 
     /// A notification of a bridged app came in: its bridge reads now, and twice more shortly after.
     private func nudge(_ app: String) {
+        // A bridge that keeps failing waits out its backoff: a nudge would otherwise ask a refusing service every second.
+        guard bridgeFailures[app] == nil else { return }
         bridgeDue[app] = nil
         bridgeNudges[app] = 3
     }
@@ -314,6 +322,8 @@ final class ChatCaptureService: ObservableObject {
                 // published property redraws every view that watches the inbox.
                 if bridgeProblems[bridge.app] != nil { bridgeProblems[bridge.app] = nil }
                 if bridged.contains(bridge.app) { bridged.remove(bridge.app) }
+                // Signed in again later, it starts fresh instead of waiting out an old backoff.
+                bridgeFailures[bridge.app] = nil
                 if bridge === serviceBridge, !bridged.isDisjoint(with: serviceBridge.covered) { bridged.subtract(serviceBridge.covered) }
                 continue
             }
@@ -350,6 +360,7 @@ final class ChatCaptureService: ObservableObject {
                 announce(since: before)
             }
             if bridgeProblems[bridge.app] != nil { bridgeProblems[bridge.app] = nil }
+            bridgeFailures[bridge.app] = nil
             // The chat helper reads several apps: each one it brought in is bridged.
             let apps: Set<String> = bridge === serviceBridge ? serviceBridge.covered.union([bridge.app]) : [bridge.app]
             if !apps.isSubset(of: bridged) { bridged.formUnion(apps) }
@@ -357,8 +368,10 @@ final class ChatCaptureService: ObservableObject {
             guard started == generation else { return }
             let problem = error.localizedDescription
             if bridgeProblems[bridge.app] != problem { bridgeProblems[bridge.app] = problem }
-            // Try again in a minute, not every few seconds.
-            bridgeDue[bridge.app] = Date().addingTimeInterval(max(bridge.interval, 60))
+            // Try again later, and later still each time it fails again: a minute, two, four… up to a quarter of an hour.
+            let failures = (bridgeFailures[bridge.app] ?? 0) + 1
+            bridgeFailures[bridge.app] = failures
+            bridgeDue[bridge.app] = Date().addingTimeInterval(ChatBackoff.delay(interval: bridge.interval, failures: failures))
         }
     }
 

@@ -72,10 +72,39 @@ needs a column in that matrix.
 | Delete for me (any message; hidden in Nook on this Mac) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) | ✓ (also in Telegram, for you) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) |
 | Real ticks on older messages | ✓ for receipts Nook received (kept on this Mac, `WAReceiptStore`) | ✓ same | ✓ (the database) | ✓ ("read up to") | ✓ (kept per person in `apps/chatd`) | – | – | – |
 | More than one account (a business number, a second phone), its chats side by side and named by account | ✓ (a GOWA device per account, `WhatsAppAccounts`) | ✓ (an OpenWA session per account) | – (one Apple account on this Mac) | – (one TDLib login so far) | – (one login per network so far) | – (one workspace so far) | ✓ (every signed-in account) | – (one website session) |
+| Vote on a poll (`ChatAbilities.vote`) | – (GOWA has no vote call yet) | ✓ | – (Messages has no polls another app can answer) | ✓ (`setPollAnswer`) | – (the helper has no vote call) | – (no polls) | – (no polls) | – (no polls) |
+| An action the app refused says why (under the field or as a toast), never a silent success | ✓ | ✓ | ✓ | ✓ (every request is tagged, `act`) | ✓ | ✓ | ✓ | ✓ |
+| A lost sign-in is told apart from a passing failure (reading waits, Settings asks to sign in again) | ✓ (the gateway's status) | ✓ (the gateway's status) | – (no sign-in; Full Disk Access) | ✓ (TDLib's state) | ✓ (the helper's status) | ✓ (`SlackData.signedOut`) | ✓ (`TeamsData.signInGone`, a passing refusal keeps the sign-in) | ✓ |
+
+### One way for every action
+
+Everything you do in a chat from Nook goes through `AppModel.runInChat` (`App/AppModel+ChatSend.swift`), whichever app
+the chat is in: sending text or an item, an emoji, a vote, an edit, a deletion, "Mark as read in <app>", pinning, muting
+and archiving. It first checks what holds for every app (`ChatAction.refusal` in `ChatContract.swift`): the chat's
+`ChatAbilities` take the action (the same list the Chats tab draws its buttons from, so a button and its action never
+disagree), there is text where text is sent, and a message changed or deleted for everyone is yours. Then the app's
+bridge does only its own translation. Afterwards the chat is read again from its app at once (`readSoon`; the WhatsApp
+gateways push their changes themselves), and the action is logged under one name per action (`chat_send`,
+`chat_react`, `chat_vote`…) with the app in the entry. A new chat app adds a case to `ChatRoute`, its line in
+`chatAbilities`, and its call in each action's `switch`; nothing else.
+
+"Mark as read in <app>" reads the chat in Nook at once, and counts it as read in the app (and logs it so) only once the
+app took it. When the app refuses, a toast says why.
+
+### One way for every read
 
 Every bridge reads on its own turn, side by side (`ChatCaptureService.pollBridges`): a slow web service never holds up
 a quick one. The chat helper reads a chat again when the chat list moved past the newest message it got
 (`ChatServiceData.isBehind`, up to three times), so a chat's row never shows an older message than the chat itself.
+
+A read that fails waits longer each time, the same for every bridge (`ChatBackoff`): a minute (or the bridge's own
+interval when that is longer), then twice as long after each failure in a row, up to a quarter of an hour. A
+notification or a send from Nook does not cut that short; signing in again does. A bridge counts as reading an app only
+while it is ready (signed in, its app not taken over by the chat helper), so its last good read never hides the app's
+notifications or keeps the helper from reading that app. Cursors move only once a whole read worked (Messages' rows and
+tapbacks), and a later read follows every page newer than the last one it read (Slack, five pages of 30), so a busy
+chat loses nothing between two reads. Uploads and long fetches (a file sent, the helper scrolling back) run on
+`ConnectorHTTP.transferSession`, so they are not cut off after 20 seconds.
 
 Every app also gets what is certain from later messages (`ChatReceipts.filled` and `filledReaders`). Someone who read
 a later message of yours read the earlier ones too. In a private chat, their message after yours means yours reached

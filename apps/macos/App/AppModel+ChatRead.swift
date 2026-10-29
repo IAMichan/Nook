@@ -43,17 +43,25 @@ extension AppModel {
         chatAbilities(chatRoute(for: entry)).markRead ? .tells : .opensApp
     }
 
-    /// "Mark as read in <app>", after your own click: read in Nook and passed on to the app. Logged, as anything Nook
-    /// does in another app is.
+    /// "Mark as read in <app>", after your own click: read in Nook at once, and passed on to the app. The chat counts
+    /// as read in the app (and is logged so) only once the app took it; when it refused, a toast says why and the chat
+    /// stays read in Nook only. An app Nook cannot tell is opened instead, to read the chat there.
     func markChatReadInApp(_ entry: ChatsEntry) {
         let appName = MessagingApps.app(id: entry.app)?.name ?? entry.app
-        let told = markReadInChatApp(chatRoute(for: entry))
-        if !told {
-            // Nook cannot write in this app: it opens it, and you read the chat there.
+        guard let route = chatRoute(for: entry), chatAbilities(route).markRead else {
             openChatApp(entry.app)
+            if case .captured(let thread) = entry.origin { ChatCaptureService.shared.markReadInApp(thread) } else { markChatReadInNook(entry) }
+            store.audit(tool: ChatAction.markRead.auditTool, args: "\(appName): \(entry.name)", result: "app geopend")
+            return
         }
-        if case .captured(let thread) = entry.origin { ChatCaptureService.shared.markReadInApp(thread) }
-        store.audit(tool: "chat_mark_read", args: "\(appName): \(entry.name)",
-                    result: chatReadHandoff(entry) == .tells ? "doorgegeven" : "app geopend")
+        markChatReadInNook(entry)
+        Task {
+            do {
+                try await self.markReadInChatApp(route, name: entry.name)
+                if case .captured(let thread) = entry.origin { ChatCaptureService.shared.markReadInApp(thread) }
+            } catch {
+                ToastCenter.shared.error(error.localizedDescription)
+            }
+        }
     }
 }

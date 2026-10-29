@@ -413,7 +413,8 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
             } else if let extra = object["@extra"] as? String, extra.hasPrefix("send:") {
                 refused(extra, message)
             } else if let extra = object["@extra"] as? String, extra.hasPrefix("action:") {
-                // A pin, mute, archive, edit or delete Telegram refused: the chat is asked again, so it shows as it is.
+                // A pin, mute, archive, edit, delete, emoji, vote or read mark Telegram refused: the chat is asked again,
+                // so it shows as it is.
                 ToastCenter.shared.error(tr("chat.action.failed"), detail: Self.explain(message))
                 if let chat = extra.split(separator: ":").last.flatMap({ Int64($0) }) {
                     send(["@type": "getChat", "chat_id": chat, "@extra": "refresh"])
@@ -527,28 +528,29 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
     }
 
     /// Tells Telegram you read the chat, after your own click: its newest messages count as viewed, so the chat is read
-    /// on your phone too and the people who wrote see it. Telegram's own unread count follows by itself.
-    func markRead(chat: Int64) {
+    /// on your phone too and the people who wrote see it. Telegram's own unread count follows by itself; a refusal
+    /// shows as a toast, as every other chat action's does.
+    func markRead(chat: Int64) throws {
         let ids = (messages[chat] ?? []).filter { !$0.isMine }.suffix(100).compactMap { TelegramData.ids($0.id)?.message }
         guard !ids.isEmpty else { return }
-        send(["@type": "viewMessages", "chat_id": chat, "message_ids": ids, "force_read": true])
+        try act(["@type": "viewMessages", "chat_id": chat, "message_ids": ids, "force_read": true], chat: chat)
     }
 
     /// Your vote on a poll, after your own click (an empty choice takes it back); the poll shows it at once.
-    func vote(_ choice: [String], message id: String) {
+    func vote(_ choice: [String], message id: String) throws {
         guard let ids = TelegramData.ids(id), let index = messages[ids.chat]?.firstIndex(where: { $0.id == id }),
-              let poll = messages[ids.chat]?[index].poll else { return }
+              let poll = messages[ids.chat]?[index].poll else { throw NookError(tr("chat.poll.failed")) }
         let options = poll.options.indices.filter { choice.contains(poll.options[$0].text) }
-        send(["@type": "setPollAnswer", "chat_id": ids.chat, "message_id": ids.message, "option_ids": options])
+        try act(["@type": "setPollAnswer", "chat_id": ids.chat, "message_id": ids.message, "option_ids": options], chat: ids.chat)
         messages[ids.chat]?[index].poll = poll.voting(choice)
         changed.insert(ids.chat)
     }
 
     /// Your emoji on a message (its id in Nook), after your own click; the same one again takes it back. The chat
-    /// shows it once Telegram has it.
+    /// shows it once Telegram has it; a refusal (an emoji the chat does not allow) shows as a toast.
     func react(_ emoji: String, to id: String, mine: Bool) throws {
         guard isReady, let ids = TelegramData.ids(id) else { throw NookError(tr("chat.compose.telegramOff")) }
-        send(TelegramData.reaction(emoji, chat: ids.chat, message: ids.message, add: !mine))
+        try act(TelegramData.reaction(emoji, chat: ids.chat, message: ids.message, add: !mine), chat: ids.chat)
     }
 
     // MARK: Chat actions

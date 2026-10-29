@@ -1161,16 +1161,21 @@ final class WhatsAppLink: ObservableObject {
     }
 
     /// "Mark as read", by hand: read in Nook and in WhatsApp, so the people who wrote see that you read it (blue ticks
-    /// where they have them). Always sent: you chose to.
-    func markReadInWhatsApp(_ chat: String) {
+    /// where they have them). Always sent: you chose to. Read in Nook at once; a gateway that refuses (or a phone that is
+    /// not linked) throws with a sentence you can act on, as every other chat app's "Mark as read" does.
+    func markReadInWhatsApp(_ chat: String) async throws {
         let key = WAJID.normalized(chat)
         readInNook[key] = Date()
-        readInWhatsApp[key] = Date()
         inbox.markRead(key)
         clearMarkedUnread(key)
-        guard let provider, isConnected else { return }
+        guard let provider, isConnected else { throw NookError(statusLine) }
         let last = inbox.conversations[key]?.messages.last { !$0.fromMe }?.id
-        Task { try? await provider.markRead(chat: key, lastIncoming: last) }
+        do {
+            try await provider.markRead(chat: key, lastIncoming: last)
+        } catch let error as WAError {
+            throw Self.actionSentence(error)
+        }
+        readInWhatsApp[key] = Date()
     }
 
     /// The unread count a chat shows in Nook: what came in while Nook ran, else what WhatsApp itself counts (when the

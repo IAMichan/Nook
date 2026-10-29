@@ -1442,21 +1442,15 @@ private struct ChatsDetail: View {
         withAnimation(NookTheme.reveal) { zoomed = bubble }
     }
 
-    /// Whether a poll in this chat can be voted on from here: WhatsApp through a gateway that can, Telegram once linked.
-    private var canVote: Bool {
-        if whatsAppChat != nil { return whatsApp.canVote }
-        return entry.app == capture.telegramBridge.app && capture.bridged.contains(entry.app)
-    }
+    /// Whether a poll in this chat can be voted on from here, as its app allows (`ChatAbilities.vote`).
+    private var canVote: Bool { abilities.vote }
 
     /// Your vote on a poll, after your own click; when it cannot go, the chat says so and the poll shows the old count.
     private func vote(_ bubble: ChatBubble, _ choice: [String]) {
-        guard let chat = whatsAppChat else {
-            capture.telegramBridge.vote(choice, message: bubble.id)
-            return
-        }
+        guard let route else { return }
         Task { @MainActor in
             do {
-                try await whatsApp.vote(choice, poll: bubble.id, chat: chat)
+                try await app.voteInChat(choice, on: bubble, route: route, name: entry.name)
             } catch {
                 notice = error.localizedDescription
             }
