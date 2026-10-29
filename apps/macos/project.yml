@@ -236,6 +236,7 @@ targets:
       - path: Services/Messages/SlackData.swift
       - path: Services/Messages/TelegramData.swift
       - path: Services/Messages/TeamsData.swift
+      - path: Services/Messages/TeamsEmoji.swift
       - path: Services/Messages/TeamsWebData.swift
       - path: Services/Messages/SnapchatWebData.swift
       - path: Services/Messages/WebSignInAgent.swift

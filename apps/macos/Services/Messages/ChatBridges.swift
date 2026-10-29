@@ -1620,7 +1620,7 @@ final class SlackBridge: ChatHistoryBridge {
     func react(_ emoji: String, to message: String, in name: String, mine: Bool) async throws {
         let (auth, conversation) = try target(name)
         guard let ts = SlackData.ts(of: message, conversation: conversation.id),
-              let shortcode = SlackData.shortcode(emoji: emoji) else { throw NookError(tr("chat.compose.unsupported")) }
+              let shortcode = SlackData.shortcode(emoji: emoji) else { throw NookError(tr("chat.react.notInApp", "Slack")) }
         let fields = ["channel": conversation.id, "timestamp": ts, "name": shortcode]
         if mine {
             _ = try await post("reactions.remove", fields, auth: auth, ignoring: ["no_reaction"])

@@ -205,14 +205,11 @@ enum TeamsData {
     // MARK: Reactions
 
     /// Teams' own reactions by their key, each as the emoji the reaction buttons of every chat in Nook use.
-    static let emotions: [(key: String, emoji: String)] = [
-        ("like", "👍"), ("heart", "❤️"), ("laugh", "😂"), ("surprised", "😮"), ("sad", "😢"), ("angry", "😡"),
-    ]
-
-    /// The emoji of a Teams reaction key: one of its own ("like"), an emoji itself (as Graph writes the newer ones),
-    /// or the newer keys' code points before "_" ("1f64f_foldedhands", "2764-fe0f_heart"). Nil when it says none.
+    /// The emoji of a Teams reaction key: one from Teams' own list ("like", "cwl", "1f64f_foldedhands", see
+    /// `TeamsEmoji`), an emoji itself (as Graph writes the newer ones), or for a key the list does not have yet, its
+    /// code points before "_". Nil when it says none.
     static func emoji(key: String) -> String? {
-        if let known = emotions.first(where: { $0.key == key.lowercased() }) { return known.emoji }
+        if let known = TeamsEmoji.byKey[key.lowercased()] { return known }
         if key.unicodeScalars.contains(where: { $0.properties.isEmojiPresentation || $0.properties.isEmoji && $0.value > 0xFF }) {
             return key
         }
@@ -223,13 +220,10 @@ enum TeamsData {
         return String(String.UnicodeScalarView(scalars))
     }
 
-    /// The key Teams keeps an emoji under: its own for the six it always had, else the emoji's code points
-    /// ("1f64f"), as the newer keys start.
-    static func key(emoji: String) -> String {
-        // "❤" and "❤️" are the same heart.
-        let bare = { (emoji: String) in emoji.unicodeScalars.filter { $0.value != 0xFE0F } }
-        if let known = emotions.first(where: { Array(bare($0.emoji)) == Array(bare(emoji)) }) { return known.key }
-        return bare(emoji).map { String($0.value, radix: 16) }.joined(separator: "-")
+    /// The key Teams keeps an emoji under, from its own list; nil for an emoji Teams does not offer, which it would
+    /// show as a placeholder.
+    static func key(emoji: String) -> String? {
+        TeamsEmoji.byEmoji[TeamsEmoji.bare(emoji)]
     }
 
     /// Reactions as (key, yours) pairs, one per person, as chips: one per emoji with how many, the most used first
