@@ -1011,6 +1011,9 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                 reportedUnread[chat.id] = chat.unread
                 result.append(BridgedChat(app: chat.app, name: chat.title, messages: [], unread: chat.unread))
             }
+            // The chats read before one that fails are already marked seen: their messages must still go to the inbox, or
+            // they never come again. The failed one stays stale and is read again at the next tick.
+            var failure: Error?
             for chat in listed where stale.contains(chat.id) || (chat.last.map({ seen[chat.id] != $0 }) ?? (seen[chat.id] == nil)) {
                 // Before the read: a change told while it runs marks the chat again, for the next turn.
                 stale.remove(chat.id)
@@ -1019,7 +1022,8 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                     answer = try await get(Self.path(chat.id) + "/messages", ["limit": String(Self.history)], token: token)
                 } catch {
                     stale.insert(chat.id)
-                    throw error
+                    failure = error
+                    continue
                 }
                 let messages = await withFiles(ChatServiceData.messages(answer, chat: chat), token: token)
                 let deleted = ChatServiceData.deleted(answer, chat: chat)
@@ -1041,6 +1045,10 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                 let picture = await local(chat.picture, token: token)
                 result.append(BridgedChat(app: chat.app, name: chat.title, messages: messages, unread: chat.unread, avatar: picture,
                                           members: chat.members.isEmpty ? nil : chat.members, deleted: deleted))
+            }
+            if let failure {
+                if result.isEmpty { throw failure }
+                onChange()
             }
             isWorking = true
             return result
@@ -1371,19 +1379,33 @@ final class SlackBridge: ChatHistoryBridge {
                 conversationsAt = Date()
             }
             var chats: [BridgedChat] = []
+            // The conversations read before one that fails already moved `newest` on: their messages must still go to the
+            // inbox, or they never come again. The failed one is read again next time; a rate limit or a lost sign-in
+            // ends this round.
+            var failure: Error?
             for conversation in pick() {
                 var parameters = ["channel": conversation.id, "limit": String(Self.firstHistory)]
                 if let ts = newest[conversation.id] { parameters["oldest"] = ts }
-                let json = try await call("conversations.history", parameters, auth: auth)
-                var read = SlackData.messages(json, conversation: conversation, users: users, me: me)
-                for ts in stale[conversation.id] ?? [] {
-                    let again = try await call("conversations.history", [
-                        "channel": conversation.id, "oldest": ts, "latest": ts, "inclusive": "true", "limit": "1",
-                    ], auth: auth)
-                    for message in SlackData.messages(again, conversation: conversation, users: users, me: me)
-                    where !read.contains(where: { $0.id == message.id }) {
-                        read.append(message)
+                let json: [String: Any]
+                var read: [InboxMessage]
+                do {
+                    json = try await call("conversations.history", parameters, auth: auth)
+                    read = SlackData.messages(json, conversation: conversation, users: users, me: me)
+                    for ts in stale[conversation.id] ?? [] {
+                        let again = try await call("conversations.history", [
+                            "channel": conversation.id, "oldest": ts, "latest": ts, "inclusive": "true", "limit": "1",
+                        ], auth: auth)
+                        for message in SlackData.messages(again, conversation: conversation, users: users, me: me)
+                        where !read.contains(where: { $0.id == message.id }) {
+                            read.append(message)
+                        }
                     }
+                } catch let error as NookError where error.kind == .auth || error.kind == .rateLimited {
+                    failure = error
+                    break
+                } catch {
+                    failure = error
+                    continue
                 }
                 stale[conversation.id] = nil
                 let messages = await withFiles(read.sorted { $0.date < $1.date }, auth: auth)
@@ -1407,6 +1429,7 @@ final class SlackBridge: ChatHistoryBridge {
                                          messages: messages, unread: nil, avatar: picture, members: members.isEmpty ? nil : members,
                                          deleted: deleted))
             }
+            if chats.isEmpty, let failure { throw failure }
             isWorking = true
             return chats
         } catch {
