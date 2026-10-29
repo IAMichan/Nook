@@ -309,6 +309,7 @@ final class ChatsShownMemo {
         var needle: String
         var view: ChatsView
         var filter: String?
+        var account: String?
         var selection: String?
         /// The groups go by day ("Today", "Yesterday"), so a new day sorts again.
         var day: Date
@@ -317,9 +318,9 @@ final class ChatsShownMemo {
     private var key: Key?
     private var value: [ChatsEntry] = []
 
-    func shown(all: [ChatsEntry], needle: String, view: ChatsView, filter: String?, selection: String?,
+    func shown(all: [ChatsEntry], needle: String, view: ChatsView, filter: String?, account: String?, selection: String?,
                make: () -> [ChatsEntry]) -> [ChatsEntry] {
-        let wanted = Key(all: all, needle: needle, view: view, filter: filter, selection: selection,
+        let wanted = Key(all: all, needle: needle, view: view, filter: filter, account: account, selection: selection,
                          day: Calendar.current.startOfDay(for: Date()))
         if key == wanted { return value }
         value = make()
@@ -347,6 +348,8 @@ struct ChatsTab: View {
     @State private var selection: String? = ChatsTab.lastOpened
     /// One app's chats only (its source id), or all.
     @State private var filter: String?
+    /// Within the chosen app, one of its accounts only (by its name), while the app has chats in more than one.
+    @State private var account: String?
     /// Which chats the list shows by where they stand; the chat you opened stays while you read it.
     @AppStorage("nook.chats.view") private var view: ChatsView = .all
     @State private var query = ""
@@ -450,6 +453,8 @@ struct ChatsTab: View {
         // ⌘⇧[ and ⌘⇧] go to the chat above or below in the list, as they go through sessions on Agents.
         .keyCommands(["session.previous": { step(-1) }, "session.next": { step(1) }], enabled: !all.isEmpty)
         .onChange(of: viewModel.chatsFocus) { _, _ in takeFocus() }
+        // Another app (or none) has accounts of its own: the account chosen before no longer applies.
+        .onChange(of: filter) { _, _ in account = nil }
         .onChange(of: selection) { _, id in
             ChatsTab.lastOpened = id
         }
@@ -501,6 +506,7 @@ struct ChatsTab: View {
         guard let focus = viewModel.chatsFocus else { return }
         viewModel.chatsFocus = nil
         filter = focus.app
+        account = nil
         view = .all
         query = focus.query
         selection = focus.chat
@@ -521,15 +527,38 @@ struct ChatsTab: View {
         return photos.photo(handle: entry.handle, name: entry.name)
     }
 
-    /// The chats of the chosen app (or every app), before the view and the search narrow them.
-    private var inApp: [ChatsEntry] { filter.map { app in all.filter { $0.app == app } } ?? all }
+    /// The chats of the chosen app (or every app), and of its chosen account, before the view and the search narrow them.
+    private var inApp: [ChatsEntry] {
+        guard let filter else { return all }
+        let chosen = shownAccount
+        return all.filter { $0.app == filter && (chosen == nil || $0.account == chosen) }
+    }
+
+    /// The accounts of the chosen app that have chats here, by name, while there is more than one; empty otherwise.
+    /// The same for every app whose chats say which account they are in (WhatsApp with several phones linked).
+    private var accounts: [String] {
+        guard let filter else { return [] }
+        let names = Set(all.lazy.filter { $0.app == filter }.compactMap(\.account))
+        return names.count > 1 ? names.sorted { $0.localizedStandardCompare($1) == .orderedAscending } : []
+    }
+
+    /// The account the list narrows to: the chosen one, as long as the chosen app still has chats in it.
+    private var shownAccount: String? { account.flatMap { accounts.contains($0) ? $0 : nil } }
+
+    /// Chats with something new per account of the chosen app.
+    private var newByAccount: [String: Int] {
+        guard let filter else { return [:] }
+        let fresh = all.filter { $0.app == filter && $0.read.isUnread }
+        return Dictionary(grouping: fresh.compactMap(\.account), by: { $0 }).mapValues(\.count)
+    }
 
     /// The chats that match the view, the app and the search (their names, their people and every message Nook has of
     /// them), in the list's order: group by group, newest first in each. A chat keeps its place when it is read, and the
     /// open one stays in the view while you read it, so nothing jumps.
     private var shown: [ChatsEntry] {
         let needle = query.trimmingCharacters(in: .whitespaces)
-        return shownMemo.shown(all: all, needle: needle, view: view, filter: filter, selection: selection) { makeShown(needle) }
+        return shownMemo.shown(all: all, needle: needle, view: view, filter: filter, account: shownAccount,
+                               selection: selection) { makeShown(needle) }
     }
 
     private func makeShown(_ needle: String) -> [ChatsEntry] {
@@ -618,7 +647,8 @@ struct ChatsTab: View {
     /// as wide as the sidebar, or one icon under the other in the rail.
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            ChatsSidebar(compact: compactSidebar, view: $view, app: $filter, counts: viewCounts, apps: apps, newByApp: newByApp,
+            ChatsSidebar(compact: compactSidebar, view: $view, app: $filter, account: $account, counts: viewCounts, apps: apps,
+                         newByApp: newByApp, accounts: accounts, newByAccount: newByAccount,
                          addSource: { app.openSettings(section: .chats) })
             footer
                 .frame(width: compactSidebar ? PanelLayout.chatsRail : PanelLayout.chatsSidebar)
@@ -626,10 +656,11 @@ struct ChatsTab: View {
         .padding(.trailing, compactSidebar ? NookTheme.Spacing.xs : NookTheme.Spacing.sm)
     }
 
-    /// The list's title: the view, and the app when one is chosen ("New · Telegram"), with the one action that fits it.
+    /// The list's title: the view, and the app when one is chosen ("New · Telegram"), and its account when one is
+    /// ("New · WhatsApp · Business"), with the one action that fits it.
     private var listTitle: String {
         let appName = filter.map { MessagingApps.app(id: $0)?.name ?? $0 }
-        return appName.map { view.title + " · " + $0 } ?? view.title
+        return [view.title, appName, shownAccount].compactMap { $0 }.joined(separator: " · ")
     }
 
     private var listHeader: some View {
