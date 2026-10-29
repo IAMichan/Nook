@@ -131,10 +131,10 @@ final class WhatsAppExportTests: XCTestCase {
                        "members known, nobody answered: the info lists who does not have it yet")
         XCTAssertNil(export(groupChat([quiet])).messages.first?.readers, "members unknown and nobody answered: nothing to say")
 
-        var private = message("3", chat: anna, text: "hi", fromMe: true)
-        private.receipt = .read
-        private.readers = [anna: ChatReader(name: "", receipt: .read, date: Date(timeIntervalSince1970: 9))]
-        let person = WAConversation(id: anna, name: "Anna", isGroup: false, messages: [private], lastActivity: private.date)
+        var direct = message("3", chat: anna, text: "hi", fromMe: true)
+        direct.receipt = .read
+        direct.readers = [anna: ChatReader(name: "", receipt: .read, date: Date(timeIntervalSince1970: 9))]
+        let person = WAConversation(id: anna, name: "Anna", isGroup: false, messages: [direct], lastActivity: direct.date)
         XCTAssertEqual(export(person).messages.first?.readers?.first?.date, Date(timeIntervalSince1970: 9),
                        "when the other person read it")
         XCTAssertNil(export(groupChat([message("4", chat: group, from: anna)])).messages.first?.readers, "theirs has none")

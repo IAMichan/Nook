@@ -1011,11 +1011,15 @@ struct ChatInbox: Codable, Equatable, Sendable {
         }
         if !chat.deleted.isEmpty { thread.messages.removeAll { chat.deleted.contains($0.id) } }
         var ids = Set(thread.messages.map(\.id))
-        for message in messages where !ids.contains(message.id) && !thread.messages.contains(where: {
+        // A chat its app knows by an id (`chatID`) gets every message under the app's own id, never also as a
+        // notification: two messages with the same words in a row ("ok", "ok") are two. Elsewhere the same words from the
+        // same side within a minute are one message a bridge and a notification each brought.
+        let byIDOnly = chat.chatID != nil
+        for message in messages where !ids.contains(message.id) && (byIDOnly || !thread.messages.contains(where: {
             // Two photos sent in a row are two messages, even without a caption.
             message.media == nil && $0.media == nil && message.poll == nil && $0.isMine == message.isMine && $0.text == message.text
                 && abs($0.date.timeIntervalSince(message.date)) < Self.sameMessageWindow
-        }) {
+        })) {
             let index = thread.messages.lastIndex { $0.date <= message.date }.map { $0 + 1 } ?? 0
             thread.messages.insert(message, at: index)
             ids.insert(message.id)

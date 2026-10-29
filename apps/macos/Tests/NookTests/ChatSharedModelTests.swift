@@ -95,6 +95,16 @@ final class ChatSharedModelTests: XCTestCase {
         XCTAssertEqual(inbox.threads[ChatInbox.key(app: "whatsapp", id: "317@s.whatsapp.net")]?.messages.map(\.id), ["p"])
     }
 
+    func testTheSameWordsTwiceInAChatKnownByItsIdAreTwoMessages() {
+        var inbox = ChatInbox()
+        inbox.merge(chat("Anna", id: "a", [message("1", "ok", at: 1), message("2", "ok", at: 2)]))
+        XCTAssertEqual(inbox.threads.values.first?.messages.map(\.id), ["1", "2"], "every message by its own id")
+        var named = ChatInbox()
+        named.merge(chat("Anna", app: "slack", [message("1", "ok", at: 1), message("2", "ok", at: 2)]))
+        XCTAssertEqual(named.threads.values.first?.messages.count, 1,
+                       "a chat known by name keeps one copy of what a bridge and a notification both brought")
+    }
+
     // MARK: History and mentions
 
     func testHistoryIsNeverNew() {
