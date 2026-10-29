@@ -907,4 +907,47 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(inbox.conversations[chat]?.messages.first?.reactions.map(\.emoji), ["🙏"])
         XCTAssertEqual(inbox.conversations[chat]?.messages.first?.replyTo, "0")
     }
+
+    // MARK: More than one account
+
+    func testChatKeyLeavesTheFirstAccountsJIDAlone() {
+        let jid = "31612345678@s.whatsapp.net"
+        XCTAssertEqual(WAChatKey.make(jid, account: ""), jid, "what Nook kept of the first account still holds")
+        XCTAssertEqual(WAChatKey.split(jid).account, "")
+        XCTAssertEqual(WAChatKey.split(jid).jid, jid)
+    }
+
+    func testChatKeyTellsTheSameChatInTwoAccountsApart() {
+        let jid = "120363000000000000@g.us"
+        let key = WAChatKey.make(jid, account: "nook-ab12cd")
+        XCTAssertNotEqual(key, WAChatKey.make(jid, account: ""))
+        XCTAssertEqual(WAChatKey.split(key).account, "nook-ab12cd")
+        XCTAssertEqual(WAChatKey.split(key).jid, jid)
+    }
+
+    func testNewAccountIDIsFreshAndSafeForTheGateway() {
+        let taken: Set<String> = ["nook", "nook-aaaaaa"]
+        let id = WAAccount.newID(taken: taken)
+        XCTAssertFalse(taken.contains(id))
+        XCTAssertTrue(id.hasPrefix("nook-"))
+        XCTAssertFalse(id.contains(WAChatKey.separator))
+        XCTAssertEqual(WAAccount.cleanName("  Zakelijk  "), "Zakelijk")
+        XCTAssertEqual(WAAccount.cleanName(String(repeating: "x", count: 80)).count, 40)
+    }
+
+    func testGOWADeviceOfEachAccount() {
+        let data = Data("""
+        {"code":"SUCCESS","results":[
+          {"id":"nook","state":"logged_in","jid":"31600000001@s.whatsapp.net"},
+          {"id":"nook-biz123","state":"logged_in","jid":"31600000002@s.whatsapp.net"},
+          {"id":"nook-new456","state":"disconnected"}
+        ]}
+        """.utf8)
+        // The first account leaves the others' devices alone, also when one of them was linked first.
+        XCTAssertEqual(WAGOWA.device(data, excluding: ["nook-biz123", "nook-new456"])?.id, "nook")
+        XCTAssertEqual(WAGOWA.device(data, id: "nook-biz123")?.status.me, "31600000002@s.whatsapp.net")
+        XCTAssertEqual(WAGOWA.device(data, id: "nook-new456")?.status.link, .needsQR)
+        XCTAssertNil(WAGOWA.device(data, id: "nook-gone00"), "an account's device that is missing is made, not borrowed")
+        XCTAssertNil(WAGOWA.device(data, excluding: ["nook", "nook-biz123", "nook-new456"]))
+    }
 }

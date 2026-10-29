@@ -10,7 +10,7 @@ extension CompanionServer {
 
     func inbox(_ request: CompanionRequest, app: AppModel) -> CompanionResponse {
         let capture = ChatCaptureService.shared
-        let whatsApp = WhatsAppLink.shared
+        let whatsApp = WhatsAppAccounts.shared
         let chats = ChatsEntry.all(whatsApp: whatsApp, capture: capture).prefix(Self.inboxLimit).map {
             Self.digest($0, canSend: app.chatRoute(for: $0) != nil)
         }
@@ -28,7 +28,10 @@ extension CompanionServer {
     /// Nook only: WhatsApp keeps it unread and the sender sees no blue ticks).
     func inboxChat(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
         guard let entry = inboxEntry(request.item) else { return .failure(request.id, .unknownItem) }
-        if case .whatsApp(let jid) = entry.origin { _ = await WhatsAppLink.shared.loadHistory(jid) }
+        if case .whatsApp(let key) = entry.origin {
+            let (link, jid) = WhatsAppAccounts.shared.route(key)
+            _ = await link.loadHistory(jid)
+        }
         // The chat may have changed while its history loaded.
         guard let current = inboxEntry(entry.id) else { return .failure(request.id, .unknownItem) }
         let readOnOpen = UserDefaults.standard.object(forKey: ChatsTab.readOnOpenKey) as? Bool ?? true
@@ -75,7 +78,7 @@ extension CompanionServer {
     /// A chat the Chats tab lists: one you hid in WhatsApp, or of an app you switched off, cannot be reached.
     private func inboxEntry(_ id: String?) -> ChatsEntry? {
         guard let id, !id.isEmpty else { return nil }
-        return ChatsEntry.all(whatsApp: WhatsAppLink.shared, capture: ChatCaptureService.shared).first { $0.id == id }
+        return ChatsEntry.all(whatsApp: WhatsAppAccounts.shared, capture: ChatCaptureService.shared).first { $0.id == id }
     }
 
     private static func digest(_ entry: ChatsEntry, canSend: Bool) -> InboxChatDigest {
@@ -113,8 +116,9 @@ extension CompanionServer {
     private func inboxLines(_ entry: ChatsEntry) -> [InboxLine] {
         let lines: [InboxLine]
         switch entry.origin {
-        case .whatsApp(let jid):
-            let bubbles = WhatsAppLink.shared.inbox.conversations[jid].map { AppModel.whatsAppBubbles($0) } ?? []
+        case .whatsApp(let key):
+            let (link, jid) = WhatsAppAccounts.shared.route(key)
+            let bubbles = link.inbox.conversations[jid].map { AppModel.whatsAppBubbles($0, link: link) } ?? []
             lines = bubbles.suffix(60).map { bubble in
                 InboxLine(id: bubble.id, text: CompanionPolicy.clip(ChatFormat.plain(bubble.text)),
                           date: (bubble.date ?? Date()).timeIntervalSince1970, sender: CompanionPolicy.clip(bubble.sender, limit: 120),

@@ -295,6 +295,7 @@ struct ChatOwnLinkSteps: View {
     @ObservedObject private var telegram = ChatCaptureService.shared.telegramBridge
     @ObservedObject private var teams = ChatCaptureService.shared.teamsBridge
     @ObservedObject private var whatsApp = WhatsAppLink.shared
+    @ObservedObject private var whatsAppAccounts = WhatsAppAccounts.shared
     @ObservedObject private var installer = WhatsAppGOWAInstaller.shared
     @ObservedObject private var snapchat = SnapchatWebSession.shared
     @State private var whatsAppOptions = false
@@ -366,7 +367,7 @@ struct ChatOwnLinkSteps: View {
             } else if !WhatsAppSettings.enabled {
                 detail(tr("chats.own.whatsapp.scanDetail"))
                 Button(tr("chats.own.whatsapp.showQR")) {
-                    whatsApp.setEnabled(true)
+                    whatsAppAccounts.setEnabled(true)
                     capture.setSource("whatsapp", on: true)
                 }
                 .buttonStyle(.borderedProminent)
@@ -380,8 +381,17 @@ struct ChatOwnLinkSteps: View {
                     Text(whatsApp.statusLine).foregroundStyle(NookTheme.textSecondary)
                 }
                 if whatsApp.link == .unreachable || whatsApp.link == .unauthorized {
-                    Button(tr("whatsapp.settings.retry")) { whatsApp.settingsChanged() }
+                    Button(tr("whatsapp.settings.retry")) { whatsAppAccounts.settingsChanged() }
                 }
+            }
+        }
+        // Another account (a business number, a second phone), once the first is linked; it can wait.
+        if whatsApp.isConnected {
+            SetupStep(number: 3, title: tr("whatsapp.accounts.step"), done: whatsAppAccounts.links.count > 1) {
+                detail(tr("whatsapp.accounts.stepDetail"))
+                Form { WhatsAppAccountRows() }
+                    .formStyle(.grouped)
+                    .scrollContentBackground(.hidden)
             }
         }
         // The rest of WhatsApp's link: which notifications reach you, reading, another gateway.

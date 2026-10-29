@@ -21,14 +21,16 @@ extension AppModel {
     }
 
     func startWhatsApp() {
-        WhatsAppLink.shared.onMessage = { [weak self] chat in self?.presentWhatsApp(chat) }
+        // Every account the same: a chat goes by its key across accounts (`WAChatKey`).
+        let accounts = WhatsAppAccounts.shared
+        accounts.onMessage = { [weak self] chat in self?.presentWhatsApp(chat) }
         // New ticks redraw the chat's card when it is on screen; they never bring one up by themselves.
-        WhatsAppLink.shared.onReceipt = { [weak self] chat in
+        accounts.onReceipt = { [weak self] chat in
             guard let self, self.viewModel.hasCard(id: Self.whatsAppCardPrefix + chat) else { return }
             self.presentWhatsApp(chat)
         }
         // Read on the phone: a card still waiting in line goes; the one on screen stays (you may be typing) and is redrawn.
-        WhatsAppLink.shared.onReadElsewhere = { [weak self] chat in
+        accounts.onReadElsewhere = { [weak self] chat in
             guard let self else { return }
             let token = Self.whatsAppCardPrefix + chat
             self.viewModel.removePending(id: token)
@@ -36,17 +38,19 @@ extension AppModel {
         }
         // A WhatsApp that went through Beeper links in Nook's own way from now on.
         BeeperImporter.migrateSettings()
-        WhatsAppLink.shared.start()
+        accounts.start()
     }
 
     /// A new message (or new ticks) in `chat`: a notice the way Settings › Notifications says for chats (its card with a
     /// field to answer, one line, or a macOS notification), or the card on screen redrawn. Nothing is marked read by
     /// showing it. `asked`: you opened the chat yourself ("@chat Jan"), so the card comes up now, whatever the rules.
+    /// `chat` is the chat's key across accounts (`WAChatKey`).
     func presentWhatsApp(_ chat: String, asked opened: Bool = false) {
-        let link = WhatsAppLink.shared
+        let (link, jid) = WhatsAppAccounts.shared.route(chat)
         let token = Self.whatsAppCardPrefix + chat
         let asked = opened || viewModel.hasCard(id: token)
-        guard let conversation = link.inbox.conversations[chat],
+        let context = WhatsAppAccounts.shared.context(of: link)
+        guard let conversation = link.inbox.conversations[jid],
               asked ? !conversation.messages.isEmpty : conversation.messages.contains(where: { !$0.fromMe }) else { return }
         // In the notice history: the newest message from them, once (the card also updates for your own replies and ticks).
         var line = ""
@@ -58,7 +62,7 @@ extension AppModel {
             let sender = who.isEmpty ? "" : who + ": "
             if NoticeHistory.shared.entries.first(where: { $0.key == token })?.detail != NoticeLog.detail(sender + text) {
                 line = sender + text
-                logNotice(.info, title: conversation.name, detail: line, context: "WhatsApp", target: .whatsApp(chat), key: token,
+                logNotice(.info, title: conversation.name, detail: line, context: context, target: .whatsApp(chat), key: token,
                           source: .chats, app: "whatsapp")
             }
         }
@@ -69,7 +73,7 @@ extension AppModel {
         // Nothing new from them (your own reply, new ticks): nothing to tell.
         guard !line.isEmpty else { return }
         let open: () -> Void = { [weak self] in self?.presentWhatsApp(chat, asked: true) }
-        deliverNotice(.chats, app: "whatsapp", id: token, title: conversation.name, subtitle: "WhatsApp", body: line,
+        deliverNotice(.chats, app: "whatsapp", id: token, title: conversation.name, subtitle: context, body: line,
                       card: { [weak self] in self?.showWhatsAppCard(chat, opened: false) },
                       strip: { [weak self] in
                           self?.viewModel.notify(conversation.name + ": " + line, button: tr("notices.openChat"), action: open)
@@ -77,29 +81,30 @@ extension AppModel {
                       open: open)
     }
 
-    /// The card of a WhatsApp chat, with a field to answer; redrawn when it is on screen already.
+    /// The card of a WhatsApp chat (by its key across accounts), with a field to answer; redrawn when it is on screen
+    /// already.
     private func showWhatsAppCard(_ chat: String, opened: Bool) {
-        let link = WhatsAppLink.shared
+        let (link, jid) = WhatsAppAccounts.shared.route(chat)
         let token = Self.whatsAppCardPrefix + chat
-        guard let conversation = link.inbox.conversations[chat], !conversation.messages.isEmpty else { return }
-        viewModel.register("\(token)#read") { link.markRead(chat) }
+        guard let conversation = link.inbox.conversations[jid], !conversation.messages.isEmpty else { return }
+        viewModel.register("\(token)#read") { link.markRead(jid) }
         viewModel.register("\(token)#nook") { [weak self] in
             guard let self else { return }
-            link.markRead(chat)
+            link.markRead(jid)
             // Only this chat is read, and asking for a draft teaches memory nothing about the user.
             self.ask(tr("whatsapp.card.nookPrompt", conversation.name),
                      focus: [Prefetch.Call(tool: "whatsapp_live", input: ["chat": chat, "limit": 20])], reflects: false)
         }
-        viewModel.register("\(token)#quiet") { link.mute(chat) }
-        viewModel.register("\(token)#mute") { link.ignore(chat) }
+        viewModel.register("\(token)#quiet") { link.mute(jid) }
+        viewModel.register("\(token)#mute") { link.ignore(jid) }
 
         let messages = conversation.messages.suffix(WAInbox.keep)
-        let bubbles = Self.whatsAppBubbles(conversation)
+        let bubbles = Self.whatsAppBubbles(conversation, link: link)
         let unread = conversation.unread > 1 ? " · \(tr("whatsapp.card.unread", conversation.unread))" : ""
         let card = NookCard(
             id: token,
             mood: .remind,
-            context: "WhatsApp\(unread)",
+            context: WhatsAppAccounts.shared.context(of: link) + unread,
             appIcon: "whatsapp",
             title: conversation.name,
             detail: .chat(bubbles),
@@ -129,7 +134,7 @@ extension AppModel {
 
         // Older messages from the gateway, once per chat, so the card can scroll back further than what came in.
         Task { @MainActor [weak self] in
-            guard await WhatsAppLink.shared.loadHistory(chat), let self, self.viewModel.hasCard(id: token) else { return }
+            guard await link.loadHistory(jid), let self, self.viewModel.hasCard(id: token) else { return }
             self.presentWhatsApp(chat)
         }
         // The newest photos, videos and documents (a fixed few, so a redraw never reaches further back), fetched once
@@ -138,7 +143,7 @@ extension AppModel {
             .filter { link.preview($0.id) == nil }.map(\.id)
         if !wanted.isEmpty {
             Task { @MainActor [weak self] in
-                guard await link.loadPreviews(wanted, chat: chat), let self, self.viewModel.hasCard(id: token) else { return }
+                guard await link.loadPreviews(wanted, chat: jid), let self, self.viewModel.hasCard(id: token) else { return }
                 self.presentWhatsApp(chat)
             }
         }
@@ -152,9 +157,9 @@ extension AppModel {
     }()
 
     /// A chat as bubbles, the newest at the bottom; in a group each says who wrote it. Once fetched, a photo shows as
-    /// itself, a video plays in its bubble and a document shows its first page; until then a file is a button.
-    static func whatsAppBubbles(_ conversation: WAConversation) -> [ChatBubble] {
-        let link = WhatsAppLink.shared
+    /// itself, a video plays in its bubble and a document shows its first page; until then a file is a button. `link` is
+    /// the account the chat is in.
+    static func whatsAppBubbles(_ conversation: WAConversation, link: WhatsAppLink = .shared) -> [ChatBubble] {
         let time = whatsAppBubbleTime
         let byID = Dictionary(conversation.messages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var names = link.memberIndex(conversation)
@@ -243,7 +248,7 @@ extension AppModel {
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let name = try await WhatsAppLink.shared.send(reply, to: chat, replyTo: replyTo)
+                let name = try await WhatsAppAccounts.shared.send(reply, to: chat, replyTo: replyTo)
                 self.store.audit(tool: "whatsapp_send", args: name, result: "verstuurd")
                 self.viewModel.dismissCard(id: token)
                 self.viewModel.finish(tr("whatsapp.sent", name))
@@ -290,7 +295,8 @@ extension AppModel {
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let url = try await WhatsAppLink.shared.download(message: bubble.id, chat: chat)
+                let (link, jid) = WhatsAppAccounts.shared.route(chat)
+                let url = try await link.download(message: bubble.id, chat: jid)
                 let shown = FilePreviewWindow.shared.show(url, title: bubble.attachment ?? url.lastPathComponent)
                 guard shown || NSWorkspace.shared.open(url) else { throw NookError(tr("whatsapp.file.noApp")) }
                 self.editShownCard(card.id) { $0.notice = nil }

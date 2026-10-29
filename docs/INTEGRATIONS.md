@@ -70,6 +70,7 @@ needs a column in that matrix.
 | A message the app writes before its text (WhatsApp on this Mac) read again until it says something | ✓ (`waiting`, 10 minutes) | – | – | – | – | – | – | – |
 | Delete for me (any message; hidden in Nook on this Mac) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) | ✓ (also in Telegram, for you) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) |
 | Real ticks on older messages | ✓ for receipts Nook received (kept on this Mac, `WAReceiptStore`) | ✓ same | ✓ (the database) | ✓ ("read up to") | ✓ (kept per person in `apps/chatd`) | – | – | – |
+| More than one account (a business number, a second phone), its chats side by side and named by account | ✓ (a GOWA device per account, `WhatsAppAccounts`) | ✓ (an OpenWA session per account) | – (one Apple account on this Mac) | – (one TDLib login so far) | – (one login per network so far) | – (one workspace so far) | ✓ (every signed-in account) | – (one website session) |
 
 Every bridge reads on its own turn, side by side (`ChatCaptureService.pollBridges`): a slow web service never holds up
 a quick one. The chat helper reads a chat again when the chat list moved past the newest message it got
@@ -79,6 +80,14 @@ Every app also gets what is certain from later messages (`ChatReceipts.filled` a
 a later message of yours read the earlier ones too. In a private chat, their message after yours means yours reached
 them. Neither WhatsApp gateway keeps receipts. So a message whose receipts came while Nook was not running (or before
 it was linked) shows only what those rules prove.
+
+WhatsApp can link more than one account through the same gateway (Settings › Chats › WhatsApp › Add account): each
+account is a `WhatsAppLink` of its own, on its own GOWA device or OpenWA session (named after its `WAAccount` id), with
+its own QR, webhook port (the first account's port plus its place in the list) and read marks. The rest of Nook knows a
+chat by its key across accounts (`WAChatKey`): the first account's chats by their JID alone, so nothing kept from before
+changes, another account's as `<account id>~<JID>`. `WhatsAppAccounts.route` finds the account and the JID again. The
+choices per kind of chat and per chat hold in every account. WhatsApp on this Mac (its database) and the chat helper still
+read one account each: the WhatsApp Business app for the Mac keeps its own database, which Nook does not read yet.
 
 While a WhatsApp chat is open in Nook, Nook tells WhatsApp this device is online, as WhatsApp Web does. Otherwise
 WhatsApp sends no typing updates. While it is online, the phone may hold back its own notifications.

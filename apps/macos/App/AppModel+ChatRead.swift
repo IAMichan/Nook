@@ -17,7 +17,9 @@ extension AppModel {
     func markChatReadInNook(_ entry: ChatsEntry) {
         switch entry.origin {
         case .captured(let thread): ChatCaptureService.shared.markRead(thread)
-        case .whatsApp(let jid): WhatsAppLink.shared.markReadInNook(jid)
+        case .whatsApp(let key):
+            let (link, jid) = WhatsAppAccounts.shared.route(key)
+            link.markReadInNook(jid)
         }
     }
 
@@ -25,7 +27,9 @@ extension AppModel {
     func markChatUnread(_ entry: ChatsEntry) {
         switch entry.origin {
         case .captured(let thread): ChatCaptureService.shared.markUnread(thread)
-        case .whatsApp(let jid): WhatsAppLink.shared.markUnread(jid)
+        case .whatsApp(let key):
+            let (link, jid) = WhatsAppAccounts.shared.route(key)
+            link.markUnread(jid)
         }
     }
 

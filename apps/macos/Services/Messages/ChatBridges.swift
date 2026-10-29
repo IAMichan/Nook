@@ -649,7 +649,7 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge {
 
     var isReady: Bool {
         // WhatsApp linked through the chat helper (as Beeper did it) brings it live, with its whole history.
-        !WhatsAppLink.shared.isConnected && !ChatHelper.linked(app) && FileManager.default.fileExists(atPath: Self.path)
+        !WhatsAppAccounts.shared.isConnected && !ChatHelper.linked(app) && FileManager.default.fileExists(atPath: Self.path)
     }
 
     func read() async throws -> [BridgedChat] {

@@ -183,6 +183,7 @@ targets:
       - path: Core/I18n+SettingsLayout.swift
       - path: Core/I18n+Workspace.swift
       - path: Core/I18n+Energy.swift
+      - path: Core/I18n+WhatsAppAccounts.swift
       - path: Core/I18n+Privacy.swift
       - path: Core/I18n+Toast.swift
       - path: Core/I18n+Confirm.swift

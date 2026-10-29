@@ -1,7 +1,8 @@
 // Sending from the Chats tab: text, files, polls, places and contact cards, to every chat Nook can write in.
 import Foundation
 
-/// Where what you send in a chat goes: WhatsApp through the linked phone's gateway, Telegram through TDLib, Teams through
+/// Where what you send in a chat goes: WhatsApp through the linked phone's gateway (by the chat's key across accounts,
+/// `WAChatKey`), Telegram through TDLib, Teams through
 /// the website's session, Slack through its web API, Messages through the Messages app on this Mac (the last three by
 /// the chat's name in Nook), Snapchat through its website (by the chat's name too), or any app the chat helper on this Mac links (Instagram, Messenger, Signal…). A chat
 /// without one is only read: its text is copied for its own app instead.
@@ -42,8 +43,8 @@ extension AppModel {
     /// Where the Chats tab sends for this chat; nil when Nook can only read it.
     func chatRoute(for entry: ChatsEntry) -> ChatRoute? {
         switch entry.origin {
-        case .whatsApp(let jid):
-            return .whatsApp(jid)
+        case .whatsApp(let key):
+            return .whatsApp(key)
         case .captured:
             let capture = ChatCaptureService.shared
             let telegram = capture.telegramBridge
@@ -61,8 +62,8 @@ extension AppModel {
     func chatAbilities(_ route: ChatRoute?) -> ChatAbilities {
         let capture = ChatCaptureService.shared
         switch route {
-        case .whatsApp(let jid):
-            let link = WhatsAppLink.shared
+        case .whatsApp(let key):
+            let (link, jid) = WhatsAppAccounts.shared.route(key)
             return ChatAbilities(send: true, sends: link.sends, reply: true, react: true, edit: link.canEdit, delete: link.canDelete,
                                  markRead: true, pin: link.canPin, mute: false, archive: link.canArchive,
                                  pinned: link.isPinned(jid))
@@ -134,8 +135,9 @@ extension AppModel {
         let capture = ChatCaptureService.shared
         let tool: String
         switch route {
-        case .whatsApp(let jid):
-            try await WhatsAppLink.shared.send(outgoing, to: jid, replyTo: replyTo)
+        case .whatsApp(let key):
+            let (link, jid) = WhatsAppAccounts.shared.route(key)
+            try await link.send(outgoing, to: jid, replyTo: replyTo)
             tool = "whatsapp_send"
         case .telegram(let id):
             try capture.telegramBridge.send(outgoing, to: id, replyTo: replyTo)
@@ -205,7 +207,10 @@ extension AppModel {
         let capture = ChatCaptureService.shared
         let work: (() async throws -> Void)?
         switch route {
-        case .whatsApp(let jid): WhatsAppLink.shared.markReadInWhatsApp(jid); return true
+        case .whatsApp(let key):
+            let (link, jid) = WhatsAppAccounts.shared.route(key)
+            link.markReadInWhatsApp(jid)
+            return true
         case .telegram(let id): capture.telegramBridge.markRead(chat: id); return true
         case .linked(let id): markLinkedChat(id, read: true); return true
         case .teams(let chat): work = { try await capture.teamsBridge.markRead(name: chat) }
@@ -247,7 +252,9 @@ extension AppModel {
     func editInChat(_ bubble: ChatBubble, text: String, route: ChatRoute, name: String) async throws {
         let capture = ChatCaptureService.shared
         switch route {
-        case .whatsApp(let jid): try await WhatsAppLink.shared.edit(bubble.id, chat: jid, to: text)
+        case .whatsApp(let key):
+            let (link, jid) = WhatsAppAccounts.shared.route(key)
+            try await link.edit(bubble.id, chat: jid, to: text)
         case .telegram: try capture.telegramBridge.edit(bubble.id, to: text)
         case .teams(let chat): try await capture.teamsBridge.edit(bubble.id, in: chat, to: text)
         case .slack(let chat): try await capture.slackBridge.edit(bubble.id, in: chat, to: text)
@@ -262,7 +269,9 @@ extension AppModel {
     func deleteInChat(_ bubble: ChatBubble, route: ChatRoute, name: String) async throws {
         let capture = ChatCaptureService.shared
         switch route {
-        case .whatsApp(let jid): try await WhatsAppLink.shared.delete(bubble.id, chat: jid)
+        case .whatsApp(let key):
+            let (link, jid) = WhatsAppAccounts.shared.route(key)
+            try await link.delete(bubble.id, chat: jid)
         case .telegram: try capture.telegramBridge.delete(bubble.id)
         case .teams(let chat): try await capture.teamsBridge.delete(bubble.id, in: chat)
         case .slack(let chat): try await capture.slackBridge.delete(bubble.id, in: chat)
@@ -284,7 +293,9 @@ extension AppModel {
     /// Pins the chat in its app, or unpins it, after your own click.
     func setChatPinned(_ pinned: Bool, route: ChatRoute, name: String) async throws {
         switch route {
-        case .whatsApp(let jid): try await WhatsAppLink.shared.setPinned(pinned, chat: jid)
+        case .whatsApp(let key):
+            let (link, jid) = WhatsAppAccounts.shared.route(key)
+            try await link.setPinned(pinned, chat: jid)
         case .telegram(let id): try ChatCaptureService.shared.telegramBridge.setPinned(pinned, chat: id)
         case .linked(let id): try await ChatCaptureService.shared.serviceBridge.setPinned(pinned, chat: id)
         case .teams, .slack, .messages, .snapchat: throw NookError(tr("chat.compose.unsupported"))
@@ -306,7 +317,9 @@ extension AppModel {
     /// back with a newer message.
     func archiveChat(route: ChatRoute, thread: String?, name: String) async throws {
         switch route {
-        case .whatsApp(let jid): try await WhatsAppLink.shared.archive(jid)
+        case .whatsApp(let key):
+            let (link, jid) = WhatsAppAccounts.shared.route(key)
+            try await link.archive(jid)
         case .telegram(let id): try ChatCaptureService.shared.telegramBridge.archive(id)
         case .linked(let id): try await ChatCaptureService.shared.serviceBridge.archive(id)
         case .teams, .slack, .messages, .snapchat: throw NookError(tr("chat.compose.unsupported"))

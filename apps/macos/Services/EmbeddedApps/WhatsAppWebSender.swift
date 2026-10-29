@@ -64,7 +64,7 @@ extension EmbeddedAppStore {
     /// Offered only while WhatsApp Web is open beside the chat and no phone is linked (then the gateway's whatsapp_send
     /// is there instead).
     static var whatsAppWebTools: [ToolSpec] {
-        guard shared.whatsAppWebOpen, !WhatsAppLink.shared.isConnected else { return [] }
+        guard shared.whatsAppWebOpen, !WhatsAppAccounts.shared.isConnected else { return [] }
         return [
             ToolSpec(
                 name: "whatsapp_send",

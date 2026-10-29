@@ -182,6 +182,11 @@ struct WAPollLedger: Codable, Equatable, Sendable {
 enum WAReceiptStore {
     static var file: URL { NookPaths.supportDirectory.appendingPathComponent("whatsapp-receipts.json") }
 
+    /// The file of one account (see `WAAccount`): the first account keeps the file it always had.
+    static func file(account: String) -> URL {
+        account.isEmpty ? file : NookPaths.supportDirectory.appendingPathComponent("whatsapp-receipts-\(account).json")
+    }
+
     static func load(from file: URL = file) -> WAReceiptLedger {
         guard let data = try? Data(contentsOf: file),
               let ledger = try? JSONDecoder().decode(WAReceiptLedger.self, from: data) else { return WAReceiptLedger() }
@@ -203,6 +208,11 @@ enum WAReceiptStore {
 enum WAPollStore {
     static var file: URL { NookPaths.supportDirectory.appendingPathComponent("whatsapp-poll-votes.json") }
 
+    /// The file of one account (see `WAAccount`): the first account keeps the file it always had.
+    static func file(account: String) -> URL {
+        account.isEmpty ? file : NookPaths.supportDirectory.appendingPathComponent("whatsapp-poll-votes-\(account).json")
+    }
+
     static func load(from file: URL = file) -> WAPollLedger {
         guard let data = try? Data(contentsOf: file),
               let ledger = try? JSONDecoder().decode(WAPollLedger.self, from: data) else { return WAPollLedger() }
@@ -219,6 +229,49 @@ enum WAPollStore {
         guard let data = try? JSONEncoder().encode(ledger) else { return }
         try? data.write(to: file, options: [.atomic])
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+    }
+}
+
+// MARK: - Accounts
+
+/// A WhatsApp account linked besides the first one (a business number, a second phone): its own device at GOWA, or its
+/// own session at OpenWA, on the same gateway. The first account has no entry: it is the one Nook always linked.
+struct WAAccount: Codable, Equatable, Identifiable, Sendable {
+    /// The gateway's device id (GOWA) or session name (OpenWA), and what the keys of its chats start with.
+    var id: String
+    /// What you call it ("Business").
+    var name: String
+
+    /// The id of a new account: "nook-" and six random letters and digits, never one already taken.
+    static func newID(taken: Set<String>) -> String {
+        let characters = Array("abcdefghijklmnopqrstuvwxyz0123456789")
+        while true {
+            let id = "nook-" + String((0..<6).map { _ in characters.randomElement()! })
+            if !taken.contains(id) { return id }
+        }
+    }
+
+    /// A name as Settings takes it: trimmed, at most 40 characters; empty stays empty (the account then goes by its
+    /// number).
+    static func cleanName(_ name: String) -> String {
+        String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
+    }
+}
+
+/// A WhatsApp chat as the rest of Nook knows it, whichever account it is in: a chat of the first account by its JID
+/// alone (so what Nook kept of it from before there were more accounts still holds), one of another account as
+/// "<account id>~<JID>". The two never meet: no JID holds a "~".
+enum WAChatKey {
+    static let separator: Character = "~"
+
+    static func make(_ jid: String, account: String) -> String {
+        account.isEmpty ? jid : account + String(separator) + jid
+    }
+
+    /// The account and the chat's JID at its gateway.
+    static func split(_ key: String) -> (account: String, jid: String) {
+        guard let index = key.firstIndex(of: separator) else { return ("", key) }
+        return (String(key[..<index]), String(key[key.index(after: index)...]))
     }
 }
 
@@ -1570,9 +1623,13 @@ enum WAGOWA {
     }
 
     /// `GET /devices` → `results: [{id, phone_number, display_name, state, jid, created_at}]`.
-    /// The device Nook uses: a logged-in one first, else the first one.
-    static func device(_ data: Data) -> (id: String, status: WAStatus)? {
-        guard let list = results(data) as? [[String: Any]], !list.isEmpty else { return nil }
+    /// The device Nook uses: `id` when an account names its own (nil when the gateway has none by that id yet); else a
+    /// logged-in one first, else the first one, of those no other account uses (`excluding`).
+    static func device(_ data: Data, id wanted: String? = nil, excluding: Set<String> = []) -> (id: String, status: WAStatus)? {
+        guard let all = results(data) as? [[String: Any]] else { return nil }
+        let list = wanted.map { wanted in all.filter { $0["id"] as? String == wanted } }
+            ?? all.filter { !excluding.contains($0["id"] as? String ?? "") }
+        guard !list.isEmpty else { return nil }
         let pick = list.first { $0["state"] as? String == "logged_in" } ?? list[0]
         guard let id = pick["id"] as? String, !id.isEmpty else { return nil }
         let jid = nonEmpty(pick["jid"])
