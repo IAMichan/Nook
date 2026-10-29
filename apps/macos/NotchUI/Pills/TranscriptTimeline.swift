@@ -186,7 +186,8 @@ struct TranscriptConversation: View {
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         // The diff or file beside the conversation and the side panel's tools take turns on the right.
-        .sharesSessionSide(detailOpen: diff != nil || preview != nil) {
+        .sharesSessionSide(detailOpen: diff != nil || preview != nil,
+                           besideWidth: diff != nil || preview != nil ? SidePanelRoom.of(outputsWidth) : 0) {
             diff = nil
             preview = nil
         }

@@ -53,14 +53,14 @@ struct AgentsTab: View {
         // the conversation and the panel side by side for as long as it can.
         let besideRoom = workbench(selection) && viewModel.sessionTool != .conversation
             ? PanelLayout.minimumPanel + PanelSplit.handle + NookTheme.Spacing.sm + 10 : 0
-        // Only a session can do without the list: the pages of the footer (pull requests, usage, the tools) are reached
-        // from the list, so it stays there.
-        let listShown = !listHidden || !workbench(selection)
+        // Only a session whose header has the toggle to bring the list back can do without it (`canHideList`).
+        let listShown = !listHidden || !canHideList(selection)
+        let entries = listEntries(live: live, past: past, transcripts: transcripts)
         HStack(alignment: .top, spacing: 0) {
             if listShown {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                     listHeader(selection)
-                    sessionList(live: live, past: past, transcripts: transcripts, selection: selection)
+                    sessionList(entries, selection: selection)
                     if !app.demoMode {
                         PanelFooter(selected: selectedID(selection), open: { viewModel.selectedAgentID = $0 },
                                     openSettings: { app.openSettings() }, history: app.history,
@@ -123,7 +123,13 @@ struct AgentsTab: View {
         .animation(NookTheme.reveal, value: listShown)
         // Looking at a session counts as having seen what it finished, also with the list put away.
         // Leaving a session counts too: what finished while you watched it is not "new".
-        .onAppear { visits.visit(selectedID(selection)) }
+        // The agent works in a chat you had marked as finished: it is not finished after all, unless you marked it
+        // during this very busy spell. Also while the list is put away.
+        .onChange(of: entries.busyKeys) { _, keys in finishedMarks.reconcile(busy: keys) }
+        .onAppear {
+            finishedMarks.reconcile(busy: entries.busyKeys)
+            visits.visit(selectedID(selection))
+        }
         .onChange(of: selectedID(selection)) { old, new in
             visits.visit(old)
             visits.visit(new)
@@ -169,7 +175,7 @@ struct AgentsTab: View {
             if !app.demoMode {
                 PanelNewButton(label: tr("agents.newSession"), active: isNew) { viewModel.selectedAgentID = "new" }
             }
-            if workbench(selection) {
+            if canHideList(selection) {
                 SidePanelCloseButton(help: tr("agents.list.hide")) {
                     withAnimation(NookTheme.reveal) { listHidden = true }
                 }
@@ -188,6 +194,14 @@ struct AgentsTab: View {
         case .live, .past, .run, .new: return true
         default: return false
         }
+    }
+
+    /// The list can be put away only where the session's header shows the toggle that brings it back: a session in a
+    /// workbench on this Mac, not one on another machine (its header has no panel toggles) and not the sample data.
+    private func canHideList(_ selection: Selection) -> Bool {
+        guard !app.demoMode, workbench(selection) else { return false }
+        if case .run(let id) = selection, app.workspace.run(id)?.remote != nil { return false }
+        return true
     }
 
     private func resolve(live: [AgentSession], past: [PastSession]) -> Selection {
@@ -232,25 +246,31 @@ struct AgentsTab: View {
 
     // MARK: List
 
-    private func sessionList(live: [AgentSession], past: [PastSession], transcripts: [String: PastSession],
-                             selection: Selection) -> some View {
-        let current = selectedID(selection)
+    /// The list's rows: what works or waits, the earlier sessions, and the conversations that are busy (which cannot
+    /// stay marked as finished). Worked out in `body`, so the marks stay right while the list is put away.
+    private struct ListEntries {
+        let running: [AgentListItem]
+        let earlier: [AgentListItem]
+        let busyKeys: Set<String>
+    }
+
+    private func listEntries(live: [AgentSession], past: [PastSession], transcripts: [String: PastSession]) -> ListEntries {
         let runs = app.demoMode ? [] : WorkspaceRunsSection.recent(app.workspace)
         let built = sorted(runs.map { item($0) } + live.map { item($0, transcript: transcripts[$0.id]) })
         let busyKeys = Set(built.filter(\.isBusy).map(\.finishKey))
         let (running, earlier) = Self.linkSpawned(running: built,
                                                   past: past.map { item($0) }.filter { !busyKeys.contains($0.finishKey) })
+        return ListEntries(running: running, earlier: earlier, busyKeys: busyKeys)
+    }
 
+    private func sessionList(_ entries: ListEntries, selection: Selection) -> some View {
+        let current = selectedID(selection)
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             TimelineView(.periodic(from: .now, by: 30)) { context in
-                AgentInboxList(items: running, past: earlier,
+                AgentInboxList(items: entries.running, past: entries.earlier,
                                current: current, now: context.date) { viewModel.selectedAgentID = $0 }
             }
         }
-        // The agent works in a chat you had marked as finished: it is not finished after all,
-        // unless you marked it during this very busy spell.
-        .onChange(of: busyKeys) { _, keys in finishedMarks.reconcile(busy: keys) }
-        .onAppear { finishedMarks.reconcile(busy: busyKeys) }
     }
 
     /// Gives a session another one spawned (Claude desktop's suggested tasks) that one as its parent, so the list shows it

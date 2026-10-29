@@ -112,7 +112,9 @@ struct AgentRunPanel: View {
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
             // The diff or file beside the conversation and the side panel's tools take turns on the right.
-            .sharesSessionSide(detailOpen: diffSelection != nil || filePreview != nil) {
+            .sharesSessionSide(detailOpen: diffSelection != nil || filePreview != nil,
+                               besideWidth: (consoleOpen ? SidePanelRoom.of(consoleWidth) : 0)
+                                   + (diffSelection != nil || filePreview != nil ? SidePanelRoom.of(outputsWidth) : 0)) {
                 diffSelection = nil
                 filePreview = nil
             }

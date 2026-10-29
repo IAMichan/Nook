@@ -205,29 +205,44 @@ extension EnvironmentValues {
     @Entry var sessionSide = SessionSideLink()
 }
 
-/// From the conversation up to its workbench: it shows a diff or a file beside itself, which takes room from the docked
-/// session panel, and a new plan does not push it away.
+/// From the conversation up to its workbench: it shows a diff or a file beside itself, so a new plan does not push it
+/// away.
 struct SessionDetailOpen: PreferenceKey {
     static let defaultValue = false
     static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
 }
 
+/// From the conversation up to its workbench: the room its own panels take (a command's terminal on the left, a diff or
+/// file on the right), from the widths they were given, so the docked session panel steps aside in time.
+struct SessionBesideWidth: PreferenceKey {
+    static let defaultValue: Double = 0
+    static func reduce(value: inout Double, nextValue: () -> Double) { value = max(value, nextValue()) }
+}
+
+/// The room a side panel of `width` takes with its drag line and gap.
+enum SidePanelRoom {
+    static func of(_ width: Double) -> Double { width + PanelSplit.handle + Double(SidePanelMetrics.gap) }
+}
+
 extension View {
     /// For a conversation that shows a diff or a file beside itself (`detailOpen`): opening one closes the tool panel,
-    /// and opening the tool panel closes it (`closeDetail`), so the two never stack.
-    func sharesSessionSide(detailOpen: Bool, closeDetail: @escaping () -> Void) -> some View {
-        modifier(SessionSideShare(detailOpen: detailOpen, closeDetail: closeDetail))
+    /// and opening the tool panel closes it (`closeDetail`), so the two never stack. `besideWidth` is the room its own
+    /// panels take (`SessionBesideWidth`).
+    func sharesSessionSide(detailOpen: Bool, besideWidth: Double, closeDetail: @escaping () -> Void) -> some View {
+        modifier(SessionSideShare(detailOpen: detailOpen, besideWidth: besideWidth, closeDetail: closeDetail))
     }
 }
 
 private struct SessionSideShare: ViewModifier {
     @Environment(\.sessionSide) private var link
     let detailOpen: Bool
+    let besideWidth: Double
     let closeDetail: () -> Void
 
     func body(content: Content) -> some View {
         content
             .preference(key: SessionDetailOpen.self, value: detailOpen)
+            .preference(key: SessionBesideWidth.self, value: besideWidth)
             .onChange(of: detailOpen) { _, open in
                 if open { link.makeRoom() }
             }

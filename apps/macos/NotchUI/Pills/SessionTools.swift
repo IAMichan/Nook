@@ -228,8 +228,11 @@ struct SessionWorkbench<Conversation: View>: View {
     @State private var outputSelection: String?
     /// The conversation shows a diff or a file beside itself (`SessionDetailOpen`).
     @State private var detailOpen = false
-    /// How wide that diff or file is (`AgentRunPanel`, `TranscriptConversation`), for the room left to dock.
-    @AppStorage("nook.agents.outputsWidth") private var detailWidth = PanelLayout.outputs
+    /// The room the conversation's own panels take (a command's terminal, a diff or file: `SessionBesideWidth`).
+    @State private var besideConversation: Double = 0
+    /// Whether the session panel was docked: it docks again only with some room to spare (`PanelLayout.dockHysteresis`),
+    /// so dragging a panel near the edge of the room does not make the column come and go.
+    @State private var wasDocked = true
 
     /// What a panel shows: nothing (closed), the list of tools, or one this session can use.
     private func shown(_ slot: SessionPanelSlot) -> SessionTool {
@@ -253,16 +256,15 @@ struct SessionWorkbench<Conversation: View>: View {
         // instead of both squeezing until neither reads.
         let covering = sideOpen
             && !PanelSplit.fits(minimum: PanelLayout.minimumPanel + NookTheme.Spacing.sm, available: totalWidth, rest: conversationRoom)
-        // The width the tool panel or the diff actually takes, not the one it was dragged to, so a window that gets
-        // narrower gives up the docked column first; under that room it is the branch button's popover again.
-        let besideWidth = sideOpen && !covering
-            ? PanelSplit.width(toolWidth, minimum: PanelLayout.minimumPanel, available: totalWidth, rest: conversationRoom)
-                + PanelSplit.handle + SidePanelMetrics.gap
-            : detailOpen
-                ? PanelSplit.width(detailWidth, minimum: PanelLayout.minimumPanel, available: totalWidth, rest: conversationRoom)
-                    + PanelSplit.handle + SidePanelMetrics.gap
-                : 0
-        let docked = dockSessionPanel && !directory.isEmpty && totalWidth - besideWidth >= PanelLayout.sessionPanelRoom
+        // The width the tool panel actually takes (not the one it was dragged to) and the room of the conversation's own
+        // panels, so a window that gets narrower gives up the docked column first; under that room it is the branch
+        // button's popover again.
+        let toolRoom = sideOpen && !covering
+            ? SidePanelRoom.of(PanelSplit.width(toolWidth, minimum: PanelLayout.minimumPanel, available: totalWidth,
+                                                rest: conversationRoom))
+            : 0
+        let needed = PanelLayout.sessionPanelRoom + (wasDocked ? 0 : PanelLayout.dockHysteresis)
+        let docked = dockSessionPanel && !directory.isEmpty && totalWidth - toolRoom - besideConversation >= needed
         HStack(alignment: .top, spacing: 0) {
             VStack(spacing: 0) {
                 // Docked, the switch sits above the session panel instead of in the conversation's header.
@@ -279,6 +281,7 @@ struct SessionWorkbench<Conversation: View>: View {
                     }))
                     .onPreferenceChange(SessionOutputsReport.self) { outputs = $0 }
                     .onPreferenceChange(SessionDetailOpen.self) { detailOpen = $0 }
+                    .onPreferenceChange(SessionBesideWidth.self) { besideConversation = $0 }
                     .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 if bottom != .conversation {
                     VStack(spacing: 0) {
@@ -327,6 +330,7 @@ struct SessionWorkbench<Conversation: View>: View {
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         .animation(NookTheme.reveal, value: side == .conversation)
         .animation(NookTheme.reveal, value: docked)
+        .onChange(of: docked) { _, now in wasDocked = now }
         .animation(NookTheme.reveal, value: bottom == .conversation)
         .onChange(of: side) { _, next in
             if SessionTool.panelTools.contains(next) { lastTool = next.rawValue }
