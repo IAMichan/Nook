@@ -136,10 +136,13 @@ struct AgentInboxList: View {
                     .foregroundStyle(NookTheme.amber)
                     .padding(.horizontal, NookTheme.Spacing.lg)
             }
-            if sections.isEmpty && showsSetUp {
-                // No session at all, not even a settled one: a calm, centered invitation instead of a bare line.
+            if showsEmptyState(sections) {
+                // Nothing working and the settled shelf closed: a calm, centered invitation instead of a bare line. With no
+                // session at all it sets up an agent, otherwise it starts a new session.
                 WSEmptyState(symbol: "terminal", title: tr("agents.noneWorkingNow"), message: tr("agents.emptyListDetail"),
-                             action: (title: tr("onboarding.agents.setUp"), run: { app.startOnboarding(at: OnboardingView.agentsStep) }))
+                             action: sections.isEmpty
+                                ? (title: tr("onboarding.agents.setUp"), run: { app.startOnboarding(at: OnboardingView.agentsStep) })
+                                : (title: tr("agents.newSession"), run: { select("new") }))
             } else {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -184,6 +187,11 @@ struct AgentInboxList: View {
     /// Nothing here yet and nothing being searched or read: the coding agents step of the first-run flow installs or
     /// signs in an agent and adds projects.
     private var showsSetUp: Bool { store.query.isEmpty && !app.history.loading && !app.demoMode }
+
+    /// The whole panel is empty: no search, nothing loading, and at most a closed shelf of settled sessions below.
+    private func showsEmptyState(_ sections: [InboxSection]) -> Bool {
+        showsSetUp && sections.allSatisfy { $0.kind == .settled } && collapsed.contains(.settled)
+    }
 
     @ViewBuilder
     private var emptyState: some View {
