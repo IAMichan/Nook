@@ -84,6 +84,7 @@ extension WorkspaceManager {
             (command: launch.script, args: ["--agent", run.provider.rawValue], env: ["NOOK_RUN_ID": id.uuidString])
         }
         let provider = run.provider
+        let profileID = run.profileID
         client.request("initialize", AcpRPC.initializeParams()) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
@@ -93,7 +94,7 @@ extension WorkspaceManager {
                 case .success(let response):
                     let capabilities = (response.dictionary["agentCapabilities"] as? [String: Any]) ?? [:]
                     client.canLoadSessions = (capabilities["loadSession"] as? Bool) ?? false
-                    self.learnModels(provider, AgentModelCatalog.acp(response.dictionary))
+                    self.learnModels(provider, AgentModelCatalog.acp(response.dictionary), profileID: profileID)
                     guard provider == .antigravity else {
                         return self.openAcpSession(id, client, bridge: bridge, prompt: prompt, executable: executable)
                     }
@@ -146,14 +147,31 @@ extension WorkspaceManager {
         }
     }
 
-    /// What the session offers and starts with. The run's model and mode are set before each prompt (see
-    /// `applyAcpSettings`), so a model you pick while the session stays open counts from your next message.
+    /// What the session offers and starts with. The run's model, effort and mode are set before each prompt (see
+    /// `applyAcpSettings`), so a model or level you pick while the session stays open counts from your next message.
     private func configureAcpSession(_ id: UUID, _ client: AcpClient, _ response: [String: Any]) {
-        guard let run = run(id) else { return }
         client.sessionInfo = response
         client.appliedModel = AcpSessionSettings.currentModel(response)
         client.appliedMode = AcpSessionSettings.currentMode(response)
-        learnModels(run.provider, AgentModelCatalog.acp(response))
+        client.appliedEffort = AcpSessionSettings.currentEffort(response)
+        client.startingEffort = client.appliedEffort
+        learnSessionOptions(id, response)
+    }
+
+    /// The models and thinking levels a session offers, for the menus.
+    private func learnSessionOptions(_ id: UUID, _ info: [String: Any]) {
+        guard let run = run(id) else { return }
+        learnModels(run.provider, AgentModelCatalog.acp(info), profileID: run.profileID)
+        learnEfforts(run.provider, AcpSessionSettings.effortLevels(info), profileID: run.profileID)
+    }
+
+    /// The config options the agent sent (all of them): a new model can bring other thinking levels, and start at a
+    /// level of its own, which is then set again before the prompt.
+    private func updateAcpOptions(_ id: UUID, _ client: AcpClient, _ options: [[String: Any]]?) {
+        guard let options else { return }
+        client.sessionInfo = AcpSessionSettings.updating(client.sessionInfo, configOptions: options)
+        if let effort = AcpSessionSettings.currentEffort(client.sessionInfo) { client.appliedEffort = effort }
+        learnSessionOptions(id, client.sessionInfo)
     }
 
     /// The mode the run asks for: Antigravity's follows the session's rights, the others only know Plan mode.
@@ -162,34 +180,43 @@ extension WorkspaceManager {
         return AcpSessionSettings.mode(plan: run.mode == .plan, info: info)
     }
 
-    /// Sets the run's model and mode on the session, each answered before the next, then calls `done`.
-    private func applyAcpSettings(_ id: UUID, _ client: AcpClient, then done: @escaping () -> Void) {
-        guard let run = run(id), let session = client.sessionID else { return done() }
+    /// Sets the run's model, effort and mode on the session, each answered before the next, then calls `done`. The next
+    /// step is worked out again after each answer: the options a reply brings (another model's levels) count.
+    private func applyAcpSettings(_ id: UUID, _ client: AcpClient, round: Int = 0, then done: @escaping () -> Void) {
+        // Each setting is asked for at most a few times, whatever the agent answers.
+        guard round < 6, let run = run(id), let session = client.sessionID else { return done() }
         let info = client.sessionInfo
+        // "Default" returns to the level the session started with.
         let steps = AcpSessionSettings.steps(session: session, info: info, model: run.model, appliedModel: client.appliedModel,
+                                             effort: run.effort ?? client.startingEffort, appliedEffort: client.appliedEffort,
                                              mode: wantedAcpMode(run, info), appliedMode: client.appliedMode)
-        applyAcpSteps(id, client, steps[...], then: done)
-    }
-
-    private func applyAcpSteps(_ id: UUID, _ client: AcpClient, _ steps: ArraySlice<AcpSessionSettings.Step>, then done: @escaping () -> Void) {
         guard let step = steps.first else { return done() }
         client.request(step.method, step.params) { [weak self] result in
             Task { @MainActor in
                 guard let self, self.acpClients[id] === client, client.isRunning else { return }
                 switch (result, step.target) {
-                case (.success, .model(let model)):
+                case (.success(let response), .model(let model)):
                     client.appliedModel = model
-                case (.success, .mode(let mode)):
+                    self.updateAcpOptions(id, client, response.dictionary["configOptions"] as? [[String: Any]])
+                case (.success(let response), .effort(let effort)):
+                    self.updateAcpOptions(id, client, response.dictionary["configOptions"] as? [[String: Any]])
+                    // Asked once: an agent that keeps its own level is not asked again and again.
+                    client.appliedEffort = effort
+                case (.success(let response), .mode(let mode)):
                     client.appliedMode = mode
+                    self.updateAcpOptions(id, client, response.dictionary["configOptions"] as? [[String: Any]])
+                case (.failure, .effort(let effort)):
+                    // The session goes on at the level it has.
+                    client.appliedEffort = effort
                 case (.failure, .model(let model)):
                     // Said once: the session goes on with the model it has.
                     client.appliedModel = model
-                    let name = self.agentModels[self.run(id)?.provider ?? .acp]?.first { $0.id == model }?.name ?? model
-                    self.append(id, RunEvent(kind: .system, text: tr("ws.acp.modelFailed", self.run(id)?.provider.displayName ?? "", name)))
+                    let name = self.offeredModels(run.provider, profileID: run.profileID).first { $0.id == model }?.name ?? model
+                    self.append(id, RunEvent(kind: .system, text: tr("ws.acp.modelFailed", run.provider.displayName, name)))
                 case (.failure, .mode(let mode)):
                     client.appliedMode = mode
                 }
-                self.applyAcpSteps(id, client, steps.dropFirst(), then: done)
+                self.applyAcpSettings(id, client, round: round + 1, then: done)
             }
         }
     }
@@ -295,6 +322,11 @@ extension WorkspaceManager {
 
     private func handleAcp(_ id: UUID, _ client: AcpClient, _ message: CodexRPCMessage, _ events: [AcpEvent]) {
         guard acpClients[id] === client, !events.isEmpty else { return }
+        // What the session offers counts at once, in a turn or not.
+        let settings = events.filter(\.isSessionState)
+        if !settings.isEmpty { applyAcp(id, client, settings) }
+        let events = events.filter { !$0.isSessionState }
+        guard !events.isEmpty else { return }
         if turns[id] == nil, client.sessionID != nil, !client.replaying, run(id)?.status.isActive != true {
             // After its turn: kept until the agent shows it is really working again.
             // A request needs its answer now, turn or not.
@@ -371,6 +403,13 @@ extension WorkspaceManager {
                 }
             case .unsupportedRequest(let rpcID):
                 client.respondError(rpcID, message: "Nook does not provide this to agents.")
+            case .commands(let commands):
+                if acpCommands[id] != commands { acpCommands[id] = commands }
+            case .configOptions(let options):
+                updateAcpOptions(id, client, options.object as? [[String: Any]])
+            case .currentMode(let mode):
+                // The agent left a mode by itself (out of plan mode, say): the run's mode is set again before the next prompt.
+                client.appliedMode = mode
             }
         }
     }

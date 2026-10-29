@@ -65,16 +65,17 @@ extension WorkspaceManager {
 
     // MARK: Menus
 
-    /// The models to offer an agent, from what it lists itself and the manifest (see `ModelChoice.list`).
-    func modelChoices(for provider: RunProvider) -> [ModelChoice] {
-        ModelChoice.list(manifest: modelManifest, provider: provider, offered: agentModels[provider] ?? [],
+    /// The models to offer an agent, from what it lists itself and the manifest (see `ModelChoice.list`). An ACP agent
+    /// you added has its own list, by its profile.
+    func modelChoices(for provider: RunProvider, profileID: String? = nil) -> [ModelChoice] {
+        ModelChoice.list(manifest: modelManifest, provider: provider, offered: offeredModels(provider, profileID: profileID),
                          installed: agentVersions[provider])
     }
 
     /// The menu entry `id` stands for, also under an alias ("opus").
-    func modelChoice(_ id: String, for provider: RunProvider) -> ModelChoice? {
+    func modelChoice(_ id: String, for provider: RunProvider, profileID: String? = nil) -> ModelChoice? {
         guard !id.isEmpty else { return nil }
-        let choices = modelChoices(for: provider)
+        let choices = modelChoices(for: provider, profileID: profileID)
         if let exact = choices.first(where: { $0.id == id }) { return exact }
         guard var alias = choices.first(where: { sameModel($0.id, id, for: provider) }) else { return nil }
         // The agent resolves an alias itself, to the newest model it knows: a saved "opus" never waits on an update.
@@ -91,9 +92,9 @@ extension WorkspaceManager {
 
     /// The menu of an agent: its default, its models, the ones you typed and `extra` (the model in use, recent ones),
     /// each once even under another name, and your favorites first.
-    func menuModelIDs(for provider: RunProvider, extra: [String] = []) -> [String] {
+    func menuModelIDs(for provider: RunProvider, profileID: String? = nil, extra: [String] = []) -> [String] {
         var list = [""]
-        for id in modelChoices(for: provider).map(\.id) + settings.customModels(for: provider) + extra
+        for id in modelChoices(for: provider, profileID: profileID).map(\.id) + settings.customModels(for: provider) + extra
         where !id.isEmpty && !list.contains(where: { sameModel($0, id, for: provider) }) {
             list.append(id)
         }

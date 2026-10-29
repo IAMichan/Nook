@@ -167,6 +167,76 @@ final class AcpAgentTests: XCTestCase {
         ])
     }
 
+    private static let thinkingSession: [String: Any] = [
+        "configOptions": [
+            ["id": "model", "category": "model", "type": "select", "currentValue": "pro",
+             "options": [["value": "pro", "name": "Pro"], ["value": "flash", "name": "Flash"]]],
+            ["id": "reasoning", "category": "thought_level", "type": "select", "currentValue": "medium",
+             "options": [["group": "Levels", "name": "Levels",
+                          "options": [["value": "low", "name": "Low"], ["value": "medium", "name": "Medium"],
+                                      ["value": "max", "name": "Maximum"]]]]],
+            ["id": "mode", "category": "mode", "type": "select", "currentValue": "code",
+             "options": [["value": "code"], ["value": "plan"]]]
+        ]
+    ]
+
+    func testSessionSettingsSetTheEffortBetweenModelAndMode() {
+        let info = Self.thinkingSession
+        XCTAssertEqual(AcpSessionSettings.currentEffort(info), "medium")
+        XCTAssertEqual(AcpSessionSettings.effortLevels(info), [AgentModel(id: "low", name: "Low"),
+                                                               AgentModel(id: "medium", name: "Medium", isDefault: true),
+                                                               AgentModel(id: "max", name: "Maximum")])
+        let steps = AcpSessionSettings.steps(session: "s", info: info, model: "flash", appliedModel: "pro", effort: "max",
+                                             appliedEffort: "medium", mode: "plan", appliedMode: "code")
+        XCTAssertEqual(steps.map(\.target), [.model("flash"), .effort("max"), .mode("plan")])
+        XCTAssertEqual(steps[1].params, ["sessionId": "s", "configId": "reasoning", "value": "max"])
+        XCTAssertEqual(steps[1].method, "session/set_config_option")
+    }
+
+    func testSessionSettingsSkipAnEffortTheAgentDoesNotOffer() {
+        let info = Self.thinkingSession
+        XCTAssertEqual(AcpSessionSettings.steps(session: "s", info: info, model: "", appliedModel: nil, effort: "medium",
+                                                appliedEffort: "medium", mode: nil, appliedMode: nil), [], "already set")
+        XCTAssertEqual(AcpSessionSettings.steps(session: "s", info: info, model: "", appliedModel: nil, effort: "xhigh",
+                                                appliedEffort: "medium", mode: nil, appliedMode: nil), [], "not one of its levels")
+        XCTAssertEqual(AcpSessionSettings.steps(session: "s", info: Self.antigravitySession, model: "", appliedModel: nil, effort: "high",
+                                                appliedEffort: nil, mode: nil, appliedMode: nil), [], "no thought_level option")
+        XCTAssertNil(AcpSessionSettings.currentEffort(Self.antigravitySession))
+        XCTAssertEqual(AcpSessionSettings.effortLevels(Self.antigravitySession), [])
+    }
+
+    func testConfigOptionsReplaceTheSessionsOptions() {
+        let changed: [[String: Any]] = [
+            ["id": "reasoning", "category": "thought_level", "type": "select", "currentValue": "high",
+             "options": [["value": "high", "name": "High"]]]
+        ]
+        let info = AcpSessionSettings.updating(Self.thinkingSession, configOptions: changed)
+        XCTAssertEqual(AcpSessionSettings.currentEffort(info), "high")
+        XCTAssertEqual(AcpSessionSettings.effortLevels(info).map(\.id), ["high"])
+        XCTAssertEqual(AcpSessionSettings.currentEffort(AcpSessionSettings.updating(Self.thinkingSession, configOptions: nil)), "medium")
+    }
+
+    func testSessionStateUpdates() {
+        func events(_ update: [String: Any]) -> [AcpEvent] {
+            AcpMapper.events(.notification(method: "session/update", params: JSONBox(["sessionId": "s", "update": update])))
+        }
+        let commands = events(["sessionUpdate": "available_commands_update", "availableCommands": [
+            ["name": "web", "description": "Search the web", "input": ["hint": "query"]],
+            ["name": "/compact", "description": ""],
+            ["name": "two words"],
+            ["name": "web"]
+        ]])
+        XCTAssertEqual(commands, [.commands([AgentSlashCommand(name: "web", detail: "Search the web", takesInput: true),
+                                             AgentSlashCommand(name: "compact", detail: nil, takesInput: false)])])
+        XCTAssertEqual(events(["sessionUpdate": "current_mode_update", "currentModeId": "plan"]), [.currentMode("plan")])
+        let options = events(["sessionUpdate": "config_option_update", "configOptions": [["id": "model"]]])
+        XCTAssertEqual(options.count, 1)
+        XCTAssertTrue(options.allSatisfy(\.isSessionState))
+        XCTAssertTrue(commands.allSatisfy(\.isSessionState))
+        XCTAssertFalse(AcpEvent.messageChunk("hi").isSessionState)
+        XCTAssertFalse(commands.contains(where: \.isWakeEvidence), "an offer is not work")
+    }
+
     func testAgentLogLinesKeepOnlyErrors() {
         let lines = [
             "I1029 16:35:47.481079 8387203840 agent.py:109] Starting connection and creating conversation...",

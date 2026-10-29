@@ -110,10 +110,10 @@ check the agent's protocol before you write `–`.
 | Fork keeps the conversation | ✓ (`--fork-session`) | – (from a summary) | – (from a summary) | – (same) | – (same) | – (same) | – (same) | – (same) |
 | Fork from an earlier turn | ✓ | – | – | – | – | – | – | – |
 | Going back also rolls back the conversation | ✓ | ✓ (`thread/rollback`) | – (only the files) | – (same) | – (same) | – (same) | – (same) | – (same) |
-| Effort level | ✓ (`--effort`) | ✓ | ? | ? | ? | ? | ? | ? |
-| The agent's own `/` commands (`/compact`, `/goal`) | ✓ | ✓ | ? (ACP `available_commands_update` is not read yet) | ? (same) | ? (same) | ? (same) | ? (same) | ? (same) |
+| Effort level | ✓ (`--effort`) | ✓ | ✓ (the session's `thought_level` config option, when it offers one; not in the headless fallback) | ✓ (same; a model listed per level is picked with the same control) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
+| The agent's own `/` commands (`/compact`, `/goal`) | ✓ | ✓ | ✓ (`available_commands_update`) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
 | A model or mode picked in an open session counts from the next message | ✓ (live) | ✓ (`turn/start`) | ✓ (`session/set_config_option` or `session/set_model`, answered before the prompt) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
-| Model list | ✓ | ✓ | ✓ | – (typed name) | – (typed name) | – (typed name) | – (typed name) | – (typed name) |
+| Model list | ✓ | ✓ | ✓ | ✓ (what its session lists, kept for the next one) | ✓ (same) | ✓ (same) | ✓ (`initialize`) | ✓ (same as OpenCode, per agent you added) |
 | Nook's tools (bridge) | ✓ (`claude mcp add`) | ✓ (`codex mcp add`) | ✓ | ✓ (`session/new` `mcpServers`) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
 | Progress in the notch from a terminal (hooks) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (no hooks) | – (no hooks) |
 | Past sessions from disk | ✓ | ✓ | ✓ | ✓ | – (`session/load`) | – (same) | – (same) | – (same) |
@@ -169,9 +169,5 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
 - **The GitHub dashboard in Chats (Tauri).** Pull requests and reviews sorted by what needs you, issues assigned to you,
   approving, commenting and asking for changes, and the merge rights check exist for GitHub only. GitLab merge requests
   are still only watched and opened in the browser; Nook has no GitLab review or merge actions yet.
-
-- **Coding agents over ACP: effort and the agent's own `/` commands.** Claude Code and Codex offer an effort level and
-  their `/compact` and `/goal` in the `/` list. ACP agents announce their commands in `available_commands_update` and
-  their options in the session's config options; `AcpMapper` reads neither yet.
 
 Add an item here when a change cannot reach every member yet.

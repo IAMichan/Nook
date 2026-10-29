@@ -423,7 +423,8 @@ struct AgentRunPanel: View {
             workspace.runs.filter { $0.id != runID && !$0.archived }.map { ($0.id.uuidString.lowercased(), $0.title) }
         }
         // Only the commands this agent really has (see AgentCommands).
-        config.commands = AgentCommands.commands(for: run.provider, hasProject: true, surface: .agent)
+        config.commands = AgentCommands.commands(for: run.provider, hasProject: true, surface: .agent,
+                                                 offered: workspace.acpCommands[runID] ?? [])
         config.skills = skills
         config.pullRequests = { repo in await GitHubPullRequests.openPullRequests(repo: repo) }
         config.keepsBigPastes = true
@@ -455,8 +456,8 @@ struct AgentRunPanel: View {
     /// The reasoning effort for the next turns, only for agents that have it.
     @ViewBuilder
     private func effortMenu(_ run: WorkspaceRun) -> some View {
-        let levels = EffortLevels.levels(for: run.provider, model: run.model)
-        if let family = app.modelFamily(run.model, for: run.provider) {
+        let levels = workspace.effortLevels(for: run.provider, profileID: run.profileID, model: run.model)
+        if let family = app.modelFamily(run.model, for: run.provider, profileID: run.profileID) {
             // An agent that lists one model per thinking level: the level picks the model of that family.
             ComposerDivider()
             Menu {
@@ -480,11 +481,13 @@ struct AgentRunPanel: View {
                 }
                 ForEach(levels, id: \.self) { level in
                     Button { workspace.setEffort(runID, level) } label: {
-                        if run.effort == level { Label(tr(EffortLevels.label(level)), systemImage: "checkmark") } else { Text(tr(EffortLevels.label(level))) }
+                        let title = workspace.effortTitle(level, for: run.provider, profileID: run.profileID)
+                        if run.effort == level { Label(title, systemImage: "checkmark") } else { Text(title) }
                     }
                 }
             } label: {
-                ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(run.effort)))
+                ComposerPill(symbol: "gauge.with.dots.needle.33percent",
+                             text: workspace.effortTitle(run.effort, for: run.provider, profileID: run.profileID))
             }
             .composerMenu()
             .help(tr("compose.effort.help"))
@@ -1198,7 +1201,7 @@ struct AgentRunPanel: View {
     private func modelMenu(_ run: WorkspaceRun) -> some View {
         let profile = app.profile(for: run)
         let account = profile.map { AccountLabel.name($0, app: app) }
-        let model = run.model.isEmpty ? nil : app.modelMenuName(run.model, for: run.provider)
+        let model = run.model.isEmpty ? nil : app.modelMenuName(run.model, for: run.provider, profileID: run.profileID)
         let idle = workspace.canTransfer(runID)
         let providers = idle ? app.connectedProviders : [run.provider]
         return ComposerDropdown(width: providers.count > 1 ? 340 : 296, takesRoom: true) {

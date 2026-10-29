@@ -234,7 +234,11 @@ final class ComposerModel: ObservableObject {
             }
     }
 
-    private func commandDetail(_ command: ComposerCommand) -> String? { tr(AgentCommands.descriptionKey(for: command)) }
+    private func commandDetail(_ command: ComposerCommand) -> String? {
+        // An agent's own command says what it does in its own words, or nothing.
+        if let detail = command.detail { return detail.isEmpty ? nil : detail }
+        return tr(AgentCommands.descriptionKey(for: command))
+    }
 
     private func pullRequestRow(repo: String, number: Int, title: String?) -> ComposerSuggestion {
         ComposerSuggestion(id: "pr:\(number)", title: "#\(number)" + (title.map { " " + $0 } ?? ""), detail: repo, symbol: PullRequestIcon.generic,

@@ -30,6 +30,12 @@ enum AcpEvent: Equatable, Sendable {
     case plan([RunTaskStep])
     case usage(used: Int, size: Int, costUSD: Double?)
     case permission(rpcID: RPCID, call: AcpToolCall, options: [AcpPermissionOption])
+    /// The agent's own `/` commands (`available_commands_update`).
+    case commands([AgentSlashCommand])
+    /// The session's config options changed (`config_option_update`), all of them: a new model can bring other levels.
+    case configOptions(JSONBox)
+    /// The agent switched its mode itself (`current_mode_update`).
+    case currentMode(String)
     /// A request Nook does not handle (`fs/…`, `terminal/…` are not advertised): answered with an error.
     case unsupportedRequest(RPCID)
 }
@@ -42,6 +48,14 @@ extension AcpEvent {
         case .messageChunk(let text): return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .toolCall(let call), .toolCallUpdate(let call): return call.status == "completed" || call.status == "failed"
         case .permission: return true
+        default: return false
+        }
+    }
+
+    /// What the session offers rather than work it does: kept also outside a turn and while a loaded session replays.
+    var isSessionState: Bool {
+        switch self {
+        case .commands, .configOptions, .currentMode: return true
         default: return false
         }
     }
@@ -213,6 +227,13 @@ enum AcpMapper {
             }
             return [.usage(used: Int(ClaudeStreamParser.number(update["used"]) ?? 0),
                            size: Int(ClaudeStreamParser.number(update["size"]) ?? 0), costUSD: cost)]
+        case "available_commands_update":
+            return [.commands(AgentSlashCommand.acp(update["availableCommands"]))]
+        case "config_option_update":
+            guard let options = update["configOptions"] as? [[String: Any]] else { return [] }
+            return [.configOptions(JSONBox(options))]
+        case "current_mode_update":
+            return (update["currentModeId"] as? String).map { [.currentMode($0)] } ?? []
         default:
             return []
         }
@@ -279,12 +300,13 @@ enum AgentLogLines {
     private static let glogRegex = try? NSRegularExpression(pattern: #"^([IWEF])\d{4} \d{2}:\d{2}:\d{2}\.\d+\s+\d+\s+[^\]\s]+:\d+\]\s?(.*)$"#)
 }
 
-/// The requests that bring an ACP session's model and mode in line with the run, sent one after the other and answered
-/// before the prompt goes. Antigravity restarts its agent session to switch models: a prompt sent before that is done
-/// ends at once without a word.
+/// The requests that bring an ACP session's model, effort and mode in line with the run, sent one after the other and
+/// answered before the prompt goes. Antigravity restarts its agent session to switch models: a prompt sent before that is
+/// done ends at once without a word.
 enum AcpSessionSettings {
     enum Target: Equatable, Sendable {
         case model(String)
+        case effort(String)
         case mode(String)
     }
 
@@ -294,8 +316,10 @@ enum AcpSessionSettings {
         var target: Target
     }
 
-    /// The model first, then the mode; only what differs from what the session already uses.
+    /// The model first, then the effort (a new model can bring other levels), then the mode; only what differs from what
+    /// the session already uses, and an effort or mode only when the agent offers it.
     static func steps(session: String, info: [String: Any], model: String, appliedModel: String?,
+                      effort: String? = nil, appliedEffort: String? = nil,
                       mode: String?, appliedMode: String?) -> [Step] {
         var steps: [Step] = []
         let model = model.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -306,6 +330,11 @@ enum AcpSessionSettings {
             } else {
                 steps.append(Step(method: "session/set_model", params: ["sessionId": session, "modelId": model], target: .model(model)))
             }
+        }
+        if let effort, !effort.isEmpty, effort != appliedEffort, let option = effortOption(info),
+           let configID = option["id"] as? String, values(option).contains(effort) {
+            steps.append(Step(method: "session/set_config_option", params: ["sessionId": session, "configId": configID, "value": effort],
+                              target: .effort(effort)))
         }
         if let mode, mode != appliedMode {
             if let option = modeOption(info), let configID = option["id"] as? String {
@@ -319,6 +348,33 @@ enum AcpSessionSettings {
             }
         }
         return steps
+    }
+
+    /// The thinking levels the session offers (its config option of category "thought_level"), in the agent's order and
+    /// under its own names; the current one is the default.
+    static func effortLevels(_ info: [String: Any]) -> [AgentModel] {
+        guard let option = effortOption(info) else { return [] }
+        let current = option["currentValue"] as? String
+        var seen = Set<String>()
+        return options(option).compactMap { entry -> AgentModel? in
+            guard let value = entry["value"] as? String, !value.isEmpty, seen.insert(value).inserted else { return nil }
+            let name = (entry["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? value
+            return AgentModel(id: value, name: name, isDefault: value == current)
+        }
+    }
+
+    /// The thinking level the session started with.
+    static func currentEffort(_ info: [String: Any]) -> String? {
+        effortOption(info)?["currentValue"] as? String
+    }
+
+    /// `info` with the config options the agent sent since (in a reply to `session/set_config_option` or in
+    /// `config_option_update`): always the complete list.
+    static func updating(_ info: [String: Any], configOptions: [[String: Any]]?) -> [String: Any] {
+        guard let configOptions else { return info }
+        var info = info
+        info["configOptions"] = configOptions
+        return info
     }
 
     /// The model the session started with.
@@ -343,9 +399,18 @@ enum AcpSessionSettings {
             .first { ($0["category"] as? String) == "mode" && ($0["type"] as? String ?? "select") == "select" }
     }
 
-    private static func values(_ option: [String: Any]) -> [String] {
+    private static func effortOption(_ info: [String: Any]) -> [String: Any]? {
+        ((info["configOptions"] as? [[String: Any]]) ?? [])
+            .first { ($0["category"] as? String) == "thought_level" && ($0["type"] as? String ?? "select") == "select" }
+    }
+
+    /// A select option's choices, groups flattened.
+    private static func options(_ option: [String: Any]) -> [[String: Any]] {
         ((option["options"] as? [[String: Any]]) ?? []).flatMap { ($0["options"] as? [[String: Any]]) ?? [$0] }
-            .compactMap { $0["value"] as? String }
+    }
+
+    private static func values(_ option: [String: Any]) -> [String] {
+        options(option).compactMap { $0["value"] as? String }
     }
 
     private static func modeIDs(_ info: [String: Any]) -> [String] {
@@ -396,6 +461,17 @@ final class AcpClient: @unchecked Sendable {
         get { lock.withLock { _mode } }
         set { lock.withLock { _mode = newValue } }
     }
+    /// The thinking level set on the session, and the one it started with (a run back on "Default" returns to it).
+    var appliedEffort: String? {
+        get { lock.withLock { _effort } }
+        set { lock.withLock { _effort = newValue } }
+    }
+    var startingEffort: String? {
+        get { lock.withLock { _startingEffort } }
+        set { lock.withLock { _startingEffort = newValue } }
+    }
+    private var _effort: String?
+    private var _startingEffort: String?
     private var _info: [String: Any] = [:]
     private var _model: String?
     private var _mode: String?
@@ -467,8 +543,9 @@ final class AcpClient: @unchecked Sendable {
             if let error { completion?(.failure(.server(error))) } else { completion?(.success(result ?? JSONBox([String: Any]()))) }
             return
         }
-        // Replayed history is dropped, except requests, which always need an answer.
-        if replaying, case .notification = message { return }
-        onMessage?(message, AcpMapper.events(message))
+        // Replayed history is dropped, except requests, which always need an answer, and what the session offers.
+        let events = AcpMapper.events(message)
+        if replaying, case .notification = message, !events.allSatisfy(\.isSessionState) { return }
+        onMessage?(message, events)
     }
 }

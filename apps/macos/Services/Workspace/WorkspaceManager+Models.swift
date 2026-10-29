@@ -9,11 +9,57 @@ extension WorkspaceManager {
         NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true).appendingPathComponent("agent-models.json")
     }
 
-    func learnModels(_ provider: RunProvider, _ models: [AgentModel]) {
-        // ACP agents you added share one kind but not their models: a list from one would be wrong for the next.
-        guard provider != .acp, !models.isEmpty, agentModels[provider] != models else { return }
+    static var customModelStoreURL: URL {
+        NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true).appendingPathComponent("custom-agent-models.json")
+    }
+    static var effortStoreURL: URL {
+        NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true).appendingPathComponent("agent-efforts.json")
+    }
+
+    func learnModels(_ provider: RunProvider, _ models: [AgentModel], profileID: String? = nil) {
+        guard !models.isEmpty else { return }
+        // ACP agents you added share one kind but not their models: each keeps its own list, by its profile.
+        if provider == .acp {
+            guard let profileID, !profileID.isEmpty, customAgentModels[profileID] != models else { return }
+            customAgentModels[profileID] = models
+            AgentModelStore(url: Self.customModelStoreURL).saveRaw(customAgentModels)
+            return
+        }
+        guard agentModels[provider] != models else { return }
         agentModels[provider] = models
         AgentModelStore(url: Self.modelStoreURL).save(agentModels)
+    }
+
+    /// The models an agent listed itself: an ACP agent you added by its profile, the others by kind.
+    func offeredModels(_ provider: RunProvider, profileID: String? = nil) -> [AgentModel] {
+        if provider == .acp { return profileID.flatMap { customAgentModels[$0] } ?? [] }
+        return agentModels[provider] ?? []
+    }
+
+    /// Where an agent's thinking levels are kept: an ACP agent you added by its profile, the others by kind.
+    static func effortKey(_ provider: RunProvider, profileID: String?) -> String {
+        provider == .acp ? "acp:" + (profileID ?? "") : provider.rawValue
+    }
+
+    /// The thinking levels an ACP session offered (see `AcpSessionSettings.effortLevels`). An agent without them keeps
+    /// what it had: one model can have levels where the next has none.
+    func learnEfforts(_ provider: RunProvider, _ levels: [AgentModel], profileID: String? = nil) {
+        let key = Self.effortKey(provider, profileID: profileID)
+        guard !levels.isEmpty, agentEfforts[key] != levels else { return }
+        agentEfforts[key] = levels
+        AgentModelStore(url: Self.effortStoreURL).saveRaw(agentEfforts)
+    }
+
+    /// The effort levels to offer: Claude Code's and Codex's own, and for ACP agents the levels the agent offered.
+    func effortLevels(for provider: RunProvider, profileID: String? = nil, model: String?) -> [String] {
+        let offered = agentEfforts[Self.effortKey(provider, profileID: profileID)]?.map(\.id)
+        return EffortLevels.levels(for: provider, model: model, advertised: offered)
+    }
+
+    /// How a level reads: Nook's word for a level it knows ("High"), else the agent's own name for it.
+    func effortTitle(_ level: String?, for provider: RunProvider, profileID: String? = nil) -> String {
+        guard let level, !EffortLevels.known.contains(level.lowercased()) else { return tr(EffortLevels.label(level?.lowercased())) }
+        return agentEfforts[Self.effortKey(provider, profileID: profileID)]?.first { $0.id == level }?.name ?? level
     }
 
     /// Asks the connected agents for their models, at most every five minutes per agent.

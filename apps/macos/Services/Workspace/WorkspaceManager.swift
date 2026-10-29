@@ -133,6 +133,12 @@ final class WorkspaceManager: ObservableObject {
     @Published var selectedRunID: UUID?
     /// The models each agent offers itself (Codex `model/list`, ACP sessions); see WorkspaceManager+Models.
     @Published var agentModels: [RunProvider: [AgentModel]] = [:]
+    /// The models of each ACP agent you added, by its `AgentProfile.id`: each runs its own command line and models.
+    @Published var customAgentModels: [String: [AgentModel]] = [:]
+    /// The thinking levels each ACP agent offers (its "thought_level" config option), by `effortKey`.
+    @Published var agentEfforts: [String: [AgentModel]] = [:]
+    /// The `/` commands each ACP session announced (`available_commands_update`).
+    @Published var acpCommands: [UUID: [AgentSlashCommand]] = [:]
     /// The open pull request of a session's branch, when GitHub says there is one (for the git button).
     @Published var openPullRequests: [UUID: URL] = [:]
     /// The same for sessions Nook only sees, by repository root.
@@ -286,6 +292,8 @@ final class WorkspaceManager: ObservableObject {
         // Agents' process groups are written down; the ones a crashed Nook left behind are stopped.
         ProcessGroupLedger.install()
         agentModels = AgentModelStore(url: Self.modelStoreURL).load()
+        customAgentModels = AgentModelStore(url: Self.customModelStoreURL).loadRaw()
+        agentEfforts = AgentModelStore(url: Self.effortStoreURL).loadRaw()
         modelManifest = ModelManifest.preferred(bundled: .bundled(), cached: ModelManifestStore(url: Self.manifestStoreURL).load())
         // The session list can be long: read it off the main thread so launching Nook does not wait for it.
         Task.detached(priority: .userInitiated) { [weak self] in

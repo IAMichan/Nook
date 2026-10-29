@@ -54,20 +54,21 @@ extension AppModel {
     /// Models to offer for an agent: its default, the models the agent itself offers and the ones the model manifest
     /// knows (see WorkspaceManager+ModelManifest), the ones you typed, and the models you used with it recently; your
     /// favorites first.
-    func models(for provider: RunProvider) -> [String] {
+    /// An ACP agent you added has its own models, by its profile; models others used with theirs are left out.
+    func models(for provider: RunProvider, profileID: String? = nil) -> [String] {
         var recent: [String] = []
-        for session in history.sessions where session.agent == provider.kind && !session.model.isEmpty {
+        for session in history.sessions where provider != .acp && session.agent == provider.kind && !session.model.isEmpty {
             if !recent.contains(session.model) { recent.append(session.model) }
             if recent.count >= 6 { break }
         }
-        return workspace.menuModelIDs(for: provider, extra: recent)
+        return workspace.menuModelIDs(for: provider, profileID: profileID, extra: recent)
     }
 
     /// How a model reads in a menu: the agent's own name for it ("GPT-5.1-Codex") or the manifest's ("opus" reads
     /// "Claude Opus 5.5"), "Default" for none.
-    func modelName(_ model: String, for provider: RunProvider) -> String {
+    func modelName(_ model: String, for provider: RunProvider, profileID: String? = nil) -> String {
         if model.isEmpty { return tr("ws.model.default") }
-        return workspace.modelChoice(model, for: provider)?.name ?? model
+        return workspace.modelChoice(model, for: provider, profileID: profileID)?.name ?? model
     }
 
     /// What the menu says about a model that needs a newer agent: "Needs Claude Code 2.1.300 or newer".
@@ -83,27 +84,27 @@ extension AppModel {
 
     /// The family a model belongs to when the agent lists one model per thinking level (Antigravity's
     /// "Gemini 3 Pro (High)" and "(Low)"); the level is then picked with the effort control. Nil otherwise.
-    func modelFamily(_ model: String, for provider: RunProvider) -> ModelVariants.Family? {
-        guard provider.usesACP, let offered = workspace.agentModels[provider] else { return nil }
-        return ModelVariants.family(of: model, in: offered)
+    func modelFamily(_ model: String, for provider: RunProvider, profileID: String? = nil) -> ModelVariants.Family? {
+        guard provider.usesACP else { return nil }
+        return ModelVariants.family(of: model, in: workspace.offeredModels(provider, profileID: profileID))
     }
 
     /// The model's name without its level when its level is picked with the effort control ("Gemini 3 Pro").
-    func modelMenuName(_ model: String, for provider: RunProvider) -> String {
-        modelFamily(model, for: provider)?.name ?? modelName(model, for: provider)
+    func modelMenuName(_ model: String, for provider: RunProvider, profileID: String? = nil) -> String {
+        modelFamily(model, for: provider, profileID: profileID)?.name ?? modelName(model, for: provider, profileID: profileID)
     }
 
     /// The models for the model menu: one entry per family of levels.
-    func menuModels(for provider: RunProvider) -> [String] {
-        let all = models(for: provider)
-        guard provider.usesACP, let offered = workspace.agentModels[provider] else { return all }
-        return ModelVariants.collapse(all, in: offered)
+    func menuModels(for provider: RunProvider, profileID: String? = nil) -> [String] {
+        let all = models(for: provider, profileID: profileID)
+        guard provider.usesACP else { return all }
+        return ModelVariants.collapse(all, in: workspace.offeredModels(provider, profileID: profileID))
     }
 
     /// The model to run when you pick `model` in the menu: keeps the level of `current` when the new family has it.
-    func menuPick(_ model: String, keeping current: String, for provider: RunProvider) -> String {
-        guard provider.usesACP, let offered = workspace.agentModels[provider] else { return model }
-        return ModelVariants.pick(model, keeping: current, in: offered)
+    func menuPick(_ model: String, keeping current: String, for provider: RunProvider, profileID: String? = nil) -> String {
+        guard provider.usesACP else { return model }
+        return ModelVariants.pick(model, keeping: current, in: workspace.offeredModels(provider, profileID: profileID))
     }
 
     /// Asks the connected agents which models they offer (at most every five minutes each), reads their versions, and
