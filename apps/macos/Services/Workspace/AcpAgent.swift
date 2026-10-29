@@ -75,6 +75,24 @@ struct AcpToolCall: Equatable, Sendable {
     var output: String
     /// Files the call changes (diff content) or touches (locations).
     var paths: [String]
+    /// What the call changed (`diff` content): the text it replaced (nil for a new file) and what it wrote.
+    var diffs: [AcpDiff] = []
+
+    /// The call's input with its changes in the form Nook's edit rows read (`old_string`/`new_string`, `edits` when it
+    /// changed more than one place), as Claude Code's Edit has them: the line count and the diff panel then work for every
+    /// ACP agent. Nil when the call changed nothing it said.
+    var editInput: JSONBox? {
+        guard !diffs.isEmpty else { return nil }
+        var input = (input?.object as? [String: Any]) ?? [:]
+        let edits: [[String: Any]] = diffs.map { ["file_path": $0.path, "old_string": $0.oldText ?? "", "new_string": $0.newText] }
+        if edits.count == 1 {
+            input.merge(edits[0]) { _, new in new }
+        } else {
+            input["file_path"] = diffs[0].path
+            input["edits"] = edits
+        }
+        return JSONBox(input)
+    }
 
     /// The tool name Nook's timeline groups by (see ToolCategory).
     var toolName: String {
@@ -87,6 +105,12 @@ struct AcpToolCall: Equatable, Sendable {
         default: return kind.isEmpty ? "tool" : kind
         }
     }
+}
+
+struct AcpDiff: Equatable, Sendable {
+    var path: String
+    var oldText: String?
+    var newText: String
 }
 
 struct AcpPermissionOption: Equatable, Sendable {
@@ -145,8 +169,36 @@ enum AcpRPC {
         return params
     }
 
-    static func promptParams(sessionID: String, text: String) -> [String: Any] {
-        ["sessionId": sessionID, "prompt": [["type": "text", "text": text]]]
+    static func promptParams(sessionID: String, text: String, attachments: [[String: Any]] = []) -> [String: Any] {
+        ["sessionId": sessionID, "prompt": [["type": "text", "text": text]] + attachments]
+    }
+
+    /// The pictures of a prompt as content blocks: the picture itself (`image`, base64) for an agent that takes them and a
+    /// type it knows, else a `resource_link` to its file, which every ACP agent reads. `read` gives a file's bytes.
+    static func attachments(_ files: [URL], images: Bool, read: (URL) -> Data?) -> [[String: Any]] {
+        files.map { file in
+            let type = mimeType(file)
+            if images, let type, let data = read(file), data.count <= maxImageBytes {
+                return ["type": "image", "mimeType": type, "data": data.base64EncodedString(), "uri": file.absoluteString]
+            }
+            var link: [String: Any] = ["type": "resource_link", "uri": file.absoluteString, "name": file.lastPathComponent]
+            if let type { link["mimeType"] = type }
+            return link
+        }
+    }
+
+    /// Larger pictures go as a link: a prompt is one JSON line.
+    static let maxImageBytes = 8 * 1024 * 1024
+
+    /// The picture types models read; others (HEIC, TIFF, BMP) go as a link to the file.
+    static func mimeType(_ file: URL) -> String? {
+        switch file.pathExtension.lowercased() {
+        case "png": return "image/png"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "gif": return "image/gif"
+        case "webp": return "image/webp"
+        default: return nil
+        }
     }
 
     /// The answer to a permission request the turn no longer waits for (Stop, a failed turn): the spec asks for one.
@@ -259,11 +311,17 @@ enum AcpMapper {
     private static func toolCall(_ raw: [String: Any]) -> AcpToolCall {
         var output: [String] = []
         var paths: [String] = []
+        var diffs: [AcpDiff] = []
         for item in (raw["content"] as? [[String: Any]]) ?? [] {
             switch item["type"] as? String {
             case "content":
                 if let text = text(item["content"]) ?? (item["content"] as? [String: Any]).flatMap(McpUI.encode) { output.append(text) }
-            case "diff": if let path = item["path"] as? String { paths.append(path) }
+            case "diff":
+                guard let path = item["path"] as? String else { break }
+                if !paths.contains(path) { paths.append(path) }
+                if let newText = item["newText"] as? String {
+                    diffs.append(AcpDiff(path: path, oldText: item["oldText"] as? String, newText: newText))
+                }
             default: break
             }
         }
@@ -274,7 +332,8 @@ enum AcpMapper {
         if output.isEmpty, let rawOutput = raw["rawOutput"].flatMap(Self.rawOutput) { output.append(rawOutput) }
         return AcpToolCall(id: (raw["toolCallId"] as? String) ?? UUID().uuidString, title: (raw["title"] as? String) ?? "",
                            kind: (raw["kind"] as? String) ?? "", status: raw["status"] as? String,
-                           input: raw["rawInput"].map { JSONBox($0) }, output: output.joined(separator: "\n"), paths: paths)
+                           input: raw["rawInput"].map { JSONBox($0) }, output: output.joined(separator: "\n"), paths: paths,
+                           diffs: diffs)
     }
 
     /// rawOutput as text: a string as is, an object's error or output field, otherwise the object as JSON.
@@ -306,11 +365,14 @@ struct AcpSessionCapabilities: Equatable, Sendable {
     var load = false
     var list = false
     var resume = false
+    /// The agent takes pictures in a prompt (`promptCapabilities.image`); otherwise they go as links to their files.
+    var images = false
 
-    init(load: Bool = false, list: Bool = false, resume: Bool = false) {
+    init(load: Bool = false, list: Bool = false, resume: Bool = false, images: Bool = false) {
         self.load = load
         self.list = list
         self.resume = resume
+        self.images = images
     }
 
     init(initialize: [String: Any]) {
@@ -320,6 +382,7 @@ struct AcpSessionCapabilities: Equatable, Sendable {
         load = (agent["loadSession"] as? Bool) ?? false
         list = session["list"] is [String: Any]
         resume = session["resume"] is [String: Any]
+        images = ((agent["promptCapabilities"] as? [String: Any])?["image"] as? Bool) ?? false
     }
 
     /// An earlier conversation can be continued: resumed, or loaded again.

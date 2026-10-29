@@ -333,6 +333,44 @@ final class AcpAgentTests: XCTestCase {
         XCTAssertEqual(replay.finished.map(\.side), [.user, .agent])
     }
 
+    func testPicturesGoAsImagesOrLinks() {
+        let png = URL(fileURLWithPath: "/tmp/shot.png")
+        let heic = URL(fileURLWithPath: "/tmp/photo.heic")
+        let read: (URL) -> Data? = { _ in Data([1, 2, 3]) }
+        let taking = AcpRPC.attachments([png, heic], images: true, read: read)
+        XCTAssertEqual(taking[0]["type"] as? String, "image")
+        XCTAssertEqual(taking[0]["mimeType"] as? String, "image/png")
+        XCTAssertEqual(taking[0]["data"] as? String, Data([1, 2, 3]).base64EncodedString())
+        XCTAssertEqual(taking[1]["type"] as? String, "resource_link", "a type models do not read goes as its file")
+        let linking = AcpRPC.attachments([png], images: false, read: read)
+        XCTAssertEqual(linking[0]["type"] as? String, "resource_link")
+        XCTAssertEqual(linking[0]["uri"] as? String, "file:///tmp/shot.png")
+        XCTAssertEqual(linking[0]["name"] as? String, "shot.png")
+        let prompt = AcpRPC.promptParams(sessionID: "s", text: "hi", attachments: linking)["prompt"] as? [[String: Any]]
+        XCTAssertEqual(prompt?.count, 2)
+        XCTAssertTrue(AcpSessionCapabilities(initialize: ["agentCapabilities": ["promptCapabilities": ["image": true]]]).images)
+    }
+
+    func testEditsBecomeTheInputEditRowsRead() throws {
+        let one = AcpMapper.events(.notification(method: "session/update", params: JSONBox(["sessionId": "s", "update": [
+            "sessionUpdate": "tool_call", "toolCallId": "t1", "title": "Edit", "kind": "edit",
+            "content": [["type": "diff", "path": "/w/a.swift", "oldText": "let a = 1", "newText": "let a = 2"]]
+        ]])))
+        guard case .toolCall(let call) = try XCTUnwrap(one.first) else { return XCTFail("a tool call") }
+        let input = try XCTUnwrap(call.editInput?.object as? [String: Any])
+        XCTAssertEqual(input["old_string"] as? String, "let a = 1")
+        XCTAssertEqual(input["new_string"] as? String, "let a = 2")
+        XCTAssertEqual(EditLines.of(tool: call.toolName, input: input), EditLines(added: 1, removed: 1))
+        XCTAssertNotNil(EditPatch.make(tool: call.toolName, input: input))
+        var two = call
+        two.diffs.append(AcpDiff(path: "/w/new.swift", oldText: nil, newText: "a\nb"))
+        let several = try XCTUnwrap(two.editInput?.object as? [String: Any])
+        XCTAssertEqual((several["edits"] as? [[String: Any]])?.count, 2)
+        XCTAssertEqual(EditLines.of(tool: two.toolName, input: several), EditLines(added: 3, removed: 1),
+                       "several places, and a new file, count as one edit")
+        XCTAssertNil(AcpToolCall(id: "x", title: "", kind: "read", status: nil, input: nil, output: "", paths: []).editInput)
+    }
+
     func testAgentLogLinesKeepOnlyErrors() {
         let lines = [
             "I1029 16:35:47.481079 8387203840 agent.py:109] Starting connection and creating conversation...",
