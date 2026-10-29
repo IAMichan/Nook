@@ -1434,8 +1434,8 @@ private struct TranscriptScrollGeometry: Equatable {
 
 /// A chat app's message bubble: a rounded box with, on the first message of a run, a small tail at its top corner
 /// pointing at who wrote it, as the chat apps draw them. The messages of one run stack into one block: where two of
-/// them meet, both corners of that edge are square (`Radius.chatJoin`), so the first is round only on top, the last
-/// only below, and one in the middle not at all. The tail sits in `tail` points of room on that side, which every
+/// them meet, the corners on the writer's side, where their edges line up, are only slightly round (`Radius.chatJoin`);
+/// the other side, where bubbles of different widths end, stays fully round, so no corner sticks out. The tail sits in `tail` points of room on that side, which every
 /// bubble keeps so a run's edges line up.
 struct ChatBubbleShape: Shape {
     let mine: Bool
@@ -1452,12 +1452,13 @@ struct ChatBubbleShape: Shape {
         let joined = NookTheme.Radius.chatJoin
         let body = CGRect(x: mine ? rect.minX : rect.minX + Self.tail, y: rect.minY,
                           width: max(0, rect.width - Self.tail), height: rect.height)
-        // Square where it meets the message above or below, on both corners of that edge; square under the tail too.
-        let top: CGFloat = joinsAbove ? joined : radius
+        // The writer's side: square under the tail, slightly round where it meets the message above or below. The far side
+        // stays round: bubbles of a run differ in width there.
+        let top: CGFloat = tailed ? 0 : (joinsAbove ? joined : radius)
         let bottom: CGFloat = joinsBelow ? joined : radius
         var path = Path(roundedRect: body, cornerRadii: RectangleCornerRadii(
-            topLeading: !mine && tailed ? 0 : top, bottomLeading: bottom,
-            bottomTrailing: bottom, topTrailing: mine && tailed ? 0 : top), style: .continuous)
+            topLeading: mine ? radius : top, bottomLeading: mine ? radius : bottom,
+            bottomTrailing: mine ? bottom : radius, topTrailing: mine ? top : radius), style: .continuous)
         guard tailed else { return path }
         let edge = mine ? body.maxX : body.minX
         let tip = mine ? rect.maxX : rect.minX

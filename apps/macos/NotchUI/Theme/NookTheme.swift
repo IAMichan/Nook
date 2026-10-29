@@ -149,8 +149,8 @@ enum NookTheme {
         static let bubble: CGFloat = 18
         /// A chat app's message bubble: tighter than Nook's own, so long runs of messages stay compact.
         static let chatBubble: CGFloat = 10
-        /// Where two bubbles of one run meet: square, so the run stacks into one block.
-        static let chatJoin: CGFloat = 0
+        /// Where two bubbles of one run meet, on the writer's side: a small rounding, so the run stacks as one column.
+        static let chatJoin: CGFloat = 4
         /// Pills and the notch's own corners.
         static let pill: CGFloat = 20
         /// The composer box: round enough that its one-line form, with the 32 pt send button 8 pt from the edge, is a
