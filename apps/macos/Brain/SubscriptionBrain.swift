@@ -18,30 +18,47 @@ enum SubscriptionBrain {
         if provider == .claudeCode { return ClaudeCodeBrain.executable }
         if let kind = provider.subscriptionAgent, let path = AppModel.shared.history.executables[kind] { return path }
         if let cached = located[command] { return cached }
-        let found = locate(command)
-        located[command] = .some(found)
-        return found
+        if let hit = inFolders(command) {
+            located[command] = .some(hit)
+            return hit
+        }
+        searchInShell(command)
+        return nil
     }
 
     /// Search again, e.g. after installing an agent.
     static func resetLocations() { located = [:] }
 
     private static var located: [String: String?] = [:]
+    private static var searching: Set<String> = []
 
-    private static func locate(_ command: String) -> String? {
+    private static func inFolders(_ command: String) -> String? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let folders = ["\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "\(home)/.npm-global/bin", "\(home)/.bun/bin",
                        "\(home)/.volta/bin", "\(home)/.cargo/bin", "\(home)/.kimi-code/bin", "\(home)/.grok/bin"]
-        if let hit = folders.map({ "\($0)/\(command)" }).first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
-            return hit
+        return folders.map { "\($0)/\(command)" }.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    /// Asks the user's login shell (nvm, asdf, uv and the like) off the main thread: a login shell can take seconds.
+    /// Settings redraws once the program is found.
+    private static func searchInShell(_ command: String) {
+        guard !searching.contains(command) else { return }
+        searching.insert(command)
+        Task.detached(priority: .utility) {
+            let found = shellLookup(command)
+            await MainActor.run {
+                located[command] = .some(found)
+                searching.remove(command)
+                if found != nil { AppSettings.shared.objectWillChange.send() }
+            }
         }
-        // Via the user's shell, for environments managed by nvm, asdf, uv and the like.
+    }
+
+    private nonisolated static func shellLookup(_ command: String) -> String? {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        if let output = try? SystemControl.runProcess(shell, ["-lc", "command -v \(command)"]) {
-            let path = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines).last ?? ""
-            if path.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: path) { return path }
-        }
-        return nil
+        guard let output = try? SystemControl.runProcess(shell, ["-lc", "command -v \(command)"]) else { return nil }
+        let path = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines).last ?? ""
+        return path.hasPrefix("/") && FileManager.default.isExecutableFile(atPath: path) ? path : nil
     }
 
     /// Signed in with the agent's own login: the account the Agents page reads from its files, Vibe's saved sign-in, or
