@@ -245,6 +245,7 @@ targets:
       - path: Services/Messages/ChatLinkData.swift
       - path: Services/Messages/ChatMedia.swift
       - path: Services/Messages/ChatFormat.swift
+      - path: Services/Messages/ChatHiddenMessages.swift
       - path: Services/Messages/ChatPoll.swift
       - path: Services/Messages/ChatOutgoing.swift
       - path: Services/Messages/ChatStickers.swift

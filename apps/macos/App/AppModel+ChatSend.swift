@@ -273,6 +273,14 @@ extension AppModel {
         store.audit(tool: "chat_delete", args: name, result: "verwijderd")
     }
 
+    /// Deletes a message for you alone, after you chose it: the chat no longer shows it in Nook (in every app), and an
+    /// app that can delete for one person (Telegram, on all your devices) does so too. `chat` is the Chats tab's chat id.
+    func deleteInChatForMe(_ bubble: ChatBubble, route: ChatRoute?, chat: String, name: String) {
+        if case .telegram = route { try? ChatCaptureService.shared.telegramBridge.delete(bubble.id, forEveryone: false) }
+        ChatHiddenMessages.shared.hide(bubble.id, in: chat)
+        store.audit(tool: "chat_delete_for_me", args: name, result: "verwijderd voor mij")
+    }
+
     /// Pins the chat in its app, or unpins it, after your own click.
     func setChatPinned(_ pinned: Bool, route: ChatRoute, name: String) async throws {
         switch route {
