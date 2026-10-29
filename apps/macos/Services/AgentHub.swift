@@ -1111,9 +1111,11 @@ final class AgentHub: ObservableObject {
         }
     }
 
+    /// The folder a session's row names: for an agent's own worktree, the repository it was made from (see `WorktreeOrigin`).
     static func projectName(_ cwd: String) -> String {
         let name = URL(fileURLWithPath: cwd).lastPathComponent
-        return name.isEmpty || cwd.isEmpty || name == "/" ? "no folder" : name
+        guard !(name.isEmpty || cwd.isEmpty || name == "/") else { return "no folder" }
+        return WorktreeOrigin.repositoryName(of: cwd) ?? name
     }
 
     static func shortPath(_ path: String) -> String {
