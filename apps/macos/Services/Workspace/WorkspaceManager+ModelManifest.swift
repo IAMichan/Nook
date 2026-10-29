@@ -65,45 +65,36 @@ extension WorkspaceManager {
 
     // MARK: Menus
 
-    /// The models to offer an agent, from what it lists itself and the manifest (see `ModelChoice.list`). An ACP agent
-    /// you added has its own list, by its profile.
+    /// One agent's model and effort controls (see `AgentModelMenu`): an ACP agent you added by its profile.
+    func modelMenu(for provider: RunProvider, profileID: String? = nil) -> AgentModelMenu {
+        AgentModelMenu(provider: provider, manifest: modelManifest, offered: offeredModels(provider, profileID: profileID),
+                       offeredEfforts: agentEfforts[Self.effortKey(provider, profileID: profileID)] ?? [],
+                       installed: agentVersions[provider], custom: settings.customModels(for: provider),
+                       favorites: settings.favoriteModels(for: provider))
+    }
+
+    /// The models to offer an agent (see `AgentModelMenu.choices`).
     func modelChoices(for provider: RunProvider, profileID: String? = nil) -> [ModelChoice] {
-        ModelChoice.list(manifest: modelManifest, provider: provider, offered: offeredModels(provider, profileID: profileID),
-                         installed: agentVersions[provider])
+        modelMenu(for: provider, profileID: profileID).choices
     }
 
     /// The menu entry `id` stands for, also under an alias ("opus").
     func modelChoice(_ id: String, for provider: RunProvider, profileID: String? = nil) -> ModelChoice? {
-        guard !id.isEmpty else { return nil }
-        let choices = modelChoices(for: provider, profileID: profileID)
-        if let exact = choices.first(where: { $0.id == id }) { return exact }
-        guard var alias = choices.first(where: { sameModel($0.id, id, for: provider) }) else { return nil }
-        // The agent resolves an alias itself, to the newest model it knows: a saved "opus" never waits on an update.
-        alias.requiredVersion = nil
-        return alias
+        modelMenu(for: provider, profileID: profileID).choice(id)
     }
 
     /// Whether two names stand for one model ("opus" and "claude-opus-5-5").
     func sameModel(_ a: String, _ b: String, for provider: RunProvider) -> Bool {
-        if a == b { return true }
-        guard !a.isEmpty, !b.isEmpty, let manifest = modelManifest else { return false }
-        return manifest.canonicalID(a, for: provider) == manifest.canonicalID(b, for: provider)
+        modelMenu(for: provider).same(a, b)
     }
 
-    /// The menu of an agent: its default, its models, the ones you typed and `extra` (the model in use, recent ones),
-    /// each once even under another name, and your favorites first.
+    /// The menu of an agent (see `AgentModelMenu.ids`).
     func menuModelIDs(for provider: RunProvider, profileID: String? = nil, extra: [String] = []) -> [String] {
-        var list = [""]
-        for id in modelChoices(for: provider, profileID: profileID).map(\.id) + settings.customModels(for: provider) + extra
-        where !id.isEmpty && !list.contains(where: { sameModel($0, id, for: provider) }) {
-            list.append(id)
-        }
-        return ModelOrdering.sorted(list, favorites: settings.favoriteModels(for: provider))
+        modelMenu(for: provider, profileID: profileID).ids(extra: extra)
     }
 
     /// An older model the menu leaves out until you search for it, unless it is in use or a favorite.
     func hidesLegacyModel(_ id: String, for provider: RunProvider, chosen: String) -> Bool {
-        guard modelChoice(id, for: provider)?.isLegacy == true else { return false }
-        return !sameModel(id, chosen, for: provider) && !settings.favoriteModels(for: provider).contains(id)
+        modelMenu(for: provider).hidesLegacy(id, chosen: chosen)
     }
 }

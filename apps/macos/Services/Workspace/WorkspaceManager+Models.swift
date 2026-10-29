@@ -50,16 +50,15 @@ extension WorkspaceManager {
         AgentModelStore(url: Self.effortStoreURL).saveRaw(agentEfforts)
     }
 
-    /// The effort levels to offer: Claude Code's and Codex's own, and for ACP agents the levels the agent offered.
+    /// The effort levels to offer (see `AgentModelMenu.effortLevels`).
     func effortLevels(for provider: RunProvider, profileID: String? = nil, model: String?) -> [String] {
-        let offered = agentEfforts[Self.effortKey(provider, profileID: profileID)]?.map(\.id)
-        return EffortLevels.levels(for: provider, model: model, advertised: offered)
+        modelMenu(for: provider, profileID: profileID).effortLevels(model: model)
     }
 
     /// How a level reads: Nook's word for a level it knows ("High"), else the agent's own name for it.
     func effortTitle(_ level: String?, for provider: RunProvider, profileID: String? = nil) -> String {
-        guard let level, !EffortLevels.known.contains(level.lowercased()) else { return tr(EffortLevels.label(level?.lowercased())) }
-        return agentEfforts[Self.effortKey(provider, profileID: profileID)]?.first { $0.id == level }?.name ?? level
+        if let key = AgentModelMenu.effortKey(level) { return tr(key) }
+        return modelMenu(for: provider, profileID: profileID).effortName(level ?? "")
     }
 
     /// Asks the connected agents for their models, at most every five minutes per agent.

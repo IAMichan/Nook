@@ -85,8 +85,7 @@ extension AppModel {
     /// The family a model belongs to when the agent lists one model per thinking level (Antigravity's
     /// "Gemini 3 Pro (High)" and "(Low)"); the level is then picked with the effort control. Nil otherwise.
     func modelFamily(_ model: String, for provider: RunProvider, profileID: String? = nil) -> ModelVariants.Family? {
-        guard provider.usesACP else { return nil }
-        return ModelVariants.family(of: model, in: workspace.offeredModels(provider, profileID: profileID))
+        workspace.modelMenu(for: provider, profileID: profileID).family(of: model)
     }
 
     /// The model's name without its level when its level is picked with the effort control ("Gemini 3 Pro").
@@ -96,15 +95,12 @@ extension AppModel {
 
     /// The models for the model menu: one entry per family of levels.
     func menuModels(for provider: RunProvider, profileID: String? = nil) -> [String] {
-        let all = models(for: provider, profileID: profileID)
-        guard provider.usesACP else { return all }
-        return ModelVariants.collapse(all, in: workspace.offeredModels(provider, profileID: profileID))
+        workspace.modelMenu(for: provider, profileID: profileID).collapsed(models(for: provider, profileID: profileID))
     }
 
     /// The model to run when you pick `model` in the menu: keeps the level of `current` when the new family has it.
     func menuPick(_ model: String, keeping current: String, for provider: RunProvider, profileID: String? = nil) -> String {
-        guard provider.usesACP else { return model }
-        return ModelVariants.pick(model, keeping: current, in: workspace.offeredModels(provider, profileID: profileID))
+        workspace.modelMenu(for: provider, profileID: profileID).pick(model, keeping: current)
     }
 
     /// Asks the connected agents which models they offer (at most every five minutes each), reads their versions, and
