@@ -149,6 +149,20 @@ names every session, `/rename` too), Codex's `thread_name` in `session_index.jso
 takes over without either is named after its first question and then gets a written title (`generateTitle`), never the
 folder name.
 
+## Signing in
+
+Every member of every family signs in without a key where its service offers that, and only falls back to a key where
+it does not. Settings shows the sign-in as the way in and folds the key away under Advanced. Where a key is the only
+way, its sheet has one button to the page that makes it, and `ClipboardKeyCatcher` picks the copied key up when you
+come back to Nook, so you never paste it.
+
+| Family | Signs in | Key or token only, and why |
+|---|---|---|
+| Connectors | GitHub (its login or the GitHub CLI), and through their own MCP sign-in (`MCPRemoteService`): Notion, Linear, Stripe, Vercel, Sentry, Jira & Confluence, Canva, Supabase, Neon, Hugging Face, Cal.com, Resend, GitLab.com. Any other MCP server on the web that offers OAuth signs in when added by its address (n8n, a self-hosted GitLab) | n8n's own API (self-hosted; its MCP address signs in instead), a self-hosted GitLab's merge requests in the notch, exchange keys in the portfolio (read-only keys are the exchanges' own way) |
+| AI providers | Claude (your subscription, through Claude Code), OpenRouter (`OpenRouterSignIn`, its own OAuth page), on this Mac (built in, Ollama, LM Studio: nothing to sign in to) | OpenAI, Gemini, Grok, Mistral, Groq, DeepSeek, Qwen, Moonshot: their APIs take keys only |
+| Coding agents | every agent through its own login, in the browser where it has one (see the table above) | an API key per account stays possible under Advanced |
+| Chat apps | WhatsApp (QR code), Teams and Slack (their websites), Snapchat (its website), Telegram (phone number and code), Messages (this Mac), the chat helper's networks | Telegram through TDLib in a build without the chat helper needs an api_id and api_hash, unless the build sets `NOOK_TELEGRAM_API_ID`; GIFs use Nook's own GIPHY key, a key of your own only avoids its limit |
+
 ## Platforms and chats
 
 The iPhone companion is the only other app with the Chats tab. It gets the same things as the Mac over the companion

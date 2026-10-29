@@ -32,7 +32,6 @@ struct ConnectionOption: Identifiable {
         case keyed(ContextSource)
         /// A service you sign in to on its own page, with the key it also takes as the other way.
         case signIn(MCPRemoteService, keyAlternative: ContextSource?)
-        case gitLab
         /// An MCP server from a preset, or your own (nil).
         case mcp(MCPPreset?)
         case iPhone
@@ -80,9 +79,12 @@ enum ConnectionCatalog {
 
         for service in MCPRemoteService.all {
             let key = cloud.first { $0.id == service.id }
+            // GitLab's token lives in its own store, not in a connector: it counts as linked too.
+            let tokenLinked = service.id == "gitlab" && !GitLabCredentials.hosts.isEmpty
             options.append(ConnectionOption(id: "signin." + service.id, title: service.name, detail: service.tagline,
                                             category: ConnectionCategory(ServiceCategory.of(service)), method: .signIn,
-                                            domain: service.domain, linked: signedIn.contains(service.id) || key.map(configured) == true,
+                                            domain: service.domain,
+                                            linked: signedIn.contains(service.id) || key.map(configured) == true || tokenLinked,
                                             destination: .signIn(service, keyAlternative: key)))
         }
         // Services with their own sign-in are listed once, above; GitHub signs in from its own sheet.
@@ -93,9 +95,6 @@ enum ConnectionCatalog {
                                             symbol: source.symbol, source: source.id, tint: source.accent, linked: configured(source),
                                             destination: .keyed(source)))
         }
-        options.append(ConnectionOption(id: "gitlab", title: "GitLab", detail: tr("gitlab.tagline"), category: .development,
-                                        method: .key, domain: "gitlab.com", symbol: "key.fill",
-                                        linked: !GitLabCredentials.hosts.isEmpty, destination: .gitLab))
 
         for preset in MCPPreset.all {
             options.append(ConnectionOption(id: "mcp." + preset.id, title: preset.name, detail: preset.detail,
@@ -374,8 +373,6 @@ struct ConnectionDestinationView: View {
             CloudConnectorViews.setupSheet(source, capabilities: capabilities(source.id), onChange: refresh)
         case .signIn(let service, let keyAlternative):
             ServiceSignInSheet(service: service, keyAlternative: keyAlternative, capabilities: capabilities(service.id))
-        case .gitLab:
-            GitLabSetupSheet()
         case .mcp(let preset):
             AddMCPServerWizardSheet(preset: preset, done: done)
         case .iPhone:
@@ -409,6 +406,9 @@ struct ServiceSignInSheet: View {
     @State private var confirmDisconnect = false
 
     private var config: MCPServerConfig? { store.servers.first { $0.serviceID == service.id } }
+
+    /// Another way in with a key or token exists.
+    private var hasKeyWay: Bool { keyAlternative != nil || service.id == "gitlab" }
 
     private var status: ServiceStatus {
         guard let config else { return .notLinked }
@@ -472,12 +472,15 @@ struct ServiceSignInSheet: View {
                         .foregroundStyle(NookTheme.textSecondary)
                 }
             }
-            if keyAlternative != nil, status == .notLinked {
-                NookDivider()
-                HStack(spacing: NookTheme.Spacing.md) {
-                    SettingNote(tr("hub.signIn.keyInstead"))
-                    Spacer(minLength: 0)
-                    Button(tr("connect.useKey")) { showKey = true }
+            // Signing in is the way; a key or token is only for whoever needs one, folded away.
+            if hasKeyWay, status == .notLinked {
+                DisclosureGroup(tr("settings.display.advanced")) {
+                    HStack(spacing: NookTheme.Spacing.md) {
+                        SettingNote(tr(service.id == "gitlab" ? "hub.signIn.gitlabToken" : "hub.signIn.keyInstead"))
+                        Spacer(minLength: 0)
+                        Button(tr("connect.useKey")) { showKey = true }
+                    }
+                    .padding(.top, NookTheme.Spacing.xs)
                 }
             }
             if !capabilities.isEmpty {
@@ -509,7 +512,10 @@ struct ServiceSignInSheet: View {
             Text(tr("connect.disconnectDetail", service.name))
         }
         .sheet(isPresented: $showKey, onDismiss: { app.connectors.refreshAll() }) {
-            if let keyAlternative {
+            // GitLab's token has its own sheet (it also serves a self-hosted GitLab).
+            if service.id == "gitlab" {
+                GitLabSetupSheet()
+            } else if let keyAlternative {
                 CloudConnectorViews.setupSheet(keyAlternative, capabilities: capabilities) { app.connectors.refreshAll() }
             }
         }

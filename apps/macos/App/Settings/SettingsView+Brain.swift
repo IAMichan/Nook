@@ -114,8 +114,9 @@ extension SettingsView {
                 // Step 2: which service, step 3: signing in to it, step 4: its model.
                 Section {
                     Picker(tr("settings.brain.provider"), selection: externalProvider) {
-                        Text(tr("settings.brain.claude") + " · " + tr("settings.brain.apiKey")).tag(AIProvider.claude)
+                        // Signing in comes first: your Claude subscription needs no key at all.
                         Text(tr("settings.brain.claude") + " · " + tr("settings.brain.claudeCodeSub")).tag(AIProvider.claudeCode)
+                        Text(tr("settings.brain.claude") + " · " + tr("settings.brain.apiKey")).tag(AIProvider.claude)
                         Divider()
                         ForEach(AIProvider.allCases.filter { $0 != .claude && $0 != .claudeCode && !$0.isLocalServer }) { provider in
                             Label { Text(provider.title) } icon: { LogoImage.brand(BrandLogo.forProvider(provider)) }.tag(provider)
@@ -223,32 +224,14 @@ extension SettingsView {
         Group {
             if settings.provider == .claudeCode {
                 claudeCodeStatus
+            } else if settings.provider == .openrouter {
+                // OpenRouter signs in on its own page and hands Nook a key itself; pasting one is folded away.
+                openRouterSignIn
+                DisclosureGroup(tr("settings.display.advanced")) {
+                    keyFields.padding(.top, NookTheme.Spacing.xs)
+                }
             } else if settings.provider.needsKey {
-                HStack {
-                    SecureField(settings.provider.keyPlaceholder, text: $keyDraft)
-                        .onSubmit { if !keyDraft.isEmpty { saveKey() } }
-                    Button(tr("button.save"), action: saveKey)
-                        .disabled(keyDraft.isEmpty)
-                }
-                HStack {
-                    if settings.hasKey(for: settings.provider) {
-                        Label(settings.provider == .claude ? "\(tr("settings.brain.keyInKeychain")): \(settings.maskedKey ?? "")" : tr("settings.brain.keyInKeychain"), systemImage: "key.fill")
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textSecondary)
-                        ConfirmedButton(tr("accounts.removeKey"), question: tr("confirm.removeKey"), detail: tr("confirm.keychain.detail")) {
-                            keyDraft = ""
-                            saveKey()
-                        }
-                        .buttonStyle(.borderless)
-                        .font(NookTheme.TextStyle.detail)
-                    } else {
-                        SettingNote(tr("settings.brain.keyStaysInKeychain"))
-                    }
-                    Spacer()
-                    if let url = settings.provider.keyURL {
-                        Link(tr("settings.brain.createKey"), destination: url).font(NookTheme.TextStyle.detail)
-                    }
-                }
+                keyFields
             } else if let url = settings.provider.keyURL {
                 HStack {
                     SettingNote(tr("settings.brain.providerMustRun", settings.provider.title))
@@ -256,6 +239,84 @@ extension SettingsView {
                     Link(tr("button.download"), destination: url).font(NookTheme.TextStyle.detail)
                 }
             }
+        }
+    }
+
+    /// Signing in to OpenRouter: one button, its progress, and what went wrong.
+    @ViewBuilder
+    var openRouterSignIn: some View {
+        let hasKey = settings.hasKey(for: .openrouter)
+        HStack {
+            if hasKey {
+                Label(tr("brain.openrouter.signedIn"), systemImage: "checkmark.seal.fill").foregroundStyle(NookTheme.mint)
+                Spacer()
+            }
+            switch openRouter.phase {
+            case .waiting:
+                ProgressView().controlSize(.small)
+                Text(tr("connect.waiting", "OpenRouter")).font(NookTheme.TextStyle.detail)
+                Button(tr("button.cancel")) { openRouter.cancel() }
+            default:
+                Button {
+                    openRouter.signIn(settings: settings)
+                } label: {
+                    Label(hasKey ? tr("connect.reauthorize") : tr("hub.signIn.button", "OpenRouter"), systemImage: "person.badge.key.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(hasKey ? .regular : .large)
+            }
+        }
+        // Signed in: test the new key at once, as after pasting one.
+        .onChange(of: openRouter.phase) { _, phase in
+            if phase == .done { Task { await testConnection() } }
+        }
+        if case .failed(let message) = openRouter.phase {
+            SettingNote(message, tone: .error)
+        }
+    }
+
+    /// A key for services that only take one: one button to the page that makes it, then the field. Nook picks a
+    /// copied key up by itself when you come back.
+    var keyFields: some View {
+        Group {
+            if let url = settings.provider.keyURL, !settings.hasKey(for: settings.provider) {
+                Button {
+                    NSWorkspace.shared.open(url)
+                    keyCatcher.watch()
+                } label: {
+                    Label(tr("brain.key.get", settings.provider.title), systemImage: "arrow.up.forward.app")
+                }
+                .controlSize(.large)
+                SettingNote(tr("brain.key.autoPaste"))
+            }
+            HStack {
+                SecureField(settings.provider.keyPlaceholder, text: $keyDraft)
+                    .onSubmit { if !keyDraft.isEmpty { saveKey() } }
+                Button(tr("button.save"), action: saveKey)
+                    .disabled(keyDraft.isEmpty)
+            }
+            HStack {
+                if settings.hasKey(for: settings.provider) {
+                    Label(settings.provider == .claude ? "\(tr("settings.brain.keyInKeychain")): \(settings.maskedKey ?? "")" : tr("settings.brain.keyInKeychain"), systemImage: "key.fill")
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                    ConfirmedButton(tr("accounts.removeKey"), question: tr("confirm.removeKey"), detail: tr("confirm.keychain.detail")) {
+                        keyDraft = ""
+                        saveKey()
+                    }
+                    .buttonStyle(.borderless)
+                    .font(NookTheme.TextStyle.detail)
+                } else {
+                    SettingNote(tr("settings.brain.keyStaysInKeychain"))
+                }
+                Spacer()
+            }
+        }
+        .onReceive(keyCatcher.$caught.compactMap { $0 }.removeDuplicates()) { key in
+            // A key copied on the service's page, picked up on the way back: saved and tested at once.
+            keyDraft = key
+            saveKey()
+            keyCatcher.caught = nil
         }
     }
 

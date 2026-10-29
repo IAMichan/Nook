@@ -61,6 +61,7 @@ struct GitLabSetupSheet: View {
     var managing: String? = nil
 
     @Environment(\.dismiss) private var dismiss
+    @StateObject private var keyCatcher = ClipboardKeyCatcher()
     @State private var host = "gitlab.com"
     @State private var showSelfHosted = false
     @State private var token = ""
@@ -138,13 +139,22 @@ struct GitLabSetupSheet: View {
             }
             Button {
                 if let tokenPage { NSWorkspace.shared.open(tokenPage) }
+                keyCatcher.watch()
             } label: {
                 Label(tr("gitlab.openTokens"), systemImage: "arrow.up.forward.app")
             }
+            .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            SettingNote(tr("brain.key.autoPaste"))
         }
         SetupStep(number: 2, title: tr("gitlab.step.paste"), done: saved) {
             tokenField
+        }
+        // The token copied on GitLab's page, picked up on the way back and checked at once.
+        .onReceive(keyCatcher.$caught.compactMap { $0 }.removeDuplicates()) { copied in
+            token = copied
+            keyCatcher.caught = nil
+            save()
         }
         SetupStep(number: 3, title: tr("gitlab.step.check"), done: check?.isValid ?? false) {
             result

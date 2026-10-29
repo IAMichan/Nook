@@ -215,6 +215,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
 
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
+    @StateObject private var keyCatcher = ClipboardKeyCatcher()
 
     /// Whether the sheet opened on an already connected service: then it's the manage view, otherwise the steps stay
     /// visible until the sheet closes, so the user sees step 3 turn green.
@@ -338,14 +339,25 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             if let url = connector.signupURL {
                 Button {
                     NSWorkspace.shared.open(url)
+                    keyCatcher.watch()
                 } label: {
                     Label(tr("settings2.openSite", connector.title), systemImage: "arrow.up.forward.app")
                 }
+                .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                SettingNote(tr("brain.key.autoPaste"))
             }
         }
         SetupStep(number: 2, title: tr("settings2.step.paste"), done: configured) {
             fieldsAndPaste
+        }
+        .onReceive(keyCatcher.$caught.compactMap { $0 }.removeDuplicates()) { key in
+            // The key copied on the service's page, picked up on the way back. A service that needs only the key is
+            // saved and checked at once; one that also needs an address waits for it.
+            guard let field = connector.configFields.first(where: { $0.secret }) else { return }
+            drafts[field.account] = key
+            keyCatcher.caught = nil
+            if connector.configFields.count == 1 { save() }
         }
         resultStep(number: 3)
     }

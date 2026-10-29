@@ -75,6 +75,9 @@ struct SettingsView: View {
     /// The mood the large preview under Appearance shows.
     @State var lookPreviewMood: NookMood = .rest
     @ObservedObject var flowStore = FlowStore.shared
+    @ObservedObject var openRouter = OpenRouterSignIn.shared
+    /// Picks up a key copied on a service's own page when you come back to Nook.
+    @StateObject var keyCatcher = ClipboardKeyCatcher()
     @ObservedObject var doubleTap = DoubleTap.shared
 
     var body: some View {

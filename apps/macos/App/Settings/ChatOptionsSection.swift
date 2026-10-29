@@ -38,10 +38,12 @@ struct ChatOptionsSection: View {
                 Text(tr("chats.settings.reading"))
             }
 
+            // GIFs work with Nook's own key; a key of your own is only for whoever runs into its limit, folded away.
             Section {
-                giphyRow
-            } header: {
-                SettingsSectionTitle(tr("chats.giphy.title"), info: tr("chats.giphy.footer"))
+                DisclosureGroup(tr("chats.giphy.title")) {
+                    giphyRow
+                }
+                .help(tr("chats.giphy.footer"))
             }
         }
     }

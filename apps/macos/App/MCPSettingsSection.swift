@@ -147,6 +147,14 @@ struct MCPServerCardRow: View {
                 } label: {
                     Label(tr("button.refresh"), systemImage: "arrow.clockwise")
                 }
+                // A server you signed in to on its own page signs in again from here when that expired.
+                if config.signsIn {
+                    Button {
+                        MCPSignIn.shared.signIn(config, app: app)
+                    } label: {
+                        Label(tr("connect.reauthorize"), systemImage: "person.badge.key")
+                    }
+                }
                 Divider()
                 Button(role: .destructive) {
                     confirmRemove = true
@@ -291,6 +299,7 @@ struct AddMCPServerWizardSheet: View {
     let done: () -> Void
 
     @ObservedObject private var store = MCPServerStore.shared
+    @StateObject private var keyCatcher = ClipboardKeyCatcher()
     @State private var name = ""
     @State private var commandOrURL = ""
     @State private var isRemote = false
@@ -358,10 +367,12 @@ struct AddMCPServerWizardSheet: View {
                             if let url = preset.helpURL {
                                 Button {
                                     NSWorkspace.shared.open(url)
+                                    keyCatcher.watch()
                                 } label: {
                                     Label(tr("mcp.wizard.getKeySite"), systemImage: "arrow.up.forward.app")
                                 }
-                                .controlSize(.small)
+                                .buttonStyle(.borderedProminent)
+                                SettingNote(tr("brain.key.autoPaste"))
                             }
                         }
                     }
@@ -409,6 +420,12 @@ struct AddMCPServerWizardSheet: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || commandOrURL.trimmingCharacters(in: .whitespaces).isEmpty || !allRequiredEnvFilled)
+        }
+        // The key copied on the service's page, picked up on the way back into the first field still empty.
+        .onReceive(keyCatcher.$caught.compactMap { $0 }.removeDuplicates()) { key in
+            keyCatcher.caught = nil
+            guard let field = preset?.requiredEnv.first(where: { (envDrafts[$0] ?? "").isEmpty }) else { return }
+            envDrafts[field] = key
         }
         .onAppear {
             if let preset {
@@ -566,6 +583,18 @@ struct AddMCPServerWizardSheet: View {
             secrets[k] = (preset?.envPrefixes[k] ?? "") + v.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
+        // A server on the web that offers its own sign-in (n8n, a self-hosted GitLab, …) needs no token: Nook signs in
+        // on its page instead. Headers typed in by hand still go first.
+        if case .http(let address) = transport, secrets.isEmpty, let url = URL(string: address) {
+            let store = store
+            Task { @MainActor in
+                let signsIn = ((try? await MCPOAuth.discover(server: url)) ?? nil) != nil
+                let config = store.add(name: cleanName, transport: transport, secrets: [:], usesOAuth: signsIn)
+                if signsIn { MCPSignIn.shared.signIn(config, app: AppModel.shared, removeOnFailure: true) }
+            }
+            done()
+            return
+        }
         store.add(name: cleanName, transport: transport, secrets: secrets)
         done()
     }
