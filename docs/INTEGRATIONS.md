@@ -116,7 +116,7 @@ check the agent's protocol before you write `–`.
 | Model list | ✓ | ✓ | ✓ | ✓ (what its session lists, kept for the next one) | ✓ (same) | ✓ (same) | ✓ (`initialize`) | ✓ (same as OpenCode, per agent you added) |
 | Nook's tools (bridge) | ✓ (`claude mcp add`) | ✓ (`codex mcp add`) | ✓ | ✓ (`session/new` `mcpServers`) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
 | Progress in the notch from a terminal (hooks) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (no hooks) | – (no hooks) |
-| Past sessions from disk | ✓ | ✓ | ✓ | ✓ | – (`session/load`) | – (same) | – (same) | – (same) |
+| Past sessions (`ProviderCapabilities.pastSessions`) | ✓ (disk) | ✓ (disk) | ✓ (disk, `.json` and from 0.33 `.jsonl`) | ✓ (disk) | ✓ (`session/list`) | ✓ (disk: `~/.cursor/chats` and `agent-transcripts`; its ACP server has no `session/list`) | ? (`session/list` when Grok offers it; not checked) | ✓ (`session/list` when the agent offers it) |
 | Resume a past session | ✓ | ✓ | ✓ | ✓ (from disk through the Antigravity app; sessions Nook runs over `session/load`) | ✓ | ✓ | ✓ | ✓ (`session/load`) |
 | A conversation the agent no longer knows starts anew, said in the timeline | ? | ✓ (`thread/resume`) | ✓ (`session/load`) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
 | Several accounts side by side | ✓ (`CLAUDE_CONFIG_DIR`) | ✓ (`CODEX_HOME`) | ✓ (`GEMINI_CLI_HOME`, Gemini CLI 0.25 and newer: the folder around an account's `.gemini`) | – (one Google sign-in per Antigravity; each Nook account keeps its own profile folder for its sessions) | – (same) | – (same) | – (same) | – (same) |

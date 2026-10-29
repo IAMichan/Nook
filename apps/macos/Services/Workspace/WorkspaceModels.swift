@@ -50,12 +50,13 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass])
-        case .antigravity:
-            // ACP, with its conversations on disk (~/.gemini/antigravity) like Gemini CLI's.
+        case .antigravity, .cursor:
+            // ACP, with its conversations on disk: Antigravity's in ~/.gemini/antigravity, Cursor's in ~/.cursor (its ACP
+            // server has no session/list).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass])
-        case .opencode, .cursor, .grok, .acp:
+        case .opencode, .grok, .acp:
             // ACP: permission requests, cancel, streamed messages and thoughts, usage updates with context and cost. Their
             // earlier sessions come from the agent itself (`session/list`).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,

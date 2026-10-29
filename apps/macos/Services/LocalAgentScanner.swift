@@ -29,7 +29,8 @@ enum LocalAgentScanner {
         Kind(name: "OpenCode", commands: ["opencode"], packages: ["opencode-ai"]),
         Kind(name: "Copilot CLI", commands: ["copilot"], packages: ["@github/copilot"]),
         Kind(name: "Amp", commands: ["amp"], packages: ["@sourcegraph/amp"]),
-        Kind(name: "Cursor", commands: ["cursor-agent"], packages: []),
+        // Cursor's CLI also installs itself as `agent`; its binary stays `cursor-agent`, in ~/.local/share/cursor-agent.
+        Kind(name: "Cursor", commands: ["cursor-agent"], packages: ["cursor-agent/versions"]),
         Kind(name: "Antigravity", commands: ["agy"], packages: []),
         Kind(name: "Hermes", commands: ["hermes"], packages: ["hermes-agent", "hermes_cli"]),
         Kind(name: "Muse Code", commands: ["muse"], packages: []),

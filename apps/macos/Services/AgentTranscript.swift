@@ -232,7 +232,7 @@ enum AgentTranscript {
         return jsonl(data).first { $0.kind == .user }
     }
 
-    /// Claude Code, Antigravity and Codex: one JSON object per line.
+    /// Claude Code, Antigravity, Codex and Cursor: one JSON object per line.
     static func jsonl(_ data: Data) -> [AgentChatMessage] {
         jsonl(data, continuing: [], firstLine: 0)
     }
@@ -245,7 +245,8 @@ enum AgentTranscript {
             let index = firstLine + offset
             guard let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else { continue }
             let id = (object["uuid"] as? String) ?? (object["id"] as? String) ?? "\(object["step_index"] ?? index)"
-            let type = (object["type"] as? String) ?? ""
+            // Cursor's CLI writes Claude Code's blocks under "role" instead of "type" (agent-transcripts/<id>/<id>.jsonl).
+            let type = (object["type"] as? String) ?? (object["role"] as? String) ?? ""
             let when = date(object["timestamp"])
 
             // Claude Code
@@ -923,5 +924,55 @@ enum GeminiChatLog {
         guard let data = try? Data(contentsOf: registry),
               let projects = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["projects"] as? [String: String] else { return "" }
         return projects.first { $0.value == project.lastPathComponent }?.key ?? ""
+    }
+}
+
+/// Cursor's CLI keeps each chat in `~/.cursor/chats/<md5 of its folder>/<chat id>/` (an agent session in
+/// `~/.cursor/acp-sessions/<id>/`): `meta.json` with the folder and times, and `store.db`, whose `meta` row `0` holds a
+/// hex-encoded JSON with the chat's name. What was said is in `~/.cursor/projects/<folder with / as ->/agent-transcripts/
+/// <id>/<id>.jsonl` (see `AgentTranscript.jsonl`). The format is Cursor's own and undocumented: read defensively.
+enum CursorChats {
+    struct Info: Equatable {
+        var cwd = ""
+        var title = ""
+        var created: Date?
+        var updated: Date?
+        /// False for a chat that was opened but never used.
+        var hasConversation = true
+    }
+
+    /// `meta.json`: `{cwd, createdAtMs, updatedAtMs, hasConversation, title?}`.
+    static func info(metaJSON data: Data) -> Info {
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return Info() }
+        return Info(cwd: (object["cwd"] as? String) ?? "", title: (object["title"] as? String) ?? "",
+                    created: milliseconds(object["createdAtMs"]), updated: milliseconds(object["updatedAtMs"]),
+                    hasConversation: (object["hasConversation"] as? Bool) ?? true)
+    }
+
+    /// The `meta` row of `store.db`: hex of a JSON object with `name` (the title) and `createdAt` (ms).
+    static func storeMeta(hex: String) -> (title: String, created: Date?)? {
+        let clean = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard clean.count.isMultiple(of: 2), !clean.isEmpty else { return nil }
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(clean.count / 2)
+        var index = clean.startIndex
+        while index < clean.endIndex {
+            let next = clean.index(index, offsetBy: 2)
+            guard let byte = UInt8(clean[index..<next], radix: 16) else { return nil }
+            bytes.append(byte)
+            index = next
+        }
+        guard let object = (try? JSONSerialization.jsonObject(with: Data(bytes))) as? [String: Any] else { return nil }
+        return ((object["name"] as? String) ?? "", milliseconds(object["createdAt"]))
+    }
+
+    /// The folder name Cursor files a chat's transcripts under: the path without its first `/`, the others as `-`.
+    static func transcriptFolder(cwd: String) -> String {
+        String(cwd.drop { $0 == "/" }).replacingOccurrences(of: "/", with: "-")
+    }
+
+    private static func milliseconds(_ value: Any?) -> Date? {
+        guard let number = value as? NSNumber, number.doubleValue > 0 else { return nil }
+        return Date(timeIntervalSince1970: number.doubleValue / 1000)
     }
 }

@@ -156,7 +156,27 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         if let versions = try? FileManager.default.contentsOfDirectory(atPath: nvm) {
             paths += versions.sorted { $0.compare($1, options: .numeric) == .orderedDescending }.map { "\(nvm)/\($0)/bin" }
         }
-        return paths.map { "\($0)/\(command)" }
+        return paths.flatMap { folder in
+            [command].map { "\(folder)/\($0)" } + otherCommands.map { "\(folder)/\($0)" }.filter(isOwnCommand)
+        }
+    }
+
+    /// Other names the agent installs itself under: Cursor's CLI is `agent` too (newer installs name it that first).
+    var otherCommands: [String] {
+        switch self {
+        case .cursor: return ["agent"]
+        case .claude, .codex, .gemini, .antigravity, .opencode, .grok, .acp: return []
+        }
+    }
+
+    /// Whether `path`, under one of `otherCommands`, is this agent's and not another program by that name: Cursor's `agent`
+    /// links into its own install folder (~/.local/share/cursor-agent).
+    private func isOwnCommand(_ path: String) -> Bool {
+        let target = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        switch self {
+        case .cursor: return target.contains("cursor-agent")
+        case .claude, .codex, .gemini, .antigravity, .opencode, .grok, .acp: return true
+        }
     }
 
     /// The default directory of the agent where the primary account resides.
@@ -595,8 +615,9 @@ private final class HistoryScanner: @unchecked Sendable {
             case .codex: found = codexFiles(home.url, since: since)
             case .gemini: found = geminiFiles(home.url, since: since)
             case .antigravity: found = antigravityFiles(home.url, since: since)
-            // Run over ACP: their history comes from the agent itself (session/load), not from files.
-            case .opencode, .cursor, .grok, .acp: found = []
+            case .cursor: found = cursorFiles(home.url, since: since)
+            // Their history comes from the agent itself (ACP session/list, see ProviderCapabilities.pastSessions).
+            case .opencode, .grok, .acp: found = []
             }
             files += found.map { ($0.url, home.kind, home.id, $0.key) }
         }
@@ -619,6 +640,8 @@ private final class HistoryScanner: @unchecked Sendable {
         } else {
             // Antigravity's titles live in a database: opened only when one of its transcripts has to be read again.
             var antigravitySummaries: [String: (title: String, cwd: String)]?
+            // Cursor's chat folders by chat id, per ~/.cursor: looked up only when one of its transcripts has to be read again.
+            var cursorChats: [String: [String: URL]] = [:]
             var fresh: [String: (key: CacheKey, parsed: Parsed)] = [:]
             var parsedAll: [(profile: String, parsed: Parsed, agent: AgentKind)] = []
             for file in files {
@@ -636,7 +659,13 @@ private final class HistoryScanner: @unchecked Sendable {
                         let summaries = antigravitySummaries ?? readAntigravitySummaries(homes)
                         antigravitySummaries = summaries
                         parsed = parseAntigravity(file.url, summaries: summaries)
-                    case .opencode, .cursor, .grok, .acp: parsed = Parsed(session: nil, entries: [])
+                    case .cursor:
+                        // ~/.cursor/projects/<folder>/agent-transcripts/<id>/<id>.jsonl
+                        let home = (0..<5).reduce(file.url) { url, _ in url.deletingLastPathComponent() }
+                        let chats = cursorChats[home.path] ?? cursorChatFolders(home)
+                        cursorChats[home.path] = chats
+                        parsed = parseCursor(file.url, chats: chats)
+                    case .opencode, .grok, .acp: parsed = Parsed(session: nil, entries: [])
                     }
                 }
                 parsed.session?.profileID = file.profile
@@ -1078,6 +1107,86 @@ private final class HistoryScanner: @unchecked Sendable {
             if let key = attributes(url), key.modified >= since { result.append((url, key)) }
         }
         return result
+    }
+
+    // MARK: Cursor
+
+    /// ~/.cursor/projects/<folder>/agent-transcripts/<id>/<id>.jsonl (see CursorChats)
+    private func cursorFiles(_ home: URL, since: Date) -> [(url: URL, key: CacheKey)] {
+        let fm = FileManager.default
+        let projects = home.appendingPathComponent("projects", isDirectory: true)
+        guard let folders = try? fm.contentsOfDirectory(atPath: projects.path) else { return [] }
+        var result: [(url: URL, key: CacheKey)] = []
+        for folder in folders {
+            let transcripts = projects.appendingPathComponent(folder, isDirectory: true).appendingPathComponent("agent-transcripts", isDirectory: true)
+            guard let chats = try? fm.contentsOfDirectory(atPath: transcripts.path) else { continue }
+            for chat in chats {
+                let url = transcripts.appendingPathComponent(chat, isDirectory: true).appendingPathComponent(chat + ".jsonl")
+                if let key = attributes(url), key.modified >= since { result.append((url, key)) }
+            }
+        }
+        return result
+    }
+
+    /// Every Cursor chat's folder in `home` (~/.cursor/chats/<hash>/<id>, ~/.cursor/acp-sessions/<id>) by its id.
+    private func cursorChatFolders(_ home: URL) -> [String: URL] {
+        let fm = FileManager.default
+        var result: [String: URL] = [:]
+        let chats = home.appendingPathComponent("chats", isDirectory: true)
+        for hash in (try? fm.contentsOfDirectory(atPath: chats.path)) ?? [] {
+            let folder = chats.appendingPathComponent(hash, isDirectory: true)
+            for id in (try? fm.contentsOfDirectory(atPath: folder.path)) ?? [] {
+                result[id] = folder.appendingPathComponent(id, isDirectory: true)
+            }
+        }
+        let sessions = home.appendingPathComponent("acp-sessions", isDirectory: true)
+        for id in (try? fm.contentsOfDirectory(atPath: sessions.path)) ?? [] where result[id] == nil {
+            result[id] = sessions.appendingPathComponent(id, isDirectory: true)
+        }
+        return result
+    }
+
+    /// A Cursor chat: what was said from its transcript, its folder and times from meta.json, its name from store.db.
+    private func parseCursor(_ url: URL, chats: [String: URL]) -> Parsed {
+        guard let data = try? Data(contentsOf: url) else { return Parsed(session: nil, entries: []) }
+        let id = url.deletingPathExtension().lastPathComponent
+        var info = CursorChats.Info()
+        if let folder = chats[id] {
+            if let meta = try? Data(contentsOf: folder.appendingPathComponent("meta.json")) { info = CursorChats.info(metaJSON: meta) }
+            if let stored = cursorStoreMeta(folder.appendingPathComponent("store.db")) {
+                if info.title.isEmpty { info.title = stored.title }
+                if info.created == nil { info.created = stored.created }
+            }
+        }
+        let messages = AgentTranscript.jsonl(data)
+        let prompts = messages.filter { $0.kind == .user }
+        guard !prompts.isEmpty else { return Parsed(session: nil, entries: []) }
+        let modified = attributes(url)?.modified ?? Date()
+        var session = PastSession(
+            agent: .cursor, sessionID: id, title: info.title, cwd: info.cwd, branch: "", model: "",
+            started: info.created ?? modified, ended: max(info.updated ?? modified, modified),
+            prompts: prompts.count, tokens: TokenTally(), lastPrompt: prompts.last?.text ?? "",
+            lastReply: messages.last { $0.kind == .assistant }?.text ?? ""
+        )
+        session.titledByAgent = !info.title.isEmpty
+        if session.title.isEmpty { session.title = prompts.first?.text ?? "" }
+        session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
+        session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
+        session.lastReply = Self.clip(session.lastReply, 12_000)
+        return Parsed(session: session, entries: [])
+    }
+
+    /// The name and creation time in a Cursor chat's store.db (`meta` row `0`).
+    private func cursorStoreMeta(_ url: URL) -> (title: String, created: Date?)? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else { return nil }
+        defer { sqlite3_close(db) }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT value FROM meta WHERE key = '0'", -1, &stmt, nil) == SQLITE_OK, let stmt else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_step(stmt) == SQLITE_ROW, let value = sqlite3_column_text(stmt, 0) else { return nil }
+        return CursorChats.storeMeta(hex: String(cString: value))
     }
 
     /// Fast lookup of session title and workspace root from ~/.gemini/antigravity/conversation_summaries.db

@@ -371,6 +371,27 @@ final class AcpAgentTests: XCTestCase {
         XCTAssertNil(AcpToolCall(id: "x", title: "", kind: "read", status: nil, input: nil, output: "", paths: []).editInput)
     }
 
+    func testCursorChats() throws {
+        let info = CursorChats.info(metaJSON: Data(#"{"schemaVersion":1,"createdAtMs":1761630000000,"updatedAtMs":1761630090000,"hasConversation":true,"cwd":"/Users/me/app"}"#.utf8))
+        XCTAssertEqual(info.cwd, "/Users/me/app")
+        XCTAssertEqual(info.created, Date(timeIntervalSince1970: 1_761_630_000))
+        XCTAssertTrue(info.hasConversation)
+        let json = #"{"agentId":"c1","name":"Fix login","createdAt":1761630000000,"mode":"agent"}"#
+        let hex = Data(json.utf8).map { String(format: "%02x", $0) }.joined()
+        let stored = try XCTUnwrap(CursorChats.storeMeta(hex: hex))
+        XCTAssertEqual(stored.title, "Fix login")
+        XCTAssertNil(CursorChats.storeMeta(hex: "zz"))
+        XCTAssertEqual(CursorChats.transcriptFolder(cwd: "/Users/me/Repository/X"), "Users-me-Repository-X")
+        let lines = [
+            #"{"role":"user","message":{"content":[{"type":"text","text":"Fix the login"}]}}"#,
+            #"{"role":"assistant","message":{"content":[{"type":"text","text":"Looking."},{"type":"tool_use","name":"read_file","input":{"path":"a.swift"}}]}}"#,
+            #"{"type":"turn_ended","status":"success"}"#
+        ]
+        let messages = AgentTranscript.jsonl(Data(lines.joined(separator: "\n").utf8))
+        XCTAssertEqual(messages.first { $0.kind == .user }?.text, "Fix the login")
+        XCTAssertEqual(messages.first { $0.kind == .assistant }?.text, "Looking.")
+    }
+
     func testAgentLogLinesKeepOnlyErrors() {
         let lines = [
             "I1029 16:35:47.481079 8387203840 agent.py:109] Starting connection and creating conversation...",
