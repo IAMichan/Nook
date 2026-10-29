@@ -151,7 +151,9 @@ struct GitLabSetupSheet: View {
             tokenField
         }
         // The token copied on GitLab's page, picked up on the way back and checked at once.
-        .onReceive(keyCatcher.$caught.compactMap { $0 }.removeDuplicates()) { copied in
+        .onDisappear { keyCatcher.stop() }
+        // perf: `caught` is set once per copied key and reset right after, so every value is a new key.
+        .onReceive(keyCatcher.$caught.compactMap { $0 }) { copied in
             token = copied
             keyCatcher.caught = nil
             save()

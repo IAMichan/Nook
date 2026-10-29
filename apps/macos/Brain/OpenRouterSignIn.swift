@@ -36,6 +36,8 @@ final class OpenRouterSignIn: NSObject, ObservableObject {
                     self.phase = .done
                 }
             } catch {
+                // A newer sign-in cancelled this one: it owns the phase now.
+                guard !Task.isCancelled else { return }
                 if (error as? MCPOAuthError) == .cancelled {
                     self.phase = .idle
                 } else {

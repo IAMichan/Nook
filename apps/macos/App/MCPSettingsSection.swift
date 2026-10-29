@@ -422,7 +422,9 @@ struct AddMCPServerWizardSheet: View {
                 .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || commandOrURL.trimmingCharacters(in: .whitespaces).isEmpty || !allRequiredEnvFilled)
         }
         // The key copied on the service's page, picked up on the way back into the first field still empty.
-        .onReceive(keyCatcher.$caught.compactMap { $0 }.removeDuplicates()) { key in
+        .onDisappear { keyCatcher.stop() }
+        // perf: `caught` is set once per copied key and reset right after, so every value is a new key.
+        .onReceive(keyCatcher.$caught.compactMap { $0 }) { key in
             keyCatcher.caught = nil
             guard let field = preset?.requiredEnv.first(where: { (envDrafts[$0] ?? "").isEmpty }) else { return }
             envDrafts[field] = key

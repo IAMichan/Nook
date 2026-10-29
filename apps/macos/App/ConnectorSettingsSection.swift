@@ -351,7 +351,9 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
         SetupStep(number: 2, title: tr("settings2.step.paste"), done: configured) {
             fieldsAndPaste
         }
-        .onReceive(keyCatcher.$caught.compactMap { $0 }.removeDuplicates()) { key in
+        .onDisappear { keyCatcher.stop() }
+        // perf: `caught` is set once per copied key and reset right after, so every value is a new key.
+        .onReceive(keyCatcher.$caught.compactMap { $0 }) { key in
             // The key copied on the service's page, picked up on the way back. A service that needs only the key is
             // saved and checked at once; one that also needs an address waits for it.
             guard let field = connector.configFields.first(where: { $0.secret }) else { return }

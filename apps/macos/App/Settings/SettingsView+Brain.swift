@@ -295,6 +295,15 @@ extension SettingsView {
                 Button(tr("button.save"), action: saveKey)
                     .disabled(keyDraft.isEmpty)
             }
+            // On this one row: on the Group around it the key would be saved once per row.
+            .onDisappear { keyCatcher.stop() }
+            // perf: `caught` is set once per copied key and reset right after, so every value is a new key.
+            .onReceive(keyCatcher.$caught.compactMap { $0 }) { key in
+                // A key copied on the service's page, picked up on the way back: saved and tested at once.
+                keyDraft = key
+                saveKey()
+                keyCatcher.caught = nil
+            }
             HStack {
                 if settings.hasKey(for: settings.provider) {
                     Label(settings.provider == .claude ? "\(tr("settings.brain.keyInKeychain")): \(settings.maskedKey ?? "")" : tr("settings.brain.keyInKeychain"), systemImage: "key.fill")
@@ -311,12 +320,6 @@ extension SettingsView {
                 }
                 Spacer()
             }
-        }
-        .onReceive(keyCatcher.$caught.compactMap { $0 }.removeDuplicates()) { key in
-            // A key copied on the service's page, picked up on the way back: saved and tested at once.
-            keyDraft = key
-            saveKey()
-            keyCatcher.caught = nil
         }
     }
 
