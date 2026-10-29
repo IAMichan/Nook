@@ -36,28 +36,34 @@ struct NookList: View {
                     }
                 }
             }
-            TimelineView(.periodic(from: .now, by: 30)) { context in
-                VStack(alignment: .leading, spacing: 2) {
-                    ScrollView(showsIndicators: false) {
-                        // Lazy: only the rows in view are built, and this list redraws while an answer streams in.
-                        LazyVStack(alignment: .leading, spacing: 2) {
-                            if items.isEmpty && (archived.isEmpty || !showArchived) {
-                                ListEmptyNote(query.isEmpty ? tr("nooks.none") : tr("nooks.noMatches"), padding: NookTheme.Spacing.lg)
-                            }
-                            if !pinned.isEmpty {
-                                sectionLabel(tr("nooks.section.pinned"))
-                                rows(pinned, now: context.date, shown: shown)
-                                if !rest.isEmpty {
-                                    sectionLabel(tr("nooks.section.recent")).padding(.top, 8)
+            // No Nooks at all yet: the whole panel says so and offers the first one, instead of a lone line in a list.
+            if query.isEmpty && items.isEmpty && archived.isEmpty {
+                WSEmptyState(symbol: "bubble.left.and.text.bubble.right", title: tr("nooks.none"),
+                             message: tr("nooks.none.detail"), action: (tr("nooks.new"), { app.newChat() }))
+            } else {
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    VStack(alignment: .leading, spacing: 2) {
+                        ScrollView(showsIndicators: false) {
+                            // Lazy: only the rows in view are built, and this list redraws while an answer streams in.
+                            LazyVStack(alignment: .leading, spacing: 2) {
+                                if items.isEmpty && (archived.isEmpty || !showArchived) {
+                                    ListEmptyNote(query.isEmpty ? tr("nooks.none") : tr("nooks.noMatches"), padding: NookTheme.Spacing.lg)
                                 }
+                                if !pinned.isEmpty {
+                                    sectionLabel(tr("nooks.section.pinned"))
+                                    rows(pinned, now: context.date, shown: shown)
+                                    if !rest.isEmpty {
+                                        sectionLabel(tr("nooks.section.recent")).padding(.top, 8)
+                                    }
+                                }
+                                rows(rest, now: context.date, shown: shown)
                             }
-                            rows(rest, now: context.date, shown: shown)
                         }
-                    }
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    // The archive sits at the foot of the list, as the settled sessions do in Agents, and opens upwards.
-                    if !archived.isEmpty {
-                        archiveShelf(archived, now: context.date, shown: shown)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        // The archive sits at the foot of the list, as the settled sessions do in Agents, and opens upwards.
+                        if !archived.isEmpty {
+                            archiveShelf(archived, now: context.date, shown: shown)
+                        }
                     }
                 }
             }
