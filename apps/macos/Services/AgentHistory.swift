@@ -543,8 +543,16 @@ private final class HistoryScanner: @unchecked Sendable {
         var seenFolders = Set<String>()
 
         for home in homes {
-            // Two accounts with the same directory: read only once.
-            guard fm.fileExists(atPath: home.url.path), seenFolders.insert(home.url.standardizedFileURL.path).inserted else { continue }
+            // Two accounts of one agent with the same directory: read only once. Gemini CLI and Antigravity share ~/.gemini,
+            // and each reads its own part of it.
+            guard fm.fileExists(atPath: home.url.path),
+                  seenFolders.insert(home.kind.rawValue + "|" + home.url.standardizedFileURL.path).inserted else { continue }
+            switch home.kind {
+            // Antigravity is there when its own folder is, not because Gemini CLI made ~/.gemini.
+            case .antigravity:
+                if !home.url.path.hasSuffix("antigravity"), !fm.fileExists(atPath: home.url.appendingPathComponent("antigravity").path) { continue }
+            case .claude, .codex, .gemini, .opencode, .cursor, .grok, .acp: break
+            }
             installed.insert(home.kind)
             let found: [(url: URL, key: CacheKey)]
             switch home.kind {

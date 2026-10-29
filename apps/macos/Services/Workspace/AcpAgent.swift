@@ -147,6 +147,14 @@ enum AcpRPC {
         ["sessionId": sessionID, "prompt": [["type": "text", "text": text]]]
     }
 
+    /// The answer to a permission request the turn no longer waits for (Stop, a failed turn): the spec asks for one.
+    static let cancelledOutcome: [String: Any] = ["outcome": ["outcome": "cancelled"]]
+
+    /// The sign-in methods `initialize` offers, in the agent's order.
+    static func authMethodIDs(_ initialize: [String: Any]) -> [String] {
+        ((initialize["authMethods"] as? [[String: Any]]) ?? []).compactMap { $0["id"] as? String }.filter { !$0.isEmpty }
+    }
+
     /// The option to answer a permission request with: the kind you chose, or the closest one the agent offers.
     static func permissionOutcome(_ options: [AcpPermissionOption], allow: Bool, always: Bool) -> [String: Any] {
         let wanted = allow ? (always ? ["allow_always", "allow_once"] : ["allow_once", "allow_always"]) : ["reject_once", "reject_always"]
@@ -282,6 +290,24 @@ enum AcpMapper {
     }
 }
 
+/// What an agent's error says, read from its text (the JSON-RPC code does not reach Nook in every case).
+enum AgentErrorText {
+    /// The agent wants you to sign in first (ACP's "Authentication required", -32000).
+    static func needsSignIn(_ message: String) -> Bool {
+        let text = message.lowercased()
+        return ["authentication required", "auth required", "auth_required", "unauthenticated", "not authenticated",
+                "please authenticate", "requires authentication", "not logged in", "login required"].contains { text.contains($0) }
+    }
+
+    /// The conversation to continue is gone (cleared, made on another machine, or by an older version of the agent).
+    static func sessionGone(_ message: String) -> Bool {
+        let text = message.lowercased()
+        guard ["session", "thread", "conversation", "rollout"].contains(where: { text.contains($0) }) else { return false }
+        return ["not found", "no such", "does not exist", "doesn't exist", "unknown", "no rollout", "invalid", "missing"]
+            .contains { text.contains($0) }
+    }
+}
+
 /// What an agent wrote to stderr, without its own log. Lines in glog's form ("I1029 16:35:47.481079 8387 agent.py:109]
 /// Starting…", as Antigravity's server writes) are that log, not the error: info and warnings are dropped, an error
 /// keeps only its message.
@@ -388,9 +414,9 @@ enum AcpSessionSettings {
     }
 
     /// The mode for a run that is not Antigravity's (whose modes follow its rights): the agent's plan mode in Plan mode,
-    /// otherwise the mode the session started with.
-    static func mode(plan: Bool, info: [String: Any]) -> String? {
-        guard plan else { return currentMode(info) }
+    /// otherwise the mode the session started with (`starting`: `info` follows the agent, and is in plan mode by then).
+    static func mode(plan: Bool, info: [String: Any], starting: String? = nil) -> String? {
+        guard plan else { return starting ?? currentMode(info) }
         return (values(modeOption(info) ?? [:]) + modeIDs(info)).first { $0.lowercased().contains("plan") }
     }
 
@@ -470,8 +496,20 @@ final class AcpClient: @unchecked Sendable {
         get { lock.withLock { _startingEffort } }
         set { lock.withLock { _startingEffort = newValue } }
     }
+    /// The mode the session started with: leaving Plan mode returns to it.
+    var startingMode: String? {
+        get { lock.withLock { _startingMode } }
+        set { lock.withLock { _startingMode = newValue } }
+    }
+    /// How the agent lets you sign in (`initialize`'s `authMethods`): asked for once when a session needs it.
+    var authMethods: [String] {
+        get { lock.withLock { _authMethods } }
+        set { lock.withLock { _authMethods = newValue } }
+    }
+    private var _authMethods: [String] = []
     private var _effort: String?
     private var _startingEffort: String?
+    private var _startingMode: String?
     private var _info: [String: Any] = [:]
     private var _model: String?
     private var _mode: String?

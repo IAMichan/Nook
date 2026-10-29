@@ -161,6 +161,10 @@ final class AcpAgentTests: XCTestCase {
         ]
         XCTAssertEqual(AcpSessionSettings.mode(plan: true, info: info), "architect-plan")
         XCTAssertEqual(AcpSessionSettings.mode(plan: false, info: info), "code", "leaving Plan mode returns to the mode it started in")
+        var planned = info
+        planned["modes"] = ["currentModeId": "architect-plan", "availableModes": [["id": "code"], ["id": "architect-plan"]]]
+        XCTAssertEqual(AcpSessionSettings.mode(plan: false, info: planned, starting: "code"), "code",
+                       "the session's options follow the agent into plan mode; leaving it goes back to where it started")
         XCTAssertEqual(AcpSessionSettings.steps(session: "s", info: info, model: "b", appliedModel: "a", mode: "architect-plan", appliedMode: "code"), [
             .init(method: "session/set_model", params: ["sessionId": "s", "modelId": "b"], target: .model("b")),
             .init(method: "session/set_mode", params: ["sessionId": "s", "modeId": "architect-plan"], target: .mode("architect-plan"))
@@ -235,6 +239,20 @@ final class AcpAgentTests: XCTestCase {
         XCTAssertTrue(commands.allSatisfy(\.isSessionState))
         XCTAssertFalse(AcpEvent.messageChunk("hi").isSessionState)
         XCTAssertFalse(commands.contains(where: \.isWakeEvidence), "an offer is not work")
+    }
+
+    func testErrorsThatNookAnswersItself() {
+        XCTAssertTrue(AgentErrorText.needsSignIn("Authentication required"))
+        XCTAssertTrue(AgentErrorText.needsSignIn("Error: not logged in. Run login first."))
+        XCTAssertFalse(AgentErrorText.needsSignIn("Authenticate called with method oauth"), "a log line is not the error")
+        XCTAssertTrue(AgentErrorText.sessionGone("Session not found: 3f2a"))
+        XCTAssertTrue(AgentErrorText.sessionGone("no rollout found for thread id 019a"))
+        XCTAssertTrue(AgentErrorText.sessionGone("Unknown session abc"))
+        XCTAssertFalse(AgentErrorText.sessionGone("Model not found"), "only the conversation being gone starts a new one")
+        XCTAssertFalse(AgentErrorText.sessionGone("network timeout"))
+        XCTAssertEqual(AcpRPC.authMethodIDs(["authMethods": [["id": "oauth-personal", "name": "Google"], ["id": "gemini-api-key"], ["name": "x"]]]),
+                       ["oauth-personal", "gemini-api-key"])
+        XCTAssertEqual((AcpRPC.cancelledOutcome["outcome"] as? [String: String])?["outcome"], "cancelled")
     }
 
     func testAgentLogLinesKeepOnlyErrors() {
