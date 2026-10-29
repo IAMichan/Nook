@@ -93,13 +93,4 @@ extension AppModel {
             break
         }
     }
-
-    /// The history's state for an agent's status: done, failed, or waiting on you.
-    static func noticeKind(_ status: AgentStatus) -> NoticeEntry.Kind {
-        switch status {
-        case .done: return .done
-        case .failed: return .failed
-        default: return .waiting
-        }
-    }
 }

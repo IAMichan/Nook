@@ -185,6 +185,8 @@ enum CardDetail: Equatable {
     case facts([Fact])
     /// A longer text under a small label, complete and wrapped (the step a takeover asks about).
     case note(String, label: String)
+    /// A quiet line or three under the title: what an agent said last, or what went wrong (`AgentNotice.detail`).
+    case summary(String)
     case chat([ChatBubble])
 }
 
@@ -208,6 +210,8 @@ struct NookCard: Equatable, Identifiable {
     var context: String
     /// The source whose app icon goes before the context ("whatsapp"), as in `SourceBrand`.
     var appIcon: String? = nil
+    /// The coding agent whose logo goes before the context ("Claude Code"), as in `AgentLogo`.
+    var agent: String? = nil
     var title: String
     var detail: CardDetail
     var primary: CardAction

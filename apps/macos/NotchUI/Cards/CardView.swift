@@ -110,7 +110,11 @@ struct CardView: View {
     /// context as one quiet line ("· Calendar, GitHub"), not a row of chips that competes with the status.
     private var header: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            if let source = card.appIcon { CardAppIcon(source: source) }
+            if let agent = card.agent {
+                AgentLogo(agent: agent, size: 16)
+            } else if let source = card.appIcon {
+                CardAppIcon(source: source)
+            }
             Text(card.context)
                 .font(NookTheme.TextStyle.label)
                 .foregroundStyle(NookTheme.textSecondary)
@@ -290,6 +294,8 @@ struct CardView: View {
             FactsDetail(facts: facts)
         case .note(let text, let label):
             NoteDetail(text: text, label: label)
+        case .summary(let text):
+            SummaryDetail(text: text)
         case .chat(let bubbles):
             // A message card's chat can be answered: each message can be quoted in the field, or get an emoji.
             ChatTranscript(bubbles: bubbles, contact: card.title, onOpen: onOpen,
@@ -693,6 +699,24 @@ private struct DiffDetail: View {
 }
 
 /// A longer text, never cut off: it wraps, and a very long one scrolls. The label names it below.
+/// What an agent said last under the card's title: quieter than the title, at most three lines, selectable.
+private struct SummaryDetail: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(NookTheme.TextStyle.body)
+            .lineSpacing(3)
+            .foregroundStyle(NookTheme.textSecondary)
+            .lineLimit(3)
+            .truncationMode(.tail)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help(text)
+    }
+}
+
 private struct NoteDetail: View {
     let text: String
     let label: String

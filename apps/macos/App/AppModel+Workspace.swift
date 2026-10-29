@@ -329,57 +329,16 @@ extension AppModel {
         // Only notify if the user is not already looking at the workspace window.
         guard !WorkspaceWindowController.shared.isKey else { return }
         let failed = run.status == .failed
-        let title = failed ? tr("ws.notice.failed", run.title) : tr("ws.notice.done", run.title)
-        let context = [run.provider.displayName, (run.projectPath as NSString).lastPathComponent].filter { !$0.isEmpty }
-            .joined(separator: " · ")
-        logNotice(failed ? .failed : .done, title: title, detail: failed ? (run.statusDetail ?? "") : "", context: context,
-                  target: .run(run.id), source: .agents, app: run.provider.rawValue)
         let runID = run.id
-        deliverNotice(.agents, app: run.provider.rawValue, id: "agentstatus-ws-" + UUID().uuidString,
-                      pace: Self.agentPace("run:" + runID.uuidString, failed: failed), title: title,
-                      subtitle: context, body: failed ? (run.statusDetail ?? "") : "", sound: failed ? .error : .done,
-                      kind: failed ? .error : .success,
-                      card: { [weak self] in self?.showTurnNotice(run, compact: false) },
-                      strip: { [weak self] in self?.showTurnNotice(run, compact: true) },
-                      open: { [weak self] in self?.openWorkspace(run: runID) })
-    }
-
-    /// The notch notice for a finished or failed turn: a card, or one slim line (`compact`).
-    private func showTurnNotice(_ run: WorkspaceRun, compact: Bool) {
-        guard notchFreeForNotice else { return }
-        let failed = run.status == .failed
-        let runID = run.id
-        guard !compact else {
-            let message = failed ? tr("ws.notice.failed", run.title) : tr("ws.notice.done", run.title)
-            viewModel.finish(message, button: tr("ws.notice.open"), tone: failed ? .failed : .done, inline: true) { [weak self] in
-                self?.openWorkspace(run: runID)
-            }
-            return
-        }
-        // Detailed: a card like a terminal agent's, with the run's provider and project, and OK to close it at once.
-        let token = "agentstatus-ws-" + UUID().uuidString
-        viewModel.register("\(token)#open") { [weak self] in self?.openWorkspace(run: runID) }
-        viewModel.register("\(token)#ok") { [weak self] in self?.viewModel.dismissCard(id: token) }
-        let project = (run.projectPath as NSString).lastPathComponent
-        let detail = failed ? (run.statusDetail ?? "") : ""
-        let title = detail.isEmpty ? run.title : run.title + "\n" + detail
-        let lines = max(1, min(4, Int(ceil(Double(title.count) / 46.0))))
-        let ok = CardAction(label: tr("button.ok"), outcome: .callback("\(token)#ok", ""))
-        viewModel.show(.card(NookCard(
-            id: token,
-            mood: failed ? .worry : .done,
-            context: [run.provider.displayName, project].filter { !$0.isEmpty }.joined(separator: " · "),
-            title: title,
-            detail: .none,
-            primary: CardAction(label: tr("ws.notice.open"), outcome: .callback("\(token)#open", ""), symbol: "eye"),
-            secondary: CardAction(label: "", outcome: .dismiss),
-            contentHeight: 100 + CGFloat(lines) * 24,
-            acknowledge: ok,
-            countdown: Self.agentNoticeSeconds,
-            escape: ok,
-            status: CardStatus(text: tr(failed ? "card.status.failed" : "card.status.done"), tone: failed ? .failed : .done)
-        )))
-        dismissAgentCardLater(token)
+        // A session Nook runs says what it replied last in its timeline; the lines it changed are not counted per turn.
+        let reply = workspace.timeline(runID).last { $0.kind == .assistant }?.text ?? ""
+        let notice = AgentNotice(agent: run.provider.displayName, project: (run.projectPath as NSString).lastPathComponent,
+                                 topic: run.title,
+                                 summary: failed ? (run.statusDetail ?? "") : AgentHub.oneLine(reply),
+                                 state: failed ? .failed : .done,
+                                 pace: Self.agentPace("run:" + runID.uuidString, failed: failed))
+        deliverAgentNotice(notice, app: run.provider.rawValue, target: .run(runID),
+                           open: { [weak self] in self?.openWorkspace(run: runID) })
     }
 
     // MARK: - Accounts

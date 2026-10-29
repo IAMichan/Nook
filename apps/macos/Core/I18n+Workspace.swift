@@ -889,8 +889,6 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.account.menu.help": "Standaardaccount per agent voor nieuwe sessies",
         "ws.account.defaultFor": "Standaard voor %@",
         "ws.account.manage": "Accounts beheren…",
-        "ws.notice.done": "Klaar: %@",
-        "ws.notice.failed": "Mislukt: %@",
         "ws.notice.open": "Bekijk",
 
         "accounts.reauthIntro": "Nook laat je opnieuw inloggen bij %@. Kies het juiste account in de browser.",
@@ -1801,8 +1799,6 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.account.menu.help": "Default account per agent for new sessions",
         "ws.account.defaultFor": "Default for %@",
         "ws.account.manage": "Manage accounts…",
-        "ws.notice.done": "Done: %@",
-        "ws.notice.failed": "Failed: %@",
         "ws.notice.open": "View",
 
         "accounts.reauthIntro": "Nook lets you log in to %@ again. Pick the right account in the browser.",
@@ -2434,8 +2430,6 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.account.menu": "Konten",
         "ws.account.defaultFor": "Standard für %@",
         "ws.account.manage": "Konten verwalten…",
-        "ws.notice.done": "Fertig: %@",
-        "ws.notice.failed": "Fehlgeschlagen: %@",
         "ws.notice.open": "Ansehen",
         "accounts.title": "Anmeldung",
         "accounts.method": "Methode",

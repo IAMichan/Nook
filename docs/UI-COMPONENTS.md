@@ -102,6 +102,10 @@ The checklist for a new or changed view:
   Two families, one rule: a notice that closes by itself has its actions in a `NookActionBar` and the OK with its ring
   (`NookNoticeEnd`); one that waits for you (an approval, a question) asks with `NookNoticeActions` and has no OK. Its time runs on a `NoticeClock`, so
   the ring and the notice hold together while the pointer is on it. A notice that waits for you has no OK.
+- A coding agent's notice is an `AgentNotice` handed to `AppModel.deliverAgentNotice`, for every agent alike: the card
+  shows the agent's logo (`NookCard.agent`), what the session is about as its title and the last reply as a quiet
+  `.summary` under it; the strip shows the logo with its state as a badge (`NoticeMark`). Never build an agent's card
+  or strip by hand.
 - A notification card says its state in `NookCard.status` (a tinted pill at the end of its header, colored by its
   `DoneTone`) and an agent's changed lines in `NookCard.changes`; its `context` keeps only who and where.
 - The result of an action is a `ToastCenter` toast, never a local notice string, banner or alert (see *Toasts*).
@@ -145,6 +149,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | --- | --- | --- |
 | `NookPrimaryButton`, `SmallPrimaryButton`, `NookGhostButton`, `SmallGhostButton` | `NookButtons.swift` | Text buttons on cards, in chat, and in the panel's own forms (optional SF Symbol before the title). They dim by themselves when `.disabled`; do not add an `.opacity` for it. Inside the panel use these, not `.borderedProminent` |
 | `NookNotice`, `NookNoticeEnd`, `NoticeClock` | `NookNotice.swift` | The one shape of every short notice: the strips under the notch (result, suggestion, moment), `PanelNoticeBar` and the toast. Mark, message and line, its actions, and with `countdown` the OK with its ring. `NookNoticeEnd` is that end (actions + OK with ring) on its own, shared by `NookNotice`, the compact agent notice in the notch's row and a card with an OK; `NoticeClock` runs the same time out and holds while the pointer is on the notice |
+| `NoticeMark` | `NookNotice.swift` | The mark at the start of a notice: its state's symbol in the state color, or for a coding agent its `AgentLogo` with the state as a small badge on the corner. `NookNotice` draws it (pass `agent:`), and so does the compact agent notice in the notch's row; never draw a notice's mark by hand |
 | `NookAcknowledgeButton`, `CountdownRing` | `NookButtons.swift` | The white "OK" that closes a notice at once, with a ring counting down until it closes by itself (card `acknowledge` + `countdown`, compact strip) |
 | `NookActionBar` | `NookButtons.swift` | A notice's own actions (`NookNoticeAction`) in one dark bar with thin dividers, next to its OK; drawn by `NookNoticeEnd`, never placed by hand |
 | `NookNoticeActions`, `NookNoticeAction` | `NookNoticeActions.swift` | The button row at the bottom of every notification (cards, approvals, questions, panel notices): main action and its "not now" in one pill (`NookSplitButton`), muted extras, rarer actions in a "…" menu (`NookMoreMenu`), optional mic. Use it for any new notification instead of loose buttons |
