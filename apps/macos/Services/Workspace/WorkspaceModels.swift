@@ -778,6 +778,32 @@ enum WorkspacePathPolicy {
     }
 }
 
+/// The folder a session works in, for its branch and changes. An agent that steps out of its project for a moment (a
+/// `cd` into a scratch folder or `/tmp`) still works on that project: the session keeps the folder in a repository
+/// instead of following it into one that has no git. A move into another repository (a worktree it entered) counts.
+enum SessionFolder {
+    /// The folder to keep when the agent reports `reported` while the session had `current`.
+    static func follow(current: String, reported: String, isRepository: (String) -> Bool = SessionFolder.isRepository) -> String {
+        guard !reported.isEmpty else { return current }
+        guard !current.isEmpty, current != reported else { return reported }
+        return isRepository(reported) || !isRepository(current) ? reported : current
+    }
+
+    /// Whether `path` lies in a git repository or worktree: a `.git` folder or file in it or above it. No git process.
+    static func isRepository(_ path: String) -> Bool {
+        guard !path.isEmpty else { return false }
+        let fm = FileManager.default
+        var folder = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
+        for _ in 0..<32 {
+            if fm.fileExists(atPath: folder.appendingPathComponent(".git").path) { return true }
+            let parent = folder.deletingLastPathComponent()
+            if parent.path == folder.path { break }
+            folder = parent
+        }
+        return false
+    }
+}
+
 /// An MCP tool as people read it: `mcp__bestanden-mappen__move_file` is "Move file" from "Bestanden mappen".
 struct McpToolName: Equatable {
     var server: String
