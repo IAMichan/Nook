@@ -29,8 +29,8 @@ enum BrandLogo: String, CaseIterable {
     static func forProvider(_ provider: AIProvider) -> BrandLogo {
         switch provider {
         case .claude, .claudeCode: return .claude
-        case .openai: return .openai
-        case .gemini: return .gemini
+        case .openai, .codexCLI: return .openai
+        case .gemini, .geminiCLI: return .gemini
         case .grok: return .grok
         case .mistral: return .mistral
         case .groq: return .groq

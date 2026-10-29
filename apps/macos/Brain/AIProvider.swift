@@ -3,7 +3,7 @@ import Foundation
 /// The brain provider Nook reasons with. Claude is default; other providers speak the OpenAI protocol
 /// (chat/completions with function calling), so a single client covers them all. Ollama and LM Studio run locally on your Mac.
 enum AIProvider: String, CaseIterable, Identifiable {
-    case claude, claudeCode, openai, gemini, grok, mistral, groq, openrouter, deepseek, qwen, moonshot, ollama, lmstudio
+    case claude, claudeCode, codexCLI, geminiCLI, openai, gemini, grok, mistral, groq, openrouter, deepseek, qwen, moonshot, ollama, lmstudio
 
     var id: String { rawValue }
 
@@ -11,6 +11,8 @@ enum AIProvider: String, CaseIterable, Identifiable {
         switch self {
         case .claude: return "Claude"
         case .claudeCode: return "Claude Code (je abonnement)"
+        case .codexCLI: return "ChatGPT (je abonnement, via Codex)"
+        case .geminiCLI: return "Gemini (je Google-account, via Gemini CLI)"
         case .openai: return "OpenAI"
         case .gemini: return "Google Gemini"
         case .grok: return "Grok (xAI)"
@@ -27,7 +29,30 @@ enum AIProvider: String, CaseIterable, Identifiable {
 
     /// Runs locally on your Mac; no API key needed.
     var isLocalServer: Bool { self == .ollama || self == .lmstudio }
-    var needsKey: Bool { !isLocalServer && self != .claudeCode }
+    var needsKey: Bool { !isLocalServer && !isSubscription }
+
+    /// The coding agent whose own login this provider thinks with (your subscription, no key); nil for the APIs.
+    var subscriptionAgent: AgentKind? {
+        switch self {
+        case .claudeCode: return .claude
+        case .codexCLI: return .codex
+        case .geminiCLI: return .gemini
+        case .claude, .openai, .gemini, .grok, .mistral, .groq, .openrouter, .deepseek, .qwen, .moonshot, .ollama, .lmstudio:
+            return nil
+        }
+    }
+
+    /// Thinks through a coding agent you are signed in to, instead of an API with a key.
+    var isSubscription: Bool { subscriptionAgent != nil }
+
+    /// Whether pictures can go along with the prompt through the agent: Codex takes them; Claude Code and Gemini CLI read
+    /// them only as files, which stays off.
+    var cliTakesImages: Bool {
+        switch self {
+        case .codexCLI: return true
+        default: return !isSubscription
+        }
+    }
 
     var keyAccount: String { self == .claude ? "anthropic-api-key" : "\(rawValue)-api-key" }
 
@@ -43,7 +68,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
         case .deepseek: return "DeepSeek API-sleutel"
         case .qwen: return "DashScope API-sleutel"
         case .moonshot: return "Moonshot API-sleutel"
-        case .ollama, .lmstudio, .claudeCode: return ""
+        case .ollama, .lmstudio, .claudeCode, .codexCLI, .geminiCLI: return ""
         }
     }
 
@@ -51,6 +76,8 @@ enum AIProvider: String, CaseIterable, Identifiable {
         switch self {
         case .claude: return URL(string: "https://console.anthropic.com/settings/keys")
         case .claudeCode: return URL(string: "https://claude.com/product/claude-code")
+        case .codexCLI: return URL(string: "https://github.com/openai/codex")
+        case .geminiCLI: return URL(string: "https://github.com/google-gemini/gemini-cli")
         case .openai: return URL(string: "https://platform.openai.com/api-keys")
         case .gemini: return URL(string: "https://aistudio.google.com/apikey")
         case .grok: return URL(string: "https://console.x.ai")
@@ -69,8 +96,8 @@ enum AIProvider: String, CaseIterable, Identifiable {
     var baseURL: String {
         switch self {
         case .claude, .claudeCode: return "https://api.anthropic.com/v1"
-        case .openai: return "https://api.openai.com/v1"
-        case .gemini: return "https://generativelanguage.googleapis.com/v1beta/openai"
+        case .openai, .codexCLI: return "https://api.openai.com/v1"
+        case .gemini, .geminiCLI: return "https://generativelanguage.googleapis.com/v1beta/openai"
         case .grok: return "https://api.x.ai/v1"
         case .mistral: return "https://api.mistral.ai/v1"
         case .groq: return "https://api.groq.com/openai/v1"
@@ -88,6 +115,8 @@ enum AIProvider: String, CaseIterable, Identifiable {
         switch self {
         case .claude: return "claude-haiku-5-5"
         case .claudeCode: return "haiku"
+        // Empty: the agent's own default for your account.
+        case .codexCLI, .geminiCLI: return ""
         case .openai: return "gpt-4.1-mini"
         case .gemini: return "gemini-2.5-flash"
         case .grok: return "grok-3-mini"
@@ -107,6 +136,8 @@ enum AIProvider: String, CaseIterable, Identifiable {
         switch self {
         case .claude: return ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]
         case .claudeCode: return ["haiku", "sonnet", "opus"]
+        case .codexCLI: return []
+        case .geminiCLI: return ["gemini-2.5-flash", "gemini-2.5-pro"]
         case .openai: return ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini"]
         case .gemini: return ["gemini-2.5-flash", "gemini-2.5-pro"]
         case .grok: return ["grok-3-mini", "grok-3", "grok-4"]
@@ -122,7 +153,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
 
     /// Fetches the models this provider offers for the provided key.
     func listModels(key: String?) async throws -> [String] {
-        if self == .claudeCode { return suggestedModels }
+        if isSubscription { return suggestedModels }
         guard let url = URL(string: baseURL + "/models" + (self == .claude ? "?limit=100" : "")) else { return [] }
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
@@ -162,7 +193,8 @@ extension AIProvider {
         let name = model.lowercased()
         func has(_ parts: String...) -> Bool { parts.contains { name.contains($0) } }
         switch self {
-        case .claude, .claudeCode, .gemini: return true
+        case .claude, .claudeCode, .gemini, .codexCLI: return true
+        case .geminiCLI: return false
         case .openai: return !has("gpt-3", "o1-mini", "o3-mini", "instruct")
         case .grok: return has("vision", "grok-4", "grok-2-image")
         case .mistral: return has("pixtral", "small", "medium", "large")

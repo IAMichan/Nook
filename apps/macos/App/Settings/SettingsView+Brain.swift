@@ -114,12 +114,18 @@ extension SettingsView {
                 // Step 2: which service, step 3: signing in to it, step 4: its model.
                 Section {
                     Picker(tr("settings.brain.provider"), selection: externalProvider) {
-                        // Signing in comes first: your Claude subscription needs no key at all.
-                        Text(tr("settings.brain.claude") + " · " + tr("settings.brain.claudeCodeSub")).tag(AIProvider.claudeCode)
-                        Text(tr("settings.brain.claude") + " · " + tr("settings.brain.apiKey")).tag(AIProvider.claude)
-                        Divider()
-                        ForEach(AIProvider.allCases.filter { $0 != .claude && $0 != .claudeCode && !$0.isLocalServer }) { provider in
-                            Label { Text(provider.title) } icon: { LogoImage.brand(BrandLogo.forProvider(provider)) }.tag(provider)
+                        // Signing in with your own account comes first: your subscription needs no key at all.
+                        Section(tr("brain.service.withAccount")) {
+                            ForEach(AIProvider.allCases.filter(\.isSubscription)) { provider in
+                                Label { Text(serviceName(provider)) } icon: { LogoImage.brand(BrandLogo.forProvider(provider)) }
+                                    .tag(provider)
+                            }
+                        }
+                        Section(tr("brain.service.withKey")) {
+                            ForEach(AIProvider.allCases.filter { !$0.isSubscription && !$0.isLocalServer }) { provider in
+                                Label { Text(serviceName(provider)) } icon: { LogoImage.brand(BrandLogo.forProvider(provider)) }
+                                    .tag(provider)
+                            }
                         }
                     }
                     .help(brainExplanation)
@@ -201,7 +207,7 @@ extension SettingsView {
     }
 
     var brainExplanation: String {
-        if [.claude, .claudeCode].contains(settings.provider) {
+        if [.claude, .claudeCode].contains(settings.provider) || settings.provider.isSubscription {
             return tr("settings.brain.claudeExplanation")
         }
         return tr("settings.brain.otherExplanation")
@@ -222,8 +228,8 @@ extension SettingsView {
     /// Signing in to the chosen service: the subscription found on this Mac, a key, or the app that must run.
     var providerSignIn: some View {
         Group {
-            if settings.provider == .claudeCode {
-                claudeCodeStatus
+            if settings.provider.isSubscription {
+                subscriptionStatus
             } else if settings.provider == .openrouter {
                 // OpenRouter signs in on its own page and hands Nook a key itself; pasting one is folded away.
                 openRouterSignIn
@@ -351,20 +357,68 @@ extension SettingsView {
         }
     }
 
-    /// Claude Code detected? Nothing left to do except test.
-    var claudeCodeStatus: some View {
+    /// The name of a service in the picker: the account you sign in with, or the API.
+    func serviceName(_ provider: AIProvider) -> String {
+        switch provider {
+        case .claudeCode: return tr("settings.brain.claude") + " · " + tr("settings.brain.claudeCodeSub")
+        case .codexCLI: return tr("brain.sub.chatgpt")
+        case .geminiCLI: return tr("brain.sub.gemini")
+        case .claude: return tr("settings.brain.claude") + " · " + tr("settings.brain.apiKey")
+        default: return provider.title
+        }
+    }
+
+    /// Whose login a subscription signs in with: Claude, ChatGPT or Google.
+    func accountBrand(_ provider: AIProvider) -> String {
+        switch provider {
+        case .claudeCode: return "Claude"
+        case .codexCLI: return "ChatGPT"
+        case .geminiCLI: return "Google"
+        default: return provider.title
+        }
+    }
+
+    /// Your subscription through its coding agent: installed, signed in, and as whom. One button does what is left
+    /// (installing and signing in in the Terminal, or signing in in your browser where the agent can).
+    @ViewBuilder
+    var subscriptionStatus: some View {
         let _ = refreshTick
-        let path = ClaudeCodeBrain.executable
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            if let path {
-                StatusRow(title: tr("settings.brain.claudeFound", path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")),
-                          detail: tr("settings.brain.claudeLoginHint"), state: .done) { EmptyView() }
-            } else {
-                StatusRow(title: tr("settings.brain.claudeNotFound"), detail: tr("settings.brain.claudeInstallHint"), state: .warning) { EmptyView() }
-                    .textSelection(.enabled)
+        if let kind = settings.provider.subscriptionAgent {
+            let profile = app.profiles.preferredProfile(kind)
+            let progress = app.agentConnect[profile.id]
+            let path = SubscriptionBrain.executable(settings.provider)
+            let account = app.history.profileAccounts[profile.id]
+            if let progress, progress.isBusy {
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    ProgressView().controlSize(.small)
+                    Text(progress.text).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                }
+            } else if path == nil {
+                StatusRow(title: tr("brain.sub.notInstalled", kind.name), detail: tr("brain.sub.notInstalledDetail", kind.name),
+                          state: .warning) {
+                    Button(tr("agents.installAndLogin")) { app.connect(profile) }
+                        .buttonStyle(.borderedProminent)
+                }
                 HStack {
-                    Button(tr("button.searchAgain")) { ClaudeCodeBrain.resetLocation(); refreshTick += 1; settings.objectWillChange.send() }
-                    if let url = settings.provider.keyURL { Link(tr("settings.brain.moreAboutClaudeCode"), destination: url) }
+                    Button(tr("button.searchAgain")) {
+                        ClaudeCodeBrain.resetLocation()
+                        app.history.refresh()
+                        refreshTick += 1
+                        settings.objectWillChange.send()
+                    }
+                    if let url = settings.provider.keyURL { Link(tr("brain.sub.more", kind.name), destination: url) }
+                }
+            } else if let account {
+                StatusRow(title: tr("brain.sub.signedIn", accountBrand(settings.provider)), detail: account.name, state: .done) {
+                    EmptyView()
+                }
+            } else {
+                StatusRow(title: tr("brain.sub.signedOut", accountBrand(settings.provider)),
+                          detail: tr("brain.sub.signedOutDetail", kind.name), state: .todo) {
+                    Button(tr("hub.signIn.button", accountBrand(settings.provider))) {
+                        if !app.signInInBrowser(profile) { app.connect(profile) }
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
             }
         }
