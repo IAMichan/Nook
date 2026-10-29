@@ -63,7 +63,9 @@ extension ChatBubble {
         self.init(id: message.id, text: message.text, time: time, date: message.date, sender: message.sender,
                   fromMe: message.isMine)
         poll = message.poll
-        reactions = (message.reactions ?? []).map { BubbleReaction(emoji: $0.emoji, count: $0.count, mine: $0.mine) }
+        reactions = (message.reactions ?? []).map {
+            BubbleReaction(emoji: $0.emoji, count: $0.count, mine: $0.mine, people: $0.people ?? [])
+        }
         if message.isMine {
             ticks = message.receipt.map(BubbleTicks.init)
             if let person {

@@ -147,7 +147,7 @@ enum SlackData {
             // Slack keeps no delivery or read receipts: your message is on Slack, and that is all it says.
             if mine { inbox.receipt = .sent }
             // Always set, also when there are none: an emoji taken back in Slack leaves the message in Nook too.
-            inbox.reactions = Self.reactions(message, me: me)
+            inbox.reactions = Self.reactions(message, me: me, users: users)
             inbox.quote = Self.quote(message, conversation: conversation, users: users, me: me)
             return inbox
         }
@@ -184,18 +184,20 @@ enum SlackData {
 
     /// The emoji on a message (`reactions: [{name, count, users}]`), the most used first; yours when your id is among
     /// its people. A skin tone counts with the emoji itself; a workspace's own emoji (no Unicode one) is left out.
-    static func reactions(_ message: [String: Any], me: String?) -> [InboxReaction] {
+    static func reactions(_ message: [String: Any], me: String?, users: [String: String] = [:]) -> [InboxReaction] {
         var result: [InboxReaction] = []
         for reaction in message["reactions"] as? [[String: Any]] ?? [] {
             guard let name = reaction["name"] as? String, let character = Self.emoji(shortcode: name) else { continue }
             let people = reaction["users"] as? [String] ?? []
             let count = max((reaction["count"] as? Int) ?? people.count, 1)
             let mine = me.map { people.contains($0) } ?? false
+            let names = people.filter { $0 != me }.compactMap { users[$0] }
             if let index = result.firstIndex(where: { $0.emoji == character }) {
                 result[index].count += count
                 result[index].mine = result[index].mine || mine
+                if !names.isEmpty { result[index].people = (result[index].people ?? []) + names }
             } else {
-                result.append(InboxReaction(emoji: character, count: count, mine: mine))
+                result.append(InboxReaction(emoji: character, count: count, mine: mine, people: names.isEmpty ? nil : names))
             }
         }
         return result.enumerated().sorted {

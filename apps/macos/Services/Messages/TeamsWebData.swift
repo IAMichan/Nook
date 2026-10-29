@@ -205,7 +205,13 @@ enum TeamsWebData {
     /// A chat's messages, oldest first: text and rich text only (no calls, no one joining), deleted ones left out; a
     /// message with only files shows their names.
     static func messages(_ json: [String: Any], chat: TeamsData.Chat, me: String) -> [InboxMessage] {
-        let messages: [InboxMessage] = (json["messages"] as? [[String: Any]] ?? []).compactMap { message in
+        let all = json["messages"] as? [[String: Any]] ?? []
+        // Who is who, by the names their messages carry: the emoji name their people by id only.
+        var names: [String: String] = [:]
+        for message in all {
+            if let id = contact(message["from"]), let name = message["imdisplayname"] as? String, !name.isEmpty { names[id] = name }
+        }
+        let messages: [InboxMessage] = all.compactMap { message in
             guard let id = message["id"] as? String, let type = message["messagetype"] as? String,
                   type == "Text" || type.hasPrefix("RichText"), let sent = date(message) else { return nil }
             let properties = message["properties"] as? [String: Any] ?? [:]
@@ -220,7 +226,7 @@ enum TeamsWebData {
             var inbox = InboxMessage(id: "teams-\(id)", sender: sender, text: text, date: sent, fromMe: mine)
             if mine { inbox.receipt = .sent }
             inbox.quote = answer.quote
-            inbox.reactions = reactions(properties["emotions"], me: me)
+            inbox.reactions = reactions(properties["emotions"], me: me, names: names)
             return inbox
         }
         return messages.sorted { $0.date < $1.date }
@@ -261,15 +267,18 @@ enum TeamsWebData {
 
     /// The emoji on a message from its "emotions" property (a list, or that list as JSON text): each key with the
     /// people who chose it. Nil when the message does not say (a chat list's preview), so what the chat showed stays.
-    static func reactions(_ value: Any?, me: String) -> [InboxReaction]? {
+    static func reactions(_ value: Any?, me: String, names: [String: String] = [:]) -> [InboxReaction]? {
         var list = value as? [[String: Any]]
         if list == nil, let text = value as? String, let data = text.data(using: .utf8) {
             list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]
         }
         guard let list else { return nil }
-        return TeamsData.reactions(list.flatMap { emotion -> [(key: String, mine: Bool)] in
+        return TeamsData.reactions(list.flatMap { emotion -> [(key: String, mine: Bool, name: String?)] in
             let key = (emotion["key"] as? String) ?? ""
-            return (emotion["users"] as? [[String: Any]] ?? []).map { (key: key, mine: contact($0["mri"]) == me) }
+            // The web app names who chose it only by their id; the chat's people give the name where Nook has it.
+            return (emotion["users"] as? [[String: Any]] ?? []).map {
+                (key: key, mine: contact($0["mri"]) == me, name: names[contact($0["mri"]) ?? ""])
+            }
         })
     }
 

@@ -337,7 +337,7 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
             // Someone put an emoji on a message, or took theirs back: the chat shows it.
             if let chat = TelegramData.int64(object["chat_id"]), let id = TelegramData.int64(object["message_id"]),
                let index = messages[chat]?.firstIndex(where: { $0.id == "telegram-\(chat)-\(id)" }) {
-                let reactions = TelegramData.reactions(object["interaction_info"])
+                let reactions = TelegramData.reactions(object["interaction_info"], users: users, me: meID)
                 if messages[chat]?[index].reactions != reactions {
                     messages[chat]?[index].reactions = reactions
                     changed.insert(chat)

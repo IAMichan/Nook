@@ -922,7 +922,7 @@ final class ChatInboxTests: XCTestCase {
         let messages = ChatServiceData.messages(answer, chat: chat)
         XCTAssertEqual(messages.map(\.id), ["beeper-!a-1"])
         XCTAssertEqual(messages.first?.receipt, .read)
-        XCTAssertEqual(messages.first?.reactions, [InboxReaction(emoji: "😂", count: 1, mine: false)])
+        XCTAssertEqual(messages.first?.reactions, [InboxReaction(emoji: "😂", count: 1, mine: false, people: ["Anna"])], "with who put it there")
         XCTAssertEqual(ChatServiceData.deleted(answer, chat: chat), ["beeper-!a-2"])
         XCTAssertEqual(ChatServiceData.networkID("beeper-!a-1", chat: "!a"), "1")
         XCTAssertNil(ChatServiceData.networkID("beeper-!b-1", chat: "!a"), "a message of another chat")
@@ -1176,7 +1176,8 @@ final class ChatInboxTests: XCTestCase {
                                            text: "\u{200E}Reageerde met 👍🏼 op Komt goed", date: now), id: "n1"))
         XCTAssertEqual(inbox.threads.count, 1, "the reaction makes no chat of its own")
         XCTAssertEqual(inbox.threads[key]?.messages.count, 2, "nor a message")
-        XCTAssertEqual(inbox.threads[key]?.messages.first?.reactions, [InboxReaction(emoji: "👍🏼", count: 1, mine: false)])
+        XCTAssertEqual(inbox.threads[key]?.messages.first?.reactions,
+                       [InboxReaction(emoji: "👍🏼", count: 1, mine: false, people: ["Mijn Schat"])], "with who put it there")
         XCTAssertFalse(inbox.add(ChatNotice(app: "whatsapp", chat: "Mijn Schat", sender: "",
                                             text: "Reageerde met 👍🏼 op Komt goed", date: now), id: "n2"), "shown once")
     }
@@ -1199,6 +1200,19 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(inbox.threads[key]?.readState, .readInNook)
         inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: [], unread: 0))
         XCTAssertEqual(inbox.threads[key]?.readState, .read)
+    }
+
+    func testReactionsSayWhoPutThemThere() {
+        let info: [String: Any] = ["reactions": ["reactions": [[
+            "type": ["@type": "reactionTypeEmoji", "emoji": "👍"], "total_count": 3, "is_chosen": true,
+            "recent_sender_ids": [["@type": "messageSenderUser", "user_id": 7], ["@type": "messageSenderUser", "user_id": 1]],
+        ]]]]
+        XCTAssertEqual(TelegramData.reactions(info, users: [7: "Anna", 1: "Me"], me: 1),
+                       [InboxReaction(emoji: "👍", count: 3, mine: true, people: ["Anna"])], "you are not among the names")
+        let slack: [String: Any] = ["reactions": [["name": "heart", "users": ["U1", "U2"], "count": 2]]]
+        XCTAssertEqual(SlackData.reactions(slack, me: "U2", users: ["U1": "Jan", "U2": "Me"]).first?.people, ["Jan"])
+        let tapbacks = [AppData.Tapback(target: "A", emoji: "❤️", adds: true, sender: "+31612345678", mine: false)]
+        XCTAssertEqual(AppData.Tapback.reactions(tapbacks) { _ in "Opa Henk" }["A"]?.first?.people, ["Opa Henk"])
     }
 
     func testAChatSplitByMarksInItsNameIsOneAgain() throws {

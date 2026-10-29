@@ -550,7 +550,8 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         let (account, chat) = try await webChat(name)
         let path = "/v1/users/ME/conversations/" + ChatJSON.segment(chat.id) + "/messages/"
             + ChatJSON.segment(String(message.dropFirst("teams-".count))) + "/properties?name=emotions"
-        let key = TeamsData.key(emoji: emoji)
+        // Teams shows only the emoji of its own list; any other would be a placeholder there.
+        guard let key = TeamsData.key(emoji: emoji) else { throw NookError(tr("chat.react.notInApp", "Teams")) }
         if mine {
             try await webAct("DELETE", account: account, path: path, json: ["emotions": ["key": key]])
         } else {

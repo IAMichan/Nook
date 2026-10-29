@@ -99,6 +99,8 @@ struct BubbleReaction: Equatable, Identifiable {
     var emoji: String
     var count: Int
     var mine: Bool
+    /// Who else put it there, by name, where the app says; empty when only the count is known.
+    var people: [String] = []
 
     var id: String { emoji }
 }
