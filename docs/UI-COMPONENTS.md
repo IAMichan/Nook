@@ -102,7 +102,7 @@ The checklist for a new or changed view:
   Two families, one rule: a notice that closes by itself has its actions in a `NookActionBar` and the OK with its ring
   (`NookNoticeEnd`); one that waits for you (an approval, a question) asks with `NookNoticeActions` and has no OK. Its time runs on a `NoticeClock`, so
   the ring and the notice hold together while the pointer is on it. A notice that waits for you has no OK.
-- A coding agent's notice is an `AgentNotice` handed to `AppModel.deliverAgentNotice`, for every agent alike: the card
+- A coding agent's notice is an `AgentStatusNotice` handed to `AppModel.deliverAgentNotice`, for every agent alike: the card
   shows the agent's logo (`NookCard.agent`), what the session is about as its title and the last reply as a quiet
   `.summary` under it; the strip shows the logo with its state as a badge (`NoticeMark`). Never build an agent's card
   or strip by hand.

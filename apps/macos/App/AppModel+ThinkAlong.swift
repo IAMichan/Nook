@@ -161,11 +161,17 @@ extension AppModel {
         // On the notch it needs a resting notch; when it is busy, the offer waits for a later look.
         let decision = settings.noticeRules.decide(.suggestions, app: bundleID, quiet: quiet.silent)
         if let style = decision.style, style != .system, !viewModel.nudgeFits { return }
-        // A suggestion is the first to give way: not while another notice popped up a few minutes ago.
-        if decision.style != nil, !noticePacer.permits(key: Self.suggestionPace, calm: ThinkAlong.calmBeforeOffer) { return }
-        thinkAlong.didOffer(line)
+        let paced = decision.style != nil
+            && !noticePacer.permits(key: Self.suggestionPace, calm: ThinkAlong.calmBeforeOffer)
         logNotice(.info, title: line, detail: body == line ? "" : body, context: appName, source: .suggestions, app: bundleID)
         missedNudge = (line, card, appName, Date())
+        // A suggestion is the first to give way: while another notice popped up a few minutes ago it only goes under
+        // the bell, and is not offered again (it does not count as an offer left unanswered).
+        if paced {
+            thinkAlong.held(line)
+            return
+        }
+        thinkAlong.didOffer(line)
         deliverNotice(.suggestions, app: bundleID, id: card.id, pace: Self.suggestionPace, title: line, subtitle: appName,
                       body: body == line ? "" : body,
                       card: { [weak self] in self?.viewModel.present(card) },

@@ -332,7 +332,7 @@ extension AppModel {
         let runID = run.id
         // A session Nook runs says what it replied last in its timeline; the lines it changed are not counted per turn.
         let reply = workspace.timeline(runID).last { $0.kind == .assistant }?.text ?? ""
-        let notice = AgentNotice(agent: run.provider.displayName, project: (run.projectPath as NSString).lastPathComponent,
+        let notice = AgentStatusNotice(agent: run.provider.displayName, project: (run.projectPath as NSString).lastPathComponent,
                                  topic: run.title,
                                  summary: failed ? (run.statusDetail ?? "") : AgentHub.oneLine(reply),
                                  state: failed ? .failed : .done,

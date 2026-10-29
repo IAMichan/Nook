@@ -92,6 +92,8 @@ extension AppModel {
                                tone: approval.danger ? .failed : .waiting)
         )
         viewModel.presentUrgent(card, keepPanel: true)
+        // It always shows, but counts: the notices after it keep their distance from it too.
+        noticePacer.record(key: Self.urgentPace)
         if sound { NookSound.play(.attention) }
     }
 
@@ -162,6 +164,7 @@ extension AppModel {
         if index == 0 {
             // An open panel stays: it asks in its own compact bar (see `PanelApprovalBar`).
             viewModel.presentUrgent(card, keepPanel: true)
+            noticePacer.record(key: Self.urgentPace)
             NookSound.play(.attention)
         } else {
             viewModel.show(.card(card))
@@ -182,7 +185,7 @@ extension AppModel {
     /// Agent finished, failed, or awaiting input: a notice the way Settings › Notifications says for agents (a card, one
     /// line, a macOS notification or only the list), unless that agent is switched off there or you look at it already.
     func agentNeedsAttention(_ session: AgentSession) {
-        let notice = AgentNotice(agent: session.name, project: session.project, topic: session.firstPrompt,
+        let notice = AgentStatusNotice(agent: session.name, project: session.project, topic: session.firstPrompt,
                                  summary: session.summary, state: Self.noticeState(session.status),
                                  added: session.linesAdded, removed: session.linesRemoved,
                                  pace: Self.agentPace(session.id, failed: session.status == .failed))
@@ -212,7 +215,7 @@ extension AppModel {
     }
 
     /// An agent's status as the state of its notice.
-    static func noticeState(_ status: AgentStatus) -> AgentNotice.State {
+    static func noticeState(_ status: AgentStatus) -> AgentStatusNotice.State {
         switch status {
         case .done: return .done
         case .failed: return .failed

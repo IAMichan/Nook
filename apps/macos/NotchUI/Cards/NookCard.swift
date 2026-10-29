@@ -185,7 +185,7 @@ enum CardDetail: Equatable {
     case facts([Fact])
     /// A longer text under a small label, complete and wrapped (the step a takeover asks about).
     case note(String, label: String)
-    /// A quiet line or three under the title: what an agent said last, or what went wrong (`AgentNotice.detail`).
+    /// A quiet line or three under the title: what an agent said last, or what went wrong (`AgentStatusNotice.detail`).
     case summary(String)
     case chat([ChatBubble])
 }

@@ -4,7 +4,7 @@ import Foundation
 /// a terminal (Claude Code, Codex, Gemini CLI, …) and a session Nook runs alike. Each agent only fills it in from what
 /// its app says; `AppModel.deliverAgentNotice` shows it as a card or a strip, so they all look the same.
 /// Pure, so what the notice says can be tested without a Mac.
-struct AgentNotice: Equatable, Sendable {
+struct AgentStatusNotice: Equatable, Sendable {
     enum State: String, Sendable {
         case done, failed, waiting
     }

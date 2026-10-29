@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The notice a coding agent gives by itself (done, failed, waiting on you), built once for every agent: a terminal
-/// session and a session Nook runs fill in an `AgentNotice` and hand it here, so the card, the strip, the sound and the
+/// session and a session Nook runs fill in an `AgentStatusNotice` and hand it here, so the card, the strip, the sound and the
 /// entry under the bell look and behave the same whichever agent it is.
 extension AppModel {
     /// How long an agent notice stays while the pointer is off the notch; the ring on its OK counts down the same time.
@@ -10,10 +10,10 @@ extension AppModel {
     /// Keeps the notice under the bell and shows it the way Settings › Notifications says for agents. `open` is what
     /// View does (the session in the panel or the main window); `openApp` the second button, where the agent has one
     /// (its terminal). A notice that waits on you always reaches you (`NoticePacer`).
-    func deliverAgentNotice(_ notice: AgentNotice, app: String, target: NoticeEntry.Target, watching: Bool = false,
+    func deliverAgentNotice(_ notice: AgentStatusNotice, app: String, target: NoticeEntry.Target, watching: Bool = false,
                             open: @escaping () -> Void, openApp: (title: String, action: () -> Void)? = nil) {
         logNotice(Self.noticeKind(notice.state), title: notice.headline,
-                  detail: notice.summary.isEmpty ? AgentNotice.short(notice.topic) : notice.summary, context: notice.project,
+                  detail: notice.summary.isEmpty ? AgentStatusNotice.short(notice.topic) : notice.summary, context: notice.project,
                   target: target, source: .agents, app: app)
         deliverNotice(.agents, app: app, id: "agentstatus-" + UUID().uuidString, pace: notice.pace,
                       urgent: notice.state == .waiting, title: notice.headline, subtitle: notice.project,
@@ -26,7 +26,7 @@ extension AppModel {
 
     /// The card: the agent's logo, who and where, its state and changed lines in the header; what the session is about
     /// as the title, and what the agent said last under it. View, the agent's own app, and OK with its countdown.
-    private func showAgentNotice(_ notice: AgentNotice, open: @escaping () -> Void,
+    private func showAgentNotice(_ notice: AgentStatusNotice, open: @escaping () -> Void,
                                  openApp: (title: String, action: () -> Void)?) {
         guard notchFreeForNotice else { return }
         let token = "agentstatus-" + UUID().uuidString
@@ -61,7 +61,7 @@ extension AppModel {
 
     /// One line in the notch's own row: the agent's logo with its state as a badge, the headline and the project, View
     /// and OK. What it said waits in the session.
-    private func showAgentStrip(_ notice: AgentNotice, open: @escaping () -> Void) {
+    private func showAgentStrip(_ notice: AgentStatusNotice, open: @escaping () -> Void) {
         guard notchFreeForNotice else { return }
         let message = notice.project.isEmpty ? notice.headline : notice.headline + " · " + notice.project
         viewModel.finish(message, button: tr("button.view"), tone: Self.doneTone(notice.state), inline: true,
@@ -92,8 +92,12 @@ extension AppModel {
         "agent:" + id + (failed ? ":failed" : "")
     }
 
+    /// What a permission request or an agent's question counts as for `NoticePacer`: it never waits, but what comes
+    /// after it does.
+    static let urgentPace = "urgent"
+
     /// The history's state for an agent notice.
-    static func noticeKind(_ state: AgentNotice.State) -> NoticeEntry.Kind {
+    static func noticeKind(_ state: AgentStatusNotice.State) -> NoticeEntry.Kind {
         switch state {
         case .done: return .done
         case .failed: return .failed
@@ -102,7 +106,7 @@ extension AppModel {
     }
 
     /// The mark and color of an agent notice: a check in mint, a bubble in amber, an exclamation mark in coral.
-    static func doneTone(_ state: AgentNotice.State) -> DoneTone {
+    static func doneTone(_ state: AgentStatusNotice.State) -> DoneTone {
         switch state {
         case .done: return .done
         case .failed: return .failed
@@ -110,7 +114,7 @@ extension AppModel {
         }
     }
 
-    static func noticeSound(_ state: AgentNotice.State) -> NookSound {
+    static func noticeSound(_ state: AgentStatusNotice.State) -> NookSound {
         switch state {
         case .done: return .done
         case .failed: return .error
@@ -118,7 +122,7 @@ extension AppModel {
         }
     }
 
-    static func toastKind(_ state: AgentNotice.State) -> NookToastKind {
+    static func toastKind(_ state: AgentStatusNotice.State) -> NookToastKind {
         switch state {
         case .done: return .success
         case .failed: return .error

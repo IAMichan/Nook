@@ -54,7 +54,9 @@ final class ThinkAlong: ObservableObject {
 
     /// How long Nook waits after an offer: longer after each decline or offer left unanswered, up to at most two hours.
     private var offerGap: TimeInterval {
-        min(7200, baseOfferGap * pow(2, Double(min(declines, 4))))
+        // The offer still out there without an answer counts already, so the next one waits the doubled time.
+        let noes = declines + (answered ? 0 : 1)
+        return min(7200, baseOfferGap * pow(2, Double(min(noes, 4))))
     }
 
     /// How long the notch must have been free of other notices before an offer may show (`NoticePacer`).
@@ -117,6 +119,13 @@ final class ThinkAlong: ObservableObject {
         if !answered { declines += 1 }
         answered = false
         lastOffer = Date()
+        offered.append(Offer(date: Date(), text: NudgeFilter.normalize(text), declined: false))
+        saveOffered()
+    }
+
+    /// An offer that only went under the bell (the notch had just told you something else): kept so it is not offered
+    /// again, without counting as an offer or moving the gap.
+    func held(_ text: String) {
         offered.append(Offer(date: Date(), text: NudgeFilter.normalize(text), declined: false))
         saveOffered()
     }
