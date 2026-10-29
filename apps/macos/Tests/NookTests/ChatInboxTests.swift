@@ -1495,6 +1495,25 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertTrue(ChatInbox.transcript(thread).hasSuffix("] Jan: dinner?"))
     }
 
+    func testSearchFindsYourOwnMessagesInEveryApp() {
+        let teams = InboxThread(id: "teams|aron", app: "teams", name: "Aron", messages: [
+            InboxMessage(id: "1", text: "Zijn de stopcontacten al binnen?", date: now, fromMe: true),
+            InboxMessage(id: "2", text: "Nog niet", date: now.addingTimeInterval(60))
+        ])
+        let whatsApp = InboxThread(id: "wa|anna", app: "whatsapp", name: "Anna", messages: [
+            InboxMessage(id: "3", text: "Stopcontácten gekocht!", date: now.addingTimeInterval(120), fromMe: true)
+        ])
+        let found = ChatInbox.search([teams, whatsApp], query: "stopcontacten").split(separator: "\n")
+        XCTAssertEqual(found.count, 2, "sent messages of every app, accents ignored")
+        XCTAssertTrue(found[0].hasPrefix("- WhatsApp · Anna · "), "newest first")
+        XCTAssertTrue(found[0].hasSuffix(" · You: Stopcontácten gekocht!"), String(found[0]))
+        XCTAssertTrue(found[1].hasSuffix(" · You: Zijn de stopcontacten al binnen?"), String(found[1]))
+        XCTAssertEqual(ChatInbox.search([teams], query: "stopcontacten binnen").split(separator: "\n").count, 1, "every word")
+        XCTAssertEqual(ChatInbox.search([teams], query: "lamp"), "")
+        XCTAssertEqual(ChatInbox.search([teams], query: "  "), "")
+        XCTAssertTrue(ChatInbox.transcript(teams).contains("] You: Zijn de stopcontacten"), "your own message is yours")
+    }
+
     // MARK: Sent, delivered, read
 
     func testReceiptsOnlyMoveForward() {
