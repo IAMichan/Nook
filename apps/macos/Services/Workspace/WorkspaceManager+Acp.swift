@@ -150,7 +150,9 @@ extension WorkspaceManager {
                     if loadID != nil, AgentErrorText.sessionGone(message) {
                         self.append(id, RunEvent(kind: .system, text: tr("ws.acp.noLoad", run.provider.displayName)))
                         self.update(id) { $0.providerSessionID = nil }
-                        return self.openAcpSession(id, client, bridge: bridge, prompt: prompt, executable: executable, signedIn: signedIn)
+                        // The new conversation starts from what happened so far.
+                        let carried = self.carryOverConversation(id, prompt: prompt)
+                        return self.openAcpSession(id, client, bridge: bridge, prompt: carried, executable: executable, signedIn: signedIn)
                     }
                     if !signedIn, AgentErrorText.needsSignIn(message), let method = client.authMethods.first {
                         // The agent signs in its own way (a browser page, a key from the environment), then the session opens.

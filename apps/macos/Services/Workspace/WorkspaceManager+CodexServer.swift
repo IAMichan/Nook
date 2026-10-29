@@ -83,7 +83,10 @@ extension WorkspaceManager {
                                 client.stop()
                                 self.append(id, RunEvent(kind: .system, text: tr("ws.acp.noLoad", run.provider.displayName)))
                                 self.update(id) { $0.providerSessionID = nil }
-                                return self.connectCodexServer(id, executable: executable, prompt: prompt ?? self.warmPrompts.removeValue(forKey: id))
+                                // The new thread starts from what happened so far.
+                                let waiting = prompt ?? self.warmPrompts.removeValue(forKey: id)
+                                return self.connectCodexServer(id, executable: executable,
+                                                               prompt: self.carryOverConversation(id, prompt: waiting))
                             }
                             self.codexServerFailed(id, client, error, prompt: prompt ?? self.warmPrompts[id], executable: executable)
                         case .success(let response):

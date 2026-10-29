@@ -635,7 +635,8 @@ final class WorkspaceManager: ObservableObject {
     /// Already taken over? Returns that session instead of adding a second one.
     @discardableResult
     func adopt(provider: RunProvider, sessionID: String, profileID: String, directory: String, title: String,
-               history: [(kind: RunEvent.Kind, text: String)] = [], fork: Bool = false) async throws -> UUID {
+               history: [(kind: RunEvent.Kind, text: String)] = [], fork: Bool = false,
+               continuesConversation: Bool = true) async throws -> UUID {
         if !fork, let existing = runs.first(where: { $0.provider == provider && $0.isConversation(sessionID) }) {
             if existing.archived { setArchived(existing.id, false) }
             selectedRunID = existing.id
@@ -690,7 +691,8 @@ final class WorkspaceManager: ObservableObject {
             instructions: "",
             status: .completed,
             statusDetail: nil,
-            providerSessionID: sessionID,
+            // An agent that cannot load this conversation itself starts a new one from it (see carryOverConversation).
+            providerSessionID: continuesConversation ? sessionID : nil,
             createdAt: now,
             updatedAt: now,
             archived: false,
@@ -713,6 +715,7 @@ final class WorkspaceManager: ObservableObject {
         // The starting point for what the next turns change.
         captureCheckpoint(id)
         if clean.isEmpty, !opening.isEmpty { generateTitle(id) }
+        if !continuesConversation { carryOverConversation(id, prompt: nil) }
         return id
     }
 
