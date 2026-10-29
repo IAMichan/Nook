@@ -4,6 +4,12 @@ import SwiftUI
 
 struct EventRow: View {
     let event: RunEvent
+    /// The answer that ends its turn: only it has the footer (copy and time), as in an agent's own transcript.
+    var final = true
+    /// What came with the answer (the turn's changed files), inside the reply above its footer.
+    var extras: AnyView? = nil
+    /// Answers a question at the end of the reply when one of its options is tapped; nil when it cannot be answered.
+    var onChoose: ((String) -> Void)? = nil
     let expanded: Bool
     let toggle: () -> Void
     let openFile: (String) -> Void
@@ -24,7 +30,9 @@ struct EventRow: View {
         case .assistant:
             let background = BackgroundWork.notice(event.text)
             if background.isEmpty {
-                TranscriptReply(text: event.text, date: event.date)
+                TranscriptReply(text: event.text, date: event.date, footer: final, onChoose: onChoose) {
+                    if let extras { extras }
+                }
             } else {
                 // "task-148 has been launched in the background…": a quiet line, as a command is.
                 HStack(spacing: NookTheme.Spacing.sm) {

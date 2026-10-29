@@ -63,7 +63,9 @@ and a selected row stands a full step above a hovered one with a `selectionMark`
 - **One message component.** Every conversation (the Nook chat, a session Nook runs, an agent's own transcript, and
   the iPhone's chat and transcripts) draws its messages with `TranscriptUserMessage` and `TranscriptReply`: the same
   14 pt text, the same `TranscriptStyle.turnGap` above each of your messages, and the same footer (time and copy, plus
-  an answer's own actions such as try again) on hover. Never draw a message bubble or an answer of your own.
+  an answer's own actions such as try again) on hover. In an agent's conversation, one Nook runs or one from its own
+  transcript, only the final answer of a turn has the footer, the turn's changed files sit inside that answer above
+  it, and the newest answer's options can be clicked. Never draw a message bubble or an answer of your own.
 
 ## Keeping it one design
 
