@@ -37,7 +37,8 @@ final class NotchSurface: ObservableObject {
 
 @MainActor
 final class NotchViewModel: ObservableObject {
-    /// The notch's own shape and strips, published apart (see `NotchSurface`).
+    /// The notch's own shape and strips, published apart (see `NotchSurface`). Written only when they change; the
+    /// state and the strip's stamp on every write, as showing the same state again redraws the notch on purpose.
     let surface = NotchSurface()
     private(set) var state: NotchState {
         get { surface.state }
@@ -45,15 +46,15 @@ final class NotchViewModel: ObservableObject {
     }
     private(set) var size: CGSize {
         get { surface.size }
-        set { surface.size = newValue }
+        set { if surface.size != newValue { surface.size = newValue } }
     }
     var canvas: CGSize {
         get { surface.canvas }
-        set { surface.canvas = newValue }
+        set { if surface.canvas != newValue { surface.canvas = newValue } }
     }
     private(set) var pointerInside: Bool {
         get { surface.pointerInside }
-        set { surface.pointerInside = newValue }
+        set { if surface.pointerInside != newValue { surface.pointerInside = newValue } }
     }
     /// A notice that came in while the panel was open: shown in the panel's own bar instead of over it.
     @Published private(set) var panelNotice: PanelNotice?
@@ -231,20 +232,20 @@ final class NotchViewModel: ObservableObject {
     }
     private(set) var doneButtonTitle: String {
         get { surface.doneButtonTitle }
-        set { surface.doneButtonTitle = newValue }
+        set { if surface.doneButtonTitle != newValue { surface.doneButtonTitle = newValue } }
     }
     private var doneButtonAction: (() -> Void)?
     private(set) var doneTone: DoneTone {
         get { surface.doneTone }
-        set { surface.doneTone = newValue }
+        set { if surface.doneTone != newValue { surface.doneTone = newValue } }
     }
     private(set) var doneInline: Bool {
         get { surface.doneInline }
-        set { surface.doneInline = newValue }
+        set { if surface.doneInline != newValue { surface.doneInline = newValue } }
     }
     private(set) var workOpensPanel: Bool {
         get { surface.workOpensPanel }
-        set { surface.workOpensPanel = newValue }
+        set { if surface.workOpensPanel != newValue { surface.workOpensPanel = newValue } }
     }
     /// The strip's own button does something (View, Open, Stop); without one the strip only has its OK.
     var doneHasAction: Bool { doneButtonAction != nil }
@@ -254,7 +255,7 @@ final class NotchViewModel: ObservableObject {
     }
     private(set) var noticeSeconds: TimeInterval? {
         get { surface.noticeSeconds }
-        set { surface.noticeSeconds = newValue }
+        set { if surface.noticeSeconds != newValue { surface.noticeSeconds = newValue } }
     }
     /// How long the confirmation strip stays.
     nonisolated static let doneSeconds: TimeInterval = 4.2

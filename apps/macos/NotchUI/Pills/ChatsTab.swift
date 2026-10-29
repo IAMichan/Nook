@@ -524,10 +524,16 @@ struct ChatsTab: View {
         // With "Read in Nook when opened" on, a chat you open is read in Nook, and so is what comes in while it is open:
         // its badge goes and stays gone after a restart. The app itself (and whoever wrote) hears nothing until you
         // choose "Mark as read in <app>". The same for every app.
-        .onChange(of: current.map { "\($0.id) \($0.unread)" }, initial: true) { _, _ in
-            guard readOnOpen, let entry = current, entry.read.isUnread else { return }
-            app.markChatReadInNook(entry)
-        }
+        .onChange(of: current.map { "\($0.id) \($0.unread)" }, initial: true) { _, _ in readOpenChat() }
+        // The main window that opened behind the app you were in (at login) is read once you come to it.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in readOpenChat() }
+    }
+
+    /// Reads the open chat in Nook, only while you can be looking at it: in the open notch, or in the main window while
+    /// that is in front. A window that opened behind the app you are in leaves it unread.
+    private func readOpenChat() {
+        guard readOnOpen, app.viewModel.isShowing(.inbox), let entry = current, entry.read.isUnread else { return }
+        app.markChatReadInNook(entry)
     }
 
     private var showsFooter: Bool { openOnAgents != nil && !app.demoMode }

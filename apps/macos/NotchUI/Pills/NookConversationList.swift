@@ -79,6 +79,13 @@ struct NookList: View {
 
     // MARK: Selecting several
 
+    /// The rows as `body` shows them, top to bottom, as they are right now.
+    private func shownNow() -> [UUID] {
+        let items = chat.list(query: query, showArchived: false)
+        let archived = showArchived ? chat.list(query: query, showArchived: true) : []
+        return (items.filter(\.pinned) + items.filter { !$0.pinned } + archived).map(\.id)
+    }
+
     /// A click on a row: opens it, or with ⌘, ⇧ or while selecting, picks it.
     private func click(_ conversation: Conversation, shown: [UUID]) {
         let keys = SelectionClick.modifiers()
@@ -198,7 +205,9 @@ struct NookList: View {
                 NookRow(conversation: conversation, selected: conversation.id == chat.activeID, now: now,
                         onPin: { chat.togglePin(conversation.id) },
                         onArchive: { chat.setArchived(!conversation.archived, conversation.id) }) {
-                    click(conversation, shown: shown)
+                    // Worked out at the click: the row is kept while it does not change (`.equatable()`), also when
+                    // the order around it does.
+                    click(conversation, shown: shownNow())
                 }
                 // The list redraws with every streamed word of an answer: only the row of that conversation changes.
                 .equatable()

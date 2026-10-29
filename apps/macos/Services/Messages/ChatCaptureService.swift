@@ -144,7 +144,14 @@ final class ChatCaptureService: ObservableObject {
         guard !loaded else { return }
         loaded = true
         inbox = read
+        if startWhenLoaded {
+            startWhenLoaded = false
+            start()
+        }
     }
+
+    /// `start` came before the inbox was read.
+    private var startWhenLoaded = false
 
     /// Reads the inbox right now when the background read is not done yet: a change in the first moment after launch
     /// waits for it, as all of them did before.
@@ -157,7 +164,12 @@ final class ChatCaptureService: ObservableObject {
 
     func start() {
         guard enabled else { return }
-        ensureLoaded()
+        // At launch the inbox is still being read in the background: collecting starts once it is in, instead of reading
+        // it a second time here on the main thread.
+        guard loaded else {
+            startWhenLoaded = true
+            return
+        }
         timer?.invalidate()
         lastChange = nil
         retryAt = nil
@@ -201,6 +213,7 @@ final class ChatCaptureService: ObservableObject {
     }
 
     func stop() {
+        startWhenLoaded = false
         timer?.invalidate()
         timer = nil
         generation += 1
@@ -211,8 +224,8 @@ final class ChatCaptureService: ObservableObject {
 
     /// Reads what was added to the database since the last look. Does nothing while the database did not change.
     func poll() async {
-        guard enabled, !polling else { return }
-        ensureLoaded()
+        // Not before the inbox is read (a connector's refresh at launch): `start` looks once it is in.
+        guard enabled, !polling, loaded else { return }
         let change = modified()
         if status == .running, !backlog, change != nil, change == lastChange { return }
         if let retryAt, retryAt > Date() { return }

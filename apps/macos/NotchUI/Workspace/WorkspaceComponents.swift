@@ -227,7 +227,8 @@ struct DiffText: View, Equatable {
             let parsedRows = UnifiedDiff.rows(text)
             let largest = parsedRows.reduce(0) { max($0, $1.old ?? 0, $1.new ?? 0) }
             let width = CGFloat(max(String(largest).count, 2)) * 6.6 + 14
-            Self.parsed.set((rows: parsedRows, numberWidth: width), for: key)
+            // The cache counts diffs, not bytes: a huge one (a generated file) is parsed each time instead of kept.
+            if text.utf8.count <= 1_000_000 { Self.parsed.set((rows: parsedRows, numberWidth: width), for: key) }
             rows = parsedRows
             numberWidth = width
         }

@@ -174,17 +174,14 @@ struct AgentRunPanel: View {
                 Task { repository = await workspace.githubRepository(runID) }
                 loadComposerState(run)
             }
-            // The panel does not observe the draft (see `composerState`): its changes come in here.
-            .onReceive(composerState.$draft.dropFirst().removeDuplicates()) { new in
-                ComposerDraftStore.shared.save(sessionID: runID.uuidString, text: new)
-            }
             .onDisappear { rememberVisit(runID) }
             .onChange(of: runID) { previous, _ in
                 rememberVisit(previous)
                 workspace.loadTimeline(runID)
                 if workspace.run(runID)?.repoRoot != nil { workspace.refreshGit(runID) }
                 workspace.prewarm(runID)
-                draft = ""
+                // The draft of the session you left stays saved, and the one of this session comes back.
+                composerState.show(session: runID.uuidString)
                 if let fresh = workspace.run(runID) { loadComposerState(fresh) }
                 renaming = false
                 confirmDelete = false
@@ -459,7 +456,7 @@ struct AgentRunPanel: View {
     /// The draft you left in this session, the drafts set aside, and the agent's skills.
     private func loadComposerState(_ run: WorkspaceRun) {
         let store = ComposerDraftStore.shared
-        if draft.isEmpty, let saved = store.draft(for: runID.uuidString) { draft = saved }
+        if composerState.session != runID.uuidString { composerState.show(session: runID.uuidString) }
         composerModel.stash = store.stash
         composerModel.onStashChanged = { [composerModel] in store.setStash(composerModel.stash) }
         let folder = URL(fileURLWithPath: run.workingDirectory, isDirectory: true)
@@ -1271,7 +1268,24 @@ struct AgentRunPanel: View {
 /// message open in it. `AgentRunPanel` holds it without observing it.
 @MainActor
 final class RunComposerState: ObservableObject {
-    @Published var draft = ""
+    /// The session the draft belongs to: each change to it is saved for that session, as you type.
+    private(set) var session: String?
+    private var switching = false
+    @Published var draft = "" {
+        didSet {
+            guard !switching, draft != oldValue, let session else { return }
+            ComposerDraftStore.shared.save(sessionID: session, text: draft)
+        }
+    }
+
+    /// Shows the draft saved for `session` (empty when there is none), saving nothing on the way: clearing the box of
+    /// the session you leave is not a change you made to its draft.
+    func show(session: String) {
+        switching = true
+        defer { switching = false }
+        self.session = session
+        draft = ComposerDraftStore.shared.draft(for: session) ?? ""
+    }
     @Published var images: [ImageAttachment] = []
     /// Passages of answers picked for the next message (Quote / Ask about this), as chips above the composer.
     @Published var quotes = ComposerQuotes()

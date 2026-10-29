@@ -193,7 +193,7 @@ enum EmbeddedAppCatalog {
 
     /// The app for a name as people type it: "WhatsApp", "whats app", "wa", "Google Calendar". An app installed on this
     /// Mac comes first; "whatsapp web" asks for the web version even then.
-    static func find(_ raw: String, installed: [EmbeddedApp] = InstalledMacApps.all) -> EmbeddedApp? {
+    static func find(_ raw: String, installed: [EmbeddedApp] = InstalledMacApps.current) -> EmbeddedApp? {
         let name = key(raw)
         guard !name.isEmpty else { return nil }
         let named = { (apps: [EmbeddedApp], name: String) in
@@ -281,7 +281,7 @@ enum EmbeddedAppCatalog {
     /// - "@chat Jan": one chat by its name ("@open chat Jan" reads the same).
     /// - "@close": puts the app next to the chat away.
     /// Nil for everything else, so a normal question that happens to start with "@" still goes to the brain.
-    static func command(in raw: String, installed: [EmbeddedApp] = InstalledMacApps.all) -> EmbeddedAppCommand? {
+    static func command(in raw: String, installed: [EmbeddedApp] = InstalledMacApps.current) -> EmbeddedAppCommand? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = text.lowercased()
         func groups(_ pattern: String) -> [String]? {
@@ -497,6 +497,17 @@ enum InstalledMacApps {
             }
             return cached.apps
         }
+        let apps = make(paths: scan())
+        cached = (apps, Date())
+        return apps
+    }
+
+    /// The list as it is now, for an app you asked to open: scanned again (and waited for) when the last scan is over a
+    /// minute old, so an app installed meanwhile opens as the Mac app. `all` is for what redraws.
+    static var current: [EmbeddedApp] {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached, Date().timeIntervalSince(cached.at) < 60 { return cached.apps }
         let apps = make(paths: scan())
         cached = (apps, Date())
         return apps
