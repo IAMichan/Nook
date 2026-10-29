@@ -53,7 +53,7 @@ struct CommandConsolePanel: View {
 
     /// The side panel's own header (`SidePanelHeader`), on the left of the conversation.
     private var header: some View {
-        SidePanelHeader(edge: .leading, closeHelp: tr("ws.console.close"), close: close) {
+        SidePanelHeader(closeHelp: tr("ws.console.close"), close: close) {
             SidePanelTitle(symbol: "terminal", title: tr("ws.console.title"))
             status
         } actions: {

@@ -161,8 +161,8 @@ struct AgentsTab: View {
 
     // MARK: List header
 
-    /// "Agents" with the button that starts a new session, and beside a session the one that puts the list away
-    /// (the same close button every side panel ends with).
+    /// "Agents" with the button that starts a new session, and beside a session the cross that puts the list away
+    /// (the same close button every side panel ends with); the left toggle in the session's header brings it back.
     private func listHeader(_ selection: Selection) -> some View {
         let isNew: Bool = { if case .new = selection { return true }; return false }()
         return PanelListHeader(tr("tab.agents")) {
@@ -170,7 +170,7 @@ struct AgentsTab: View {
                 PanelNewButton(label: tr("agents.newSession"), active: isNew) { viewModel.selectedAgentID = "new" }
             }
             if workbench(selection) {
-                SidePanelCloseButton(edge: .leading, help: tr("agents.list.hide")) {
+                SidePanelCloseButton(help: tr("agents.list.hide")) {
                     withAnimation(NookTheme.reveal) { listHidden = true }
                 }
             }

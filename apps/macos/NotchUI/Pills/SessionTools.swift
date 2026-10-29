@@ -56,8 +56,7 @@ enum SessionTool: String {
 }
 
 /// The panels' quiet icons in a session's header, one per side as in an editor: the session list on the left, the
-/// bottom panel and the side panel on the right (`SidePanelToggle`). Each carries the same mark as the button that
-/// closes its panel. The terminal and the browser open from the panels themselves (their tabs, + and the list of tools). The bottom panel
+/// bottom panel and the side panel on the right (`SidePanelToggle`), each with the mark of its side. The terminal and the browser open from the panels themselves (their tabs, + and the list of tools). The bottom panel
 /// opens on what it showed last, the terminal by default; the side panel on what it showed last, or on the list of
 /// tools when no tab is open. When the agent started a process or opened a page that you have not looked at yet, the
 /// side panel's icon carries a small dot. The same goes for a plan or another output the agent made.
@@ -195,21 +194,17 @@ private struct SessionPanelSlot {
     let tool: ReferenceWritableKeyPath<NotchViewModel, SessionTool>
     let tabs: ReferenceWritableKeyPath<NotchViewModel, [SessionTool]>
     let closeHelp: String
-    /// The side it is on, for the close button's mark (`Edge.panelSymbol`).
-    let edge: Edge
 
-    @MainActor static let side = SessionPanelSlot(tool: \.sessionTool, tabs: \.sessionTabs, closeHelp: "agents.tool.close",
-                                                  edge: .trailing)
-    @MainActor static let bottom = SessionPanelSlot(tool: \.bottomTool, tabs: \.bottomTabs, closeHelp: "agents.tool.closeBottom",
-                                                    edge: .bottom)
+    @MainActor static let side = SessionPanelSlot(tool: \.sessionTool, tabs: \.sessionTabs, closeHelp: "agents.tool.close")
+    @MainActor static let bottom = SessionPanelSlot(tool: \.bottomTool, tabs: \.bottomTabs, closeHelp: "agents.tool.closeBottom")
 }
 
 /// A session in the Agents tab together with the tools it works with. The conversation stays in view; a terminal, the
 /// browser or the changes open in a side panel on its right or a bottom panel under it, each in a tab you open with +
 /// and close with its cross. A tool is open in one of the two at a time. With no tab open a panel lists the tools.
-/// Drag the line beside (or above) a panel to make it wider (or taller). The right side holds one panel at a time:
-/// the tool panel, a diff or file the conversation opened (`SessionSideLink`), or, while neither is open and the window
-/// has room, the session panel docked as a column.
+/// Drag the line beside (or above) a panel to make it wider (or taller). The tool panel and a diff or file the
+/// conversation opened take turns on the right (`SessionSideLink`). With room to spare the session panel stays docked
+/// as a column at the far right, so the panel toggles on top of it keep their place while panels open and close.
 struct SessionWorkbench<Conversation: View>: View {
     @ObservedObject var viewModel: NotchViewModel
     let directory: String
@@ -233,6 +228,8 @@ struct SessionWorkbench<Conversation: View>: View {
     @State private var outputSelection: String?
     /// The conversation shows a diff or a file beside itself (`SessionDetailOpen`).
     @State private var detailOpen = false
+    /// How wide that diff or file is (`AgentRunPanel`, `TranscriptConversation`), for the room left to dock.
+    @AppStorage("nook.agents.outputsWidth") private var detailWidth = PanelLayout.outputs
 
     /// What a panel shows: nothing (closed), the list of tools, or one this session can use.
     private func shown(_ slot: SessionPanelSlot) -> SessionTool {
@@ -256,10 +253,16 @@ struct SessionWorkbench<Conversation: View>: View {
         // instead of both squeezing until neither reads.
         let covering = sideOpen
             && !PanelSplit.fits(minimum: PanelLayout.minimumPanel + NookTheme.Spacing.sm, available: totalWidth, rest: conversationRoom)
-        // One panel on the right: the session panel docks only while no tool, diff or file is open there; then it is
-        // the branch button's popover again.
-        let docked = dockSessionPanel && !directory.isEmpty && !sideOpen && !detailOpen
-            && totalWidth >= PanelLayout.sessionPanelRoom
+        // The width the tool panel or the diff actually takes, not the one it was dragged to, so a window that gets
+        // narrower gives up the docked column first; under that room it is the branch button's popover again.
+        let besideWidth = sideOpen && !covering
+            ? PanelSplit.width(toolWidth, minimum: PanelLayout.minimumPanel, available: totalWidth, rest: conversationRoom)
+                + PanelSplit.handle + SidePanelMetrics.gap
+            : detailOpen
+                ? PanelSplit.width(detailWidth, minimum: PanelLayout.minimumPanel, available: totalWidth, rest: conversationRoom)
+                    + PanelSplit.handle + SidePanelMetrics.gap
+                : 0
+        let docked = dockSessionPanel && !directory.isEmpty && totalWidth - besideWidth >= PanelLayout.sessionPanelRoom
         HStack(alignment: .top, spacing: 0) {
             VStack(spacing: 0) {
                 // Docked, the switch sits above the session panel instead of in the conversation's header.
@@ -292,9 +295,14 @@ struct SessionWorkbench<Conversation: View>: View {
             // Under the covering panel the conversation keeps its place (and what you typed) but takes no clicks.
             .allowsHitTesting(!covering)
             .accessibilityHidden(covering)
+            if sideOpen && !covering {
+                panel(.side, tool: side)
+                    .sidePanel(.trailing, width: $toolWidth, defaultWidth: PanelLayout.tool, available: totalWidth,
+                               rest: conversationRoom)
+            }
             if docked {
+                // At the far right, so the toggles on top stay put while the tool panel opens and closes beside it.
                 // The switch takes the height of the conversation's header, so the rows start where the conversation does.
-                HStack(spacing: 0) {
                 VStack(alignment: .trailing, spacing: 0) {
                     SessionToolSwitch(viewModel: viewModel, directory: directory, outputsFresh: outputs.fresh && !outputsShown)
                         .frame(height: 30)
@@ -305,14 +313,7 @@ struct SessionWorkbench<Conversation: View>: View {
                     }
                     .id(directory)
                 }
-                }
-                .frame(width: PanelLayout.sessionPanel)
-                .padding(.leading, NookTheme.Spacing.sm)
-            }
-            if sideOpen && !covering {
-                panel(.side, tool: side)
-                    .sidePanel(.trailing, width: $toolWidth, defaultWidth: PanelLayout.tool, available: totalWidth,
-                               rest: conversationRoom)
+                .fixedSidePanel(width: PanelLayout.sessionPanel)
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -325,6 +326,7 @@ struct SessionWorkbench<Conversation: View>: View {
         }
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         .animation(NookTheme.reveal, value: side == .conversation)
+        .animation(NookTheme.reveal, value: docked)
         .animation(NookTheme.reveal, value: bottom == .conversation)
         .onChange(of: side) { _, next in
             if SessionTool.panelTools.contains(next) { lastTool = next.rawValue }
@@ -373,7 +375,7 @@ struct SessionWorkbench<Conversation: View>: View {
         SessionToolPanel(directory: directory, runID: runID, tool: tool, tabs: tabs(slot), pullRequest: viewModel.sidePullRequest,
                          pullRequestTabs: viewModel.sidePullRequestTabs, activePullRequest: viewModel.activeSidePullRequest,
                          outputs: outputs.outputs, outputSelection: $outputSelection, outputsFresh: outputs.fresh,
-                         closeHelp: tr(slot.closeHelp), edge: slot.edge,
+                         closeHelp: tr(slot.closeHelp),
                          show: { item in withAnimation(NookTheme.swap) { viewModel[keyPath: slot.tool] = item } },
                          selectPullRequest: { id in
                              withAnimation(NookTheme.swap) { viewModel.activeSidePullRequest = id; viewModel.sessionTool = .pullRequest }
@@ -496,7 +498,6 @@ private struct SessionToolPanel: View {
     @Binding var outputSelection: String?
     let outputsFresh: Bool
     let closeHelp: String
-    let edge: Edge
     let show: (SessionTool) -> Void
     let selectPullRequest: (UUID) -> Void
     /// Opens a Pull request tab beside the session, on this pull request or (nil) on the list to pick one.
@@ -572,7 +573,7 @@ private struct SessionToolPanel: View {
         SidePanelTabBar(items: tabs.flatMap(tabItems), selected: selectedTab, onSelect: selectTab, onClose: closeTab) {
             addMenu
         } trailing: {
-            SidePanelCloseButton(edge: edge, help: closeHelp, action: close)
+            SidePanelCloseButton(help: closeHelp, action: close)
         }
     }
 

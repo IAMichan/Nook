@@ -185,7 +185,7 @@ struct TurnDiffPanel: View {
 
     /// The side panel's own header (`SidePanelHeader`): the turn to show and how many files it changed.
     private func header(_ current: TurnDiff, files: [StackedDiffFile]) -> some View {
-        SidePanelHeader(edge: .trailing, closeHelp: tr("ws.outputs.close"), wide: $wide, close: close) {
+        SidePanelHeader(closeHelp: tr("ws.outputs.close"), wide: $wide, close: close) {
             ComposerDropdown(width: 240) {
                 HStack(spacing: NookTheme.Spacing.xs) {
                     Text(selection.turn == TurnDiffSelection.all ? tr("agents.diff.allTurns") : title(current))

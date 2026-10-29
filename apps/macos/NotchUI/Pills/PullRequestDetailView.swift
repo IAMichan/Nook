@@ -193,7 +193,7 @@ struct PullRequestDetailView: View {
                 ProgressView().controlSize(.small)
             }
             if let onBack, inline {
-                ToolbarIconButton("sidebar.right", tr("agents.pr.closePanel"), onBack)
+                SidePanelCloseButton(help: tr("agents.pr.closePanel"), action: onBack)
             }
         }
         .frame(height: 32)

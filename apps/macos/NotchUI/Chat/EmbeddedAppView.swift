@@ -413,9 +413,8 @@ struct EmbeddedAppPane: View {
                         }
                         if let side = store.side {
                             EmbeddedArtifactPanel(webView: side)
-                                .resizablePanel(width: $artifactWidth, defaultWidth: PanelLayout.artifact,
-                                                minimum: PanelLayout.minimumPanel, available: paneWidth,
-                                                rest: PanelLayout.minimumPanel + PanelSplit.handle, edge: .leading, divider: true)
+                                .sidePanel(.trailing, width: $artifactWidth, defaultWidth: PanelLayout.artifact,
+                                           available: paneWidth, rest: PanelLayout.minimumPanel + PanelSplit.handle)
                         }
                     }
                     .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { paneWidth = $0 }

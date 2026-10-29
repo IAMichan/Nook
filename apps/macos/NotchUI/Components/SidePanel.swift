@@ -1,19 +1,21 @@
 import SwiftUI
 
-// One side panel for everything that opens beside a conversation: the session list on the left, a command's terminal,
-// the tool panel with its tabs, and a turn's diff or a file on the right. They all work the same way:
+// One side panel for everything that opens beside a conversation or a list: the lists of the Nook, Agents and Chats
+// tabs, a command's terminal, the tool panel with its tabs, a turn's diff or a file, a pull request beside its list, an
+// artifact beside its app, and the docked session panel. They all work the same way:
 //
-// - Each sits flat on the canvas with a drag line on the conversation's side (drag to resize, double-click for its
-//   usual width) and slides in from its own edge (`.sidePanel(_:width:…)`).
+// - Each sits flat on the canvas with a line on the side of what it sits beside: a drag line (drag to resize,
+//   double-click for its usual width, `.sidePanel(_:width:…)`), or a plain line for a panel of fixed width
+//   (`.fixedSidePanel(width:)`). Each slides in from its own edge.
 // - Each starts with a header of the same height (`SidePanelHeader`, or `SidePanelTabBar` for the tool panel) that
-//   ends in the same close button. That button carries the mark of the side the panel is on (`Edge.panelSymbol`).
-// - The header of a session has one toggle per side (`SidePanelToggle`) with that same mark: the button that opens a
-//   panel looks like the one that closes it.
-// - The right side shows one panel at a time: the tool panel, a turn's diff or a file. The session panel docks there
-//   only while neither is open (`SessionSideLink`, `SessionDetailOpen`).
+//   ends in the same close button: a cross (`SidePanelCloseButton`).
+// - A session's header has one toggle per side (`SidePanelToggle`): the list on the left, the bottom panel, the side
+//   panel on the right, each with the mark of its side (`Edge.panelSymbol`), lit while it is open.
+// - The tool panel and a diff or file the conversation opens take turns on the right instead of stacking
+//   (`SessionSideLink`, `SessionDetailOpen`).
 
 extension Edge {
-    /// The mark of the panel on this side of a conversation: on the toggle that opens it and the button that closes it.
+    /// The mark of the panel on this side of a conversation, on the toggle in a session's header that shows or hides it.
     var panelSymbol: String {
         switch self {
         case .leading: return "sidebar.left"
@@ -41,21 +43,29 @@ extension View {
                             edge: leading ? HorizontalEdge.trailing : HorizontalEdge.leading, divider: true)
             .transition(.move(edge: leading ? Edge.leading : Edge.trailing).combined(with: .opacity))
     }
+
+    /// Makes this a panel of fixed `width` on the right of what it sits beside (the docked session panel): the same
+    /// line and gap as a resizable one, without the drag.
+    func fixedSidePanel(width: CGFloat) -> some View {
+        HStack(spacing: 0) {
+            NookDivider(vertical: true).frame(width: CGFloat(PanelSplit.handle))
+            self.frame(width: width).padding(.leading, SidePanelMetrics.gap)
+        }
+        .transition(.move(edge: .trailing).combined(with: .opacity))
+    }
 }
 
 /// The top row of a side panel: what it shows on the left (a `SidePanelTitle`, or a picker), its own actions, and at
 /// the end the buttons every panel has: wider or narrower when `wide` is given, then the close button.
 struct SidePanelHeader<Leading: View, Actions: View>: View {
-    let edge: Edge
     let closeHelp: String
     let wide: Binding<Bool>?
     let close: () -> Void
     let leading: Leading
     let actions: Actions
 
-    init(edge: Edge, closeHelp: String, wide: Binding<Bool>? = nil, close: @escaping () -> Void,
+    init(closeHelp: String, wide: Binding<Bool>? = nil, close: @escaping () -> Void,
          @ViewBuilder leading: () -> Leading, @ViewBuilder actions: () -> Actions) {
-        self.edge = edge
         self.closeHelp = closeHelp
         self.wide = wide
         self.close = close
@@ -70,7 +80,7 @@ struct SidePanelHeader<Leading: View, Actions: View>: View {
             HStack(spacing: NookTheme.Spacing.xxs) {
                 actions
                 if let wide { SidePanelWidenButton(wide: wide) }
-                SidePanelCloseButton(edge: edge, help: closeHelp, action: close)
+                SidePanelCloseButton(help: closeHelp, action: close)
             }
         }
         .frame(height: SidePanelMetrics.header)
@@ -78,9 +88,9 @@ struct SidePanelHeader<Leading: View, Actions: View>: View {
 }
 
 extension SidePanelHeader where Actions == EmptyView {
-    init(edge: Edge, closeHelp: String, wide: Binding<Bool>? = nil, close: @escaping () -> Void,
+    init(closeHelp: String, wide: Binding<Bool>? = nil, close: @escaping () -> Void,
          @ViewBuilder leading: () -> Leading) {
-        self.init(edge: edge, closeHelp: closeHelp, wide: wide, close: close, leading: leading) { EmptyView() }
+        self.init(closeHelp: closeHelp, wide: wide, close: close, leading: leading) { EmptyView() }
     }
 }
 
@@ -105,14 +115,13 @@ struct SidePanelTitle: View {
     }
 }
 
-/// The last button of every side panel's header: puts the panel away, with the mark of the side it is on.
+/// The last button of every side panel's header: a cross that puts the panel away, the same cross as on a tab.
 struct SidePanelCloseButton: View {
-    let edge: Edge
     let help: String
     let action: () -> Void
 
     var body: some View {
-        ToolbarIconButton(edge.panelSymbol, help, action)
+        ToolbarIconButton("xmark", help, action)
     }
 }
 
@@ -162,9 +171,9 @@ struct SidePanelToggle: View {
 
 // MARK: One panel on the right
 
-/// From a session's workbench to the conversation inside it. The right side holds one panel at a time: `toolOpen`
-/// says the tool panel is open there (a diff or a file the conversation shows beside itself closes for it), and
-/// `makeRoom` closes the tool panel for such a diff or file.
+/// From a session's workbench to the conversation inside it. The tool panel and a diff or file the conversation shows
+/// beside itself take turns: `toolOpen` says the tool panel is open (the diff or file closes for it), and `makeRoom`
+/// closes the tool panel for a diff or file.
 struct SessionSideLink {
     var toolOpen = false
     var makeRoom: () -> Void = {}
@@ -174,8 +183,8 @@ extension EnvironmentValues {
     @Entry var sessionSide = SessionSideLink()
 }
 
-/// From the conversation up to its workbench: it shows a diff or a file beside itself, so the session panel does
-/// not dock and a new plan does not push the diff away.
+/// From the conversation up to its workbench: it shows a diff or a file beside itself, which takes room from the docked
+/// session panel, and a new plan does not push it away.
 struct SessionDetailOpen: PreferenceKey {
     static let defaultValue = false
     static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
@@ -183,7 +192,7 @@ struct SessionDetailOpen: PreferenceKey {
 
 extension View {
     /// For a conversation that shows a diff or a file beside itself (`detailOpen`): opening one closes the tool panel,
-    /// and opening the tool panel closes it (`closeDetail`), so the right side never holds two panels.
+    /// and opening the tool panel closes it (`closeDetail`), so the two never stack.
     func sharesSessionSide(detailOpen: Bool, closeDetail: @escaping () -> Void) -> some View {
         modifier(SessionSideShare(detailOpen: detailOpen, closeDetail: closeDetail))
     }

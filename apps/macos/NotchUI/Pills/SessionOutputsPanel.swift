@@ -201,7 +201,7 @@ struct FilePreviewPanel: View {
 
     /// The side panel's own header (`SidePanelHeader`), on the right of the conversation.
     private var header: some View {
-        SidePanelHeader(edge: .trailing, closeHelp: tr("ws.outputs.close"), wide: $wide, close: close) {
+        SidePanelHeader(closeHelp: tr("ws.outputs.close"), wide: $wide, close: close) {
             SidePanelTitle(symbol: "doc.text", title: URL(fileURLWithPath: path).lastPathComponent,
                            help: AgentPathFormat.tilde(path))
         }

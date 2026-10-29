@@ -11,8 +11,8 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
-- The session list on the left of the Agents tab can be put away beside a session, with the button at the end of its
-  title row or the new left toggle in the session's header; it is remembered.
+- The session list on the left of the Agents tab can be put away beside a session, with the cross at the end of its
+  title row or the new left toggle in the session's header (list, bottom panel, side panel); it is remembered.
 
 - Downloaded builds (the release .dmg/.zip) update themselves from GitHub Releases through the footer's Update
   button: Nook downloads the release's .zip, checks its Ed25519 signature against the key it carries, and installs it
@@ -56,10 +56,10 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Changed
 
-- Every panel beside a conversation in the Agents tab (the session list, a command's terminal, the tool panel, a
-  turn's diff, a file) is one shared side panel: the same drag line, header height and close button, whose mark is the
-  side it sits on. The right side shows one panel at a time, so a diff or file and the tool panel take turns instead
-  of stacking, and the docked session panel steps aside while either is open.
+- Every side panel is one shared panel: the lists of the Nook, Agents and Chats tabs, a command's terminal, the tool
+  panel, a turn's diff or a file, a pull request beside its list, an artifact beside its app and the docked session
+  panel get the same line, gap, 32 pt header and cross to close. A diff or file and the tool panel take turns instead
+  of stacking, and the docked session panel moved to the far right so the panel toggles above it keep their place.
 - A pull request opens beside the list opens one: half the page, its edge dragged wider or
   narrower (remembered), and a button on its tab line that makes it fill the page.
 - A pull request's page looks: a one-line title, segmented tabs, its tabs as `#number` whose mark turns

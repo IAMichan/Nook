@@ -59,11 +59,10 @@ struct NookChatView: View {
                         NookList(chat: chat)
                         footer
                     }
-                    .padding(.trailing, compact ? NookTheme.Spacing.xs : NookTheme.Spacing.md)
-                    .resizablePanel(width: compact ? $listWidth : $windowListWidth,
-                                    defaultWidth: compact ? PanelLayout.chatList : PanelLayout.chatListWindow,
-                                    minimum: PanelLayout.minimumList, available: totalWidth,
-                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .trailing, divider: true)
+                    .sidePanel(.leading, width: compact ? $listWidth : $windowListWidth,
+                               defaultWidth: compact ? PanelLayout.chatList : PanelLayout.chatListWindow,
+                               minimum: PanelLayout.minimumList, available: totalWidth,
+                               rest: PanelLayout.minimumConversation + PanelSplit.handle)
                     .padding(.trailing, compact ? NookTheme.Spacing.md : NookTheme.Spacing.lg)
                 }
                 VStack(alignment: .leading, spacing: 0) {
