@@ -572,7 +572,7 @@ struct AgentRunPanel: View {
         let found = finding ? TimelineSearch.search(events, query: findQuery) : .idle
         let current = findIndex.flatMap { found.matches.indices.contains($0) ? found.matches[$0].eventID : nil }
         return ScrollViewReader { proxy in
-            ScrollView(showsIndicators: true) {
+            ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     if events.isEmpty {
                         ListEmptyNote(tr("agents.run.empty"))
@@ -622,6 +622,7 @@ struct AgentRunPanel: View {
                 .scrollTargetLayout()
                 .chatColumn()
             }
+            .scrollIndicators(.never)
             // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
             .composerInset {
                 VStack(spacing: NookTheme.Spacing.lg) { bottomBar(run) }
