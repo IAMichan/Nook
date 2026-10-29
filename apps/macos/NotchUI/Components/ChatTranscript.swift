@@ -550,7 +550,7 @@ private struct ChatBubbleView: View, Equatable {
         .padding(.vertical, mediaOnly ? 0 : (bare ? NookTheme.Spacing.xxs : NookTheme.Spacing.sm))
         // Room for the tail on its side, on every bubble of the run, so their edges line up.
         .padding(bubble.fromMe ? .trailing : .leading, bare ? 0 : ChatBubbleShape.tail)
-        .background(ChatBubbleShape(mine: bubble.fromMe, tailed: first)
+        .background(ChatBubbleShape(mine: bubble.fromMe, tailed: first, joinsBelow: !last)
             .fill(bare ? Color.clear : (bubble.fromMe ? NookTheme.chatMine : NookTheme.chatTheirs)))
     }
 }
@@ -1277,20 +1277,28 @@ private struct TranscriptScrollGeometry: Equatable {
 }
 
 /// A chat app's message bubble: a rounded box with, on the first message of a run, a small tail at its top corner
-/// pointing at who wrote it, as the chat apps draw them. The tail sits in `tail` points of room on that side, which
-/// every bubble keeps so a run's edges line up.
+/// pointing at who wrote it, as the chat apps draw them. The messages of one run stack: on the writer's side the
+/// corners where two of them meet are nearly square (`Radius.chatJoin`), so the run reads as one column. The tail sits
+/// in `tail` points of room on that side, which every bubble keeps so a run's edges line up.
 struct ChatBubbleShape: Shape {
     let mine: Bool
+    /// The first message of a run: the tail, and a square top corner on the writer's side.
     let tailed: Bool
+    /// Another message of the same run follows: the bottom corner on the writer's side meets it.
+    var joinsBelow = false
     static let tail: CGFloat = 7
 
     func path(in rect: CGRect) -> Path {
         let radius = NookTheme.Radius.chatBubble
+        let joined = NookTheme.Radius.chatJoin
         let body = CGRect(x: mine ? rect.minX : rect.minX + Self.tail, y: rect.minY,
                           width: max(0, rect.width - Self.tail), height: rect.height)
+        // The writer's side: square under the tail, nearly square where it meets the message above or below.
+        let top: CGFloat = tailed ? 0 : joined
+        let bottom: CGFloat = joinsBelow ? joined : radius
         var path = Path(roundedRect: body, cornerRadii: RectangleCornerRadii(
-            topLeading: tailed && !mine ? 0 : radius, bottomLeading: radius, bottomTrailing: radius,
-            topTrailing: tailed && mine ? 0 : radius), style: .continuous)
+            topLeading: mine ? radius : top, bottomLeading: mine ? radius : bottom,
+            bottomTrailing: mine ? bottom : radius, topTrailing: mine ? top : radius), style: .continuous)
         guard tailed else { return path }
         let edge = mine ? body.maxX : body.minX
         let tip = mine ? rect.maxX : rect.minX
