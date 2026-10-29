@@ -113,4 +113,67 @@ final class AcpAgentTests: XCTestCase {
         XCTAssertEqual(stop.usage.cacheReadTokens, 40)
         XCTAssertEqual(AcpRPC.stop([:]).reason, "end_turn")
     }
+
+    // MARK: Session settings
+
+    /// Antigravity's `session/new` reply: a model and a mode config option next to `models` and `modes`.
+    private static let antigravitySession: [String: Any] = [
+        "sessionId": "s1",
+        "modes": ["currentModeId": "default", "availableModes": [["id": "default"], ["id": "auto_edit"], ["id": "yolo"]]],
+        "configOptions": [
+            ["id": "model", "category": "model", "type": "select", "currentValue": "gemini-3.8-flash-high",
+             "options": [["value": "gemini-4-argon-medium", "name": "Gemini 4 Argon (Medium)"],
+                         ["value": "gemini-3.8-flash-high", "name": "Gemini 3.8 Flash (High)"]]],
+            ["id": "mode", "category": "mode", "type": "select", "currentValue": "default",
+             "options": [["value": "default"], ["value": "auto_edit"], ["value": "yolo"]]]
+        ],
+        "models": ["currentModelId": "gemini-3.8-flash-high",
+                   "availableModels": [["modelId": "gemini-4-argon-medium"], ["modelId": "gemini-3.8-flash-high"]]]
+    ]
+
+    func testSessionSettingsSetTheModelBeforeTheMode() {
+        let info = Self.antigravitySession
+        XCTAssertEqual(AcpSessionSettings.currentModel(info), "gemini-3.8-flash-high")
+        XCTAssertEqual(AcpSessionSettings.currentMode(info), "default")
+        let steps = AcpSessionSettings.steps(session: "s1", info: info, model: "gemini-4-argon-medium", appliedModel: "gemini-3.8-flash-high",
+                                             mode: "yolo", appliedMode: "default")
+        XCTAssertEqual(steps, [
+            .init(method: "session/set_config_option", params: ["sessionId": "s1", "configId": "model", "value": "gemini-4-argon-medium"],
+                  target: .model("gemini-4-argon-medium")),
+            .init(method: "session/set_config_option", params: ["sessionId": "s1", "configId": "mode", "value": "yolo"], target: .mode("yolo"))
+        ])
+    }
+
+    func testSessionSettingsSkipWhatIsAlreadySet() {
+        let info = Self.antigravitySession
+        XCTAssertEqual(AcpSessionSettings.steps(session: "s1", info: info, model: "gemini-3.8-flash-high", appliedModel: "gemini-3.8-flash-high",
+                                                mode: "default", appliedMode: "default"), [])
+        XCTAssertEqual(AcpSessionSettings.steps(session: "s1", info: info, model: "", appliedModel: nil, mode: nil, appliedMode: nil), [],
+                       "no model chosen: the agent's own default stays")
+        XCTAssertEqual(AcpSessionSettings.steps(session: "s1", info: info, model: "", appliedModel: nil, mode: "unknown", appliedMode: "default"),
+                       [], "a mode the agent does not offer is not sent")
+    }
+
+    func testSessionSettingsWithoutConfigOptions() {
+        let info: [String: Any] = [
+            "modes": ["currentModeId": "code", "availableModes": [["id": "code"], ["id": "architect-plan"]]],
+            "models": ["currentModelId": "a", "availableModels": [["modelId": "a"], ["modelId": "b"]]]
+        ]
+        XCTAssertEqual(AcpSessionSettings.mode(plan: true, info: info), "architect-plan")
+        XCTAssertEqual(AcpSessionSettings.mode(plan: false, info: info), "code", "leaving Plan mode returns to the mode it started in")
+        XCTAssertEqual(AcpSessionSettings.steps(session: "s", info: info, model: "b", appliedModel: "a", mode: "architect-plan", appliedMode: "code"), [
+            .init(method: "session/set_model", params: ["sessionId": "s", "modelId": "b"], target: .model("b")),
+            .init(method: "session/set_mode", params: ["sessionId": "s", "modeId": "architect-plan"], target: .mode("architect-plan"))
+        ])
+    }
+
+    func testAgentLogLinesKeepOnlyErrors() {
+        let lines = [
+            "I1029 16:35:47.481079 8387203840 agent.py:109] Starting connection and creating conversation...",
+            "W1029 16:35:51.682007 6195638272 proxy_server.py:225] Proxy client disconnected: [Errno 32] Broken pipe",
+            "E1029 16:35:52.000001 6195638272 server.py:12] Quota exceeded for gemini-4-argon-high",
+            "Traceback (most recent call last):"
+        ]
+        XCTAssertEqual(AgentLogLines.withoutLog(lines), ["Quota exceeded for gemini-4-argon-high", "Traceback (most recent call last):"])
+    }
 }

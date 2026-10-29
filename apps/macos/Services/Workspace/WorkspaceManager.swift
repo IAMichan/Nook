@@ -985,6 +985,8 @@ final class WorkspaceManager: ObservableObject {
             sendPendingNow(id)
             return
         }
+        // Pressing Stop again changes nothing: the first one is still on its way.
+        if turns[id]?.stopping == true { return }
         turns[id]?.stopping = true
         if run(id)?.provider == .claude {
             process.send(ClaudeStreamParser.interruptRequest(id: "nook-stop-" + UUID().uuidString.prefix(8)))
@@ -1424,7 +1426,7 @@ final class WorkspaceManager: ObservableObject {
         } else {
             stripped = raw
         }
-        let lines = stripped.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        let lines = AgentLogLines.withoutLog(stripped.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
         let tail = lines.suffix(6).joined(separator: "\n")
         let lower = tail.lowercased()
         if lower.contains("not logged in") || lower.contains("please run /login") || lower.contains("authenticat") {

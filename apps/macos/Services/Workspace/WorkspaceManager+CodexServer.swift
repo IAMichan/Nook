@@ -188,6 +188,8 @@ extension WorkspaceManager {
     /// Stops the running turn politely (`turn/interrupt`). False when this is not a Codex app-server session.
     func stopCodexServerTurn(_ id: UUID) -> Bool {
         guard let client = codexServers[id], run(id)?.status.isActive == true else { return false }
+        // Pressing Stop again changes nothing: the first one is still on its way.
+        if turns[id]?.stopping == true { return true }
         turns[id]?.stopping = true
         expireApprovals(id)
         questions[id] = nil

@@ -146,28 +146,64 @@ extension WorkspaceManager {
         }
     }
 
-    /// Plan mode and the model, when the agent offers them (`session/set_mode`, `session/set_model`).
+    /// What the session offers and starts with. The run's model and mode are set before each prompt (see
+    /// `applyAcpSettings`), so a model you pick while the session stays open counts from your next message.
     private func configureAcpSession(_ id: UUID, _ client: AcpClient, _ response: [String: Any]) {
-        guard let run = run(id), let session = client.sessionID else { return }
-        let modes = ((response["modes"] as? [String: Any])?["availableModes"] as? [[String: Any]]) ?? []
-        if run.provider == .antigravity {
-            setAcpMode(client, session: session, response: response, modes: modes,
-                       to: AntigravityAcp.mode(run.mode, permission: run.permission))
-        } else if run.mode == .plan, let plan = modes.first(where: { (($0["id"] as? String) ?? "").lowercased().contains("plan") })?["id"] as? String {
-            client.request("session/set_mode", ["sessionId": session, "modeId": plan]) { _ in }
-        }
+        guard let run = run(id) else { return }
+        client.sessionInfo = response
+        client.appliedModel = AcpSessionSettings.currentModel(response)
+        client.appliedMode = AcpSessionSettings.currentMode(response)
         learnModels(run.provider, AgentModelCatalog.acp(response))
-        if !run.model.isEmpty {
-            // A model config option is set as one; otherwise `session/set_model`.
-            if let option = AgentModelCatalog.acpModelOptionID(response) {
-                client.request("session/set_config_option", ["sessionId": session, "configId": option, "value": run.model]) { _ in }
-            } else {
-                client.request("session/set_model", ["sessionId": session, "modelId": run.model]) { _ in }
+    }
+
+    /// The mode the run asks for: Antigravity's follows the session's rights, the others only know Plan mode.
+    private func wantedAcpMode(_ run: WorkspaceRun, _ info: [String: Any]) -> String? {
+        if run.provider == .antigravity { return AntigravityAcp.mode(run.mode, permission: run.permission) }
+        return AcpSessionSettings.mode(plan: run.mode == .plan, info: info)
+    }
+
+    /// Sets the run's model and mode on the session, each answered before the next, then calls `done`.
+    private func applyAcpSettings(_ id: UUID, _ client: AcpClient, then done: @escaping () -> Void) {
+        guard let run = run(id), let session = client.sessionID else { return done() }
+        let info = client.sessionInfo
+        let steps = AcpSessionSettings.steps(session: session, info: info, model: run.model, appliedModel: client.appliedModel,
+                                             mode: wantedAcpMode(run, info), appliedMode: client.appliedMode)
+        applyAcpSteps(id, client, steps[...], then: done)
+    }
+
+    private func applyAcpSteps(_ id: UUID, _ client: AcpClient, _ steps: ArraySlice<AcpSessionSettings.Step>, then done: @escaping () -> Void) {
+        guard let step = steps.first else { return done() }
+        client.request(step.method, step.params) { [weak self] result in
+            Task { @MainActor in
+                guard let self, self.acpClients[id] === client, client.isRunning else { return }
+                switch (result, step.target) {
+                case (.success, .model(let model)):
+                    client.appliedModel = model
+                case (.success, .mode(let mode)):
+                    client.appliedMode = mode
+                case (.failure, .model(let model)):
+                    // Said once: the session goes on with the model it has.
+                    client.appliedModel = model
+                    let name = self.agentModels[self.run(id)?.provider ?? .acp]?.first { $0.id == model }?.name ?? model
+                    self.append(id, RunEvent(kind: .system, text: tr("ws.acp.modelFailed", self.run(id)?.provider.displayName ?? "", name)))
+                case (.failure, .mode(let mode)):
+                    client.appliedMode = mode
+                }
+                self.applyAcpSteps(id, client, steps.dropFirst(), then: done)
             }
         }
     }
 
     private func sendAcpPrompt(_ id: UUID, _ client: AcpClient, prompt: String) {
+        applyAcpSettings(id, client) { [weak self] in
+            guard let self, self.acpClients[id] === client else { return }
+            // Stopped while the model was being set: the prompt never went.
+            if self.turns[id]?.stopping == true { return self.acpStopped(id) }
+            self.promptAcp(id, client, prompt: prompt)
+        }
+    }
+
+    private func promptAcp(_ id: UUID, _ client: AcpClient, prompt: String) {
         guard let run = run(id), let session = client.sessionID else { return }
         var text = prompt
         // Your instructions go with the first prompt of a newly created session; the plan line with every prompt in Plan mode.
@@ -180,6 +216,9 @@ extension WorkspaceManager {
                 guard let self else { return }
                 switch result {
                 case .failure(let error):
+                    // Closed by Stop (or by force after it): that is not an error of the agent.
+                    guard self.acpClients[id] === client, let state = self.turns[id] else { return }
+                    if state.stopping { return self.acpStopped(id) }
                     self.failAcpTurn(id, WorkspaceManager.cleanError(error.localizedDescription, status: 1))
                 case .success(let response):
                     let stop = AcpRPC.stop(response.dictionary)
@@ -218,6 +257,8 @@ extension WorkspaceManager {
 
     func stopAcpTurn(_ id: UUID) -> Bool {
         guard let client = acpClients[id], run(id)?.status.isActive == true else { return false }
+        // Pressing Stop again changes nothing: the first one is still on its way.
+        if turns[id]?.stopping == true { return true }
         turns[id]?.stopping = true
         expireApprovals(id)
         append(id, RunEvent(kind: .system, text: tr("ws.event.stopping")))
@@ -409,6 +450,7 @@ extension WorkspaceManager {
         acpClients[id] = nil
         client.stop()
         warmPrompts[id] = nil
+        if turns[id]?.stopping == true { return acpStopped(id) }
         // Warming up failed with no message waiting: remember a Gemini without ACP, and the next message starts it again.
         guard let prompt else {
             if run(id)?.provider == .gemini, client.sessionID == nil { acpFallback.insert(executable) }
@@ -421,9 +463,11 @@ extension WorkspaceManager {
             launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
             return
         }
-        let text = error.localizedDescription
-        let login = text.lowercased().contains("auth") ? " " + tr("ws.acp.login", run(id).map { $0.provider.kind.loginCommand } ?? "") : ""
-        failAcpTurn(id, WorkspaceManager.cleanError(text, status: 1) + login)
+        // The server's own log ("Authenticate called…") is not a sign-in error.
+        let raw = error.localizedDescription
+        let shown = AgentLogLines.withoutLog(raw.components(separatedBy: "\n")).joined(separator: "\n")
+        let login = shown.lowercased().contains("auth") ? " " + tr("ws.acp.login", run(id).map { $0.provider.kind.loginCommand } ?? "") : ""
+        failAcpTurn(id, WorkspaceManager.cleanError(raw, status: 1) + login)
     }
 
     private func acpExited(_ id: UUID, _ client: AcpClient, status: Int32, stderr: String, prompt: String, executable: String) {
@@ -440,19 +484,25 @@ extension WorkspaceManager {
             launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
             return
         }
+        if state.stopping { return acpStopped(id) }
         pauseLive(id)
         expireApprovals(id)
         turns[id] = nil
-        if state.stopping {
-            update(id) { $0.move(to: .stopped) }
-            append(id, RunEvent(kind: .system, text: tr("ws.event.stopped")))
-            sendPendingNow(id)
-        } else {
-            let detail = WorkspaceManager.cleanError(stderr, status: status)
-            update(id) { $0.move(to: .failed, detail: detail) }
-            append(id, RunEvent(kind: .error, text: detail))
-            turnDidFinish(id)
-        }
+        let detail = WorkspaceManager.cleanError(stderr, status: status)
+        update(id) { $0.move(to: .failed, detail: detail) }
+        append(id, RunEvent(kind: .error, text: detail))
+        turnDidFinish(id)
+    }
+
+    /// The turn you stopped is over, also when the agent closed instead of answering the cancel.
+    private func acpStopped(_ id: UUID) {
+        pauseLive(id)
+        expireApprovals(id)
+        turns[id] = nil
+        settleOpenWork(id, reason: .stopped)
+        update(id) { $0.move(to: .stopped) }
+        append(id, RunEvent(kind: .system, text: tr("ws.event.stopped")))
+        sendPendingNow(id)
     }
 
     private func failAcpTurn(_ id: UUID, _ message: String) {

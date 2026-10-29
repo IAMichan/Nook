@@ -101,18 +101,4 @@ extension WorkspaceManager {
         if error == nil { onAntigravitySignedIn?() }
         login.done(error)
     }
-
-    /// Sets an ACP mode: as the mode config option when the agent has one, otherwise with `session/set_mode` when it
-    /// lists the mode.
-    func setAcpMode(_ client: AcpClient, session: String, response: [String: Any], modes: [[String: Any]], to mode: String) {
-        let options = (response["configOptions"] as? [[String: Any]]) ?? []
-        if let option = options.first(where: { ($0["category"] as? String) == "mode" && ($0["type"] as? String ?? "select") == "select" }),
-           let configID = option["id"] as? String {
-            let values = ((option["options"] as? [[String: Any]]) ?? []).flatMap { ($0["options"] as? [[String: Any]]) ?? [$0] }
-            guard values.isEmpty || values.contains(where: { ($0["value"] as? String) == mode }) else { return }
-            client.request("session/set_config_option", ["sessionId": session, "configId": configID, "value": mode]) { _ in }
-        } else if modes.contains(where: { ($0["id"] as? String) == mode }) {
-            client.request("session/set_mode", ["sessionId": session, "modeId": mode]) { _ in }
-        }
-    }
 }
