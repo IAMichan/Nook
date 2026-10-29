@@ -261,4 +261,44 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(BranchPolicy.shouldFastForward(ahead: 1, behind: 3, dirty: false), .skipDiverged)
         XCTAssertEqual(BranchPolicy.shouldFastForward(ahead: 1, behind: 3, dirty: true), .skipDiverged)
     }
+
+    // MARK: A session's branches
+
+    func testLeavingBranchKeepsEarlierOnesInOrder() {
+        XCTAssertEqual(SessionBranches.leaving("feat-a", for: "feat-b", earlier: nil, base: "main"), ["feat-a"])
+        XCTAssertEqual(SessionBranches.leaving("feat-b", for: "feat-c", earlier: ["feat-a"], base: "main"), ["feat-a", "feat-b"])
+        XCTAssertNil(SessionBranches.leaving("main", for: "feat-a", earlier: nil, base: "main"), "the default branch is not listed")
+        XCTAssertEqual(SessionBranches.leaving("feat-b", for: "feat-a", earlier: ["feat-a"], base: nil), ["feat-b"],
+                       "going back to a branch takes it out of the earlier ones")
+    }
+
+    func testKeepingReplacesAnOlderReadOfTheSameRequest() {
+        var first = link(1, head: "feat-a"); first.url = "https://github.com/a/b/pull/1"
+        var merged = first; merged.state = .merged
+        var second = link(2, head: "feat-b"); second.url = "https://github.com/a/b/pull/2"
+        let kept = SessionBranches.keeping([merged, second], in: [first])
+        XCTAssertEqual(kept.map(\.number), [1, 2])
+        XCTAssertEqual(kept.first?.state, .merged)
+    }
+
+    func testRowsListEveryBranchWithItsPullRequest() {
+        var first = link(1, head: "feat-a"); first.url = "https://github.com/a/b/pull/1"
+        let current = URL(string: "https://github.com/a/b/pull/2")!
+        let rows = SessionBranches.rows(earlier: ["feat-a"], earlierLinks: [first], current: "feat-b", currentPullRequest: current)
+        XCTAssertEqual(rows.map(\.branch), ["feat-a", "feat-b"])
+        XCTAssertEqual(rows.map(\.pullRequest), [URL(string: first.url), current])
+        XCTAssertEqual(rows.map(\.isCurrent), [false, true])
+    }
+
+    func testRowsAreEmptyForASessionWithOneBranch() {
+        let current = URL(string: "https://github.com/a/b/pull/2")!
+        XCTAssertTrue(SessionBranches.rows(earlier: [], earlierLinks: [], current: "feat-b", currentPullRequest: current).isEmpty)
+    }
+
+    func testAWatchedEarlierPullRequestIsNotShownTwice() {
+        var first = link(1, head: "feat-a"); first.url = "https://github.com/a/b/pull/1"
+        let watched = URL(string: first.url)!
+        let rows = SessionBranches.rows(earlier: ["feat-a"], earlierLinks: [first], current: "feat-b", currentPullRequest: watched)
+        XCTAssertEqual(rows.map(\.pullRequest), [watched, nil])
+    }
 }

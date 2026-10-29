@@ -73,12 +73,18 @@ struct ChatsSidebar: View {
     @Binding var view: ChatsView
     /// The app the list shows only (its source id), or nil for every app.
     @Binding var app: String?
+    /// Within the chosen app, the account the list shows only (by its name), or nil for all of them.
+    @Binding var account: String?
     /// How many chats each view lists, within the chosen app.
     let counts: [ChatsView: Int]
     /// The apps to offer, busiest and newest first.
     let apps: [String]
     /// Chats with something new per app.
     let newByApp: [String: Int]
+    /// The chosen app's accounts, while it has chats in more than one: they show under it.
+    let accounts: [String]
+    /// Chats with something new per account of the chosen app.
+    let newByAccount: [String: Int]
     let addSource: () -> Void
 
     var body: some View {
@@ -111,6 +117,7 @@ struct ChatsSidebar: View {
                             } action: {
                                 withAnimation(NookTheme.swap) { app = app == id ? nil : id }
                             }
+                            if app == id { accountRows }
                         }
                     }
                     ChatsSidebarRow(title: tr("chats.addSource"), count: 0, countTint: NookTheme.textTertiary,
@@ -131,6 +138,21 @@ struct ChatsSidebar: View {
         }
         .frame(width: compact ? PanelLayout.chatsRail : PanelLayout.chatsSidebar)
         .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    /// The chosen app's accounts, under it and set in: a click shows that account's chats only, again shows all of them.
+    @ViewBuilder
+    private var accountRows: some View {
+        ForEach(accounts, id: \.self) { name in
+            ChatsSidebarRow(title: name, count: newByAccount[name] ?? 0, countTint: NookTheme.amber,
+                            selected: account == name, compact: compact) {
+                Image(systemName: "person.crop.circle")
+                    .font(NookTheme.font(11.5, .medium))
+            } action: {
+                withAnimation(NookTheme.swap) { account = account == name ? nil : name }
+            }
+            .padding(.leading, compact ? 0 : NookTheme.Spacing.lg)
+        }
     }
 
     /// What the marks in the list mean, said once, quietly, at the foot.

@@ -227,7 +227,7 @@ struct AgentSessionDetail: View {
 
     /// The agent asks something in words (not a multiple-choice question): its question, quietly, above the composer.
     private func waitingNote(_ session: AgentSession) -> some View {
-        ScrollView(showsIndicators: true) {
+        ScrollView {
             Text(session.summary)
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.paper)
@@ -235,6 +235,7 @@ struct AgentSessionDetail: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .scrollIndicators(.never)
         .frame(maxHeight: 90)
         .fixedSize(horizontal: false, vertical: true)
         .padding(NookTheme.Spacing.lg)
@@ -243,7 +244,7 @@ struct AgentSessionDetail: View {
 
     /// The change an approval is about, scrollable so it can be read in full before deciding.
     private func approvalDiff(_ session: AgentSession) -> some View {
-        ScrollView(showsIndicators: true) {
+        ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 Text(session.file)
                     .foregroundStyle(NookTheme.textTertiary)
@@ -260,6 +261,7 @@ struct AgentSessionDetail: View {
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, 10)
         }
+        .scrollIndicators(.never)
         .frame(maxWidth: .infinity, maxHeight: 110, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.well))
     }
@@ -295,7 +297,7 @@ struct AgentSessionDetail: View {
         let canSend = app.canReply(to: session)
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty, canSend else { return }
+            guard composerModel.hasContent(text), canSend else { return }
             let outgoing = composerModel.outgoing(text).send
             let picked = choice
             let settings = turnSettings
@@ -466,7 +468,7 @@ struct AgentSessionDetail: View {
                 .foregroundStyle(NookTheme.paper)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
-            ScrollView(showsIndicators: true) {
+            ScrollView {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                     ForEach(Array(item.options.enumerated()), id: \.offset) { _, option in
                         let chosen = picks.contains(option.label)
@@ -505,6 +507,7 @@ struct AgentSessionDetail: View {
                     }
                 }
             }
+            .scrollIndicators(.never)
             .frame(maxHeight: 170)
             .fixedSize(horizontal: false, vertical: true)
             if item.multiSelect {
@@ -577,7 +580,7 @@ struct AgentSessionDetail: View {
         let canContinue = app.canReply(to: session)
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty, canContinue else { return }
+            guard composerModel.hasContent(text), canContinue else { return }
             let outgoing = composerModel.outgoing(text).send
             let picked = choice
             let settings = turnSettings

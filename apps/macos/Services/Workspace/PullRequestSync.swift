@@ -11,12 +11,16 @@ final class PullRequestSync: ObservableObject {
     @Published private(set) var links: [UUID: [PullRequestLink]] = [:]
     /// Keyed by `folderKey(path:branch:)`.
     @Published private(set) var folderLinks: [String: [PullRequestLink]] = [:]
+    /// The pull requests of the branches a session worked on before its current one, for the list above its composer.
+    /// Their state is followed there (`PullRequestStatusStore`), so they are not asked about here again.
+    @Published private(set) var earlier: [UUID: [PullRequestLink]] = [:]
     private var checked: [UUID: Date] = [:]
     private var folderChecked: [String: Date] = [:]
     private var running = false
     private let defaults = UserDefaults.standard
     private static let key = "agents.pullRequests.v1"
     private static let foldersKey = "agents.pullRequests.folders.v1"
+    private static let earlierKey = "agents.pullRequests.earlier.v1"
 
     init() {
         if let data = defaults.data(forKey: Self.key),
@@ -27,6 +31,11 @@ final class PullRequestSync: ObservableObject {
         if let data = defaults.data(forKey: Self.foldersKey),
            let stored = try? JSONDecoder().decode([String: [PullRequestLink]].self, from: data) {
             folderLinks = stored
+        }
+        if let data = defaults.data(forKey: Self.earlierKey),
+           let stored = try? JSONDecoder().decode([String: [PullRequestLink]].self, from: data) {
+            earlier = Dictionary(stored.compactMap { key, value in UUID(uuidString: key).map { ($0, value) } },
+                                 uniquingKeysWith: { first, _ in first })
         }
     }
 
@@ -44,9 +53,10 @@ final class PullRequestSync: ObservableObject {
     func merged(_ id: UUID) -> Bool { PullRequestSettlement.shouldSettle(links: links[id] ?? []) }
 
     /// The session moved on to a new branch: its old pull requests no longer say anything about it (a merged one would
-    /// settle it), and the new branch is asked about in the next round.
+    /// settle it), and the new branch is asked about in the next round. They stay listed above its composer.
     func forget(_ id: UUID) {
         guard links[id] != nil || checked[id] != nil else { return }
+        retire(id, links[id] ?? [])
         links[id] = nil
         checked[id] = nil
         save()
@@ -65,6 +75,7 @@ final class PullRequestSync: ObservableObject {
         }
         links = links.mapValues(settle)
         folderLinks = folderLinks.mapValues(settle)
+        earlier = earlier.mapValues(settle)
         PullRequestStatusStore.shared.record(key: PullRequestStatusStore.key(repo: repository, number: number), glyph: .merged, checks: nil)
         save()
     }
@@ -140,6 +151,9 @@ final class PullRequestSync: ObservableObject {
                           let found = await SourceForge.requests(repo: repo, branch: branch) else { continue }
                     PullRequestStatusStore.shared.record(found, at: now)
                     let next: [PullRequestLink]? = found.isEmpty ? nil : found
+                    // The requests of a branch the session has since left move to its earlier ones.
+                    let left = (links[id] ?? []).filter { $0.headBranch.map { $0 != branch } ?? false }
+                    if !left.isEmpty { retire(id, left); changed = true }
                     if links[id] != next {
                         links[id] = next
                         changed = true
@@ -180,9 +194,16 @@ final class PullRequestSync: ObservableObject {
         }.value
     }
 
+    private func retire(_ id: UUID, _ left: [PullRequestLink]) {
+        let next = SessionBranches.keeping(left, in: earlier[id] ?? [])
+        if next != earlier[id] ?? [] { earlier[id] = next }
+    }
+
     private func save() {
         let stored = Dictionary(uniqueKeysWithValues: links.map { ($0.key.uuidString, $0.value) })
         if let data = try? JSONEncoder().encode(stored) { defaults.set(data, forKey: Self.key) }
         if let data = try? JSONEncoder().encode(folderLinks) { defaults.set(data, forKey: Self.foldersKey) }
+        let kept = Dictionary(uniqueKeysWithValues: earlier.map { ($0.key.uuidString, $0.value) })
+        if let data = try? JSONEncoder().encode(kept) { defaults.set(data, forKey: Self.earlierKey) }
     }
 }
