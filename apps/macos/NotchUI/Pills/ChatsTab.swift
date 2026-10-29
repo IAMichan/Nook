@@ -402,6 +402,8 @@ struct ChatsTab: View {
     /// Shows the panel footer at the foot of the leftmost column (under the sidebar's views and apps), where Agents has it
     /// under its sessions, so the refresh and update button sits in the same place on every tab. A footer page (pull requests, usage) opens on Agents through it.
     var openOnAgents: ((String) -> Void)?
+    /// In the main window rather than the notch: each has its own open chat, read only while that one is in sight.
+    var inWindow = false
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var capture = ChatCaptureService.shared
     @ObservedObject private var whatsApp = WhatsAppAccounts.shared
@@ -529,10 +531,10 @@ struct ChatsTab: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in readOpenChat() }
     }
 
-    /// Reads the open chat in Nook, only while you can be looking at it: in the open notch, or in the main window while
-    /// that is in front. A window that opened behind the app you are in leaves it unread.
+    /// Reads the open chat in Nook, only while you can be looking at this one: in the open notch, or in the main window
+    /// while that is in front. A window that opened behind the app you are in leaves it unread.
     private func readOpenChat() {
-        guard readOnOpen, app.viewModel.isShowing(.inbox), let entry = current, entry.read.isUnread else { return }
+        guard readOnOpen, app.viewModel.isShowing(.inbox, inWindow: inWindow), let entry = current, entry.read.isUnread else { return }
         app.markChatReadInNook(entry)
     }
 

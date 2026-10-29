@@ -305,6 +305,14 @@ final class NotchViewModel: ObservableObject {
         return WorkspaceWindowController.shared.isOpen
     }
 
+    /// Whether `tab` is on screen in one place: the open notch (`inWindow` false), or the main window while that is in
+    /// front. The notch and the window each have the tab, with what is chosen in it of their own.
+    func isShowing(_ tab: PanelTab, inWindow: Bool) -> Bool {
+        guard inWindow else { return state == .panel(tab) }
+        if case .panel = state { return false }
+        return WorkspaceWindowController.shared.isKey && windowTab == tab && windowSheet == nil
+    }
+
     /// Whether `tab` is on screen: in the open panel, or in the main window while that is in front.
     func isShowing(_ tab: PanelTab) -> Bool {
         if state == .panel(tab) { return true }

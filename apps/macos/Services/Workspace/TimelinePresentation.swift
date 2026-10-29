@@ -259,19 +259,10 @@ enum TimelinePresentation {
     /// One line per command: an approval you gave says nothing the tool call it let through does not, and the tool that
     /// runs right now is the live line under the timeline (with its time), so neither gets a row of its own.
     static func visible(_ events: [RunEvent], active: Bool) -> [RunEvent] {
-        var hidden: Set<UUID> = []
         let turns = split(events)
-        for turn in turns {
-            let calls = Set(turn.filter { $0.kind == .tool }.map { key($0.tool, $0.text) })
-            for approval in turn where approval.kind == .approval && approval.state == .allowed
-                && calls.contains(key(approval.tool, approval.text)) {
-                hidden.insert(approval.id)
-            }
+        return turns.enumerated().flatMap { index, turn in
+            visible(turn: turn, hidingRunning: active && index == turns.count - 1)
         }
-        if active, let turn = turns.last, let running = turn.last(where: { $0.kind == .tool && $0.state == .running }) {
-            hidden.insert(running.id)
-        }
-        return hidden.isEmpty ? events : events.filter { !hidden.contains($0.id) }
     }
 
     /// A tool call and the approval that asked for it share tool and summary; a nested call carries "↳ " in front.
@@ -314,8 +305,6 @@ enum TimelinePresentation {
 
     // MARK: Turns
 
-    /// A turn starts at each message of yours, and where the agent woke up by itself after background work; anything
-    /// before the first one is a turn of its own.
     /// The last of `split`'s turns, found from the end: what the live line, the running command and the subagents read,
     /// without splitting the whole session for it.
     static func lastTurn(_ events: [RunEvent]) -> [RunEvent] {
@@ -323,6 +312,8 @@ enum TimelinePresentation {
         return Array(events[start...])
     }
 
+    /// A turn starts at each message of yours, and where the agent woke up by itself after background work; anything
+    /// before the first one is a turn of its own.
     static func split(_ events: [RunEvent]) -> [[RunEvent]] {
         var turns: [[RunEvent]] = []
         for event in events {

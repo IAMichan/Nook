@@ -219,7 +219,7 @@ struct PanelView: View {
                 NookChatTab(viewModel: viewModel, openOnAgents: openOnAgents)
             }
         case .agents: AgentsTab(viewModel: viewModel)
-        case .inbox: ChatsTab(viewModel: viewModel, openOnAgents: openOnAgents)
+        case .inbox: ChatsTab(viewModel: viewModel, openOnAgents: openOnAgents, inWindow: inWindow)
         case .music: MusicTab()
         }
     }
