@@ -41,10 +41,16 @@
   const profile = $derived(profiles.find((p) => p.id === config.profileId));
   const levels = $derived(effortLevels(config.provider));
 
+  function cleanProjectPath(raw: string): string {
+    const trimmed = raw.trim();
+    return trimmed.length > 1 ? trimmed.replace(/[\\/]+$/, "") : trimmed;
+  }
+
   const favorites = $derived.by(() => {
     const seen = new Set<string>();
     const out: string[] = [];
-    for (const path of settings?.favoriteProjects ?? []) {
+    for (const raw of settings?.favoriteProjects ?? []) {
+      const path = cleanProjectPath(raw);
       if (!path || seen.has(path)) continue;
       seen.add(path);
       out.push(path);
@@ -56,7 +62,8 @@
     const seen = new Set<string>(favorites);
     const limit = Math.max(3, 10 - favorites.length);
     const out: string[] = [];
-    for (const path of [config.projectPath, settings?.lastProject ?? "", ...(settings?.recentProjects ?? []), ...(agents.history?.sessions ?? []).map((s) => s.cwd)]) {
+    for (const raw of [config.projectPath, settings?.lastProject ?? "", ...(settings?.recentProjects ?? []), ...(agents.history?.sessions ?? []).map((s) => s.cwd)]) {
+      const path = cleanProjectPath(raw);
       if (!path || seen.has(path)) continue;
       seen.add(path);
       out.push(path);
@@ -65,21 +72,10 @@
     return out;
   });
 
-  function isFavorite(path: string): boolean {
-    return favorites.includes(path);
-  }
-
   function toggleFavorite(path: string) {
-    if (!settings) return;
-    const current = settings.favoriteProjects ?? [];
-    const next = current.includes(path) ? current.filter((p) => p !== path) : [...current, path];
-    workspaceApi
-      .saveSettings({
-        ...$state.snapshot(settings),
-        favoriteProjects: next,
-      })
-      .then(() => workspace.refresh())
-      .catch(() => {});
+    const clean = cleanProjectPath(path);
+    if (!clean) return;
+    workspaceApi.toggleFavoriteProject(clean).catch(() => {});
   }
 
   const worktreeAllowed = $derived(!!project && project.verdict === "ok" && !!project.repoRoot && project.hasCommits && !!workspace.overview?.gitAvailable);
@@ -123,8 +119,11 @@
     config.isolation = settings!.defaultIsolation;
     config.worktreeRoot = settings!.worktreeRoot;
     requestAnimationFrame(() => textarea?.focus());
-    const initial = settings!.lastProject || favorites[0] || recent[0];
-    if (initial) select(initial);
+    const candidates = settings!.lastProject ? [settings!.lastProject] : [...favorites, ...recent];
+    for (const path of candidates) {
+      await select(path);
+      if (project?.verdict === "ok") break;
+    }
   }
 
   function choose(p: RunProvider, account: string | null) {
@@ -260,20 +259,20 @@
       {#if menu === "project"}
         <div class="menu" role="menu" tabindex="-1" onclick={stop} onkeydown={() => {}}>
           {#if favorites.length}
-            <div class="mhead">Favorieten</div>
+            <div class="mhead">Favorites</div>
             {#each favorites as path (path)}
-              <div class="mrow" class:chosen={project?.path === path}>
+              <div class="mrow" class:chosen={cleanProjectPath(project?.path ?? "") === path}>
                 <button class="mitem" onclick={() => select(path)}><span>{projectName(path)}</span><span class="faint small">{path}</span></button>
-                <button class="star starred" title="Uit favorieten halen" aria-label="Uit favorieten halen" onclick={() => toggleFavorite(path)}>★</button>
+                <button class="star starred" title="Remove from favorites" aria-label="Remove from favorites" onclick={() => toggleFavorite(path)}>★</button>
               </div>
             {/each}
           {/if}
           {#if recent.length}
             <div class="mhead">Recent</div>
             {#each recent as path (path)}
-              <div class="mrow" class:chosen={project?.path === path}>
+              <div class="mrow" class:chosen={cleanProjectPath(project?.path ?? "") === path}>
                 <button class="mitem" onclick={() => select(path)}><span>{projectName(path)}</span><span class="faint small">{path}</span></button>
-                <button class="star" title="Aan favorieten toevoegen" aria-label="Aan favorieten toevoegen" onclick={() => toggleFavorite(path)}>☆</button>
+                <button class="star" title="Add to favorites" aria-label="Add to favorites" onclick={() => toggleFavorite(path)}>☆</button>
               </div>
             {/each}
           {/if}
@@ -450,8 +449,8 @@
   .mrow .mitem { flex: 1; min-width: 0; }
   .mrow .mitem:hover { background: none; }
   .mrow .star { opacity: 0; padding: 4px 8px; color: var(--text3); font-size: 13px; align-items: center; justify-content: center; }
-  .mrow:hover .star, .mrow .star.starred { opacity: 1; }
-  .mrow .star.starred { color: var(--paper); }
+  .mrow:hover .star, .mrow .star:focus-visible, .mrow .star.starred { opacity: 1; }
+  .mrow .star.starred, .mrow .star:focus-visible { color: var(--paper); }
   .mrow .star:hover { background: none; color: var(--paper); }
   .menu hr { border: none; border-top: 1px solid var(--line2); margin: 4px 0; width: 100%; }
   .mhead { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; padding: 4px; }

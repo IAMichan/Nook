@@ -95,6 +95,15 @@ pub fn workspace_forget_project(state: State<'_, WorkspaceState>, path: String) 
 }
 
 #[tauri::command]
+pub fn workspace_toggle_favorite_project(app: tauri::AppHandle, state: State<'_, WorkspaceState>, path: String) {
+    let mut s = lock(&state.settings);
+    s.toggle_favorite_project(&path);
+    s.save_to(&WorkspaceSettings::file());
+    drop(s);
+    let _ = app.emit("workspace-changed", ());
+}
+
+#[tauri::command]
 pub fn workspace_timeline(state: State<'_, WorkspaceState>, run: String) -> Res<Vec<RunEvent>> {
     Ok(state.manager.timeline(id(&run)?))
 }

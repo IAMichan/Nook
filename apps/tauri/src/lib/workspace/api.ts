@@ -243,6 +243,7 @@ export const workspaceApi = {
   overview: () => invoke<WorkspaceOverview>("workspace_overview"),
   saveSettings: (settings: WorkspaceSettings) => invoke<void>("workspace_save_settings", { settings }),
   forgetProject: (path: string) => invoke<void>("workspace_forget_project", { path }),
+  toggleFavoriteProject: (path: string) => invoke<void>("workspace_toggle_favorite_project", { path }),
   timeline: (id: string) => invoke<RunEvent[]>("workspace_timeline", { run: run(id) }),
   queue: (id: string) => invoke<MessageQueue>("workspace_queue", { run: run(id) }),
   inspect: (path: string) => invoke<ProjectInfo>("workspace_inspect", { path }),
