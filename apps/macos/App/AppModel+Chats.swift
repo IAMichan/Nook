@@ -91,10 +91,11 @@ extension AppModel {
     }
 
     /// Where a chat is, as its card, notice and search result say it: its app, and the account while the app has more
-    /// than one linked ("WhatsApp · Business").
+    /// than one linked ("WhatsApp · Business"), or the linked account for integrations such as Instagram.
     static func chatContext(_ thread: InboxThread) -> String {
         let app = MessagingApps.app(id: thread.app)?.name ?? thread.app
-        return thread.account.map { app + " · " + $0 } ?? app
+        let account = thread.account ?? ChatLinker.shared.accountName(for: thread.app)
+        return account.map { app + " · " + $0 } ?? app
     }
 
     /// The card of a chat, the same for every app: its messages (they scroll back), a field to answer it (in the chat
