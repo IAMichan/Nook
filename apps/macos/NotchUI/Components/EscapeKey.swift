@@ -52,3 +52,49 @@ private struct EscapeKeyReader: NSViewRepresentable {
         }
     }
 }
+
+extension View {
+    /// Keys pressed in the window this view is in, before the focused field or SwiftUI sees them: a palette steers its
+    /// list (Return, ↑/↓, Tab) while its text field keeps the keyboard, which `onKeyPress` and `onSubmit` do not hear
+    /// reliably in the notch. `handler` returns true when it used the key. Keys an input method is composing stay the
+    /// field's.
+    func onWindowKeyDown(enabled: Bool = true, perform handler: @escaping (NSEvent) -> Bool) -> some View {
+        background(KeyDownReader(enabled: enabled, handler: handler))
+    }
+}
+
+private struct KeyDownReader: NSViewRepresentable {
+    let enabled: Bool
+    let handler: (NSEvent) -> Bool
+
+    func makeNSView(context: Context) -> KeyDownView {
+        let view = KeyDownView()
+        updateNSView(view, context: context)
+        return view
+    }
+
+    func updateNSView(_ nsView: KeyDownView, context: Context) {
+        nsView.enabled = enabled
+        nsView.handler = handler
+    }
+
+    final class KeyDownView: NSView {
+        var enabled = true
+        var handler: ((NSEvent) -> Bool)?
+        private var monitor: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, self.enabled, let window = self.window, event.window === window else { return event }
+                if let editor = window.firstResponder as? NSTextView, editor.hasMarkedText() { return event }
+                return self.handler?(event) == true ? nil : event
+            }
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}

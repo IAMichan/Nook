@@ -1,9 +1,11 @@
+import Carbon
 import SwiftUI
 
 /// Search everything (⌘K or ⇧⌘F, or the magnifying glass in the panel header): one field over conversations with Nook, agent
 /// sessions and their transcripts, chats, call notes, memories, notices, settings and actions. Typing ranks as you go;
-/// a chip (or Tab) keeps one kind; ↑/↓ move, Return opens the hit right where it matched, Esc, the cross or a click
-/// beside it closes. With nothing typed it shows your recent searches and how to search more precisely (see
+/// a chip (or Tab) keeps one kind; ↑/↓ (or ⌃N/⌃P) move, Return opens the hit right where it matched, ⌘1 to ⌘9 open the
+/// first nine at once, Esc, the cross or a click beside it closes. Return before the results are in opens the best one
+/// as soon as they arrive. With nothing typed it shows your recent searches and how to search more precisely (see
 /// `SearchQuery` for the query language).
 struct SearchPanel: View {
     @EnvironmentObject private var app: AppModel
@@ -17,6 +19,8 @@ struct SearchPanel: View {
     @State private var text = ""
     @State private var kind: SearchKind?
     @State private var index = 0
+    /// Return came before the results for what is typed: open the best one when they arrive.
+    @State private var openWhenReady = false
     @FocusState private var focused: Bool
 
     /// What a row is: a hit, or asking Nook what you typed.
@@ -58,7 +62,7 @@ struct SearchPanel: View {
         VStack(spacing: 0) {
             HStack(spacing: NookTheme.Spacing.xs) {
                 NookSearchField(prompt: tr("search.placeholder"), text: $text, style: .large, focus: $focused,
-                                onSubmit: { open(list) }, onEscape: close)
+                                onSubmit: submit, onEscape: close)
                 ToolbarIconButton("xmark", tr("button.close"), height: 22, width: 22, close)
             }
             .padding(.leading, NookTheme.Spacing.xs)
@@ -86,13 +90,18 @@ struct SearchPanel: View {
         .onDisappear { center.cancelSearch() }
         .onChange(of: text) { _, value in
             index = 0
+            openWhenReady = false
             center.search(value)
         }
         .onChange(of: kind) { _, _ in index = 0 }
         .onChange(of: center.hits) { _, _ in index = min(index, max(0, rows.count - 1)) }
-        .onKeyPress(.downArrow) { index = min(index + 1, max(0, list.count - 1)); return .handled }
-        .onKeyPress(.upArrow) { index = max(index - 1, 0); return .handled }
-        .onKeyPress(.tab) { cycleKind(); return .handled }
+        .onChange(of: center.searched) { _, value in
+            guard openWhenReady, value == text else { return }
+            openWhenReady = false
+            index = 0
+            open(rows)
+        }
+        .onWindowKeyDown(perform: key)
         .onKeyPress(.escape) { close(); return .handled }
     }
 
@@ -115,14 +124,60 @@ struct SearchPanel: View {
         }
     }
 
-    /// Tab: the next kind that has hits, then back to all.
-    private func cycleKind() {
+    /// Tab: the next kind that has hits, then back to all; ⇧Tab goes the other way.
+    private func cycleKind(backward: Bool = false) {
         let present = Self.kinds.filter { value in center.hits.contains { $0.document.kind == value } }
         guard !present.isEmpty else { kind = nil; return }
-        if let kind, let at = present.firstIndex(of: kind) {
-            self.kind = at + 1 < present.count ? present[at + 1] : nil
+        // All, then each kind with hits, round and round.
+        let order: [SearchKind?] = [nil] + present
+        let at = order.firstIndex(of: kind) ?? 0
+        kind = order[(at + (backward ? order.count - 1 : 1)) % order.count]
+    }
+
+    // MARK: Keys
+
+    /// The palette's keys, taken before the field sees them so the list follows the keyboard while you type.
+    private func key(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        let list = rows
+        switch Int(event.keyCode) {
+        case kVK_Return, kVK_ANSI_KeypadEnter:
+            guard flags.isEmpty else { return false }
+            submit()
+        case kVK_DownArrow where flags.isEmpty:
+            move(1, in: list)
+        case kVK_UpArrow where flags.isEmpty:
+            move(-1, in: list)
+        case kVK_Tab where flags.isEmpty || flags == .shift:
+            guard !text.isEmpty else { return false }
+            cycleKind(backward: flags == .shift)
+        default:
+            let character = event.charactersIgnoringModifiers?.lowercased()
+            if flags == .control, character == "n" || character == "p" {
+                move(character == "n" ? 1 : -1, in: list)
+                return true
+            }
+            // ⌘1 to ⌘9: the hit with that number, counted down the list.
+            guard flags == .command, let digit = character.flatMap(Int.init), (1...9).contains(digit),
+                  list.indices.contains(digit - 1), !text.isEmpty else { return false }
+            index = digit - 1
+            open(list)
+        }
+        return true
+    }
+
+    private func move(_ delta: Int, in list: [Row]) {
+        index = min(max(index + delta, 0), max(0, list.count - 1))
+    }
+
+    /// Return: the chosen row, or the best hit once the results for what is typed are in.
+    private func submit() {
+        let typed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !typed.isEmpty else { return }
+        if center.searched != text {
+            openWhenReady = true
         } else {
-            kind = present[0]
+            open(rows)
         }
     }
 
@@ -205,6 +260,7 @@ struct SearchPanel: View {
                     if let date = hit.passage?.date ?? hit.document.date {
                         Text(NookDates.ago(date)).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
                     }
+                    if selected { returnHint }
                 }
                 if let line = detail(hit) {
                     Text(line)
@@ -281,12 +337,18 @@ struct SearchPanel: View {
                 .frame(width: 18)
             Text(tr("search.ask", typed)).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
             Spacer(minLength: 0)
+            if selected { returnHint }
         }
         .padding(.horizontal, NookTheme.Spacing.md)
         .frame(height: 34)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(selected ? NookTheme.smoke : .clear))
         .contentShape(Rectangle())
         .accessibilityAddTraits(.isButton)
+    }
+
+    /// On the chosen row: Return opens it.
+    private var returnHint: some View {
+        Text(verbatim: "↩").font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textSecondary).accessibilityHidden(true)
     }
 
     // MARK: Start
