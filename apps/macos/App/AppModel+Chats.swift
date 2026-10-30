@@ -19,6 +19,10 @@ extension AppModel {
                 SystemNotifier.shared.withdraw(Self.chatCardPrefix + id)
             }
         }
+        // The chats with a card up or in line: their apps are read quickly meanwhile, for every app alike.
+        capture.watching = { [weak self] in
+            Set(self?.viewModel.cardIDs(prefix: Self.chatCardPrefix).map { String($0.dropFirst(Self.chatCardPrefix.count)) } ?? [])
+        }
         // A chat's card follows its chat while it is up or waits in line: the newest message, your own answer and its
         // ticks show in it, not only what was there when it came up.
         capture.$inbox
