@@ -152,9 +152,10 @@ struct PanelView: View {
     }
 
     /// The tabs, with what waits for you on them: an amber count on Agents, a dot on Nook when an answer is unread. In
-    /// the window, the tooltip names the tab's shortcut (⌘1, ⌘2, …).
+    /// the window, the tooltip names the tab's shortcut (⌘1, ⌘2, …). The tab split view shows beside this one stays
+    /// in the bar, even Music while nothing plays.
     private var tabItems: [NookTabBar<PanelTab>.Item] {
-        let tabs = PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || tab == .music)
+        let tabs = PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || tab == .music || splitTab == .music)
         let waiting = app.activeAgents.filter { $0.status == .waiting || $0.approvalID != nil }.count
         // The conversations the Nook list shows, without sorting them only to ask whether one is unread.
         let unread = tab != .chat && app.chat.conversations.contains {
@@ -218,7 +219,10 @@ struct PanelView: View {
     /// shadow, lifted off the content. The selected tab is on the accent.
     private var headerCapsule: some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
-            NookTabBar(items: tabItems, selected: tab, onSelect: { select($0) }, prominent: true)
+            // The tab beside this one is outlined, and a click on it swaps the two, as the swap button in its pane does.
+            NookTabBar(items: tabItems, selected: tab, onSelect: { value in
+                if value == splitTab { swapSplit(value) } else { select(value) }
+            }, prominent: true, beside: splitTab)
             NookDivider(vertical: true)
                 .frame(height: 18)
                 .padding(.horizontal, NookTheme.Spacing.sm)

@@ -10,6 +10,7 @@ let splitTranslations: [AppLanguage: [String: String]] = [
         "split.onTab": "Deze tab heb je al open",
         "split.close": "Gesplitst scherm sluiten",
         "split.swap": "Omwisselen met de hoofdtab",
+        "split.beside": "Ernaast geopend",
     ],
     .en: [
         "split.title": "Split view",
@@ -18,6 +19,7 @@ let splitTranslations: [AppLanguage: [String: String]] = [
         "split.onTab": "This tab is already open",
         "split.close": "Close split view",
         "split.swap": "Swap with the main tab",
+        "split.beside": "Open beside",
     ],
     .de: [
         "split.title": "Geteilte Ansicht",
@@ -26,6 +28,7 @@ let splitTranslations: [AppLanguage: [String: String]] = [
         "split.onTab": "Dieser Tab ist schon offen",
         "split.close": "Geteilte Ansicht schließen",
         "split.swap": "Mit dem Haupttab tauschen",
+        "split.beside": "Daneben geöffnet",
     ],
     .fr: [
         "split.title": "Écran partagé",
@@ -34,6 +37,7 @@ let splitTranslations: [AppLanguage: [String: String]] = [
         "split.onTab": "Cet onglet est déjà ouvert",
         "split.close": "Fermer l’écran partagé",
         "split.swap": "Échanger avec l’onglet principal",
+        "split.beside": "Ouvert à côté",
     ],
     .es: [
         "split.title": "Pantalla dividida",
@@ -42,5 +46,6 @@ let splitTranslations: [AppLanguage: [String: String]] = [
         "split.onTab": "Esta pestaña ya está abierta",
         "split.close": "Cerrar pantalla dividida",
         "split.swap": "Intercambiar con la pestaña principal",
+        "split.beside": "Abierta al lado",
     ],
 ]

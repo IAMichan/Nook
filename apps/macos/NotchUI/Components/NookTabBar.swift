@@ -29,6 +29,8 @@ struct NookTabBar<Value: Hashable>: View {
     /// Small tabs on a shared track, the selected one on a rounded square: a segmented control, as on pull
     /// request page (Summary, Guide, Timeline, Code).
     var segmented = false
+    /// The tab split view shows beside the selected one: outlined on the accent, so both tabs on screen read as open.
+    var beside: Value? = nil
     @Namespace private var selection
     @State private var hovered: Value?
 
@@ -52,7 +54,7 @@ struct NookTabBar<Value: Hashable>: View {
                     }
                     .font(NookTheme.font(segmented ? 12 : 13, .medium))
                     .foregroundStyle(item.value == selected ? selectedText
-                                     : (hovered == item.value ? NookTheme.paper : NookTheme.textTertiary))
+                                     : (hovered == item.value || item.value == beside ? NookTheme.paper : NookTheme.textTertiary))
                     .padding(.leading, segmented ? 10 : 12)
                     .padding(.trailing, closable ? 8 : (segmented ? 10 : 12))
                     .padding(.vertical, segmented ? 4 : 5)
@@ -61,6 +63,9 @@ struct NookTabBar<Value: Hashable>: View {
                             shape
                                 .fill(prominent ? NookTheme.iris : (segmented ? NookTheme.line2 : NookTheme.smoke))
                                 .matchedGeometryEffect(id: "selection", in: selection)
+                        } else if item.value == beside {
+                            shape.fill(NookTheme.iris.opacity(0.14))
+                                .overlay(shape.stroke(NookTheme.iris.opacity(0.75), lineWidth: 1))
                         } else if segmented && hovered == item.value {
                             shape.fill(NookTheme.rowHover)
                         }
@@ -71,6 +76,7 @@ struct NookTabBar<Value: Hashable>: View {
                 .help(item.help ?? "")
                 .accessibilityLabel(item.count > 0 ? item.title + ", \(item.count)" : item.title)
                 .accessibilityAddTraits(item.value == selected ? .isSelected : [])
+                .accessibilityValue(item.value == beside ? tr("split.beside") : "")
                 .overlay(alignment: .trailing) {
                     if let onClose, item.value == selected || hovered == item.value {
                         Button { onClose(item.value) } label: {
@@ -99,6 +105,7 @@ struct NookTabBar<Value: Hashable>: View {
             }
         }
         .animation(NookTheme.hover, value: hovered)
+        .animation(NookTheme.reveal, value: beside)
     }
 
     private var shape: AnyShape {
