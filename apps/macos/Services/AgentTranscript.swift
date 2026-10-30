@@ -35,6 +35,9 @@ struct AgentToolStep: Identifiable, Equatable {
     /// What a command, search or other tool gave back, shortened: what the step shows when you open it. Nil for a step
     /// that read or changed a file (the file itself is a click away) and for one without a result yet.
     var output: String? = nil
+    /// The tool's input as JSON, long texts shortened: what a Nook session shows for the step when it takes over turns
+    /// written outside Nook (see TranscriptFollow).
+    var input: String? = nil
 }
 
 /// Something that happened to the conversation rather than in it: the context was compacted, or the agent's run hit an
@@ -296,7 +299,8 @@ enum AgentTranscript {
                                                        plan: name == "ExitPlanMode" ? input["plan"] as? String : nil,
                                                        lines: EditLines.of(tool: name, input: input),
                                                        file: opensFile(name) ? ToolSummary.path(input) : nil,
-                                                       patch: EditPatch.make(tool: name, input: input)),
+                                                       patch: EditPatch.make(tool: name, input: input),
+                                                       input: inputJSON(input)),
                                    at: when, to: &messages)
                         default:
                             continue
@@ -378,12 +382,13 @@ enum AgentTranscript {
                                                    : nil,
                                                patch: name == "apply_patch"
                                                    ? (payload["input"] as? String) ?? EditPatch.make(tool: name, input: arguments)
-                                                   : nil),
+                                                   : nil,
+                                               input: inputJSON(arguments)),
                            at: when, to: &messages)
                 case "local_shell_call":
                     let action = (payload["action"] as? [String: Any]) ?? [:]
                     append(step: AgentToolStep(id: callID, name: "Shell", summary: codexSummary("shell", action),
-                                               command: ToolSummary.command(action)), at: when, to: &messages)
+                                               command: ToolSummary.command(action), input: inputJSON(action)), at: when, to: &messages)
                 case "web_search_call":
                     let action = (payload["action"] as? [String: Any]) ?? [:]
                     append(step: AgentToolStep(id: callID, name: "WebSearch", summary: oneLine((action["query"] as? String) ?? "")),
@@ -434,7 +439,8 @@ enum AgentTranscript {
                                                path: ToolCategory.of(tool: raw) == .edit ? path : nil,
                                                lines: EditLines.of(tool: raw, input: input),
                                                file: opensFile(raw) ? path : nil,
-                                               patch: EditPatch.make(tool: raw, input: input)),
+                                               patch: EditPatch.make(tool: raw, input: input),
+                                               input: inputJSON(input)),
                            at: callDate, to: &messages)
                     let display = call["resultDisplay"] as? String
                     switch call["status"] as? String {
@@ -545,6 +551,22 @@ enum AgentTranscript {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         return text.count > maxOutput ? String(text.prefix(maxOutput - 1)) + "…" : text
+    }
+
+    /// A tool's input as compact JSON, each text in it cut at `limit`: a file the agent wrote whole need not stay in
+    /// memory for every transcript read. Nil for an empty input.
+    static func inputJSON(_ input: [String: Any], limit: Int = 4_000) -> String? {
+        guard !input.isEmpty else { return nil }
+        func shorten(_ value: Any) -> Any {
+            if let text = value as? String { return text.count > limit ? String(text.prefix(limit)) + "…" : text }
+            if let list = value as? [Any] { return list.map(shorten) }
+            if let object = value as? [String: Any] { return object.mapValues(shorten) }
+            return value
+        }
+        let object = input.mapValues(shorten)
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     /// "2026-10-19T14:03:11.482Z", with or without the fraction, as the agents write it.

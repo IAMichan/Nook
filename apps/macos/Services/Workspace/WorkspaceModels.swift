@@ -566,6 +566,9 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
     var state: State?
     /// Undone by going back to before an earlier message: shown dimmed, the agent no longer remembers it.
     var rolledBack: Bool? = nil
+    /// Taken from the agent's transcript, not written by a turn in Nook: the conversation went on outside Nook (see
+    /// TranscriptFollow). The transcript message or step it stands for, so reading the transcript again updates it.
+    var source: String? = nil
 
     init(kind: Kind, text: String, tool: String? = nil, callID: String? = nil, detail: String? = nil,
          output: String? = nil, state: State? = nil, date: Date = Date(), id: UUID = UUID()) {

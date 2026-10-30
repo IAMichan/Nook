@@ -184,22 +184,39 @@ extension AppModel {
         return current + earlier
     }
 
-    /// A conversation Nook runs that was continued in the terminal (`claude --resume` writes a new transcript under a new
-    /// session id): the Nook session moves on to that id and shows what was said there. Without it the continuation
-    /// appeared as a second chat and Nook's next turn resumed the older conversation, losing the terminal's messages.
+    /// A conversation Nook runs that went on outside Nook: in the agent's own app (the Claude desktop app), its terminal,
+    /// or resumed there (`claude --resume` writes a new transcript under a new session id, and the Nook session moves on
+    /// to that id). The Nook session shows what was said and done there, as the agent's own app does, also while the
+    /// agent still works on it. Without it the Nook session stopped at your message, or the continuation appeared as a
+    /// second chat and Nook's next turn resumed the older conversation.
     func followTerminalContinuations() {
-        for run in workspace.runs where !run.archived && !run.status.isActive {
+        for run in workspace.runs where !run.archived && !run.status.isActive && !run.isRemote {
             guard let current = run.providerSessionID, !current.isEmpty else { continue }
             let agent = run.provider.displayName
-            guard let past = history.sessions.first(where: {
-                $0.agent.name == agent && $0.sessionID != current && !$0.path.isEmpty && $0.earlierIDs.contains(current)
-            }) else { continue }
+            let family = AgentSessionRecord.family(agent)
+            // The agent's app or terminal working on this conversation right now, with the transcript it writes.
+            let live = hub.sessions.first {
+                AgentSessionRecord.family($0.name) == family && $0.ownConversationID == current && !$0.transcriptPath.isEmpty
+            }
+            // A transcript that resumed this one under a new id, else this conversation's own.
+            let resumed = history.sessions.first {
+                AgentSessionRecord.family($0.agent.name) == family && $0.sessionID != current && !$0.path.isEmpty
+                    && $0.earlierIDs.contains(current)
+            }
+            let own = history.sessions.first {
+                AgentSessionRecord.family($0.agent.name) == family && $0.sessionID == current && !$0.path.isEmpty
+            }
+            let newSession = resumed?.sessionID ?? current
+            guard let path = resumed?.path ?? live?.transcriptPath ?? own?.path else { continue }
+            // Only when something was written there after Nook last ran it, and once for each change.
+            let written = [live?.updated, resumed?.ended, own?.ended].compactMap { $0 }.max() ?? .distantPast
+            guard written > run.updatedAt, followedTranscripts[run.id] != written else { continue }
+            followedTranscripts[run.id] = written
+            let busy = live.map { $0.status == .running || $0.status == .waiting || $0.approvalID != nil } ?? false
             let id = run.id
-            let path = past.path
-            let newSession = past.sessionID
             Task { [weak self] in
                 let messages = await Task.detached(priority: .utility) { AgentTranscript.recent(path: path) }.value
-                self?.workspace.followContinuation(id, from: current, to: newSession, messages: messages)
+                self?.workspace.followContinuation(id, from: current, to: newSession, messages: messages, finished: !busy)
             }
         }
     }
