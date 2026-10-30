@@ -135,6 +135,15 @@ struct SessionPanel: View {
             guard runID == nil, progress == nil else { return }
             await readFolderState()
         }
+        // A pull request opened outside Nook (an agent running `gh`) leaves git as it was: ask again now and then while
+        // the panel shows one isn't there yet. The lookup itself asks GitHub once a minute at most.
+        .task(id: directory) {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                guard !Task.isCancelled, progress == nil, quick?.hasOpenPullRequest != true else { continue }
+                if let runID { quick = await workspace.quickGitState(runID) } else { await readFolderState() }
+            }
+        }
     }
 
     // MARK: Machine and folder

@@ -184,6 +184,8 @@ final class WorkspaceManager: ObservableObject {
     var pendingSendNow: [UUID: String] = [:]
     /// When GitHub was last asked about a branch's pull request ("owner/repo branch"), so it is asked once a minute at most.
     var pullRequestChecked: [String: Date] = [:]
+    /// The open pull request those lookups found, by the same key, so every view of a branch gets the same answer.
+    var pullRequestOpen: [String: URL] = [:]
     /// Branches ("owner/repo branch") whose pull request was merged or closed, from the same lookups.
     var pullRequestLanded: Set<String> = []
     /// Sessions whose Antigravity sign-in page already opened.
