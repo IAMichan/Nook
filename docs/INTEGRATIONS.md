@@ -109,8 +109,10 @@ Sent mailbox, each message as its subject in bold over the start of its own text
 `MailChatData.text`). With more than one account each chat is named by its account, as WhatsApp's are. Newsletters and
 notifications (`MailChatData.isAutomated`) are the app's channels and stay quiet by default (`ChatNoticeRules`).
 
-Nook reads Mail only after you linked it in Settings › Chats › Mail (the first read asks for Automation), and only while
-Mail is open, as the Mail connector does: it never starts Mail in the background. An answer goes out through Mail
+Nook reads Mail only after you linked it, in Settings › Chats › Mail or from Mail's empty list in the Chats tab (the
+first read asks for Automation), and only while Mail is open, as the Mail connector does: it never starts Mail in the
+background on its own. Linking it, or "Read Mail now" while Mail is closed, starts Mail out of sight once, so the first
+chats show at once. A read in which not one account answered says why instead of showing an empty list. An answer goes out through Mail
 (`MailSender`) as a reply to the chat's newest mail from the chat's account; "Mark as read" sets Mail's read status,
 which tells the server. Mail apps Nook cannot read itself (Outlook for Mac, Gmail and Outlook on the web, Spark, Proton
 Mail) are members by their notifications: `ChatCapture.mailNotice` reads the subject from them the same way. Mail has no

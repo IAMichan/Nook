@@ -575,11 +575,26 @@ final class ChatCaptureService: ObservableObject {
         bridgeChanged(snapchatBridge.app)
     }
 
-    /// Links the Mail app: every account in it is read from now on (the first read asks for permission under
-    /// Automation), and Mail's chats are switched on.
+    /// Links the Mail app: every account in it is read from now on and right away, Mail started out of sight when it is
+    /// closed (the first read asks for permission under Automation), and Mail's chats are switched on.
     func linkMail() {
-        mailBridge.setLinked(true)
-        loggedIn(mailBridge.app)
+        Task {
+            // A Mail that does not start still links: Nook reads it as soon as you open Mail yourself.
+            try? await mailBridge.linkAndRead()
+            loggedIn(mailBridge.app)
+        }
+    }
+
+    /// Mail is linked but closed: starts it out of sight and reads it now, after your own click.
+    func readMailNow() {
+        Task {
+            do {
+                try await MailConnector.ensureRunning()
+                bridgeChanged(mailBridge.app)
+            } catch {
+                bridgeProblems[mailBridge.app] = error.localizedDescription
+            }
+        }
     }
 
     /// Stops reading the Mail app, after your own confirmation: what was read is forgotten and its row offers to link

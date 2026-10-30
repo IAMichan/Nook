@@ -38,6 +38,13 @@ final class MailBridge: ChatBridge, ObservableObject {
 
     var isReady: Bool { isLinked && ScriptText.isRunning(MailSender.mailBundleID) }
 
+    /// Links Mail from the Chats tab or Settings and reads it at once: Mail is started out of sight when it is closed,
+    /// so the first chats show right away instead of the next time you open Mail.
+    func linkAndRead() async throws {
+        setLinked(true)
+        try await MailConnector.ensureRunning()
+    }
+
     func setLinked(_ linked: Bool) {
         UserDefaults.standard.set(linked, forKey: Self.linkedKey)
         if isLinked != linked { isLinked = linked }
@@ -51,12 +58,18 @@ final class MailBridge: ChatBridge, ObservableObject {
             let found = MailChatData.accounts(text)
             if found != accounts { accounts = found }
             var rows: [MailChatData.Row] = []
+            var failure: NookError?
             // Each account on its own: one that syncs a big mailbox never keeps the others from showing.
             for account in found {
                 let result = await ScriptText.run(MailChatData.readScript(account: account.name), timeout: 20)
-                guard let raw = result.text else { continue }
+                guard let raw = result.text else {
+                    failure = failure ?? problem(result.errorNumber, result.errorMessage, timeout: 20)
+                    continue
+                }
                 rows += MailChatData.rows(raw, account: account)
             }
+            // Not one account could be read: say why, instead of an empty list that looks like there is no mail.
+            if rows.isEmpty, let failure { throw failure }
             await readBodies(of: rows)
             let chats = MailChatData.chats(rows, accounts: found, bodies: bodies, named: found.count > 1)
             remember(chats, rows: rows, accounts: found)
