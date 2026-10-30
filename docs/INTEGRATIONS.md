@@ -206,7 +206,7 @@ check the agent's protocol before you write `–`.
 | Resume a past session | ✓ | ✓ | ✓ | ✓ (in the Antigravity app while it runs; otherwise in Nook, a new conversation that starts from its transcript) | ✓ | ✓ | ✓ | ✓ (`session/load`) |
 | A conversation the agent no longer knows starts anew from a summary of the timeline, said in it | ? | ✓ (`thread/resume`) | ✓ (`session/load`) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
 | Several accounts side by side | ✓ (`CLAUDE_CONFIG_DIR`) | ✓ (`CODEX_HOME`) | ✓ (`GEMINI_CLI_HOME`, Gemini CLI 0.25 and newer: the folder around an account's `.gemini`) | – (one Google sign-in per Antigravity; each Nook account keeps its own profile folder for its sessions) | – (same) | – (same) | – (same) | – (same) |
-| Subscription limits | ✓ | ✓ | – | ✓ | – | – | – | – |
+| Subscription limits | ✓ | ✓ | – | ✓ (`retrieveUserQuotaSummary`: a 5-hour and a weekly window per model group, shown like Claude's with reset time and pace; the per-model list of `fetchAvailableModels` only for accounts without that summary) | – | – | – | – |
 | A turn that failed on an expired login offers to sign in again (`AgentSignInFailure`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (signs in itself: `authenticate` with its first `authMethods` entry when a session asks for it) |
 | Signing in happens in your browser, without a Terminal window, and the failed turn runs again afterwards (`AgentKind.browserLoginArguments`) | ✓ (`claude auth login`) | ✓ (`codex login`) | – (Terminal: `gemini` only signs in in its interactive screen) | ✓ (over ACP) | – (Terminal: `opencode auth login` asks which provider) | ✓ (`cursor-agent login`) | ✓ (`grok login`) | – (signs in itself: `authenticate` with its first `authMethods` entry when a session asks for it) |
 

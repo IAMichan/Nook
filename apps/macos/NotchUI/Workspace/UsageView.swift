@@ -72,8 +72,21 @@ struct UsageView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
-                        ForEach(limits) { limit in
-                            limitRow(limit, accent: profile.kind.color)
+                        ForEach(QuotaLimit.grouped(limits), id: \.name) { group in
+                            // Antigravity's groups ("Gemini", "Claude & GPT") each read like Claude's windows, under their name.
+                            if !group.name.isEmpty, group.limits.allSatisfy({ $0.duration != nil }) {
+                                Text(group.name)
+                                    .font(NookTheme.TextStyle.detail)
+                                    .foregroundStyle(NookTheme.textSecondary)
+                                    .lineLimit(1)
+                                ForEach(group.limits) { limit in
+                                    limitRow(limit, title: limit.window, accent: profile.kind.color)
+                                }
+                            } else {
+                                ForEach(group.limits) { limit in
+                                    limitRow(limit, title: limit.label, accent: profile.kind.color)
+                                }
+                            }
                         }
                     }
                 }
@@ -83,10 +96,11 @@ struct UsageView: View {
         .padding(.vertical, NookTheme.Spacing.xs)
     }
 
-    private func limitRow(_ limit: QuotaLimit, accent: Color) -> some View {
+
+    private func limitRow(_ limit: QuotaLimit, title: String, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-                Text(limit.label)
+                Text(title)
                     .font(NookTheme.TextStyle.body)
                     .lineLimit(1)
                 if let note = limit.note ?? AgentFormat.reset(limit.resetsAt) {
