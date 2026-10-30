@@ -63,12 +63,28 @@ final class ChatComposerModel: ObservableObject {
         if !files.isEmpty, panel != .stickers { panel = nil }
     }
 
+    /// Pictures still being written to disk: each waits for the one before, so they join `files` in the order they came.
+    private var savingPictures: Task<Void, Never>?
+    /// Moves on when the chat changes, so a picture still being written does not land in the next chat.
+    private var pictureGeneration = 0
+
     /// A picture without a file of its own (a screenshot on the pasteboard, a picture dragged from a browser).
     func add(_ image: NSImage) {
-        do {
-            add([try ChatSendPrep.save(image)], as: .photo)
-        } catch {
-            problem = error.localizedDescription
+        let previous = savingPictures
+        let generation = pictureGeneration
+        savingPictures = Task { [weak self] in
+            await previous?.value
+            let saved: Result<URL, Error>
+            do {
+                saved = .success(try await ChatSendPrep.saveOffMain(image))
+            } catch {
+                saved = .failure(error)
+            }
+            guard let self, self.pictureGeneration == generation else { return }
+            switch saved {
+            case .success(let url): self.add([url], as: .photo)
+            case .failure(let error): self.problem = error.localizedDescription
+            }
         }
     }
 
@@ -84,6 +100,8 @@ final class ChatComposerModel: ObservableObject {
 
     func open(_ panel: Panel) {
         problem = nil
+        // Contacts may have changed since the panel was last open.
+        if panel == .contact { contactsIndexed = nil }
         self.panel = self.panel == panel ? nil : panel
         if panel == .poll, poll.options.isEmpty { poll = ChatPollDraft() }
     }
@@ -118,6 +136,7 @@ final class ChatComposerModel: ObservableObject {
         places = []
         contactQuery = ""
         gifQuery = ""
+        pictureGeneration += 1
         recorder.cancel()
     }
 
@@ -278,17 +297,39 @@ final class ChatComposerModel: ObservableObject {
         }
         contactsDenied = false
         let query = Research.fold(contactQuery.trimmingCharacters(in: .whitespacesAndNewlines))
+        let index = await contactIndex()
+        guard !Task.isCancelled else { return }
         var cards: [ChatContactCard] = []
-        for entry in await ContactDirectory.entries() {
-            let phones = entry.handles.filter { !$0.contains("@") && $0.filter(\.isNumber).count >= 6 }
-            guard !phones.isEmpty else { continue }
-            let name = Research.fold(entry.name)
-            for phone in phones where query.isEmpty || name.contains(query) || phone.filter(\.isNumber).contains(query) {
-                cards.append(ChatContactCard(name: entry.name, phone: phone))
+        for entry in index {
+            for phone in entry.phones where query.isEmpty || entry.folded.contains(query) || phone.digits.contains(query) {
+                cards.append(ChatContactCard(name: entry.name, phone: phone.number))
             }
             if cards.count >= 40 { break }
         }
         contacts = cards.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    /// Your contacts with a phone number, their names folded once per opening of the panel and not on every key typed.
+    private var contactsIndexed: [ContactIndexEntry]?
+
+    struct ContactIndexEntry {
+        let name: String
+        let folded: String
+        let phones: [(number: String, digits: String)]
+    }
+
+    private func contactIndex() async -> [ContactIndexEntry] {
+        if let contactsIndexed { return contactsIndexed }
+        var index: [ContactIndexEntry] = []
+        for entry in await ContactDirectory.entries() {
+            let phones = entry.handles.filter { !$0.contains("@") }
+                .map { (number: $0, digits: $0.filter(\.isNumber)) }
+                .filter { $0.digits.count >= 6 }
+            guard !phones.isEmpty else { continue }
+            index.append(ContactIndexEntry(name: entry.name, folded: Research.fold(entry.name), phones: phones))
+        }
+        contactsIndexed = index
+        return index
     }
 }
 
@@ -494,8 +535,8 @@ struct ChatAttachMenu: View {
             }
             if sends.contains(.contact) {
                 DropdownRow(symbol: "person.crop.circle.fill", title: tr("chat.compose.contact"), tile: NookTheme.blue) {
+                    // The panel looks them up itself as it opens (`ChatContactForm`).
                     model.open(.contact)
-                    Task { await model.lookUpContacts() }
                 }
             }
             if sends.contains(.photo), model.canPastePicture {
@@ -940,7 +981,6 @@ private struct ChatContactForm: View {
     var body: some View {
         ChatComposePanel(symbol: "person.crop.circle", title: tr("chat.compose.contact"), close: { model.closePanel() }) {
             NookSearchField(prompt: tr("chat.compose.contact.search"), text: $model.contactQuery, style: .inline, focus: $focused)
-                .onChange(of: model.contactQuery) { _, _ in Task { await model.lookUpContacts() } }
             if model.contactsDenied {
                 Text(tr("chat.compose.contact.denied"))
                     .font(NookTheme.TextStyle.detail)
@@ -963,6 +1003,13 @@ private struct ChatContactForm: View {
             }
         }
         .onAppear { focused = true }
+        // Typing waits a moment before looking up, as the GIF panel does; opening lists them at once. A newer query
+        // cancels the one before, so an older answer never lands after a newer one.
+        .task(id: model.contactQuery) {
+            if !model.contactQuery.isEmpty { try? await Task.sleep(nanoseconds: 150_000_000) }
+            guard !Task.isCancelled else { return }
+            await model.lookUpContacts()
+        }
     }
 }
 

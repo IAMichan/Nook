@@ -27,8 +27,29 @@ enum ChatFormat {
         case code(String)
     }
 
-    /// The blocks of a message: lines in a row of the same kind stay together.
+    /// The blocks of a message: lines in a row of the same kind stay together. Kept per text: every bubble asks for
+    /// them each time it is drawn, and opening a chat draws dozens at once.
     static func blocks(_ text: String) -> [Block] {
+        let key = text as NSString
+        if let kept = blocksCache.object(forKey: key) { return kept.value }
+        let made = parse(text)
+        blocksCache.setObject(Kept(made), forKey: key)
+        return made
+    }
+
+    /// A value an `NSCache` can hold.
+    final class Kept<Value>: @unchecked Sendable {
+        let value: Value
+        init(_ value: Value) { self.value = value }
+    }
+
+    private static let blocksCache: NSCache<NSString, Kept<[Block]>> = {
+        let cache = NSCache<NSString, Kept<[Block]>>()
+        cache.countLimit = 2_000
+        return cache
+    }()
+
+    private static func parse(_ text: String) -> [Block] {
         var blocks: [Block] = []
         var paragraph: [String] = []
         var quote: [String] = []
@@ -180,8 +201,23 @@ enum ChatFormat {
     }
 
     /// The first web address in a message (written out, or as a Markdown link), for its preview; nil when it has none.
+    /// Kept per text, as a bubble asks for it on every draw.
     static func firstLink(_ text: String) -> URL? {
         guard text.contains("http") else { return nil }
+        let key = text as NSString
+        if let kept = linkCache.object(forKey: key) { return kept.value }
+        let found = findLink(text)
+        linkCache.setObject(Kept(found), forKey: key)
+        return found
+    }
+
+    private static let linkCache: NSCache<NSString, Kept<URL?>> = {
+        let cache = NSCache<NSString, Kept<URL?>>()
+        cache.countLimit = 2_000
+        return cache
+    }()
+
+    private static func findLink(_ text: String) -> URL? {
         for block in blocks(text) {
             let spans: [Span]
             switch block {
