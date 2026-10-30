@@ -167,38 +167,6 @@ final class ChatsEntryMemo {
     }
 }
 
-/// Whether any chat has something new, for the dot on the Chats tab. The panel watches this instead of the chats
-/// themselves: those change with nearly every bridge read (a tick, a reaction, a chat listed again), and each change
-/// redrew the whole panel, which with many chats kept the CPU busy. This changes only when the dot does.
-@MainActor
-final class ChatsUnreadDot: ObservableObject {
-    static let shared = ChatsUnreadDot()
-
-    @Published private(set) var lit = false
-    private var watching: [AnyCancellable] = []
-    private var pending = false
-
-    private init() {
-        lit = ChatsTab.unread > 0
-        watching = [
-            WhatsAppAccounts.shared.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.recount() } },
-            ChatCaptureService.shared.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.recount() } },
-            ChatNoticeRulesStore.shared.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.recount() } },
-        ]
-    }
-
-    /// Counts again once the change is made (`objectWillChange` comes before it), once for a burst of changes.
-    private func recount() {
-        guard !pending else { return }
-        pending = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            pending = false
-            let now = ChatsTab.unread > 0
-            if now != lit { lit = now }
-        }
-    }
-}
 
 /// The open chat's bubbles, made again only when the chat, its fetched files or the language changed. Making them goes
 /// through every message (and in a group names everyone who read yours), and the chat view asks for them several times
@@ -206,7 +174,7 @@ final class ChatsUnreadDot: ObservableObject {
 @MainActor
 final class ChatBubblesMemo {
     private enum Source: Equatable {
-        case thread(InboxThread?, thumbnails: Int)
+        case thread(InboxThread?)
     }
 
     private var source: Source?
@@ -226,10 +194,10 @@ final class ChatBubblesMemo {
         return memo
     }
 
-    /// The chat's bubbles, made again when the chat, the pictures of its files (`ChatFileThumbnails`) or the language
-    /// changed.
-    func bubbles(_ thread: InboxThread?, thumbnails: Int, make: (InboxThread?) -> [ChatBubble]) -> [ChatBubble] {
-        remembered(.thread(thread, thumbnails: thumbnails)) { make(thread) }
+    /// The chat's bubbles, made again when the chat or the language changed. The pictures of its files are not part of
+    /// them: each bubble loads its own once it comes into view.
+    func bubbles(_ thread: InboxThread?, make: (InboxThread?) -> [ChatBubble]) -> [ChatBubble] {
+        remembered(.thread(thread)) { make(thread) }
     }
 
     private func remembered(_ source: Source, make: () -> [ChatBubble]) -> [ChatBubble] {
@@ -1190,8 +1158,6 @@ private struct ChatsDetail: View {
     @ObservedObject var capture: ChatCaptureService
     /// What a linked WhatsApp account can do now (edit, pin, vote…) is part of what this chat offers.
     @ObservedObject private var whatsApp = WhatsAppAccounts.shared
-    /// The pictures of files (a video's first frame, a document's first page) as they come in.
-    @ObservedObject private var thumbnails = ChatFileThumbnails.shared
     /// "Mark as unread" in the header: the tab closes the chat and shows its badge again.
     var onMarkUnread: () -> Void = {}
     /// Escape: the tab closes the chat.
@@ -1303,7 +1269,7 @@ private struct ChatsDetail: View {
     }
 
     private var bubbles: [ChatBubble] {
-        let all = bubblesMemo.bubbles(capture.inbox.threads[entry.id], thumbnails: thumbnails.revision) { thread in
+        let all = bubblesMemo.bubbles(capture.inbox.threads[entry.id]) { thread in
             thread.map { ChatBubble.bubbles($0) { Self.time.string(from: $0) } } ?? []
         }
         return outbox.bubbles(hiddenMessages.visible(all, in: entry.id) { $0.id }, chat: entry.id)

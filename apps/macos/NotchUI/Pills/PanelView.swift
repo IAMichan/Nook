@@ -13,8 +13,6 @@ struct PanelView: View {
     /// header's empty space moves the window, and the traffic lights take the place of the close button.
     var inWindow = false
     @EnvironmentObject private var app: AppModel
-    /// For the dot on Chats when a message comes in.
-    @ObservedObject private var chatsDot = ChatsUnreadDot.shared
     /// The width of the Agents session list, which the footer takes on a tab without a list of its own.
     @AppStorage("nook.agents.listWidth") private var agentsListWidth = PanelLayout.agentsList
     /// Search everything is open over the tab (⌘K or ⇧⌘F, or the magnifying glass in the header).
@@ -26,6 +24,9 @@ struct PanelView: View {
     @AppStorage(PanelSplitChoice.key) private var split = ""
     @AppStorage(PanelSplitChoice.widthKey) private var splitWidth = PanelLayout.split
     @State private var contentWidth: Double = 0
+    /// The pointer is on the tab beside this one: the tab bar lights that tab and outlines this one, so you see which
+    /// of the two you are working in.
+    @State private var splitHover = false
 
     /// The height of the header row (the floating capsule with the tabs, or a task's title), so Nook can be centered
     /// on it: a 30 pt button with the capsule's 4 pt padding above and below.
@@ -67,6 +68,8 @@ struct PanelView: View {
                             .transaction(value: side) { $0.animation = nil }
                             .sidePanel(.trailing, width: $splitWidth, defaultWidth: PanelLayout.split,
                                        available: contentWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle)
+                            .onHover { inside in withAnimation(NookTheme.hover) { splitHover = inside } }
+                            .onDisappear { splitHover = false }
                     }
                 }
                 .animation(NookTheme.reveal, value: splitTab)
@@ -151,20 +154,13 @@ struct PanelView: View {
         select(.agents)
     }
 
-    /// The tabs, with what waits for you on them: an amber count on Agents, a dot on Nook when an answer is unread. In
-    /// the window, the tooltip names the tab's shortcut (⌘1, ⌘2, …). The tab split view shows beside this one stays
-    /// in the bar, even Music while nothing plays.
+    /// The tabs, with what waits for you on them: an amber count on Agents. In the window, the tooltip names the tab's
+    /// shortcut (⌘1, ⌘2, …). The tab split view shows beside this one stays in the bar, even Music while nothing plays.
     private var tabItems: [NookTabBar<PanelTab>.Item] {
         let tabs = PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || tab == .music || splitTab == .music)
         let waiting = app.activeAgents.filter { $0.status == .waiting || $0.approvalID != nil }.count
-        // The conversations the Nook list shows, without sorting them only to ask whether one is unread.
-        let unread = tab != .chat && app.chat.conversations.contains {
-            !$0.archived && (!$0.isEmpty || $0.busy) && $0.status == .unread
-        }
-        let chatsUnread = tab != .inbox && chatsDot.lit
         return tabs.enumerated().map { index, value in
             NookTabBar<PanelTab>.Item(value: value, title: value.title,
-                                      fresh: (value == .chat && unread) || (value == .inbox && chatsUnread),
                                       count: value == .agents ? waiting : 0,
                                       help: inWindow ? "\(value.title) (⌘\(index + 1))" : nil)
         }
@@ -220,9 +216,13 @@ struct PanelView: View {
     private var headerCapsule: some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
             // The tab beside this one is outlined, and a click on it swaps the two, as the swap button in its pane does.
-            NookTabBar(items: tabItems, selected: tab, onSelect: { value in
-                if value == splitTab { swapSplit(value) } else { select(value) }
-            }, prominent: true, beside: splitTab)
+            // With the pointer on that tab's pane, the two trade places in the bar: the tab you work in is the lit one.
+            let main = tabItems.first { PanelSplitChoice.same($0.value, tab) }?.value ?? tab
+            let side = splitTab
+            let onSide = splitHover && side != nil
+            NookTabBar(items: tabItems, selected: onSide ? side ?? tab : tab, onSelect: { value in
+                if value == side { swapSplit(value) } else { select(value) }
+            }, prominent: true, beside: onSide ? main : side)
             NookDivider(vertical: true)
                 .frame(height: 18)
                 .padding(.horizontal, NookTheme.Spacing.sm)

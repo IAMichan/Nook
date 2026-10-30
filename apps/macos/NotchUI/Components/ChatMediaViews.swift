@@ -76,19 +76,26 @@ extension ChatBubble {
             }
         }
         guard let file = message.media else { return }
+        // A photo sent as a document shows as a photo, in every app (`ChatMedia.shownKind`).
+        let kind = file.shownKind
         // A song or a sound file goes by its own name ("track.mp3"); a voice message, a photo or a video by its kind.
-        attachment = file.kind == .audio ? (file.name.flatMap { $0.isEmpty ? nil : $0 } ?? file.label) : file.label
-        guard let url = file.url else { return }
+        attachment = kind == .audio ? (file.name.flatMap { $0.isEmpty ? nil : $0 } ?? file.label) : file.label
+        guard let url = file.url else {
+            // A picture its app still fetches: a photo-shaped tile until it is here, not a file row.
+            if kind == .photo || kind == .gif { media = .photoComing }
+            return
+        }
         self.file = url
-        switch file.kind {
+        switch kind {
         case .photo:
-            // Not readable yet (the app may still be writing it): the bubble loads it itself (`ChatPhotoLoader`).
-            image = ChatMediaImages.image(url)
+            // Only a photo decoded before: the bubble decodes the others in the background (`ChatPhotoLoader`), so
+            // making a chat's bubbles never waits on its pictures.
+            image = ChatMediaImages.cached(url)
             media = .photo(url)
         case .video:
             media = .video(url)
-            // Its first frame, once made (`ChatFileThumbnails`), for every app, as WhatsApp's link drew it.
-            image = ChatFileThumbnails.shared.image(url, kind: .video)
+            // Its first frame when made before; the bubble makes it once it comes into view (`VideoTile`).
+            image = ChatFileThumbnails.shared.cached(url)
         case .gif:
             media = .gif(url)
         case .sticker:
@@ -96,41 +103,40 @@ extension ChatBubble {
         case .audio, .voice:
             media = .audio(url, seconds: file.seconds)
         case .file:
-            // A document shows its first page, once made.
-            image = ChatFileThumbnails.shared.image(url, kind: .file)
+            // A document shows its first page when made before; the bubble makes it once it comes into view.
+            image = ChatFileThumbnails.shared.cached(url)
         }
     }
 }
 
 /// Pictures of files on this Mac that show more than their name, for every app's bubbles: a video's first frame and a
-/// document's first page, made once each in the background (WhatsApp's link made them for its own chats alone before).
-/// `revision` moves on as each one is ready, so a chat that shows the file draws it then.
-final class ChatFileThumbnails: ObservableObject, @unchecked Sendable {
+/// document's first page, made once each in the background. A bubble asks for its picture only while it is in or near
+/// view (`chatMediaLive`), so scrolling back through a long chat never makes the pictures of all its files at once.
+final class ChatFileThumbnails: @unchecked Sendable {
     static let shared = ChatFileThumbnails()
-
-    /// Moves on (on the main thread) each time a picture is ready.
-    @Published private(set) var revision = 0
 
     private let cache = NSCache<NSString, NSImage>()
     private let lock = NSLock()
-    /// The files a picture was asked for, so each is made once (one that cannot be made is not asked again).
-    private var asked: Set<String> = []
+    /// The files whose picture could not be made, so they are not tried again.
+    private var failed: Set<String> = []
 
-    /// The picture of a video or a document, when it is made; nil until then (it is made now), and for any other file.
-    func image(_ url: URL, kind: ChatMedia.Kind) -> NSImage? {
+    /// The picture when it was made before; nil otherwise, without making it.
+    func cached(_ url: URL) -> NSImage? {
+        cache.object(forKey: url.path as NSString)
+    }
+
+    /// The picture of a video or a document, made now when it was not before; nil for any other file and for one whose
+    /// picture cannot be made.
+    func image(_ url: URL, kind: ChatMedia.Kind) async -> NSImage? {
         guard kind == .video || kind == .file else { return nil }
-        let key = url.path as NSString
-        if let image = cache.object(forKey: key) { return image }
-        lock.lock()
-        let first = asked.insert(url.path).inserted
-        lock.unlock()
-        guard first else { return nil }
-        Task.detached(priority: .utility) { [weak self] in
-            guard let image = await Self.make(url, kind: kind) else { return }
-            self?.cache.setObject(image, forKey: key)
-            await MainActor.run { self?.revision &+= 1 }
+        if let image = cached(url) { return image }
+        guard !lock.withLock({ failed.contains(url.path) }) else { return nil }
+        guard let image = await Self.make(url, kind: kind) else {
+            lock.withLock { _ = failed.insert(url.path) }
+            return nil
         }
-        return nil
+        cache.setObject(image, forKey: url.path as NSString)
+        return image
     }
 
     /// A video's first frame, a document's first page.
@@ -156,8 +162,15 @@ final class ChatFileThumbnails: ObservableObject, @unchecked Sendable {
 enum ChatMediaImages {
     private static let cache = NSCache<NSString, NSImage>()
 
+    private static func key(_ url: URL, side: CGFloat) -> NSString { "\(url.path)#\(Int(side))" as NSString }
+
+    /// The picture when it was decoded before, without touching the file: nil otherwise.
+    static func cached(_ url: URL, side: CGFloat = 480) -> NSImage? {
+        cache.object(forKey: key(url, side: side))
+    }
+
     static func image(_ url: URL, side: CGFloat = 480) -> NSImage? {
-        let key = "\(url.path)#\(Int(side))" as NSString
+        let key = key(url, side: side)
         if let cached = cache.object(forKey: key) { return cached }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let options: [CFString: Any] = [
@@ -173,14 +186,21 @@ enum ChatMediaImages {
 
     private static let pixelSizes = NSCache<NSString, NSValue>()
 
-    /// The photo's own size in pixels, upright (EXIF orientation applied), read from its header only.
+    /// The photo's own size in pixels, upright (EXIF orientation applied), read from its header only, once per file.
+    /// Nil for a file that is no picture (a GIF that came as a video): remembered too, so a redraw does not ask again.
     static func pixelSize(_ url: URL) -> CGSize? {
         let key = url.path as NSString
-        if let known = pixelSizes.object(forKey: key) { return known.sizeValue }
+        if let known = pixelSizes.object(forKey: key) { return known.sizeValue == .zero ? nil : known.sizeValue }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
-              let height = properties[kCGImagePropertyPixelHeight] as? CGFloat, width > 0, height > 0 else { return nil }
+              let height = properties[kCGImagePropertyPixelHeight] as? CGFloat, width > 0, height > 0 else {
+            // Not readable yet (still being written) is asked again later; only a file that is there and no picture is kept.
+            if FileManager.default.fileExists(atPath: url.path), CGImageSourceCreateWithURL(url as CFURL, nil) == nil {
+                pixelSizes.setObject(NSValue(size: .zero), forKey: key)
+            }
+            return nil
+        }
         // Orientations 5 to 8 turn the picture a quarter, so its sides swap.
         let orientation = properties[kCGImagePropertyOrientation] as? Int ?? 1
         let size = orientation >= 5 ? CGSize(width: height, height: width) : CGSize(width: width, height: height)
@@ -210,6 +230,38 @@ enum ChatMediaImages {
     }
 }
 
+// MARK: In view
+
+extension EnvironmentValues {
+    /// Whether the chat message around a view is in view or close to it (`ChatBubbleView`): only then does its media
+    /// decode, play, animate or fetch its preview. Messages far up in a long chat's history stay a still placeholder of
+    /// the same size, so scrolling through them stays smooth. True outside a chat.
+    @Entry var chatMediaLive = true
+}
+
+extension View {
+    /// Sets `near` to whether this view is in its scroll view's visible part or within a screen of it, so its media is
+    /// ready before it scrolls into view; always true outside a scroll view.
+    func chatNearView(_ near: Binding<Bool>) -> some View {
+        onGeometryChange(for: Bool.self) { proxy in
+            guard let visible = proxy.bounds(of: .scrollView) else { return true }
+            let margin = max(visible.height, 400)
+            return visible.insetBy(dx: 0, dy: -margin).intersects(CGRect(origin: .zero, size: proxy.size))
+        } action: { near.wrappedValue = $0 }
+    }
+}
+
+/// A picture's place while its message is far from view: a quiet tile, or nothing for a sticker, at the same size.
+private struct ChatMediaStandIn: View {
+    var clear = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+            .fill(clear ? Color.clear : NookTheme.ink.opacity(0.3))
+            .accessibilityHidden(true)
+    }
+}
+
 // MARK: Sticker
 
 /// A sticker as the chat app shows it: on its own, without a bubble, moving when it is an animated one.
@@ -218,16 +270,30 @@ struct ChatStickerView: View {
 
     let url: URL
     let name: String
+    @Environment(\.chatMediaLive) private var live
+
+    /// The sticker decoded, when its message is in view or it was decoded before.
+    private var still: NSImage? {
+        live ? ChatMediaImages.image(url, side: Self.side * 2) : ChatMediaImages.cached(url, side: Self.side * 2)
+    }
 
     var body: some View {
         Group {
             if ChatMediaImages.isAnimated(url) {
-                AnimatedPicture(url: url)
-            } else if let image = ChatMediaImages.image(url, side: Self.side * 2) {
+                if live {
+                    AnimatedPicture(url: url)
+                } else {
+                    ChatMediaStandIn(clear: true)
+                        .aspectRatio(ChatMediaImages.pixelSize(url) ?? CGSize(width: 1, height: 1), contentMode: .fit)
+                }
+            } else if let image = still {
                 Image(nsImage: image)
                     .resizable()
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fit)
+            } else if !live {
+                ChatMediaStandIn(clear: true)
+                    .aspectRatio(ChatMediaImages.pixelSize(url) ?? CGSize(width: 1, height: 1), contentMode: .fit)
             } else {
                 Image(systemName: "face.smiling")
                     .font(NookTheme.font(40))
@@ -250,23 +316,30 @@ struct ChatGIFView: View {
 
     let url: URL
     let name: String
+    @Environment(\.chatMediaLive) private var live
 
     private var size: CGSize {
-        if let image = ChatMediaImages.image(url), image.size.width > 0, image.size.height > 0 {
-            let height = min(Self.maxHeight, Self.maxWidth * image.size.height / image.size.width)
-            return CGSize(width: height * image.size.width / image.size.height, height: height)
+        // From the file's header: drawing a chat does not decode its GIFs.
+        if let pixels = ChatMediaImages.pixelSize(url) {
+            let height = min(Self.maxHeight, Self.maxWidth * pixels.height / pixels.width)
+            return CGSize(width: height * pixels.width / pixels.height, height: height)
         }
         return CGSize(width: Self.maxWidth, height: Self.maxHeight)
     }
 
     var body: some View {
         Group {
+            // Far from view it neither moves nor plays: a long chat's GIFs do not all run at once.
             if ChatMediaImages.isPicture(url) {
-                AnimatedPicture(url: url)
-                    .frame(width: size.width, height: size.height)
+                Group {
+                    if live { AnimatedPicture(url: url) } else { ChatMediaStandIn() }
+                }
+                .frame(width: size.width, height: size.height)
             } else {
-                LoopingVideo(url: url)
-                    .frame(width: Self.maxWidth, height: Self.maxHeight)
+                Group {
+                    if live { LoopingVideo(url: url) } else { ChatMediaStandIn() }
+                }
+                .frame(width: Self.maxWidth, height: Self.maxHeight)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))

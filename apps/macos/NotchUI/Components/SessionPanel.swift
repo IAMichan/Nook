@@ -114,7 +114,8 @@ struct SessionPanel: View {
     @State private var scriptName = ""
     @State private var scriptCommand = ""
     @State private var quick: GitQuickState?
-    @State private var progress: String?
+    /// The step of an action this panel started (a push) that the workspace does not track.
+    @State private var localProgress: String?
     @State private var confirmDefault: GitQuickAction?
     @State private var error: String?
 
@@ -135,6 +136,13 @@ struct SessionPanel: View {
     }
 
     private var directory: String { model.directory }
+    /// The step of the git action under way here: kept by the workspace, so closing and opening the panel again (or
+    /// another view of the same session) still shows it until it is done.
+    private var progress: String? {
+        if let localProgress { return localProgress }
+        if let runID { return workspace.quickGitProgress(runID)?.step }
+        return workspace.quickGitProgress(folder: model.root ?? directory)?.step
+    }
     private var run: WorkspaceRun? { runID.flatMap { workspace.run($0) } }
 
     var body: some View {
@@ -455,15 +463,15 @@ struct SessionPanel: View {
         let root = model.root
         guard runID != nil || root != nil else { return }
         confirmDefault = nil
-        progress = tr(action.labelKey)
+        localProgress = tr(action.labelKey)
         Task {
             do {
                 // A pull request it made stays put in the tray above the composer.
                 let link: URL?
                 if let runID {
-                    link = try await workspace.performQuickGit(runID, action, progress: { progress = $0 })
+                    link = try await workspace.performQuickGit(runID, action, progress: { _ in localProgress = nil })
                 } else {
-                    link = try await workspace.performQuickGit(folder: root ?? directory, action, progress: { progress = $0 })
+                    link = try await workspace.performQuickGit(folder: root ?? directory, action, progress: { _ in localProgress = nil })
                 }
                 ToastCenter.shared.gitQuick(action, result: .success(link))
             } catch let failure {
@@ -475,7 +483,7 @@ struct SessionPanel: View {
 
     private func push() {
         guard let runID else { return perform(.push) }
-        progress = tr("ws.quick.pushing")
+        localProgress = tr("ws.quick.pushing")
         Task {
             do {
                 try await workspace.push(runID)
@@ -489,7 +497,7 @@ struct SessionPanel: View {
 
     /// After an action: read git again, for the button and the rest of the panel.
     private func finish() async {
-        progress = nil
+        localProgress = nil
         await model.refresh()
         if let runID { quick = await workspace.quickGitState(runID) } else { await readFolderState() }
     }

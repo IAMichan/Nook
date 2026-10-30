@@ -51,9 +51,26 @@ struct ChatTranscript: View {
     /// long the chat is; scrolling back to the top draws the ones before them.
     @State private var drawnFrom: String?
     @State private var drawsAll = false
+    /// Older messages were just drawn above and the chat is being put back where you were: reaching the top again in
+    /// the same moment does not draw another page at once.
+    @State private var drawingOlder = false
+    /// The day lines and runs of what is drawn, worked out again only when the messages change.
+    @State private var timeline = TranscriptTimelineMemo()
+    /// Your fingers or the wheel move the chat (or it still glides from that): nothing else moves it meanwhile.
+    @State private var interacting = false
+    /// When this chat was opened: what comes in the first moments (its newest messages, its pictures) is simply there,
+    /// without the chat sliding past everything to reach it.
+    @State private var openedAt = Date()
 
-    /// How many messages a chat lays out when it opens, and how many more each time you reach the top.
+    /// The end of the chat, under its last message and whoever is typing: where the chat stays while you are there.
+    private static let bottomID = "\u{1}bottom"
+    /// How long after opening a chat what comes in does not glide in.
+    private static let settling: TimeInterval = 2
+
+    /// How many messages a chat lays out when it opens.
     static let page = 60
+    /// How many more it lays out each time you reach the top: a small step, so reaching the top never stalls the chat.
+    static let olderPage = 30
 
     /// The messages laid out: the newest `page` (from the first new one, when that is further back), or from `drawnFrom`.
     /// A card, which does not scroll back, draws them all.
@@ -68,7 +85,8 @@ struct ChatTranscript: View {
     /// You moved the chat: what is drawn stays put from now on, so a new message does not push the oldest one out above
     /// what you read.
     private func userScrolled() {
-        scrolledByUser = true
+        // Called on every step of scrolling up: state is written only when it changes, so scrolling redraws nothing.
+        if !scrolledByUser { scrolledByUser = true }
         if drawnFrom == nil, !drawsAll, fills { drawnFrom = drawn.first?.id }
     }
 
@@ -77,11 +95,13 @@ struct ChatTranscript: View {
         let shown = drawn
         guard shown.count < bubbles.count, let top = shown.first?.id,
               let index = bubbles.firstIndex(where: { $0.id == top }) else { return false }
-        drawnFrom = bubbles[max(index - Self.page, 0)].id
+        drawnFrom = bubbles[max(index - Self.olderPage, 0)].id
+        drawingOlder = true
         DispatchQueue.main.async {
             var still = Transaction()
             still.disablesAnimations = true
             withTransaction(still) { proxy.scrollTo(top, anchor: .top) }
+            drawingOlder = false
         }
         return true
     }
@@ -107,6 +127,9 @@ struct ChatTranscript: View {
                         loadOlderButton { loadOlder(proxy) }
                     }
                     stack
+                    Color.clear
+                        .frame(height: 0)
+                        .id(Self.bottomID)
                 }
             }
             .scrollIndicators(.never)
@@ -129,6 +152,15 @@ struct ChatTranscript: View {
                                          container: geometry.containerSize.height,
                                          content: geometry.contentSize.height)
             } action: { old, new in
+                // The chat grew while you were at its newest message (pictures appearing, a chat's history or a new
+                // message arriving), or its room shrank (the field grows with a longer message): it stays at the newest
+                // at once, so the messages move up with the field instead of slipping under it.
+                if new.content != old.content || new.container != old.container, old.nearBottom, !interacting, !loadingOlder, !drawingOlder {
+                    var still = Transaction()
+                    still.disablesAnimations = true
+                    withTransaction(still) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+                    return
+                }
                 if new.offset < old.offset - 0.5, new.content == old.content, new.container == old.container {
                     userScrolled()
                 }
@@ -144,6 +176,8 @@ struct ChatTranscript: View {
                 }
             }
             .onScrollPhaseChange { _, phase in
+                let moving = phase == .interacting || phase == .decelerating
+                if moving != interacting { interacting = moving }
                 if phase == .interacting || phase == .decelerating, !scrolledByUser { userScrolled() }
             }
             .onChange(of: bubbles.last?.id) { previous, last in
@@ -151,7 +185,9 @@ struct ChatTranscript: View {
                 // A new message (or one you just sent) glides into view. Another chat, or a chat's history arriving
                 // at once, is not a new message: it is simply there, at its newest, without scrolling past everything.
                 let arrived = previous.map { old in bubbles.suffix(4).contains { $0.id == old } } ?? false
-                if arrived {
+                // Just opened: the newest messages its app sends now are part of opening it, not news to glide to.
+                let settling = !scrolledByUser && Date().timeIntervalSince(openedAt) < Self.settling
+                if arrived, !settling {
                     // Reading back: the chat stays where you are, and the button counts what came in. Your own
                     // message always brings you down to it.
                     guard atBottom || bubbles.last?.fromMe == true else {
@@ -177,6 +213,8 @@ struct ChatTranscript: View {
             }
             // Another chat starts at its newest message again: reaching its top counts only once you scroll there.
             .onChange(of: contact) {
+                openedAt = Date()
+                interacting = false
                 scrolledByUser = false
                 reachedStart = false
                 atBottom = true
@@ -190,7 +228,7 @@ struct ChatTranscript: View {
     /// Loads the older messages once at a time; the message that was on top stays where it was, with the older ones
     /// above it.
     private func loadOlder(_ proxy: ScrollViewProxy, automatic: Bool = false) {
-        guard !loadingOlder else { return }
+        guard !loadingOlder, !drawingOlder else { return }
         // What this Mac already has is drawn first; only then is the chat's app asked for more.
         if drawOlder(proxy) { return }
         guard let onLoadOlder, !(automatic && reachedStart) else { return }
@@ -227,7 +265,7 @@ struct ChatTranscript: View {
 
     private func entries(_ bubbles: [ChatBubble]) -> [ChatTimeline.Entry] {
         let items = bubbles.map { ChatTimeline.Item(id: $0.id, author: $0.fromMe ? "\u{1}me" : $0.sender, date: $0.date) }
-        return ChatTimeline.entries(items, locale: Locale(identifier: I18n.shared.currentLanguage.rawValue))
+        return timeline.entries(items, language: I18n.shared.currentLanguage)
     }
 
     private var stack: some View {
@@ -326,7 +364,7 @@ struct ChatTranscript: View {
         switch bubble.media {
         case .photo(let url), .sticker(let url): return url
         case .gif(let url): return ChatMediaImages.isPicture(url) ? url : nil
-        case .file, .video, .audio: return nil
+        case .file, .photoComing, .video, .audio: return nil
         }
     }
 
@@ -386,6 +424,10 @@ private struct ChatBubbleView: View, Equatable {
     @State private var picking = false
     /// Your message's info (who read it, who has it) is open over its ticks.
     @State private var showingInfo = false
+    /// The bubble is in view or close to it: only then does its media load, play or move (`chatMediaLive`).
+    @State private var near = false
+    /// A document's first page, made once the bubble comes near view.
+    @State private var filePreview: NSImage?
 
     /// Lines a long message shows until "Read more".
     private static let foldedLines = 12
@@ -412,7 +454,7 @@ private struct ChatBubbleView: View, Equatable {
     private var mediaOnly: Bool {
         guard bubble.text.isEmpty, bubble.quote == nil, bubble.poll == nil else { return false }
         switch bubble.media {
-        case .photo: return true
+        case .photo, .photoComing: return true
         case .video, .gif: return true
         default: return false
         }
@@ -476,6 +518,10 @@ private struct ChatBubbleView: View, Equatable {
             } else {
                 ChatPhotoLoader(url: url, name: attachment, onZoom: onZoom, onOpen: onOpen)
             }
+        case .photoComing:
+            Button(action: onOpen) { ChatPhotoPlaceholder(name: attachment) }
+                .buttonStyle(.plain)
+                .help(tr("card.attachment.view"))
         case .video(let url):
             VideoTile(url: url, poster: bubble.image, name: attachment)
         case .gif(let url):
@@ -485,7 +531,7 @@ private struct ChatBubbleView: View, Equatable {
         case .audio(let url, let seconds):
             ChatAudioView(url: url, seconds: seconds, name: attachment, fromMe: bubble.fromMe)
         default:
-            AttachmentButton(name: attachment, preview: bubble.image, file: bubble.file, action: onOpen)
+            AttachmentButton(name: attachment, preview: bubble.image ?? filePreview, file: bubble.file, action: onOpen)
         }
     }
 
@@ -522,6 +568,12 @@ private struct ChatBubbleView: View, Equatable {
             }
         }
         .onHover { hovering = $0 }
+        .environment(\.chatMediaLive, near)
+        .chatNearView($near)
+        .task(id: near ? bubble.file : nil) {
+            guard near, case .file = bubble.media, let file = bubble.file, bubble.image == nil, filePreview == nil else { return }
+            filePreview = await ChatFileThumbnails.shared.image(file, kind: .file)
+        }
     }
 
     /// Answer this message and react to it: shown while the pointer is on the bubble, where the chat can be answered.
@@ -1164,6 +1216,7 @@ struct VideoTile: View {
     @State private var hovering = false
     /// A frame of the video itself, when its app sent no picture of it: never a black box.
     @State private var still: ChatVideoStills.Still?
+    @Environment(\.chatMediaLive) private var live
 
     private var picture: NSImage? { poster ?? still?.image }
 
@@ -1234,7 +1287,11 @@ struct VideoTile: View {
         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
         .onHover { hovering = $0 }
         .onDisappear { player?.pause() }
-        .task(id: url) { still = await ChatVideoStills.still(url) }
+        // Its frame is read once its message comes near view, not for every video in the history at once.
+        .task(id: live ? url : nil) {
+            guard live, still == nil else { return }
+            still = await ChatVideoStills.still(url)
+        }
     }
 
     private func play() {
@@ -1488,9 +1545,11 @@ private struct ZoomablePhoto: NSViewRepresentable {
 }
 
 /// A photo in a chat bubble, as it came: a click enlarges it in the card or chat.
-/// A photo that was not readable yet when its bubble was made (its app was still writing it, or fetching it): read
-/// again in the background, a few times over a while, with a quiet placeholder meanwhile; then shown as any photo. One
-/// that never becomes readable shows as a file that opens in its app.
+/// A photo in a chat bubble that was not decoded yet: read in the background (again a few times over a while when its
+/// app is still writing it), with a quiet placeholder meanwhile; then shown as any photo. One that never becomes
+/// readable shows as a file that opens in its app. Every photo comes in this way, so making a chat's bubbles never
+/// decodes a picture and opening or scrolling a chat full of photos stays smooth. The placeholder already has the
+/// photo's own size (read from its header), so nothing in the chat moves when the photo appears.
 struct ChatPhotoLoader: View {
     let url: URL
     let name: String
@@ -1498,6 +1557,16 @@ struct ChatPhotoLoader: View {
     let onOpen: () -> Void
     @State private var image: NSImage?
     @State private var failed = false
+    @Environment(\.chatMediaLive) private var live
+
+    init(url: URL, name: String, onZoom: @escaping () -> Void, onOpen: @escaping () -> Void) {
+        self.url = url
+        self.name = name
+        self.onZoom = onZoom
+        self.onOpen = onOpen
+        // A photo decoded before (scrolled past, or the chat opened lately) shows at once, without a placeholder first.
+        _image = State(initialValue: ChatMediaImages.cached(url))
+    }
 
     private static let tries = 12
     private static let pause: Duration = .seconds(2)
@@ -1509,18 +1578,12 @@ struct ChatPhotoLoader: View {
             } else if failed {
                 AttachmentButton(name: name, file: url, action: onOpen)
             } else {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                    .fill(NookTheme.ink.opacity(0.3))
-                    .frame(width: PhotoButton.maxWidth, height: PhotoButton.maxHeight * 0.75)
-                    .overlay {
-                        Image(systemName: "photo")
-                            .font(NookTheme.font(22))
-                            .foregroundStyle(NookTheme.textTertiary)
-                    }
-                    .accessibilityLabel(name)
+                ChatPhotoPlaceholder(name: name, size: ChatMediaImages.pixelSize(url))
             }
         }
-        .task(id: url) {
+        // Decoded once its message comes near view: scrolling back does not decode the whole history's photos.
+        .task(id: live ? url : nil) {
+            guard live, image == nil else { return }
             for attempt in 0..<Self.tries {
                 let url = url
                 if let loaded = await Task.detached(priority: .utility, operation: { ChatMediaImages.image(url) }).value {
@@ -1532,6 +1595,30 @@ struct ChatPhotoLoader: View {
             }
             failed = true
         }
+    }
+}
+
+/// Where a photo goes while it is not drawn yet: a quiet tile with a photo mark, at the photo's own size when that is
+/// known. Also a photo its app has not given Nook yet, which a click opens in the app.
+struct ChatPhotoPlaceholder: View {
+    let name: String
+    /// The photo's size in pixels; nil when not known (a tile of a usual photo's shape).
+    var size: CGSize? = nil
+
+    var body: some View {
+        let shown = size.map(PhotoButton.fittedSize(for:))
+            ?? CGSize(width: PhotoButton.maxWidth, height: PhotoButton.maxHeight * 0.75)
+        RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+            .fill(NookTheme.ink.opacity(0.3))
+            .frame(width: shown.width, height: shown.height)
+            .overlay {
+                Image(systemName: "photo")
+                    .font(NookTheme.font(22))
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+            .contentShape(Rectangle())
+            .accessibilityElement()
+            .accessibilityLabel(name)
     }
 }
 
@@ -1644,6 +1731,27 @@ struct AttachmentButton: View {
         }
         guard !ext.isEmpty else { return nil }
         return UTType(filenameExtension: ext)?.localizedDescription ?? ext.uppercased()
+    }
+}
+
+/// `ChatTimeline.entries` of what a chat draws, kept while its messages, the day and the language stay the same: the
+/// transcript's body runs again on every change anywhere in Nook's chats and while you scroll.
+@MainActor
+private final class TranscriptTimelineMemo {
+    private var items: [ChatTimeline.Item]?
+    private var day: Date?
+    private var language: AppLanguage?
+    private var kept: [ChatTimeline.Entry] = []
+
+    func entries(_ items: [ChatTimeline.Item], language: AppLanguage) -> [ChatTimeline.Entry] {
+        // "Today" and "Yesterday" move on at midnight.
+        let day = Calendar.current.startOfDay(for: Date())
+        if items == self.items, day == self.day, language == self.language { return kept }
+        kept = ChatTimeline.entries(items, locale: Locale(identifier: language.rawValue))
+        self.items = items
+        self.day = day
+        self.language = language
+        return kept
     }
 }
 

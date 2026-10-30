@@ -67,10 +67,7 @@ struct AgentsTab: View {
                     if !app.demoMode {
                         PanelFooter(selected: selectedID(selection), open: { open($0) },
                                     openSettings: { app.openSettings() }, history: app.history,
-                                    onBack: { viewModel.selectedAgentID = beforePullRequests },
-                                    openCloud: showsCloudLink ? {
-                                        if let url = URL(string: "https://claude.ai/code") { NSWorkspace.shared.open(url) }
-                                    } : nil)
+                                    onBack: { viewModel.selectedAgentID = beforePullRequests })
                     }
                 }
                 .listPanel(stacked: stacked, width: $listWidth, defaultWidth: PanelLayout.agentsList, available: totalWidth,
@@ -464,12 +461,6 @@ struct AgentsTab: View {
     private func unseen(_ id: String, _ finished: Date?) -> Bool {
         guard !app.demoMode, let finished, id != viewModel.selectedAgentID else { return false }
         return visits.isUnseen(id, finished: finished)
-    }
-
-    /// Sessions in Anthropic's cloud (Claude app, claude.ai/code) are not read with the Claude Code login: the cloud icon
-    /// in the footer opens them where they live, for anyone with a Claude subscription account in Nook.
-    private var showsCloudLink: Bool {
-        !app.demoMode && app.profiles.all.contains { $0.kind == .claude && !$0.usesAPIKey && app.isConnected($0) }
     }
 
     /// Sample data only: nothing to start.
