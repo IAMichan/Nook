@@ -16,7 +16,7 @@ struct SidePanelPullRequestPicker: View {
     init(directory: String, choose: @escaping (PullRequestOpenRequest) -> Void) {
         self.directory = directory
         self.choose = choose
-        _git = StateObject(wrappedValue: FolderGitModel(directory: directory))
+        _git = StateObject(wrappedValue: FolderGitModel.make(directory: directory))
     }
 
     /// One group of the list: its heading and its pull requests with the account each is read with.

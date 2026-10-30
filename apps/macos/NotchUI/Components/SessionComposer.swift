@@ -235,10 +235,12 @@ struct SessionComposer<Controls: View>: View {
 
     /// Return with the list open takes the chosen line; a plain Return otherwise sends. Sending here, instead of leaving
     /// it to `onSubmit`, keeps the field from committing the edit, which selected the whole text while it was still there.
+    /// SwiftUI handles key presses while it updates its views, and sending changes the session and the draft, so the send
+    /// itself runs right after.
     private func returnKey(_ press: KeyPress) -> KeyPress.Result {
         if chooseSelected() { return .handled }
         guard press.modifiers.isEmpty else { return .ignored }
-        submit()
+        DispatchQueue.main.async { submit() }
         return .handled
     }
 

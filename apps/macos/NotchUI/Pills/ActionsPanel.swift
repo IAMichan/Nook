@@ -69,9 +69,8 @@ struct ActionsPanel: View {
     private func list(selected: Int?) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             PanelListHeader(tr("actions.title")) {
-                if store.loading && !store.loaded {
-                    ProgressView().controlSize(.small)
-                } else if let read = store.lastRead {
+                // The list's own skeleton shows a first read; only a later one is a time here.
+                if let read = store.lastRead {
                     PullRequestFreshness(date: read)
                 }
                 if let repo = store.repo, let url = URL(string: "https://github.com/\(repo)/actions") {
@@ -91,7 +90,10 @@ struct ActionsPanel: View {
                              action: (title: tr("agents.pulls.connect"), run: { app.openSettings(section: .connections) }))
             } else {
                 toolbar
-                if store.repo == nil {
+                if store.repo == nil && !store.repositoriesLoaded {
+                    // The repository you pushed to last is on its way.
+                    WorkflowRunGhostList()
+                } else if store.repo == nil {
                     WSEmptyState(symbol: "play.circle", title: tr("actions.pickRepo"), message: tr("actions.pickRepoDetail"))
                 } else {
                     content(selected: selected)
@@ -231,7 +233,7 @@ struct ActionsPanel: View {
             WSEmptyState(symbol: "exclamationmark.triangle", title: tr("actions.error"), message: error,
                          action: (title: tr("actions.refresh"), run: { Task { await store.refresh() } }))
         } else if !store.loaded {
-            PatientSpinner()
+            WorkflowRunGhostList()
         } else if store.runs.isEmpty {
             WSEmptyState(symbol: "play.circle", title: tr("actions.none"), message: tr("actions.noneDetail"))
         } else if shown.isEmpty {
@@ -358,6 +360,53 @@ struct WorkflowRunRow: View {
                 }
             }
         }
+    }
+}
+
+/// The list's shape while its first runs are on their way: a day's heading and rows shaped like `WorkflowRunRow`
+/// (mark, title and status, then the line under it with the time), so the page does not jump when they come in.
+struct WorkflowRunGhostList: View {
+    /// Title widths, so the rows do not look like one stamp repeated.
+    private static let titles: [CGFloat] = [220, 170, 250, 140, 200, 180]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            PullRequestGhostBar(width: 64, height: 9)
+                .padding(.horizontal, NookTheme.Spacing.md)
+                .padding(.top, NookTheme.Spacing.md)
+                .padding(.bottom, NookTheme.Spacing.sm)
+            ForEach(Array(Self.titles.enumerated()), id: \.offset) { _, width in
+                WorkflowRunGhostRow(title: width)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(tr("actions.loading"))
+    }
+}
+
+/// One placeholder row: the run's mark, its title with the status at the end, and the line under it with the time.
+struct WorkflowRunGhostRow: View {
+    var title: CGFloat = 200
+
+    var body: some View {
+        HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
+            Circle().fill(NookTheme.rowHover).frame(width: 14, height: 14).padding(.top, 2)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    PullRequestGhostBar(width: title, height: 10)
+                    Spacer(minLength: NookTheme.Spacing.sm)
+                    PullRequestGhostBar(width: 72, height: 8)
+                }
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    PullRequestGhostBar(width: title * 0.7, height: 7)
+                    Spacer(minLength: NookTheme.Spacing.sm)
+                    PullRequestGhostBar(width: 48, height: 7)
+                }
+            }
+        }
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .padding(.vertical, NookTheme.Spacing.sm + 1)
     }
 }
 

@@ -239,7 +239,7 @@ final class NotchController {
                 guard let self, let panel, self.shownCard == card, panel.isKeyWindow else { return }
                 // Typing already goes to a field (the field editor, or the field itself): leave it there.
                 if let responder = panel.firstResponder as? NSText, responder.isEditable { return }
-                if let field = Self.firstEditable(in: panel.contentView) { panel.makeFirstResponder(field) }
+                if let field = Self.firstEditable(in: panel.contentView) { _ = panel.makeFirstResponder(field) }
             }
         }
     }

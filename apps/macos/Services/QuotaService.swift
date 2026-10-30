@@ -29,6 +29,21 @@ struct QuotaLimit: Identifiable, Equatable {
         guard let range = label.range(of: " · ", options: .backwards) else { return label }
         return String(label[range.upperBound...])
     }
+
+    /// Limits per model group ("Claude & GPT", "Gemini") in the order they come; plain windows ("5 hours") share one
+    /// unnamed group.
+    static func grouped(_ limits: [QuotaLimit]) -> [(name: String, limits: [QuotaLimit])] {
+        var result: [(name: String, limits: [QuotaLimit])] = []
+        for limit in limits {
+            let name = limit.group ?? ""
+            if let index = result.firstIndex(where: { $0.name == name }) {
+                result[index].limits.append(limit)
+            } else {
+                result.append((name, [limit]))
+            }
+        }
+        return result
+    }
 }
 
 /// The subscription limits of every agent account, from one place. The Agents list, the account details, Settings › Coding agents
@@ -55,7 +70,7 @@ struct QuotaService {
             // No limits reported; ACP agents report context and cost per session instead.
             return []
         case .antigravity:
-            return antigravity.limits
+            return antigravity.limits.map { Self.settled($0) }
         case .codex:
             guard let snapshot = codex.snapshot(home: profile.home.map { _ in profile.homeURL }) else { return [] }
             return [
@@ -76,6 +91,17 @@ struct QuotaService {
             return QuotaLimit(label: label, percent: reported.percent, resetsAt: reported.resetsAt, duration: duration)
         }
         return QuotaLimit(label: label, percent: 0, resetsAt: nil, note: tr("agents.usage.startsOnMessage"))
+    }
+
+    /// An Antigravity window read the way Claude's are: one that has reset since it was read, or that has not started yet
+    /// (nothing used and its reset still a whole window away, which Google moves along until the first message), is an
+    /// idle window that starts with the next message.
+    static func settled(_ limit: QuotaLimit, now: Date = Date()) -> QuotaLimit {
+        guard let resetsAt = limit.resetsAt else { return limit }
+        let passed = resetsAt <= now
+        let unstarted = limit.percent < 0.5 && limit.duration.map { resetsAt.timeIntervalSince(now) > $0 - 15 * 60 } == true
+        guard passed || unstarted else { return limit }
+        return QuotaLimit(label: limit.label, percent: 0, resetsAt: nil, note: tr("agents.usage.startsOnMessage"), duration: limit.duration)
     }
 
     /// "5 hours 34% · week 12%", or nil when nothing is known.

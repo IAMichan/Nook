@@ -1467,13 +1467,19 @@ final class ChatInboxTests: XCTestCase {
     func testChatHelperChatsAndMessages() {
         let list: [String: Any] = ["items": [
             ["id": "!a:beeper.local", "accountID": "instagramgo", "network": "Instagram", "title": "Anna", "type": "single",
-             "unreadCount": 2, "lastActivity": "2026-10-22T09:00:00.000Z"],
+             "unreadCount": 2, "lastActivity": "2026-10-22T09:00:00.000Z", "account": "anna.ig"],
             ["id": "!b", "accountID": "discordgo", "title": "Gamers", "type": "group", "isArchived": true],
             ["id": "!c", "accountID": "gmessages", "title": "Bank", "type": "single"]
         ]]
         let chats = ChatServiceData.chats(list)
         XCTAssertEqual(chats.map(\.app), ["instagram"])
         XCTAssertEqual(chats.first?.unread, 2)
+        XCTAssertEqual(chats.first?.account, "anna.ig")
+        var inbox = ChatInbox()
+        let msg = InboxMessage(id: "1", text: "Hoi", date: Date(), fromMe: false)
+        inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: [msg], unread: 2, account: "anna.ig"))
+        let key = ChatInbox.key(app: "instagram", chat: "Anna")
+        XCTAssertEqual(inbox.threads[key]?.account, "anna.ig")
         let group = ChatServiceData.Chat(id: "!g", app: "discord", title: "Gamers", isGroup: true, unread: 0, last: nil)
         let history: [String: Any] = ["items": [
             ["id": "2", "timestamp": "2026-10-22T09:00:00Z", "text": "gg", "senderName": "Jan", "isSender": false],

@@ -523,7 +523,7 @@ struct SessionWorkbench<Conversation: View>: View {
             if viewModel.sidePullRequestTabs.count > 1 {
                 let request = viewModel.sidePullRequestTabs.first { $0.id == id }?.request
                 viewModel.closedSessionTabs.push(ClosedSessionTab(tool: .pullRequest, bottom: false, pullRequest: request))
-                withAnimation(NookTheme.swap) { viewModel.closeSidePullRequest(id) }
+                _ = withAnimation(NookTheme.swap) { viewModel.closeSidePullRequest(id) }
             } else {
                 closeTab(.pullRequest, in: slot)
             }

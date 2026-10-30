@@ -94,7 +94,8 @@ extension ChatsEntry {
         return ChatsEntry(id: thread.id, app: thread.app, name: thread.name, preview: preview,
                           last: max(thread.last, reaction?.date ?? .distantPast), read: thread.readState,
                           lastIsMine: reaction == nil && newest?.isMine ?? false, readKnown: readKnown, ticks: ticks,
-                          members: thread.members, handle: thread.handle, avatar: thread.avatar, account: thread.account,
+                          members: thread.members, handle: thread.handle, avatar: thread.avatar,
+                          account: thread.account ?? ChatLinker.shared.accountName(for: thread.app),
                           chatID: thread.chatID)
     }
 
@@ -148,20 +149,25 @@ extension ChatsEntry {
 @MainActor
 final class ChatsEntryMemo {
     private var entries: [ChatsEntry]?
+    /// The inbox the list was made from (`ChatCaptureService.inboxRevision`). `objectWillChange` comes before a change:
+    /// a list made again in that moment is of the chats as they were, and nothing would forget it after.
+    private var revision: Int?
     private var watching: [AnyCancellable] = []
-    /// What of WhatsApp's linked accounts and the chat helper decides which chats show (`ChatCaptureService.isShown`),
-    /// as it was when `entries` was made. Asked at each read instead of following their changes: they publish for every
-    /// picture, name and read mark that comes in, and each made the whole list again while you scrolled it.
+    /// What of WhatsApp's linked accounts and the chat helper decides which chats show (`ChatCaptureService.isShown`)
+    /// and the account names the helper's chats carry, as they were when `entries` was made. Asked at each read instead
+    /// of following their changes: they publish for every picture, name, read mark and send, and each made the whole
+    /// list again while you scrolled it.
     private var visibility: [String] = []
 
     private static func visibility() -> [String] {
         WhatsAppAccounts.shared.links.map { "\($0.account):\($0.holdsChats)" } + ["\(ChatHelper.linked("whatsapp"))"]
+            + ChatLinker.shared.networks.map { "\($0.app):\($0.accounts.first?.name ?? "")" }
     }
 
     func entries(capture: ChatCaptureService) -> [ChatsEntry] {
         let visibility = Self.visibility()
         if visibility != self.visibility { entries = nil }
-        if let entries { return entries }
+        if let entries, revision == capture.inboxRevision { return entries }
         self.visibility = visibility
         if watching.isEmpty {
             // Which chats show also follows the linked WhatsApp accounts and the chats you hid.
@@ -179,6 +185,7 @@ final class ChatsEntryMemo {
         }
         let made = ChatsEntry.all(capture: capture)
         entries = made
+        revision = capture.inboxRevision
         return made
     }
 }
@@ -751,16 +758,20 @@ struct ChatsTab: View {
                         .disabled(searching)
                         if open {
                             ForEach(section.entries) { entry in
-                                if entry.id != section.entries.first?.id { NookRowSeparator() }
-                                ChatsRow(entry: entry, photo: photo(entry), selected: entry.id == selected,
-                                         typing: typists.chats.isEmpty ? nil : typing.line(entry.id),
-                                         rowAction: rowAction(entry)) {
-                                    revealSelection = false
-                                    selection = entry.id
+                                // One view per chat: a lazy stack whose rows bring a separator only sometimes loses
+                                // track of a row that moves to the top of its group, and kept showing its old line.
+                                VStack(spacing: NookTheme.Spacing.xxs) {
+                                    if entry.id != section.entries.first?.id { NookRowSeparator() }
+                                    ChatsRow(entry: entry, photo: photo(entry), selected: entry.id == selected,
+                                             typing: typists.chats.isEmpty ? nil : typing.line(entry.id),
+                                             rowAction: rowAction(entry)) {
+                                        revealSelection = false
+                                        selection = entry.id
+                                    }
+                                        .equatable()
+                                        .contextMenu { readMenu(entry) }
                                 }
-                                    .equatable()
-                                    .contextMenu { readMenu(entry) }
-                                    .id(entry.id)
+                                .id(entry.id)
                             }
                         }
                     }

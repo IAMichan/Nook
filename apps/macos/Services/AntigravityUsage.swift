@@ -6,7 +6,9 @@ import SQLite3
 /// Antigravity's ACP server keeps its Google sign-in in `<GEMINI_HOME>/antigravity-acp/acp_token.json`:
 /// first the profiles of Nook's own Antigravity sessions, then Antigravity's own folder. Nook exchanges the
 /// refresh token for a short-lived access token (kept until shortly before it expires) and asks Google's Cloud Code
-/// endpoint for the quota summary. The token never leaves this
+/// endpoint for the quota summary (`retrieveUserQuotaSummary`): the groups of Antigravity's Model Quota screen ("Gemini
+/// Models", "Claude and GPT models"), each with a 5-hour and a weekly bucket. Only accounts without that summary fall back
+/// to the per-model quotas of `fetchAvailableModels`. The token never leaves this
 /// request and is not stored or logged; nothing is written to Antigravity's files.
 @MainActor
 final class AntigravityUsage: ObservableObject {
@@ -197,33 +199,34 @@ final class AntigravityUsage: ObservableObject {
         #else
         let architecture = "x64"
         #endif
-        let agent = "antigravity/hub/1.0.0 (aidev_client; os_type=darwin; arch=\(architecture); cl=963137146)"
+        // Google answers only a client that calls itself Antigravity's Hub, and an old version misses newer models.
+        let agent = "antigravity/hub/2.24.0 (aidev_client; os_type=darwin; arch=\(architecture); cl=1000335682)"
         let body = (try? JSONSerialization.data(withJSONObject: project.map { ["project": $0] } ?? [:])) ?? Data("{}".utf8)
 
-        // The endpoints can report different groups (the daily one has returned Claude & GPT without Gemini): every
-        // endpoint's windows count, the most used reading of a window wins. The summary has the 5-hour and weekly
-        // windows; the model list adds models with a quota of their own (a newly released Gemini, say) that the
-        // summary does not cover yet.
-        var summary: [Window] = []
-        var models: [Window] = []
-        for operation in ["retrieveUserQuotaSummary", "fetchAvailableModels"] {
-            for endpoint in endpoints {
+        func ask(_ operation: String) -> [[String: Any]] {
+            endpoints.compactMap { endpoint in
                 var request = URLRequest(url: URL(string: "\(endpoint)/v1internal:\(operation)")!)
                 request.httpMethod = "POST"
                 request.setValue("Bearer \(access)", forHTTPHeaderField: "Authorization")
                 request.setValue(agent, forHTTPHeaderField: "User-Agent")
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.httpBody = body
-                guard let object = send(request) as? [String: Any] else { continue }
-                if operation == "retrieveUserQuotaSummary" {
-                    merge(summaryWindows(object), into: &summary)
-                } else {
-                    merge(modelWindows(object), into: &models)
-                }
+                return send(request) as? [String: Any]
             }
         }
-        let combined = combine(summary: summary, models: models)
-        return combined.isEmpty ? nil : combined
+
+        // The quota summary is what Antigravity's own Model Quota screen shows: per group of models a 5-hour and a weekly
+        // window. The endpoints can report different groups (the daily one has returned Claude & GPT without Gemini):
+        // every endpoint's windows count, the most used reading of a window wins.
+        var summary: [Window] = []
+        for answer in ask("retrieveUserQuotaSummary") { merge(summaryWindows(answer), into: &summary) }
+        if !summary.isEmpty { return summary.map(\.limit) }
+        // Older accounts only have a quota per model, without a window length.
+        var models: [Window] = []
+        for answer in ask("fetchAvailableModels") { merge(modelWindows(answer), into: &models) }
+        // The model list reports every model untouched on any plan when it knows nothing; that is no reading.
+        guard models.contains(where: { $0.limit.percent > 0 }) else { return nil }
+        return models.map(\.limit)
     }
 
     private nonisolated static func form(_ values: [String: String]) -> Data {
@@ -257,10 +260,37 @@ final class AntigravityUsage: ObservableObject {
         var limit: QuotaLimit
     }
 
-    private nonisolated static func limit(label: String, quota: [String: Any]) -> QuotaLimit? {
-        guard let remaining = (quota["remainingFraction"] as? NSNumber)?.doubleValue, remaining.isFinite else { return nil }
-        let reset = (quota["resetTime"] as? String).flatMap(parseDate)
-        return QuotaLimit(label: label, percent: (1 - min(1, max(0, remaining))) * 100, resetsAt: reset)
+    nonisolated static let fiveHours: TimeInterval = 5 * 3600
+    nonisolated static let week: TimeInterval = 7 * 24 * 3600
+
+    /// A window from a quota or bucket. Nil when it is switched off or says nothing about what is left.
+    nonisolated static func limit(label: String, quota: [String: Any], duration: TimeInterval? = nil) -> QuotaLimit? {
+        guard (quota["disabled"] as? Bool) != true else { return nil }
+        let reset = resetDate(quota)
+        guard let remaining = remainingFraction(quota) ?? (reset != nil ? 0.0 : nil) else { return nil }
+        return QuotaLimit(label: label, percent: (1 - min(1, max(0, remaining))) * 100, resetsAt: reset, duration: duration)
+    }
+
+    /// What is left, 0...1, in each of the shapes Google sends: flat (`remainingFraction`, the CLI's `remaining_fraction`),
+    /// nested (`remaining.remainingFraction`) or as a oneof (`remaining: {case, value}`). Proto3 JSON leaves a zero out,
+    /// so a quota with a reset time but no fraction is used up (see `limit`).
+    nonisolated static func remainingFraction(_ quota: [String: Any]) -> Double? {
+        if let value = number(quota["remainingFraction"] ?? quota["remaining_fraction"]) { return value }
+        guard let nested = quota["remaining"] as? [String: Any] else { return nil }
+        if let value = number(nested["remainingFraction"] ?? nested["remaining_fraction"]) { return value }
+        if (nested["case"] as? String) == "remainingFraction" { return number(nested["value"]) }
+        return nil
+    }
+
+    private nonisolated static func number(_ value: Any?) -> Double? {
+        let result = (value as? NSNumber)?.doubleValue ?? (value as? String).flatMap(Double.init)
+        return result?.isFinite == true ? result : nil
+    }
+
+    private nonisolated static func resetDate(_ quota: [String: Any]) -> Date? {
+        let value = quota["resetTime"] ?? quota["reset_time"]
+        if let text = value as? String { return parseDate(text) ?? Double(text).map { Date(timeIntervalSince1970: $0) } }
+        return number(value).map { Date(timeIntervalSince1970: $0) }
     }
 
     /// Adds windows to a list; a window that is already there keeps its most used reading.
@@ -274,55 +304,73 @@ final class AntigravityUsage: ObservableObject {
         }
     }
 
-    /// The summary's windows, then every model quota the summary does not already show: a model whose reading
-    /// equals a window of its family is that window, so it is left out.
-    nonisolated static func combine(summary: [Window], models: [Window]) -> [QuotaLimit] {
-        var result = summary.map(\.limit)
-        for model in models {
-            let covered = summary.contains { window in
-                window.family.localizedCaseInsensitiveContains(model.family)
-                    && abs(window.limit.percent - model.limit.percent) < 0.5
-                    && sameReset(window.limit.resetsAt, model.limit.resetsAt)
-            }
-            if !covered, !result.contains(where: { $0.id == model.limit.id }) { result.append(model.limit) }
-        }
-        return result
-    }
-
-    private nonisolated static func sameReset(_ a: Date?, _ b: Date?) -> Bool {
-        guard let a, let b else { return a == nil && b == nil }
-        return abs(a.timeIntervalSince(b)) < 120
-    }
-
-    nonisolated static func summaryWindows(_ summary: [String: Any]) -> [Window] {
-        let groups = (summary["groups"] as? [[String: Any]]) ?? []
+    /// The summary's windows, "Gemini · 5 hours" and "Gemini · Week" per group, the 5-hour window first as with Claude.
+    /// The groups sit at the top, under `response` (the local server) or under `summary`.
+    nonisolated static func summaryWindows(_ object: [String: Any]) -> [Window] {
+        let root = (object["response"] as? [String: Any]) ?? (object["summary"] as? [String: Any])
+            ?? ((object["command"] as? [String: Any])?["data"] as? [String: Any]) ?? object
+        let groups = (root["groups"] as? [[String: Any]]) ?? []
         let sources: [(name: String, buckets: [[String: Any]])] = groups.contains(where: { !(($0["buckets"] as? [Any]) ?? []).isEmpty })
-            ? groups.map { (($0["displayName"] as? String) ?? "", ($0["buckets"] as? [[String: Any]]) ?? []) }
-            : [("", (summary["buckets"] as? [[String: Any]]) ?? [])]
+            ? groups.map { ((($0["displayName"] ?? $0["name"]) as? String) ?? "", ($0["buckets"] as? [[String: Any]]) ?? []) }
+            : [("", (root["buckets"] as? [[String: Any]]) ?? [])]
         var result: [Window] = []
         for source in sources {
+            var group: [(order: Int, window: Window)] = []
             for bucket in source.buckets {
-                guard (bucket["disabled"] as? Bool) != true, let id = bucket["bucketId"] as? String else { continue }
-                let trimmedGroup = source.name.trimmingCharacters(in: .whitespaces)
-                let family = id.hasPrefix("gemini-") ? "Gemini" : id.hasPrefix("3p-") ? "Claude & GPT" : (trimmedGroup.isEmpty ? id : trimmedGroup)
-                let window = bucket["window"] as? String
-                let name = (bucket["displayName"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
-                let kind = window == "weekly" ? tr("agents.week") : window == "5h" ? tr("agents.fiveHour") : (name.isEmpty ? tr("agents.usage.quota") : name)
-                // A bucket of one model version ("gemini-4-pro-5h") is named after it, so Gemini 3 and Gemini 4 stay apart.
+                guard let id = (bucket["bucketId"] ?? bucket["id"]) as? String else { continue }
+                let name = ((bucket["displayName"] ?? bucket["name"]) as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+                let span = windowSpan(window: bucket["window"] as? String, id: id, name: name)
+                let family = familyName(bucket: id, group: source.name)
+                let kind = span == fiveHours ? tr("agents.fiveHour") : span == week ? tr("agents.week")
+                    : (name.isEmpty ? tr("agents.usage.quota") : name)
+                // A bucket or group of one model version ("gemini-4-argon-5h", "Gemini 4 Argon") is named after it, so
+                // it stays apart from the family's own group.
                 let model = modelName(id: id)
-                let title = model.contains(where: \.isNumber) ? model : family
-                guard let entry = limit(label: "\(title) · \(kind)", quota: bucket) else { continue }
-                merge([Window(family: family, limit: entry)], into: &result)
+                let groupName = source.name.replacingOccurrences(of: "\\s+models?$", with: "", options: [.regularExpression, .caseInsensitive])
+                    .trimmingCharacters(in: .whitespaces)
+                let title = model.contains(where: \.isNumber) ? model : groupName.contains(where: \.isNumber) ? groupName : family
+                guard let entry = limit(label: "\(title) · \(kind)", quota: bucket, duration: span) else { continue }
+                group.append((span == fiveHours ? 0 : span == week ? 1 : 2, Window(family: family, limit: entry)))
             }
+            merge(group.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }.map { $0.element.window }, into: &result)
         }
         return result
     }
 
-    /// Every model's own quota, named after the model ("Gemini 4 Pro"). Older accounts only list these, without a window length.
+    /// How long a bucket's window lasts: its `window` field ("5h", "weekly"), else what its id or name says.
+    nonisolated static func windowSpan(window: String?, id: String, name: String) -> TimeInterval? {
+        let text = [window ?? "", id, name].joined(separator: " ").lowercased()
+        if window == "5h" || text.contains("5h") || text.contains("five hour") { return fiveHours }
+        if window == "weekly" || text.contains("weekly") || text.contains("week") { return week }
+        return nil
+    }
+
+    /// "Gemini" for the Gemini group, "Claude & GPT" for the third-party one, else the group's own name.
+    private nonisolated static func familyName(bucket id: String, group: String) -> String {
+        let lowered = (id + " " + group).lowercased()
+        if id.hasPrefix("3p-") || lowered.contains("claude") || lowered.contains("gpt") { return "Claude & GPT" }
+        if id.hasPrefix("gemini-") || lowered.contains("gemini") { return "Gemini" }
+        let trimmed = group.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? id : trimmed
+    }
+
+    /// Model ids that are Antigravity's own helpers (autocomplete, chat titles, images), not models you pick.
+    nonisolated static func isHelperModel(_ id: String) -> Bool {
+        let id = id.lowercased()
+        return id.hasPrefix("chat_") || id.hasPrefix("tab_") || ["internal", "autocomplete", "lite", "image"].contains(where: { id.contains($0) })
+            || id.hasSuffix("-exp") || id.hasSuffix("-agent") || id.hasSuffix("disabled")
+    }
+
+    /// Every model's own quota, named after the model ("Gemini 4 Pro"). Only the models Antigravity lists in its picker
+    /// (`agentModelSorts`) count when it sends that list; its helpers never do.
     nonisolated static func modelWindows(_ object: [String: Any]) -> [Window] {
         guard let models = object["models"] as? [String: [String: Any]] else { return [] }
+        let picker = Set(((object["agentModelSorts"] as? [[String: Any]]) ?? [])
+            .flatMap { ($0["groups"] as? [[String: Any]]) ?? [] }
+            .flatMap { ($0["modelIds"] as? [String]) ?? [] })
         var result: [Window] = []
         for (id, model) in models.sorted(by: { $0.key < $1.key }) {
+            guard (model["disabled"] as? Bool) != true, !isHelperModel(id), picker.isEmpty || picker.contains(id) else { continue }
             let provider = model["modelProvider"] as? String
             let family = provider == "MODEL_PROVIDER_GOOGLE" || id.hasPrefix("gemini-") ? "Gemini"
                 : provider == "MODEL_PROVIDER_ANTHROPIC" || id.hasPrefix("claude-") ? "Claude"
@@ -333,9 +381,9 @@ final class AntigravityUsage: ObservableObject {
                 .trimmingCharacters(in: .whitespaces)
             let derived = modelName(id: id)
             let name = !display.isEmpty ? display : derived.isEmpty ? family : derived
-            for (key, suffix) in [("quotaInfo", tr("agents.usage.quota")), ("weeklyQuotaInfo", tr("agents.week"))] {
+            for (key, suffix, span) in [("quotaInfo", tr("agents.usage.quota"), TimeInterval?.none), ("weeklyQuotaInfo", tr("agents.week"), Optional(week))] {
                 guard let quota = model[key] as? [String: Any],
-                      let entry = limit(label: "\(name) · \(suffix)", quota: quota) else { continue }
+                      let entry = limit(label: "\(name) · \(suffix)", quota: quota, duration: span) else { continue }
                 merge([Window(family: family, limit: entry)], into: &result)
             }
         }
