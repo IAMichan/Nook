@@ -118,7 +118,8 @@ struct AgentRunPanel: View {
             .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(
                 outputs: outputs,
                 turns: turnDiffs(run),
-                fresh: !outputsLink.shown && seenOutputs.map { SessionOutputs.hasNew(outputs, seen: $0) } == true))
+                pullRequest: derived.createdPullRequest,
+                fresh:!outputsLink.shown && seenOutputs.map { SessionOutputs.hasNew(outputs, seen: $0) } == true))
             // What the outputs tab shows is seen.
             .onChange(of: outputsLink.shown) { _, isShown in
                 if isShown { seenOutputs = Set(outputs.map(SessionOutputs.signature)) }
@@ -1389,13 +1390,34 @@ final class RunPullRequestLinks {
         case .assistant:
             return MarkdownBlock.lastGitHubPullRequest(in: event.text)
         case .tool:
-            guard let output = event.output else { return nil }
-            let call = [event.tool, event.text, event.detail].compactMap { $0 }.joined(separator: " ").lowercased()
-            guard call.contains("pr create") || call.contains("pr view") || call.contains("pull_request")
-                    || call.contains("pullrequest") else { return nil }
+            guard let output = event.output, showsPullRequest([event.tool, event.text, event.detail]) else { return nil }
             return MarkdownBlock.lastGitHubPullRequest(in: output)
         default:
             return nil
         }
+    }
+
+    /// The same for a conversation Nook reads from an agent's transcript (a session it only sees).
+    nonisolated static func last(in messages: [AgentChatMessage]) -> URL? {
+        for message in messages.reversed() {
+            switch message.kind {
+            case .assistant:
+                if let url = MarkdownBlock.lastGitHubPullRequest(in: message.text) { return url }
+            case .tools:
+                for step in message.steps.reversed() {
+                    guard let output = step.output, showsPullRequest([step.name, step.summary, step.command]) else { continue }
+                    if let url = MarkdownBlock.lastGitHubPullRequest(in: output) { return url }
+                }
+            default:
+                continue
+            }
+        }
+        return nil
+    }
+
+    /// A tool call that makes or shows a pull request, so the link in its output is that pull request's.
+    private nonisolated static func showsPullRequest(_ parts: [String?]) -> Bool {
+        let call = parts.compactMap { $0 }.joined(separator: " ").lowercased()
+        return call.contains("pr create") || call.contains("pr view") || call.contains("pull_request") || call.contains("pullrequest")
     }
 }

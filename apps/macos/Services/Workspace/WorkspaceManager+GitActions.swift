@@ -66,6 +66,13 @@ extension WorkspaceManager {
         PullRequestSync.shared.forget(id)
     }
 
+    /// A conversation links a pull request: the first time Nook sees it, the answers kept for a minute no longer count,
+    /// so the next look asks the forge and the button turns from "create" to what comes next at once.
+    func pullRequestLinked(_ url: URL) {
+        guard linkedPullRequests.insert(url).inserted else { return }
+        pullRequestChecked.removeAll()
+    }
+
     /// Where the button stands for a session; nil outside a repository.
     func quickGitState(_ id: UUID) async -> GitQuickState? {
         guard let run = run(id), run.repoRoot != nil, let target = quickTarget(run), let status = self.git[id]?.status else { return nil }
