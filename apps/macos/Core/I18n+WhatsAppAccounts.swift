@@ -1,7 +1,7 @@
 import Foundation
 
 // Texts for linking more than one WhatsApp account through the gateway (a business number, a second phone), and the
-// parts every linked chat app's sheet in Settings › Chats has: accounts, in Nook, advanced.
+// parts every linked chat app's sheet in Settings › Connections has: accounts, in Nook, advanced.
 
 let whatsAppAccountTranslations: [AppLanguage: [String: String]] = [
     .nl: [

@@ -4,12 +4,12 @@ import SwiftUI
 /// Antigravity, and so on. Each account shows the limits its agent reports (5 hours and the week), and what was used in
 /// tokens today and this week with a small chart of the last seven days. Agents that report a limit per model
 /// (Antigravity) get a compact table with only the busiest models; the rest folds away. That is the Limits tab; Cost and
-/// Tokens show every agent's usage on this Mac, as Settings › Usage does.
+/// Tokens show every agent's usage on this Mac, as Settings › Coding agents does.
 struct AgentsUsagePanel: View {
     @EnvironmentObject private var app: AppModel
     /// Accounts whose full model list is unfolded.
     @State private var expanded: Set<String> = []
-    /// Cost, Tokens or Limits, as the tabs of Settings › Usage.
+    /// Cost, Tokens or Limits, as the tabs of Settings › Coding agents.
     @AppStorage("usage.tab") private var tabRaw = UsageTab.limits.rawValue
     @AppStorage("usage.window") private var windowRaw = UsageWindow.week.rawValue
 
@@ -359,7 +359,7 @@ struct AgentsUsagePanel: View {
 
 /// How a usage percentage is colored: calm in the AI's own color while there is room, amber when it gets close, coral
 /// when it is nearly gone. The number stays plain white until then, so only what needs attention stands out. Shared by
-/// the notch and Settings › Usage, so a limit looks the same in both.
+/// the notch and Settings › Coding agents, so a limit looks the same in both.
 enum UsageTone {
     static func fill(_ percent: Double, accent: Color) -> Color {
         switch percent {
@@ -435,7 +435,7 @@ struct WeekBars: View {
     }
 }
 
-/// Reads the limits of every account now, in the header of the usage panel and Settings › Usage. Shows a small spinner
+/// Reads the limits of every account now, in the header of the usage panel and Settings › Coding agents. Shows a small spinner
 /// until Claude Code has answered.
 struct UsageRefreshButton: View {
     @EnvironmentObject private var app: AppModel

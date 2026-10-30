@@ -228,7 +228,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `ChatLinkPreview` | `ChatLinkPreview.swift` | What a web address in a chat message leads to, under its text in every chat: a picture or GIF as itself, a video that plays in the bubble, a sound file with its player, any other page as a card with its picture, site and title (a play mark for a video page). Previews come from `ChatLinkPreviews` (LinkPresentation, fetched once per address) and video frames from `ChatVideoStills`. Never draw a link's preview by hand |
 | `ChatBubbleShape` | `ChatTranscript.swift` | A chat app's message bubble: a rounded box (`Radius.chatBubble`) with a small tail at its top corner on the first message of a run, filled `chatMine` (yours) or `chatTheirs`. Every bubble keeps `ChatBubbleShape.tail` points of room on its side so a run lines up; the typing bubble uses it too. Never draw a chat bubble's outline by hand |
 | `ChatCallRow` | `ChatMediaViews.swift` | A call in a chat, the same for every app: a round mark with its kind (arrow in or out, a camera for video, a hung-up phone in coral for one you missed), what it was and who rang and how long. `ChatFormat.call` reads any app's call line into a `ChatCall`; never draw a call by hand |
-| `ChatLimitsLine` | `ChatsSidebar.swift` | In the tray above the answer field of a chat Nook can only read, for every app: what is missing and one button, "Link <app>" (Settings › Chats) for an app Nook can link, else "Open <app>"; a cross hides it for that app |
+| `ChatLimitsLine` | `ChatsSidebar.swift` | In the tray above the answer field of a chat Nook can only read, for every app: what is missing and one button, "Link <app>" (Settings › Connections) for an app Nook can link, else "Open <app>"; a cross hides it for that app |
 | `ChatReplyField` | `ChatReplyField.swift` | The answer field under a chat (the Chats tab, and every full card with a field in the notch): Return sends (as Cmd+Return), Shift- or Option-Return adds a line, "@" opens the menu with "@nook" and ready-made requests, "@nook …" lets Nook write the message into the field first (it comes in a few words at a time), shown as Nook's draft in an iris panel above it: what you asked, Stop while it writes, go back to the request, step between Nook's versions, steer it (Shorter, Friendlier, More formal, Other words, or a change typed in its own field), and a Send button. The field is a soft round box whose buttons sit at its foot; the send button lights up (iris for "@nook …") once there is something to send. With `outgoing` a message on its way leaves the field for a mint panel above it (a gliding paper plane, "Sending to …" shimmering, the message), which shows a check and "Sent" for a moment once the chat has it. With `quote` it answers one message, shown above the field until sent or let go (the cross, Escape); with `onEscape`, Escape in the field with nothing to let go of closes what holds it. With `.extras(…)` it takes more than text: buttons before the text, what waits above the field, a button in place of send while nothing is typed, a bar that stands in for the field, and Cmd-V for pictures and files. Never build a chat's answer field by hand |
 | `ChatComposerModel`, `ChatAttachMenu`, `ChatEmojiButton`, `ChatMicButton`, `ChatRecordingBar`, `ChatComposerPanels` | `ChatComposer.swift` | What a chat sends besides text, plugged into `ChatReplyField.extras` (the Chats tab): "+" with photos and videos, files, GIFs, stickers, audio, a poll, a location and a contact (only what the chat's app can send, `ChatOutgoing.Kind`), the emoji browser, a voice message recorded in place of the field, the files waiting to go (each with what it goes as), and the poll, place, contact and sticker panels above the field. Never build a chat's attachments by hand |
 
@@ -262,20 +262,25 @@ are not kept there.
 | `SettingsLinkRow` | `SettingsBlocks.swift` | A row that leads to another page or flow: tile, title, line under it, chevron; a status symbol only when something is not done |
 | `InUseLabel` | `SettingsBlocks.swift` | The mint "In use" check on the chosen model, file or key |
 | `HoverActionsRow` | `SettingsBlocks.swift` | A row whose buttons show under the pointer; at rest a small symbol says its state (memory rows) |
-| `SettingsTile`, `HealthPill`, `SetupStep`, `GalleryCard`, `IntroCard` | `SettingsStyle.swift` | Tiles, health pills, setup steps |
-| `ServiceRowLayout`, `ServiceStatusLabel` | `ServiceRows.swift` | The one row shape of every connected service (icon, name with state, one line, actions) |
+| `SettingsTile`, `HealthPill`, `SetupStep`, `IntroCard` | `SettingsStyle.swift` | Tiles, health pills, setup steps |
+| `ServiceRowLayout`, `ServiceStatusLabel` | `ServiceRows.swift` | The one row shape of everything linked (chat apps, services, GitLab, your own servers, the iPhone): icon, name with state, one line, then Fix when it needs you, a switch where it has one, and Manage |
 | `ChatAccountRow` | `ServiceRows.swift` | One account of a chat app in its sheet (WhatsApp, Telegram, Teams, Slack, Messages, Snapchat, the chat service's apps): a `ServiceRowLayout` with the app's icon |
-| `GalleryCard`, `GalleryGrid`, `ConnectMethodBadge` | `SettingsStyle.swift`, `ServiceRows.swift` | The one card shape of everything you can add; the badge says how (sign in, a key, MCP) |
-| `ServiceCategoryChips` | `ServiceRows.swift` | The category filter under the connections search field |
-| `OneClickServiceCard`, `GitHubSignInCard`, `MCPServiceRow` | `ServiceRows.swift` | Services that sign in on their own page |
-| `GitLabCard`, `GitLabHostRow`, `GitLabSetupSheet` | `GitLabSettings.swift` | GitLab in the same card, row, and setup-sheet shapes |
-| `MCPPresetCard`, `MCPCustomCard`, `MCPServerCardRow`, `AddMCPServerWizardSheet` | `MCPSettingsSection.swift` | MCP servers in the same shapes |
+| `ConnectionCatalog`, `ConnectionOption` | `ConnectionCatalog.swift` | Everything Nook can link, built from each kind's own catalogue; a new service is added there, never as a section of its own |
+| `AddConnectionSheet`, `ConnectionOptionGrid`, `ConnectionOptionTile`, `ConnectionCategoryChips` | `ConnectionCatalog.swift` | The one way to add anything: pick it (search or a group), then its steps in the same sheet. A tile shows how it links (`ConnectMethodBadge`) or that it is linked |
+| `ServiceSignInSheet` | `ConnectionCatalog.swift` | A service you sign in to on its own page, in two steps, with its key as the other way |
+| `SettingsFormSheet`, `IPhoneSheet` | `ConnectionCatalog.swift` | A sheet whose content is plain settings rows |
+| `ConnectMethodBadge`, `MCPServiceRow` | `ServiceRows.swift` | How an option links; a service you signed in to |
+| `GitLabHostRow`, `GitLabSetupSheet` | `GitLabSettings.swift` | GitLab in the same row and setup-sheet shapes |
+| `MCPServerCardRow`, `AddMCPServerWizardSheet` | `MCPSettingsSection.swift` | MCP servers in the same shapes |
 | `SetupSheet`, `SetupStep` | `SettingsStyle.swift` | Every setup flow: icon and title on top, numbered steps, one clear button below |
 | `SheetPart` | `SettingsStyle.swift` | A part of a sheet for something already set up: its name and its rows. A linked chat app's sheet is always Accounts, In Nook, then Advanced folded away |
 
-Settings › Connections is one page in one layout: search and category chips, what needs you, your connections (rows),
-the apps on this Mac (switches), and one catalogue of everything you can add (cards). A new service gets a row and a
-card in these shapes, and a `SetupSheet` when it needs steps; it never gets a section of its own.
+Settings › Accounts & connections (`ConnectionsPage`) is the one page for everything you link or sign in to: a search
+field and one Add button, then what you have by kind (chat apps, services, your own servers, the iPhone), each in the
+`ServiceRowLayout` shape with what needs you first, then the apps on this Mac (switches) and the chat options. Adding
+always goes through `AddConnectionSheet`, and managing opens the same sheet the steps were in. A new service gets an
+option in `ConnectionCatalog`, a row in this shape, and a `SetupSheet` when it needs steps; it never gets a section or
+page of its own. Whatever stops working shows in `ConnectionProblems`, which the Overview and the sidebar badge read.
 
 ## File layout
 

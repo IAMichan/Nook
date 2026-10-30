@@ -1,7 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Assistant: what Nook sees and how it thinks along.
+/// Settings › Assistant: what Nook sees, how it thinks along, what it remembers (`MemorySettingsSection`), and Nook as a
+/// friend, in that order.
 extension SettingsView {
     // MARK: Assistant
 
@@ -41,14 +42,13 @@ extension SettingsView {
                 .pickerStyle(.segmented)
                 SettingNote(settings.nookAccess.detail + " " + tr("nookAccess.always"))
             }
-            buddySection
         }
     }
 
     // MARK: Buddy
 
     /// Nook as a friend: the small moments he shares by himself, how playful he sounds, and your birthday.
-    private var buddySection: some View {
+    var buddySection: some View {
         Section {
             SettingToggle(tr("settings.buddy.moments"), detail: tr("settings.buddy.momentsDetail"), isOn: $settings.buddyMoments)
             Picker(tr("settings.buddy.tone"), selection: $settings.buddyTone) {

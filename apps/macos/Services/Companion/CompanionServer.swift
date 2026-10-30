@@ -242,7 +242,7 @@ final class CompanionServer: ObservableObject {
             return
         }
         peer.lastHeard = Date()
-        // What this phone may do is decided on the Mac (Settings › Devices); anything else is refused before it runs.
+        // What this phone may do is decided on the Mac (Settings › Connections › iPhone); anything else is refused before it runs.
         if !pairing, !CompanionScopes.allows(request.op, granted: scopes(of: claimed)) {
             CompanionDiagnosticsLog.mac.record("refused", ["op": request.op.rawValue, "error": "scope", "device": claimed])
             send(.failure(request.id, .notAllowedFromPhone, message: "scope"), key: key, deviceID: claimed, on: connection)
@@ -633,7 +633,7 @@ final class CompanionServer: ObservableObject {
 }
 
 extension CompanionDiagnosticsLog {
-    /// The Mac's companion log (docs/COMPANION.md, "Diagnostics"): local only, copied redacted from Settings › Devices.
+    /// The Mac's companion log (docs/COMPANION.md, "Diagnostics"): local only, copied redacted from Settings › Connections › iPhone.
     static let mac = CompanionDiagnosticsLog(url: NookPaths.supportDirectory.appendingPathComponent("companion-diagnostics.ndjson"))
 }
 

@@ -5,7 +5,7 @@ import IOKit.ps
 import IOKit.pwr_mgt
 
 /// Keeps the Mac awake while the iPhone companion may need it (`KeepAwakePolicy`): while agents work or wait on you,
-/// while a phone is connected live, or always, as chosen in Settings › Devices › Away from home. On the power adapter it
+/// while a phone is connected live, or always, as chosen in Settings › Connections › iPhone › Away from home. On the power adapter it
 /// holds off all sleep, so a MacBook stays reachable with its lid closed; on battery only idle sleep, and only for work
 /// or a phone. The screen may always turn off. What it holds shows in Activity Monitor and `pmset -g assertions` as
 /// "Nook: …".

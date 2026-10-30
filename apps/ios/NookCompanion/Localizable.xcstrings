@@ -2895,31 +2895,31 @@
         }
       }
     },
-    "Link WhatsApp or turn on Chats in Nook › Settings › Chats to see every chat here." : {
+    "Link WhatsApp or turn on Chats in Nook › Settings › Connections to see every chat here." : {
       "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verbinde WhatsApp oder schalte Chats in Nook › Einstellungen › Chats ein, um hier alle Chats zu sehen."
+            "value" : "Verbinde WhatsApp oder schalte Chats in Nook › Einstellungen › Verbindungen ein, um hier alle Chats zu sehen."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vincula WhatsApp o activa los chats en Nook › Ajustes › Chats para ver aquí todos tus chats."
+            "value" : "Vincula WhatsApp o activa los chats en Nook › Ajustes › Conexiones para ver aquí todos tus chats."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Associez WhatsApp ou activez les discussions dans Nook › Réglages › Discussions pour voir toutes vos discussions ici."
+            "value" : "Associez WhatsApp ou activez les discussions dans Nook › Réglages › Connexions pour voir toutes vos discussions ici."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Koppel WhatsApp of zet Chats aan in Nook › Instellingen › Chats om hier al je chats te zien."
+            "value" : "Koppel WhatsApp of zet Chats aan in Nook › Instellingen › Koppelingen om hier al je chats te zien."
           }
         }
       }
@@ -4351,58 +4351,58 @@
         }
       }
     },
-    "On %@, check Settings › Devices › Away from home: ‘Test relay’ shows whether the relay works." : {
+    "On %@, check Settings › Connections › iPhone › Away from home: ‘Test relay’ shows whether the relay works." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Prüfe auf %@ Einstellungen › Geräte › Unterwegs: ‘Relay testen’ zeigt, ob das Relay funktioniert."
+            "value" : "Prüfe auf %@ Einstellungen › Verbindungen › iPhone › Unterwegs: ‘Relay testen’ zeigt, ob das Relay funktioniert."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "En %@, revisa Ajustes › Dispositivos › Fuera de casa: ‘Probar el relé’ muestra si el relé funciona."
+            "value" : "En %@, revisa Ajustes › Conexiones › iPhone › Fuera de casa: ‘Probar el relé’ muestra si el relé funciona."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sur %@, vérifiez Réglages › Appareils › Hors de chez vous : ‘Tester le relais’ indique si le relais fonctionne."
+            "value" : "Sur %@, vérifiez Réglages › Connexions › iPhone › Hors de chez vous : ‘Tester le relais’ indique si le relais fonctionne."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kijk op %@ bij Instellingen › Apparaten › Buiten de deur: ‘Test relay’ laat zien of de relay werkt."
+            "value" : "Kijk op %@ bij Instellingen › Koppelingen › iPhone › Buiten de deur: ‘Test relay’ laat zien of de relay werkt."
           }
         }
       }
     },
-    "On %@, open Nook › Settings › Devices, choose ‘Pair an iPhone’ and scan the code again." : {
+    "On %@, open Nook › Settings › Connections › iPhone, choose ‘Pair an iPhone’ and scan the code again." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Öffne auf %@ Nook › Einstellungen › Geräte, wähle ‘iPhone koppeln’ und scanne den Code erneut."
+            "value" : "Öffne auf %@ Nook › Einstellungen › Verbindungen › iPhone, wähle ‘iPhone koppeln’ und scanne den Code erneut."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "En %@, abre Nook › Ajustes › Dispositivos, elige ‘Emparejar un iPhone’ y vuelve a escanear el código."
+            "value" : "En %@, abre Nook › Ajustes › Conexiones › iPhone, elige ‘Emparejar un iPhone’ y vuelve a escanear el código."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sur %@, ouvrez Nook › Réglages › Appareils, choisissez ‘Jumeler un iPhone’ et scannez à nouveau le code."
+            "value" : "Sur %@, ouvrez Nook › Réglages › Connexions › iPhone, choisissez ‘Jumeler un iPhone’ et scannez à nouveau le code."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open op %@ Nook › Instellingen › Apparaten, kies ‘Koppel een iPhone’ en scan de code opnieuw."
+            "value" : "Open op %@ Nook › Instellingen › Koppelingen › iPhone, kies ‘Koppel een iPhone’ en scan de code opnieuw."
           }
         }
       }
@@ -6896,30 +6896,30 @@
         }
       }
     },
-    "To reach %@ away from home, set up Tailscale or the relay in Nook › Settings › Devices." : {
+    "To reach %@ away from home, set up Tailscale or the relay in Nook › Settings › Connections › iPhone." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Um %@ unterwegs zu erreichen, richte Tailscale oder das Relay in Nook › Einstellungen › Geräte ein."
+            "value" : "Um %@ unterwegs zu erreichen, richte Tailscale oder das Relay in Nook › Einstellungen › Verbindungen › iPhone ein."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Para llegar a %@ fuera de casa, configura Tailscale o el relé en Nook › Ajustes › Dispositivos."
+            "value" : "Para llegar a %@ fuera de casa, configura Tailscale o el relé en Nook › Ajustes › Conexiones › iPhone."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pour joindre %@ hors de chez vous, configurez Tailscale ou le relais dans Nook › Réglages › Appareils."
+            "value" : "Pour joindre %@ hors de chez vous, configurez Tailscale ou le relais dans Nook › Réglages › Connexions › iPhone."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Om %@ buiten de deur te bereiken: stel Tailscale of de relay in via Nook › Instellingen › Apparaten."
+            "value" : "Om %@ buiten de deur te bereiken: stel Tailscale of de relay in via Nook › Instellingen › Koppelingen › iPhone."
           }
         }
       }
@@ -7207,34 +7207,6 @@
         }
       }
     },
-    "Update Nook on %@." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aktualisiere Nook auf %@."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Actualiza Nook en %@."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mettez à jour Nook sur %@."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Werk Nook bij op %@."
-          }
-        }
-      }
-    },
     "Update Nook Companion to use everything your Mac offers." : {
       "localizations" : {
         "de" : {
@@ -7259,6 +7231,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Werk Nook Companion bij om alles te kunnen gebruiken wat je Mac biedt."
+          }
+        }
+      }
+    },
+    "Update Nook on %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktualisiere Nook auf %@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualiza Nook en %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mettez à jour Nook sur %@."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Werk Nook bij op %@."
           }
         }
       }

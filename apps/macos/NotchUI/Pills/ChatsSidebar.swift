@@ -423,7 +423,7 @@ struct ChatMarkButton: View {
 
 /// In the tray above the answer field of a chat Nook can only read, the same for every app: what is missing here and
 /// the one step that brings it. An app Nook can link (WhatsApp, Telegram, Instagram, Slack, Teams…) gets a button to
-/// Settings › Chats; one it can only see through notifications says so and opens the app. A cross puts it away for
+/// Settings › Connections; one it can only see through notifications says so and opens the app. A cross puts it away for
 /// that app.
 struct ChatLimitsLine: View {
     let appName: String
