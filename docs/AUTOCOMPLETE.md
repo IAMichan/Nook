@@ -54,11 +54,24 @@ Enable it in **Settings › Autocomplete**, which has five tabs:
 - **The text you reply to:** autocomplete reads the pane around the field (`AppTextReader.textAroundFocus`: the nearest ancestor of the focused element with enough text, such as the conversation above a message field) instead of the whole window with its sidebar first. The prompt keeps the *end* of it (`CompletionScreenText.recent`), so the newest messages sit right above your text. Nook's own screen reading fills in until that read is done.
 - **Fresh context:** the context around a field is gathered again after a message is sent (the field empties) and every three minutes, so new incoming messages are seen. The clipboard only goes into the prompt for five minutes after it was copied. Clipboard contents marked as concealed (password managers), transient or auto-generated (`org.nspasteboard.*`) never go in.
 - **Typo check:** the last finished word is checked with the macOS spell checker, also while the next word is being typed (the fix then retypes that word's start too). Short or mixed-language text is checked in the likely languages and the ones set in macOS, and only counts as a typo when none of them knows the word. The fix comes from the autocorrect choice or the spell checker's guesses, but only when it is one or two letters away (`CompletionTextAnalysis.isLikelyFix`). Words you write often, and fixes turned down with Escape, are left alone.
+- **No suggestion on a typo being typed:** while the word before the cursor (four letters or more, no capitals inside) is not a word in any of your languages, nor the start of one (`NSSpellChecker.completions(forPartialWordRange:)`), no suggestion comes: the model would only finish the mistake. On by default, under **Typo correction** (`holdOnTypo`, `AutocompleteTypos.suspectsWordBeingTyped`).
+- **British or American:** a suggestion follows the English spelling you write (`CompletionSpelling`): "colour" next to "favourite", "color" next to "favorite". Decided per kind of difference (-ise/-ize, -our/-or, -re/-er, doubled l, single words such as grey/gray), from the field first and your writing samples second; "-ize" is only decided by its own words, since Oxford spelling writes it next to "colour". Pairs whose American form is another British word (cheque/check, programme/program) are left out. A word the model finishes ("colo" + "ur") is judged whole and left as you started it.
+- **Coding agents in terminals:** terminals stay off for the shell, but suggestions come in the prompt of a coding agent running in Terminal or iTerm2 (Claude Code, Codex, Gemini CLI, OpenCode…), as in Cotypist (`CompletionTerminal.agentPrompt`). The input line must start with `>`, `›` or `❯` and the agent's frame must be around it (a rule or box line above and below, or one of its footer hints such as `? for shortcuts` or `context left`), so a heredoc's `> ` never counts. Only the text typed after the marker goes to the model, without the box, status lines or placeholder; the window title (which agents animate) is left out of the field's identity. When the terminal gives no font, the ghost text takes the one in its own settings (iTerm2's default profile, Ghostty's `font-family`, kitty's `font_family`). Ghostty, kitty, Alacritty, WezTerm and Warp do not give their text or cursor through Accessibility yet. Off with **In terminals: in a coding agent's prompt**; a terminal turned on in the Apps tab gets suggestions in the shell too.
+- **How text goes in, per app:** typed as key events (the default; one character at a time once an app is seen to drop the rest), one character at a time from the start, with every space a press of the space bar (for apps that drop a space typed as a character), or pasted with ⌘V for apps that mangle typed text. A paste marks the clipboard as transient (clipboard managers skip it) and puts back what was there 0.4 s later, unless something else was copied meanwhile.
+- **Force-activate:** the **Suggest now** key also works where suggestions are off (an app, a site, a small field), as Cotypist's force-activate does: suggestions then stay on in that field until the focus moves to another field or app (`AutocompleteController.forcedApp`). Never in a password manager or under Secure Input.
+- **LoRA adapter:** a GGUF LoRA adapter made for the GGUF model can be chosen under the model; it is applied at full strength (`llama_set_adapters_lora`), and one that does not fit the model is skipped. The brain's MLX model takes none.
+- **macOS predictions:** when macOS's own inline predictions are on, Settings offers to turn them off right there (the same user setting as Keyboard › Text Input), not only to open Keyboard settings.
+- **Recorded texts:** the writing Nook learned from can be read under **Style & Context** (the newest 100, with the app and date) and deleted one by one, besides all at once.
+- **Where a suggestion came from:** each one logs its source and time (Console, subsystem `nl.imdigital.nook`, category `autocomplete`, "served from": memo, learned phrase, written ahead, model, or model (cold) when it still had to load).
 - **Chat models first:** automatic model choice prefers a chat (instruct) model, then a base model, and a code or math model last. Measured with Gemma 4 E4B on eight everyday messages (Dutch and English, with and without screen context): the instruct model made a suggestion for all eight, sure of its first word 36–98% of the time; the base model of the same size made one for only two, mostly too unsure (6–28%) to show anything. Settings recommends Gemma 4 E4B Instruct from 24 GB of memory and E2B Instruct from 16 GB.
 
 ## Emoji Picker
 
 Typing `:` at the start of a word opens a picker under the cursor: the emoji you used last, then the most used. Typing on (`:lach`, `:heart`) filters it at once, without reading the field again. Pick with the arrow keys and Tab (or Return, once two letters are typed, so `:D` and Return still sends), with 1–9 for the row with the selection, or with a click: the panel itself takes no clicks, so the key tap hit-tests the card on a mouse down and swallows that click. Escape, a space or punctuation closes it.
+
+A preferred gender for people (🤷, 🙋, 🏃 and the like as a woman or a man) and, with a skin tone chosen, each emoji in the default yellow next to it are set under the skin tone.
+
+Text emoticons offer their emoji too (**Emoji for emoticons**): after `:-)`, `;)`, `<3` or `^_^` at the start of a word, a card shows 🙂, 😉, ❤️ or 😊 and the accept key puts it in place of the emoticon; typing on keeps the emoticon. `:D`, `:P` and `:O` are names to the picker already, which then shows their face first.
 
 ## Model Selection
 
@@ -90,10 +103,18 @@ not been run on a real Windows PC yet.
   typed with `SendInput` and `KEYEVENTF_UNICODE`, never through the clipboard. The ghost text and the emoji card are a
   transparent, click-through, never-activated, topmost window that is excluded from capture.
 - **Emoji picker:** as on the Mac, including the emoji that fit the text (keywords, no model). Clicks on the card are
-  taken in the mouse hook and hit-tested against the card's layout (`PickerLayout`).
+  taken in the mouse hook and hit-tested against the card's layout (`PickerLayout`). Emoticons (`:-)`, `<3`) open
+  the same card with their one emoji (`Picker::for_emoticon`), which the accept key puts in place of the emoticon.
+- **British or American spelling:** as on the Mac (`spelling.rs`, the same table), from the field only, since
+  Windows does not learn from your writing yet. The preferred gender for people in emoji is the same as on the Mac
+  (`render_person`); the yellow variant next to toned emoji is not ported yet.
 - **Not yet ported:** screen and window text as context, learning from your writing and the word bonus, token
   healing, writing ahead and the suggestion memo, ranking several candidates, the app's text colour for the ghost
-  text, typo fixes, word alternatives, per-website rules (the browser's address is not read), battery behavior, the
+  text, typo fixes and holding back on a typo being typed (no spell checker yet), word alternatives, coding agent
+  prompts in terminals (Windows Terminal is read through UI Automation, not yet tried), insert modes per app (typing
+  stays `SendInput`), force-activate (Windows has no Suggest now key yet), LoRA adapters (Windows runs a local server
+  such as Ollama, which loads its own), the macOS predictions switch (Windows has none), the list of recorded texts
+  (nothing is recorded yet), per-website rules (the browser's address is not read), battery behavior, the
   menu-bar count and the 30-day chart.
 
 ## Building & Testing

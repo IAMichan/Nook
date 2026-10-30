@@ -45,6 +45,9 @@ struct CompletionKeyGate: Equatable {
     /// Nil while other words are turned off.
     var alternatives: CompletionShortcut?
     var suggestNow: CompletionShortcut?
+    /// Suggestions are off here, but the `suggestNow` key would turn them on for the focused field (see
+    /// `AutocompleteController.forcedApp`).
+    var canForce = false
     var showing = Showing.nothing
     /// An accept key pressed now would be held until the suggestion on its way shows (see `holdAcceptKey`).
     var canHold = false
@@ -63,8 +66,8 @@ struct CompletionKeyGate: Equatable {
         if key.matches(toggleAll) { return true }
         if appKnown, key.matches(toggleApp) { return true }
         if key.matches(alternatives) { return true }
+        if key.matches(suggestNow), active || canForce { return true }
         guard active else { return false }
-        if key.matches(suggestNow) { return true }
 
         let plainEscape = key.code == Self.escape && key.modifiers == 0
         let tabLeftToApp = leaveTab && key.code == Self.tab

@@ -408,16 +408,16 @@ enum AutocompleteField {
     }
 }
 
-/// Types into the focused field with key events that carry the characters themselves, so the clipboard is untouched. The
-/// events carry a mark, so Nook's key watcher knows they are not the user's.
+/// Types into the focused field with key events that carry the characters themselves, so the clipboard is untouched; or, for
+/// an app set to it, pastes (see `CompletionInsertMode`). The events carry a mark, so Nook's key watcher knows they are not
+/// the user's.
 enum AutocompleteTyper {
     static let marker: Int64 = 0x4E4F4F4B
     /// Some apps cut off longer strings.
     private static let chunk = 20
 
     /// Deletes `count` characters before the cursor, then types `text` (emoji, typo fixes, other words).
-    /// - Parameter oneByOne: one character per key event, for apps that take only the first character of each.
-    static func replace(last count: Int, with text: String, oneByOne: Bool = false) {
+    @MainActor static func replace(last count: Int, with text: String, mode: CompletionInsertMode = .keys) {
         let source = CGEventSource(stateID: .combinedSessionState)
         for _ in 0..<count {
             for isDown in [true, false] {
@@ -427,7 +427,7 @@ enum AutocompleteTyper {
                 event.post(tap: .cgSessionEventTap)
             }
         }
-        type(text, oneByOne: oneByOne)
+        type(text, mode: mode)
     }
 
     /// Presses one key (an accept key held while a suggestion was on its way, passed on after all).
@@ -441,9 +441,19 @@ enum AutocompleteTyper {
         }
     }
 
-    static func type(_ text: String, oneByOne: Bool = false) {
+    /// - Parameter mode: `.oneByOne` for apps that take only the first character of each key event.
+    @MainActor static func type(_ text: String, mode: CompletionInsertMode = .keys) {
+        if mode == .paste { return paste(text) }
+        if mode == .spaceKey {
+            // Each space a press of the space bar, the text between as usual.
+            for (index, part) in text.split(separator: " ", omittingEmptySubsequences: false).enumerated() {
+                if index > 0 { press(keyCode: 49, flags: []) }
+                if !part.isEmpty { type(String(part)) }
+            }
+            return
+        }
         let source = CGEventSource(stateID: .combinedSessionState)
-        let pieces: [[UInt16]] = oneByOne ? text.map { Array(String($0).utf16) } : chunks(of: Array(text.utf16))
+        let pieces: [[UInt16]] = mode == .oneByOne ? text.map { Array(String($0).utf16) } : chunks(of: Array(text.utf16))
         for piece in pieces {
             for isDown in [true, false] {
                 guard let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: isDown) else { continue }
@@ -453,6 +463,45 @@ enum AutocompleteTyper {
                 event.post(tap: .cgSessionEventTap)
             }
         }
+    }
+
+    /// What was on the clipboard before the last paste, put back once the app has taken the text.
+    @MainActor private static var saved: (items: [[NSPasteboard.PasteboardType: Data]], count: Int)?
+    @MainActor private static var restoreWork: DispatchWorkItem?
+
+    /// Puts `text` on the clipboard, marked as there for a moment (clipboard managers skip it, see nspasteboard.org), presses
+    /// ⌘V, and puts back what was there before. Pastes in quick succession keep the first saved contents.
+    @MainActor private static func paste(_ text: String) {
+        let board = NSPasteboard.general
+        if saved == nil {
+            let items = (board.pasteboardItems ?? []).map { item in
+                Dictionary(item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }) { first, _ in first }
+            }
+            saved = (items, board.changeCount)
+        }
+        board.clearContents()
+        board.setString(text, forType: .string)
+        board.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
+        let ours = board.changeCount
+        press(keyCode: 9, flags: .maskCommand)
+        restoreWork?.cancel()
+        let work = DispatchWorkItem {
+            MainActor.assumeIsolated {
+                defer { saved = nil }
+                // Something else was copied meanwhile: that stays.
+                guard let saved, board.changeCount == ours else { return }
+                board.clearContents()
+                let items = saved.items.map { contents in
+                    let item = NSPasteboardItem()
+                    for (type, data) in contents { item.setData(data, forType: type) }
+                    return item
+                }
+                if !items.isEmpty { board.writeObjects(items) }
+            }
+        }
+        restoreWork = work
+        // Apps read the clipboard when they handle ⌘V, which can take a moment in a busy web app.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 
     private static func chunks(of units: [UInt16]) -> [[UInt16]] {

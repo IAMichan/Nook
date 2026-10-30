@@ -21,6 +21,7 @@ use nook_core::services::autocomplete::engine::{self, Engine, EngineOutput, Engi
 use nook_core::services::autocomplete::prefs::{EscapeAction, KeyChord};
 use nook_core::services::autocomplete::prompt::{field_key, CompletionContext, CompletionPrompt, PromptBuilder};
 use nook_core::services::autocomplete::session::{ReadOutcome, Session};
+use nook_core::services::autocomplete::spelling;
 use nook_core::services::autocomplete::stats::{self, CompletionStats, SeenApp, StatsSummary};
 use nook_core::services::autocomplete::suggestion::{CompletionOptions, CompletionPolicy, CompletionSuggestion};
 use nook_core::services::autocomplete::{privacy, AutocompleteSettings};
@@ -315,16 +316,16 @@ fn create_ghost(app: &AppHandle, input: &Arc<dyn TextInput>) {
     }
 }
 
-fn choice_list(picker: &Picker, tone: u8) -> Vec<EmojiChoice> {
+fn choice_list(picker: &Picker, tone: u8, gender: u8) -> Vec<EmojiChoice> {
     picker
         .choices
         .iter()
-        .map(|e| EmojiChoice { emoji: emoji::render(e, tone), name: e.shortcodes.first().cloned().unwrap_or_default() })
+        .map(|e| EmojiChoice { emoji: emoji::render_person(e, tone, gender), name: e.shortcodes.first().cloned().unwrap_or_default() })
         .collect()
 }
 
 /// The picker card under the caret. Returns where it is (physical pixels), for the hook's click test.
-fn show_card(app: &AppHandle, input: &Arc<dyn TextInput>, open: &OpenPicker, tone: u8) -> Option<ScreenRect> {
+fn show_card(app: &AppHandle, input: &Arc<dyn TextInput>, open: &OpenPicker, tone: u8, gender: u8) -> Option<ScreenRect> {
     let window = app.get_webview_window(GHOST)?;
     let rect = ScreenRect {
         x: open.caret.x,
@@ -336,7 +337,7 @@ fn show_card(app: &AppHandle, input: &Arc<dyn TextInput>, open: &OpenPicker, ton
         "autocomplete-ghost",
         serde_json::json!({
             "kind": "picker",
-            "choices": choice_list(&open.picker, tone),
+            "choices": choice_list(&open.picker, tone, gender),
             "selected": open.picker.selected,
             "query": open.picker.query,
             "layout": open.layout,
@@ -567,7 +568,7 @@ impl Controller {
     fn redraw_picker(&mut self) {
         let tone = self.settings.autocomplete.skin_tone;
         let Some(open) = self.picker.as_ref() else { return };
-        let card = show_card(&self.app, &self.input, open, tone);
+        let card = show_card(&self.app, &self.input, open, tone, self.settings.autocomplete.emoji_gender);
         self.input.set_picker(card, open.picker.return_takes());
         let app = open.app.clone();
         self.arm_for(&app);
@@ -577,9 +578,9 @@ impl Controller {
     fn take_emoji(&mut self, index: usize) {
         let Some(open) = self.picker.take() else { return };
         let Some(chosen) = open.picker.choices.get(index).copied() else { return self.close_picker() };
-        let rendered = emoji::render(chosen, self.settings.autocomplete.skin_tone);
+        let rendered = emoji::render_person(chosen, self.settings.autocomplete.skin_tone, self.settings.autocomplete.emoji_gender);
         self.close_picker();
-        if let Err(e) = self.input.replace_text(open.picker.query.chars().count() + 1, &rendered) {
+        if let Err(e) = self.input.replace_text(open.picker.replaces, &rendered) {
             log::warn!("Aanvullen: {e}");
             return;
         }
@@ -596,10 +597,18 @@ impl Controller {
         if !self.settings.autocomplete.emoji || field.has_selection {
             return false;
         }
-        let (Some(query), Some(caret)) = (emoji::query(&field.before), field.caret) else { return false };
-        let keep = field.before.chars().count().saturating_sub(query.chars().count() + 1);
-        let context: String = field.before.chars().take(keep).collect();
-        let Some(picker) = Picker::open(&query, &context, &self.shared().usage()) else { return false };
+        let Some(caret) = field.caret else { return false };
+        let picker = match emoji::query(&field.before) {
+            Some(query) => {
+                let keep = field.before.chars().count().saturating_sub(query.chars().count() + 1);
+                let context: String = field.before.chars().take(keep).collect();
+                Picker::open(&query, &context, &self.shared().usage())
+            }
+            // ":-)" just typed: its emoji, taken with the accept key in place of the emoticon.
+            None if self.settings.autocomplete.emoticons => Picker::for_emoticon(&field.before),
+            None => None,
+        };
+        let Some(picker) = picker else { return false };
         let scale = self.app.get_webview_window(GHOST).and_then(|w| w.scale_factor().ok()).unwrap_or(1.0);
         let layout = PickerLayout::new(picker.choices.len());
         self.picker = Some(OpenPicker { picker, caret, app: field.app_id.clone(), layout, scale });
@@ -815,8 +824,15 @@ impl Controller {
             }
         };
         let Some(result) = output.result else { return };
+        // In the user's British or American spelling, as the field shows.
+        let text = if self.settings.autocomplete.match_spelling {
+            let field: String = answer.before.chars().rev().take(2_000).collect::<Vec<_>>().into_iter().rev().collect();
+            spelling::apply(&spelling::habit(&format!("{field} {}", answer.after)), &result.text, &answer.before)
+        } else {
+            result.text.clone()
+        };
         let Some(suggestion) =
-            CompletionSuggestion::make(&result.text, &answer.before, &answer.after, answer.max_words, result.truncated, result.unfinished)
+            CompletionSuggestion::make(&text, &answer.before, &answer.after, answer.max_words, result.truncated, result.unfinished)
         else {
             return;
         };
@@ -955,7 +971,7 @@ pub fn playground_emoji(app: &AppHandle, text: &str) -> Option<EmojiChoices> {
     let keep = text.chars().count().saturating_sub(query.chars().count() + 1);
     let context: String = text.chars().take(keep).collect();
     let picker = Picker::open(&query, &context, &app.state::<Autocomplete>().usage())?;
-    Some(EmojiChoices { query, choices: choice_list(&picker, settings.autocomplete.skin_tone) })
+    Some(EmojiChoices { query, choices: choice_list(&picker, settings.autocomplete.skin_tone, settings.autocomplete.emoji_gender) })
 }
 
 /// The models on the local server autocomplete uses, for the model picker.

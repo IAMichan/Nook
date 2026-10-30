@@ -54,6 +54,21 @@ enum CompletionTriState: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// How accepted text goes into an app.
+enum CompletionInsertMode: String, Codable, CaseIterable, Identifiable {
+    /// Key events that carry the text, a few characters each; one character each once the app is seen to drop the rest.
+    case keys
+    /// One character per key event from the start.
+    case oneByOne
+    /// Key events, with every space a press of the space bar: for apps that drop a space typed as a character.
+    case spaceKey
+    /// Through the clipboard and ⌘V, with what was on the clipboard put back right after: for apps that mangle typed text
+    /// (some web editors drop or reorder fast key events).
+    case paste
+
+    var id: String { rawValue }
+}
+
 /// Settings for one app, by bundle id.
 struct CompletionAppRule: Codable, Equatable {
     var enabled = CompletionTriState.inherit
@@ -68,6 +83,7 @@ struct CompletionAppRule: Codable, Equatable {
     /// Draw suggestions in the system's grey instead of a shade of the app's text colour: for apps or sites that report a
     /// colour that is not the one on screen.
     var neutralColor = false
+    var insertMode = CompletionInsertMode.keys
 }
 
 /// Settings for one website, by host name.
@@ -106,6 +122,8 @@ struct CompletionPreferences: Codable, Equatable {
 
     // Model: a GGUF path, "brain:<id>" for the brain's model, or empty for automatic (see CompletionSource.resolve).
     var modelPath = ""
+    /// A LoRA adapter (GGUF) for a GGUF model, applied on top of it; empty for none. The brain's MLX model takes none.
+    var loraAdapterPath = ""
 
     // Context
     var windowContext = true
@@ -136,12 +154,25 @@ struct CompletionPreferences: Codable, Equatable {
 
     // Emoji
     var emoji = true
+    /// A text emoticon just typed (":-)", "<3") offers its emoji.
+    var emoticons = true
     /// 0 yellow, 1…5 light to dark.
     var skinTone = 0
+    /// 0 as the emoji is, 1 a woman, 2 a man (see `CompletionEmojiCatalog.gendered`).
+    var emojiGender = 0
+    /// With a skin tone chosen, each emoji in the picker in the default yellow too.
+    var neutralEmoji = false
 
     // Typos
     var typos = true
     var showTypoFixes = true
+    /// No suggestion while the word being typed looks misspelled: the model would only build on the mistake.
+    var holdOnTypo = true
+    /// Suggestions in British or American spelling, as the user writes (see `CompletionSpelling`).
+    var matchSpelling = true
+    /// In terminals, suggestions in the prompt of a coding agent (Claude Code, Codex…), never in the shell (see
+    /// `CompletionTerminal`).
+    var agentPromptsInTerminals = true
 
     // Battery (and Low Power Mode, see `CompletionPower`)
     var shorterOnBattery = true
@@ -165,6 +196,11 @@ struct CompletionPreferences: Codable, Equatable {
         "org.alacritty", "com.github.wez.wezterm", "com.apple.dt.Xcode", "dev.zed.Zed", "com.jetbrains.intellij", "com.sublimetext.4",
         "com.1password.1password", "com.agilebits.onepassword7", "com.bitwarden.desktop", "com.apple.keychainaccess",
         "com.apple.Passwords"
+    ]
+
+    /// Password managers: never a suggestion, not even when asked for with the `suggestNow` key.
+    static let passwordManagers: Set<String> = [
+        "com.1password.1password", "com.agilebits.onepassword7", "com.bitwarden.desktop", "com.apple.keychainaccess", "com.apple.Passwords",
     ]
 
     /// Code editors built on the web (VS Code and its forks): suggestions in their chat inputs and other prose fields (Claude
@@ -195,6 +231,12 @@ struct CompletionPreferences: Codable, Equatable {
 
     func isEnabled(onSite host: String?) -> Bool {
         host.flatMap { sites[$0] }?.enabled.resolved(true) ?? true
+    }
+
+    /// A terminal that is off here, where suggestions still come in a coding agent's prompt.
+    func onlyAgentPrompts(inApp bundleID: String?) -> Bool {
+        guard enabled, agentPromptsInTerminals, let bundleID, CompletionTerminal.apps.contains(bundleID) else { return false }
+        return app(bundleID).enabled != .off && !isEnabled(inApp: bundleID)
     }
 
     func midLine(inApp bundleID: String?) -> Bool { app(bundleID).midLine.resolved(midLine) }

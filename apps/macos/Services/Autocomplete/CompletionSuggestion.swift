@@ -364,6 +364,16 @@ enum CompletionTextAnalysis {
         return (found.word, found.tail + String(text.suffix(partial)))
     }
 
+    /// The word right before the cursor while it is being typed, when it is worth checking for a typo: at least four letters
+    /// after a space or the start, no digits, no capitals inside it (names, acronyms, code). Nil right after a space.
+    static func wordBeingTyped(in text: String) -> String? {
+        let word = String(text.reversed().prefix { $0.isLetter || $0 == "'" || $0 == "’" }.reversed())
+        guard (4...20).contains(word.count), word.first?.isLetter == true, word.dropFirst().allSatisfy({ !$0.isUppercase }) else { return nil }
+        let head = text.dropLast(word.count)
+        guard head.isEmpty || head.last!.isWhitespace || "(\"“‘".contains(head.last!) else { return nil }
+        return word
+    }
+
     /// A word followed by one separator, or by punctuation and a space.
     private static func finishedWord(endingAt text: String) -> (word: String, tail: String)? {
         if let (word, separator) = justCompletedWord(in: text) { return (word, String(separator)) }
