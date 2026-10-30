@@ -205,7 +205,6 @@ struct DiffText: View, Equatable {
     private let syntaxKey: DiffSyntax.Key
     /// The syntax-colored lines, once worked out (`DiffSyntaxStyle`); until then the code is plain.
     @State private var colored: DiffSyntaxStyle.Lines?
-    @State private var hovered: Int?
     @State private var editing: Int?
     @State private var commentDraft = ""
 
@@ -251,15 +250,15 @@ struct DiffText: View, Equatable {
     /// beside a session that streams redraws many times a second), and reading every line of it again is for nothing.
     private static let parsed = BoundedCache<DiffSyntax.Key, (rows: [UnifiedDiff.Row], numberWidth: CGFloat)>(limit: 48)
 
-    private static let codeColor = NookTheme.textStrong
     private static let hunkColor = NookTheme.blue
-    private var gutterWidth: CGFloat { numberWidth * 2 + markerWidth }
-    private let markerWidth: CGFloat = 16
+    private var gutterWidth: CGFloat { numberWidth * 2 + DiffLineRow.markerWidth }
 
     var body: some View {
         Group {
             if stacked {
-                VStack(alignment: .leading, spacing: 0) { lines }
+                // Lazy as well inside the list's own lazy stack: a long file builds only the lines in view, not all of
+                // them at once when it scrolls in.
+                LazyVStack(alignment: .leading, spacing: 0) { lines }
                     .background(WS.code)
             } else {
                 ScrollView(.vertical) {
@@ -301,56 +300,12 @@ struct DiffText: View, Equatable {
     }
 
     private func lineRow(_ row: UnifiedDiff.Row, index: Int) -> some View {
-        let tint = accent(row.kind)
-        return HStack(alignment: .top, spacing: 0) {
-            number(row.old)
-            number(row.new)
-            Text(verbatim: row.kind == .add ? "+" : row.kind == .remove ? "−" : "")
-                .font(NookTheme.mono(11.5, .semibold))
-                .foregroundStyle(tint ?? .clear)
-                .frame(width: markerWidth, alignment: .center)
-            Text(colored?[index] ?? code(row))
-                .font(NookTheme.mono(11.5))
-                .foregroundStyle(row.kind == .context ? Self.codeColor.opacity(0.82) : Self.codeColor)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, 28)
-                .textSelection(.enabled)
+        DiffLineRow(row: row, code: colored?[index] ?? code(row), tint: accent(row.kind), numberWidth: numberWidth,
+                    commentable: onComment != nil, editing: editing == index) {
+            commentDraft = ""
+            editing = index
         }
-        .padding(.vertical, 1.5)
-        .background(alignment: .leading) {
-            HStack(spacing: 0) {
-                (tint?.opacity(0.16) ?? WS.subtle.opacity(0.5)).frame(width: numberWidth * 2)
-                (tint?.opacity(0.08) ?? .clear)
-            }
-        }
-        .background(hovered == index && onComment != nil ? WS.hover : .clear)
-        .overlay(alignment: .topTrailing) {
-            if onComment != nil, hovered == index, editing != index {
-                Button {
-                    commentDraft = ""
-                    editing = index
-                } label: {
-                    Image(systemName: "plus.bubble.fill")
-                        .font(NookTheme.font(11, .semibold))
-                        .foregroundStyle(NookTheme.paper)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, NookTheme.Spacing.xxs)
-                }
-                .buttonStyle(.plain)
-                .help(tr("ws.review.add"))
-            }
-        }
-        .onHover { inside in if inside { hovered = index } else if hovered == index { hovered = nil } }
-    }
-
-    private func number(_ value: Int?) -> some View {
-        Text(value.map(String.init) ?? "")
-            .font(NookTheme.mono(10.5))
-            .foregroundStyle(WS.tertiary)
-            .padding(.trailing, 7)
-            .frame(width: numberWidth, alignment: .trailing)
-            .padding(.top, 1)
+        .equatable()
     }
 
     /// The line's code, with the changed part of an edited line on a stronger tint.
@@ -384,7 +339,7 @@ struct DiffText: View, Equatable {
             Text(UnifiedDiff.hunkLabel(row.raw))
                 .font(NookTheme.mono(10.5))
                 .foregroundStyle(Self.hunkColor)
-                .padding(.leading, markerWidth)
+                .padding(.leading, DiffLineRow.markerWidth)
             if !row.text.isEmpty {
                 Text(row.text)
                     .font(NookTheme.mono(10.5))
@@ -478,6 +433,80 @@ struct DiffText: View, Equatable {
         onComment?(line, code, clean)
         commentDraft = ""
         editing = nil
+    }
+}
+
+/// One code line of a `DiffText`: the old and new line number, the marker, and the code. A view of its own with its own
+/// hover, so the pointer passing over lines (also while the list scrolls under it) redraws only the line it enters and
+/// leaves, not every line of the diff.
+private struct DiffLineRow: View, Equatable {
+    static let markerWidth: CGFloat = 16
+    private static let codeColor = NookTheme.textStrong
+
+    let row: UnifiedDiff.Row
+    let code: AttributedString
+    let tint: Color?
+    let numberWidth: CGFloat
+    /// Hovering the line offers a comment button.
+    let commentable: Bool
+    /// The comment editor is open under this line: no button over it.
+    let editing: Bool
+    let comment: () -> Void
+    @State private var hovering = false
+
+    static func == (a: DiffLineRow, b: DiffLineRow) -> Bool {
+        a.row == b.row && a.code == b.code && a.tint == b.tint && a.numberWidth == b.numberWidth
+            && a.commentable == b.commentable && a.editing == b.editing
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            number(row.old)
+            number(row.new)
+            Text(verbatim: row.kind == .add ? "+" : row.kind == .remove ? "−" : "")
+                .font(NookTheme.mono(11.5, .semibold))
+                .foregroundStyle(tint ?? .clear)
+                .frame(width: Self.markerWidth, alignment: .center)
+            Text(code)
+                .font(NookTheme.mono(11.5))
+                .foregroundStyle(row.kind == .context ? Self.codeColor.opacity(0.82) : Self.codeColor)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 28)
+                .textSelection(.enabled)
+        }
+        .padding(.vertical, 1.5)
+        .background(alignment: .leading) {
+            HStack(spacing: 0) {
+                (tint?.opacity(0.16) ?? WS.subtle.opacity(0.5)).frame(width: numberWidth * 2)
+                (tint?.opacity(0.08) ?? .clear)
+            }
+        }
+        .background(hovering && commentable ? WS.hover : .clear)
+        .overlay(alignment: .topTrailing) {
+            if commentable, hovering, !editing {
+                Button(action: comment) {
+                    Image(systemName: "plus.bubble.fill")
+                        .font(NookTheme.font(11, .semibold))
+                        .foregroundStyle(NookTheme.paper)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, NookTheme.Spacing.xxs)
+                }
+                .buttonStyle(.plain)
+                .help(tr("ws.review.add"))
+            }
+        }
+        // A diff without comments has nothing to show under the pointer: no state changes while it moves.
+        .onHover { inside in if commentable { hovering = inside } }
+    }
+
+    private func number(_ value: Int?) -> some View {
+        Text(value.map(String.init) ?? "")
+            .font(NookTheme.mono(10.5))
+            .foregroundStyle(WS.tertiary)
+            .padding(.trailing, 7)
+            .frame(width: numberWidth, alignment: .trailing)
+            .padding(.top, 1)
     }
 }
 
