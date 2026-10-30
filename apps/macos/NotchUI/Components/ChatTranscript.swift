@@ -604,6 +604,10 @@ private struct ChatBubbleView: View, Equatable {
             CappedWidth(maximum: Self.maxWidth) {
                 VStack(alignment: bubble.fromMe ? .trailing : .leading, spacing: NookTheme.Spacing.xxs) {
                     content
+                        // A right-click anywhere on the bubble (not the empty room beside it) opens the chevron's own
+                        // menu, also on its selectable text, whose system menu would win from a `.contextMenu`.
+                        // Watched while the bubble is in view, so a right-click without moving the mouse first works.
+                        .onRightClickMenu(enabled: near) { menuItems.entries }
                         .overlay(alignment: .topTrailing) {
                             MessageMenuButton(bubble: bubble, items: menuItems, onPicture: bare)
                                 .padding(NookTheme.Spacing.xs)
@@ -626,8 +630,6 @@ private struct ChatBubbleView: View, Equatable {
             }
         }
         .onHover { hovering = $0 }
-        // A right-click on the message opens the chevron's own menu.
-        .contextMenu { menuItems }
         .environment(\.chatMediaLive, near)
         .chatNearView($near)
         .task(id: near ? bubble.file : nil) {
@@ -777,39 +779,47 @@ private struct MessageMenuItems: View {
         }
     }
 
-    var body: some View {
+    /// The menu as one list: drawn by the chevron (`body`) and by a right-click (`.onRightClickMenu`).
+    var entries: [NookMenuEntry] {
+        var entries: [NookMenuEntry] = []
         if let onReply {
-            Button { onReply() } label: { Label(tr("chat.reply"), systemImage: "arrowshape.turn.up.left") }
+            entries.append(NookMenuEntry(title: tr("chat.reply"), symbol: "arrowshape.turn.up.left", action: onReply))
         }
         if let onReact {
-            Menu {
-                ForEach(ChatReactions.quick, id: \.self) { emoji in
-                    Button(emoji) { onReact(emoji) }
-                }
-            } label: { Label(tr("chat.react"), systemImage: "face.smiling") }
+            entries.append(NookMenuEntry(title: tr("chat.react"), symbol: "face.smiling",
+                                         children: ChatReactions.quick.map { emoji in
+                                             NookMenuEntry(title: emoji, action: { onReact(emoji) })
+                                         }))
         }
         if let onForward {
-            Button { onForward() } label: { Label(tr("chat.forward"), systemImage: "arrowshape.turn.up.right") }
+            entries.append(NookMenuEntry(title: tr("chat.forward"), symbol: "arrowshape.turn.up.right", action: onForward))
         }
         if !bubble.copyText.isEmpty {
-            Button { Pasteboard.copy(bubble.copyText) } label: { Label(tr("whatsapp.copy.message"), systemImage: "doc.on.doc") }
+            let text = bubble.copyText
+            entries.append(NookMenuEntry(title: tr("whatsapp.copy.message"), symbol: "doc.on.doc",
+                                         action: { Pasteboard.copy(text) }))
         }
         if let picture {
-            Button { Pasteboard.copyImage(picture, fallback: bubble.image) } label: {
-                Label(tr("chat.copyImage"), systemImage: "photo.on.rectangle")
-            }
+            let image = bubble.image
+            entries.append(NookMenuEntry(title: tr("chat.copyImage"), symbol: "photo.on.rectangle",
+                                         action: { Pasteboard.copyImage(picture, fallback: image) }))
         }
         if let onEdit {
-            Button { onEdit() } label: { Label(tr("chat.edit"), systemImage: "pencil") }
+            entries.append(NookMenuEntry(title: tr("chat.edit"), symbol: "pencil", action: onEdit))
         }
         if let onInfo {
-            Button { onInfo() } label: { Label(tr("chat.info.title"), systemImage: "info.circle") }
+            entries.append(NookMenuEntry(title: tr("chat.info.title"), symbol: "info.circle", action: onInfo))
         }
-        Button { onCopyChat() } label: { Label(tr("whatsapp.copy.chat"), systemImage: "text.bubble") }
+        entries.append(NookMenuEntry(title: tr("whatsapp.copy.chat"), symbol: "text.bubble", action: onCopyChat))
         if let onDelete {
-            Divider()
-            Button(role: .destructive) { onDelete() } label: { Label(tr("chat.deleteMessage"), systemImage: "trash") }
+            entries.append(NookMenuEntry(title: tr("chat.deleteMessage"), symbol: "trash", destructive: true, separated: true,
+                                         action: onDelete))
         }
+        return entries
+    }
+
+    var body: some View {
+        NookMenuItems(entries: entries)
     }
 }
 
