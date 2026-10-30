@@ -110,11 +110,12 @@ struct StackedDiffList<Content: View>: View {
     }
 }
 
-extension StackedDiffList where Content == DiffText {
+extension StackedDiffList where Content == EquatableView<DiffText> {
     init(files: [StackedDiffFile], scope: String, expanded: Binding<Set<String>>, showsTree: Bool = false,
          focus: String? = nil, diff: @escaping (StackedDiffFile) async throws -> String) {
         self.init(files: files, scope: scope, expanded: expanded, showsTree: showsTree, focus: focus, diff: diff) { file, text in
-            DiffText(text: text, stacked: true, path: file.path)
+            // The panel beside a streaming session redraws many times a second; the diff only when it changed.
+            DiffText(text: text, stacked: true, path: file.path).equatable()
         }
     }
 }
