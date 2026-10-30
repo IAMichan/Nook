@@ -116,8 +116,8 @@ final class MailChatDataTests: XCTestCase {
     func testScriptsQuoteNamesAndFindMessagesById() {
         let row = MailChatData.Row(account: "Lisa \"Work\"", mailbox: "INBOX", id: 42, subject: "", person: "a@b.c",
                                    date: Date(), read: false, fromMe: false)
-        XCTAssertEqual(MailChatData.reference(row), "message id 42 of mailbox \"INBOX\" of account \"Lisa \\\"Work\\\"\"")
-        XCTAssertTrue(MailChatData.markReadScript([row]).contains("set m to message id 42"))
+        XCTAssertEqual(MailChatData.reference(row), "first message of mailbox \"INBOX\" of account \"Lisa \\\"Work\\\"\" whose id is 42")
+        XCTAssertTrue(MailChatData.markReadScript([row]).contains("whose id is 42"))
         XCTAssertTrue(MailChatData.markReadScript([row]).contains("set read status of m to true"))
         XCTAssertTrue(MailChatData.bodiesScript([row]).contains("<<<BODY>>>42"))
         XCTAssertTrue(MailChatData.readScript(account: "Work").contains("account \"Work\""))
@@ -252,7 +252,7 @@ final class MailChatDataTests: XCTestCase {
         let script = MailChatData.locate(row)
         let place = script.range(of: "message 5 of box")
         let near = script.range(of: "id of messages 5 thru hi of box")
-        let search = script.range(of: "message id 77 of box")
+        let search = script.range(of: "first message of box whose id is 77")
         XCTAssertNotNil(place)
         XCTAssertNotNil(near)
         XCTAssertNotNil(search)
@@ -262,9 +262,28 @@ final class MailChatDataTests: XCTestCase {
 
         row.index = nil
         XCTAssertEqual(MailChatData.locate(row).trimmingCharacters(in: .whitespaces),
-                       "set m to message id 77 of mailbox \"INBOX\" of account \"Google\"", "no place: by its id")
+                       "set m to first message of mailbox \"INBOX\" of account \"Google\" whose id is 77", "no place: by its id")
         for script in [MailChatData.messageScript(row), MailChatData.bodiesScript([row]), MailChatData.markReadScript([row])] {
-            XCTAssertTrue(script.contains("set m to message id 77"), script)
+            XCTAssertTrue(script.contains("whose id is 77"), script)
         }
     }
+
+    #if os(macOS)
+    /// Every Mail script compiles against Mail's dictionary: Mail's terms can turn plain-looking AppleScript into a syntax
+    /// error (`message id 42` once broke opening a mail with -2741), which no string check catches.
+    func testMailScriptsCompile() {
+        let row = MailChatData.Row(account: "Google", mailbox: "INBOX", id: 77, subject: "", person: "a@b.c", date: Date(),
+                                   read: false, fromMe: false, index: 5)
+        var placeless = row
+        placeless.index = nil
+        let scripts = [MailChatData.accountsScript, MailChatData.readScript(account: "Google"),
+                       MailChatData.messageScript(row), MailChatData.messageScript(placeless),
+                       MailChatData.bodiesScript([row, placeless]), MailChatData.markReadScript([row, placeless]),
+                       "tell application \"Mail\"\nset m to \(MailChatData.reference(row))\nend tell"]
+        for source in scripts {
+            var error: NSDictionary?
+            XCTAssertTrue(NSAppleScript(source: source)?.compileAndReturnError(&error) ?? false, "\(error ?? [:])\n\(source)")
+        }
+    }
+    #endif
 }
