@@ -162,6 +162,9 @@ enum BubbleMedia: Equatable {
     case file
     /// The photo saved on this Mac, enlarged in the card with a click.
     case photo(URL)
+    /// A photo its app has not given Nook yet (it is still being fetched, or too large to fetch): a photo-shaped tile
+    /// that opens it in the app, never a file row; it shows as the photo once it is here.
+    case photoComing
     /// The video saved on this Mac, played in the bubble.
     case video(URL)
     /// A GIF (a real one, or a short video the app loops), playing by itself without sound.

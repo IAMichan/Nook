@@ -208,11 +208,26 @@ struct ChatReplyField: View {
                 HStack(spacing: NookTheme.Spacing.xxs) { leadingAccessory }
                     .frame(minHeight: Self.buttonSide)
             }
-            TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(NookTheme.textTertiary), axis: .vertical)
+            // The placeholder is drawn on one line here, not as the field's prompt: a vertical field sizes itself to its
+            // prompt too, and a long one ("Message to … (LinkedIn) · @nook writes along") wrapped it to two lines high
+            // once the field was laid out again (marking the chat read), with the text up top and the buttons below.
+            TextField("", text: $text, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1...6)
+                .background(alignment: .leading) {
+                    if text.isEmpty {
+                        Text(placeholder)
+                            .font(NookTheme.TextStyle.body)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .accessibilityLabel(placeholder)
                 .focused(focus)
                 // Return sends, as in every chat app; with the `@` menu open Return chooses a line there, and on
                 // "@nook …" Return lets Nook write. ⌥Return adds a line; ⌘Return (send) and ⇧Return (a line) are

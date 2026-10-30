@@ -76,14 +76,21 @@ extension ChatBubble {
             }
         }
         guard let file = message.media else { return }
+        // A photo sent as a document shows as a photo, in every app (`ChatMedia.shownKind`).
+        let kind = file.shownKind
         // A song or a sound file goes by its own name ("track.mp3"); a voice message, a photo or a video by its kind.
-        attachment = file.kind == .audio ? (file.name.flatMap { $0.isEmpty ? nil : $0 } ?? file.label) : file.label
-        guard let url = file.url else { return }
+        attachment = kind == .audio ? (file.name.flatMap { $0.isEmpty ? nil : $0 } ?? file.label) : file.label
+        guard let url = file.url else {
+            // A picture its app still fetches: a photo-shaped tile until it is here, not a file row.
+            if kind == .photo || kind == .gif { media = .photoComing }
+            return
+        }
         self.file = url
-        switch file.kind {
+        switch kind {
         case .photo:
-            // Not readable yet (the app may still be writing it): the bubble loads it itself (`ChatPhotoLoader`).
-            image = ChatMediaImages.image(url)
+            // Only a photo decoded before: the bubble decodes the others in the background (`ChatPhotoLoader`), so
+            // making a chat's bubbles never waits on its pictures.
+            image = ChatMediaImages.cached(url)
             media = .photo(url)
         case .video:
             media = .video(url)
@@ -156,8 +163,15 @@ final class ChatFileThumbnails: ObservableObject, @unchecked Sendable {
 enum ChatMediaImages {
     private static let cache = NSCache<NSString, NSImage>()
 
+    private static func key(_ url: URL, side: CGFloat) -> NSString { "\(url.path)#\(Int(side))" as NSString }
+
+    /// The picture when it was decoded before, without touching the file: nil otherwise.
+    static func cached(_ url: URL, side: CGFloat = 480) -> NSImage? {
+        cache.object(forKey: key(url, side: side))
+    }
+
     static func image(_ url: URL, side: CGFloat = 480) -> NSImage? {
-        let key = "\(url.path)#\(Int(side))" as NSString
+        let key = key(url, side: side)
         if let cached = cache.object(forKey: key) { return cached }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let options: [CFString: Any] = [
@@ -173,14 +187,21 @@ enum ChatMediaImages {
 
     private static let pixelSizes = NSCache<NSString, NSValue>()
 
-    /// The photo's own size in pixels, upright (EXIF orientation applied), read from its header only.
+    /// The photo's own size in pixels, upright (EXIF orientation applied), read from its header only, once per file.
+    /// Nil for a file that is no picture (a GIF that came as a video): remembered too, so a redraw does not ask again.
     static func pixelSize(_ url: URL) -> CGSize? {
         let key = url.path as NSString
-        if let known = pixelSizes.object(forKey: key) { return known.sizeValue }
+        if let known = pixelSizes.object(forKey: key) { return known.sizeValue == .zero ? nil : known.sizeValue }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
-              let height = properties[kCGImagePropertyPixelHeight] as? CGFloat, width > 0, height > 0 else { return nil }
+              let height = properties[kCGImagePropertyPixelHeight] as? CGFloat, width > 0, height > 0 else {
+            // Not readable yet (still being written) is asked again later; only a file that is there and no picture is kept.
+            if FileManager.default.fileExists(atPath: url.path), CGImageSourceCreateWithURL(url as CFURL, nil) == nil {
+                pixelSizes.setObject(NSValue(size: .zero), forKey: key)
+            }
+            return nil
+        }
         // Orientations 5 to 8 turn the picture a quarter, so its sides swap.
         let orientation = properties[kCGImagePropertyOrientation] as? Int ?? 1
         let size = orientation >= 5 ? CGSize(width: height, height: width) : CGSize(width: width, height: height)
@@ -252,9 +273,10 @@ struct ChatGIFView: View {
     let name: String
 
     private var size: CGSize {
-        if let image = ChatMediaImages.image(url), image.size.width > 0, image.size.height > 0 {
-            let height = min(Self.maxHeight, Self.maxWidth * image.size.height / image.size.width)
-            return CGSize(width: height * image.size.width / image.size.height, height: height)
+        // From the file's header: drawing a chat does not decode its GIFs.
+        if let pixels = ChatMediaImages.pixelSize(url) {
+            let height = min(Self.maxHeight, Self.maxWidth * pixels.height / pixels.width)
+            return CGSize(width: height * pixels.width / pixels.height, height: height)
         }
         return CGSize(width: Self.maxWidth, height: Self.maxHeight)
     }

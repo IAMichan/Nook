@@ -182,7 +182,7 @@ struct AgentSessionDetail: View {
             } else {
                 errorLine
                 VStack(spacing: 0) {
-                    pullRequestTray(pullRequest(cwd: session.cwd, branch: known.flatMap { $0.branch.isEmpty ? nil : $0.branch } ?? GitHead.branch(for: session.cwd) ?? "", reply: pullRequestText(shown)))
+                    pullRequestTray(pullRequest(cwd: session.cwd, branch: known.flatMap { $0.branch.isEmpty ? nil : $0.branch } ?? GitHead.branch(for: session.cwd) ?? "", reply: pullRequestText(shown)), cwd: session.cwd)
                     liveComposer(shown).zIndex(1)
                 }
                 // The tray keeps to the box's column, so it follows the box when that is narrower than the panel.
@@ -277,11 +277,8 @@ struct AgentSessionDetail: View {
     }
 
     /// The tray above a composer with the session's pull request in it (its state, checks and a way to open it).
-    @ViewBuilder
-    private func pullRequestTray(_ url: URL?) -> some View {
-        if let url {
-            ComposerTray(edge: .top) { PullRequestWatchStrip(url: url, watch: nil) }
-        }
+    private func pullRequestTray(_ url: URL?, cwd: String) -> some View {
+        FolderPullRequestTray(found: url, cwd: cwd)
     }
 
     /// The composer under a live session. What you send continues the conversation in Nook: an idle session goes on as
@@ -631,7 +628,7 @@ struct AgentSessionDetail: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             errorLine
             VStack(spacing: 0) {
-                pullRequestTray(pullRequest(cwd: session.cwd, branch: session.branch.isEmpty ? (GitHead.branch(for: session.cwd) ?? "") : session.branch, reply: session.lastReply))
+                pullRequestTray(pullRequest(cwd: session.cwd, branch: session.branch.isEmpty ? (GitHead.branch(for: session.cwd) ?? "") : session.branch, reply: session.lastReply), cwd: session.cwd)
                 SessionComposer(
                     text: $draft,
                     prompt: canContinue ? tr("agents.reply.resume")
@@ -713,5 +710,28 @@ struct AgentSessionDetail: View {
     private func plan(for profile: AgentProfile) -> String {
         if let plan = app.history.profileAccounts[profile.id]?.plan, !plan.isEmpty { return plan }
         return app.quota.codexPlan(for: profile)
+    }
+}
+
+/// The tray above the composer of a session Nook does not run: its pull request, and while the git button writes or
+/// opens one for the folder, that already. Its own view, so only it redraws with the workspace, not the conversation.
+private struct FolderPullRequestTray: View {
+    @EnvironmentObject private var workspace: WorkspaceManager
+    let found: URL?
+    let cwd: String
+
+    var body: some View {
+        // The one the git button just opened for this folder comes first, before the sync has found it.
+        let opened = cwd.isEmpty ? nil : workspace.folderPullRequests.first { cwd == $0.key || cwd.hasPrefix($0.key + "/") }?.value
+        let url = opened ?? found
+        let pending = workspace.quickGitProgress(folder: cwd).flatMap { $0.action.proposes ? $0.step : nil }
+        if url != nil || pending != nil {
+            ComposerTray(edge: .top) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    if let url { PullRequestWatchStrip(url: url, watch: nil) }
+                    if let pending { PullRequestPendingRow(step: pending) }
+                }
+            }
+        }
     }
 }

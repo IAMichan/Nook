@@ -383,6 +383,31 @@ struct BranchTrayRow: View {
     }
 }
 
+/// A pull request the git button is still writing or opening, in the tray above the composer where it will appear: a
+/// spinner in the state column and the step it is at, until the request itself takes its place.
+struct PullRequestPendingRow: View {
+    let step: String
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                ProgressView().controlSize(.mini)
+                NookSymbol(PullRequestIcon.generic, size: 10).font(NookTheme.font(10, .semibold))
+            }
+            .padding(.leading, 5)
+            Text(step)
+                .font(NookTheme.TextStyle.detail)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: NookTheme.Spacing.sm)
+        }
+        .foregroundStyle(NookTheme.textSecondary)
+        .padding(.leading, NookTheme.Spacing.xs)
+        .frame(minHeight: 26)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// A thin column next to the conversation with a mark per message of yours: hover shows the
 /// message, a click goes there.
 struct TurnMinimap: View {

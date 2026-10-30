@@ -69,6 +69,9 @@ struct SeparateGraph<Content: View>: NSViewRepresentable {
         let host = PassThroughHostingView(rootView: content)
         // SwiftUI around it decides its size; it does not ask for one of its own.
         host.sizingOptions = []
+        // Nor does it keep out of the title bar: SwiftUI around it already placed it. In the main window Nook's drawing
+        // (three times his size) reaches up under the title bar, and its safe area pushed him down out of his ring.
+        host.safeAreaRegions = []
         return host
     }
 
