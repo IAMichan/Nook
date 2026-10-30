@@ -32,8 +32,6 @@ struct PanelFooter: View {
     var vertical = false
     /// Leaving the pull requests page for where you were; nil keeps the icons there too.
     var onBack: (() -> Void)? = nil
-    /// Opens the cloud sessions on claude.ai/code; nil leaves the cloud icon out (only Agents passes it).
-    var openCloud: (() -> Void)? = nil
     @ObservedObject private var updater = AppUpdater.shared
 
     var body: some View {
@@ -64,10 +62,6 @@ struct PanelFooter: View {
                        action: { open(AgentsPage.actions) }) { ToolGlyph(symbol: "play.circle") }
             FooterIcon(label: tr("agents.footer.usage"), active: selected == AgentsPage.usage,
                        action: { open(AgentsPage.usage) }) { UsageGlyph() }
-            if let openCloud {
-                FooterIcon(label: tr("agents.cloud.open"), hint: tr("agents.cloud.explain"), active: false,
-                           action: openCloud) { ToolGlyph(symbol: "cloud") }
-            }
             if !vertical { Spacer(minLength: 0) }
             UpdateFooterButton {
                 let busy = history.loading || updater.phase == .checking
