@@ -2,9 +2,8 @@ import Foundation
 
 /// A model that continues text for autocomplete. Two kinds: `LlamaCompleter` (a GGUF file through llama.cpp) and
 /// `BrainCompleter` (the model Nook's brain downloaded, through MLX). Both work the same way: a certainty threshold, the
-/// prompt kept in the model's cache between keys, a bonus for the user's own words, and other words to pick. The llama engine
-/// also writes the candidates that start with the next likeliest words side by side and shows the surest (see
-/// `CompletionRanking`); the MLX engine writes one sequence, greedy.
+/// prompt kept in the model's cache between keys, a bonus for the user's own words, other words to pick, and the candidates
+/// that start with the next likeliest words written side by side in one batch, the surest shown (see `CompletionRanking`).
 protocol CompletionEngine: AnyObject, Sendable {
     /// The source it runs (`CompletionSource.identity`).
     var identity: String { get }
