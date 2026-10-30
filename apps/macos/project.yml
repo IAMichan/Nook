@@ -293,6 +293,7 @@ targets:
       - path: Core/SafeStorage.swift
       - path: Core/Accounts.swift
       - path: Services/Connectors/MCP/MCPClient.swift
+      - path: Services/Connectors/GitHubRateLimit.swift
       - path: Services/Connectors/PullRequestGraphQL.swift
       - path: Services/Connectors/PullRequestDetail.swift
       - path: Services/Connectors/PullRequestReadiness.swift
