@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Settings › Appearance: how Nook looks. A large live Nook on top that shows each mood, the three styles as cards,
-/// then the color (the biggest change after the style), the face and finish folded away, and the wardrobe.
+/// then the color (the biggest change after the style), and the face and finish folded away.
 extension SettingsView {
     // MARK: Appearance
 
@@ -80,18 +80,14 @@ extension SettingsView {
                 }
             }
 
-            WardrobeSettingsSection()
-
             Section {
                 HStack {
                     Spacer()
                     Button(tr("settings.appearance.reset")) {
                         settings.nookLook = .classic
                         settings.accentHex = NookTheme.defaultAccentHex
-                        settings.nookWardrobe = .standard
                     }
-                    .disabled(settings.nookLook == .classic && settings.accentHex == NookTheme.defaultAccentHex
-                              && settings.nookWardrobe == .standard)
+                    .disabled(settings.nookLook == .classic && settings.accentHex == NookTheme.defaultAccentHex)
                 }
             }
             .listRowBackground(Color.clear)

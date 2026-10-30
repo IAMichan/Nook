@@ -127,9 +127,8 @@ struct SettingsView: View {
             .font(NookTheme.TextStyle.body)
             .scrollContentBackground(.hidden)
             .background(NookTheme.canvas)
-            // Rebuilt for a new page or language. Not for the accent: Appearance is drawn in this view's own body and
-            // `WardrobeSettingsSection` observes the settings, so both redraw in the new color without the Form being
-            // rebuilt (which would scroll back to the top on every swatch click or color picker drag).
+            // Rebuilt for a new page or language. Not for the accent: Appearance is drawn in this view's own body, so it
+            // redraws in the new color without the Form being rebuilt (which would scroll back to the top on every swatch click or color picker drag).
             .id("\(app.settingsSection.rawValue)-\(settings.appLanguage.rawValue)")
         }
         .tint(NookTheme.iris)

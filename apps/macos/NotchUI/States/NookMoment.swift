@@ -15,8 +15,6 @@ struct NookMoment: Equatable, Identifiable {
     var id: String
     var line: String
     var mood: NookMood
-    /// What Nook wears in this moment (a party hat on your birthday); nil for what he wears anyway.
-    var outfit: [NookAccessory]?
     var action: Action?
     var actionTitle = ""
     /// How long it stays when you leave it alone.

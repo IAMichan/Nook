@@ -1,7 +1,7 @@
 import XCTest
 
-/// Nook as a buddy: what he wears (`NookOutfit`, `NookWardrobe`) and when he shares a moment (`BuddyPlanner`,
-/// `BuddyActivity`, `BuddyLedger`). All of it pure, so the clock, the calendar and the signals come from the test.
+/// Nook as a buddy: when he shares a moment (`BuddyPlanner`, `BuddyActivity`, `BuddyLedger`). All of it pure, so the
+/// clock, the calendar and the signals come from the test.
 final class BuddyTests: XCTestCase {
     private var calendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
@@ -13,88 +13,7 @@ final class BuddyTests: XCTestCase {
         calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour, minute: minute))!
     }
 
-    private func context(_ date: Date) -> NookOutfit.Context {
-        var context = NookOutfit.Context(date: date)
-        context.calendar = calendar
-        return context
-    }
-
-    // MARK: Wardrobe
-
-    func testTheWardrobeHoldsOneItemPerPlace() {
-        var wardrobe = NookWardrobe.standard
-        wardrobe.wear(.beanie)
-        wardrobe.wear(.scarf)
-        wardrobe.wear(.crown)
-        XCTAssertEqual(wardrobe.chosen(in: .head), .crown)
-        XCTAssertEqual(wardrobe.chosen(in: .neck), .scarf)
-        XCTAssertNil(wardrobe.chosen(in: .eyes))
-        wardrobe.clear(.head)
-        XCTAssertEqual(wardrobe.chosen, [.scarf])
-    }
-
-    func testTheWardrobeSurvivesStorageAndSkipsUnknownItems() {
-        let wardrobe = NookWardrobe(automatic: false, chosen: [.sunglasses, .beret])
-        XCTAssertEqual(NookWardrobe(stored: wardrobe.stored), wardrobe)
-        let later = NookWardrobe(stored: #"{"automatic":true,"chosen":["tophat","scarf"]}"#)
-        XCTAssertEqual(later.chosen, [.scarf])
-        XCTAssertEqual(NookWardrobe(stored: "not json"), .standard)
-        XCTAssertEqual(NookWardrobe(stored: nil), .standard)
-    }
-
-    // MARK: Dressing himself
-
-    func testHeWearsAScarfInWinterAndNotInSpring() {
-        XCTAssertTrue(NookOutfit.resolve(.standard, context: context(date(2026, 1, 14, 14))).contains(.scarf))
-        XCTAssertFalse(NookOutfit.resolve(.standard, context: context(date(2026, 4, 14, 14))).contains(.scarf))
-    }
-
-    func testSeasonsAreTurnedAroundBelowTheEquator() {
-        var july = context(date(2026, 7, 14, 14))
-        july.southernHemisphere = true
-        XCTAssertTrue(NookOutfit.resolve(.standard, context: july).contains(.scarf))
-        var january = context(date(2026, 1, 14, 14))
-        january.southernHemisphere = true
-        XCTAssertFalse(NookOutfit.resolve(.standard, context: january).contains(.scarf))
-    }
-
-    func testANightcapLateAtNight() {
-        XCTAssertEqual(NookOutfit.automatic(.head, context: context(date(2026, 5, 6, 23, 30))), .nightcap)
-        XCTAssertEqual(NookOutfit.automatic(.head, context: context(date(2026, 5, 7, 2))), .nightcap)
-        XCTAssertNil(NookOutfit.automatic(.head, context: context(date(2026, 5, 7, 10))))
-    }
-
-    func testAPartyHatOnYourBirthdayAndWhenCelebrating() {
-        var birthday = context(date(2026, 6, 12, 10))
-        birthday.birthday = NookMonthDay(month: 6, day: 12)
-        XCTAssertEqual(NookOutfit.automatic(.head, context: birthday), .partyHat)
-        var party = context(date(2026, 6, 13, 10))
-        party.celebrating = true
-        XCTAssertEqual(NookOutfit.automatic(.head, context: party), .partyHat)
-    }
-
-    func testHolidays() {
-        XCTAssertEqual(NookOutfit.automatic(.head, context: context(date(2026, 12, 25, 12))), .santaHat)
-        var kingsDay = context(date(2026, 4, 27, 12))
-        kingsDay.region = "NL"
-        XCTAssertEqual(NookOutfit.automatic(.head, context: kingsDay), .crown)
-        kingsDay.region = "DE"
-        XCTAssertNil(NookOutfit.automatic(.head, context: kingsDay))
-    }
-
-    func testYourChoiceWinsAndDressingHimselfCanBeTurnedOff() {
-        var wardrobe = NookWardrobe(automatic: true, chosen: [.hardHat])
-        let winterNight = context(date(2026, 1, 14, 23, 30))
-        XCTAssertEqual(NookOutfit.resolve(wardrobe, context: winterNight), [.hardHat, .scarf])
-        wardrobe.automatic = false
-        XCTAssertEqual(NookOutfit.resolve(wardrobe, context: winterNight), [.hardHat])
-    }
-
-    func testHatsComeOffForTheHeadphones() {
-        var listening = context(date(2026, 1, 14, 23, 30))
-        listening.headphones = true
-        XCTAssertEqual(NookOutfit.resolve(NookWardrobe(automatic: true, chosen: [.crown]), context: listening), [.scarf])
-    }
+    // MARK: Birthday
 
     func testABirthdayOnLeapDayIsCelebratedOnTheTwentyEighth() {
         let leap = NookMonthDay(month: 2, day: 29)!

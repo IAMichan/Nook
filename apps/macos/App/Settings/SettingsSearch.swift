@@ -23,7 +23,6 @@ enum SettingsSearch {
         ("settings.display.eyes", .appearance),
         ("settings.display.mouth", .appearance),
         ("settings.display.glow", .appearance),
-        ("wardrobe.title", .appearance),
         ("settings.buddy.title", .assistant),
         ("settings.buddy.birthday", .assistant),
         ("settings.notch.placement", .general),

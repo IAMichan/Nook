@@ -26,8 +26,6 @@ struct NookOrb: View {
     var frameRate: Double?
     /// Draws this look instead of the one chosen in Settings: the previews in Settings › Appearance.
     var look: NookLook?
-    /// Wears this instead of what Nook wears right now (`NookAppearance.outfit`): previews and moments.
-    var outfit: [NookAccessory]?
     /// Told where Nook moves each frame, so the task ring around him can follow like elastic.
     var motion: NookMotion?
 
@@ -83,32 +81,11 @@ struct NookOrb: View {
     /// Drowsiness is shared by every screen: the pointer being on one screen (`.seen`) must not keep the others awake.
     private var dozing: Bool { presence.drowsy && (mood == .rest || mood == .seen) }
 
-    /// What Nook wears in this orb. His own hats come off while the headphones are on (the band runs over his head);
-    /// a hat this orb is asked to wear (a preview, a party) takes the headphones' place instead.
-    private var worn: [NookAccessory] {
-        if let outfit { return outfit }
-        return presence.listeningToMusic ? appearance.outfit.filter { $0.slot != .head } : appearance.outfit
-    }
-
-    private var wearsHeadphones: Bool {
-        presence.listeningToMusic && !(outfit?.contains { $0.slot == .head } ?? false)
-    }
-
-    /// From the center to the middle of each eye, as the eye style places them; the glasses sit there.
-    private var eyeReach: CGFloat {
-        switch style.eyes {
-        case .bars: return size * 0.145
-        case .round: return size * 0.141
-        case .dots: return size * 0.125
-        }
-    }
-
     private func orb(_ p: Pose) -> some View {
         // The light stays where it is while Nook turns: the highlight moves against his gaze.
         let light = UnitPoint(x: 0.34 - p.gaze.x * 0.09, y: 0.26 - p.gaze.y * 0.07)
         let shadeCenter = UnitPoint(x: light.x + 0.08, y: light.y + 0.1)
         let turn = min(abs(p.gaze.x), 1)
-        let worn = self.worn
         return ZStack {
             let glowing = glow && style.glow
             Circle()
@@ -130,21 +107,6 @@ struct NookOrb: View {
             if style.mouth != .none { mouthLayer(p.mouth, gaze: p.gaze, turn: turn) }
         }
         .frame(width: size, height: size)
-        // What he wears is drawn behind and over the orb, never in its stack: the accessory canvas is larger than the
-        // orb (room for a party hat), and in the stack it made the orb and its shading grow to the canvas size.
-        // Before the scale and tilt, so headphones and hats hop, squash and tilt with Nook.
-        .background {
-            if wearsHeadphones { NookHeadphones(size: size, gaze: p.gaze, layer: .back) }
-            if !worn.isEmpty {
-                NookAccessoryLayer(items: worn, size: size, gaze: p.gaze, eyeY: -eyeLift, eyeReach: eyeReach, layer: .back)
-            }
-        }
-        .overlay {
-            if !worn.isEmpty {
-                NookAccessoryLayer(items: worn, size: size, gaze: p.gaze, eyeY: -eyeLift, eyeReach: eyeReach, layer: .front)
-            }
-            if wearsHeadphones { NookHeadphones(size: size, gaze: p.gaze, layer: .front) }
-        }
         .scaleEffect(x: p.scale * p.stretch.width, y: p.scale * p.stretch.height)
         .rotationEffect(.degrees(p.rotation))
         .offset(p.offset)

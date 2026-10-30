@@ -197,7 +197,7 @@ extension AppModel {
             if session.status == .done {
                 let others = activeAgents.contains { $0.id != session.id }
                 if others { NookPresence.shared.nod() } else { NookPresence.shared.celebrate() }
-                buddyAgentFinished(last: !others)
+                buddyAgentFinished()
             }
         }
         let terminal = TerminalLauncher.name(for: session.hostBundleID)
