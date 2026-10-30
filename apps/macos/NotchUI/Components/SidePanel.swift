@@ -193,27 +193,20 @@ struct SidePanelToggle: View {
 
 // MARK: One panel on the right
 
-/// From a session's workbench to the conversation inside it. The tool panel and a diff or file the conversation shows
-/// beside itself take turns: `toolOpen` says the tool panel is open (the diff or file closes for it), and `makeRoom`
-/// closes the tool panel for a diff or file.
+/// From a session's workbench to the conversation inside it: opens a turn's diff or a file step in the side panel on
+/// the right (to the right of the docked session panel, taking turns with the tool panel), and reports which file is shown.
 struct SessionSideLink {
-    var toolOpen = false
-    var makeRoom: () -> Void = {}
+    var shownFile: String? = nil
+    var showFile: (String) -> Void = { _ in }
+    var openDiff: (TurnDiffSelection) -> Void = { _ in }
 }
 
 extension EnvironmentValues {
     @Entry var sessionSide = SessionSideLink()
 }
 
-/// From the conversation up to its workbench: it shows a diff or a file beside itself, so a new plan does not push it
-/// away.
-struct SessionDetailOpen: PreferenceKey {
-    static let defaultValue = false
-    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
-}
-
-/// From the conversation up to its workbench: the room its own panels take (a command's terminal on the left, a diff or
-/// file on the right), from the widths they were given, so the docked session panel steps aside in time.
+/// From the conversation up to its workbench: the room its own panel takes (a command's terminal on the left), so the
+/// docked session panel steps aside in time.
 struct SessionBesideWidth: PreferenceKey {
     static let defaultValue: Double = 0
     static func reduce(value: inout Double, nextValue: () -> Double) { value = max(value, nextValue()) }
@@ -222,32 +215,4 @@ struct SessionBesideWidth: PreferenceKey {
 /// The room a side panel of `width` takes with its drag line and gap.
 enum SidePanelRoom {
     static func of(_ width: Double) -> Double { width + PanelSplit.handle + Double(SidePanelMetrics.gap) }
-}
-
-extension View {
-    /// For a conversation that shows a diff or a file beside itself (`detailOpen`): opening one closes the tool panel,
-    /// and opening the tool panel closes it (`closeDetail`), so the two never stack. `besideWidth` is the room its own
-    /// panels take (`SessionBesideWidth`).
-    func sharesSessionSide(detailOpen: Bool, besideWidth: Double, closeDetail: @escaping () -> Void) -> some View {
-        modifier(SessionSideShare(detailOpen: detailOpen, besideWidth: besideWidth, closeDetail: closeDetail))
-    }
-}
-
-private struct SessionSideShare: ViewModifier {
-    @Environment(\.sessionSide) private var link
-    let detailOpen: Bool
-    let besideWidth: Double
-    let closeDetail: () -> Void
-
-    func body(content: Content) -> some View {
-        content
-            .preference(key: SessionDetailOpen.self, value: detailOpen)
-            .preference(key: SessionBesideWidth.self, value: besideWidth)
-            .onChange(of: detailOpen) { _, open in
-                if open { link.makeRoom() }
-            }
-            .onChange(of: link.toolOpen) { _, open in
-                if open { withAnimation(NookTheme.reveal) { closeDetail() } }
-            }
-    }
 }
