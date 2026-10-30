@@ -148,10 +148,13 @@ extension ChatsEntry {
 @MainActor
 final class ChatsEntryMemo {
     private var entries: [ChatsEntry]?
+    /// The inbox the list was made from (`ChatCaptureService.inboxRevision`). `objectWillChange` comes before a change:
+    /// a list made again in that moment is of the chats as they were, and nothing would forget it after.
+    private var revision: Int?
     private var watching: [AnyCancellable] = []
 
     func entries(capture: ChatCaptureService) -> [ChatsEntry] {
-        if let entries { return entries }
+        if let entries, revision == capture.inboxRevision { return entries }
         if watching.isEmpty {
             // Which chats show also follows the linked WhatsApp accounts and the chats you hid.
             let changes: [ObservableObjectPublisher] = [
@@ -163,6 +166,7 @@ final class ChatsEntryMemo {
         }
         let made = ChatsEntry.all(capture: capture)
         entries = made
+        revision = capture.inboxRevision
         return made
     }
 }
@@ -691,11 +695,15 @@ struct ChatsTab: View {
                         .disabled(searching)
                         if open {
                             ForEach(section.entries) { entry in
-                                if entry.id != section.entries.first?.id { NookRowSeparator() }
-                                ChatsRow(entry: entry, photo: photo(entry), selected: entry.id == selected,
-                                         rowAction: rowAction(entry)) { selection = entry.id }
-                                    .contextMenu { readMenu(entry) }
-                                    .id(entry.id)
+                                // One view per chat: a lazy stack whose rows bring a separator only sometimes loses
+                                // track of a row that moves to the top of its group, and kept showing its old line.
+                                VStack(spacing: NookTheme.Spacing.xxs) {
+                                    if entry.id != section.entries.first?.id { NookRowSeparator() }
+                                    ChatsRow(entry: entry, photo: photo(entry), selected: entry.id == selected,
+                                             rowAction: rowAction(entry)) { selection = entry.id }
+                                        .contextMenu { readMenu(entry) }
+                                }
+                                .id(entry.id)
                             }
                         }
                     }
