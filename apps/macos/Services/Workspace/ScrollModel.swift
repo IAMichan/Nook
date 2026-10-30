@@ -72,6 +72,34 @@ struct ScrollModel: Equatable, Sendable {
     }
 }
 
+/// Where a scroll view stands, for a rail that takes the place of its scroll bar: the part in view as a thumb, and the
+/// offset a point on the rail scrolls to. Places on the rail run from 0 (the top of the content) to 1 (its end), as the
+/// marks of your messages do (`PromptMark.position`), so dragging over a mark brings that message to the top.
+struct ScrollFrame: Equatable, Sendable {
+    var offset = 0.0
+    var content = 0.0
+    var container = 0.0
+    /// The space above and below the content (a composer the conversation scrolls on behind).
+    var insetTop = 0.0
+    var insetBottom = 0.0
+
+    var minOffset: Double { -insetTop }
+    var maxOffset: Double { max(minOffset, content + insetBottom - container) }
+
+    /// The part in view, from 0 to 1: where it starts and how much of the content it covers.
+    var thumb: (start: Double, length: Double) {
+        guard content > 0 else { return (0, 1) }
+        let length = min(1, max(0, container / content))
+        let start = min(1 - length, max(0, (offset - minOffset) / content))
+        return (start, length)
+    }
+
+    /// The offset that puts the place `fraction` along the content at the top, as far as the content can scroll.
+    func offset(at fraction: Double) -> Double {
+        min(maxOffset, max(minOffset, minOffset + min(1, max(0, fraction)) * content))
+    }
+}
+
 /// Where a session's timeline was left, per session id; bounded so it cannot grow forever.
 struct ScrollMemory: Codable, Equatable, Sendable {
     enum Position: Equatable, Sendable {

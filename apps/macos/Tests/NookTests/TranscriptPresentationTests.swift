@@ -331,4 +331,16 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertTrue(TranscriptPresentation.promptMarks([]).isEmpty)
         XCTAssertTrue(TranscriptPresentation.promptMarks(TranscriptPresentation.rows([message("x1", .assistant, "Hallo")], working: false)).isEmpty)
     }
+
+    func testASessionNookRunsMarksYourMessagesOnTheSameRail() {
+        let events = [RunEvent(kind: .user, text: "Hoi"), RunEvent(kind: .tool, text: "Read · a.swift"),
+                      RunEvent(kind: .assistant, text: String(repeating: "Een lange regel tekst. ", count: 30)),
+                      RunEvent(kind: .user, text: "En nu?"), RunEvent(kind: .assistant, text: "Klaar.")]
+        let marks = TranscriptPresentation.promptMarks(events: events)
+        XCTAssertEqual(marks.map(\.id), [events[0].id.uuidString, events[3].id.uuidString])
+        XCTAssertEqual(marks.map(\.row), marks.map(\.id), "a click scrolls to the message itself")
+        XCTAssertEqual(marks.first?.position, 0)
+        XCTAssertTrue(marks[1].position > 0.5 && marks[1].position < 1)
+        XCTAssertTrue(TranscriptPresentation.promptMarks(events: [RunEvent(kind: .assistant, text: "Hallo")]).isEmpty)
+    }
 }

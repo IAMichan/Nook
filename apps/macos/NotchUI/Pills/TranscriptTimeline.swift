@@ -38,6 +38,9 @@ struct TranscriptConversation: View {
     @State private var scrollPhase: ScrollPhase = .idle
     /// The rows on screen, for where you left the conversation; not state, so scrolling does not redraw it.
     @State private var onScreen = VisibleTimelineRows()
+    /// Where the conversation is scrolled, for the rail, and the position the rail scrolls it to when you drag it.
+    @State private var viewport = TimelineViewport()
+    @State private var position = ScrollPosition()
     /// Where you left this conversation last time (TimelineVisitStore), read as it opens.
     @State private var visit: TimelineVisit?
     /// The row the "New since your last visit" line sits above; decided once the conversation has loaded.
@@ -79,7 +82,7 @@ struct TranscriptConversation: View {
         let beforeNew = newSince.flatMap { id in rows.firstIndex { $0.id == id } }.flatMap { $0 > 0 ? rows[$0 - 1].id : nil }
         HStack(alignment: .top, spacing: 0) {
             ScrollViewReader { proxy in
-                // No scroll bar, not even when the system shows them always: the rail beside it marks your messages.
+                // No scroll bar, not even when the system shows them always: the rail beside it marks your messages and scrolls.
                 ScrollView {
                     // Lazy: a long conversation only lays out what is on screen.
                     LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -118,6 +121,7 @@ struct TranscriptConversation: View {
                     .padding(.vertical, NookTheme.Spacing.xs)
                 }
                 .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .scrollPosition($position)
                 // Open at the newest message; the transcript loads after the view appears, so also follow it once it arrives.
                 .defaultScrollAnchor(.bottom, for: .initialOffset)
                 .defaultScrollAnchor(.bottom, for: .alignment)
@@ -126,6 +130,13 @@ struct TranscriptConversation: View {
                 .defaultScrollAnchor(scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
                 .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.1) { ids in onScreen.ids = Set(ids) }
                 .scrollIndicators(.never)
+                .onScrollGeometryChange(for: ScrollFrame.self) { geometry in
+                    ScrollFrame(offset: geometry.contentOffset.y, content: geometry.contentSize.height,
+                                container: geometry.containerSize.height,
+                                insetTop: geometry.contentInsets.top, insetBottom: geometry.contentInsets.bottom)
+                } action: { _, frame in
+                    viewport.frame = frame
+                }
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 48
                 } action: { _, nowAtEnd in
@@ -145,9 +156,12 @@ struct TranscriptConversation: View {
                 }
                 .overlay(alignment: .trailing) {
                     if overflows, !derived.marks.isEmpty {
-                        TranscriptPromptRail(marks: derived.marks) { mark in
+                        TranscriptPromptRail(marks: derived.marks, viewport: viewport) { mark in
                             scroll.userScrolled()
                             withAnimation(NookTheme.scroll) { proxy.scrollTo(mark.row, anchor: .top) }
+                        } onScrub: { fraction in
+                            scroll.userScrolled()
+                            position.scrollTo(y: viewport.frame.offset(at: fraction))
                         }
                         .padding(.vertical, NookTheme.Spacing.md)
                         .transition(.opacity)
@@ -445,55 +459,97 @@ private final class TranscriptDerived {
     }
 }
 
+/// Where the conversation is scrolled, for the rail beside it. Kept out of the timeline's own state: it changes on
+/// every scroll, and only the rail draws from it.
+@Observable
+@MainActor
+final class TimelineViewport {
+    var frame = ScrollFrame()
+}
+
 /// Your messages as short marks along the edge of the conversation, where a scroll bar would be: each sits about where
-/// the message is, a click scrolls to it, and hovering shows the prompt you wrote. The rail itself only shows while the pointer is over it.
+/// the message is, a click scrolls to it, and hovering shows the prompt you wrote. The rail is the scroll bar too: the
+/// part in view shows as a thumb, and pressing or dragging anywhere on it scrolls the whole conversation along. The rail
+/// itself only shows while the pointer is over it or you drag it.
 struct TranscriptPromptRail: View {
     let marks: [PromptMark]
+    let viewport: TimelineViewport
     let onSelect: (PromptMark) -> Void
+    /// A place on the rail was pressed or dragged to, from 0 (the top) to 1 (the end).
+    let onScrub: (Double) -> Void
     @State private var hovered: String?
     /// The pointer is over the rail: only then it shows, with a background so the marks stand out over the text.
     @State private var overRail = false
+    @GestureState private var dragging = false
 
     private static let width: CGFloat = 28
     /// The height each mark can be clicked over.
     private static let target: CGFloat = 16
 
+    private var shown: Bool { overRail || dragging }
+
     var body: some View {
-        ZStack {
-            // A fully transparent view is not hit-tested, so this layer keeps the hidden rail hoverable.
-            Color.clear.contentShape(Rectangle())
-            marksLayer.opacity(overRail ? 1 : 0)
+        GeometryReader { geometry in
+            let travel = max(0, geometry.size.height - Self.target)
+            ZStack(alignment: .topLeading) {
+                // A fully transparent view is not hit-tested, so this layer keeps the hidden rail hoverable.
+                Color.clear.contentShape(Rectangle())
+                Group {
+                    thumb(travel: travel)
+                    marksLayer(travel: travel)
+                }
+                .opacity(shown ? 1 : 0)
+            }
+            .frame(width: Self.width, height: geometry.size.height)
+            // Alongside the marks' own clicks, so a drag that starts on a mark scrolls as well.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($dragging) { _, state, _ in state = true }
+                    .onChanged { drag in
+                        guard travel > 0 else { return }
+                        onScrub(Double((drag.location.y - Self.target / 2) / travel))
+                    }
+            )
         }
         .frame(width: Self.width)
         .background(
             RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
                 .fill(DropdownStyle.panel)
-                .opacity(overRail ? 0.92 : 0)
+                .opacity(shown ? 0.92 : 0)
         )
         .onHover { overRail = $0 }
         .animation(NookTheme.hover, value: hovered)
-        .animation(NookTheme.hover, value: overRail)
+        .animation(NookTheme.hover, value: shown)
     }
 
-    private var marksLayer: some View {
-        GeometryReader { geometry in
-            let travel = max(0, geometry.size.height - Self.target)
-            ForEach(marks) { mark in
-                let lit = hovered == mark.id
-                Button { onSelect(mark) } label: {
-                    Capsule()
-                        .fill(lit ? NookTheme.paper : NookTheme.textTertiary)
-                        .frame(width: lit ? 12 : 8, height: 2)
-                        .frame(width: Self.width, height: Self.target)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .hoverCard { PromptCard(text: Self.prompt(mark.text)) }
-                .onHover { inside in
-                    if inside { hovered = mark.id } else if hovered == mark.id { hovered = nil }
-                }
-                .position(x: Self.width / 2, y: Self.target / 2 + mark.position * travel)
+    /// The part of the conversation in view, behind the marks.
+    private func thumb(travel: CGFloat) -> some View {
+        let part = viewport.frame.thumb
+        let height = max(Self.target, CGFloat(part.length) * travel)
+        let top = min(Self.target / 2 + CGFloat(part.start) * travel, Self.target / 2 + travel - height)
+        return RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+            .fill(NookTheme.textTertiary.opacity(dragging ? 0.32 : 0.18))
+            .frame(width: Self.width - NookTheme.Spacing.sm * 2, height: height)
+            .offset(x: NookTheme.Spacing.sm, y: max(0, top))
+            .allowsHitTesting(false)
+    }
+
+    private func marksLayer(travel: CGFloat) -> some View {
+        ForEach(marks) { mark in
+            let lit = hovered == mark.id
+            Button { onSelect(mark) } label: {
+                Capsule()
+                    .fill(lit ? NookTheme.paper : NookTheme.textTertiary)
+                    .frame(width: lit ? 12 : 8, height: 2)
+                    .frame(width: Self.width, height: Self.target)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .hoverCard { PromptCard(text: Self.prompt(mark.text)) }
+            .onHover { inside in
+                if inside { hovered = mark.id } else if hovered == mark.id { hovered = nil }
+            }
+            .position(x: Self.width / 2, y: Self.target / 2 + mark.position * travel)
         }
     }
 

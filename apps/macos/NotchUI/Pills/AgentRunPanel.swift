@@ -35,6 +35,11 @@ struct AgentRunPanel: View {
     @State private var atEnd = true
     /// The blocks on screen, for where you left the session; not state, so scrolling does not redraw it.
     @State private var onScreen = VisibleTimelineRows()
+    /// Where the timeline is scrolled, for the rail, and the position the rail scrolls it to when you drag it.
+    @State private var viewport = TimelineViewport()
+    @State private var position = ScrollPosition()
+    /// The timeline is taller than the view: only then the rail with your messages shows.
+    @State private var overflows = false
     /// Where you left this session's conversation last time (TimelineVisitStore), read as it opens.
     @State private var visit: TimelineVisit?
     /// The block the "New since your last visit" line sits above; decided as the session opens.
@@ -609,6 +614,7 @@ struct AgentRunPanel: View {
                 .scrollTargetLayout()
                 .chatColumn()
             }
+            .scrollPosition($position)
             .scrollIndicators(.never)
             // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
             .composerInset {
@@ -631,6 +637,16 @@ struct AgentRunPanel: View {
             .onScrollPhaseChange { _, phase in
                 if (phase == .interacting || phase == .decelerating) && !atEnd { scroll.userScrolled() }
             }
+            .onScrollGeometryChange(for: ScrollFrame.self) { geometry in
+                ScrollFrame(offset: geometry.contentOffset.y, content: geometry.contentSize.height,
+                            container: geometry.containerSize.height,
+                            insetTop: geometry.contentInsets.top, insetBottom: geometry.contentInsets.bottom)
+            } action: { _, frame in
+                viewport.frame = frame
+            }
+            .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
+                overflows = now
+            }
             .overlay(alignment: .top) {
                 if finding {
                     TimelineFindBar(query: $findQuery, result: found, current: findIndex,
@@ -641,15 +657,19 @@ struct AgentRunPanel: View {
                         .padding(.top, NookTheme.Spacing.xs)
                 }
             }
-            // A mark per message of yours, to jump through a long session.
-            .overlay(alignment: .topTrailing) {
-                let turns = memo.userTurns
-                if turns.count >= 4, !finding {
-                    TurnMinimap(turns: turns) { id in
+            // A mark per message of yours along the edge, as in an agent's own transcript: it jumps and scrolls.
+            .overlay(alignment: .trailing) {
+                if overflows, !finding, !memo.marks.isEmpty {
+                    TranscriptPromptRail(marks: memo.marks, viewport: viewport) { mark in
                         scroll.userScrolled()
+                        guard let id = UUID(uuidString: mark.row) else { return }
                         withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
+                    } onScrub: { fraction in
+                        scroll.userScrolled()
+                        position.scrollTo(y: viewport.frame.offset(at: fraction))
                     }
-                    .padding(.top, NookTheme.Spacing.md)
+                    .padding(.vertical, NookTheme.Spacing.md)
+                    .transition(.opacity)
                 }
             }
             .keyCommand("chat.find") { openFind() }
@@ -1295,8 +1315,8 @@ private final class RunTimelineDerived {
 
     /// Counts the changes to the events other than more text in the answer being written (`TimelineRowContext`).
     private(set) var revision = 0
-    /// Your messages, for the marks beside a long session.
-    private(set) var userTurns: [RunEvent] = []
+    /// Your messages, for the marks on the rail beside the session.
+    private(set) var marks: [PromptMark] = []
     /// The pull request the events before the last one link, so a streamed answer only has to look at itself.
     private var pullRequestBeforeLast: URL?
     /// Each turn's blocks, so only the turn that changed is laid out again.
@@ -1350,7 +1370,7 @@ private final class RunTimelineDerived {
         answerable = active ? nil : events.last(where: { $0.kind == .assistant }).flatMap { finalAnswers.contains($0.id) ? $0.id : nil }
         outputs = SessionOutputs.collect(all, tasks: run.tasks, directory: run.workingDirectory)
         runningCommand = CommandConsole.running(TimelinePresentation.lastTurn(all))?.id
-        userTurns = events.filter { $0.kind == .user }
+        marks = TranscriptPresentation.promptMarks(events: events)
         pullRequestBeforeLast = RunPullRequestLinks.last(in: Array(all.dropLast()))
         createdPullRequest = all.last.flatMap(RunPullRequestLinks.pullRequest(in:)) ?? pullRequestBeforeLast
         return self
