@@ -99,12 +99,16 @@ extension WorkspaceManager {
         if let repo = facts.repo, let branch, let lookup = pullRequestLookup {
             let key = repo.key + " " + branch
             if let last = pullRequestChecked[key], Date().timeIntervalSince(last) < 60 {
-                // Asked a moment ago: keep that answer.
+                // Asked a moment ago, perhaps for another view of the same branch: keep that answer (or the pull
+                // request this view just opened itself).
+                open = pullRequestOpen[key] ?? known
+                if open != known { found(open) }
             } else {
                 pullRequestChecked[key] = Date()
                 // Usually the same answer as last time: publishing it again would redraw every view of the workspace.
                 let answer = await lookup(repo, branch)
                 open = answer.open
+                pullRequestOpen[key] = answer.open
                 if answer.landed { pullRequestLanded.insert(key) } else { pullRequestLanded.remove(key) }
                 found(open)
             }
