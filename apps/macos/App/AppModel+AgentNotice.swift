@@ -87,12 +87,6 @@ extension AppModel {
         }
     }
 
-    /// What an agent notice is about for `NoticePacer`: its session, and a failure apart, so a session that ends in an
-    /// error right after a finished turn still tells you.
-    static func agentPace(_ id: String, failed: Bool) -> String {
-        "agent:" + id + (failed ? ":failed" : "")
-    }
-
     /// What a permission request or an agent's question counts as for `NoticePacer`: it never waits, but what comes
     /// after it does.
     static let urgentPace = "urgent"

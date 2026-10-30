@@ -17,6 +17,8 @@ final class ThinkAlong: ObservableObject {
         let date: Date
         let text: String
         var declined: Bool
+        /// Only kept under the bell (the notch had just told you something else): not counted as one of the day's offers.
+        var held = false
     }
 
     /// The apps Think Along was switched off in at some point (bundle ID → name), so Settings › Notifications can list
@@ -48,7 +50,8 @@ final class ThinkAlong: ObservableObject {
         let stored = UserDefaults.standard.array(forKey: "thinkAlongOffered") as? [[String: Any]] ?? []
         offered = stored.compactMap { entry -> Offer? in
             guard let date = entry["date"] as? Date, let text = entry["text"] as? String else { return nil }
-            return Offer(date: date, text: text, declined: entry["declined"] as? Bool ?? false)
+            return Offer(date: date, text: text, declined: entry["declined"] as? Bool ?? false,
+                         held: entry["held"] as? Bool ?? false)
         }
     }
 
@@ -85,7 +88,7 @@ final class ThinkAlong: ObservableObject {
         guard now.timeIntervalSince(focusSince) >= settle,
               now.timeIntervalSince(lastLook) >= max(minLookGap, minGap ?? 0),
               now.timeIntervalSince(lastOffer) >= offerGap,
-              offered.filter({ now.timeIntervalSince($0.date) < repeatGap }).count < dailyLimit else { return false }
+              offered.filter({ !$0.held && now.timeIntervalSince($0.date) < repeatGap }).count < dailyLimit else { return false }
         if let previous = looked[key] {
             guard previous.print != print, now.timeIntervalSince(previous.date) >= sameWindowGap else { return false }
         }
@@ -126,7 +129,7 @@ final class ThinkAlong: ObservableObject {
     /// An offer that only went under the bell (the notch had just told you something else): kept so it is not offered
     /// again, without counting as an offer or moving the gap.
     func held(_ text: String) {
-        offered.append(Offer(date: Date(), text: NudgeFilter.normalize(text), declined: false))
+        offered.append(Offer(date: Date(), text: NudgeFilter.normalize(text), declined: false, held: true))
         saveOffered()
     }
 
@@ -150,7 +153,7 @@ final class ThinkAlong: ObservableObject {
     private func saveOffered() {
         let cutoff = Date().addingTimeInterval(-declinedGap)
         offered = Array(offered.filter { $0.date > cutoff }.suffix(40))
-        let stored: [[String: Any]] = offered.map { ["date": $0.date, "text": $0.text, "declined": $0.declined] }
+        let stored: [[String: Any]] = offered.map { ["date": $0.date, "text": $0.text, "declined": $0.declined, "held": $0.held] }
         UserDefaults.standard.set(stored, forKey: "thinkAlongOffered")
     }
 

@@ -21,8 +21,8 @@ struct AgentStatusNotice: Equatable, Sendable {
     /// The lines it changed, when its app says so.
     var added = 0
     var removed = 0
-    /// What the notice is about for `NoticePacer` (one session).
-    var pace: String
+    /// The session it is about ("<id>" for a terminal session, "run:<id>" for one Nook runs).
+    var session: String
 
     /// Longest topic shown as the card's title; a longer first prompt is cut at a word.
     static let topicLimit = 90
@@ -51,9 +51,13 @@ struct AgentStatusNotice: Equatable, Sendable {
 
     var hasChanges: Bool { added + removed > 0 }
 
-    /// The card's id: one per session, so a newer notice from the same session redraws its card instead of counting as
-    /// a new pop-up (`AppModel.deliverNotice`).
-    var cardID: String { "agentstatus-" + pace }
+    /// What the notice is about for `NoticePacer`: its session, and a failure apart, so a session that ends in an error
+    /// right after a finished turn still tells you.
+    var pace: String { "agent:" + session + (state == .failed ? ":failed" : "") }
+
+    /// The card's id: one per session whatever its state, so a newer notice from the same session (a failure too)
+    /// redraws its card instead of counting as a new pop-up (`AppModel.deliverNotice`).
+    var cardID: String { "agentstatus-" + session }
 
     /// The one line of the compact strip: the headline and which session, by what it is about (or its folder when it
     /// has no topic), so two sessions in one folder tell apart.
@@ -72,7 +76,8 @@ struct AgentStatusNotice: Equatable, Sendable {
         let line = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
         let clean = line.trimmingCharacters(in: .whitespaces)
         guard clean.count > topicLimit else { return clean }
-        let cut = clean.prefix(topicLimit)
+        // One character is kept for the ellipsis, so the result never passes the limit.
+        let cut = clean.prefix(topicLimit - 1)
         let word = cut.lastIndex(of: " ").map { cut[..<$0] } ?? cut
         return word.trimmingCharacters(in: .whitespaces.union(.punctuationCharacters)) + "…"
     }

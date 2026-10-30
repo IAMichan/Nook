@@ -170,6 +170,8 @@ struct CardView: View {
             .font(long ? NookTheme.TextStyle.body : NookTheme.TextStyle.heading)
             .lineSpacing(long ? 4 : 1)
             .foregroundStyle(NookTheme.paper)
+            // An agent notice keeps its title to the two lines its card is sized for; the reply is under it.
+            .lineLimit(card.agent == nil ? nil : 2)
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
     }

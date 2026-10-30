@@ -189,7 +189,7 @@ extension AppModel {
         let notice = AgentStatusNotice(agent: session.name, project: session.project, topic: session.firstPrompt,
                                  summary: session.summary, state: Self.noticeState(session.status),
                                  added: session.linesAdded, removed: session.linesRemoved,
-                                 pace: Self.agentPace(session.id, failed: session.status == .failed))
+                                 session: session.id)
         let watching = isWatching(sessionKey: session.id)
         if !watching {
             CompanionNotifier.shared.attention(session)

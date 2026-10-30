@@ -336,7 +336,7 @@ extension AppModel {
                                  topic: run.title,
                                  summary: failed ? (run.statusDetail ?? "") : AgentHub.oneLine(reply),
                                  state: failed ? .failed : .done,
-                                 pace: Self.agentPace("run:" + runID.uuidString, failed: failed))
+                                 session: "run:" + runID.uuidString)
         deliverAgentNotice(notice, app: run.provider.rawValue, target: .run(runID),
                            open: { [weak self] in self?.openWorkspace(run: runID) })
     }
