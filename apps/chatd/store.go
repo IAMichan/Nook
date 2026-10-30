@@ -224,8 +224,8 @@ type Room struct {
 
 const roomColumns = `r.id, r.bridge, r.name, r.avatar, r.topic, r.is_direct, r.created, r.read_ts, r.others_read_ts,
 	r.marked_unread, r.pinned, r.muted, r.archived,
-	COALESCE((SELECT MAX(ts) FROM timeline t WHERE t.room=r.id AND t.type IN ('m.room.message','m.sticker')), r.created) AS last_ts,
-	(SELECT COUNT(*) FROM timeline t WHERE t.room=r.id AND t.type IN ('m.room.message','m.sticker') AND t.deleted=0
+	COALESCE((SELECT MAX(ts) FROM timeline t WHERE t.room=r.id AND t.type IN ('m.room.message','m.sticker','org.matrix.msc3381.poll.start')), r.created) AS last_ts,
+	(SELECT COUNT(*) FROM timeline t WHERE t.room=r.id AND t.type IN ('m.room.message','m.sticker','org.matrix.msc3381.poll.start') AND t.deleted=0
 		AND t.ts>r.read_ts AND t.sender<>?)`
 
 func scanRoom(row interface{ Scan(...any) error }) (*Room, error) {
@@ -389,6 +389,11 @@ func (s *Store) Add(evtID id.EventID, room id.RoomID, sender id.UserID, evtType 
 		if reaction, ok := content.Parsed.(*event.ReactionEventContent); ok {
 			target = reaction.RelatesTo.EventID
 		}
+	case event.EventUnstablePollResponse:
+		// A vote points at its poll, as an emoji at its message.
+		if response, ok := content.Parsed.(*event.PollResponseEventContent); ok {
+			target = response.RelatesTo.GetReferenceID()
+		}
 	case event.EventMessage:
 		if message, ok := content.Parsed.(*event.MessageEventContent); ok && message.RelatesTo.GetReplaceID() != "" {
 			replacement := message.NewContent
@@ -448,14 +453,14 @@ func (s *Store) Event(evtID id.EventID) (*Stored, error) {
 
 // Messages are the newest messages of a room, newest first.
 func (s *Store) Messages(room id.RoomID, limit int) ([]*Stored, error) {
-	return s.list(`SELECT `+storedColumns+` FROM timeline WHERE room=? AND type IN ('m.room.message','m.sticker')
+	return s.list(`SELECT `+storedColumns+` FROM timeline WHERE room=? AND type IN ('m.room.message','m.sticker','org.matrix.msc3381.poll.start')
 		ORDER BY ts DESC LIMIT ?`, room, limit)
 }
 
 // MessagesBefore are the newest `limit` messages of a room sent before `before` (Unix milliseconds): scrolling back
 // goes on from the oldest message the app shows, as far as the history goes.
 func (s *Store) MessagesBefore(room id.RoomID, before int64, limit int) ([]*Stored, error) {
-	return s.list(`SELECT `+storedColumns+` FROM timeline WHERE room=? AND type IN ('m.room.message','m.sticker') AND ts < ?
+	return s.list(`SELECT `+storedColumns+` FROM timeline WHERE room=? AND type IN ('m.room.message','m.sticker','org.matrix.msc3381.poll.start') AND ts < ?
 		ORDER BY ts DESC LIMIT ?`, room, before, limit)
 }
 
@@ -475,6 +480,12 @@ func (s *Store) Reactions(targets []id.EventID) (map[id.EventID][]*Stored, error
 		result[e.Target] = append(result[e.Target], e)
 	}
 	return result, err
+}
+
+// Votes are the votes on a poll, oldest first: each person's newest one is their choice now.
+func (s *Store) Votes(poll id.EventID) ([]*Stored, error) {
+	return s.list(`SELECT `+storedColumns+` FROM timeline WHERE type=? AND deleted=0 AND target=? ORDER BY ts`,
+		event.EventUnstablePollResponse.Type, poll)
 }
 
 // Reaction is your own emoji `key` on a message, to take it back.

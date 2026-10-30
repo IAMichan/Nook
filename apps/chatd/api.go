@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -60,6 +61,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/chats/{chat}/messages/{message}", a.authed(a.redact))
 	mux.HandleFunc("POST /v1/chats/{chat}/messages/{message}/reactions", a.authed(a.react))
 	mux.HandleFunc("DELETE /v1/chats/{chat}/messages/{message}/reactions/{key}", a.authed(a.unreact))
+	mux.HandleFunc("POST /v1/chats/{chat}/messages/{message}/vote", a.authed(a.vote))
 	mux.HandleFunc("POST /v1/assets/upload/base64", a.authed(a.upload))
 	mux.HandleFunc("POST /v1/assets/download", a.authed(a.download))
 	mux.HandleFunc("GET /v1/ws", a.authed(a.live.Serve))
@@ -263,7 +265,7 @@ func (a *API) chatJSON(ctx context.Context, room *Room) map[string]any {
 		"id": string(room.ID), "accountID": room.Bridge, "network": network, "title": title, "type": kind,
 		"unreadCount": room.Unread, "lastActivity": time.UnixMilli(room.LastTS).UTC().Format(time.RFC3339Nano),
 		"imgURL": a.mediaURL(room.Avatar), "participants": map[string]any{"items": people},
-		"isPinned": room.Pinned, "isMuted": room.Muted, "isArchived": room.Archived,
+		"isPinned": room.Pinned, "isMuted": room.Muted, "isArchived": room.Archived, "canVote": a.votes(ctx, net),
 	}
 }
 
@@ -408,6 +410,12 @@ func (a *API) messageJSON(ctx context.Context, net *Network, room *Room, e *Stor
 		"id": string(e.ID), "chatID": string(room.ID), "timestamp": time.UnixMilli(e.TS).UTC().Format(time.RFC3339Nano),
 		"senderID": string(e.Sender), "senderName": names[e.Sender], "isSender": mine, "isDeleted": e.Deleted, "type": "TEXT",
 	}
+	if poll, ok := e.Content.Parsed.(*event.PollStartEventContent); ok {
+		out["type"] = "POLL"
+		out["text"] = poll.PollStart.Question.GetText()
+		out["poll"] = a.pollJSON(ctx, net, e.ID, &poll.PollStart)
+		return out
+	}
 	content, _ := e.Content.Parsed.(*event.MessageEventContent)
 	if content == nil {
 		content = &event.MessageEventContent{}
@@ -514,6 +522,34 @@ func (a *API) messageJSON(ctx context.Context, net *Network, room *Room, e *Stor
 		}
 	}
 	return out
+}
+
+// pollJSON is a poll with each option's voters (by their id; you as "me"), from each person's newest vote.
+func (a *API) pollJSON(ctx context.Context, net *Network, poll id.EventID, start *event.PollStart) map[string]any {
+	choices := map[id.UserID][]string{}
+	if votes, err := a.store.Votes(poll); err == nil {
+		for _, vote := range votes {
+			if response, ok := vote.Content.Parsed.(*event.PollResponseEventContent); ok {
+				voter := vote.Sender
+				if a.isSelf(ctx, net, voter) {
+					voter = me
+				}
+				choices[voter] = response.Response.Answers
+			}
+		}
+	}
+	options := make([]map[string]any, 0, len(start.Answers))
+	for _, answer := range start.Answers {
+		voters := []string{}
+		for voter, chosen := range choices {
+			if slices.Contains(chosen, answer.ID) {
+				voters = append(voters, string(voter))
+			}
+		}
+		slices.Sort(voters)
+		options = append(options, map[string]any{"id": answer.ID, "text": answer.GetText(), "voters": voters})
+	}
+	return map[string]any{"question": start.Question.GetText(), "multiple": start.MaxSelections > 1, "options": options}
 }
 
 // MARK: Sending and acting
@@ -655,6 +691,68 @@ func (a *API) react(w http.ResponseWriter, r *http.Request) {
 	evt := a.queue(r.Context(), net, room.ID, event.EventReaction, content)
 	_, _ = a.store.Add(evt.ID, room.ID, me, event.EventReaction, &evt.Content, time.Now(), "")
 	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+// vote is your vote on a poll, by its options' texts (an empty list takes it back), for a network that takes votes.
+func (a *API) vote(w http.ResponseWriter, r *http.Request) {
+	room, net := a.chat(w, r)
+	if room == nil {
+		return
+	}
+	var body struct {
+		Answers []string `json:"answers"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "no choice")
+		return
+	}
+	target := id.EventID(r.PathValue("message"))
+	var poll *event.PollStartEventContent
+	if stored, err := a.store.Event(target); err == nil && stored != nil {
+		poll, _ = stored.Content.Parsed.(*event.PollStartEventContent)
+	}
+	if poll == nil {
+		writeError(w, http.StatusNotFound, "no such poll")
+		return
+	}
+	if !a.votes(r.Context(), net) {
+		writeError(w, http.StatusNotImplemented, "this network takes no votes")
+		return
+	}
+	ids := []string{}
+	for _, text := range body.Answers {
+		for _, answer := range poll.PollStart.Answers {
+			if answer.GetText() == text && !slices.Contains(ids, answer.ID) {
+				ids = append(ids, answer.ID)
+			}
+		}
+	}
+	if len(ids) != len(body.Answers) {
+		writeError(w, http.StatusBadRequest, "no such option")
+		return
+	}
+	content := &event.PollResponseEventContent{RelatesTo: event.RelatesTo{Type: event.RelReference, EventID: target},
+		Response: event.PollResponse{Answers: ids}}
+	evt := a.queue(r.Context(), net, room.ID, event.EventUnstablePollResponse, content)
+	_, _ = a.store.Add(evt.ID, room.ID, me, event.EventUnstablePollResponse, &evt.Content, time.Now(), "")
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+// votes says whether the chat's network takes votes on polls (its connector handles them: WhatsApp and Signal).
+func (a *API) votes(ctx context.Context, net *Network) bool {
+	if net == nil || net.Bridge == nil {
+		return false
+	}
+	user, err := net.User(ctx)
+	if err != nil {
+		return false
+	}
+	for _, login := range user.GetUserLogins() {
+		if _, ok := login.Client.(bridgev2.PollHandlingNetworkAPI); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *API) unreact(w http.ResponseWriter, r *http.Request) {

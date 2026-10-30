@@ -85,7 +85,8 @@ extension AppModel {
             guard let chat = bridge.chats[id] else { return ChatAbilities(send: true, sends: bridge.sends, markRead: true) }
             return ChatAbilities(send: true, sends: bridge.sends, reply: true, react: chat.canReact,
                                  edit: chat.canEdit, delete: chat.canDelete, markRead: true,
-                                 pin: true, mute: true, archive: true, pinned: chat.isPinned, muted: chat.isMuted)
+                                 pin: true, mute: true, archive: true, pinned: chat.isPinned, muted: chat.isMuted,
+                                 vote: chat.canVote)
         case nil:
             return ChatAbilities()
         }
@@ -270,7 +271,8 @@ extension AppModel {
                 let (link, jid) = WhatsAppAccounts.shared.route(key)
                 try await link.vote(choice, poll: bubble.id, chat: jid)
             case .telegram: try capture.telegramBridge.vote(choice, message: bubble.id)
-            case .teams, .slack, .messages, .snapchat, .linked: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
+            case .linked(let id): try await capture.serviceBridge.vote(choice, on: bubble.id, in: id)
+            case .teams, .slack, .messages, .snapchat: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
             }
         }
     }

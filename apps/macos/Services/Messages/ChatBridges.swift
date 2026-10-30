@@ -1280,6 +1280,12 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
         }
     }
 
+    /// Your vote on a poll (its options' texts; an empty choice takes it back), where the chat's network takes votes.
+    func vote(_ choice: [String], on message: String, in chat: String) async throws {
+        guard let id = ChatServiceData.networkID(message, chat: chat) else { throw NookError(tr("chat.poll.failed")) }
+        try await act("POST", Self.path(chat) + "/messages/" + ChatJSON.segment(id) + "/vote", ["answers": choice], chat: chat)
+    }
+
     /// Changes the text of your message.
     func edit(_ message: String, in chat: String, to text: String) async throws {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
