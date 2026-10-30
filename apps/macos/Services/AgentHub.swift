@@ -209,17 +209,13 @@ final class AgentHub: ObservableObject {
             processes = found
             settleEndedRestored(found)
             await settleStale(found)
-            // A hooked session covers one process of its agent and folder, not all of them: two sessions of the same agent in
-            // the same folder stay two rows.
-            var covered: [String: Int] = [:]
-            for record in records.values { covered["\(record.agent)|\(record.cwd)", default: 0] += 1 }
+            // A hooked session covers one process of its agent, not all of them: two sessions of the same agent in the same
+            // folder stay two rows.
+            let covered = SessionLiveness.claimed(Self.scanned(found),
+                                                  by: records.values.map { (agent: $0.agent, cwd: $0.cwd, pid: $0.pid) })
             let now = Date()
             let newDetected: [AgentSession] = found.sorted { $0.pid < $1.pid }.compactMap { agent in
-                let key = "\(agent.name)|\(agent.cwd)"
-                if let count = covered[key], count > 0 {
-                    covered[key] = count - 1
-                    return nil
-                }
+                guard !covered.contains(agent.pid) else { return nil }
                 // Already connected? If so, this session was started before integration and just needs a restart.
                 let home = agent.home.isEmpty ? nil : URL(fileURLWithPath: agent.home, isDirectory: true)
                 let kind = AgentKind(agentName: agent.name)
@@ -615,8 +611,9 @@ final class AgentHub: ObservableObject {
             linesAdded: 0,
             linesRemoved: 0
         )
-        if !cwd.isEmpty {
-            // Not into a scratch folder outside its project: the branch and changes stay those of the project.
+        // The agent `cd`'ing into a subfolder keeps the session in the folder it started in; nor into a scratch folder
+        // outside its project: the branch and changes stay those of the project.
+        if !cwd.isEmpty, record.cwd.isEmpty || !cwd.hasPrefix(record.cwd + "/") {
             record.cwd = SessionFolder.follow(current: record.cwd, reported: cwd)
             record.project = Self.projectName(record.cwd)
         }

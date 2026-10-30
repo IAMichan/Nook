@@ -42,6 +42,9 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Fixed
 
+- A coding agent that `cd`s into a subfolder no longer shows up as two chats in Agents (one under the subfolder,
+  one for its process): the session stays in the folder it started in, and the process scan matches it by process
+  and parent folder (macOS and Tauri).
 - Sending a mail draft from the chat no longer fails with "error -1712" when Mail was not running: Nook starts Mail
   first and gives it time to send. Mail errors are now shown in your language, and a draft can send from the account
   you named ("vanuit mijn gmail").

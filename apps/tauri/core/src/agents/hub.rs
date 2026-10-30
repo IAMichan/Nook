@@ -347,7 +347,8 @@ impl AgentHub {
                 lineage: vec![],
                 pid: None,
             });
-            if !cwd.is_empty() {
+            // The agent `cd`'ing into a subfolder keeps the session in the folder it started in.
+            if !cwd.is_empty() && !liveness::is_inside(&cwd, &record.cwd) {
                 record.cwd = cwd.clone();
                 record.project = project_name(&cwd);
             }
@@ -858,21 +859,16 @@ impl AgentHub {
                 }
             }
             let mut dropped = self.drop_ended_restored(&mut s, &found);
-            // Een sessie met hooks dekt één proces van zijn agent en map, niet allemaal.
-            let mut covered: HashMap<String, usize> = HashMap::new();
-            for r in s.records.values() {
-                *covered.entry(format!("{}|{}", r.agent, r.cwd)).or_default() += 1;
-            }
+            // Een sessie met hooks dekt één proces van zijn agent, niet allemaal (ook vanuit een submap).
+            let sessions: Vec<(String, String, Option<u32>)> =
+                s.records.values().map(|r| (r.agent.clone(), r.cwd.clone(), r.pid)).collect();
+            let covered = liveness::claimed(&found, &sessions);
             let mut sorted = found;
             sorted.sort_by_key(|a| a.pid);
             let mut detected = Vec::new();
             for agent in sorted {
-                let key = format!("{}|{}", agent.name, agent.cwd);
-                if let Some(count) = covered.get_mut(&key) {
-                    if *count > 0 {
-                        *count -= 1;
-                        continue;
-                    }
+                if covered.contains(&agent.pid) {
+                    continue;
                 }
                 let agent_id = if agent.name == "Codex" { "codex" } else { "claude-code" };
                 let variable = if agent_id == "codex" { "CODEX_HOME" } else { "CLAUDE_CONFIG_DIR" };
@@ -1706,6 +1702,30 @@ mod tests {
         assert!(d[0].is_linked);
         assert_eq!(hub.process_id("proc-11"), Some(11));
         assert_eq!(hub.process_id("claude-code:a"), None, "twee processen in één map: dubbelzinnig");
+    }
+
+    #[test]
+    fn a_session_that_cd_into_a_subfolder_is_one_row() {
+        let (hub, _) = hub();
+        let event = |cwd: &str| {
+            serde_json::to_vec(&json!({"agent": "claude-code", "mode": "event", "env": {}, "lineage": [90, 50],
+                "event": {"hook_event_name": "PreToolUse", "session_id": "a", "cwd": cwd, "tool_name": "Bash"}}))
+            .unwrap()
+        };
+        let p = |pid| DetectedAgent { pid, name: "Claude Code".into(), cwd: "/w/nook".into(), home: String::new() };
+        hub.handle(&event("/w/nook"), Responder::none());
+        hub.handle(&event("/w/nook/apps/macos"), Responder::none());
+        assert_eq!(hub.sessions()[0].project, "nook", "stays in the folder it started in");
+        hub.apply_scan(vec![p(50)], |_, _| true);
+        assert!(hub.detected().is_empty(), "its process is not a second row");
+        // Without a known process (lineage missing) the folder above still matches.
+        hub.lock().records.values_mut().for_each(|r| {
+            r.pid = None;
+            r.lineage.clear();
+            r.cwd = "/w/nook/apps/macos".into();
+        });
+        hub.apply_scan(vec![p(50)], |_, _| true);
+        assert!(hub.detected().is_empty());
     }
 
     #[test]

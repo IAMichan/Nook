@@ -112,6 +112,25 @@ final class SessionLivenessTests: XCTestCase {
         XCTAssertFalse(SessionLiveness.isRunning(agent: "Codex", cwd: "/Users/me/site", pid: 50, in: other))
     }
 
+    func testAHookedSessionClaimsOneProcess() {
+        let processes = [(pid: Int32(10), name: "Claude Code", cwd: "/w"), (pid: Int32(11), name: "Claude Code", cwd: "/w")]
+        XCTAssertEqual(SessionLiveness.claimed(processes, by: [(agent: "Claude Code", cwd: "/w", pid: nil)]), [10])
+        XCTAssertEqual(SessionLiveness.claimed(processes, by: [(agent: "Claude Code", cwd: "/w", pid: 11)]), [11])
+        XCTAssertEqual(SessionLiveness.claimed(processes, by: [(agent: "Codex", cwd: "/w", pid: nil)]), [])
+    }
+
+    func testASessionInASubfolderClaimsItsProcess() {
+        // The agent started in /Users/me/nook and `cd`'d into apps/macos: its hooks report the subfolder.
+        let processes = [(pid: Int32(40), name: "Claude Code", cwd: "/Users/me/nook")]
+        XCTAssertEqual(SessionLiveness.claimed(processes, by: [(agent: "Claude Code", cwd: "/Users/me/nook/apps/macos", pid: nil)]),
+                       [40])
+        XCTAssertEqual(SessionLiveness.claimed(processes, by: [(agent: "Claude Code", cwd: "/Users/me/nook-old", pid: nil)]), [])
+        // A session in the folder itself goes first.
+        let two = processes + [(pid: Int32(41), name: "Claude Code", cwd: "/Users/me/nook/apps")]
+        XCTAssertEqual(SessionLiveness.claimed(two, by: [(agent: "Claude Code", cwd: "/Users/me/nook/apps/macos", pid: nil),
+                                                         (agent: "Claude Code", cwd: "/Users/me/nook", pid: nil)]), [40, 41])
+    }
+
     func testTheAgentIsFoundAmongTheHooksParents() {
         let processes = [(pid: Int32(50), name: "Claude Code", cwd: "/a"), (pid: Int32(60), name: "Codex", cwd: "/a")]
         // The hook script, its shell, the agent, the terminal.
