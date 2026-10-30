@@ -811,6 +811,17 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(ChatMedia(kind: .sticker).label, tr("chat.media.sticker"))
     }
 
+    func testAPhotoSentAsADocumentShowsAsAPhoto() {
+        XCTAssertEqual(ChatMedia(kind: .file, name: "IMG_2041.JPG").shownKind, .photo)
+        XCTAssertEqual(ChatMedia(kind: .file, path: "/tmp/chat/1/screenshot.png").shownKind, .photo, "no name: by its file")
+        XCTAssertEqual(ChatMedia(kind: .file, name: "party.gif").shownKind, .gif)
+        XCTAssertEqual(ChatMedia(kind: .file, name: "clip.mov").shownKind, .video)
+        XCTAssertEqual(ChatMedia(kind: .file, name: "plan.pdf").shownKind, .file)
+        XCTAssertEqual(ChatMedia(kind: .file).shownKind, .file)
+        XCTAssertEqual(ChatMedia(kind: .sticker, name: "smile.png").shownKind, .sticker, "only a document is looked at again")
+        XCTAssertEqual(ChatMedia(kind: .file, name: "IMG_2041.JPG").label, "IMG_2041.JPG", "it keeps its name")
+    }
+
     func testAFetchedFileStaysInItsFolder() {
         let url = ChatMedia.destination(key: "slack-C1-17.1", name: "../../evil/x.png")
         XCTAssertEqual(url.deletingLastPathComponent().deletingLastPathComponent().path, ChatMedia.folder.path)

@@ -51,6 +51,11 @@ struct ChatTranscript: View {
     /// long the chat is; scrolling back to the top draws the ones before them.
     @State private var drawnFrom: String?
     @State private var drawsAll = false
+    /// Older messages were just drawn above and the chat is being put back where you were: reaching the top again in
+    /// the same moment does not draw another page at once.
+    @State private var drawingOlder = false
+    /// The day lines and runs of what is drawn, worked out again only when the messages change.
+    @State private var timeline = TranscriptTimelineMemo()
 
     /// How many messages a chat lays out when it opens, and how many more each time you reach the top.
     static let page = 60
@@ -68,7 +73,8 @@ struct ChatTranscript: View {
     /// You moved the chat: what is drawn stays put from now on, so a new message does not push the oldest one out above
     /// what you read.
     private func userScrolled() {
-        scrolledByUser = true
+        // Called on every step of scrolling up: state is written only when it changes, so scrolling redraws nothing.
+        if !scrolledByUser { scrolledByUser = true }
         if drawnFrom == nil, !drawsAll, fills { drawnFrom = drawn.first?.id }
     }
 
@@ -78,10 +84,12 @@ struct ChatTranscript: View {
         guard shown.count < bubbles.count, let top = shown.first?.id,
               let index = bubbles.firstIndex(where: { $0.id == top }) else { return false }
         drawnFrom = bubbles[max(index - Self.page, 0)].id
+        drawingOlder = true
         DispatchQueue.main.async {
             var still = Transaction()
             still.disablesAnimations = true
             withTransaction(still) { proxy.scrollTo(top, anchor: .top) }
+            drawingOlder = false
         }
         return true
     }
@@ -180,7 +188,7 @@ struct ChatTranscript: View {
     /// Loads the older messages once at a time; the message that was on top stays where it was, with the older ones
     /// above it.
     private func loadOlder(_ proxy: ScrollViewProxy, automatic: Bool = false) {
-        guard !loadingOlder else { return }
+        guard !loadingOlder, !drawingOlder else { return }
         // What this Mac already has is drawn first; only then is the chat's app asked for more.
         if drawOlder(proxy) { return }
         guard let onLoadOlder, !(automatic && reachedStart) else { return }
@@ -217,7 +225,7 @@ struct ChatTranscript: View {
 
     private func entries(_ bubbles: [ChatBubble]) -> [ChatTimeline.Entry] {
         let items = bubbles.map { ChatTimeline.Item(id: $0.id, author: $0.fromMe ? "\u{1}me" : $0.sender, date: $0.date) }
-        return ChatTimeline.entries(items, locale: Locale(identifier: I18n.shared.currentLanguage.rawValue))
+        return timeline.entries(items, language: I18n.shared.currentLanguage)
     }
 
     private var stack: some View {
@@ -316,7 +324,7 @@ struct ChatTranscript: View {
         switch bubble.media {
         case .photo(let url), .sticker(let url): return url
         case .gif(let url): return ChatMediaImages.isPicture(url) ? url : nil
-        case .file, .video, .audio: return nil
+        case .file, .photoComing, .video, .audio: return nil
         }
     }
 
@@ -402,7 +410,7 @@ private struct ChatBubbleView: View, Equatable {
     private var mediaOnly: Bool {
         guard bubble.text.isEmpty, bubble.quote == nil, bubble.poll == nil else { return false }
         switch bubble.media {
-        case .photo: return true
+        case .photo, .photoComing: return true
         case .video, .gif: return true
         default: return false
         }
@@ -466,6 +474,10 @@ private struct ChatBubbleView: View, Equatable {
             } else {
                 ChatPhotoLoader(url: url, name: attachment, onZoom: onZoom, onOpen: onOpen)
             }
+        case .photoComing:
+            Button(action: onOpen) { ChatPhotoPlaceholder(name: attachment) }
+                .buttonStyle(.plain)
+                .help(tr("card.attachment.view"))
         case .video(let url):
             VideoTile(url: url, poster: bubble.image, name: attachment)
         case .gif(let url):
@@ -1478,9 +1490,11 @@ private struct ZoomablePhoto: NSViewRepresentable {
 }
 
 /// A photo in a chat bubble, as it came: a click enlarges it in the card or chat.
-/// A photo that was not readable yet when its bubble was made (its app was still writing it, or fetching it): read
-/// again in the background, a few times over a while, with a quiet placeholder meanwhile; then shown as any photo. One
-/// that never becomes readable shows as a file that opens in its app.
+/// A photo in a chat bubble that was not decoded yet: read in the background (again a few times over a while when its
+/// app is still writing it), with a quiet placeholder meanwhile; then shown as any photo. One that never becomes
+/// readable shows as a file that opens in its app. Every photo comes in this way, so making a chat's bubbles never
+/// decodes a picture and opening or scrolling a chat full of photos stays smooth. The placeholder already has the
+/// photo's own size (read from its header), so nothing in the chat moves when the photo appears.
 struct ChatPhotoLoader: View {
     let url: URL
     let name: String
@@ -1488,6 +1502,15 @@ struct ChatPhotoLoader: View {
     let onOpen: () -> Void
     @State private var image: NSImage?
     @State private var failed = false
+
+    init(url: URL, name: String, onZoom: @escaping () -> Void, onOpen: @escaping () -> Void) {
+        self.url = url
+        self.name = name
+        self.onZoom = onZoom
+        self.onOpen = onOpen
+        // A photo decoded before (scrolled past, or the chat opened lately) shows at once, without a placeholder first.
+        _image = State(initialValue: ChatMediaImages.cached(url))
+    }
 
     private static let tries = 12
     private static let pause: Duration = .seconds(2)
@@ -1499,15 +1522,7 @@ struct ChatPhotoLoader: View {
             } else if failed {
                 AttachmentButton(name: name, file: url, action: onOpen)
             } else {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                    .fill(NookTheme.ink.opacity(0.3))
-                    .frame(width: PhotoButton.maxWidth, height: PhotoButton.maxHeight * 0.75)
-                    .overlay {
-                        Image(systemName: "photo")
-                            .font(NookTheme.font(22))
-                            .foregroundStyle(NookTheme.textTertiary)
-                    }
-                    .accessibilityLabel(name)
+                ChatPhotoPlaceholder(name: name, size: ChatMediaImages.pixelSize(url))
             }
         }
         .task(id: url) {
@@ -1522,6 +1537,30 @@ struct ChatPhotoLoader: View {
             }
             failed = true
         }
+    }
+}
+
+/// Where a photo goes while it is not drawn yet: a quiet tile with a photo mark, at the photo's own size when that is
+/// known. Also a photo its app has not given Nook yet, which a click opens in the app.
+struct ChatPhotoPlaceholder: View {
+    let name: String
+    /// The photo's size in pixels; nil when not known (a tile of a usual photo's shape).
+    var size: CGSize? = nil
+
+    var body: some View {
+        let shown = size.map(PhotoButton.fittedSize(for:))
+            ?? CGSize(width: PhotoButton.maxWidth, height: PhotoButton.maxHeight * 0.75)
+        RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+            .fill(NookTheme.ink.opacity(0.3))
+            .frame(width: shown.width, height: shown.height)
+            .overlay {
+                Image(systemName: "photo")
+                    .font(NookTheme.font(22))
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+            .contentShape(Rectangle())
+            .accessibilityElement()
+            .accessibilityLabel(name)
     }
 }
 
@@ -1634,6 +1673,27 @@ struct AttachmentButton: View {
         }
         guard !ext.isEmpty else { return nil }
         return UTType(filenameExtension: ext)?.localizedDescription ?? ext.uppercased()
+    }
+}
+
+/// `ChatTimeline.entries` of what a chat draws, kept while its messages, the day and the language stay the same: the
+/// transcript's body runs again on every change anywhere in Nook's chats and while you scroll.
+@MainActor
+private final class TranscriptTimelineMemo {
+    private var items: [ChatTimeline.Item]?
+    private var day: Date?
+    private var language: AppLanguage?
+    private var kept: [ChatTimeline.Entry] = []
+
+    func entries(_ items: [ChatTimeline.Item], language: AppLanguage) -> [ChatTimeline.Entry] {
+        // "Today" and "Yesterday" move on at midnight.
+        let day = Calendar.current.startOfDay(for: Date())
+        if items == self.items, day == self.day, language == self.language { return kept }
+        kept = ChatTimeline.entries(items, locale: Locale(identifier: language.rawValue))
+        self.items = items
+        self.day = day
+        self.language = language
+        return kept
     }
 }
 
