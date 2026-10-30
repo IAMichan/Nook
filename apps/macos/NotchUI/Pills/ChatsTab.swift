@@ -334,6 +334,9 @@ struct ChatsTab: View {
     /// (a rail when it is narrow). A double-click on the line goes back to that. Remembered.
     @AppStorage("nook.chats.sidebarWidth") private var sidebarChoice: Double = 0
     @State private var sidebarDragStart: Double?
+    /// The sidebar's width while its line is dragged (`PanelDrag`).
+    @State private var liveSidebar: Double?
+    private var sidebarSize: Double { liveSidebar ?? sidebarChoice }
     /// Settings › Connections: opening a chat reads it in Nook. On by default; the app itself hears it only from your click.
     @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
     @State private var totalWidth: Double = 0
@@ -360,15 +363,15 @@ struct ChatsTab: View {
     /// The sidebar folds to a rail of icons when the panel is narrow, so the list and the chat keep their room.
     /// Dragged narrower than `chatsSidebarFold`, it is the rail too.
     private var compactSidebar: Bool {
-        if sidebarChoice > 0 { return sidebarChoice < PanelLayout.chatsSidebarFold }
+        if sidebarSize > 0 { return sidebarSize < PanelLayout.chatsSidebarFold }
         return totalWidth > 0 && totalWidth < PanelLayout.chatsSidebarRoom
     }
     private var sidebarWidth: Double {
         if compactSidebar { return Double(PanelLayout.chatsRail) }
-        guard sidebarChoice > 0 else { return Double(PanelLayout.chatsSidebar) }
+        guard sidebarSize > 0 else { return Double(PanelLayout.chatsSidebar) }
         // However wide you made it, the list keeps its narrowest width beside it.
         let room = totalWidth > 0 ? totalWidth - PanelLayout.minimumList - PanelSplit.handle : PanelLayout.chatsSidebarMax
-        return max(PanelLayout.chatsSidebarFold, min(sidebarChoice, PanelLayout.chatsSidebarMax, room))
+        return max(PanelLayout.chatsSidebarFold, min(sidebarSize, PanelLayout.chatsSidebarMax, room))
     }
     /// Too narrow for the list and a chat side by side: one of them at a time (`PanelLayout.stacks`).
     private var stacked: Bool { PanelLayout.stacks(totalWidth - sidebarWidth) }
@@ -669,10 +672,13 @@ struct ChatsTab: View {
                 let start = sidebarDragStart ?? sidebarWidth
                 sidebarDragStart = start
                 let dragged = start + offset
-                sidebarChoice = dragged < PanelLayout.chatsSidebarFold
-                    ? Double(PanelLayout.chatsRail) : min(dragged, PanelLayout.chatsSidebarMax)
+                PanelDrag.step($liveSidebar, to: dragged < PanelLayout.chatsSidebarFold
+                    ? Double(PanelLayout.chatsRail) : min(dragged, PanelLayout.chatsSidebarMax))
             },
-            onEnd: { sidebarDragStart = nil },
+            onEnd: {
+                sidebarDragStart = nil
+                PanelDrag.commit($liveSidebar, to: $sidebarChoice)
+            },
             onReset: { withAnimation(NookTheme.reveal) { sidebarChoice = 0 } }
         )
     }

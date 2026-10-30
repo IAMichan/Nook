@@ -20,9 +20,12 @@ private struct ResizablePanel: ViewModifier {
     let edge: HorizontalEdge
     let divider: Bool
     @State private var dragStart: Double?
+    /// The width while the line is being dragged: only this panel follows the pointer, and `width` (usually
+    /// `@AppStorage`, read by the views around it) is written once, when the drag ends.
+    @State private var live: Double?
 
     func body(content: Content) -> some View {
-        let shown = PanelSplit.width(width, minimum: minimum, available: available, rest: rest)
+        let shown = PanelSplit.width(live ?? width, minimum: minimum, available: available, rest: rest)
         HStack(alignment: .top, spacing: 0) {
             if edge == .leading { handle(shown) }
             content.frame(width: shown)
@@ -37,12 +40,45 @@ private struct ResizablePanel: ViewModifier {
             onDrag: { offset in
                 let start = dragStart ?? shown
                 dragStart = start
-                width = PanelSplit.width(PanelSplit.dragged(from: start, offset: offset, handleOnLeading: edge == .leading),
-                                         minimum: minimum, available: available, rest: rest)
+                let dragged = PanelSplit.width(PanelSplit.dragged(from: start, offset: offset, handleOnLeading: edge == .leading),
+                                               minimum: minimum, available: available, rest: rest)
+                PanelDrag.step($live, to: dragged)
             },
-            onEnd: { dragStart = nil },
-            onReset: { width = defaultWidth }
+            onEnd: {
+                dragStart = nil
+                PanelDrag.commit($live, to: $width)
+            },
+            onReset: { withAnimation(NookTheme.reveal) { width = defaultWidth } }
         )
+    }
+}
+
+/// How a drag line moves what it resizes: right under the pointer, every step without animation (an animation still
+/// running from the last step makes the panel trail the pointer and stutter), on whole points, and only when the size
+/// really changed. The size lives in a `@State` while dragging and goes to its `@AppStorage` once, at the end: writing
+/// the stored value on every mouse event saves it each time and redraws every view that reads it.
+enum PanelDrag {
+    static func step(_ live: Binding<Double?>, to value: Double) {
+        let snapped = value.rounded()
+        guard live.wrappedValue != snapped else { return }
+        still { live.wrappedValue = snapped }
+    }
+
+    /// Ends the drag: the stored size takes the dragged one, in the same transaction that lets go of the live one, so
+    /// nothing jumps back for a frame.
+    static func commit(_ live: Binding<Double?>, to stored: Binding<Double>) {
+        guard let value = live.wrappedValue else { return }
+        still {
+            if stored.wrappedValue != value { stored.wrappedValue = value }
+            live.wrappedValue = nil
+        }
+    }
+
+    /// Runs `change` with every animation off, the implicit ones (`.animation(_:value:)`) included.
+    static func still(_ change: () -> Void) {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction, change)
     }
 }
 

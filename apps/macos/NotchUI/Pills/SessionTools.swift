@@ -240,6 +240,8 @@ struct SessionWorkbench<Conversation: View>: View {
     @State private var totalWidth: Double = SessionWorkbenchSize.width
     @State private var totalHeight: Double = SessionWorkbenchSize.height
     @State private var dragStart: Double?
+    /// The bottom panel's height while its line is dragged (`PanelDrag`).
+    @State private var liveBottomHeight: Double?
     /// What the conversation found the agent produced (`SessionOutputsReport`), and the output the outputs tab shows.
     @State private var outputs = SessionOutputsReport()
     @State private var outputSelection: String?
@@ -320,11 +322,15 @@ struct SessionWorkbench<Conversation: View>: View {
                     }
                 if bottom != .conversation {
                     VStack(spacing: 0) {
-                        BottomSplitHandle(onDrag: dragBottom, onEnd: { dragStart = nil },
-                                          onReset: { bottomHeight = BottomPanelLayout.standard })
+                        BottomSplitHandle(onDrag: dragBottom,
+                                          onEnd: {
+                                              dragStart = nil
+                                              PanelDrag.commit($liveBottomHeight, to: $bottomHeight)
+                                          },
+                                          onReset: { withAnimation(NookTheme.reveal) { bottomHeight = BottomPanelLayout.standard } })
                         panel(.bottom, tool: bottom)
                     }
-                    .frame(height: CGFloat(BottomPanelLayout.height(bottomHeight, available: totalHeight)))
+                    .frame(height: CGFloat(BottomPanelLayout.height(liveBottomHeight ?? bottomHeight, available: totalHeight)))
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
@@ -490,7 +496,7 @@ struct SessionWorkbench<Conversation: View>: View {
     private func dragBottom(_ offset: Double) {
         let start = dragStart ?? BottomPanelLayout.height(bottomHeight, available: totalHeight)
         dragStart = start
-        bottomHeight = BottomPanelLayout.height(start - offset, available: totalHeight)
+        PanelDrag.step($liveBottomHeight, to: BottomPanelLayout.height(start - offset, available: totalHeight))
     }
 
     private func panel(_ slot: SessionPanelSlot, tool: SessionTool) -> some View {
@@ -585,7 +591,7 @@ private struct BottomSplitHandle: View {
             // Global coordinates: the line itself moves while you drag it.
             DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { value in
-                    dragging = true
+                    if !dragging { dragging = true }
                     onDrag(Double(value.translation.height))
                 }
                 .onEnded { _ in

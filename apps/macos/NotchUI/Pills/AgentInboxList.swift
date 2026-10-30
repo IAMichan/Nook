@@ -24,6 +24,9 @@ struct AgentInboxList: View {
     @State private var settledLimit = InboxLayout.settledPage
     @State private var dragging: String?
     @State private var targeted: InboxSection.Kind?
+    /// The row (or section header) the dragged row is over: moving onto the next row of a section says "entered" there
+    /// before the last row says "left", which must not take the section's mark away.
+    @State private var targetedSpot: String?
     @State private var hint: String?
     @State private var selection = ListSelection<String>()
 
@@ -471,7 +474,7 @@ struct AgentInboxList: View {
     /// Applies a drop: onto a row of the same section it reorders, onto a section it changes the session's state.
     fileprivate func drop(on kind: InboxSection.Kind, row targetRow: String?, section: InboxSection, sections: [InboxSection],
                           byID: [String: AgentListItem]) -> Bool {
-        defer { dragging = nil; targeted = nil }
+        defer { dragging = nil; targeted = nil; targetedSpot = nil }
         guard let dragged = dragging, let (from, entry) = locate(dragged, in: sections), let item = byID[dragged] else { return false }
         if from.kind == kind, let targetRow {
             let ids = section.rows.map(\.id)
@@ -493,8 +496,17 @@ struct AgentInboxList: View {
         return true
     }
 
-    fileprivate func setTargeted(_ kind: InboxSection.Kind, _ on: Bool) {
-        if on { targeted = kind } else if targeted == kind { targeted = nil }
+    fileprivate func setTargeted(_ kind: InboxSection.Kind, row: String?, _ on: Bool) {
+        let spot = kind.rawValue + "/" + (row ?? "")
+        withAnimation(NookTheme.hover) {
+            if on {
+                if targeted != kind { targeted = kind }
+                targetedSpot = spot
+            } else if targetedSpot == spot {
+                targeted = nil
+                targetedSpot = nil
+            }
+        }
     }
 
     private func show(_ text: String) {
@@ -567,8 +579,11 @@ private struct DropTarget: ViewModifier {
     let row: String?
 
     func body(content: Content) -> some View {
-        content.onDrop(of: [.plainText], isTargeted: Binding(get: { false }, set: { list.setTargeted(kind, $0) })) { _ in
-            list.drop(on: kind, row: row, section: section, sections: sections, byID: byID)
+        content.onDrop(of: [.plainText], isTargeted: Binding(get: { false }, set: { list.setTargeted(kind, row: row, $0) })) { _ in
+            // The row glides to where it was dropped, as the others make room, instead of jumping there.
+            withAnimation(NookTheme.reveal) {
+                list.drop(on: kind, row: row, section: section, sections: sections, byID: byID)
+            }
         }
     }
 }

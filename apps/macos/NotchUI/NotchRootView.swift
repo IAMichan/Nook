@@ -688,7 +688,10 @@ private struct NotchResizeHandles: View {
             .gesture(
                 // Global coordinates: the edge itself moves while you drag it.
                 DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { hovered = edge; viewModel.resize(edge, translation: $0.translation) }
+                    .onChanged { value in
+                        if hovered != edge { hovered = edge }
+                        viewModel.resize(edge, translation: value.translation)
+                    }
                     .onEnded { _ in viewModel.endResize(); hovered = nil }
             )
             .onTapGesture(count: 2) { viewModel.resetPanelSize() }
