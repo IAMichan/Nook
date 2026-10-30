@@ -360,7 +360,11 @@ struct AutocompleteSettingsSection: View {
                 HStack {
                     Slider(value: Binding(get: { Double(store.prefs.delayMilliseconds) }, set: { store.prefs.delayMilliseconds = Int($0) }),
                            in: 0...600, step: 20).frame(width: 160)
+                    // A fixed width keeps the slider still while the value grows from "0 ms" to "600 ms";
+                    // otherwise the row reflows under the cursor and the slider jitters back and forth.
                     Text("\(store.prefs.delayMilliseconds) ms").monospacedDigit().foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(1)
+                        .frame(width: 56, alignment: .trailing)
                 }
             }
             SettingToggle(tr("autocomplete.inline"), detail: tr("autocomplete.inlineDetail"), isOn: $store.prefs.inlineGhost)
