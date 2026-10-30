@@ -332,12 +332,36 @@ enum TranscriptPresentation {
         return marks
     }
 
+    /// The same marks for a session Nook runs, from its events: `row` is the event itself. A finished turn folds its
+    /// steps into one line, so a step weighs little.
+    static func promptMarks(events: [RunEvent]) -> [PromptMark] {
+        let weights = events.map { event -> Double in
+            switch event.kind {
+            case .user: return 3 + min(8, lines(event.text, width: 60))
+            case .assistant: return 1 + lines(event.text, width: 90)
+            default: return 0.2
+            }
+        }
+        let total = weights.reduce(0, +)
+        guard total > 0 else { return [] }
+        var marks: [PromptMark] = []
+        var above = 0.0
+        for (event, weight) in zip(events, weights) {
+            if event.kind == .user {
+                marks.append(PromptMark(id: event.id.uuidString, row: event.id.uuidString, position: above / total, text: event.text))
+            }
+            above += weight
+        }
+        return marks
+    }
+
+    private static func lines(_ text: String, width: Int) -> Double {
+        Double(text.split(separator: "\n", omittingEmptySubsequences: false)
+            .reduce(0) { $0 + max(1, ($1.count + width - 1) / width) })
+    }
+
     /// Roughly how many lines a row takes: enough to tell a long answer from a one-line step.
     private static func weight(_ row: TranscriptRow) -> Double {
-        func lines(_ text: String, width: Int) -> Double {
-            Double(text.split(separator: "\n", omittingEmptySubsequences: false)
-                .reduce(0) { $0 + max(1, ($1.count + width - 1) / width) })
-        }
         switch row {
         // A long message folds to its first eight lines; the space above it starts the turn.
         case .user(let message): return 3 + min(8, lines(message.text, width: 60))

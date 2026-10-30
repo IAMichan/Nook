@@ -108,4 +108,24 @@ final class ScrollModelTests: XCTestCase {
         let odd = try JSONDecoder().decode(ScrollMemory.Position.self, from: Data(#"{"kind":"future","x":1}"#.utf8))
         XCTAssertEqual(odd, .end)
     }
+
+    func testFrameThumbFollowsTheViewport() {
+        var frame = ScrollFrame(offset: 0, content: 1000, container: 250)
+        XCTAssertEqual(frame.thumb.start, 0)
+        XCTAssertEqual(frame.thumb.length, 0.25)
+        frame.offset = 500
+        XCTAssertEqual(frame.thumb.start, 0.5)
+        frame.offset = 900
+        XCTAssertEqual(frame.thumb.start, 0.75)
+        XCTAssertEqual(ScrollFrame().thumb.length, 1)
+    }
+
+    func testFrameOffsetBringsAPlaceToTheTopWithinRange() {
+        let frame = ScrollFrame(offset: 0, content: 1000, container: 250, insetTop: 10, insetBottom: 90)
+        XCTAssertEqual(frame.offset(at: 0), -10)
+        XCTAssertEqual(frame.offset(at: 0.5), 490)
+        XCTAssertEqual(frame.offset(at: 1), 840)
+        XCTAssertEqual(frame.offset(at: 7), 840)
+        XCTAssertEqual(frame.offset(at: -1), -10)
+    }
 }
