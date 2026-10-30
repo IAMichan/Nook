@@ -11,6 +11,11 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- An Actions page beside Pull requests under the Agents list (the play icon): a repository's GitHub Actions runs,
+  newest first under a heading per day, filtered by workflow (CI, Promote, Release…) and by state (running, failed).
+  A run opens with its jobs, each job's steps and log, and re-run (all or only the failed jobs) or cancel. Runs that
+  are still going are followed live. On the Mac and in the Tauri app.
+
 - The session list on the left of the Agents tab can be put away beside a session, with the cross at the end of its
   title row or the new left toggle in the session's header (list, bottom panel, side panel); it is remembered.
 

@@ -1,10 +1,12 @@
 import SwiftUI
 import AppKit
 
-/// The pages the Agents tab opens on the right: your pull requests and the usage of every account (from the buttons
-/// under the list), and the tools that are not tied to one session: every terminal, the browser, every worktree.
+/// The pages the Agents tab opens on the right: your pull requests, a repository's GitHub Actions and the usage of every
+/// account (from the buttons under the list), and the tools that are not tied to one session: every terminal, the browser, every worktree.
 enum AgentsPage {
     static let pullRequests = "pulls"
+    /// A repository's GitHub Actions: its workflow runs (CI, a promote, a release) and their jobs and logs.
+    static let actions = "actions"
     static let usage = "usage"
     static let terminals = "terminals"
     static let browser = "browser"
@@ -14,10 +16,10 @@ enum AgentsPage {
     static let tools: Set<String> = [terminals, browser, worktrees, simulator]
 }
 
-/// Settings, pull requests and usage as quiet icons, and one refresh button at the far end. It shows on every tab, under
+/// Settings, pull requests, Actions and usage as quiet icons, and one refresh button at the far end. It shows on every tab, under
 /// the tab's list (the sessions on Agents, the Nooks on the chat, the chats on Chats), taking the list's width so the
 /// button follows the line beside the list when you drag it. A tab without a list shows it at the bottom as wide as the
-/// list would be. On the other tabs, pull requests and usage open their page on Agents.
+/// list would be. On the other tabs, pull requests, Actions and usage open their page on Agents.
 /// Refresh reads the session lists again and checks main for an update; while there is one (or it installs), the
 /// update button takes its place, so there is never a second round arrow beside it. On the pull requests page a back
 /// button replaces the icons and the refresh (the page has its own), and only the update button stays beside it.
@@ -58,6 +60,8 @@ struct PanelFooter: View {
                        action: openSettings) { ToolGlyph(symbol: "gearshape") }
             FooterIcon(label: tr("agents.footer.pullRequests"), active: selected == AgentsPage.pullRequests,
                        action: { open(AgentsPage.pullRequests) }) { PullRequestGlyph() }
+            FooterIcon(label: tr("actions.title"), hint: tr("actions.footerHint"), active: selected == AgentsPage.actions,
+                       action: { open(AgentsPage.actions) }) { ToolGlyph(symbol: "play.circle") }
             FooterIcon(label: tr("agents.footer.usage"), active: selected == AgentsPage.usage,
                        action: { open(AgentsPage.usage) }) { UsageGlyph() }
             if let openCloud {

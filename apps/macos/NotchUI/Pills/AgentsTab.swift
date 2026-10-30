@@ -28,6 +28,7 @@ struct AgentsTab: View {
         case past(PastSession)
         case run(UUID)
         case pullRequests
+        case actions
         case usage
         case terminals
         case browser
@@ -108,6 +109,7 @@ struct AgentsTab: View {
                             // Each session gets its own panel state: nothing (a pending "restore files" above all) carries over.
                             .id("run:" + id.uuidString)
                         case .pullRequests: PullRequestsPanel()
+                        case .actions: ActionsPanel()
                         case .usage: AgentsUsagePanel()
                         case .terminals: AgentsToolPage(title: tr("agents.footer.terminals")) { TerminalsView() }
                         case .browser: AgentsToolPage(title: tr("agents.footer.browser")) { BrowserView() }
@@ -234,6 +236,7 @@ struct AgentsTab: View {
         let id = viewModel.selectedAgentID
         if id == "new" { return .new }
         if id == AgentsPage.pullRequests && !app.demoMode { return .pullRequests }
+        if id == AgentsPage.actions && !app.demoMode { return .actions }
         if id == AgentsPage.usage && !app.demoMode { return .usage }
         if id == AgentsPage.terminals && !app.demoMode { return .terminals }
         if id == AgentsPage.browser && !app.demoMode { return .browser }
@@ -261,6 +264,7 @@ struct AgentsTab: View {
         case .past(let session): return "past:" + session.id
         case .run(let id): return "run:" + id.uuidString
         case .pullRequests: return AgentsPage.pullRequests
+        case .actions: return AgentsPage.actions
         case .usage: return AgentsPage.usage
         case .terminals: return AgentsPage.terminals
         case .browser: return AgentsPage.browser

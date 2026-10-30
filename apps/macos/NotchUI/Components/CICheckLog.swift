@@ -8,7 +8,10 @@ import AppKit
 /// read on GitHub. A check from another app (CodeRabbit, a deploy, a commit status) shows its report instead: what it
 /// says about the commit, its remarks on lines of code, and what the app wrote on the pull request.
 struct CICheckLogView: View {
-    let pullRequest: URL
+    /// The pull request the check belongs to; nil for a job of a repository's own runs (the Actions page), which
+    /// passes `repository` instead.
+    let pullRequest: URL?
+    var repository: String? = nil
     let check: PullRequestCheck
     /// The back button before the name, on a page that showed the check in place of something else.
     var onBack: (() -> Void)?
@@ -295,7 +298,7 @@ struct CICheckLogView: View {
         guard let jobID = CILogParser.jobID(from: check.url) else { return }
         while !Task.isCancelled {
             do {
-                let fresh = try await GitHubCILogs.log(pullRequest: pullRequest, jobID: jobID)
+                let fresh = try await readLog(jobID: jobID)
                 guard !Task.isCancelled else { return }
                 withAnimation(NookTheme.swap) { log = fresh }
                 failure = nil
@@ -306,6 +309,12 @@ struct CICheckLogView: View {
             }
             try? await Task.sleep(nanoseconds: Self.followInterval)
         }
+    }
+
+    private func readLog(jobID: Int) async throws -> CILog {
+        if let repository { return try await GitHubCILogs.log(repo: repository, jobID: jobID) }
+        guard let pullRequest else { throw CloudHelp.notSetUp("GitHub") }
+        return try await GitHubCILogs.log(pullRequest: pullRequest, jobID: jobID)
     }
 
     // MARK: Report
@@ -392,6 +401,11 @@ struct CICheckLogView: View {
     /// Starts again when the check's outcome changes, keeping what it showed until the new read is in.
     private func followReport() async {
         failure = nil
+        // Only a pull request's checks come from other apps; a repository's runs are all Actions jobs.
+        guard let pullRequest else {
+            failure = tr("ws.ci.report.none")
+            return
+        }
         while !Task.isCancelled {
             do {
                 let fresh = try await GitHubCILogs.report(pullRequest: pullRequest, check: check)

@@ -206,6 +206,7 @@ targets:
       - path: Core/I18n+Keybindings.swift
       - path: Core/I18n+Bridge.swift
       - path: Core/I18n+Releases.swift
+      - path: Core/I18n+Actions.swift
       - path: Core/I18n+RelayPush.swift
       - path: Core/I18n+ChatTimeline.swift
       - path: Core/I18n+WorkspaceFeatures.swift
@@ -304,6 +305,7 @@ targets:
       - path: Services/Connectors/PullRequestActions.swift
       - path: Services/Connectors/PullRequestFileOrder.swift
       - path: Services/Connectors/CILog.swift
+      - path: Services/Connectors/WorkflowRuns.swift
       - path: Services/Connectors/PullRequestBatchMerge.swift
       - path: Services/Connectors/GitHubMarkdown.swift
       - path: Services/Connectors/PullRequestFilter.swift

@@ -826,6 +826,21 @@ impl GitHub {
         PullRequestList { available, accounts: pulls::load(&self.env, &targets, watching).await }
     }
 
+    /// The id and token of every account, the one with `preferred` first, for reading a repository that only some of
+    /// them may see: the Actions page tries them in this order and keeps the first one with access.
+    pub fn tokens_in_order(&self, preferred: Option<&str>) -> Vec<(String, String)> {
+        if !self.env.store.is_on(ID) {
+            return vec![];
+        }
+        let mut result: Vec<(String, String)> =
+            self.accounts().into_iter().filter_map(|a| Some((a.id.clone(), self.env.secret(&a.key("token"))?))).collect();
+        if let Some(index) = preferred.and_then(|id| result.iter().position(|(a, _)| a == id)) {
+            let first = result.remove(index);
+            result.insert(0, first);
+        }
+        result
+    }
+
     /// The id and token of the account with this id; without one (or when it lost its token) the first account that
     /// has a token, so a pull request is read and merged with the account it was listed under.
     pub fn token_for(&self, account_id: Option<&str>) -> Option<(String, String)> {

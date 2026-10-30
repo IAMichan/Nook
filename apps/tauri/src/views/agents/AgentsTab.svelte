@@ -12,6 +12,8 @@
   import Worktrees from "../workspace/Worktrees.svelte";
   import LiveDetail from "./LiveDetail.svelte";
   import PastDetail from "./PastDetail.svelte";
+  import Actions from "./actions/Actions.svelte";
+  import ActionsGlyph from "./actions/ActionsGlyph.svelte";
   import PullGlyph from "./pulls/PullGlyph.svelte";
   import PullRequests from "./pulls/PullRequests.svelte";
   import NewSession from "./run/NewSession.svelte";
@@ -128,7 +130,7 @@
   );
   const earlier = $derived(past.filter((p) => !query.trim() || `${p.title} ${p.cwd} ${agentNames[p.agent]}`.toLowerCase().includes(query.trim().toLowerCase())));
 
-  const pages = ["pulls", "usage", "terminals", "browser", "worktrees"] as const;
+  const pages = ["pulls", "actions", "usage", "terminals", "browser", "worktrees"] as const;
   type Page = (typeof pages)[number];
 
   /// Wat rechts staat. Zonder keuze (of als die weg is): wat op je wacht of werkt, anders de plek om te starten.
@@ -233,6 +235,7 @@
     </div>
     <div class="footer">
       <button class="glyph" class:on={selected.kind === "page" && selected.page === "pulls"} title="Pull requests" aria-label="Pull requests" onclick={() => agents.select("pulls")}><PullGlyph size={13} /></button>
+      <button class="glyph" class:on={selected.kind === "page" && selected.page === "actions"} title="Actions" aria-label="Actions" onclick={() => agents.select("actions")}><ActionsGlyph size={13} /></button>
       <button class:on={selected.kind === "page" && selected.page === "usage"} title="Gebruik" onclick={() => agents.select("usage")}>Gebruik</button>
       <span class="vsep"></span>
       <button class:on={selected.kind === "page" && selected.page === "terminals"} title="Alle terminals" onclick={() => agents.select("terminals")}>›_</button>
@@ -250,6 +253,7 @@
       {#key selected.past.sessionId}<PastDetail session={selected.past as PastSession} oncontinue={continuePast} />{/key}
     {:else if selected.kind === "page"}
       {#if selected.page === "pulls"}<PullRequests />
+      {:else if selected.page === "actions"}<Actions />
       {:else if selected.page === "usage"}<UsagePage />
       {:else if selected.page === "terminals"}<Terminals />
       {:else if selected.page === "browser"}<Browser />

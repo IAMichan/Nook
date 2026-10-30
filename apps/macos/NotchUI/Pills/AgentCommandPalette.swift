@@ -23,6 +23,7 @@ struct AgentCommandPalette: View {
         var actions: [Entry] = [
             Entry(id: "act:new", symbol: "square.and.pencil", title: tr("agents.newSession"), detail: "") { viewModel.selectedAgentID = "new" },
             Entry(id: "act:pulls", symbol: PullRequestIcon.generic, title: tr("agents.footer.pullRequests"), detail: "") { viewModel.selectedAgentID = AgentsPage.pullRequests },
+            Entry(id: "act:actions", symbol: "play.circle", title: tr("actions.title"), detail: tr("actions.footerHint")) { viewModel.selectedAgentID = AgentsPage.actions },
             Entry(id: "act:usage", symbol: "chart.bar", title: tr("agents.footer.usage"), detail: "") { viewModel.selectedAgentID = AgentsPage.usage },
             Entry(id: "act:terminals", symbol: "terminal", title: tr("agents.footer.terminals"), detail: "") { viewModel.selectedAgentID = AgentsPage.terminals },
             Entry(id: "act:browser", symbol: "globe", title: tr("agents.footer.browser"), detail: "") { viewModel.selectedAgentID = AgentsPage.browser },
