@@ -30,8 +30,9 @@ struct TaskRingItem: Identifiable, Equatable {
 /// piece and Nook looks at it, with its name beside the ring; click it to go there. In the closed notch it is thin and
 /// close around Nook and only shows: a click on the notch opens the panel.
 ///
-/// Given Nook's `motion`, the ring follows him like elastic, closed or open: when he hops, nods or leans towards you
-/// it trails behind on a spring, stretches towards him while he pulls away and overshoots a little before it settles.
+/// Given Nook's `motion`, the ring moves with him, closed or open, so he always stays in its middle; it reacts like
+/// elastic: when he hops, nods or leans towards you it stretches along his move on a spring and overshoots a little
+/// before it settles round again.
 struct NookTaskRing: View {
     enum Style { case panel, compact }
 
@@ -81,7 +82,7 @@ struct NookTaskRing: View {
         TaskRingLayers(config: .init(items: items, metrics: metrics, hovered: hovered, reduceMotion: reduceMotion,
                                      frameRate: plan.frameRate(plan.interactiveFrameRate, attended: attended)),
                        motion: motion)
-        // Twice its size, so the ring trailing behind Nook and stretching is not cut off.
+        // Twice its size, so the ring moving with Nook and stretching is not cut off.
         .frame(width: metrics.side * 2, height: metrics.side * 2)
         .allowsHitTesting(false)
         .frame(width: metrics.side, height: metrics.side)
@@ -113,7 +114,7 @@ struct NookTaskRing: View {
         return Double((start + end) / 2) * 2 * .pi - .pi / 2
     }
 
-    /// The piece under `point`, measured on the ring at rest: it trails Nook by a few points at most.
+    /// The piece under `point`, measured on the ring at rest: it moves with Nook by a few points at most.
     private func index(at point: CGPoint) -> Int? {
         guard !items.isEmpty else { return nil }
         let side = metrics.side
@@ -203,7 +204,7 @@ private final class TaskRingLayerView: NSView {
 
     /// Centered in the view and turned upside down, so the drawing below is y-down like SwiftUI's.
     private let ring = CALayer()
-    /// Follows Nook: moved with the spring and stretched towards him.
+    /// Follows Nook: moved with him and stretched along his move.
     private let body = CALayer()
     private let trackLayer = CAShapeLayer()
     private var pieces: [String: Piece] = [:]
@@ -212,7 +213,9 @@ private final class TaskRingLayerView: NSView {
     private weak var motion: NookMotion?
     private var following: AnyCancellable?
     private var target = CGSize.zero
+    /// Where the ring's stretch trails Nook: how far the band is pulled out of round, and in which direction.
     private var spring = RingSpring()
+    private var stretch: (amount: CGFloat, direction: Double) = (0, 0)
     private var link: CADisplayLink?
 
     init() {
@@ -494,7 +497,8 @@ private final class TaskRingLayerView: NSView {
 
     // MARK: Following Nook
 
-    /// Trails `motion` on a spring: a display link runs while the ring catches up with Nook, and stops once it rests.
+    /// Moves with `motion` at once, so Nook always stays in the middle of the ring; only its stretch trails him on a
+    /// spring, on a display link that runs while the spring catches up and stops once it rests.
     func follow(_ motion: NookMotion) {
         guard motion !== self.motion else { return }
         self.motion = motion
@@ -508,8 +512,11 @@ private final class TaskRingLayerView: NSView {
         target = offset
         guard let config, !config.reduceMotion, config.frameRate > 0, window != nil else {
             spring = RingSpring(position: offset)
-            return applyFollow(stretch: (0, 0))
+            stretch = (0, 0)
+            return applyFollow()
         }
+        // In the same transaction as Nook's own move, not a display frame later.
+        applyFollow()
         guard link == nil else { return }
         let link = displayLink(target: self, selector: #selector(step))
         let fps = Float(config.frameRate)
@@ -525,7 +532,8 @@ private final class TaskRingLayerView: NSView {
         let dy = target.height - spring.position.height
         let pull = hypot(dx, dy)
         let radius = config?.metrics.radius ?? 1
-        applyFollow(stretch: pull > 0.05 ? (min(pull / radius * 0.9, 0.12), atan2(dy, dx)) : (0, 0))
+        stretch = pull > 0.05 ? (min(pull / radius * 0.9, 0.12), atan2(dy, dx)) : (0, 0)
+        applyFollow()
         if spring.settled(at: target) { stopFollowing() }
     }
 
@@ -534,13 +542,13 @@ private final class TaskRingLayerView: NSView {
         link = nil
     }
 
-    /// Moves the ring with the spring and stretches it along the line towards Nook, a little narrower across it, like a
-    /// band that is pulled.
-    private func applyFollow(stretch: (amount: CGFloat, direction: Double)) {
+    /// Centers the ring on Nook and stretches it along the line he moves in, a little narrower across it, like a band
+    /// that is pulled.
+    private func applyFollow() {
         var transform = CATransform3DMakeRotation(-stretch.direction, 0, 0, 1)
         transform = CATransform3DConcat(transform, CATransform3DMakeScale(1 + stretch.amount, 1 - stretch.amount * 0.6, 1))
         transform = CATransform3DConcat(transform, CATransform3DMakeRotation(stretch.direction, 0, 0, 1))
-        transform = CATransform3DConcat(transform, CATransform3DMakeTranslation(spring.position.width, spring.position.height, 0))
+        transform = CATransform3DConcat(transform, CATransform3DMakeTranslation(target.width, target.height, 0))
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         body.transform = transform
@@ -548,8 +556,8 @@ private final class TaskRingLayerView: NSView {
     }
 }
 
-/// The ring's own place: a soft, slightly bouncy spring pulled towards Nook, so it trails behind him, overshoots a
-/// little and settles.
+/// A soft, slightly bouncy spring pulled towards Nook: how far it lags behind him is how far the ring stretches, so the
+/// band pulls when he moves, overshoots a little and settles round again.
 private struct RingSpring {
     private(set) var position = CGSize.zero
     private var velocity = CGSize.zero
