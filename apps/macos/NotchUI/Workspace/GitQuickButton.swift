@@ -7,7 +7,8 @@ struct GitQuickButton: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     let runID: UUID
     @State private var state: GitQuickState?
-    @State private var progress: String?
+    /// The step of the action under way, kept by the workspace so every view of the session shows it.
+    private var progress: String? { workspace.quickGitProgress(runID)?.step }
     @State private var confirmDefault: GitQuickAction?
 
     var body: some View {
@@ -90,16 +91,14 @@ struct GitQuickButton: View {
     }
 
     private func perform(_ action: GitQuickAction) {
-        progress = tr(action.labelKey)
         Task {
             do {
                 // A pull request it made stays put in the tray above the composer.
-                let link = try await workspace.performQuickGit(runID, action, progress: { progress = $0 })
+                let link = try await workspace.performQuickGit(runID, action, progress: { _ in })
                 ToastCenter.shared.gitQuick(action, result: .success(link))
             } catch {
                 ToastCenter.shared.gitQuick(action, result: .failure(error))
             }
-            progress = nil
             state = await workspace.quickGitState(runID)
         }
     }

@@ -26,6 +26,33 @@ extension WorkspaceManager {
         var switchedBranch: (String) -> Void = { _ in }
     }
 
+    /// A git action under way: what it does and the step it is at.
+    struct QuickGitProgress: Equatable {
+        let action: GitQuickAction
+        var step: String
+    }
+
+    /// The action under way for a session Nook runs.
+    func quickGitProgress(_ id: UUID) -> QuickGitProgress? { quickGitProgress[id.uuidString] }
+
+    /// The action under way in the repository a folder belongs to (a session's folder can lie deeper than its root).
+    func quickGitProgress(folder path: String) -> QuickGitProgress? {
+        guard !path.isEmpty else { return nil }
+        if let exact = quickGitProgress[path] { return exact }
+        return quickGitProgress.first { key, _ in key.hasPrefix("/") && path.hasPrefix(key.hasSuffix("/") ? key : key + "/") }?.value
+    }
+
+    /// Runs an action while its step stays readable under `key`, for every view that shows it.
+    private func tracked(_ key: String, _ action: GitQuickAction, progress: @escaping (String) -> Void,
+                         _ work: (@escaping (String) -> Void) async throws -> URL?) async throws -> URL? {
+        quickGitProgress[key] = QuickGitProgress(action: action, step: tr(action.labelKey))
+        defer { quickGitProgress[key] = nil }
+        return try await work { [weak self] step in
+            self?.quickGitProgress[key]?.step = step
+            progress(step)
+        }
+    }
+
     private func quickTarget(_ run: WorkspaceRun) -> QuickGitTarget? {
         guard let git = sessionGit(for: run) else { return nil }
         return QuickGitTarget(directory: run.workingDirectory, git: git, baseBranch: run.baseBranch, root: run.repoRoot ?? run.workingDirectory,
@@ -86,7 +113,8 @@ extension WorkspaceManager {
     func quickGitState(folder root: String, status: GitStatus) async -> GitQuickState? {
         guard let target = quickTarget(folder: root) else { return nil }
         return await quickGitState(target, status: status, known: folderPullRequests[root]) { [weak self] found in
-            self?.folderPullRequests[root] = found
+            // Published: only a new answer redraws the views.
+            if self?.folderPullRequests[root] != found { self?.folderPullRequests[root] = found }
         }
     }
 
@@ -132,7 +160,9 @@ extension WorkspaceManager {
         guard let run = run(id), let target = quickTarget(run) else { throw StartError.noGit }
         guard !run.status.isActive else { throw StartError.git(tr("ws.error.busy")) }
         defer { refreshGit(id) }
-        return try await performQuickGit(target, action, hooks: quickHooks(id), progress: progress)
+        return try await tracked(id.uuidString, action, progress: progress) { step in
+            try await performQuickGit(target, action, hooks: quickHooks(id), progress: step)
+        }
     }
 
     /// The same for a session Nook only sees, in its repository root.
@@ -141,7 +171,9 @@ extension WorkspaceManager {
         guard let target = quickTarget(folder: root) else { throw StartError.noGit }
         let hooks = QuickGitHooks(openedPullRequest: { [weak self] in self?.folderPullRequests[root] = $0 },
                                   switchedBranch: { [weak self] _ in self?.folderPullRequests[root] = nil })
-        return try await performQuickGit(target, action, hooks: hooks, progress: progress)
+        return try await tracked(root, action, progress: progress) { step in
+            try await performQuickGit(target, action, hooks: hooks, progress: step)
+        }
     }
 
     private func performQuickGit(_ target: QuickGitTarget, _ action: GitQuickAction, hooks: QuickGitHooks,

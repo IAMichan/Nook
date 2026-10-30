@@ -144,7 +144,10 @@ final class WorkspaceManager: ObservableObject {
     /// The open pull request of a session's branch, when GitHub says there is one (for the git button).
     @Published var openPullRequests: [UUID: URL] = [:]
     /// The same for sessions Nook only sees, by repository root.
-    var folderPullRequests: [String: URL] = [:]
+    @Published var folderPullRequests: [String: URL] = [:]
+    /// The git action the button is carrying out, by session (its id) or, for one Nook only sees, repository root: the
+    /// tray above the composer and the session panel show its step until it is done, also when the panel was closed.
+    @Published var quickGitProgress: [String: QuickGitProgress] = [:]
     /// GitHub through Nook's connector, configured by AppModel: the open pull request of a branch (and whether an earlier
     /// one was merged or closed), and opening one (nil while GitHub is not connected: the git button then opens GitHub's
     /// compare page with title and description filled in).

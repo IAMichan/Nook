@@ -1087,12 +1087,15 @@ struct AgentRunPanel: View {
             SessionBranches.rows(earlier: run.earlierBranches ?? [], earlierLinks: pullRequestSync.earlier[runID] ?? [],
                                  current: run.branch, currentPullRequest: pullRequest)
         } ?? []
-        if pullRequest != nil || !branches.isEmpty || !waiting.isEmpty || !quotes.isEmpty {
+        // A pull request the git button is writing or opening shows here already, where it will appear.
+        let pending = workspace.quickGitProgress(runID).flatMap { $0.action.proposes ? $0.step : nil }
+        let hasPullRequests = pullRequest != nil || !branches.isEmpty || pending != nil
+        if hasPullRequests || !waiting.isEmpty || !quotes.isEmpty {
             ComposerTray(edge: .top) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     if !quotes.isEmpty {
                         ComposerQuoteChips(quotes: quotes.items) { id in quotes.remove(id) }
-                        if pullRequest != nil || !branches.isEmpty || !waiting.isEmpty { ComposerTrayDivider() }
+                        if hasPullRequests || !waiting.isEmpty { ComposerTrayDivider() }
                     }
                     if !branches.isEmpty {
                         branchList(branches, watch: watch, canWatchCurrent: canWatch)
@@ -1101,7 +1104,8 @@ struct AgentRunPanel: View {
                             workspace.watchPullRequest(runID, url: watch == nil ? pullRequest : nil)
                         } : nil)
                     }
-                    if (pullRequest != nil || !branches.isEmpty) && !waiting.isEmpty { ComposerTrayDivider() }
+                    if let pending { PullRequestPendingRow(step: pending) }
+                    if hasPullRequests && !waiting.isEmpty { ComposerTrayDivider() }
                     if !waiting.isEmpty {
                         QueuedMessagesStrip(
                             queue: waiting, editing: editingQueued,
