@@ -843,7 +843,8 @@ private struct ReactionChips: View {
     var body: some View {
         // A click shows who put which emoji there, as the chat apps do; there yours can be taken back or another added.
         Button { showingPeople = true } label: {
-            HStack(spacing: NookTheme.Spacing.xs) {
+            // Many emoji wrap onto more rows under the bubble instead of squeezing each chip.
+            ChipFlow(spacing: NookTheme.Spacing.xs) {
                 ForEach(reactions) { reaction in chip(reaction) }
             }
             .contentShape(Rectangle())
@@ -869,6 +870,8 @@ private struct ReactionChips: View {
                     .foregroundStyle(reaction.mine ? NookTheme.mint : NookTheme.textStrong)
             }
         }
+        .lineLimit(1)
+        .fixedSize()
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.xxs)
         // An edge of its own, so it reads on the chat beside any bubble; yours in mint.
