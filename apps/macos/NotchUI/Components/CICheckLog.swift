@@ -5,13 +5,15 @@ import AppKit
 /// While the job runs it is followed live: the step that runs turns and counts up, the bar fills as steps finish, and the
 /// log takes the steps' place as soon as GitHub has it (GitHub hands out a job's log only once the job is done). The CI
 /// popover of a watched pull request and the checks on a pull request page both show it, so a check never has to be
-/// read on GitHub.
+/// read on GitHub. A check from another app (CodeRabbit, a deploy, a commit status) shows its report instead: what it
+/// says about the commit, its remarks on lines of code, and what the app wrote on the pull request.
 struct CICheckLogView: View {
     let pullRequest: URL
     let check: PullRequestCheck
     /// The back button before the name, on a page that showed the check in place of something else.
     var onBack: (() -> Void)?
     @State private var log: CILog?
+    @State private var report: CICheckReport?
     @State private var failure: String?
     /// nil until the reader picks: a log with errors opens on them, one without opens whole.
     @State private var showFullLog: Bool?
@@ -20,14 +22,22 @@ struct CICheckLogView: View {
 
     /// How often a running job is read again.
     private static let followInterval: UInt64 = 3_000_000_000
+    /// How often the report of a check that still runs is read again: three requests a turn, so less often.
+    private static let reportInterval: UInt64 = 10_000_000_000
+
+    private var isJob: Bool { CILogParser.jobID(from: check.url) != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             header
-            if CILogParser.jobID(from: check.url) == nil {
-                message(tr("ws.ci.noLog"))
-            } else if let failure {
+            if let failure {
                 message(failure)
+            } else if !isJob {
+                if let report {
+                    reportView(report)
+                } else {
+                    PatientSpinner().frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             } else if let log {
                 if log.text == nil {
                     timeline(log)
@@ -40,7 +50,7 @@ struct CICheckLogView: View {
                 PatientSpinner().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .task(id: check.id) { await follow() }
+        .task(id: isJob ? check.id : check.id + check.outcome.rawValue) { await (isJob ? follow() : followReport()) }
     }
 
     // MARK: Header
@@ -65,7 +75,7 @@ struct CICheckLogView: View {
                                       progress: log.flatMap(progress))
                 }
                 Spacer(minLength: 0)
-                if let text = log?.text, !text.isEmpty {
+                if let text = log?.text ?? report?.plainText, !text.isEmpty {
                     ToolbarIconButton("doc.on.doc", tr("ws.ci.copy")) { Pasteboard.copy(text) }
                 }
                 if let url = check.url {
@@ -295,6 +305,105 @@ struct CICheckLogView: View {
                 if log == nil { failure = error.localizedDescription }
             }
             try? await Task.sleep(nanoseconds: Self.followInterval)
+        }
+    }
+
+    // MARK: Report
+
+    /// A check from another app: its own report first, then what the app wrote on the pull request, in one column that
+    /// scrolls. With neither, a line that says so (the check's page is behind the button in the header).
+    @ViewBuilder
+    private func reportView(_ report: CICheckReport) -> some View {
+        if report.isEmpty {
+            message(tr(check.outcome == .pending ? "ws.ci.report.waiting" : "ws.ci.report.none"))
+        } else {
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                    if !report.title.isEmpty {
+                        Text(report.title).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textStrong)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if !report.summary.isEmpty { MarkdownView(text: report.summary, size: 12.5) }
+                    if !report.annotations.isEmpty { annotations(report.annotations) }
+                    if !report.text.isEmpty { MarkdownView(text: report.text, size: 12.5) }
+                    if !report.notes.isEmpty { notes(report.notes) }
+                }
+                .textSelection(.enabled)
+                .padding(NookTheme.Spacing.md)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.well))
+            .frame(maxHeight: .infinity)
+            .layoutPriority(1)
+        }
+    }
+
+    /// The remarks on lines of code, one per line: the mark in its level's color, file and line, then what it says.
+    private func annotations(_ items: [CICheckReport.Annotation]) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            NookSectionLabel(tr("ws.ci.report.annotations", items.count), inset: 0)
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
+                    Image(systemName: item.level == .error ? "xmark.octagon.fill"
+                          : item.level == .warning ? "exclamationmark.triangle.fill" : "info.circle.fill")
+                        .font(NookTheme.font(10, .semibold))
+                        .foregroundStyle(item.level == .error ? NookTheme.coralSoft : item.level == .warning ? NookTheme.amber : NookTheme.blue)
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                        Text(item.path + (item.line.map { ":\($0)" } ?? ""))
+                            .font(NookTheme.mono(10.5))
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                        Text([item.title, item.message].filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textStrong)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+    }
+
+    /// What the app wrote on the pull request, newest first, each under its author and when.
+    private func notes(_ items: [CICheckReport.Note]) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            NookSectionLabel(tr("ws.ci.report.notes"), inset: 0)
+            ForEach(Array(items.enumerated()), id: \.offset) { index, note in
+                if index > 0 { NookDivider() }
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    HStack(spacing: NookTheme.Spacing.xs) {
+                        GitHubAvatar(login: note.author, size: 16)
+                        Text(note.author).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textStrong).lineLimit(1)
+                        if let date = note.date {
+                            Text("· " + NookDates.ago(date)).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary)
+                        }
+                        Spacer(minLength: 0)
+                        if let url = note.url {
+                            ToolbarIconButton("arrow.up.right.square", tr("ws.ci.open")) { NSWorkspace.shared.open(url) }
+                        }
+                    }
+                    MarkdownView(text: note.body, size: 12.5)
+                }
+            }
+        }
+    }
+
+    /// Reads the report, and again every few seconds while the check still runs, so its words follow along.
+    /// Starts again when the check's outcome changes, keeping what it showed until the new read is in.
+    private func followReport() async {
+        failure = nil
+        while !Task.isCancelled {
+            do {
+                let fresh = try await GitHubCILogs.report(pullRequest: pullRequest, check: check)
+                guard !Task.isCancelled else { return }
+                if fresh != report { withAnimation(NookTheme.swap) { report = fresh } }
+                failure = nil
+            } catch {
+                guard !Task.isCancelled else { return }
+                if report == nil { failure = error.localizedDescription }
+            }
+            guard check.outcome == .pending else { return }
+            try? await Task.sleep(nanoseconds: Self.reportInterval)
         }
     }
 
