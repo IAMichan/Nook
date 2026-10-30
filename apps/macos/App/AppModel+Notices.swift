@@ -27,18 +27,34 @@ extension AppModel {
     ///
     /// Notices keep their distance (`NoticePacer`): one thing (`pace`, the `id` when nil) pops up once in a while, and
     /// a burst from many sources ends in the history instead of on the notch. `urgent`: it waits on you, and always shows.
-    /// A card of the same `id` that is on the notch already is redrawn, not counted as a new pop-up.
+    /// A card of the same `id` that is on the notch already is redrawn, not counted as a new pop-up. `stillNew`: a
+    /// notice the pacer held back pops up once the pacer lets it (`NoticePacer.nextPermitted`, within
+    /// `heldNoticeLimit`), if `stillNew` then says it still has news (a chat not read meanwhile), instead of only waiting
+    /// in the history: someone who wrote right after an earlier pop-up is still told, a moment later.
     @discardableResult
     func deliverNotice(_ source: NoticeSource, app: String = "", id: String, pace: String? = nil, urgent: Bool = false,
                        title: String, subtitle: String = "",
                        body: String = "", sound: NookSound? = nil, watching: Bool = false, kind: NookToastKind = .info,
                        card: @escaping () -> Void, strip: @escaping () -> Void,
-                       open: (() -> Void)? = nil, window: (() -> Void)? = nil) -> NoticeDecision {
+                       open: (() -> Void)? = nil, window: (() -> Void)? = nil,
+                       stillNew: (() -> Bool)? = nil) -> NoticeDecision {
         let decision = settings.noticeRules.decide(source, app: app, quiet: quiet.silent, watching: watching)
         guard let style = decision.style else { return decision }
         var onNotch = false
         if case .card(let shown) = viewModel.state { onNotch = shown.id == id }
-        guard onNotch || noticePacer.allow(key: pace ?? id, urgent: urgent) else { return .historyOnly }
+        let key = pace ?? id
+        guard onNotch || noticePacer.allow(key: key, urgent: urgent) else {
+            if let stillNew {
+                holdNotice(key: key, stillNew: stillNew) { [weak self] in
+                    _ = self?.deliverNotice(source, app: app, id: id, pace: pace, urgent: urgent, title: title, subtitle: subtitle,
+                                            body: body, sound: sound, watching: watching, kind: kind, card: card, strip: strip,
+                                            open: open, window: window, stillNew: stillNew)
+                }
+            }
+            return .historyOnly
+        }
+        // Shown now: a pop-up still held for the same thing has nothing left to say.
+        Self.heldNotices.removeValue(forKey: key)?.cancel()
         if let sound { NookSound.play(sound) }
         if style != .system, WorkspaceWindowController.shared.isOpen {
             let detail = [subtitle, body].filter { !$0.isEmpty }.joined(separator: " · ")
@@ -56,6 +72,27 @@ extension AppModel {
                                          fallback: card)
         }
         return decision
+    }
+
+    /// Notices the pacer held back that pop up once it lets them, by their pace key: a newer one about the same thing
+    /// replaces the one before.
+    private static var heldNotices: [String: Task<Void, Never>] = [:]
+    /// How long a held notice waits at most. One the pacer holds longer (a burst from many sources) stays in the history
+    /// only, as before: a pop-up ten minutes after the message would be news to no one.
+    static let heldNoticeLimit: TimeInterval = NoticePacer.sameKeyGap
+
+    private func holdNotice(key: String, stillNew: @escaping () -> Bool, deliver: @escaping () -> Void) {
+        Self.heldNotices.removeValue(forKey: key)?.cancel()
+        let wait = noticePacer.nextPermitted(key: key).timeIntervalSinceNow
+        guard wait <= Self.heldNoticeLimit else { return }
+        Self.heldNotices[key] = Task { @MainActor in
+            // A moment past the time itself, so the pacer's own comparison lets it through.
+            try? await Task.sleep(for: .seconds(max(wait, 0) + 0.5))
+            guard !Task.isCancelled else { return }
+            Self.heldNotices[key] = nil
+            guard stillNew() else { return }
+            deliver()
+        }
     }
 
     /// Whether a notice may take the notch now: it rests (or shows something passing, a nudge or a moment), or shows an

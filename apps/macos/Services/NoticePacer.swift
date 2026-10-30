@@ -25,6 +25,20 @@ struct NoticePacer: Sendable {
         return recent.count < Self.burstLimit
     }
 
+    /// The first moment `permits` lets a notice about `key` through, from `now` on (`now` itself when it does already).
+    /// A chat held back pops up then, if it still has news, instead of only waiting in the list.
+    func nextPermitted(key: String, calm: TimeInterval = 0, now: Date = Date()) -> Date {
+        let recent = shown.filter { now.timeIntervalSince($0.date) < Self.burstWindow }
+        var at = now
+        if let last = recent.last { at = max(at, last.date.addingTimeInterval(max(Self.gap, calm))) }
+        if let same = recent.last(where: { $0.key == key }) { at = max(at, same.date.addingTimeInterval(Self.sameKeyGap)) }
+        // The burst has room again once enough of it left the window that one more fits.
+        if recent.count >= Self.burstLimit {
+            at = max(at, recent[recent.count - Self.burstLimit].date.addingTimeInterval(Self.burstWindow))
+        }
+        return at
+    }
+
     /// Notes a notice that popped up, so the next ones keep their distance.
     mutating func record(key: String, now: Date = Date()) {
         shown = shown.filter { now.timeIntervalSince($0.date) < Self.burstWindow } + [(now, key)]

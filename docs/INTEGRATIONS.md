@@ -55,7 +55,7 @@ needs a column in that matrix.
 | Photo caption in the chat list | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (the list shows a status, not the message) | – (Nook reads no attachments from Mail yet) |
 | People by name, not by number | ✓ (your Contacts, then `/user/my/contacts`) | ✓ (your Contacts, then `/contacts`) | ✓ (Contacts) | ✓ (Telegram's names) | ✓ (the network's names) | ✓ | ✓ | ✓ (Snapchat's names) | ✓ (the name in the sender's address) |
 | Opened chat read from the app at once | ✓ (the chat's history) | ✓ (the chat's history) | ✓ | ✓ | ✓ (that chat read again) | ✓ | ✓ | ✓ | ✓ (Mail read again) |
-| Notch card follows its chat live (its app read at least every 20 s while the card is up or waits, `ChatCaptureService.watching`) | ✓ (live) | ✓ (live) | ✓ (every 2 s) | ✓ (every 3 s) | ✓ (live line, else every 10 s) | ✓ (every 20 s, else 60 s) | ✓ (every 20 s, else 60 s) | ✓ (every 20 s, else 30 s) | ✓ (Mail read again at once on its notification, else every 20 s, else 60 s) |
+| Notch card and the chat open in the Chats tab follow their chat live (its app read at least every 20 s while the card is up or waits, or the chat is open, `ChatCaptureService.watching`, `openChat`) | ✓ (live) | ✓ (live) | ✓ (every 2 s) | ✓ (every 3 s) | ✓ (live line, else every 10 s) | ✓ (every 20 s, else 60 s) | ✓ (every 20 s, else 60 s) | ✓ (every 20 s, else 30 s) | ✓ (Mail read again at once on its notification, else every 20 s, else 60 s) |
 | Shared links shown short (`[url](url)` → `site/path`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Edit, delete and info from the message's ⌄ menu (↑ in an empty field edits) | ✓ (when the gateway can) | ✓ (when the gateway can) | – from Nook (Messages lets no other app edit); an edit or unsend made in Messages shows (`date_edited`, `date_retracted`) | ✓ | ✓ (where the network allows it) | ✓ | ✓ | – (the website takes only new text) | – (sent mail cannot be changed) |
 | Link previews and embeds (picture, video, sound, page card) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (Nook reads no attachments from Mail yet) |
@@ -165,8 +165,13 @@ a quick one. The chat helper reads a chat again when the chat list moved past th
 (`ChatServiceData.isBehind`, up to three times), so a chat's row never shows an older message than the chat itself.
 
 A read that fails waits longer each time, the same for every bridge (`ChatBackoff`): a minute (or the bridge's own
-interval when that is longer), then twice as long after each failure in a row, up to a quarter of an hour. A
-notification or a send from Nook does not cut that short; signing in again does. A bridge counts as reading an app only
+interval when that is longer), then twice as long after each failure in a row, up to a quarter of an hour. A bridge that
+reads a database on this Mac (`ChatBridge.readsLocally`: Messages, WhatsApp on this Mac) starts at five seconds after a
+passing failure (the app held its lock), and at a minute without Full Disk Access. A notification or a send from Nook
+does not cut that short; signing in again does. A database the app kept locked past the wait is read without its
+write-ahead log, where the newest rows may still be (`AppDatabase.read`, `complete`): Messages, WhatsApp on this Mac and
+the notifications then read again at their next turn, also when the database did not change since, so a message still
+in the log never waits for the app's next write. A bridge counts as reading an app only
 while it is ready (signed in, its app not taken over by the chat helper), so its last good read never hides the app's
 notifications or keeps the helper from reading that app. Cursors move only once a whole read worked (Messages' rows and
 tapbacks), and a later read follows every page newer than the last one it read (Slack, five pages of 30), so a busy
@@ -185,6 +190,10 @@ chat by its key across accounts (`WAChatKey`): the first account's chats by thei
 changes, another account's as `<account id>~<JID>`. `WhatsAppAccounts.route` finds the account and the JID again. The
 choices per kind of chat and per chat hold in every account. WhatsApp on this Mac (its database) and the chat helper still
 read one account each: the WhatsApp Business app for the Mac keeps its own database, which Nook does not read yet.
+
+A linked phone's messages come in on the gateway's webhook the moment they arrive. Without a webhook for five minutes,
+Nook asks the gateway every ten seconds; with one, it still asks once a minute (`WhatsAppLink.safetyPollGap`), since a
+webhook that keeps bringing ticks and typing may still have dropped a message.
 
 While a WhatsApp chat is open in Nook, Nook tells WhatsApp this device is online, as WhatsApp Web does. Otherwise
 WhatsApp sends no typing updates. While it is online, the phone may hold back its own notifications.

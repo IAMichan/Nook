@@ -42,6 +42,30 @@ final class NoticePacerTests: XCTestCase {
         XCTAssertTrue(pacer.permits(key: "suggestion", calm: 300, now: start.addingTimeInterval(300)))
     }
 
+    func testItSaysWhenAHeldNoticeMayPopUp() {
+        var pacer = NoticePacer()
+        XCTAssertEqual(pacer.nextPermitted(key: "chat:anna", now: start), start, "nothing shown yet: now")
+        XCTAssertTrue(pacer.allow(key: "chat:anna", now: start))
+        let soon = start.addingTimeInterval(5)
+        XCTAssertEqual(pacer.nextPermitted(key: "chat:ben", now: soon), start.addingTimeInterval(NoticePacer.gap))
+        let again = pacer.nextPermitted(key: "chat:anna", now: soon)
+        XCTAssertEqual(again, start.addingTimeInterval(NoticePacer.sameKeyGap), "the same chat waits its own gap")
+        XCTAssertFalse(pacer.permits(key: "chat:anna", now: again.addingTimeInterval(-1)))
+        XCTAssertTrue(pacer.permits(key: "chat:anna", now: again))
+    }
+
+    func testAFullBurstSaysWhenItHasRoomAgain() {
+        var pacer = NoticePacer()
+        for index in 0..<NoticePacer.burstLimit {
+            XCTAssertTrue(pacer.allow(key: "agent:\(index)", now: start.addingTimeInterval(Double(index) * 30)))
+        }
+        let later = start.addingTimeInterval(Double(NoticePacer.burstLimit) * 30)
+        let room = pacer.nextPermitted(key: "chat:new", now: later)
+        XCTAssertEqual(room, start.addingTimeInterval(NoticePacer.burstWindow))
+        XCTAssertFalse(pacer.permits(key: "chat:new", now: room.addingTimeInterval(-1)))
+        XCTAssertTrue(pacer.permits(key: "chat:new", now: room))
+    }
+
     func testAskingDoesNotCount() {
         var pacer = NoticePacer()
         XCTAssertTrue(pacer.permits(key: "agent:a", now: start))

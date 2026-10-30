@@ -13,16 +13,26 @@ import os
 /// Runs one read-only query on an app's database.
 enum AppDatabase {
     static func query(_ path: String, _ sql: String, app: String) async throws -> [[String: Any]] {
+        try await read(path, sql, app: app).rows
+    }
+
+    /// As `query`, and whether the answer is complete: false when the app held its lock past the wait and the file was
+    /// read without its write-ahead log, where its newest rows may still be. A reader that skips a database that did not
+    /// change since its last read (the chat bridges) reads it again next time instead of taking that answer as all of it:
+    /// otherwise a message still in the log shows only once the app writes something else.
+    static func read(_ path: String, _ sql: String, app: String) async throws -> (rows: [[String: Any]], complete: Bool) {
         // The app writes to its database while it runs (Messages almost always): wait for its lock instead of failing.
         var output = await run(path: path, sql: sql)
+        var complete = true
         if case .failure(let error) = output, isLocked(error) {
             // Still locked: read the database file as it is on disk. The newest messages may still be in the app's
             // write-ahead log, but an answer from nearly everything beats none.
             output = await run(path: snapshotURI(path), sql: sql)
+            complete = false
         }
         switch output {
         case .success(let rows):
-            return rows
+            return (rows, complete)
         case .failure(let error):
             let message = error.localizedDescription.lowercased()
             if message.contains("authorization denied") || message.contains("unable to open") || message.contains("not permitted") {
