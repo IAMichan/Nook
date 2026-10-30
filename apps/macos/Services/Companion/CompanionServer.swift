@@ -34,6 +34,9 @@ final class CompanionServer: ObservableObject {
     private var streams: [CompanionPeer] = []
     private var watch: AnyCancellable?
     private var streamTimer: Timer?
+    /// A pass of `pushTimelines` runs, and another one was asked for meanwhile.
+    private var timelinePushRunning = false
+    private var timelinePushAgain = false
     private var endpointCache: (at: Date, port: UInt16, list: [CompanionEndpoint])?
 
     func attach(app: AppModel) {
@@ -239,7 +242,7 @@ final class CompanionServer: ObservableObject {
             return
         }
         peer.lastHeard = Date()
-        // What this phone may do is decided on the Mac (Settings › Devices); anything else is refused before it runs.
+        // What this phone may do is decided on the Mac (Settings › Connections › iPhone); anything else is refused before it runs.
         if !pairing, !CompanionScopes.allows(request.op, granted: scopes(of: claimed)) {
             CompanionDiagnosticsLog.mac.record("refused", ["op": request.op.rawValue, "error": "scope", "device": claimed])
             send(.failure(request.id, .notAllowedFromPhone, message: "scope"), key: key, deviceID: claimed, on: connection)
@@ -358,6 +361,62 @@ final class CompanionServer: ObservableObject {
             peer.sent = sessions
             send(CompanionResponse(id: id, ok: true, sessions: sessions, seq: peer.seq), key: key, deviceID: deviceID, on: peer.transport)
         }
+        pushTimelines()
+    }
+
+    // MARK: The open session, live
+
+    /// The phone opened a session (or closed it, `session` nil): from now on its conversation follows over the live
+    /// connection (`pushTimelines`). Answered with the whole recent conversation, which every later update builds on.
+    private func watchSession(_ request: CompanionRequest, deviceID: String, app: AppModel) async -> CompanionResponse {
+        let peer = streams.first { $0.deviceID == deviceID }
+        guard let session = request.session else {
+            peer?.watch = nil
+            peer?.sentTimeline = []
+            return CompanionResponse(id: request.id, ok: true)
+        }
+        guard let entries = await timelineEntries(session, app: app) else { return .failure(request.id, .unknownSession) }
+        if let peer {
+            peer.watch = session
+            peer.sentTimeline = entries
+        }
+        return CompanionResponse(id: request.id, ok: true, timeline: entries, timelineSession: session)
+    }
+
+    /// Sends every phone that has a session open what changed in its conversation: only the entries after the last one
+    /// it has alike (`TimelineDelta`), or the whole conversation when they share none. Runs one pass at a time; a change
+    /// during a pass asks for one more. Without a phone watching, it costs nothing.
+    private func pushTimelines() {
+        guard let app, streams.contains(where: { $0.watch != nil }) else { return }
+        guard !timelinePushRunning else { timelinePushAgain = true; return }
+        timelinePushRunning = true
+        Task { @MainActor in
+            repeat {
+                timelinePushAgain = false
+                for peer in streams {
+                    guard let session = peer.watch, let key = peer.key, let deviceID = peer.deviceID, let id = peer.streamID,
+                          let entries = await timelineEntries(session, app: app),
+                          peer.watch == session, entries != peer.sentTimeline else { continue }
+                    let change = TimelineDelta.delta(from: peer.sentTimeline, to: entries)
+                    // A tail too big for one answer goes whole instead, which `newestFitting` already cut to size.
+                    let fits = CompanionPolicy.newestFitting(change.entries).count == change.entries.count
+                    peer.seq += 1
+                    peer.sentTimeline = entries
+                    send(CompanionResponse(id: id, ok: true, timeline: fits ? change.entries : entries, seq: peer.seq,
+                                           timelineSession: session, timelineAfter: fits ? change.after : nil),
+                         key: key, deviceID: deviceID, on: peer.transport)
+                }
+            } while timelinePushAgain
+            timelinePushRunning = false
+        }
+    }
+
+    /// Your words from the phone, with the pictures that came along as paths below them; nil when there are neither,
+    /// or a picture is not one the phone may send.
+    private static func message(_ request: CompanionRequest) -> String? {
+        let hasImages = request.images?.isEmpty == false
+        guard let words = CompanionPolicy.cleanMessage(request.text ?? "") ?? (hasImages ? "" : nil) else { return nil }
+        return CompanionImages.attach(request.images, to: words)
     }
 
     /// What a paired phone may do; nothing beyond keeping the connection for a key without a device.
@@ -454,7 +513,7 @@ final class CompanionServer: ObservableObject {
         case .send:
             // An agent outside Nook (the Claude app, a terminal): answered as on the Mac, by continuing it in Nook.
             if let session = request.session, CompanionAgents.handles(session) {
-                guard let text = CompanionPolicy.cleanMessage(request.text ?? "") else { return .failure(request.id, .badRequest) }
+                guard let text = Self.message(request) else { return .failure(request.id, .badRequest) }
                 if let error = await CompanionAgents.send(app, session: session, text: text) { return .failure(request.id, error) }
                 audit("send", session)
                 return CompanionResponse(id: request.id, ok: true, sessions: digests(app), message: "sent")
@@ -462,10 +521,21 @@ final class CompanionServer: ObservableObject {
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), let run = workspace.run(runID) else {
                 return .failure(request.id, .unknownSession)
             }
-            guard let text = CompanionPolicy.cleanMessage(request.text ?? "") else { return .failure(request.id, .badRequest) }
-            if run.status.isActive { workspace.enqueue(runID, text: text) } else { workspace.send(runID, text: text) }
-            audit("send", run.title)
-            return CompanionResponse(id: request.id, ok: true, sessions: digests(app), message: run.status.isActive ? "queued" : "sent")
+            guard let text = Self.message(request) else { return .failure(request.id, .badRequest) }
+            // While it works: into the running turn when the phone asks to steer and the turn can take it (as the Mac's
+            // composer steers), else in line for after the turn.
+            let outcome: String
+            if !run.status.isActive {
+                workspace.send(runID, text: text)
+                outcome = "sent"
+            } else if request.steer == true, workspace.canSteer(runID), workspace.steer(runID, text: text) {
+                outcome = "steered"
+            } else {
+                workspace.enqueue(runID, text: text)
+                outcome = "queued"
+            }
+            audit(outcome == "steered" ? "steer" : "send", run.title)
+            return CompanionResponse(id: request.id, ok: true, sessions: digests(app), message: outcome)
         case .stop:
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), let run = workspace.run(runID) else {
                 return .failure(request.id, .unknownSession)
@@ -479,6 +549,10 @@ final class CompanionServer: ObservableObject {
             return await launch(request, app: app)
         case .timeline:
             return await timeline(request, app: app)
+        case .watch:
+            return await watchSession(request, deviceID: deviceID, app: app)
+        case .diff:
+            return await diff(request, app: app)
         case .manage:
             return manage(request, app: app)
         case .chats:
@@ -552,13 +626,14 @@ final class CompanionServer: ObservableObject {
                                  folder: URL(fileURLWithPath: run.workingDirectory).lastPathComponent, branch: run.branch,
                                  updated: run.updatedAt.timeIntervalSince1970, excerpt: CompanionPolicy.excerpt(lastAnswer), items: items,
                                  model: (run.resolvedModel ?? run.model).isEmpty ? nil : CompanionPolicy.excerpt(run.resolvedModel ?? run.model),
-                                 actions: Self.actions(run, now: now).map(\.rawValue))
+                                 actions: Self.actions(run, now: now).map(\.rawValue),
+                                 canSteer: workspace.canSteer(run.id))
         }
     }
 }
 
 extension CompanionDiagnosticsLog {
-    /// The Mac's companion log (docs/COMPANION.md, "Diagnostics"): local only, copied redacted from Settings › Devices.
+    /// The Mac's companion log (docs/COMPANION.md, "Diagnostics"): local only, copied redacted from Settings › Connections › iPhone.
     static let mac = CompanionDiagnosticsLog(url: NookPaths.supportDirectory.appendingPathComponent("companion-diagnostics.ndjson"))
 }
 
@@ -581,6 +656,9 @@ final class CompanionPeer {
     var key: Data?
     var seq = 0
     var sent: [SessionDigest]?
+    /// The session the phone has open (`watch`), and its conversation as the phone has it now.
+    var watch: String?
+    var sentTimeline: [TimelineEntry] = []
 
     init(_ transport: CompanionTransport, counted: Bool) {
         self.transport = transport

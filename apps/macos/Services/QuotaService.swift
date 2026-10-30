@@ -31,7 +31,7 @@ struct QuotaLimit: Identifiable, Equatable {
     }
 }
 
-/// The subscription limits of every agent account, from one place. The Agents list, the account details, Settings › Usage
+/// The subscription limits of every agent account, from one place. The Agents list, the account details, Settings › Coding agents
 /// and Nook's own context all read them here, so they can no longer disagree.
 ///
 /// Claude Code reports its limits through its status line and sessions in Nook, and `ClaudeUsage` asks the `claude` CLI

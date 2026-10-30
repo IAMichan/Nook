@@ -2,12 +2,12 @@
 
 - **Status:** Accepted, implemented (see "Implementation" below)
 - **Date:** 2026-10-23
-- **Scope:** `apps/macos` Chats tab, Settings › Chats
+- **Scope:** `apps/macos` Chats tab, Settings › Connections
 - **Related:** [IAMichan/Nook#533](https://github.com/IAMichan/Nook/pull/533) (link chat apps in Nook's own way)
 
 ## Context
 
-Settings › Chats links each chat app in Nook's own way, without a chat service:
+Settings › Connections links each chat app in Nook's own way, without a chat service:
 
 | App | How Nook links it today | Realtime? |
 | --- | --- | --- |
@@ -65,7 +65,7 @@ The API should be the subset of the Beeper Client API Nook already speaks: `GET 
 `/v1/bridges/{id}/login-sessions` (QR, cookie and form steps), `GET /v1/chats`, `GET /v1/chats/{id}/messages`,
 send, assets, and `/v1/ws` with `chat.upserted` / `message.upserted`. Then `ChatLinker`, `BeeperBridge` and
 `ChatLiveStream` work unchanged apart from a configurable base URL and port (not 23373, so it never collides with a
-running Beeper), and Settings › Chats needs no new layout: "a local chat service runs" simply becomes true.
+running Beeper), and Settings › Connections needs no new layout: "a local chat service runs" simply becomes true.
 
 - **Covers:** Signal, Messenger, Instagram (realtime via Lightspeed, replacing the 30 s poll), X, LinkedIn. Discord only
   after porting the legacy bridge to bridgev2 or finding a maintained connector, and see ban risk below.
@@ -206,7 +206,7 @@ program that shares no code with Nook, and it saves a second repository, CI and 
   a build with only TDLib keeps using `TelegramBridge`.
 - Beeper removed (later): Nook no longer reads Beeper Desktop at all. The Beeper chat service, the Beeper WhatsApp
   gateway and the Beeper MCP preset are gone; the client that read Beeper's API now only reads the helper and is named
-  after it (`ChatServiceBridge`, `ChatServiceData`). Someone coming from Beeper moves over once in Settings › Chats ›
+  after it (`ChatServiceBridge`, `ChatServiceData`). Someone coming from Beeper moves over once in Settings › Connections ›
   Moving from Beeper (`BeeperImport`, `BeeperImporter`): Beeper Desktop's local API is asked for its accounts, its chats
   with their recent text history, and which chats are pinned, muted or archived. Those apps are switched on, the history
   lands in the Chats tab, and each chat's settings are applied by the helper once its app is linked in Nook. Sign-ins
@@ -215,7 +215,7 @@ program that shares no code with Nook, and it saves a second repository, CI and 
   stays off until it is linked again.
 - WhatsApp and scrolling back as Beeper did (later): removing Beeper should not change the Chats tab, so the helper does
   what Beeper did for it instead of Beeper. It runs `mautrix-whatsapp` (the connector Beeper links WhatsApp with), linked
-  by a QR code from your phone in Settings › Chats › WhatsApp › through the chat service; it asks the phone for a year of
+  by a QR code from your phone in Settings › Connections › WhatsApp › through the chat service; it asks the phone for a year of
   history and for older messages on demand. `POST /v1/chats/{chat}/paginate` is Beeper's "load older messages": the
   bridges' manual backfill brings in a chat's next batch, and the Chats tab asks for it as you scroll back in any chat
   the helper brings in. Every other source scrolls back the same way, with no cap (`ChatHistoryBridge`): Messages and

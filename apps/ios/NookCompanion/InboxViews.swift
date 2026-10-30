@@ -10,12 +10,15 @@ struct InboxListView: View {
     @EnvironmentObject private var client: CompanionClient
     @Binding var path: [String]
     @State private var query = ""
-    @State private var unreadOnly = false
+    @State private var filter = Filter.all
+
+    /// All chats, the unread ones, or the ones you can answer from here (the Mac writes in them for you).
+    enum Filter { case all, unread, answerable }
 
     private var shown: [InboxChatDigest] {
         let words = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return client.inbox.filter { chat in
-            (!unreadOnly || chat.unread > 0)
+            (filter != .unread || chat.unread > 0) && (filter != .answerable || chat.canSend)
                 && (words.isEmpty || chat.name.localizedCaseInsensitiveContains(words)
                     || chat.preview.localizedCaseInsensitiveContains(words) || chat.appName.localizedCaseInsensitiveContains(words))
         }
@@ -39,7 +42,7 @@ struct InboxListView: View {
                             if client.phase == .connected {
                                 if client.inboxStatus == "chatsoff" {
                                     EmptyState(symbol: "bubble.left.and.bubble.right", title: "Chats are off on your Mac",
-                                               message: "Link WhatsApp or turn on Chats in Nook › Settings › Chats to see every chat here.") {}
+                                               message: "Link WhatsApp or turn on Chats in Nook › Settings › Connections to see every chat here.") {}
                                 } else {
                                     EmptyState(symbol: "bubble.left.and.bubble.right", title: "No chats yet",
                                                message: "New messages from WhatsApp and your other chat apps on your Mac show up here.") {}
@@ -48,13 +51,19 @@ struct InboxListView: View {
                         } else {
                             NookSearchField(prompt: "Search chats", text: $query)
                             HStack(spacing: Theme.Spacing.md) {
-                                FilterChip(title: "All", selected: !unreadOnly) { unreadOnly = false }
-                                FilterChip(title: "Unread", count: client.inbox.filter { $0.unread > 0 }.count, selected: unreadOnly) { unreadOnly = true }
+                                FilterChip(title: "All", selected: filter == .all) { filter = .all }
+                                FilterChip(title: "Unread", count: client.inbox.filter { $0.unread > 0 }.count, selected: filter == .unread) { filter = .unread }
+                                FilterChip(title: "Can answer", selected: filter == .answerable) { filter = .answerable }
                             }
                             if shown.isEmpty {
                                 Group {
-                                    if unreadOnly { Text("Nothing unread.") } else { Text("No chat matches.") }
+                                    switch filter {
+                                    case .unread: Text("Nothing unread.")
+                                    case .answerable: Text("No chat you can answer from here yet. Link your chat apps in Nook › Settings › Chats on your Mac.")
+                                    case .all: Text("No chat matches.")
+                                    }
                                 }
+                                .multilineTextAlignment(.center)
                                 .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary)
                                 .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xxl)
                             }
@@ -124,7 +133,15 @@ struct InboxRow: View {
                     CountBadge(count: chat.unread)
                         .accessibilityLabel(Text("\(chat.unread) unread"))
                 }
-                Text(chat.appName).font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
+                // The app, and whether you can answer here or only read.
+                HStack(spacing: Theme.Spacing.xs) {
+                    Text(chat.appName)
+                    if !chat.canSend {
+                        Text(verbatim: "·")
+                        Text("Read only")
+                    }
+                }
+                .font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
             }
         }
         .padding(.horizontal, Theme.Spacing.lg)
@@ -353,7 +370,12 @@ struct InboxChatView: View {
         } else if let chat {
             ComposerDock {
                 Label {
-                    Text("Nook can only read this chat. Answer it in \(chat.appName).")
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                        Text("Nook can only read this chat. Answer it in \(chat.appName).")
+                        // How to answer it from here next time.
+                        Text("To answer from your phone, link \(chat.appName) in Nook › Settings › Chats on your Mac.")
+                            .foregroundStyle(Theme.textTertiary)
+                    }
                 } icon: {
                     Image(systemName: "info.circle")
                 }

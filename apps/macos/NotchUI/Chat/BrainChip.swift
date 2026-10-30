@@ -45,11 +45,11 @@ private struct BrainPicker: View {
     @State private var fetchError: String?
     @Environment(\.closeDropdown) private var close
 
-    /// External services that can answer right now: a key is saved, or Claude Code is installed.
+    /// External services that can answer right now: a key is saved, or the coding agent of a subscription is installed.
     private var externals: [AIProvider] {
         AIProvider.allCases.filter { provider in
             guard !provider.isLocalServer else { return false }
-            if provider == .claudeCode { return ClaudeCodeBrain.executable != nil }
+            if provider.isSubscription { return SubscriptionBrain.executable(provider) != nil }
             return settings.hasKey(for: provider)
         }
     }
@@ -85,11 +85,11 @@ private struct BrainPicker: View {
         }
     }
 
-    /// How a service is reached: through your Claude account (personal or work) for Claude Code, else an API key.
-    /// Tells apart the two Claude marks in the rail.
+    /// How a service is reached: through your account (personal or work) for a subscription, else an API key.
+    /// Tells apart the two marks of one maker in the rail (Claude Code and the Claude API, ChatGPT and the OpenAI API…).
     private func account(of provider: AIProvider) -> AccountKind {
-        guard provider == .claudeCode else { return .apiKey }
-        return AccountKind.of(app.profiles.preferredProfile(.claude), app: app)
+        guard let kind = provider.subscriptionAgent else { return .apiKey }
+        return AccountKind.of(app.profiles.preferredProfile(kind), app: app)
     }
 
     private var addButton: some View {
@@ -178,7 +178,7 @@ private struct BrainPicker: View {
                 }
             }
         }
-        if provider != .claudeCode && fetched[provider] == nil {
+        if !provider.isSubscription && fetched[provider] == nil {
             DropdownRow(symbol: fetching ? "hourglass" : "arrow.clockwise", title: tr("button.fetchModels"),
                         detail: fetchError, staysOpen: true) {
                 Task { await fetchModels(provider) }

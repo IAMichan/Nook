@@ -1,6 +1,6 @@
 import Foundation
 
-// Texts of push through the relay (`RelayPushClient`): Settings › Devices › push notifications.
+// Texts of push through the relay (`RelayPushClient`): Settings › Connections › iPhone › push notifications.
 
 let relayPushTranslations: [AppLanguage: [String: String]] = [
     .nl: [

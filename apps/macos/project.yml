@@ -181,6 +181,7 @@ targets:
       - path: Core/I18n+Redesign.swift
       - path: Core/I18n+Selection.swift
       - path: Core/I18n+SettingsLayout.swift
+      - path: Core/I18n+SettingsHub.swift
       - path: Core/I18n+Workspace.swift
       - path: Core/I18n+Energy.swift
       - path: Core/I18n+WhatsAppAccounts.swift

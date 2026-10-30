@@ -1,7 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Shortcuts: every key of Nook in one list, for talking, dictating, the panel and completing.
+/// Settings › Shortcuts: every key of Nook, from the ones that work anywhere on the Mac to the keys inside the panel.
+/// The keybindings file is folded away at the end.
 extension SettingsView {
     // MARK: Shortcuts
 
@@ -13,9 +14,8 @@ extension SettingsView {
                     Text(tr("settings.overview.pointToNotch")).foregroundStyle(NookTheme.textSecondary)
                 }
             } header: {
-                Text(tr("settings.group.nook"))
+                Text(tr("shortcuts.anywhere"))
             }
-            KeybindingsSettingsSection()
             Section {
                 Picker(tr("flow.settings.key"), selection: $flowStore.key) {
                     ForEach(FlowKey.allCases) { key in
@@ -48,6 +48,7 @@ extension SettingsView {
                 }
             }
             AutocompleteKeysSection()
+            KeybindingsSettingsSection()
         }
     }
 

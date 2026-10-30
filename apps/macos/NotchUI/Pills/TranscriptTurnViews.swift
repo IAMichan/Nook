@@ -43,7 +43,6 @@ struct TurnChangesCard: View {
             }
         }
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
-        .padding(.top, NookTheme.Spacing.lg)
     }
 
     private func header(_ tree: ChangedFilesTree) -> some View {

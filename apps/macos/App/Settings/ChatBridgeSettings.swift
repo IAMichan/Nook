@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import Security
 
-/// Settings › Chats › Telegram: the app id and hash from my.telegram.org, then logging in as on a new device (your
+/// Settings › Connections › Telegram: the app id and hash from my.telegram.org, then logging in as on a new device (your
 /// number, the code Telegram sends, your password when you set one). Telegram's own library has to be in this build.
 struct TelegramSettingsRows: View {
     @ObservedObject var telegram: TelegramBridge
@@ -142,7 +142,7 @@ struct TelegramKeysButton: View {
     }
 }
 
-/// Settings › Chats › Teams: every account you signed in with on teams.microsoft.com (or with a code on Microsoft's own
+/// Settings › Connections › Teams: every account you signed in with on teams.microsoft.com (or with a code on Microsoft's own
 /// page), and a button to add one more. Signing in is all it takes.
 struct TeamsSettingsRows: View {
     @ObservedObject var teams: TeamsBridge
@@ -248,7 +248,7 @@ struct TeamsSettingsRows: View {
 }
 
 /// Slack with its history: signing in on slack.com, as with Teams, or a user token of an app of your own (kept in the
-/// Keychain), and whether reading works. In Slack's sheet on Settings › Chats.
+/// Keychain), and whether reading works. In Slack's sheet on Settings › Connections.
 struct SlackSettingsRows: View {
     let setCollecting: (Bool) -> Void
     /// Whether the token of an app of your own is offered here (folded); a linked Slack's sheet has it under Advanced.

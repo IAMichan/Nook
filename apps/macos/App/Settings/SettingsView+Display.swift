@@ -1,7 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Settings › General: every language choice together, and where Nook sits on screen. The look is under Appearance.
+/// Settings › General: the languages, where Nook sits on screen, and how much it does on its own. The look is under
+/// Appearance; the language dictation is translated to is with dictation.
 extension SettingsView {
     // MARK: General
 
@@ -15,11 +16,6 @@ extension SettingsView {
                 }
                 Picker(tr("settings.brain.answerLanguage"), selection: $settings.language) {
                     ForEach(AppSettings.languages, id: \.code) { Text($0.name).tag($0.code) }
-                }
-                Picker(tr("flow.settings.translate"), selection: $flowStore.translateTo) {
-                    Text(tr("flow.settings.asSpoken")).tag("")
-                    // The stored choice is the language's own name, as `AppLanguage.displayName` writes it.
-                    ForEach(AppLanguage.allCases) { lang in Text(lang.displayName).tag(lang.displayName) }
                 }
             } header: {
                 Text(tr("settings.overview.languageSection"))
@@ -55,8 +51,11 @@ extension SettingsView {
                 ))
             }
             energySection
-            Section(tr("settings.display.advanced")) {
-                Toggle(tr("settings.notch.demoData"), isOn: $app.demoMode)
+            // Rarely needed: folded away at the end, like on every page.
+            Section {
+                DisclosureGroup(tr("settings.display.advanced")) {
+                    Toggle(tr("settings.notch.demoData"), isOn: $app.demoMode)
+                }
             }
         }
     }

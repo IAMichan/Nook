@@ -165,15 +165,15 @@ enum DiagnosisText {
         case .updateApp: return String(localized: "Update Nook Companion from the App Store.")
         case .setClocks: return String(localized: "Turn on automatic date and time on this iPhone and on \(mac).")
         case .waitAMinute: return String(localized: "Wait a minute; Nook Companion tries again by itself.")
-        case .pairAgain: return String(localized: "On \(mac), open Nook › Settings › Devices, choose ‘Pair an iPhone’ and scan the code again.")
+        case .pairAgain: return String(localized: "On \(mac), open Nook › Settings › Connections › iPhone, choose ‘Pair an iPhone’ and scan the code again.")
         case .wakeMac: return String(localized: "Make sure \(mac) is on and awake.")
         case .openNookOnMac: return String(localized: "Make sure Nook runs on \(mac) with iPhone Companion turned on.")
-        case .checkRelayOnMac: return String(localized: "On \(mac), check Settings › Devices › Away from home: ‘Test relay’ shows whether the relay works.")
+        case .checkRelayOnMac: return String(localized: "On \(mac), check Settings › Connections › iPhone › Away from home: ‘Test relay’ shows whether the relay works.")
         case .keepMacAwake: return String(localized: "Choose ‘Keep this Mac awake’ in the same place, so it stays reachable while you are away.")
         case .checkInternet: return String(localized: "Check that this iPhone has internet; a VPN or content filter can block the relay.")
         case .turnOnTailscale: return String(localized: "Turn on Tailscale on this iPhone and on \(mac), signed in to the same account.")
         case .sameWiFi: return String(localized: "Join the same Wi‑Fi as \(mac).")
-        case .setUpAway: return String(localized: "To reach \(mac) away from home, set up Tailscale or the relay in Nook › Settings › Devices.")
+        case .setUpAway: return String(localized: "To reach \(mac) away from home, set up Tailscale or the relay in Nook › Settings › Connections › iPhone.")
         }
     }
 }
