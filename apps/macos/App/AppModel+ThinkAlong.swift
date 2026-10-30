@@ -161,15 +161,26 @@ extension AppModel {
         // On the notch it needs a resting notch; when it is busy, the offer waits for a later look.
         let decision = settings.noticeRules.decide(.suggestions, app: bundleID, quiet: quiet.silent)
         if let style = decision.style, style != .system, !viewModel.nudgeFits { return }
-        thinkAlong.didOffer(line)
+        let paced = decision.style != nil
+            && !noticePacer.permits(key: Self.suggestionPace, calm: ThinkAlong.calmBeforeOffer)
         logNotice(.info, title: line, detail: body == line ? "" : body, context: appName, source: .suggestions, app: bundleID)
         missedNudge = (line, card, appName, Date())
-        deliverNotice(.suggestions, app: bundleID, id: card.id, title: line, subtitle: appName,
+        // A suggestion is the first to give way: while another notice popped up a few minutes ago it only goes under
+        // the bell, and is not offered again (it does not count as an offer left unanswered).
+        if paced {
+            thinkAlong.held(line)
+            return
+        }
+        thinkAlong.didOffer(line)
+        deliverNotice(.suggestions, app: bundleID, id: card.id, pace: Self.suggestionPace, title: line, subtitle: appName,
                       body: body == line ? "" : body,
                       card: { [weak self] in self?.viewModel.present(card) },
                       strip: { [weak self] in _ = self?.viewModel.offerNudge(line, card: card) },
                       open: { [weak self] in self?.viewModel.present(card) })
     }
+
+    /// What a Think Along offer is about for `NoticePacer`: one at a time, whatever it is about.
+    static let suggestionPace = "suggestion"
 
     /// Dates the offer talks about ("2027-09-20", "next Friday"), as the system's date detector reads them.
     static func mentionedDates(in text: String) -> [Date] {
