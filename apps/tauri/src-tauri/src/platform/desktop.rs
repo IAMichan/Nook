@@ -4,6 +4,8 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use crate::state::AppState;
 
 pub const BAR: &str = "bar";
@@ -21,7 +23,45 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     create_bar(app)?;
     create_tray(app)?;
     register_shortcuts(app);
+    watch_fullscreen(app);
     Ok(())
+}
+
+/// While a game or another app runs full screen, clicks pass through the closed bar to that app, so a click near the
+/// top of the screen never lands on Nook by accident. A shortcut or the tray still opens the bar; once it has focus it
+/// takes clicks again.
+#[cfg(windows)]
+fn watch_fullscreen(app: &AppHandle) {
+    let app = app.clone();
+    let _ = std::thread::Builder::new().name("nook-fullscreen".into()).spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(750));
+        let Some(bar) = app.get_webview_window(BAR) else { continue };
+        let pass = fullscreen_app_in_front() && !bar.is_focused().unwrap_or(false);
+        if pass != CLICKS_PASS.load(Ordering::Relaxed) {
+            set_clicks_pass(&bar, pass);
+        }
+    });
+}
+
+#[cfg(not(windows))]
+fn watch_fullscreen(_app: &AppHandle) {}
+
+/// Whether the bar lets clicks through right now.
+static CLICKS_PASS: AtomicBool = AtomicBool::new(false);
+
+fn set_clicks_pass(bar: &tauri::WebviewWindow, pass: bool) {
+    if bar.set_ignore_cursor_events(pass).is_ok() {
+        CLICKS_PASS.store(pass, Ordering::Relaxed);
+    }
+}
+
+/// Windows' own answer to "is a full-screen app in front?": a Direct3D game in exclusive full screen, a borderless
+/// full-screen window (most games, a video, a slideshow) or presentation mode.
+#[cfg(windows)]
+fn fullscreen_app_in_front() -> bool {
+    use windows::Win32::UI::Shell::{SHQueryUserNotificationState, QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN};
+    unsafe { SHQueryUserNotificationState() }
+        .is_ok_and(|state| state == QUNS_BUSY || state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_PRESENTATION_MODE)
 }
 
 fn create_bar(app: &AppHandle) -> tauri::Result<()> {
@@ -126,6 +166,8 @@ pub fn open_bar(app: &AppHandle, focus: &str) {
     }
     if let Some(bar) = app.get_webview_window(BAR) {
         place_bar(app, true);
+        // Over a full-screen game the closed bar lets clicks through; the open panel must take them right away.
+        set_clicks_pass(&bar, false);
         let _ = bar.show();
         let _ = bar.set_focus();
         let _ = bar.emit("bar-open", focus);
