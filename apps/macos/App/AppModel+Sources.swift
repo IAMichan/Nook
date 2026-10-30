@@ -153,7 +153,8 @@ extension AppModel {
         var ids = Set(available.map(\.source))
         ids.formUnion(connectors.sources.map(\.id))
         let order = SourceCatalog.all.map(\.id)
-        // The calendar is in the context only for the coming week of Apple Calendar. The planner can still pick it, as
+        // The calendar is in the context only when the question is about time, and then only for the coming week of
+        // Apple Calendar. The planner can always pick it, as
         // one source for every calendar (Apple Calendar, ICS calendars, Cal.com), so a question about a day is checked
         // in all of them.
         ids.subtract(QueryPlanner.agendas)

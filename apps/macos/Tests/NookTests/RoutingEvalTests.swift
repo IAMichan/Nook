@@ -31,7 +31,10 @@ final class RoutingEvalTests: XCTestCase {
         Case(question: "Which issues are open for the launch?", must: ["github"]),
         Case(question: "Summarize my week", must: ["mail", "github", "calendar", "notes"]),
         Case(question: "Wat heb ik net gekopieerd?", must: ["clipboard"]),
-        Case(question: "Hoe laat is mijn volgende afspraak?", must: ["calendar"], mustNot: ["github", "stripe", "mail"])
+        Case(question: "Hoe laat is mijn volgende afspraak?", must: ["calendar"], mustNot: ["github", "stripe", "mail"]),
+        Case(question: "Reageer alvast op de mail van Gijs dat wij die dysons kunnen toevoegen", must: ["mail"], mustNot: ["calendar", "github"]),
+        Case(question: "Welke pull requests staan nog open?", must: ["github"], mustNot: ["calendar"]),
+        Case(question: "Wanneer heb ik tijd voor een lunch met Sanne?", must: ["calendar"])
     ]
 
     func testEverydayQuestionsReachTheRightSources() {
