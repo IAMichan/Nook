@@ -13,8 +13,6 @@ struct PanelView: View {
     /// header's empty space moves the window, and the traffic lights take the place of the close button.
     var inWindow = false
     @EnvironmentObject private var app: AppModel
-    /// For the dot on Chats when a message comes in.
-    @ObservedObject private var chatsDot = ChatsUnreadDot.shared
     /// The width of the Agents session list, which the footer takes on a tab without a list of its own.
     @AppStorage("nook.agents.listWidth") private var agentsListWidth = PanelLayout.agentsList
     /// Search everything is open over the tab (⌘K or ⇧⌘F, or the magnifying glass in the header).
@@ -156,20 +154,13 @@ struct PanelView: View {
         select(.agents)
     }
 
-    /// The tabs, with what waits for you on them: an amber count on Agents, a dot on Nook when an answer is unread. In
-    /// the window, the tooltip names the tab's shortcut (⌘1, ⌘2, …). The tab split view shows beside this one stays
-    /// in the bar, even Music while nothing plays.
+    /// The tabs, with what waits for you on them: an amber count on Agents. In the window, the tooltip names the tab's
+    /// shortcut (⌘1, ⌘2, …). The tab split view shows beside this one stays in the bar, even Music while nothing plays.
     private var tabItems: [NookTabBar<PanelTab>.Item] {
         let tabs = PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || tab == .music || splitTab == .music)
         let waiting = app.activeAgents.filter { $0.status == .waiting || $0.approvalID != nil }.count
-        // The conversations the Nook list shows, without sorting them only to ask whether one is unread.
-        let unread = tab != .chat && app.chat.conversations.contains {
-            !$0.archived && (!$0.isEmpty || $0.busy) && $0.status == .unread
-        }
-        let chatsUnread = tab != .inbox && chatsDot.lit
         return tabs.enumerated().map { index, value in
             NookTabBar<PanelTab>.Item(value: value, title: value.title,
-                                      fresh: (value == .chat && unread) || (value == .inbox && chatsUnread),
                                       count: value == .agents ? waiting : 0,
                                       help: inWindow ? "\(value.title) (⌘\(index + 1))" : nil)
         }
