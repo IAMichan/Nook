@@ -185,7 +185,7 @@ extension AppModel {
         let looking = Task { @MainActor [weak self] in
             let note = await self?.attachFrontWindow(app) ?? ""
             guard let self, !Task.isCancelled else { return }
-            await ScreenBrain.$routed.withValue(worker) { self.handleUserText(request, reveal: false, note: note) }
+            ScreenBrain.$routed.withValue(worker) { self.handleUserText(request, reveal: false, note: note) }
             self.followInNotch()
         }
         viewModel.showWork(tr("doubletap.step.looking", app.localizedName ?? "")) { [weak self] in

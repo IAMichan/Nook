@@ -6,7 +6,7 @@ options:
   createIntermediateGroups: true
   developmentLanguage: en
   # Matches the Xcode the project is built with, so Xcode does not ask to "Update to recommended settings".
-  xcodeVersion: "26.0"
+  xcodeVersion: "26.3"
 settings:
   base:
     SWIFT_VERSION: "5.0"

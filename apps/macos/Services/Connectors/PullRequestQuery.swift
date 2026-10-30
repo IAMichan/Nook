@@ -48,7 +48,7 @@ struct PullRequestQuery: Equatable, Sendable {
                 query.repo = String(value.prefix(maxLength))
             case "repo":
                 query.excludedRepos += list(rawValue)
-            case "author", "draft", "review", "checks", "status", "repo":
+            case "author", "draft", "review", "checks", "status":
                 query.words.append(token.lowercased())
             default:
                 // Anything else with a colon is a scoped label ("area:ui"), unless it reads as a path or an address.

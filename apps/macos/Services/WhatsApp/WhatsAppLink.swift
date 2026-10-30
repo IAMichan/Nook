@@ -549,16 +549,16 @@ final class WhatsAppLink: ObservableObject {
 
     private func startListener(kind: WAGatewayKind) {
         let secret = WhatsAppSettings.webhookSecret()
-        listener.onRequest = { request in
+        listener.onRequest = { [weak self] request in
             guard request.method == "POST", request.path.hasPrefix(WhatsAppLink.webhookPath) else { return 404 }
             // Signed by the gateway with Nook's secret, over the exact bytes received.
             guard WAWebhook.verify(kind: kind, headers: request.headers, body: request.body, secret: secret) else { return 401 }
             let body = request.body
-            Task { @MainActor [weak self] in self?.received(body, kind: kind) }
+            Task { @MainActor in self?.received(body, kind: kind) }
             return 200
         }
-        listener.onListening = { ok in
-            Task { @MainActor [weak self] in
+        listener.onListening = { [weak self] ok in
+            Task { @MainActor in
                 guard let link = self, link.provider != nil else { return }
                 if !ok { link.webhook = .portBusy }
                 else if link.webhook == .off || link.webhook == .portBusy { link.webhook = .listening; link.refresh() }

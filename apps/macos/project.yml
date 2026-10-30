@@ -6,7 +6,7 @@ options:
   createIntermediateGroups: true
   developmentLanguage: en
   # Matches the Xcode the project is built with, so Xcode does not ask to "Update to recommended settings".
-  xcodeVersion: "26.0"
+  xcodeVersion: "26.3"
   # Gives local builds a stable signing identity, so macOS keeps granted permissions (see Config/Signing.xcconfig).
   preGenCommand: sh Config/local-signing.sh
 settings:

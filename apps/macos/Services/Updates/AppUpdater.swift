@@ -682,7 +682,7 @@ final class AppUpdater: ObservableObject {
         let app: URL = try await onOwnThread {
             try installation.run("/usr/bin/ditto", ["-x", "-k", archive.path, unpacked.path], in: folder.path,
                                  environment: ProcessInfo.processInfo.environment, timeout: 600)
-            guard let bundle = try fileManager.contentsOfDirectory(at: unpacked, includingPropertiesForKeys: nil)
+            guard let bundle = try FileManager.default.contentsOfDirectory(at: unpacked, includingPropertiesForKeys: nil)
                 .first(where: { $0.pathExtension == "app" }) else { throw InstallError.badBundle("no app") }
             let info = NSDictionary(contentsOf: bundle.appendingPathComponent("Contents/Info.plist")) as? [String: Any] ?? [:]
             switch ReleaseBundleCheck.problem(info: info, bundleIdentifier: job.bundleIdentifier, expected: job.candidate.version) {

@@ -137,8 +137,8 @@ final class CompanionRelayClient: ObservableObject {
         setup = .working(.account)
         Task {
             do {
-                let (address, account) = try await CloudflareRelayDeployer.deploy(token: token) { [weak self] step in
-                    self?.setup = .working(step)
+                let (address, account) = try await CloudflareRelayDeployer.deploy(token: token) { step in
+                    self.setup = .working(step)
                 }
                 _ = Keychain.write(token, account: Self.tokenAccount)
                 UserDefaults.standard.set(account, forKey: Self.accountKey)

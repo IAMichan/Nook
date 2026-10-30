@@ -24,9 +24,9 @@ final class ChatOutbox: ObservableObject {
 
     /// How long a sent message waits for its app's copy before Nook stops showing it (an app that changed its text, or
     /// one Nook does not read back).
-    static let patience: TimeInterval = 120
+    nonisolated static let patience: TimeInterval = 120
     /// The difference allowed between this Mac's clock and the time the app gives your message.
-    private static let clockSlack: TimeInterval = 10
+    nonisolated private static let clockSlack: TimeInterval = 10
 
     private static let time: DateFormatter = {
         let formatter = DateFormatter()

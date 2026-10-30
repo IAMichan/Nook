@@ -292,7 +292,7 @@ final class PullRequestStore: ObservableObject {
     private var failures: [String: Int] = [:]
     private static let staleAfter: TimeInterval = 30
     /// The closed and merged rows and the watched search: read again at most this often, unless asked for.
-    private static let backgroundAfter: TimeInterval = 180
+    nonisolated private static let backgroundAfter: TimeInterval = 180
     private var backgroundAt = Date.distantPast
     private var background: Task<Void, Never>?
     /// A forced refresh asked for while the background pass was running: it runs again right after.

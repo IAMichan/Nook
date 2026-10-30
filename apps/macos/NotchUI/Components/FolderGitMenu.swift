@@ -52,7 +52,7 @@ final class FolderGitModel: ObservableObject {
     }
     private static let snapshots = SnapshotStore()
 
-    /// Locked rather than main-actor bound: a view creates its model in its (nonisolated) initializer.
+    /// Locked rather than main-actor bound, so the cache itself can be read from any thread.
     private final class SnapshotStore: @unchecked Sendable {
         private let lock = NSLock()
         private var byDirectory: [String: Snapshot] = [:]
@@ -76,7 +76,13 @@ final class FolderGitModel: ObservableObject {
     /// The refresh under way: the session panel and the branch button ask together as a session opens, and share it.
     private var refreshing: Task<Void, Never>?
 
-    nonisolated init(directory: String) {
+    /// For a view's `StateObject`: SwiftUI makes it on the main thread, from an autoclosure the compiler does not see as
+    /// main-actor bound.
+    nonisolated static func make(directory: String) -> FolderGitModel {
+        MainActor.assumeIsolated { FolderGitModel(directory: directory) }
+    }
+
+    init(directory: String) {
         self.directory = directory
         if let known = Self.snapshots.get(directory) {
             _root = Published(initialValue: known.root)
@@ -203,7 +209,7 @@ struct FolderGitButton: View {
     @Environment(\.sessionPanelDocked) private var docked
 
     init(directory: String, runID: UUID? = nil, agentWorking: Bool, showChanges: @escaping () -> Void, onChange: (() -> Void)? = nil) {
-        _model = StateObject(wrappedValue: FolderGitModel(directory: directory))
+        _model = StateObject(wrappedValue: FolderGitModel.make(directory: directory))
         self.runID = runID
         self.agentWorking = agentWorking
         self.showChanges = showChanges
@@ -296,7 +302,7 @@ struct DockedSessionPanel: View {
     let showChanges: () -> Void
 
     init(directory: String, runID: UUID?, agentWorking: Bool, showChanges: @escaping () -> Void) {
-        _model = StateObject(wrappedValue: FolderGitModel(directory: directory))
+        _model = StateObject(wrappedValue: FolderGitModel.make(directory: directory))
         self.runID = runID
         self.agentWorking = agentWorking
         self.showChanges = showChanges
@@ -330,7 +336,7 @@ struct FolderChangesSheet: View {
 
     /// `stacked` is kept for the side panel's call; the stacked list fits a narrow panel and a wide one alike.
     init(directory: String, stacked: Bool = false) {
-        _model = StateObject(wrappedValue: FolderGitModel(directory: directory))
+        _model = StateObject(wrappedValue: FolderGitModel.make(directory: directory))
     }
 
     var body: some View {

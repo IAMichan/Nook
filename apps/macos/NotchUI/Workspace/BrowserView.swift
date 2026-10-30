@@ -239,7 +239,7 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
     func evaluate(_ script: String) async throws -> Any {
         await restoreParked()
         guard webView.url != nil else { throw NookError(tr("workbench.browser.nothingOpen")) }
-        return try await webView.evaluateJavaScript(script)
+        return try await webView.evaluateJavaScript(script) as Any
     }
 
     // MARK: Tools
