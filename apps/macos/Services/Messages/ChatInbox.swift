@@ -469,17 +469,29 @@ struct InboxReaction: Codable, Equatable, Sendable {
     var people: [String]? = nil
 }
 
-/// Someone else's emoji on a message in a chat, as it came in. While nothing newer was written there, the chat's line in
-/// the list says it ("Reacted with 👍 to “See you”") instead of the newest message, the same for every chat app.
+/// The newest emoji put on a message in a chat (someone else's or yours), as it came in. While nothing newer was written
+/// there, the chat's line in the list says it ("Reacted with 👍 to “See you”") instead of the newest message, the same for
+/// every chat app: the line is always the chat's newest change.
 struct ChatReactionNote: Codable, Equatable, Sendable {
     var emoji: String
     /// Who put it there, as the app names them (WhatsApp: their id, named when shown); empty when the app does not say.
     var person: String = ""
+    /// The emoji is yours; nil and false: someone else's.
+    var mine: Bool? = nil
     /// The message it is on, by its id in Nook.
     var message: String
     /// That message as one line (`InboxMessage.summary`).
     var text: String
     var date: Date
+
+    init(emoji: String, person: String = "", mine: Bool? = nil, message: String, text: String, date: Date) {
+        self.emoji = emoji
+        self.person = person
+        self.mine = mine
+        self.message = message
+        self.text = text
+        self.date = date
+    }
 
     /// The longest bit of the message the line quotes: the list cuts the rest anyway, and the emoji must stay visible.
     static let quoteLength = 40
@@ -489,22 +501,31 @@ struct ChatReactionNote: Codable, Equatable, Sendable {
     func line(who: String) -> String {
         let plain = ChatFormat.plain(text).trimmingCharacters(in: .whitespacesAndNewlines)
         let quote = plain.count > Self.quoteLength ? String(plain.prefix(Self.quoteLength)) + "…" : plain
+        if mine == true { return tr("chats.row.reactedYou", emoji, quote) }
         return who.isEmpty ? tr("chats.row.reacted", emoji, quote) : tr("chats.row.reactedBy", who, emoji, quote)
     }
 
-    /// The newest emoji someone else put on one of your messages between `old` and `new` (the same message, read
-    /// again), dated `date`: the one whose count went up, with who when the app names them. Nil when none came.
+    /// The emoji is still on its message, as `reactions` show it now: false once it was taken back.
+    func stands(in reactions: [InboxReaction]) -> Bool {
+        reactions.contains { $0.emoji == emoji && (mine == true ? $0.mine : $0.count > ($0.mine ? 1 : 0)) }
+    }
+
+    /// The newest emoji put on a message between `old` and `new` (the same message, read again), dated `date`: someone
+    /// else's whose count went up, with who when the app names them, else yours that is new there. Nil when none came.
     static func added(on new: InboxMessage, before old: [InboxReaction]?, at date: Date) -> ChatReactionNote? {
-        guard new.isMine, let chips = new.reactions else { return nil }
+        guard let chips = new.reactions else { return nil }
         let earlier = old ?? []
         for chip in chips.reversed() {
             let was = earlier.first { $0.emoji == chip.emoji }
-            // Yours on it does not count: only someone else's emoji is news.
             let others = chip.count - (chip.mine ? 1 : 0)
             let othersBefore = was.map { $0.count - ($0.mine ? 1 : 0) } ?? 0
-            guard others > othersBefore else { continue }
-            let person = (chip.people ?? []).first { !(was?.people ?? []).contains($0) } ?? ""
-            return ChatReactionNote(emoji: chip.emoji, person: person, message: new.id, text: new.summary, date: date)
+            if others > othersBefore {
+                let person = (chip.people ?? []).first { !(was?.people ?? []).contains($0) } ?? ""
+                return ChatReactionNote(emoji: chip.emoji, person: person, message: new.id, text: new.summary, date: date)
+            }
+            if chip.mine, was?.mine != true {
+                return ChatReactionNote(emoji: chip.emoji, mine: true, message: new.id, text: new.summary, date: date)
+            }
         }
         return nil
     }
@@ -543,7 +564,7 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     /// A bridge reads this chat from its app (`ChatInbox.merge`), which keeps its whole history: Nook keeps the newest
     /// and scrolls back there. A chat only notifications bring has nowhere else to come from, so it keeps every message.
     var bridged: Bool? = nil
-    /// The newest emoji someone else put on a message here: the chat's line while nothing newer was written.
+    /// The newest emoji put on a message here (someone else's or yours): the chat's line while nothing newer was written.
     var reaction: ChatReactionNote? = nil
     /// The chat's own id in its app, when its bridge gives one (`BridgedChat.chatID`); its `id` is then made from it.
     var chatID: String? = nil
@@ -865,6 +886,8 @@ struct ChatInbox: Codable, Equatable, Sendable {
         // Usually the newest, but a late notification goes in its place.
         let index = thread.messages.lastIndex { $0.date <= notice.date }.map { $0 + 1 } ?? 0
         thread.messages.insert(message, at: index)
+        // The newest message is the newest change: the line again.
+        if index == thread.messages.count - 1 { thread.reaction = nil }
         if thread.messages.count > thread.keeps { thread.messages.removeFirst(thread.messages.count - thread.keeps) }
         thread.name = notice.chat
         thread.unread += 1
@@ -891,9 +914,11 @@ struct ChatInbox: Codable, Equatable, Sendable {
         guard !chips.contains(where: { $0.emoji == reaction.emoji }) else { return false }
         chips.append(InboxReaction(emoji: reaction.emoji, count: 1, mine: false, people: person.isEmpty ? nil : [person]))
         threads[key]?.messages[index].reactions = chips
-        // A notification only ever says what someone else did, so it is news whichever message it is on.
+        // A notification only ever says what someone else did, so it is news whichever message it is on. Never dated
+        // before the chat's newest message: it came after it, whatever clock dated that one.
+        let last = threads[key]?.last ?? date
         threads[key]?.reaction = ChatReactionNote(emoji: reaction.emoji, person: person, message: messages[index].id,
-                                                  text: messages[index].summary, date: date)
+                                                  text: messages[index].summary, date: max(date, last))
         return true
     }
 
@@ -1044,8 +1069,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
                 thread.messages[index].reactions = reactions
                 if let note = ChatReactionNote.added(on: thread.messages[index], before: old, at: now) {
                     thread.reaction = note
-                } else if thread.reaction?.message == message.id,
-                          !(reactions.contains { $0.emoji == thread.reaction?.emoji && $0.count > ($0.mine ? 1 : 0) }) {
+                } else if let note = thread.reaction, note.message == message.id, !note.stands(in: reactions) {
                     // The emoji the line shows was taken back.
                     thread.reaction = nil
                 }
@@ -1068,9 +1092,21 @@ struct ChatInbox: Codable, Equatable, Sendable {
             // History (fetched on opening the chat, or after the Mac slept) is never new.
             if chat.unread == nil, !chat.history, let newestBefore, !message.isMine, message.date > newestBefore { thread.unread += 1 }
         }
+        // A message that came in after what the chat had is its newest change: the line again, even when the emoji the
+        // line showed was dated later by this Mac's clock (it was read before the message, or in the same read).
+        if let newest = thread.messages.last, newest.id != before.messages.last?.id,
+           newest.date > before.messages.last?.date ?? .distantPast {
+            thread.reaction = nil
+        }
         if thread.messages.count > thread.keeps { thread.messages.removeFirst(thread.messages.count - thread.keeps) }
         // Before the count: a read in Nook holds against it by when the chat last had a message.
         if let activity = chat.activity, thread.activity.map({ activity > $0 }) ?? true { thread.activity = activity }
+        // An emoji that came in this read came after the chat's newest message, whatever clock dated that one (the
+        // phone's, a server's a little ahead of this Mac).
+        if var note = thread.reaction, note != before.reaction, note.date < thread.last {
+            note.date = thread.last
+            thread.reaction = note
+        }
         if let unread = chat.unread {
             if let read = thread.readInNook {
                 // Read in Nook: only what came in after that is new here, never more than the app itself counts. A chat
@@ -1117,8 +1153,8 @@ struct ChatInbox: Codable, Equatable, Sendable {
     }
 
     /// Your emoji on a message, or taken back, as you just sent it: the chat shows it before its app's next read
-    /// confirms it.
-    mutating func toggleReaction(_ emoji: String, on message: String, in id: String) {
+    /// confirms it, and as its line while nothing newer comes.
+    mutating func toggleReaction(_ emoji: String, on message: String, in id: String, at date: Date = Date()) {
         guard let index = threads[id]?.messages.firstIndex(where: { $0.id == message }) else { return }
         var chips = threads[id]?.messages[index].reactions ?? []
         if let chip = chips.firstIndex(where: { $0.emoji == emoji && $0.mine }) {
@@ -1132,6 +1168,13 @@ struct ChatInbox: Codable, Equatable, Sendable {
             chips.append(InboxReaction(emoji: emoji, count: 1, mine: true))
         }
         threads[id]?.messages[index].reactions = chips
+        guard let thread = threads[id] else { return }
+        if chips.contains(where: { $0.emoji == emoji && $0.mine }) {
+            threads[id]?.reaction = ChatReactionNote(emoji: emoji, mine: true, message: message,
+                                                     text: thread.messages[index].summary, date: max(date, thread.last))
+        } else if let note = thread.reaction, note.message == message, !note.stands(in: chips) {
+            threads[id]?.reaction = nil
+        }
     }
 
     /// Read in Nook: the badge goes and stays gone after a restart. The app itself is not told.
