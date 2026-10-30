@@ -359,6 +359,8 @@ final class AppModel: ObservableObject {
         // Load agents, accounts and past sessions up front and keep them fresh in the background, so the Agents tab is
         // already filled the moment the notch opens instead of loading only then.
         history.refresh(minimumInterval: 0)
+        // Pre-warm the search everything index in the background so ⌘K search opens instantly.
+        SearchCenter.shared.load(self)
         Timer.scheduledCoalesced(withTimeInterval: 30) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
