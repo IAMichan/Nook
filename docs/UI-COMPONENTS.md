@@ -256,6 +256,11 @@ agent that finished, a request, a message) is kept with `AppModel.logNotice` whe
 or banner shows, so one held back by quiet mode or a busy notch is kept as well. Toasts, the results of what you did,
 are not kept there.
 
+Next to the bell, split view (`PanelSplitButton` and `PanelSplitPane` in `NotchUI/Pills/PanelSplit.swift`) shows a
+second tab (the Nook chat, Agents, Chats or Music) on the right of the current one, as a resizable `.sidePanel`. The
+choice and width are remembered (`PanelSplitChoice`) and shared by the notch and the main window; the tab you are on
+never shows beside itself. Show a tab beside another through it; do not build a second split.
+
 ## Settings — `apps/macos/App/Settings`
 
 | Component | File | Use |

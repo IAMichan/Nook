@@ -74,6 +74,8 @@ enum PanelLayout {
     static let chatsSidebar: CGFloat = 184
     static let chatsRail: CGFloat = 48
     static let chatsSidebarRoom: Double = 1000
+    /// The second tab of split view, beside the one you are on.
+    static let split: Double = 440
     /// The list of Nooks beside the chat, in the notch and in the main window.
     static let chatList: Double = 200
     static let chatListWindow: Double = 260
