@@ -150,14 +150,16 @@ struct AgentsTab: View {
             }
         }
         .keyCommands(["commandPalette.toggle": { palette.toggle(); return true }], context: ["paletteOpen": palette])
-        .onAppear {
-            app.hub.refreshDetected()
-            app.adoptAccounts()
-            app.history.refresh()
-        }
         // Keep sessions and usage up to date while the tab remains open. Without the loading state: a refresh in the
         // background that flips it redraws the whole window twice for a list that is already there.
         .task {
+            // The first refresh waits until the switch to this tab has settled: what it publishes redraws the whole app,
+            // and in the middle of the switch that made it stutter.
+            try? await Task.sleep(for: NookTheme.tabSettle)
+            guard !Task.isCancelled else { return }
+            app.hub.refreshDetected()
+            app.adoptAccounts()
+            app.history.refresh()
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
                 app.adoptAccounts()

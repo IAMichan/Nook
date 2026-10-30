@@ -44,9 +44,14 @@ struct PanelView: View {
                     DoubleTapRunBar(doubleTap: DoubleTap.shared)
                         .padding(.leading, headerInset)
                 }
+                // Switching tabs: the old tab goes at once and the new one fades in on its own, outside the spring that
+                // moves the tab capsule and resizes the panel. In that spring the old and the new tab were both on screen
+                // and laid out on every frame, and every change the new tab made as it appeared (its width, its lists)
+                // was animated too: that was the lag between Nook, Agents, Chats and Music.
                 content
                     .id(tab)
-                    .transition(.opacity.combined(with: .offset(y: 6)))
+                    .transition(.asymmetric(insertion: .opacity.animation(NookTheme.tabFade), removal: .identity))
+                    .transaction(value: tab) { $0.animation = nil }
                     .padding(.top, headerInset > 0 ? PanelOrb.belowHeader : NookTheme.Spacing.xl)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Agents, the chat and Chats keep the footer under their list. A tab without one (Music) shows it at the
