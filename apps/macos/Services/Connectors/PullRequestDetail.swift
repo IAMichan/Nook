@@ -242,6 +242,11 @@ struct PullRequestCheck: Identifiable, Equatable, Sendable {
     var running = false
     var started: Date? = nil
     var finished: Date? = nil
+    /// GitHub's id of a check run, to read its report (`/check-runs/{id}`); nil for a commit status.
+    var checkRunID: Int? = nil
+    /// The login of the app or account that reports the check ("coderabbitai[bot]"), to find what it wrote on the pull
+    /// request when the check itself carries no report.
+    var reporter: String? = nil
 
     var id: String { name + "|" + (url?.absoluteString ?? "") }
 }
@@ -427,7 +432,9 @@ enum PullRequestDetailParser {
                                     url: ((run["html_url"] as? String) ?? (run["details_url"] as? String)).flatMap(URL.init(string:)),
                                     isCheckRun: true, running: status == "in_progress",
                                     started: date(run["started_at"]),
-                                    finished: status == "completed" ? date(run["completed_at"]) : nil)
+                                    finished: status == "completed" ? date(run["completed_at"]) : nil,
+                                    checkRunID: int(run["id"]),
+                                    reporter: ((run["app"] as? [String: Any])?["slug"] as? String).map { $0 + "[bot]" })
         }
         // The combined status lists every context once, with its latest state.
         for status in statuses {
@@ -436,7 +443,8 @@ enum PullRequestDetailParser {
             let description = (status["description"] as? String) ?? state
             result.append(PullRequestCheck(name: (status["context"] as? String) ?? "?", outcome: outcome,
                                            detail: description.isEmpty ? state : description,
-                                           url: (status["target_url"] as? String).flatMap(URL.init(string:))))
+                                           url: (status["target_url"] as? String).flatMap(URL.init(string:)),
+                                           reporter: (status["creator"] as? [String: Any])?["login"] as? String))
         }
         func rank(_ check: PullRequestCheck) -> Int {
             switch check.outcome { case .failing: return 0; case .pending: return 1; case .passing: return 2; case .skipped: return 3 }

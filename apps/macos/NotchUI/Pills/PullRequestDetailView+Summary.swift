@@ -397,15 +397,21 @@ extension PullRequestDetailView {
 
     // MARK: Checks
 
-    /// The checks as one plain list them: failing first, then running, then passed or skipped.
+    /// The checks as one card, the ones that need you first: failing, then running, then passed, skipped last. Each row
+    /// opens what the check has to say in Nook.
+    @ViewBuilder
     func checks(_ detail: PullRequestDetail) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if detail.checks.isEmpty {
-                ListEmptyNote(tr("agents.pr.checks.none"))
-            } else {
-                // The ones that need you first: failing, then running, then passed, skipped last.
-                ForEach(Array(sortedChecks(detail.checks).enumerated()), id: \.offset) { _, check in checkRow(check, detail: detail) }
+        if detail.checks.isEmpty {
+            ListEmptyNote(tr("agents.pr.checks.none"))
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(sortedChecks(detail.checks).enumerated()), id: \.offset) { index, check in
+                    if index > 0 { NookRowSeparator() }
+                    checkRow(check, detail: detail)
+                }
             }
+            .padding(.vertical, NookTheme.Spacing.xs)
+            .panelCard()
         }
     }
 
@@ -416,9 +422,10 @@ extension PullRequestDetailView {
             .map(\.element)
     }
 
-    /// A GitHub Actions job opens its steps and log here; a check from another app has no log to read, so its own page.
+    /// A row opens the check in Nook: an Actions job its steps and log, a check from another app its report and what the
+    /// app wrote on the pull request. Only without a readable pull request does it fall back to the check's own page.
     func checkRow(_ check: PullRequestCheck, detail: PullRequestDetail) -> some View {
-        let readsHere = CILogParser.jobID(from: check.url) != nil && detail.url.flatMap(GitHubPullRequests.parse) != nil
+        let readsHere = detail.url.flatMap(GitHubPullRequests.parse) != nil
         return PullRequestHoverRow(action: {
             if readsHere {
                 withAnimation(NookTheme.swap) { openCheck = check }
@@ -431,13 +438,13 @@ extension PullRequestDetailView {
                 Text(check.name).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
                 Spacer(minLength: 4)
                 CICheckStatusText(check: check)
-                if check.url != nil {
+                if readsHere || check.url != nil {
                     Image(systemName: readsHere ? "chevron.right" : "arrow.up.right")
                         .font(NookTheme.font(9, .semibold))
                         .foregroundStyle(NookTheme.textTertiary)
                 }
             }
         }
-        .disabled(check.url == nil)
+        .disabled(!readsHere && check.url == nil)
     }
 }

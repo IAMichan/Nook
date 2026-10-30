@@ -35,6 +35,47 @@ struct CILog: Equatable, Sendable {
     var doneSteps: Int { steps.filter { $0.outcome != .pending }.count }
 }
 
+/// What a check that is not a GitHub Actions job has to say, read in Nook instead of on its own page: the report a check
+/// run carries (a title, a summary and details in Markdown, and remarks on lines of code), and what the app behind the
+/// check wrote on the pull request (CodeRabbit, a deploy bot…), which is where a commit status puts its words.
+struct CICheckReport: Equatable, Sendable {
+    /// A remark on a line of code ("Foo.swift:12 · warning · Unused variable").
+    struct Annotation: Equatable, Sendable {
+        let path: String
+        let line: Int?
+        let level: CILog.Line.Kind
+        let title: String
+        let message: String
+    }
+
+    /// What the app wrote on the pull request: a comment or a review, newest first.
+    struct Note: Equatable, Sendable {
+        let author: String
+        let date: Date?
+        let body: String
+        let url: URL?
+    }
+
+    var title: String = ""
+    var summary: String = ""
+    var text: String = ""
+    var annotations: [Annotation] = []
+    var notes: [Note] = []
+
+    var isEmpty: Bool { title.isEmpty && summary.isEmpty && text.isEmpty && annotations.isEmpty && notes.isEmpty }
+
+    /// Everything as plain text, for the copy button.
+    var plainText: String {
+        var parts = [title, summary, text].filter { !$0.isEmpty }
+        parts += annotations.map { annotation in
+            [annotation.path + (annotation.line.map { ":\($0)" } ?? ""), annotation.title, annotation.message]
+                .filter { !$0.isEmpty }.joined(separator: " · ")
+        }
+        parts += notes.map(\.body)
+        return parts.joined(separator: "\n\n")
+    }
+}
+
 enum CILogParser {
     /// The lines of a log Nook shows: the end, where a failure is.
     static let maxLines = 2_000
@@ -145,6 +186,54 @@ enum CILogParser {
             }
         }
         return result
+    }
+
+    // MARK: Reports
+
+    /// The report of `GET /check-runs/{id}` and its `/annotations`.
+    static func report(run: [String: Any], annotations: [[String: Any]]) -> CICheckReport {
+        let output = (run["output"] as? [String: Any]) ?? [:]
+        func text(_ key: String) -> String {
+            ((output[key] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        var report = CICheckReport(title: text("title"), summary: GitHubMarkdown.markdown(text("summary")),
+                                   text: GitHubMarkdown.markdown(text("text")))
+        report.annotations = annotations.map { item in
+            let level: CILog.Line.Kind
+            switch (item["annotation_level"] as? String) ?? "" {
+            case "failure": level = .error
+            case "warning": level = .warning
+            default: level = .notice
+            }
+            return CICheckReport.Annotation(path: (item["path"] as? String) ?? "", line: item["start_line"] as? Int,
+                                            level: level, title: (item["title"] as? String) ?? "",
+                                            message: (item["message"] as? String) ?? "")
+        }
+        // A title that only repeats the summary's first line says nothing new.
+        if !report.title.isEmpty, report.summary.hasPrefix(report.title) { report.title = "" }
+        return report
+    }
+
+    /// What `reporter` wrote on the pull request, from its comments (`/issues/{n}/comments`) and reviews
+    /// (`/pulls/{n}/reviews`), newest first. "coderabbitai[bot]" and "coderabbitai" are the same author.
+    static func notes(comments: [[String: Any]], reviews: [[String: Any]], reporter: String, limit: Int = 5) -> [CICheckReport.Note] {
+        let wanted = botless(reporter)
+        guard !wanted.isEmpty else { return [] }
+        func note(_ item: [String: Any], dateKey: String) -> CICheckReport.Note? {
+            guard let author = (item["user"] as? [String: Any])?["login"] as? String, botless(author) == wanted else { return nil }
+            let body = ((item["body"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !body.isEmpty else { return nil }
+            return CICheckReport.Note(author: author, date: PullRequestDetailParser.date(item[dateKey]),
+                                      body: GitHubMarkdown.markdown(body),
+                                      url: (item["html_url"] as? String).flatMap(URL.init(string:)))
+        }
+        let found = comments.compactMap { note($0, dateKey: "updated_at") } + reviews.compactMap { note($0, dateKey: "submitted_at") }
+        return Array(found.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }.prefix(limit))
+    }
+
+    private static func botless(_ login: String) -> String {
+        let lower = login.lowercased()
+        return lower.hasSuffix("[bot]") ? String(lower.dropLast(5)) : lower
     }
 
     private static let markers: [(String, CILog.Line.Kind)] = [
