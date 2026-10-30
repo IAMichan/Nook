@@ -32,6 +32,7 @@ EXCLUDE_SOURCES=(
   "App/ChatRecovery.swift"
   "Brain/ChatImage.swift"
   "Services/WhatsApp/WhatsAppGateway.swift"
+  "Services/WhatsApp/WhatsAppNames.swift"
   "Brain/Weather.swift"
   "Services/LocalAgentScanner.swift"
   "Services/Updates/Ed25519Verifier.swift"
@@ -119,6 +120,10 @@ for file in "$ROOT"/Tests/NookTests/*.swift; do
   for excluded in "${EXCLUDE_TESTS[@]}"; do [ "$name" = "$excluded" ] && skip=1; done
   [ "$skip" = 1 ] && continue
   { echo "@testable import Core"; cat "$file"; } > "$WORK/Tests/CoreTests/$name.swift"
+  # Linux's test discovery cannot call a synchronous test on the main actor (it aborts the whole run): there they are async.
+  if [ "$(uname)" != "Darwin" ] && grep -qE '^\s*@MainActor\s*$' "$file"; then
+    perl -pi -e 's/^(\s*(?:\@MainActor\s+)?func test\w*\(\))(\s+throws)?\s*\{/$1 async$2 {/' "$WORK/Tests/CoreTests/$name.swift"
+  fi
 done
 
 cd "$WORK"

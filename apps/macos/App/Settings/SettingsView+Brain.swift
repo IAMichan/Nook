@@ -7,7 +7,6 @@ extension SettingsView {
 
     enum BrainKind: Hashable { case local, external }
     enum LocalRuntime: Hashable { case builtIn, ollama, lmstudio }
-    enum ExternalKind: Hashable { case claude, other }
 
     /// Local first: the built-in model, Ollama and LM Studio all keep everything on the Mac. External is a deliberate choice.
     var brainKind: Binding<BrainKind> {
@@ -42,16 +41,15 @@ extension SettingsView {
         )
     }
 
-    var externalKind: Binding<ExternalKind> {
+    /// The online AI in one choice: Claude with a key or your subscription, or any other service. No second picker.
+    var externalProvider: Binding<AIProvider> {
         Binding(
-            get: { [.claude, .claudeCode].contains(settings.provider) ? .claude : .other },
-            set: { kind in
+            get: { settings.provider.isLocalServer ? .claude : settings.provider },
+            set: { provider in
+                guard provider != settings.provider else { return }
                 testResult = nil
                 fetchedModels = []
-                switch kind {
-                case .claude: if settings.provider != .claudeCode { settings.provider = .claude }
-                case .other: if [.claude, .claudeCode].contains(settings.provider) || settings.provider.isLocalServer { settings.provider = .openai }
-                }
+                settings.provider = provider
             }
         )
     }
@@ -74,6 +72,7 @@ extension SettingsView {
                 }
             }
 
+            // Step 1: on this Mac, or an online service. Each step below follows from the one before it.
             Section {
                 Picker(tr("settings.brain.where"), selection: brainKind) {
                     Text(tr("settings.brain.localChoice")).tag(BrainKind.local)
@@ -81,6 +80,8 @@ extension SettingsView {
                 }
                 .pickerStyle(.segmented)
                 .help(tr("settings.brain.localDefault"))
+            } header: {
+                stepTitle(1, tr("brain.step.where"))
             } footer: {
                 // Local needs no warning (its explanation is on hover); leaving the Mac is said out loud.
                 if !settings.isLocalBrain {
@@ -89,25 +90,57 @@ extension SettingsView {
             }
 
             if settings.isLocalBrain {
-                Section(tr("brain.advice.title")) { adviceRows }
+                // Step 2: the models Nook advises for this Mac; every other model and runtime is folded away.
                 Section {
-                    Picker(tr("settings.brain.localRuntime"), selection: localRuntime) {
-                        Text(tr("settings.brain.builtIn")).tag(LocalRuntime.builtIn)
-                        Text("Ollama").tag(LocalRuntime.ollama)
-                        Text("LM Studio").tag(LocalRuntime.lmstudio)
+                    adviceRows
+                    DisclosureGroup(tr("brain.local.all")) {
+                        Picker(tr("settings.brain.localRuntime"), selection: localRuntime) {
+                            Text(tr("settings.brain.builtIn")).tag(LocalRuntime.builtIn)
+                            Text("Ollama").tag(LocalRuntime.ollama)
+                            Text("LM Studio").tag(LocalRuntime.lmstudio)
+                        }
+                        .pickerStyle(.segmented)
+                        if settings.useLocal {
+                            localFields
+                        } else {
+                            providerSignIn
+                            providerModel
+                        }
                     }
-                    .pickerStyle(.segmented)
-                    if settings.useLocal { localFields } else { providerFields }
+                } header: {
+                    stepTitle(2, tr("brain.step.model"))
                 }
             } else {
+                // Step 2: which service, step 3: signing in to it, step 4: its model.
                 Section {
-                    Picker(tr("settings.brain.thinksWith"), selection: externalKind) {
-                        Text(tr("settings.brain.claude")).tag(ExternalKind.claude)
-                        Text(tr("settings.brain.otherAI")).tag(ExternalKind.other)
+                    Picker(tr("settings.brain.provider"), selection: externalProvider) {
+                        // Signing in with your own account comes first: your subscription needs no key at all.
+                        Section(tr("brain.service.withAccount")) {
+                            ForEach(AIProvider.allCases.filter(\.isSubscription)) { provider in
+                                Label { Text(serviceName(provider)) } icon: { LogoImage.brand(BrandLogo.forProvider(provider)) }
+                                    .tag(provider)
+                            }
+                        }
+                        Section(tr("brain.service.withKey")) {
+                            ForEach(AIProvider.allCases.filter { !$0.isSubscription && !$0.isLocalServer }) { provider in
+                                Label { Text(serviceName(provider)) } icon: { LogoImage.brand(BrandLogo.forProvider(provider)) }
+                                    .tag(provider)
+                            }
+                        }
                     }
-                    .pickerStyle(.segmented)
                     .help(brainExplanation)
-                    providerFields
+                } header: {
+                    stepTitle(2, tr("brain.step.service"))
+                }
+                Section {
+                    providerSignIn
+                } header: {
+                    stepTitle(3, tr("brain.step.signIn"))
+                }
+                Section {
+                    providerModel
+                } header: {
+                    stepTitle(4, tr("brain.step.model"))
                 }
                 ScreenBrainSection(settings: settings)
             }
@@ -174,63 +207,37 @@ extension SettingsView {
     }
 
     var brainExplanation: String {
-        if [.claude, .claudeCode].contains(settings.provider) {
+        if [.claude, .claudeCode].contains(settings.provider) || settings.provider.isSubscription {
             return tr("settings.brain.claudeExplanation")
         }
         return tr("settings.brain.otherExplanation")
     }
 
-    var providerFields: some View {
-        Group {
-            if settings.provider.isLocalServer {
-                EmptyView()
-            } else if [.claude, .claudeCode].contains(settings.provider) {
-                Picker(tr("settings.brain.connectVia"), selection: $settings.provider) {
-                    Text(tr("settings.brain.apiKey")).tag(AIProvider.claude)
-                    Text(tr("settings.brain.claudeCodeSub")).tag(AIProvider.claudeCode)
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: settings.provider) { _, _ in testResult = nil }
-            } else {
-                Picker(tr("settings.brain.provider"), selection: $settings.provider) {
-                    ForEach(AIProvider.allCases.filter { $0 != .claude && $0 != .claudeCode && !$0.isLocalServer }) { provider in
-                        Label { Text(provider.title) } icon: { LogoImage.brand(BrandLogo.forProvider(provider)) }.tag(provider)
-                    }
-                }
-                .onChange(of: settings.provider) { _, _ in
-                    fetchedModels = []
-                    testResult = nil
-                }
-            }
+    /// A section header with its step number: "2  Service".
+    func stepTitle(_ number: Int, _ title: String) -> some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            Text("\(number)")
+                .font(NookTheme.TextStyle.label)
+                .foregroundStyle(NookTheme.onIris)
+                .frame(width: 16, height: 16)
+                .background(Circle().fill(NookTheme.iris))
+            Text(title)
+        }
+    }
 
-            if settings.provider == .claudeCode {
-                claudeCodeStatus
+    /// Signing in to the chosen service: the subscription found on this Mac, a key, or the app that must run.
+    var providerSignIn: some View {
+        Group {
+            if settings.provider.isSubscription {
+                subscriptionStatus
+            } else if settings.provider == .openrouter {
+                // OpenRouter signs in on its own page and hands Nook a key itself; pasting one is folded away.
+                openRouterSignIn
+                DisclosureGroup(tr("settings.display.advanced")) {
+                    keyFields.padding(.top, NookTheme.Spacing.xs)
+                }
             } else if settings.provider.needsKey {
-                HStack {
-                    SecureField(settings.provider.keyPlaceholder, text: $keyDraft)
-                        .onSubmit { if !keyDraft.isEmpty { saveKey() } }
-                    Button(tr("button.save"), action: saveKey)
-                        .disabled(keyDraft.isEmpty)
-                }
-                HStack {
-                    if settings.hasKey(for: settings.provider) {
-                        Label(settings.provider == .claude ? "\(tr("settings.brain.keyInKeychain")): \(settings.maskedKey ?? "")" : tr("settings.brain.keyInKeychain"), systemImage: "key.fill")
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textSecondary)
-                        ConfirmedButton(tr("accounts.removeKey"), question: tr("confirm.removeKey"), detail: tr("confirm.keychain.detail")) {
-                            keyDraft = ""
-                            saveKey()
-                        }
-                        .buttonStyle(.borderless)
-                        .font(NookTheme.TextStyle.detail)
-                    } else {
-                        SettingNote(tr("settings.brain.keyStaysInKeychain"))
-                    }
-                    Spacer()
-                    if let url = settings.provider.keyURL {
-                        Link(tr("settings.brain.createKey"), destination: url).font(NookTheme.TextStyle.detail)
-                    }
-                }
+                keyFields
             } else if let url = settings.provider.keyURL {
                 HStack {
                     SettingNote(tr("settings.brain.providerMustRun", settings.provider.title))
@@ -238,7 +245,93 @@ extension SettingsView {
                     Link(tr("button.download"), destination: url).font(NookTheme.TextStyle.detail)
                 }
             }
+        }
+    }
 
+    /// Signing in to OpenRouter: one button, its progress, and what went wrong.
+    @ViewBuilder
+    var openRouterSignIn: some View {
+        let hasKey = settings.hasKey(for: .openrouter)
+        HStack {
+            if hasKey {
+                Label(tr("brain.openrouter.signedIn"), systemImage: "checkmark.seal.fill").foregroundStyle(NookTheme.mint)
+                Spacer()
+            }
+            switch openRouter.phase {
+            case .waiting:
+                ProgressView().controlSize(.small)
+                Text(tr("connect.waiting", "OpenRouter")).font(NookTheme.TextStyle.detail)
+                Button(tr("button.cancel")) { openRouter.cancel() }
+            default:
+                Button {
+                    openRouter.signIn(settings: settings)
+                } label: {
+                    Label(hasKey ? tr("connect.reauthorize") : tr("hub.signIn.button", "OpenRouter"), systemImage: "person.badge.key.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(hasKey ? .regular : .large)
+            }
+        }
+        // Signed in: test the new key at once, as after pasting one.
+        .onChange(of: openRouter.phase) { _, phase in
+            if phase == .done { Task { await testConnection() } }
+        }
+        if case .failed(let message) = openRouter.phase {
+            SettingNote(message, tone: .error)
+        }
+    }
+
+    /// A key for services that only take one: one button to the page that makes it, then the field. Nook picks a
+    /// copied key up by itself when you come back.
+    var keyFields: some View {
+        Group {
+            if let url = settings.provider.keyURL, !settings.hasKey(for: settings.provider) {
+                Button {
+                    NSWorkspace.shared.open(url)
+                    keyCatcher.watch()
+                } label: {
+                    Label(tr("brain.key.get", settings.provider.title), systemImage: "arrow.up.forward.app")
+                }
+                .controlSize(.large)
+                SettingNote(tr("brain.key.autoPaste"))
+            }
+            HStack {
+                SecureField(settings.provider.keyPlaceholder, text: $keyDraft)
+                    .onSubmit { if !keyDraft.isEmpty { saveKey() } }
+                Button(tr("button.save"), action: saveKey)
+                    .disabled(keyDraft.isEmpty)
+            }
+            // On this one row: on the Group around it the key would be saved once per row.
+            .onDisappear { keyCatcher.stop() }
+            // perf: `caught` is set once per copied key and reset right after, so every value is a new key.
+            .onReceive(keyCatcher.$caught.compactMap { $0 }) { key in
+                // A key copied on the service's page, picked up on the way back: saved and tested at once.
+                keyDraft = key
+                saveKey()
+                keyCatcher.caught = nil
+            }
+            HStack {
+                if settings.hasKey(for: settings.provider) {
+                    Label(settings.provider == .claude ? "\(tr("settings.brain.keyInKeychain")): \(settings.maskedKey ?? "")" : tr("settings.brain.keyInKeychain"), systemImage: "key.fill")
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                    ConfirmedButton(tr("accounts.removeKey"), question: tr("confirm.removeKey"), detail: tr("confirm.keychain.detail")) {
+                        keyDraft = ""
+                        saveKey()
+                    }
+                    .buttonStyle(.borderless)
+                    .font(NookTheme.TextStyle.detail)
+                } else {
+                    SettingNote(tr("settings.brain.keyStaysInKeychain"))
+                }
+                Spacer()
+            }
+        }
+    }
+
+    /// The model of the chosen service: typed, or picked from what the service offers.
+    var providerModel: some View {
+        Group {
             HStack {
                 TextField(tr("settings.brain.model"), text: Binding(
                     get: { settings.activeProviderModel },
@@ -264,22 +357,111 @@ extension SettingsView {
         }
     }
 
-    /// Claude Code detected? Nothing left to do except test.
-    var claudeCodeStatus: some View {
+    /// The name of a service in the picker: the account you sign in with, or the API.
+    func serviceName(_ provider: AIProvider) -> String {
+        switch provider {
+        case .claudeCode: return tr("settings.brain.claude") + " · " + tr("settings.brain.claudeCodeSub")
+        case .codexCLI: return tr("brain.sub.chatgpt")
+        case .geminiCLI: return tr("brain.sub.gemini")
+        case .grokCLI: return tr("brain.sub.grok")
+        case .kimiCLI: return tr("brain.sub.kimi")
+        case .vibeCLI: return tr("brain.sub.mistral")
+        case .claude: return tr("settings.brain.claude") + " · " + tr("settings.brain.apiKey")
+        default: return provider.title
+        }
+    }
+
+    /// Whose login a subscription signs in with: Claude, ChatGPT or Google.
+    func accountBrand(_ provider: AIProvider) -> String {
+        switch provider {
+        case .claudeCode: return "Claude"
+        case .codexCLI: return "ChatGPT"
+        case .geminiCLI: return "Google"
+        case .grokCLI: return "xAI"
+        case .kimiCLI: return "Kimi"
+        case .vibeCLI: return "Mistral"
+        default: return provider.title
+        }
+    }
+
+    /// Your subscription through its coding agent: installed, signed in, and as whom. One button does what is left
+    /// (installing and signing in in the Terminal, or signing in in your browser where the agent can).
+    @ViewBuilder
+    var subscriptionStatus: some View {
         let _ = refreshTick
-        let path = ClaudeCodeBrain.executable
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            if let path {
-                StatusRow(title: tr("settings.brain.claudeFound", path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")),
-                          detail: tr("settings.brain.claudeLoginHint"), state: .done) { EmptyView() }
-            } else {
-                StatusRow(title: tr("settings.brain.claudeNotFound"), detail: tr("settings.brain.claudeInstallHint"), state: .warning) { EmptyView() }
-                    .textSelection(.enabled)
+        if let kind = settings.provider.subscriptionAgent {
+            let profile = app.profiles.preferredProfile(kind)
+            let progress = app.agentConnect[profile.id]
+            let path = SubscriptionBrain.executable(settings.provider)
+            let account = app.history.profileAccounts[profile.id]
+            if let progress, progress.isBusy {
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    ProgressView().controlSize(.small)
+                    Text(progress.text).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                }
+            } else if path == nil {
+                StatusRow(title: tr("brain.sub.notInstalled", kind.name), detail: tr("brain.sub.notInstalledDetail", kind.name),
+                          state: .warning) {
+                    Button(tr("agents.installAndLogin")) { app.connect(profile) }
+                        .buttonStyle(.borderedProminent)
+                }
                 HStack {
-                    Button(tr("button.searchAgain")) { ClaudeCodeBrain.resetLocation(); refreshTick += 1; settings.objectWillChange.send() }
-                    if let url = settings.provider.keyURL { Link(tr("settings.brain.moreAboutClaudeCode"), destination: url) }
+                    Button(tr("button.searchAgain")) {
+                        ClaudeCodeBrain.resetLocation()
+                        app.history.refresh()
+                        refreshTick += 1
+                        settings.objectWillChange.send()
+                    }
+                    if let url = settings.provider.keyURL { Link(tr("brain.sub.more", kind.name), destination: url) }
+                }
+            } else if let account {
+                StatusRow(title: tr("brain.sub.signedIn", accountBrand(settings.provider)), detail: account.name, state: .done) {
+                    EmptyView()
+                }
+            } else {
+                StatusRow(title: tr("brain.sub.signedOut", accountBrand(settings.provider)),
+                          detail: tr("brain.sub.signedOutDetail", kind.name), state: .todo) {
+                    Button(tr("hub.signIn.button", accountBrand(settings.provider))) {
+                        if !app.signInInBrowser(profile) { app.connect(profile) }
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
             }
+        } else if let command = settings.provider.cliCommand {
+            // Kimi Code and Mistral Vibe: Nook only thinks through them, so they sign in with their own command.
+            let path = SubscriptionBrain.executable(settings.provider)
+            let signedIn = SubscriptionBrain.isSignedIn(settings.provider)
+            if path == nil {
+                StatusRow(title: tr("brain.sub.notInstalled", command), detail: tr("brain.sub.installYourself", command),
+                          state: .warning) {
+                    if let url = settings.provider.keyURL { Link(tr("brain.sub.more", command), destination: url) }
+                }
+                Button(tr("button.searchAgain")) {
+                    SubscriptionBrain.resetLocations()
+                    refreshTick += 1
+                    settings.objectWillChange.send()
+                }
+            } else {
+                StatusRow(title: signedIn ? tr("brain.sub.signedIn", accountBrand(settings.provider))
+                                          : tr("brain.sub.signedOut", accountBrand(settings.provider)),
+                          detail: tr("brain.sub.terminalLogin", command), state: signedIn ? .done : .todo) {
+                    Button(signedIn ? tr("connect.reauthorize") : tr("hub.signIn.button", accountBrand(settings.provider))) {
+                        signInWithCommand(settings.provider)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+    }
+
+    /// Opens the agent's own sign-in in a Terminal window you can see (it asks for a code or opens your browser).
+    func signInWithCommand(_ provider: AIProvider) {
+        guard let command = SubscriptionBrain.loginCommand(provider) else { return }
+        do {
+            try app.runVisibly(command, in: FileManager.default.homeDirectoryForCurrentUser.path,
+                               name: "nook-signin-\(provider.rawValue)", title: tr("brain.sub.terminalTitle", accountBrand(provider)))
+        } catch {
+            ToastCenter.shared.error(tr("accounts.terminalFailed", error.localizedDescription))
         }
     }
 

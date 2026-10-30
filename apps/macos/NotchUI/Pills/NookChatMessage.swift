@@ -1,7 +1,8 @@
 import SwiftUI
 import AppKit
 
-// A single message in a Nook conversation, with its error card, typing indicator and offer chips.
+// A single message in a Nook conversation, on the shared `TranscriptUserMessage` and `TranscriptReply`, with its
+// error card, typing indicator and offer chips.
 
 struct ChatMessageView: View, Equatable {
     let message: ChatMessage
@@ -12,8 +13,6 @@ struct ChatMessageView: View, Equatable {
     /// Used for the buttons only, deliberately not observed: observing the whole app model redrew every message on
     /// every change anywhere in Nook.
     let app: AppModel
-    @State private var hovering = false
-    @State private var copied = false
 
     var body: some View {
         switch message.role {
@@ -22,77 +21,78 @@ struct ChatMessageView: View, Equatable {
         }
     }
 
+    /// What you wrote: the same message as in an agent's conversation (`TranscriptUserMessage`), with its pictures.
     private var user: some View {
-        VStack(alignment: .trailing, spacing: NookTheme.Spacing.sm) {
+        TranscriptUserMessage(text: message.text, date: message.date) {
             if !message.images.isEmpty {
                 ImageMessageRow(images: message.images)
             }
-            if !message.text.isEmpty {
-                ConversationMessage(fromUser: true, text: message.text, size: 14)
-            }
         }
-        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
+    /// Nook's answer: the same reply as an agent's (`TranscriptReply`), with what came with it (a chart, a mail, its
+    /// sources, a plan, what Nook can do next) under the words, and copy, try again and the time on hover.
+    @ViewBuilder
     private var nook: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            if message.isError {
-                ChatErrorCard(message: message, canRetry: isLast)
-            } else if !message.text.isEmpty {
-                ConversationMessage(fromUser: false, text: message.text, size: 14,
-                                    onChoose: !message.streaming && isNewest ? { app.handleUserText($0) } : nil)
-            } else if message.streaming && message.charts.isEmpty && message.mails.isEmpty {
-                TypingIndicator(status: message.status, since: message.date)
-            }
-
-            ForEach(message.charts) { chart in
-                ChatChartView(chart: chart)
-            }
-
-            ForEach(message.mails) { mail in
-                MailDraftView(
-                    draft: mail,
-                    onSend: { app.sendMail($0) },
-                    onOpen: { app.openMail($0) },
-                    onDismiss: { app.dismissMail($0) },
-                    onReopen: { app.reopenMail($0) }
-                )
-                .id(mail.id)
-            }
-
-            if !message.streaming && !message.visibleNotices.isEmpty {
-                NoticeList(notices: message.visibleNotices)
-            }
-
-            // Where Nook looked, folded away until you want to see it; a source that failed opens it.
-            if !message.isError {
-                SourcesDisclosure(message: message, onRetry: isLast ? { app.retryLast() } : nil)
-            }
-
-            if !message.actions.isEmpty {
-                PlanReview(message: message)
-            }
-
-            // What Nook can do next: one click to execute.
-            // Stacked when they do not fit side by side, so a long offer is never cut off.
-            if !message.streaming && !message.offers.isEmpty {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: NookTheme.Spacing.sm) { offerChips }
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) { offerChips }
+        if message.isError {
+            ChatErrorCard(message: message, canRetry: isLast)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            TranscriptReply(text: message.text, date: message.date, footer: !message.streaming,
+                            onChoose: !message.streaming && isNewest ? { app.handleUserText($0) } : nil) {
+                extras
+            } actions: {
+                if isLast {
+                    ToolbarIconButton("arrow.clockwise", tr("chat.retry"), height: 22) { app.retryLast() }
                 }
             }
+        }
+    }
 
-            if message.streaming && !message.text.isEmpty && !message.status.isEmpty {
-                TypingIndicator(status: message.status, since: message.date)
-            }
+    @ViewBuilder
+    private var extras: some View {
+        if message.text.isEmpty && message.streaming && message.charts.isEmpty && message.mails.isEmpty {
+            TypingIndicator(status: message.status, since: message.date)
+        }
 
-            if !message.streaming && !message.isError && !message.text.isEmpty {
-                actionRow
+        ForEach(message.charts) { chart in
+            ChatChartView(chart: chart)
+        }
+
+        ForEach(message.mails) { mail in
+            MailDraftView(
+                draft: mail,
+                onSend: { app.sendMail($0) },
+                onOpen: { app.openMail($0) },
+                onDismiss: { app.dismissMail($0) },
+                onReopen: { app.reopenMail($0) }
+            )
+            .id(mail.id)
+        }
+
+        if !message.streaming && !message.visibleNotices.isEmpty {
+            NoticeList(notices: message.visibleNotices)
+        }
+
+        // Where Nook looked, folded away until you want to see it; a source that failed opens it.
+        SourcesDisclosure(message: message, onRetry: isLast ? { app.retryLast() } : nil)
+
+        if !message.actions.isEmpty {
+            PlanReview(message: message)
+        }
+
+        // What Nook can do next: one click to execute.
+        // Stacked when they do not fit side by side, so a long offer is never cut off.
+        if !message.streaming && !message.offers.isEmpty {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: NookTheme.Spacing.sm) { offerChips }
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) { offerChips }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
+
+        if message.streaming && !message.text.isEmpty && !message.status.isEmpty {
+            TypingIndicator(status: message.status, since: message.date)
+        }
     }
 
     @ViewBuilder
@@ -100,29 +100,6 @@ struct ChatMessageView: View, Equatable {
         ForEach(message.offers, id: \.self) { offer in
             OfferChip(text: offer) { app.handleUserText(offer) }
         }
-    }
-
-    /// Under a finished answer, on hover: copy, try again (the newest answer only) and when it was written. The row keeps
-    /// its place when hidden, so nothing jumps when the pointer moves over the thread.
-    private var actionRow: some View {
-        HStack(spacing: NookTheme.Spacing.xxs) {
-            ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", copied ? tr("button.copied") : tr("button.copy"), height: 22) {
-                Pasteboard.copy(message.text)
-                copied = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
-            }
-            if isLast {
-                ToolbarIconButton("arrow.clockwise", tr("chat.retry"), height: 22) { app.retryLast() }
-            }
-            Text(message.date.formatted(date: .omitted, time: .shortened))
-                .font(NookTheme.TextStyle.caption)
-                .foregroundStyle(NookTheme.textTertiary)
-                .padding(.leading, NookTheme.Spacing.xs)
-        }
-        .opacity(hovering || copied ? 1 : 0)
-        .animation(NookTheme.hover, value: hovering)
-        .padding(.top, -NookTheme.Spacing.sm)
-        .padding(.leading, -NookTheme.Spacing.sm)
     }
 
     static func == (a: ChatMessageView, b: ChatMessageView) -> Bool {

@@ -15,25 +15,25 @@ enum Theme {
     /// What lifts off the canvas: cards, the composer, a sheet's rows.
     static let surface = Color(hex: 0x141414)
     /// A control or chip on a card, your own bubble.
-    static let raised = Color(hex: 0x1F1F1F)
+    static let raised = Color(hex: 0x242424)
     /// The faintest divider between regions.
     static let hairline = Color(hex: 0x232323)
     /// The line between the items of a list: a step brighter than `hairline`.
-    static let separator = Color(hex: 0x262626)
+    static let separator = Color(hex: 0x323232)
     /// The quiet fill of a card that groups rows (the Mac's `panelCard`) and of the composer's tray.
     static let field = Color(hex: 0x111111)
     /// The stroke of the composer and its tray at rest.
-    static let fieldStroke = Color(hex: 0x1C1C1C)
+    static let fieldStroke = Color(hex: 0x282828)
     /// Your own message in a conversation: a soft fill, no edge (the Mac's `NookTheme.bubble`).
     static let bubble = Color(hex: 0x1C1C1C)
     /// A row under your finger (the Mac's `rowHover`).
-    static let rowPressed = Color(hex: 0x141414)
+    static let rowPressed = Color(hex: 0x181818)
 
     static let text = Color(hex: 0xF5F5F5)
     /// Running text a little softer than `text` (the agent's and Nook's answers).
-    static let textStrong = Color(hex: 0xD6D6D6)
-    static let textSecondary = Color(hex: 0x999999)
-    static let textTertiary = Color(hex: 0x6E6E6E)
+    static let textStrong = Color(hex: 0xDADADA)
+    static let textSecondary = Color(hex: 0xA8A8A8)
+    static let textTertiary = Color(hex: 0x8C8C8C)
     /// Dark text on a light fill (the primary button, Nook's accent).
     static let ink = Color(hex: 0x0B0B0D)
 

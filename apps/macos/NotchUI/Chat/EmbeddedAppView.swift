@@ -413,9 +413,8 @@ struct EmbeddedAppPane: View {
                         }
                         if let side = store.side {
                             EmbeddedArtifactPanel(webView: side)
-                                .resizablePanel(width: $artifactWidth, defaultWidth: PanelLayout.artifact,
-                                                minimum: PanelLayout.minimumPanel, available: paneWidth,
-                                                rest: PanelLayout.minimumPanel + PanelSplit.handle, edge: .leading, divider: true)
+                                .sidePanel(.trailing, width: $artifactWidth, defaultWidth: PanelLayout.artifact,
+                                           available: paneWidth, rest: PanelLayout.minimumPanel + PanelSplit.handle)
                         }
                     }
                     .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { paneWidth = $0 }
@@ -469,24 +468,14 @@ private struct EmbeddedArtifactPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                Image(systemName: "square.on.square")
-                    .font(NookTheme.font(11, .semibold))
-                    .foregroundStyle(NookTheme.textSecondary)
-                Text(store.sideTitle.isEmpty ? tr("embedded.artifact") : store.sideTitle)
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(NookTheme.paper)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+            // The same header as every side panel: what it shows, then open it in the browser and the cross.
+            SidePanelHeader(closeHelp: tr("embedded.artifact.close"), close: { store.closeSide() }) {
+                SidePanelTitle(symbol: "square.on.square", title: store.sideTitle.isEmpty ? tr("embedded.artifact") : store.sideTitle)
                 if store.sideLoading { ProgressView().controlSize(.small) }
-                Spacer(minLength: 6)
-                NookIconButton(systemName: "arrow.up.forward.app", label: tr("browser.openExternal"), size: 26) { store.openSideInDefaultBrowser() }
-                    .help(tr("browser.openExternal"))
-                NookIconButton(systemName: "xmark", label: tr("embedded.artifact.close"), size: 26) { store.closeSide() }
-                    .help(tr("embedded.artifact.close"))
+            } actions: {
+                ToolbarIconButton("arrow.up.forward.app", tr("browser.openExternal")) { store.openSideInDefaultBrowser() }
             }
-            .padding(.horizontal, 8)
-            .frame(height: 32)
+            .padding(.horizontal, NookTheme.Spacing.sm)
             NookDivider()
             WebViewHost(webView: webView)
         }
@@ -516,7 +505,8 @@ struct SessionArtifactPanel: View {
             }
             .background(NookTheme.field)
         } else {
-            Color.clear
+            WSEmptyState(symbol: "square.on.square", title: tr("agents.tool.artifact.emptyTitle"),
+                         message: tr("agents.tool.artifact.emptyMessage"))
         }
     }
 

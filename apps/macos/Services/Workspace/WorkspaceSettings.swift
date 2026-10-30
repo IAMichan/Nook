@@ -221,9 +221,10 @@ final class WorkspaceSettings: ObservableObject {
 
     func profile(for provider: RunProvider) -> String? { defaultProfiles[provider.rawValue] }
 
-    /// The effort last chosen for this agent, while the agent still offers it.
+    /// The effort last chosen for this agent, while the agent still offers it. An ACP agent's levels are the ones its
+    /// session offered: the level stays, and a session that does not offer it skips it (see `AcpSessionSettings`).
     func effort(for provider: RunProvider) -> String? {
-        defaultEfforts[provider.rawValue].flatMap { EffortLevels.isOffered($0, for: provider, model: nil) ? $0 : nil }
+        defaultEfforts[provider.rawValue].flatMap { provider.usesACP || EffortLevels.isOffered($0, for: provider, model: nil) ? $0 : nil }
     }
 
     func setEffort(_ effort: String?, for provider: RunProvider) { defaultEfforts[provider.rawValue] = effort }

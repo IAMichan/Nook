@@ -31,6 +31,21 @@ extension PullRequestStack {
         return (index + 1, stack.count)
     }
 
+    /// Where every pull request of `items` stands in its stack, by id, for a whole list at once. The same answer as
+    /// `position(of:in:)` for each, but each one is only weighed against the open pull requests of its own repository,
+    /// so a long list is not walked again for every row.
+    static func positions(in items: [PullRequestItem]) -> [String: (index: Int, count: Int)] {
+        var seen = Set<String>()
+        let open = items.filter { $0.state == .open && !$0.headBranch.isEmpty && seen.insert($0.id).inserted }
+        var result: [String: (index: Int, count: Int)] = [:]
+        for (_, repo) in Dictionary(grouping: open, by: { $0.repo.lowercased() }) where repo.count > 1 {
+            for item in repo {
+                if let position = position(of: item, in: repo) { result[item.id] = position }
+            }
+        }
+        return result
+    }
+
     /// The pull requests to merge to land `item`: from the bottom of its stack up to and including it.
     static func mergeOrder(upTo item: PullRequestItem, in items: [PullRequestItem]) -> [PullRequestItem] {
         guard let stack = stack(of: item, in: items), let index = stack.firstIndex(where: { $0.id == item.id }) else { return [item] }

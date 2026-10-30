@@ -12,7 +12,7 @@ import Foundation
 enum BeeperImport {
     /// Beeper Desktop's local API.
     static let base = URL(string: "http://localhost:23373")!
-    /// Where Nook kept Beeper's access token while it read Beeper (Settings › Chats, or the WhatsApp gateway's).
+    /// Where Nook kept Beeper's access token while it read Beeper (Settings › Connections, or the WhatsApp gateway's).
     static let tokenAccount = "chats.beeper.token"
     static let bundleID = "com.automattic.beeper.desktop"
     /// Chats and messages per chat brought over, as many as Nook keeps of a chat.

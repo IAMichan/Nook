@@ -80,12 +80,9 @@ struct AgentRunPanel: View {
                     CommandConsolePanel(event: event) {
                         withAnimation(NookTheme.reveal) { self.consoleEventID = nil }
                     }
-                    // Like the side panel on the right: a line between it and the conversation, not a box around it.
-                    .padding(.trailing, NookTheme.Spacing.sm)
-                    .resizablePanel(width: $consoleWidth, defaultWidth: PanelLayout.console, minimum: PanelLayout.minimumPanel,
-                                    available: PanelLayout.room(totalWidth, besides: filePreview != nil ? outputsWidth : nil),
-                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .trailing, divider: true)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+                    .sidePanel(.leading, width: $consoleWidth, defaultWidth: PanelLayout.console,
+                               available: PanelLayout.room(totalWidth, besides: filePreview != nil || diffSelection != nil ? outputsWidth : nil),
+                               rest: PanelLayout.minimumConversation + PanelSplit.handle)
                 }
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                     header(run)
@@ -99,23 +96,28 @@ struct AgentRunPanel: View {
                                   load: run.isRemote ? nil : { turn, files in try await gitDiff(turn, files) }) {
                         withAnimation(NookTheme.reveal) { diffSelection = nil }
                     }
-                    .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
-                                    available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
-                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .sidePanel(.trailing, width: $outputsWidth, defaultWidth: PanelLayout.outputs,
+                               available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
+                               rest: PanelLayout.minimumConversation + PanelSplit.handle)
                 } else if let filePreview {
                     FilePreviewPanel(path: filePreview, wide: PanelLayout.wide($outputsWidth)) {
                         withAnimation(NookTheme.reveal) { self.filePreview = nil }
                     }
                     .id(filePreview)
-                    .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
-                                    available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
-                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .sidePanel(.trailing, width: $outputsWidth, defaultWidth: PanelLayout.outputs,
+                               available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
+                               rest: PanelLayout.minimumConversation + PanelSplit.handle)
                 }
             }
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+            // The diff or file beside the conversation and the side panel's tools take turns on the right.
+            .sharesSessionSide(detailOpen: diffSelection != nil || filePreview != nil,
+                               besideWidth: (consoleOpen ? SidePanelRoom.of(consoleWidth) : 0)
+                                   + (diffSelection != nil || filePreview != nil ? SidePanelRoom.of(outputsWidth) : 0)) {
+                diffSelection = nil
+                filePreview = nil
+            }
             // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
             .environment(\.fileLinkBase, run.isRemote ? nil : run.workingDirectory)
             // Selected words of an answer go with the reply as a chip above the composer (right-click › Quote in your
@@ -423,7 +425,8 @@ struct AgentRunPanel: View {
             workspace.runs.filter { $0.id != runID && !$0.archived }.map { ($0.id.uuidString.lowercased(), $0.title) }
         }
         // Only the commands this agent really has (see AgentCommands).
-        config.commands = AgentCommands.commands(for: run.provider, hasProject: true, surface: .agent)
+        config.commands = AgentCommands.commands(for: run.provider, hasProject: true, surface: .agent,
+                                                 offered: workspace.acpCommands[runID] ?? [])
         config.skills = skills
         config.pullRequests = { repo in await GitHubPullRequests.openPullRequests(repo: repo) }
         config.keepsBigPastes = true
@@ -455,8 +458,8 @@ struct AgentRunPanel: View {
     /// The reasoning effort for the next turns, only for agents that have it.
     @ViewBuilder
     private func effortMenu(_ run: WorkspaceRun) -> some View {
-        let levels = EffortLevels.levels(for: run.provider, model: run.model)
-        if let family = app.modelFamily(run.model, for: run.provider) {
+        let levels = workspace.effortLevels(for: run.provider, profileID: run.profileID, model: run.model)
+        if let family = app.modelFamily(run.model, for: run.provider, profileID: run.profileID) {
             // An agent that lists one model per thinking level: the level picks the model of that family.
             ComposerDivider()
             Menu {
@@ -480,11 +483,13 @@ struct AgentRunPanel: View {
                 }
                 ForEach(levels, id: \.self) { level in
                     Button { workspace.setEffort(runID, level) } label: {
-                        if run.effort == level { Label(tr(EffortLevels.label(level)), systemImage: "checkmark") } else { Text(tr(EffortLevels.label(level))) }
+                        let title = workspace.effortTitle(level, for: run.provider, profileID: run.profileID)
+                        if run.effort == level { Label(title, systemImage: "checkmark") } else { Text(title) }
                     }
                 }
             } label: {
-                ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(run.effort)))
+                ComposerPill(symbol: "gauge.with.dots.needle.33percent",
+                             text: workspace.effortTitle(run.effort, for: run.provider, profileID: run.profileID))
             }
             .composerMenu()
             .help(tr("compose.effort.help"))
@@ -496,9 +501,10 @@ struct AgentRunPanel: View {
     private func composerTrailing(_ run: WorkspaceRun) -> some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
             if let window = run.usage.contextWindow, let used = run.usage.contextTokens, window > 0 {
+                // Every agent that compacts on `/compact` (Claude Code, Codex, an ACP agent that offers it) gets the button.
+                let compacts = AgentCommands.canCompact(run.provider, offered: workspace.acpCommands[runID] ?? [])
                 ComposerContextRing(used: used, window: window,
-                                    onCompact: run.status.isActive || !(run.provider == .claude || run.provider == .codex) ? nil
-                                        : { workspace.send(runID, text: "/compact") })
+                                    onCompact: run.status.isActive || !compacts ? nil : { workspace.send(runID, text: "/compact") })
             }
             ComposerMic(text: $draft)
         }
@@ -572,30 +578,41 @@ struct AgentRunPanel: View {
         let memo = derived.update(workspace.timeline(runID), run: run)
         let events = memo.events
         let blocks = memo.blocks
-        let cards = Dictionary(turnDiffs(run).compactMap { turn in turn.answerID.map { ($0, turn) } }, uniquingKeysWith: { first, _ in first })
+        let cards = memo.cards
         let found = finding ? TimelineSearch.search(events, query: findQuery) : .idle
         let current = findIndex.flatMap { found.matches.indices.contains($0) ? found.matches[$0].eventID : nil }
+        // While the agent works, as in an agent's own transcript: "Working for …" right under your message, and the step
+        // that runs now only in the live line at the end, not also in the list above it.
+        let active = run.status.isActive
+        let workingUnder = active ? events.last(where: { $0.kind == .user })?.id : nil
+        let liveStep = active ? events.last.flatMap { $0.kind == .tool && $0.state == .running ? $0.id : nil } : nil
         return ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     if events.isEmpty {
                         ListEmptyNote(tr("agents.run.empty"))
                     }
                     // Finished turns fold to "Worked for …", tool calls in a row to one sentence.
                     ForEach(blocks) { block in
-                        VStack(alignment: .leading, spacing: 14) {
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                             if block.id == newSince { TimelineNewDivider() }
                             TimelineBlockView(block: block, expanded: openBlocks, toggle: toggleBlock) { event in
-                                AnyView(
-                                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                                        eventRow(event)
-                                        // What the turn changed (its card): a file or Open diff opens the diff beside it.
-                                        if let turn = cards[event.id.uuidString] {
-                                            TurnChangesCard(turn: turn, directory: run.workingDirectory) { file in
+                                if event.id == liveStep { return AnyView(EmptyView()) }
+                                return AnyView(
+                                    VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                                        // What the turn changed (its card): under the final answer, inside it, as in an
+                                        // agent's own transcript; a file or Open diff opens the diff beside it.
+                                        let card = cards[event.id].map { turn in
+                                            AnyView(TurnChangesCard(turn: turn, directory: run.workingDirectory) { file in
                                                 openDiff(TurnDiffSelection(turn: turn.id, file: file))
                                             }
-                                            .task(id: turn.id + "|\(turn.files.count)") { await countLines(turn, run: run) }
+                                            .task(id: turn.id + "|\(turn.files.count)") { await countLines(turn, run: run) })
                                         }
+                                        let inReply = event.kind == .assistant && memo.finalAnswers.contains(event.id)
+                                        eventRow(event, final: memo.finalAnswers.contains(event.id),
+                                                 extras: inReply ? card : nil, answerable: memo.answerable == event.id)
+                                        if !inReply, let card { card }
+                                        if event.id == workingUnder { TranscriptWorkingLine(since: run.turnStartedAt) }
                                     }
                                     .padding(.vertical, current == event.id ? 4 : 0)
                                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.iris.opacity(current == event.id ? 0.16 : 0)))
@@ -604,19 +621,17 @@ struct AgentRunPanel: View {
                         }
                         .id(block.id)
                     }
-                    if run.status.isActive {
-                        // The agent's task list, live, right above what it does now.
-                        if TaskChecklist.showsInline(run.tasks, active: true), let tasks = run.tasks {
-                            TaskChecklistCard(steps: tasks)
-                        }
-                        LiveActivityRow(live: TimelinePresentation.live(events), activity: AgentActivity.current(events),
-                                        step: run.tasks.flatMap(TaskChecklist.activeStep),
-                                        since: run.turnStartedAt,
-                                        waiting: run.status == .waitingApproval, asking: workspace.questions[runID] != nil,
-                                        accent: NookTheme.textSecondary,
-                                        openConsole: CommandConsole.running(events).map { command -> () -> Void in
-                                            { withAnimation(NookTheme.reveal) { consoleEventID = consoleEventID == command.id ? nil : command.id } }
-                                        })
+                    if active {
+                        // The agent's task list, live, right above what it does now: the same live line as in an agent's
+                        // own transcript.
+                        TranscriptLiveLine(activity: AgentActivity.current(events),
+                                           tasks: TaskChecklist.showsInline(run.tasks, active: true) ? run.tasks : nil,
+                                           waiting: run.status == .waitingApproval || workspace.questions[runID] != nil,
+                                           asking: workspace.questions[runID] != nil,
+                                           openConsole: CommandConsole.running(events).map { command -> () -> Void in
+                                               { withAnimation(NookTheme.reveal) { consoleEventID = consoleEventID == command.id ? nil : command.id } }
+                                           },
+                                           help: TimelinePresentation.live(events).tool)
                     }
                     if run.status == .failed || run.status == .stopped {
                         recovery(run, events: events, blocks: blocks, proxy: proxy)
@@ -832,7 +847,7 @@ struct AgentRunPanel: View {
     }
 
     @ViewBuilder
-    private func eventRow(_ event: RunEvent) -> some View {
+    private func eventRow(_ event: RunEvent, final: Bool = true, extras: AnyView? = nil, answerable: Bool = false) -> some View {
         if event.kind == .assistant, event.tool == "plan" {
             let idle = !(workspace.run(runID)?.status.isActive ?? false)
             // Only the latest plan, and only until you sent something after it.
@@ -863,7 +878,7 @@ struct AgentRunPanel: View {
                         .disabled(!workspace.canTransfer(runID))
                 }
         } else if event.kind == .assistant {
-            eventView(event)
+            eventView(event, final: final, extras: extras, answerable: answerable)
                 .contextMenu {
                     // "Fork from this response".
                     Button(tr("agents.fork.fromResponse")) { forkThrough(event) }
@@ -923,9 +938,13 @@ struct AgentRunPanel: View {
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.surface))
     }
 
-    private func eventView(_ event: RunEvent) -> some View {
+    private func eventView(_ event: RunEvent, final: Bool = true, extras: AnyView? = nil, answerable: Bool = false) -> some View {
         EventRow(
             event: event,
+            final: final,
+            extras: extras,
+            // A question at the end of the newest answer, answered with a click, as in an agent's own transcript.
+            onChoose: answerable ? { workspace.send(runID, text: $0) } : nil,
             expanded: expanded.contains(event.id),
             toggle: { toggle(event.id) },
             openFile: { path in app.viewModel.open(.changes(runID, file: path)) },
@@ -1198,7 +1217,7 @@ struct AgentRunPanel: View {
     private func modelMenu(_ run: WorkspaceRun) -> some View {
         let profile = app.profile(for: run)
         let account = profile.map { AccountLabel.name($0, app: app) }
-        let model = run.model.isEmpty ? nil : app.modelMenuName(run.model, for: run.provider)
+        let model = run.model.isEmpty ? nil : app.modelMenuName(run.model, for: run.provider, profileID: run.profileID)
         let idle = workspace.canTransfer(runID)
         let providers = idle ? app.connectedProviders : [run.provider]
         return ComposerDropdown(width: providers.count > 1 ? 340 : 296, takesRoom: true) {
@@ -1249,6 +1268,14 @@ private final class RunTimelineDerived {
     private(set) var events: [RunEvent] = []
     private(set) var blocks: [TimelineBlock] = []
     private(set) var turns: [TurnDiff] = []
+    /// The answer that ends each finished turn: only it carries the footer (copy and time), as in an agent's own
+    /// transcript (`TranscriptPresentation`).
+    private(set) var finalAnswers: Set<UUID> = []
+    /// Each turn's changed-files card, under the turn's final answer (inside the reply, above its footer); a turn without
+    /// an answer keeps it under the line that ends it.
+    private(set) var cards: [UUID: TurnDiff] = [:]
+    /// The newest final answer while the agent waits: a question at its end can be answered with a click.
+    private(set) var answerable: UUID?
     private(set) var outputs: [SessionOutput] = []
     private(set) var runningCommand: UUID?
     /// The last pull request the agent reported with `<pr-created>`, for the tray above the composer.
@@ -1264,6 +1291,24 @@ private final class RunTimelineDerived {
         events = all.filter { !($0.kind == .system && $0.tool == "launch") }
         blocks = TimelinePresentation.blocks(events, active: active)
         turns = TurnDiff.collect(events: all)
+        finalAnswers = []
+        cards = [:]
+        let byTurn = Dictionary(turns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        // Split as `TurnDiff.collect` does, so a turn and its card share the id of its first event.
+        let split = TimelinePresentation.split(all)
+        for (index, turn) in split.enumerated() {
+            // A turn still at work gets its final answer (and its card) when it is done.
+            let finished = index < split.count - 1 || !active
+            let answer = finished ? turn.last(where: { $0.kind == .assistant && $0.tool != "plan" && BackgroundWork.notice($0.text).isEmpty }) : nil
+            if let answer { finalAnswers.insert(answer.id) }
+            guard let first = turn.first, let diff = byTurn[first.id.uuidString] else { continue }
+            if let answer {
+                cards[answer.id] = diff
+            } else if let end = diff.answerID.flatMap(UUID.init(uuidString:)) {
+                cards[end] = diff
+            }
+        }
+        answerable = active ? nil : events.last(where: { $0.kind == .assistant }).flatMap { finalAnswers.contains($0.id) ? $0.id : nil }
         outputs = SessionOutputs.collect(all, tasks: run.tasks, directory: run.workingDirectory)
         runningCommand = CommandConsole.running(all)?.id
         createdPullRequest = RunPullRequestLinks.last(in: all)

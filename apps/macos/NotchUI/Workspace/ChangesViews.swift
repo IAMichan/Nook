@@ -35,13 +35,19 @@ struct ChangesSheet: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: NookTheme.Spacing.sm)
+                // The same bar as a folder's changes in the side panel: read git again, then fold or show the tree. Dimmed
+                // while git is read, so two quick clicks never race and leave the older result in view.
+                if embedded {
+                    ToolbarIconButton("arrow.clockwise", tr("agents.pulls.refresh"),
+                                      enabled: workspace.git[runID]?.loading != true) { workspace.refreshGit(runID) }
+                }
                 StackedDiffToolbar(files: files, expanded: $expanded, showsTree: $showsTree)
                 if !embedded {
                     Button(tr("button.close")) { close() }.keyboardShortcut(.cancelAction)
                 }
             }
             .padding(.horizontal, embedded ? NookTheme.Spacing.sm : 14)
-            .frame(height: embedded ? 36 : 48)
+            .frame(height: embedded ? SidePanelMetrics.toolbar : 48)
             NookDivider()
             if files.isEmpty {
                 StackedDiffNote(text: tr("ws.changes.noDiffDetail"))

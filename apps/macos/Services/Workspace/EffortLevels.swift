@@ -1,11 +1,16 @@
 import Foundation
 
 // Reasoning effort per turn. Uses the levels a model advertises (Codex `effort` on turn/start, any non-empty
-// string); Nook has no live catalogue yet, so `advertised` lets the lead pass what the session reports.
+// string; an ACP agent's "thought_level" config option), passed as `advertised`.
 enum EffortLevels {
+    /// The levels Nook has a word for (`effort.level.*`); another level an agent offers reads under the agent's name.
+    static let known: Set<String> = ["minimal", "low", "medium", "high", "xhigh", "thinking"]
+
     /// Codex: low, medium, high are the safe common set; "minimal" and "xhigh" exist only on some models, so they
     /// appear only when `advertised` says so. Claude Code takes `--effort` at launch; low, medium and high are the
-    /// levels every model accepts.
+    /// levels every model accepts. Agents over ACP (Gemini CLI, Antigravity, OpenCode, Cursor, Grok, the ones you add)
+    /// have exactly the levels their session offered, as the agent spells them (it is sent back as is), and none when
+    /// it offered none.
     static func levels(for provider: RunProvider, model: String?, advertised: [String]? = nil) -> [String] {
         switch provider {
         case .codex:
@@ -16,8 +21,9 @@ enum EffortLevels {
             return ["low", "medium", "high"]
         case .claude:
             return ["low", "medium", "high"]
-        default:
-            return []
+        case .gemini, .antigravity, .opencode, .cursor, .grok, .acp:
+            var seen = Set<String>()
+            return (advertised ?? []).filter { !$0.isEmpty && seen.insert($0).inserted }
         }
     }
 

@@ -1,11 +1,11 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Usage: limits per account, tokens, costs. This file also holds the agent rows of Settings › Agents.
+/// The usage part of Settings › Coding agents: limits per account, tokens, costs. This file also holds the agent rows.
 extension SettingsView {
     // MARK: Usage
 
-    /// All usage on its own page: plan limits per account, tokens and reported costs of agent sessions.
+    /// All usage: plan limits per account, tokens and reported costs of agent sessions.
     var usageSection: some View {
         UsageView()
             .environmentObject(app.workspace)

@@ -173,15 +173,23 @@ struct AgentModelStore {
     let url: URL
 
     func load() -> [RunProvider: [AgentModel]] {
-        guard let data = try? Data(contentsOf: url),
-              let raw = try? JSONDecoder().decode([String: [AgentModel]].self, from: data) else { return [:] }
         var result: [RunProvider: [AgentModel]] = [:]
-        for (key, models) in raw { if let provider = RunProvider(rawValue: key) { result[provider] = models } }
+        for (key, models) in loadRaw() { if let provider = RunProvider(rawValue: key) { result[provider] = models } }
         return result
     }
 
     func save(_ models: [RunProvider: [AgentModel]]) {
-        let raw = Dictionary(uniqueKeysWithValues: models.map { ($0.key.rawValue, $0.value) })
+        saveRaw(Dictionary(uniqueKeysWithValues: models.map { ($0.key.rawValue, $0.value) }))
+    }
+
+    /// The lists under keys of their own: an ACP agent you added by its profile, thinking levels by `effortKey`.
+    func loadRaw() -> [String: [AgentModel]] {
+        guard let data = try? Data(contentsOf: url),
+              let raw = try? JSONDecoder().decode([String: [AgentModel]].self, from: data) else { return [:] }
+        return raw
+    }
+
+    func saveRaw(_ raw: [String: [AgentModel]]) {
         guard let data = try? JSONEncoder().encode(raw) else { return }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: url, options: .atomic)

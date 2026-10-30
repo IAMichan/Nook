@@ -247,10 +247,10 @@ struct NewSessionComposer: View {
             ComposerPill(agent: config.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
                          text: comparing.isEmpty
                             ? [config.provider.displayName, name].compactMap { $0 }.joined(separator: " · ")
-                                + (config.model.isEmpty ? "" : " · " + app.modelMenuName(config.model, for: config.provider))
+                                + (config.model.isEmpty ? "" : " · " + app.modelMenuName(config.model, for: config.provider, profileID: config.profileID))
                             : tr("compare.pill", comparing.count + 1),
                          short: !comparing.isEmpty ? tr("compare.pill", comparing.count + 1)
-                            : (config.model.isEmpty ? config.provider.displayName : app.modelMenuName(config.model, for: config.provider)))
+                            : (config.model.isEmpty ? config.provider.displayName : app.modelMenuName(config.model, for: config.provider, profileID: config.profileID)))
         } content: {
             if app.connectedProviders.isEmpty {
                 DropdownHeader(title: tr("agents.noneConnected"))
@@ -295,13 +295,15 @@ struct NewSessionComposer: View {
     /// How hard the agent thinks, only for agents that have it; "Default" leaves it to the agent.
     @ViewBuilder
     private var effortMenu: some View {
-        let levels = EffortLevels.levels(for: config.provider, model: config.model.isEmpty ? nil : config.model)
-        if let family = app.modelFamily(config.model, for: config.provider) {
+        let levels = workspace.effortLevels(for: config.provider, profileID: config.profileID,
+                                            model: config.model.isEmpty ? nil : config.model)
+        if let family = app.modelFamily(config.model, for: config.provider, profileID: config.profileID) {
             levelMenu(family)
         } else if !levels.isEmpty {
             ComposerDivider()
             ComposerDropdown(width: 220) {
-                ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(config.effort)))
+                ComposerPill(symbol: "gauge.with.dots.needle.33percent",
+                             text: workspace.effortTitle(config.effort, for: config.provider, profileID: config.profileID))
             } content: {
                 DropdownHeader(title: tr("compose.effort"))
                 DropdownRow(symbol: "circle.dashed", title: tr(EffortLevels.label(nil)), chosen: config.effort == nil) {
@@ -309,7 +311,8 @@ struct NewSessionComposer: View {
                     remember()
                 }
                 ForEach(levels, id: \.self) { level in
-                    DropdownRow(symbol: Self.effortSymbol(level, in: levels), title: tr(EffortLevels.label(level)),
+                    DropdownRow(symbol: Self.effortSymbol(level, in: levels),
+                                title: workspace.effortTitle(level, for: config.provider, profileID: config.profileID),
                                 chosen: config.effort == level) {
                         config.effort = level
                         remember()
@@ -794,7 +797,7 @@ struct NewSessionComposer: View {
     /// "Claude Code · Opus": how a model of a comparison is named in its session's title and in an error.
     private func comparisonName(_ target: ComparisonTarget) -> String {
         target.model.isEmpty ? target.provider.displayName
-            : target.provider.displayName + " · " + app.modelMenuName(target.model, for: target.provider)
+            : target.provider.displayName + " · " + app.modelMenuName(target.model, for: target.provider, profileID: target.profileID)
     }
 }
 

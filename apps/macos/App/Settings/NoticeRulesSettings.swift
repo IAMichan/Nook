@@ -58,13 +58,17 @@ struct NoticeRulesSettings: View {
 
     /// A source's apps, each with its own switch. Greyed out while the source shows nothing at all.
     private func appSection(_ source: NoticeSource, header: String, info: String, apps: [AppRow]) -> some View {
-        Section {
-            ForEach(apps) { row in
-                Toggle(isOn: isOn(source, app: row.id)) {
-                    HStack(spacing: NookTheme.Spacing.md) {
-                        SiteIcon(domain: row.domain, fallback: row.symbol, tint: NookTheme.textSecondary, size: 20, source: row.icon)
-                            .frame(width: 22)
-                        Text(row.name)
+        // The list of apps can be long: folded away, with how many may notify on its label.
+        let on = apps.filter { settings.noticeRules.isOn(source, app: $0.id) }.count
+        return Section {
+            DisclosureGroup(tr("notices.settings.whichApps", on, apps.count)) {
+                ForEach(apps) { row in
+                    Toggle(isOn: isOn(source, app: row.id)) {
+                        HStack(spacing: NookTheme.Spacing.md) {
+                            SiteIcon(domain: row.domain, fallback: row.symbol, tint: NookTheme.textSecondary, size: 20, source: row.icon)
+                                .frame(width: 22)
+                            Text(row.name)
+                        }
                     }
                 }
             }

@@ -63,40 +63,6 @@ struct ConnectMethodBadge: View {
     }
 }
 
-/// The category chips under the search field of Settings › Connections: All, then one per `ServiceCategory`.
-struct ServiceCategoryChips: View {
-    @Binding var selection: ServiceCategory?
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                chip(nil, title: tr("connect.category.all"))
-                ForEach(ServiceCategory.allCases) { category in
-                    chip(category, title: category.title)
-                }
-            }
-            .padding(.vertical, NookTheme.Spacing.xxs)
-        }
-    }
-
-    private func chip(_ category: ServiceCategory?, title: String) -> some View {
-        let active = selection == category
-        return Button {
-            selection = category
-        } label: {
-            Text(title)
-                .font(NookTheme.TextStyle.label)
-                .foregroundStyle(active ? NookTheme.onIris : NookTheme.textStrong)
-                .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-                .padding(.vertical, NookTheme.Spacing.xs + 1)
-                .background(Capsule().fill(active ? NookTheme.iris : NookTheme.smoke))
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(active ? .isSelected : [])
-    }
-}
-
 /// One of a few plain states a connection is in, the same words everywhere.
 enum ServiceStatus: Equatable {
     case notLinked, connecting, connected, expired, unreachable, off
@@ -110,6 +76,20 @@ enum ServiceStatus: Equatable {
         case .unreachable: return NookTheme.coral
         case .connecting: return NookTheme.iris
         case .notLinked, .off: return NookTheme.textSecondary
+        }
+    }
+}
+
+extension ConnectionHealth {
+    /// The same state in the words every row of Settings › Accounts & connections uses.
+    var status: ServiceStatus {
+        switch self {
+        case .working: return .connected
+        case .busy: return .connecting
+        case .off: return .off
+        case .needsYou: return .expired
+        case .broken: return .unreachable
+        case .notLinked: return .notLinked
         }
     }
 }
@@ -239,98 +219,6 @@ struct MCPServiceRow: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
             }
-        }
-    }
-}
-
-/// A service you connect by signing in on its own page: one click opens its sign-in, you log in there, and Nook takes
-/// it from there. A service that also takes a key offers that on right-click.
-struct OneClickServiceCard: View {
-    let service: MCPRemoteService
-    var keyAlternative: ContextSource?
-    var capabilities: String = ""
-    var onChange: () -> Void = {}
-
-    @EnvironmentObject private var app: AppModel
-    @ObservedObject private var signIn = MCPSignIn.shared
-    @ObservedObject private var store = MCPServerStore.shared
-    @State private var showKeySetup = false
-
-    private var config: MCPServerConfig? { store.servers.first { $0.serviceID == service.id } }
-
-    var body: some View {
-        let connecting = config.map { signIn.isConnecting($0.id) } ?? false
-        let failure = signIn.failure(for: service.id) ?? config.flatMap { signIn.failure(for: $0.id) }
-        GalleryCard(title: service.name,
-                    detail: failure ?? (connecting ? tr("connect.waiting", service.name) : service.tagline)) {
-            ServiceTile(domain: service.domain, fallback: "link", tint: NookTheme.iris, size: 32)
-        } accessory: {
-            ConnectMethodBadge(method: .signIn, text: failure == nil ? nil : tr("connector.retry"), busy: connecting)
-        } action: {
-            if connecting { signIn.cancel() } else { signIn.connect(service, app: app) }
-        }
-        .help(connecting ? tr("button.cancel") : tr("settings.connections.signInHelp", service.name))
-        .contextMenu {
-            if keyAlternative != nil {
-                Button(tr("connect.useKey")) { showKeySetup = true }
-            }
-        }
-        .sheet(isPresented: $showKeySetup, onDismiss: onChange) {
-            if let keyAlternative {
-                CloudConnectorViews.setupSheet(keyAlternative, capabilities: capabilities, onChange: onChange)
-            }
-        }
-    }
-}
-
-/// GitHub, not connected yet: one click signs in on GitHub's own page (or takes over the GitHub CLI login), without
-/// making a token first. A token stays available on right-click.
-struct GitHubSignInCard: View {
-    let keyAlternative: ContextSource
-    var capabilities: String = ""
-    var onChange: () -> Void = {}
-
-    @ObservedObject private var signIn = GitHubSignIn.shared
-    @State private var showKeySetup = false
-
-    private var connecting: Bool {
-        switch signIn.phase {
-        case .checkingCLI, .waiting, .waitingForCLI: return true
-        case .idle, .done, .failed: return false
-        }
-    }
-
-    private var failure: String? {
-        if case .failed(let message) = signIn.phase { return message }
-        return nil
-    }
-
-    var body: some View {
-        GalleryCard(title: "GitHub",
-                    detail: failure ?? (connecting ? tr("connector.githubFinishLogin") : ServiceState.tagline("github"))) {
-            ServiceTile(domain: keyAlternative.iconDomain, fallback: keyAlternative.symbol, tint: keyAlternative.accent, size: 32,
-                        source: keyAlternative.id)
-        } accessory: {
-            ConnectMethodBadge(method: .signIn, text: failure == nil ? nil : tr("connector.retry"), busy: connecting)
-        } action: {
-            if connecting { signIn.cancel() } else { signIn.reconnect() }
-        }
-        .help(connecting ? tr("button.cancel") : tr("settings.connections.signInHelp", "GitHub"))
-        .contextMenu {
-            Button(tr("connect.useKey")) { showKeySetup = true }
-        }
-        .onChange(of: signIn.phase) { _, phase in
-            guard phase == .done else { return }
-            ConnectorToggle.set(keyAlternative.id, true)
-            let target = keyAlternative
-            let done = onChange
-            Task { @MainActor in
-                await target.refresh()
-                done()
-            }
-        }
-        .sheet(isPresented: $showKeySetup, onDismiss: onChange) {
-            CloudConnectorViews.setupSheet(keyAlternative, capabilities: capabilities, onChange: onChange)
         }
     }
 }

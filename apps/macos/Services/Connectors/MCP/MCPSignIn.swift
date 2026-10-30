@@ -29,7 +29,12 @@ struct MCPRemoteService: Identifiable, Equatable {
         MCPRemoteService(id: "canva", name: "Canva", url: "https://mcp.canva.com/mcp", domain: "canva.com", category: .work),
         MCPRemoteService(id: "supabase", name: "Supabase", url: "https://mcp.supabase.com/mcp", domain: "supabase.com", category: .development),
         MCPRemoteService(id: "neon", name: "Neon", url: "https://mcp.neon.tech/mcp", domain: "neon.tech", category: .development),
-        MCPRemoteService(id: "huggingface", name: "Hugging Face", url: "https://huggingface.co/mcp", domain: "huggingface.co", category: .development)
+        MCPRemoteService(id: "huggingface", name: "Hugging Face", url: "https://huggingface.co/mcp", domain: "huggingface.co", category: .development),
+        // Sign in instead of a key: Cal.com and Resend host their own MCP server with OAuth, as does GitLab.com (the
+        // token stays the way for a self-hosted GitLab and for merge requests in the notch).
+        MCPRemoteService(id: "calcom", name: "Cal.com", url: "https://mcp.cal.com/mcp", domain: "cal.com", category: .work),
+        MCPRemoteService(id: "resend", name: "Resend", url: "https://mcp.resend.com/mcp", domain: "resend.com", category: .business),
+        MCPRemoteService(id: "gitlab", name: "GitLab", url: "https://gitlab.com/api/v4/mcp", domain: "gitlab.com", category: .development)
     ]
 }
 

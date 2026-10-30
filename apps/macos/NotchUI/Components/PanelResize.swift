@@ -64,6 +64,8 @@ enum PanelLayout {
     /// window needs before it docks; under that it is the branch button's popover.
     static let sessionPanel: CGFloat = 300
     static let sessionPanelRoom: Double = 1100
+    /// The extra room the session panel needs to dock again after it stepped aside.
+    static let dockHysteresis: Double = 48
     /// An artifact beside the app that made it (a Claude artifact next to Claude).
     static let artifact: Double = 420
     /// The chat list on the left of the Chats tab.

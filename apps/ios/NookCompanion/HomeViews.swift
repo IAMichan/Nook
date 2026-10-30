@@ -6,6 +6,9 @@ struct TodayView: View {
     @EnvironmentObject private var client: CompanionClient
     let openChat: (String) -> Void
     let openUsage: () -> Void
+    /// The Agents tab with its New session sheet open.
+    let newSession: () -> Void
+    let openChats: () -> Void
 
     private var home: HomeDigest? { client.home }
     private var waiting: [SessionDigest] {
@@ -18,6 +21,8 @@ struct TodayView: View {
             LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                 header
                 ConnectionLine()
+                // What you start from here, first: a session, a question to Nook, an answer in a chat.
+                QuickActions(newSession: newSession, askNook: { openChat("") }, openChats: openChats)
                 if !client.allows(.read), client.phase == .connected {
                     Banner(text: String(localized: "Seeing sessions and your day is turned off for this iPhone in Nook on your Mac."), symbol: "lock.fill")
                 } else if !client.can(CompanionFeature.home), client.phase == .connected {
@@ -360,5 +365,102 @@ struct SuggestionRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: Quick actions
+
+/// Why the phone cannot do one of the three things it starts (a session, a question to Nook, an answer in a chat), in
+/// words that say how to change it; nil when it can. An action the Mac does not allow stays in sight and says this when
+/// tapped, so nothing you look for has quietly disappeared.
+enum QuickActionBlock {
+    @MainActor
+    static func session(_ client: CompanionClient) -> String? {
+        if !client.allows(.operate) { return String(localized: "Starting sessions is turned off for this iPhone in Nook on your Mac.") }
+        if !client.can(CompanionFeature.start) { return String(localized: "This Mac cannot start sessions from the phone yet. Update Nook on your Mac.") }
+        return nil
+    }
+
+    @MainActor
+    static func nook(_ client: CompanionClient) -> String? {
+        if !client.allows(.nookChat) { return String(localized: "Chatting with Nook is turned off for this iPhone in Nook on your Mac.") }
+        if !client.can(CompanionFeature.chat) { return String(localized: "Update Nook on your Mac to chat with Nook from your phone.") }
+        return nil
+    }
+
+    @MainActor
+    static func chats(_ client: CompanionClient) -> String? {
+        if !client.allows(.chats) { return String(localized: "Chats are turned off for this iPhone in Nook on your Mac.") }
+        if !client.can(CompanionFeature.inbox) { return String(localized: "Update Nook on your Mac to read and answer your chats from your phone.") }
+        return nil
+    }
+}
+
+/// The three things you start from the phone, at the top of Today: a session with a coding agent, a question to Nook,
+/// and an answer in one of your chats. Each shows what is going on there now (sessions at work, unread chats).
+struct QuickActions: View {
+    @EnvironmentObject private var client: CompanionClient
+    let newSession: () -> Void
+    let askNook: () -> Void
+    let openChats: () -> Void
+
+    var body: some View {
+        let working = client.sessions.filter { $0.attention == "working" }.count
+        HStack(spacing: Theme.Spacing.md) {
+            QuickActionTile(symbol: "square.and.pencil", title: "New session",
+                            detail: working > 0 ? String(localized: "\(working) working") : nil,
+                            blocked: QuickActionBlock.session(client), action: newSession)
+            QuickActionTile(symbol: "sparkles", title: "Ask Nook", detail: nil,
+                            blocked: QuickActionBlock.nook(client), action: askNook)
+            QuickActionTile(symbol: "bubble.left.and.bubble.right", title: "Answer a chat",
+                            detail: client.inboxUnread > 0 ? String(localized: "\(client.inboxUnread) unread") : nil,
+                            blocked: QuickActionBlock.chats(client), action: openChats)
+        }
+    }
+}
+
+/// One quick action: its symbol, what it does, and in quieter text what is going on there. Blocked, it is dimmed and a
+/// tap says why instead.
+private struct QuickActionTile: View {
+    @EnvironmentObject private var client: CompanionClient
+    let symbol: String
+    let title: LocalizedStringKey
+    let detail: String?
+    let blocked: String?
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            if let blocked {
+                client.notice = blocked
+            } else {
+                Haptics.tap()
+                action()
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                Image(systemName: blocked == nil ? symbol : "lock.fill")
+                    .font(Theme.font(18, .semibold))
+                    .foregroundStyle(Theme.text)
+                    .frame(height: 28, alignment: .leading)
+                Spacer(minLength: Theme.Spacing.md)
+                Text(title)
+                    .font(Theme.TextStyle.strong)
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(detail ?? " ")
+                    .font(Theme.TextStyle.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+            .card(padding: Theme.Spacing.lg)
+            .opacity(blocked == nil ? 1 : 0.55)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressFade())
+        .accessibilityHint(blocked.map { Text($0) } ?? Text(""))
     }
 }

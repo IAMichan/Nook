@@ -160,6 +160,7 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
     let now: Date
     var showsAvatar = true
     @ViewBuilder var accessory: () -> Accessory
+    @State private var hovering = false
 
     init(event: PullRequestEvent, now: Date, showsAvatar: Bool = true, @ViewBuilder accessory: @escaping () -> Accessory) {
         self.event = event
@@ -169,13 +170,25 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
     }
 
     var body: some View {
+        // On one line where it fits; in a narrow panel the emoji take a line of their own under it.
+        ViewThatFits(in: .horizontal) {
+            row(reactions: true)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                row(reactions: false)
+                if !event.reactions.isEmpty { PullRequestReactionBar(reactions: event.reactions) }
+            }
+        }
+        .onHover { hovering = $0 }
+    }
+
+    private func row(reactions: Bool) -> some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             if showsAvatar { GitHubAvatar(login: event.author, size: 18) }
             Text("@" + event.author).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper).lineLimit(1)
             verdict
             accessory()
             Spacer(minLength: NookTheme.Spacing.xs)
-            if !event.reactions.isEmpty { PullRequestReactionBar(reactions: event.reactions) }
+            if reactions, !event.reactions.isEmpty { PullRequestReactionBar(reactions: event.reactions) }
             if let date = event.date {
                 Text(AgentFormat.short(now.timeIntervalSince(date)))
                     .font(NookTheme.TextStyle.detail)
@@ -184,9 +197,13 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
                     .help(date.formatted(date: .abbreviated, time: .shortened))
             }
             if let url = event.url {
+                // Under the pointer only: ten comments should not mean ten buttons at rest. It keeps its room, so the
+                // time beside it does not jump.
                 ToolbarIconButton("arrow.up.right", tr("agents.pulls.open"), height: 20, width: 20) {
                     NSWorkspace.shared.open(url)
                 }
+                .opacity(hovering ? 1 : 0)
+                .allowsHitTesting(hovering)
             }
         }
     }

@@ -44,7 +44,7 @@ extension AppModel {
         logNotice(.info, title: thread.name, detail: line, context: appName, target: .chat(id), key: token,
                   source: .chats, app: thread.app)
         let open: () -> Void = { [weak self] in self?.showChats(ChatsFocus(chat: id)) }
-        deliverNotice(.chats, app: thread.app, id: token, title: thread.name, subtitle: appName, body: line,
+        deliverNotice(.chats, app: thread.app, id: token, pace: "chat:" + id, title: thread.name, subtitle: appName, body: line,
                       card: { [weak self] in self?.showCapturedChatCard(id) },
                       strip: { [weak self] in
                           self?.viewModel.notify(thread.name + ": " + line, button: tr("notices.openChat"), action: open)

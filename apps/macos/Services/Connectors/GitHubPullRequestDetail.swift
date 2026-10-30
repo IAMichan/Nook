@@ -80,11 +80,12 @@ enum GitHubPullRequestDetail {
         async let fileList = all("/pulls/\(number)/files", count: counts?.changedFiles, limit: 30)
         async let timeline = all("/issues/\(number)/timeline", count: nil, limit: 5)
         async let threads = reviewThreads(repo: repo, number: number, token: token)
+        async let issues = linkedIssues(repo: repo, number: number, token: token)
         let commits = PullRequestDetailParser.commits(await commitList)
         let events = PullRequestDetailParser.events(reviews: await reviews, comments: await comments, lineComments: await lineComments,
                                                     timeline: await timeline, commits: commits)
         return PullRequestActivity(events: PullRequestDetailParser.applying(await threads, to: events), commits: commits,
-                                   files: PullRequestDetailParser.files(await fileList))
+                                   files: PullRequestDetailParser.files(await fileList), issues: await issues)
     }
 
     /// Which threads on lines are resolved or outdated, from GraphQL. Best effort: without it every thread shows open.
@@ -93,6 +94,14 @@ enum GitHubPullRequestDetail {
               let url = URL(string: "https://api.github.com/graphql") else { return [:] }
         let answer = try? await ConnectorHTTP.json(url, headers: headers(token), method: "POST", body: body)
         return PullRequestDetailParser.reviewThreads(answer)
+    }
+
+    /// The issues the pull request closes, from GraphQL. Best effort: without it the Summary leaves the line out.
+    private static func linkedIssues(repo: String, number: Int, token: String) async -> [PullRequestLinkedIssue] {
+        guard let body = PullRequestDetailParser.linkedIssuesBody(repo: repo, number: number),
+              let url = URL(string: "https://api.github.com/graphql") else { return [] }
+        let answer = try? await ConnectorHTTP.json(url, headers: headers(token), method: "POST", body: body)
+        return PullRequestDetailParser.linkedIssues(answer)
     }
 
     /// One page of a list, handed from the task that read it. Parsed JSON is only read after the group is done.
