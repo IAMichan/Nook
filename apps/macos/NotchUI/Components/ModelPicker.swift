@@ -56,7 +56,7 @@ struct ModelPickerPanel<Place: Hashable, Icon: View, Detail: View>: View {
     }
 }
 
-/// One place's column in a model picker: its name, an optional line on what it is, rows above the search (accounts,
+/// One place's column in a model picker: its name, an optional line on what it is (an account), rows above the search (
 /// "send to several models"), the search field, the models and a link to Settings.
 struct ModelPickerColumn<Above: View, Rows: View>: View {
     let title: String
