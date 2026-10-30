@@ -69,7 +69,10 @@ user or contributor notices, add a line under **Unreleased**. At release time th
   decode off the main thread; the notch opens sooner (shorter hover wait and open spring) without the hover's curve
   taking over the open animation. Pull requests keep their list (and where it was scrolled) when one opens or closes
   beside it, switch tabs at once, reuse a diff's colors, and poll without redrawing the page. The main window holds
-  its animations while you resize it or it goes into or out of full screen.
+  its animations while you resize it or it goes into or out of full screen. Older sessions load their timeline in the
+  background, transcript rows and chat text are drawn again only when they change, @ mentions and pasted pictures no
+  longer block typing, the notch redraws only its ring and mood as agents work, Double Tap and the UI driver read
+  other apps off the main thread, and typing in Settings redraws only the field.
 
 - Every side panel is one shared panel: the lists of the Nook, Agents and Chats tabs, a command's terminal, the tool
   panel, a turn's diff or a file, a pull request beside its list, an artifact beside its app and the docked session
