@@ -225,7 +225,7 @@ enum NookTheme {
     // Animation. Every curve is a spring: a spring keeps its velocity when it is interrupted (hover off before the
     // hover in finished, a tab picked while the last one still slides), where a timing curve restarts from rest and
     // visibly jerks. Opening has a subtle overshoot; closing is smooth without bounce.
-    static let open = Animation.spring(duration: 0.42, bounce: 0.08)
+    static let open = Animation.spring(duration: 0.36, bounce: 0.06)
     static let close = Animation.spring(duration: 0.3, bounce: 0)
     /// Tab switching within the same panel: tighter, and without overshoot so the content does not wobble.
     static let swap = Animation.spring(duration: 0.28, bounce: 0)
@@ -314,7 +314,7 @@ extension AnyTransition {
         }
         return .asymmetric(
             insertion: .modifier(active: NotchContentFade(amount: 1), identity: NotchContentFade(amount: 0))
-                .animation(.spring(duration: 0.36, bounce: 0).delay(0.08)),
+                .animation(.spring(duration: 0.28, bounce: 0).delay(0.04)),
             removal: .opacity.animation(.easeIn(duration: 0.12))
         )
     }

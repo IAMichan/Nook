@@ -5,12 +5,9 @@ struct NotchRootView: View {
     @ObservedObject var viewModel: NotchViewModel
     /// The notch's state, size and strips, which the view model publishes apart from the rest.
     @ObservedObject private var surface: NotchSurface
-    @EnvironmentObject private var app: AppModel
-    // Redraws the closed notch's ring when you mark a chat as finished or read a session.
-    @ObservedObject private var finishedMarks = FinishedSessions.shared
-    @ObservedObject private var visits = SessionVisits.shared
-    /// Nook's idle frame rate follows the energy plan: a little slower on battery.
-    @ObservedObject private var energy = EnergyMonitor.shared
+    /// For the accent, which builds the content anew. Not `AppModel`: it publishes a few times a second while agents work,
+    /// so only the pieces that show its data observe it (Nook and his ring, a card, the open panel), not the whole notch.
+    @ObservedObject private var settings = AppSettings.shared
     /// Lets the closed notch's ring follow Nook. Held, not observed: only the ring redraws when he moves.
     @State private var orbMotion = NookMotion()
 
@@ -41,7 +38,7 @@ struct NotchRootView: View {
                 content(size: size)
             }
             .frame(width: size.width, height: size.height, alignment: .top)
-            .clipShape(bare ? AnyShape(Rectangle().inset(by: -24)) : AnyShape(shape))
+            .clipShape(NotchClip(radius: bare ? 0 : radius, topRadius: bare ? 0 : topRadius, outset: bare ? 24 : 0))
             // The black shape and its shadow sit behind the clipped content. The shadow is cast by the plain shape, not
             // by everything in the panel: a shadow on the content blurs all of it again on every frame of an animation.
             // Docked in the notch, or bare, there is no shadow at all (an invisible shadow is still blurred).
@@ -55,8 +52,12 @@ struct NotchRootView: View {
             // Open, or showing a conversation, the sides and bottom corners can be dragged to make the notch larger or smaller.
             .overlay { if viewModel.isResizable { NotchResizeHandles(viewModel: viewModel) } }
             // A slight expansion when hovering over the notch: it is alive, without bouncing.
+            // Only on the resting notch: opening ends the hover in the same update, and the hover's curve then took over
+            // the open spring for the panel's frame, clip and background (and scaled its text for a moment).
             .scaleEffect(hoverGrow ? 1.02 : 1, anchor: .top)
-            .animation(NookTheme.hover, value: hoverGrow)
+            .transaction(value: hoverGrow) { [resting = viewModel.state.isResting] transaction in
+                if resting { transaction.animation = NookTheme.hover }
+            }
         }
         .frame(
             width: viewModel.canvas.width,
@@ -106,7 +107,7 @@ struct NotchRootView: View {
         // or closed. An animated frame laid the whole panel out again on every frame of the spring (and set off every
         // `onGeometryChange` in it), which is where opening and closing stuttered.
         .animation(nil) { $0.frame(width: size.width, height: size.height, alignment: .top) }
-        .id("\(contentKey)-\(app.settings.accentHex)")
+        .id("\(contentKey)-\(settings.accentHex)")
         .transition(.notchContent)
     }
 
@@ -114,24 +115,9 @@ struct NotchRootView: View {
 
     /// Nook without a bar, in the same ring as the closed notch and the open panel.
     private var bareOrb: some View {
-        let active = app.activeAgents
-        let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
-        let mood: NookMood
-        if !active.isEmpty {
-            mood = waiting ? .waiting : .think
-        } else if app.chat.anyBusy {
-            mood = .think
-        } else {
-            mood = viewModel.pointerInside ? .seen : .rest
-        }
         let side = NotchViewModel.floatingOrbSide
-        return NookOrb(mood: mood, size: 28, animated: viewModel.pointerInside || !active.isEmpty || app.chat.anyBusy,
-                       frameRate: viewModel.pointerInside ? energy.plan.interactiveFrameRate : energy.plan.idleOrbFrameRate,
-                       motion: orbMotion)
-            .background {
-                let ring = TaskRingItem.all(app: app, selected: viewModel.selectedAgentID)
-                if !ring.isEmpty { NookTaskRing(items: ring, style: .compact, orbSize: 28, maxSide: side, motion: orbMotion) }
-            }
+        return RestingNook(viewModel: viewModel, pointerInside: viewModel.pointerInside, orbSize: 28, ringSide: side,
+                           motion: orbMotion)
             .frame(width: side, height: side)
             .contentShape(Circle())
             .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
@@ -145,17 +131,14 @@ struct NotchRootView: View {
     private func regularContent(nh: CGFloat, nw: CGFloat) -> some View {
         switch viewModel.state {
         case .idle:
-            let active = app.activeAgents
-            let busy = !active.isEmpty || app.chat.anyBusy
-            if !busy && app.settings.hideWhenIdle && !viewModel.geometry.isFloating {
-                Color.clear
-            } else {
+            // Hidden while nothing works, if you chose so (`IdleGate`).
+            IdleGate(floating: viewModel.geometry.isFloating) {
                 // An agent or a Nook at work: Nook thinks along inside a thin ring, one piece per task, as in the panel
                 // (waiting when one asks for you). At rest he only looks up when the pointer comes near.
-                let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
-                let mood: NookMood = busy ? (waiting ? .waiting : .think) : (viewModel.pointerInside ? .seen : .rest)
-                wings(nh: nh, nw: nw, mood: mood, animated: busy || viewModel.pointerInside, orbSize: 20,
-                      ring: TaskRingItem.all(app: app, selected: viewModel.selectedAgentID)) {
+                wings(nh: nh, nw: nw) {
+                    RestingNook(viewModel: viewModel, pointerInside: viewModel.pointerInside, orbSize: 20, ringSide: nh,
+                                glow: viewModel.geometry.isFloating, motion: orbMotion)
+                } right: {
                     EmptyView()
                 }
                 .contentShape(Rectangle())
@@ -164,14 +147,11 @@ struct NotchRootView: View {
             }
         case .music:
             // Music keeps the idle notch's task ring: Nook still thinks along (or waits) while an agent or a chat works.
-            let active = app.activeAgents
-            let busy = !active.isEmpty || app.chat.anyBusy
-            let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
-            let mood: NookMood = busy ? (waiting ? .waiting : .think) : (viewModel.pointerInside ? .seen : .rest)
-            wings(nh: nh, nw: nw, mood: mood, animated: busy || viewModel.pointerInside, orbSize: 20,
-                  ring: TaskRingItem.all(app: app, selected: viewModel.selectedAgentID)) {
-                EqualizerBars(color: NookTheme.music, height: 14, isPlaying: app.nowPlaying.current?.isPlaying ?? true,
-                              frameRate: energy.plan.ambientFrameRate)
+            wings(nh: nh, nw: nw) {
+                RestingNook(viewModel: viewModel, pointerInside: viewModel.pointerInside, orbSize: 20, ringSide: nh,
+                            glow: viewModel.geometry.isFloating, motion: orbMotion)
+            } right: {
+                NowPlayingBars(height: 14, ambient: true)
             }
             .contentShape(Rectangle())
             .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
@@ -188,22 +168,10 @@ struct NotchRootView: View {
             momentStrip(moment, nh: nh)
         case .card(let card):
             expanded(nh: nh, mood: card.mood) {
-                CardView(
-                    card: card,
-                    onAction: { viewModel.perform($0) },
-                    onVoice: { viewModel.startListening() },
-                    onReply: { app.handleCardReply($0, card: card) },
-                    onDraft: { try await app.draftCardReply($0, card: card) },
-                    onChoose: { viewModel.choose($0, $1) },
-                    onOpen: { app.openCardAttachment($0, card: card) },
-                    onReplyTo: { app.replyCardMessage($0, to: $1, card: card) },
-                    onReact: { app.reactCardMessage($0, $1, card: card) },
-                    paused: viewModel.pointerInside,
-                    onHeight: { viewModel.fitCompactCard(id: card.id, height: $0) }
-                )
+                NotchCard(viewModel: viewModel, card: card, paused: viewModel.pointerInside)
             }
         case .panel(let tab):
-            expanded(nh: nh, mood: viewModel.mood(for: tab), ring: true) {
+            expanded(nh: nh, mood: .rest, tab: tab, ring: true) {
                 PanelView(viewModel: viewModel, tab: tab, headerInset: Self.panelHeaderInset)
             }
         }
@@ -211,24 +179,15 @@ struct NotchRootView: View {
 
     // MARK: Idle and Music: Nook left of the notch, something compact on the right
 
-    private func wings<Right: View>(
+    private func wings<Left: View, Right: View>(
         nh: CGFloat,
         nw: CGFloat,
-        mood: NookMood,
-        animated: Bool,
-        orbSize: CGFloat = 24,
-        ring: [TaskRingItem] = [],
+        @ViewBuilder left: () -> Left,
         @ViewBuilder right: () -> Right
     ) -> some View {
         let wing = (viewModel.size.width - nw) / 2
         return HStack(spacing: 0) {
-            // Full rate while the pointer is on the notch (Nook follows it); slower while it only thinks along.
-            NookOrb(mood: mood, size: orbSize, animated: animated, glow: viewModel.geometry.isFloating,
-                    frameRate: viewModel.pointerInside ? energy.plan.interactiveFrameRate : energy.plan.idleOrbFrameRate,
-                    motion: orbMotion)
-                .background {
-                    if !ring.isEmpty { NookTaskRing(items: ring, style: .compact, orbSize: orbSize, maxSide: nh, motion: orbMotion) }
-                }
+            left()
                 .frame(width: wing, height: nh)
             Spacer(minLength: 0)
             right()
@@ -240,12 +199,11 @@ struct NotchRootView: View {
     /// The "new track" strip: Nook and artwork on the left end, title and equalizer on the right end.
     private func trackStrip(title: String, artist: String, nh: CGFloat, nw: CGFloat) -> some View {
         let wing = (viewModel.size.width - nw) / 2
-        let isPlaying = app.nowPlaying.current?.isPlaying ?? true
         return HStack(spacing: 0) {
             // Left wing: Nook pinned to the far left, album cover beside it
             HStack(spacing: NookTheme.Spacing.md) {
                 NookOrb(mood: viewModel.pointerInside ? .seen : .rest, size: 24, animated: true, glow: viewModel.geometry.isFloating)
-                TrackCover(artworkURL: app.nowPlaying.current?.artworkURL)
+                TrackCover()
                 Spacer(minLength: 0)
             }
             .padding(.leading, 14)
@@ -269,7 +227,7 @@ struct NotchRootView: View {
                 }
                 .truncationMode(.tail)
                 Spacer(minLength: NookTheme.Spacing.sm)
-                EqualizerBars(color: NookTheme.music, height: 13, isPlaying: isPlaying)
+                NowPlayingBars(height: 13)
             }
             .padding(.trailing, 14)
             .frame(width: wing, height: nh)
@@ -413,14 +371,14 @@ struct NotchRootView: View {
 
     private func momentNotice(_ moment: NookMoment, line: String) -> some View {
         let actions: [NookNoticeAction] = moment.action != nil && !moment.actionTitle.isEmpty
-            ? [NookNoticeAction(moment.actionTitle) { app.performMomentAction(moment) }] : []
+            ? [NookNoticeAction(moment.actionTitle) { viewModel.app?.performMomentAction(moment) }] : []
         return NookNotice(title: line, actions: actions, countdown: viewModel.noticeSeconds, paused: noticePaused,
                           onOK: { viewModel.acknowledgeNotice() })
         .id(viewModel.noticeStamp)
         .contentShape(Rectangle())
         .onTapGesture {
             // Breathing along is only started with the button: a click on the line never surprises you with it.
-            if let action = moment.action, action != .breathe { app.performMomentAction(moment) } else { viewModel.show(.idle) }
+            if let action = moment.action, action != .breathe { viewModel.app?.performMomentAction(moment) } else { viewModel.show(.idle) }
         }
     }
 
@@ -430,10 +388,12 @@ struct NotchRootView: View {
     private static var panelHeaderInset: CGFloat { PanelOrb.headerInset }
 
     /// `ring`: the open panel shows Nook's task ring around him, in the header row so the panel's content runs the
-    /// full width below him; a card keeps him in a column of his own.
+    /// full width below him; a card keeps him in a column of his own. `tab`: the open tab, whose mood Nook takes
+    /// instead of `mood`.
     private func expanded<Inner: View>(
         nh: CGFloat,
         mood: NookMood,
+        tab: PanelTab? = nil,
         ring: Bool = false,
         @ViewBuilder inner: () -> Inner
     ) -> some View {
@@ -441,12 +401,12 @@ struct NotchRootView: View {
             if ring {
                 ZStack(alignment: .topLeading) {
                     inner()
-                    expandedOrb(mood: mood, size: Self.panelOrbSize, ring: true)
+                    expandedOrb(mood: mood, tab: tab, size: Self.panelOrbSize, ring: true)
                         .offset(y: (PanelView.headerHeight - Self.panelOrbSize) / 2)
                 }
             } else {
                 HStack(alignment: .top, spacing: 20) {
-                    expandedOrb(mood: mood, size: 46, ring: false)
+                    expandedOrb(mood: mood, tab: tab, size: 46, ring: false)
                     inner()
                 }
             }
@@ -467,8 +427,149 @@ struct NotchRootView: View {
     }
 
     /// Nook in the expanded notch; tap him to go home. In the open panel the task ring circles him.
-    private func expandedOrb(mood: NookMood, size: CGFloat, ring: Bool) -> some View {
-        PanelOrb(viewModel: viewModel, mood: mood, size: size, ring: ring, glow: viewModel.geometry.isFloating)
+    private func expandedOrb(mood: NookMood, tab: PanelTab?, size: CGFloat, ring: Bool) -> some View {
+        ExpandedOrb(viewModel: viewModel, tab: tab, mood: mood, size: size, ring: ring)
+    }
+}
+
+// MARK: The pieces that show the app's data
+
+// `NotchRootView` does not observe `AppModel`, which publishes a few times a second while agents work: these pieces do,
+// so its ticks redraw them and not the whole notch (its shape, clip and layout). What they take from the notch's
+// surface, which they do not observe, they are given as values.
+
+/// Nook in the resting notch (idle, music, or floating and bare) inside his task ring: thinking along while an agent or a
+/// chat works, waiting when one asks for you, and at rest only looking up when the pointer comes near.
+private struct RestingNook: View {
+    @ObservedObject var viewModel: NotchViewModel
+    let pointerInside: Bool
+    let orbSize: CGFloat
+    /// The most room the ring may take.
+    let ringSide: CGFloat
+    var glow = true
+    let motion: NookMotion
+    @EnvironmentObject private var app: AppModel
+    // Redraws the ring when you mark a chat as finished or read a session.
+    @ObservedObject private var finishedMarks = FinishedSessions.shared
+    @ObservedObject private var visits = SessionVisits.shared
+    /// Nook's idle frame rate follows the energy plan: a little slower on battery.
+    @ObservedObject private var energy = EnergyMonitor.shared
+
+    var body: some View {
+        let active = app.activeAgents
+        let busy = !active.isEmpty || app.chat.anyBusy
+        let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
+        let mood: NookMood = busy ? (waiting ? .waiting : .think) : (pointerInside ? .seen : .rest)
+        // Full rate while the pointer is on the notch (Nook follows it); slower while he only thinks along.
+        NookOrb(mood: mood, size: orbSize, animated: busy || pointerInside, glow: glow,
+                frameRate: pointerInside ? energy.plan.interactiveFrameRate : energy.plan.idleOrbFrameRate,
+                motion: motion)
+            .background {
+                let ring = TaskRingItem.all(app: app, selected: viewModel.selectedAgentID)
+                if !ring.isEmpty { NookTaskRing(items: ring, style: .compact, orbSize: orbSize, maxSide: ringSide, motion: motion) }
+            }
+    }
+}
+
+/// The idle notch, or nothing at all while no agent or chat works and you chose to hide it then (`hideWhenIdle`).
+private struct IdleGate<Content: View>: View {
+    let floating: Bool
+    let content: Content
+    @EnvironmentObject private var app: AppModel
+
+    init(floating: Bool, @ViewBuilder content: () -> Content) {
+        self.floating = floating
+        self.content = content()
+    }
+
+    var body: some View {
+        if !floating && app.settings.hideWhenIdle && app.activeAgents.isEmpty && !app.chat.anyBusy {
+            Color.clear
+        } else {
+            content
+        }
+    }
+}
+
+/// The equalizer of what plays now. `ambient`: the closed notch shows it for as long as music plays, at the energy
+/// plan's lower rate.
+private struct NowPlayingBars: View {
+    let height: CGFloat
+    var ambient = false
+    @EnvironmentObject private var app: AppModel
+    @ObservedObject private var energy = EnergyMonitor.shared
+
+    var body: some View {
+        let playing = app.nowPlaying.current?.isPlaying ?? true
+        if ambient {
+            EqualizerBars(color: NookTheme.music, height: height, isPlaying: playing, frameRate: energy.plan.ambientFrameRate)
+        } else {
+            EqualizerBars(color: NookTheme.music, height: height, isPlaying: playing)
+        }
+    }
+}
+
+/// A card in the notch, with the app's replies, drafts and attachments.
+private struct NotchCard: View {
+    /// Not observed: the card only calls it.
+    let viewModel: NotchViewModel
+    let card: NookCard
+    let paused: Bool
+    @EnvironmentObject private var app: AppModel
+
+    var body: some View {
+        CardView(
+            card: card,
+            onAction: { viewModel.perform($0) },
+            onVoice: { viewModel.startListening() },
+            onReply: { app.handleCardReply($0, card: card) },
+            onDraft: { try await app.draftCardReply($0, card: card) },
+            onChoose: { viewModel.choose($0, $1) },
+            onOpen: { app.openCardAttachment($0, card: card) },
+            onReplyTo: { app.replyCardMessage($0, to: $1, card: card) },
+            onReact: { app.reactCardMessage($0, $1, card: card) },
+            paused: paused,
+            onHeight: { viewModel.fitCompactCard(id: card.id, height: $0) }
+        )
+    }
+}
+
+/// Nook in the expanded notch. In the open panel he takes the tab's mood (its agents, its chats), so this observes the
+/// app; a card gives its own.
+private struct ExpandedOrb: View {
+    @ObservedObject var viewModel: NotchViewModel
+    let tab: PanelTab?
+    let mood: NookMood
+    let size: CGFloat
+    let ring: Bool
+    @EnvironmentObject private var app: AppModel
+
+    var body: some View {
+        PanelOrb(viewModel: viewModel, mood: tab.map { viewModel.mood(for: $0) } ?? mood, size: size, ring: ring,
+                 glow: viewModel.geometry.isFloating)
+    }
+}
+
+/// The notch's clip: its shape, or (floating and bare) a plain rectangle a little larger than the frame, so Nook's glow
+/// is not cut off. One shape type for both: a type-erased `AnyShape` was boxed and compared on every frame of a spring.
+private struct NotchClip: Shape {
+    var radius: CGFloat
+    var topRadius: CGFloat
+    /// Not animated: it takes its new value at once, as the clip did when it changed type.
+    var outset: CGFloat
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(radius, topRadius) }
+        set {
+            radius = newValue.first
+            topRadius = newValue.second
+        }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        UnevenRoundedRectangle(topLeadingRadius: topRadius, bottomLeadingRadius: radius, bottomTrailingRadius: radius,
+                               topTrailingRadius: topRadius, style: .continuous)
+            .path(in: rect.insetBy(dx: -outset, dy: -outset))
     }
 }
 
@@ -777,9 +878,10 @@ private extension View {
 
 /// Album artwork or playback placeholder in the new-track strip.
 private struct TrackCover: View {
-    let artworkURL: URL?
+    @EnvironmentObject private var app: AppModel
 
     var body: some View {
+        let artworkURL = app.nowPlaying.current?.artworkURL
         ZStack {
             RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
                 .fill(artworkURL != nil ? NookTheme.graphite : NookTheme.music.opacity(0.18))

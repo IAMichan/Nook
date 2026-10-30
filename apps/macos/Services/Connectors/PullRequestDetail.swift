@@ -202,7 +202,14 @@ enum PullRequestTimelineEntry: Identifiable, Equatable, Sendable {
         }
     }
 
+    /// Kept per timeline, so the Timeline tab does not walk it again on every draw.
     static func entries(_ events: [PullRequestEvent]) -> [PullRequestTimelineEntry] {
+        memo.value(for: events, make: build)
+    }
+
+    private static let memo = RecentMemo<[PullRequestEvent], [PullRequestTimelineEntry]>(limit: 4)
+
+    private static func build(_ events: [PullRequestEvent]) -> [PullRequestTimelineEntry] {
         var result: [PullRequestTimelineEntry] = []
         for event in events {
             guard case .commit = event.kind else {
@@ -321,6 +328,15 @@ struct PullRequestCommit: Identifiable, Equatable, Sendable {
 
     var id: String { sha }
     var shortSHA: String { String(sha.prefix(7)) }
+
+    /// Each commit's `details` by its sha, kept per list: the timeline looks one up for every commit it draws.
+    static func detailsBySHA(_ commits: [PullRequestCommit]) -> [String: String] {
+        detailsMemo.value(for: commits) { commits in
+            Dictionary(commits.map { ($0.sha, $0.details) }, uniquingKeysWith: { first, _ in first })
+        }
+    }
+
+    private static let detailsMemo = RecentMemo<[PullRequestCommit], [String: String]>(limit: 4)
     var subject: String { message.components(separatedBy: "\n").first ?? message }
     /// The message under the subject, without the blank line between them; empty for a one-line message.
     var details: String {

@@ -85,7 +85,7 @@ extension PullRequestDetailView {
     func commitEntry(_ event: PullRequestEvent, detail: PullRequestDetail, now: Date) -> some View {
         if case .commit(let sha) = event.kind {
             PullRequestCommitEntry(sha: sha, message: event.body,
-                                   details: detail.commits.first(where: { $0.sha == sha })?.details ?? "",
+                                   details: PullRequestCommit.detailsBySHA(detail.commits)[sha] ?? "",
                                    time: event.date.map { AgentFormat.short(now.timeIntervalSince($0)) },
                                    date: event.date) { openCommit(sha, detail: detail) }
         }

@@ -16,9 +16,18 @@ struct AgentSessionDetail: View {
     let selection: AgentSessionSelection
     /// In the notch: the terminal and browser icons, next to the branch button.
     var headerAccessory: AnyView? = nil
-    @State private var draft = ""
+    /// What you type, held without being observed: as state of this view, every key drew the whole conversation above
+    /// the composer again. Only the composer watches it (`Observing`), as in `AgentRunPanel`.
+    @State private var composerState = SessionDraftState()
+    private var draft: String {
+        get { composerState.draft }
+        nonmutating set { composerState.draft = newValue }
+    }
+    private var images: [ImageAttachment] {
+        get { composerState.images }
+        nonmutating set { composerState.images = newValue }
+    }
     @StateObject private var composerModel = ComposerModel()
-    @State private var images: [ImageAttachment] = []
     /// Why the last action in this view failed, shown above the composer.
     @State private var actionError: String?
     /// Another agent, account or model picked in the composer; the next message continues the conversation with it.
@@ -283,8 +292,12 @@ struct AgentSessionDetail: View {
 
     /// The composer under a live session. What you send continues the conversation in Nook: an idle session goes on as
     /// is, a busy Claude Code session as a copy, and one that waits on you, or still runs in a terminal, is taken over.
-    @ViewBuilder
     private func liveComposer(_ session: AgentSession) -> some View {
+        Observing(composerState) { liveComposerContent(session) }
+    }
+
+    @ViewBuilder
+    private func liveComposerContent(_ session: AgentSession) -> some View {
         let canSend = app.canReply(to: session)
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -311,14 +324,14 @@ struct AgentSessionDetail: View {
             }
         }
         if app.demoMode {
-            SessionComposer(text: $draft, prompt: session.placeholder, onSend: { draft = "" }) {
+            SessionComposer(text: $composerState.draft, prompt: session.placeholder, onSend: { draft = "" }) {
                 agentPill(name: session.name, profile: nil)
             }
             .choicesBelowBox()
-            .images($images)
+            .images($composerState.images)
         } else {
             SessionComposer(
-                text: $draft,
+                text: $composerState.draft,
                 prompt: canSend ? tr("agents.reply.followUp", choice?.provider.displayName ?? session.name)
                     : tr("agents.reply.unsupported", session.name),
                 canSend: canSend,
@@ -332,8 +345,8 @@ struct AgentSessionDetail: View {
             }
             .rich(composerModel, composerConfig(folder: session.cwd))
             .choicesBelowBox()
-            .images($images)
-            .trailing { ComposerMic(text: $draft) }
+            .images($composerState.images)
+            .trailing { ComposerMic(text: $composerState.draft) }
         }
     }
 
@@ -629,24 +642,26 @@ struct AgentSessionDetail: View {
             errorLine
             VStack(spacing: 0) {
                 pullRequestTray(pullRequest(cwd: session.cwd, branch: session.branch.isEmpty ? (GitHead.branch(for: session.cwd) ?? "") : session.branch, reply: session.lastReply), cwd: session.cwd)
-                SessionComposer(
-                    text: $draft,
-                    prompt: canContinue ? tr("agents.reply.resume")
-                        : (session.cwd.isEmpty ? tr("agents.nook.noFolder") : tr("agents.nook.unsupported", session.agent.name)),
-                    canSend: canContinue,
-                    sending: working,
-                    onSend: send
-                ) {
-                    // "Open in Nook" adopts the conversation: only for agents Nook runs itself (not Antigravity).
-                    pastMenu(session, canContinue: app.canContinueInNook(session))
-                    agentMenu(name: session.agent.name, kind: session.agent, profile: app.profile(for: session),
-                              canSwitch: app.canContinueInNook(session))
-                    if app.canContinueInNook(session) { turnControls(kind: session.agent) }
+                Observing(composerState) {
+                    SessionComposer(
+                        text: $composerState.draft,
+                        prompt: canContinue ? tr("agents.reply.resume")
+                            : (session.cwd.isEmpty ? tr("agents.nook.noFolder") : tr("agents.nook.unsupported", session.agent.name)),
+                        canSend: canContinue,
+                        sending: working,
+                        onSend: send
+                    ) {
+                        // "Open in Nook" adopts the conversation: only for agents Nook runs itself (not Antigravity).
+                        pastMenu(session, canContinue: app.canContinueInNook(session))
+                        agentMenu(name: session.agent.name, kind: session.agent, profile: app.profile(for: session),
+                                  canSwitch: app.canContinueInNook(session))
+                        if app.canContinueInNook(session) { turnControls(kind: session.agent) }
+                    }
+                    .rich(composerModel, composerConfig(folder: session.cwd))
+                    .choicesBelowBox()
+                    .images($composerState.images)
+                    .trailing { ComposerMic(text: $composerState.draft) }
                 }
-                .rich(composerModel, composerConfig(folder: session.cwd))
-                .choicesBelowBox()
-                .images($images)
-                .trailing { ComposerMic(text: $draft) }
                 .zIndex(1)
             }
             .chatColumn()
@@ -734,4 +749,12 @@ private struct FolderPullRequestTray: View {
             }
         }
     }
+}
+
+/// What you are writing under a session Nook did not start: its text and pictures. `AgentSessionDetail` holds it
+/// without observing it, so typing draws the composer again and not the conversation.
+@MainActor
+final class SessionDraftState: ObservableObject {
+    @Published var draft = ""
+    @Published var images: [ImageAttachment] = []
 }

@@ -50,8 +50,14 @@ struct PullRequestDetailView: View {
     @State var armedMerge = false
     @State var armToken = UUID()
     @State var merging = false
-    /// Scrolled past the title: the top folds to one line (number and title).
-    @State var condensed = false
+    /// Scrolled past the title: the top folds to one line (number and title). Held without
+    /// being observed (only the top watches it, see `headerBlock`): as state of this view, the fold built the open tab's
+    /// whole page again in the middle of a scroll.
+    @State var fold = PullRequestHeaderFold()
+    var condensed: Bool {
+        get { fold.condensed }
+        nonmutating set { if fold.condensed != newValue { fold.condensed = newValue } }
+    }
     /// The popover that says in full what may still hold the merge back.
     @State var showBlocker = false
     /// The popover under the Summary's Status line: everything GitHub weighs before a merge, one line each.
@@ -117,6 +123,9 @@ struct PullRequestDetailView: View {
                     TimelineView(.periodic(from: .now, by: 60)) { context in
                         content(detail, now: context.date)
                     }
+                    // The new tab is simply there: in the spring that slides the tab bar's mark, the old and the new
+                    // page were both laid out on every frame.
+                    .transaction(value: tab) { $0.animation = nil }
                     // At the column's corner, not the window's; the empty rest of its frame lets clicks through.
                     if actions.panel != .write { writeButton(detail).pullRequestPageColumn(alignment: .trailing) }
                 }
@@ -168,26 +177,27 @@ struct PullRequestDetailView: View {
     /// The top of the page, laid out: the crumbs with the page's actions, the title, who and when, the
     /// branches and the size, then the tabs, ruled off from the content that scrolls under it. Once the title is
     /// scrolled away the middle folds to one line and the crumbs show the number and title instead.
+    /// The fold is not animated: its height changing on every frame of a spring laid the page under it out again on
+    /// each one, in the middle of the scroll that set it off.
     var headerBlock: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            topBar
-            if condensed {
-                condensedLine
-                    .padding(.bottom, NookTheme.Spacing.sm)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            } else {
-                header
-                    .padding(.top, NookTheme.Spacing.xs)
-                    .padding(.bottom, NookTheme.Spacing.lg)
-                    .transition(.opacity)
-            }
-            if let detail {
+        Observing(fold) {
+            VStack(alignment: .leading, spacing: 0) {
+                topBar
+                if condensed {
+                    condensedLine
+                        .padding(.bottom, NookTheme.Spacing.sm)
+                } else {
+                    header
+                        .padding(.top, NookTheme.Spacing.xs)
+                        .padding(.bottom, NookTheme.Spacing.lg)
+                }
+                if let detail {
+                    NookDivider()
+                    tabs(detail).padding(.vertical, NookTheme.Spacing.sm)
+                }
                 NookDivider()
-                tabs(detail).padding(.vertical, NookTheme.Spacing.sm)
             }
-            NookDivider()
         }
-        .animation(NookTheme.reveal, value: condensed)
     }
 
     var topBar: some View {
@@ -200,12 +210,17 @@ struct PullRequestDetailView: View {
             if stack.count > 1 { stackMenu }
             if let detail {
                 primaryAction(detail)
-                // Refreshing is in the ⋯ menu, which spins while GitHub is asked.
-                PullRequestMoreMenu(state: actions, detail: detail, loading: model.loading, fetchedAt: model.fetchedAt) {
-                    Task { await model.refresh(activity: true) }
+                // Refreshing is in the ⋯ menu, which spins while GitHub is asked. It alone
+                // watches the reads, so a poll draws the menu again and not the page.
+                Observing(model.status) {
+                    PullRequestMoreMenu(state: actions, detail: detail, loading: model.loading, fetchedAt: model.fetchedAt) {
+                        Task { await model.refresh(activity: true) }
+                    }
                 }
-            } else if model.loading {
-                ProgressView().controlSize(.small)
+            } else {
+                Observing(model.status) {
+                    if model.loading { ProgressView().controlSize(.small) }
+                }
             }
             if let onMaximize {
                 ToolbarIconButton(maximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
@@ -610,8 +625,20 @@ struct PullRequestDetailView: View {
 
     func switchTo(_ value: Tab) {
         withAnimation(NookTheme.swap) { tab = value }
-        openFile = nil
-        openCheck = nil
-        condensed = false
+        // At once: the top unfolding over the new page made it lay out again on every frame of its spring.
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) {
+            openFile = nil
+            openCheck = nil
+            condensed = false
+        }
     }
+}
+
+/// Whether a pull request page's top is folded (`PullRequestDetailView.condensed`). Only the top observes it, so folding
+/// it draws the top again and not the tab under it (as `SessionDraftState` in `AgentSessionDetail`).
+@MainActor
+final class PullRequestHeaderFold: ObservableObject {
+    @Published var condensed = false
 }

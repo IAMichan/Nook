@@ -221,6 +221,8 @@ struct DiffText: View, Equatable {
         syntaxPath = path ?? DiffSyntax.firstPath(in: text)
         let key = DiffSyntax.Key(path: syntaxPath, text: text)
         syntaxKey = key
+        // A diff seen before opens in its colors: plain first and colored a frame later measured every line twice.
+        _colored = State(initialValue: DiffSyntaxStyle.cache.value(for: key))
         self.comments = comments
         self.onComment = onComment
         self.onRemoveComment = onRemoveComment
@@ -269,6 +271,10 @@ struct DiffText: View, Equatable {
             }
         }
         .task(id: syntaxKey) {
+            if let kept = DiffSyntaxStyle.cache.value(for: syntaxKey) {
+                colored = kept
+                return
+            }
             colored = nil
             guard syntaxPath.flatMap(SyntaxLanguage.detect) != nil || rows.contains(where: { $0.kind == .file }) else { return }
             let lines = await DiffSyntaxStyle.lines(for: text, path: syntaxPath, key: syntaxKey)

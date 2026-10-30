@@ -61,7 +61,8 @@ struct ChatTranscript: View, Equatable {
     /// The day lines and runs of what is drawn, worked out again only when the messages change.
     @State private var timeline = TranscriptTimelineMemo()
     /// Your fingers or the wheel move the chat (or it still glides from that): nothing else moves it meanwhile.
-    @State private var interacting = false
+    /// Read only by the handlers: as state, each start and stop of a scroll drew every message again.
+    @State private var interacting = Unobserved(false)
     /// When this chat was opened: what comes in the first moments (its newest messages, its pictures) is simply there,
     /// without the chat sliding past everything to reach it.
     @State private var openedAt = Date()
@@ -178,7 +179,7 @@ struct ChatTranscript: View, Equatable {
                 // well as where the last frame was: in the first layouts of a chat that just opened (its history and
                 // its read mark coming in together) that frame may not have reached the bottom yet, and the chat then
                 // stayed up in its history.
-                if new.content != old.content || new.container != old.container, old.nearBottom || atBottom, !interacting,
+                if new.content != old.content || new.container != old.container, old.nearBottom || atBottom, !interacting.value,
                    !loadingOlder, !drawingOlder {
                     var still = Transaction()
                     still.disablesAnimations = true
@@ -201,7 +202,7 @@ struct ChatTranscript: View, Equatable {
             }
             .onScrollPhaseChange { _, phase in
                 let moving = phase == .interacting || phase == .decelerating
-                if moving != interacting { interacting = moving }
+                interacting.value = moving
                 if phase == .interacting || phase == .decelerating, !scrolledByUser { userScrolled() }
             }
             .onChange(of: bubbles.last?.id) { previous, last in
@@ -255,7 +256,7 @@ struct ChatTranscript: View, Equatable {
             // Someone starts typing: their bubble comes into view under the last message.
             .onChange(of: typing != nil) { _, shown in
                 // Only while you are at the newest message: reading back, someone typing does not pull you down.
-                guard shown, atBottom, !interacting else { return }
+                guard shown, atBottom, !interacting.value else { return }
                 withAnimation(NookTheme.scroll) { proxy.scrollTo(ChatTypingBubble.id, anchor: .bottom) }
             }
             // Another chat starts at its newest message again: reaching its top counts only once you scroll there. The
@@ -264,7 +265,7 @@ struct ChatTranscript: View, Equatable {
             .onChange(of: contact) {
                 guard !fills else { return }
                 openedAt = Date()
-                interacting = false
+                interacting.value = false
                 scrolledByUser = false
                 reachedStart = false
                 atBottom = true
@@ -516,7 +517,18 @@ private struct ChatBubbleView: View, Equatable {
         .padding(NookTheme.Spacing.sm)
         .allowsHitTesting(false)
     }
-    private var long: Bool { bubble.text.count > 700 || bubble.text.filter { $0 == "\n" }.count >= Self.foldedLines }
+    /// Read once per draw (`content`). Bytes first: a text of at most 700 bytes has at most 700 characters, and
+    /// counting newline bytes needs no grapheme breaking.
+    private var long: Bool {
+        let bytes = bubble.text.utf8
+        if bytes.count > 700, bubble.text.count > 700 { return true }
+        var lines = 0
+        for byte in bytes where byte == 0x0A {
+            lines += 1
+            if lines >= Self.foldedLines { return true }
+        }
+        return false
+    }
     /// The start of a long message while it is folded: its first lines, its first 700 characters.
     private var folded: String {
         String(bubble.text.components(separatedBy: "\n").prefix(Self.foldedLines).joined(separator: "\n").prefix(700))
@@ -670,7 +682,10 @@ private struct ChatBubbleView: View, Equatable {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        // Each read once per draw: they are read in several places below.
+        let link = self.link
+        let long = !bubble.text.isEmpty && self.long
+        return VStack(alignment: .leading, spacing: 2) {
             if first, !bubble.sender.isEmpty {
                 Text(bubble.sender)
                     .font(NookTheme.TextStyle.label)
@@ -1259,10 +1274,20 @@ private struct ReactionPickerButton: View {
 enum ChatLinks {
     private static let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
 
+    /// Kept per text: the detector is the costly part of drawing a bubble, and bubbles are drawn again often.
+    private static let cache: NSCache<NSString, ChatFormat.Kept<AttributedString>> = {
+        let cache = NSCache<NSString, ChatFormat.Kept<AttributedString>>()
+        cache.countLimit = 2_000
+        return cache
+    }()
+
     static func attributed(_ text: String) -> AttributedString {
-        var attributed = AttributedString(text)
         // Most messages have no address at all: skip the detector for them.
-        guard text.contains("."), let detector else { return attributed }
+        guard text.contains("."), let detector else { return AttributedString(text) }
+        let key = text as NSString
+        if let kept = cache.object(forKey: key) { return kept.value }
+        var attributed = AttributedString(text)
+        defer { cache.setObject(ChatFormat.Kept(attributed), forKey: key) }
         for match in detector.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
             guard let url = match.url, ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? ""),
                   let range = Range(match.range, in: attributed) else { continue }
@@ -1787,6 +1812,8 @@ struct AttachmentButton: View {
     var file: URL? = nil
     let action: () -> Void
     @State private var hovering = false
+    /// The file's size in bytes, read from disk once per file and not on every hover.
+    @State private var bytes: Int?
 
     var body: some View {
         Button(action: action) {
@@ -1812,7 +1839,7 @@ struct AttachmentButton: View {
                         .truncationMode(.middle)
                         .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.leading)
-                    if let kind = Self.detail(of: name, file: file) {
+                    if let kind = Self.detail(of: name, bytes: bytes) {
                         Text(kind)
                             .font(NookTheme.TextStyle.caption)
                             .foregroundStyle(NookTheme.textTertiary)
@@ -1828,6 +1855,12 @@ struct AttachmentButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .task(id: file) {
+            guard let file else { bytes = nil; return }
+            bytes = await Task.detached(priority: .utility) {
+                (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+            }.value
+        }
         .help(tr("card.attachment.view"))
         .accessibilityLabel("\(tr("card.attachment.view")): \(name)")
     }
@@ -1845,9 +1878,9 @@ struct AttachmentButton: View {
 
     /// Its size and kind, as a chat app shows them under a file's name ("233 kB · pdf"); only the kind ("PDF document")
     /// while the file is not on this Mac, nil for a name without an extension and no file.
-    private static func detail(of name: String, file: URL?) -> String? {
+    private static func detail(of name: String, bytes: Int?) -> String? {
         let ext = (name as NSString).pathExtension
-        if let file, let bytes = (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize {
+        if let bytes {
             let size = ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
             return ext.isEmpty ? size : "\(size) · \(ext.lowercased())"
         }

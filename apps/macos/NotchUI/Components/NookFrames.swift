@@ -122,8 +122,12 @@ final class PointerWhere: ObservableObject {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }.flatMap(Self.displayID)
         if screen != self.screen { self.screen = screen }
-        // Only ask the WindowServer when the pointer is over one of Nook's own windows at all.
-        let overNook = NSApp.windows.contains { $0.isVisible && NSMouseInRect(mouse, $0.frame, false) }
+        // Only ask the WindowServer when the pointer is over one of Nook's own windows at all. A notch window spans most
+        // of its screen and lets clicks through outside its shape (`NotchController` turns that off only while the
+        // pointer is on the shape; the copies on other screens always): until then the pointer is not over Nook there.
+        let overNook = NSApp.windows.contains { window in
+            window.isVisible && !(window is NotchPanel && window.ignoresMouseEvents) && NSMouseInRect(mouse, window.frame, false)
+        }
         let number = overNook ? NSWindow.windowNumber(at: mouse, belowWindowWithWindowNumber: 0) : 0
         let window = overNook && NSApp.windows.contains { $0.windowNumber == number } ? number : nil
         if window != self.window { self.window = window }

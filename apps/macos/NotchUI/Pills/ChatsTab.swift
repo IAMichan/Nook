@@ -291,6 +291,28 @@ final class ChatsCountsMemo {
         key = (all, filter, account)
         return value
     }
+
+    private var accountsKey: (all: [ChatsEntry], filter: String?)?
+    private var accountsValue: [String] = []
+
+    /// The chosen app's accounts: read through `shownAccount` many times per redraw, and they only change with the chats.
+    func accounts(all: [ChatsEntry], filter: String?, make: () -> [String]) -> [String] {
+        if let accountsKey, accountsKey.filter == filter, accountsKey.all == all { return accountsValue }
+        accountsValue = make()
+        accountsKey = (all, filter)
+        return accountsValue
+    }
+
+    private var appsKey: [ChatsEntry]?
+    private var appsValue: [String] = []
+
+    /// The apps that have chats, in the sidebar's order: a grouping and a sort over every chat.
+    func apps(all: [ChatsEntry], make: () -> [String]) -> [String] {
+        if let appsKey, appsKey == all { return appsValue }
+        appsValue = make()
+        appsKey = all
+        return appsValue
+    }
 }
 
 /// Every chat in one place: WhatsApp (with a linked phone) and every other chat app on this Mac whose notifications
@@ -635,8 +657,11 @@ struct ChatsTab: View {
     /// The same for every app whose chats say which account they are in (WhatsApp with several phones linked).
     private var accounts: [String] {
         guard let filter else { return [] }
-        let names = Set(all.lazy.filter { $0.app == filter }.compactMap(\.account))
-        return names.count > 1 ? names.sorted { $0.localizedStandardCompare($1) == .orderedAscending } : []
+        let all = self.all
+        return countsMemo.accounts(all: all, filter: filter) {
+            let names = Set(all.lazy.filter { $0.app == filter }.compactMap(\.account))
+            return names.count > 1 ? names.sorted { $0.localizedStandardCompare($1) == .orderedAscending } : []
+        }
     }
 
     /// The account the list narrows to: the chosen one, as long as the chosen app still has chats in it.
@@ -713,12 +738,16 @@ struct ChatsTab: View {
     /// with your login or link, as Instagram or Mail), also before it brought in a message. An app that is merely
     /// installed waits until it brings in a chat, so the sidebar shows what you linked, not every app on this Mac.
     private var apps: [String] {
-        let counts = Dictionary(grouping: all, by: \.app).mapValues(\.count)
-        let fresh = newByApp
-        var result = counts.keys.sorted { a, b in
-            let (fa, fb) = (fresh[a] ?? 0, fresh[b] ?? 0)
-            if (fa > 0) != (fb > 0) { return fa > 0 }
-            return counts[a]! != counts[b]! ? counts[a]! > counts[b]! : a < b
+        let all = self.all
+        var result = countsMemo.apps(all: all) {
+            let counts = Dictionary(grouping: all, by: \.app).mapValues(\.count)
+            // From `all` itself, not `newByApp`: the memo is keyed on the chats alone.
+            let fresh = Dictionary(grouping: all.filter { $0.read.isUnread }, by: \.app).mapValues(\.count)
+            return counts.keys.sorted { a, b in
+                let (fa, fb) = (fresh[a] ?? 0, fresh[b] ?? 0)
+                if (fa > 0) != (fb > 0) { return fa > 0 }
+                return counts[a]! != counts[b]! ? counts[a]! > counts[b]! : a < b
+            }
         }
         if capture.enabled {
             for source in capture.sources.active
@@ -781,14 +810,22 @@ struct ChatsTab: View {
     }
 
     private var listHeader: some View {
-        let fresh = inApp.filter { $0.read.isUnread }
+        // Whether anything is new from the memoized counts; the chats themselves only once the button is clicked.
+        let hasNew: Bool
+        if let filter {
+            hasNew = (shownAccount.map { newByAccount[$0] ?? 0 } ?? newByApp[filter] ?? 0) > 0
+        } else {
+            hasNew = newByApp.values.contains { $0 > 0 }
+        }
         return PanelListHeader(listTitle) {
             // A mail app's list writes new mail too, as a mail app does.
             if let filter, MailChatData.apps.contains(filter) {
                 PanelNewButton(label: tr("chats.mail.new"), active: composing != nil) { startMail() }
             }
-            if !fresh.isEmpty {
-                ToolbarIconButton("checkmark.circle", tr("chats.markAllReadInNook")) { app.markAllChatsReadInNook(fresh) }
+            if hasNew {
+                ToolbarIconButton("checkmark.circle", tr("chats.markAllReadInNook")) {
+                    app.markAllChatsReadInNook(inApp.filter { $0.read.isUnread })
+                }
             }
         }
     }
@@ -1517,6 +1554,8 @@ private struct ChatsDetail: View, Equatable {
     }
 
     var body: some View {
+        // Made once per redraw: each read filters the hidden messages and lays the outbox over them again.
+        let bubbles = self.bubbles
         VStack(alignment: .leading, spacing: 0) {
             header
                 .padding(.bottom, NookTheme.Spacing.md)
@@ -1975,7 +2014,10 @@ private struct ChatsDetail: View, Equatable {
                     ChatEmojiButton(text: $reply)
                 },
                 above: {
-                    ChatComposerPanels(model: composer, sends: sends, chatStickers: shelfItems) { sendItem($0) }
+                    // Only while the sticker shelf is open: this is built with every key you type, and finding the
+                    // stickers walks the whole chat.
+                    ChatComposerPanels(model: composer, sends: sends,
+                                       chatStickers: composer.panel == .stickers ? shelfItems : []) { sendItem($0) }
                 },
                 idle: {
                     ChatMicButton(recorder: composer.recorder) { notice = $0.localizedDescription }
@@ -1989,6 +2031,14 @@ private struct ChatsDetail: View, Equatable {
     /// text is back in the field, the files that did not go wait again, and the quote stays. Text alone is in the chat
     /// the moment you send it (`ChatOutbox`), with a clock until its app took it.
     private func send(via route: ChatRoute) {
+        // A pasted picture still being written goes with this message: sending now would leave it for the next one.
+        guard composer.pendingPictures == 0 else {
+            Task { @MainActor in
+                await composer.picturesSaved()
+                send(via: route)
+            }
+            return
+        }
         let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         let files = composer.files
         guard !text.isEmpty || !files.isEmpty else { return }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Nook's memory as the app uses it: the `MemoryBook` and what Nook learned about its sources, kept in `nook.sqlite`.
-/// Every change is written right away, row by row, so nothing learned is lost when Nook quits.
+/// Every change is written right away, so nothing learned is lost when Nook quits.
 @MainActor
 final class NookMemory: ObservableObject {
     @Published private(set) var book = MemoryBook()
@@ -30,8 +30,10 @@ final class NookMemory: ObservableObject {
         var next = book
         let result = change(&next)
         let after = Dictionary(next.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        for (id, item) in after where before[id] != item { store.saveMemory(item) }
-        for id in before.keys where after[id] == nil { store.deleteMemory(id: id) }
+        // One transaction for the lot: a prune or a reflection can touch many rows at once. Not written, the book stays
+        // as it was, so what Nook shows is what it will remember after a restart.
+        guard store.saveMemories(after.values.filter { before[$0.id] != $0 }, deleting: before.keys.filter { after[$0] == nil })
+        else { return result }
         // Most changes (an outcome observed after every tool call, a recall) leave the book as it was; publishing then
         // would redraw every view of the app for nothing.
         if next != book { book = next }

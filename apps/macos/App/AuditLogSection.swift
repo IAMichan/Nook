@@ -11,7 +11,11 @@ struct AuditLogSection: View {
         Section {
             TextField(tr("privacy.log.search"), text: $query)
                 .onSubmit(load)
-                .onChange(of: query) { _, _ in load() }
+                // Once you pause typing: the search reads up to 90 days of the log, and ran with every key.
+                .task(id: query) {
+                    try? await Task.sleep(for: .milliseconds(200))
+                    if !Task.isCancelled { load() }
+                }
             if entries.isEmpty {
                 Text(tr("privacy.log.empty")).foregroundStyle(NookTheme.textSecondary)
             }

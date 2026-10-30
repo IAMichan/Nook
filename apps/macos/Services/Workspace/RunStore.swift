@@ -97,21 +97,47 @@ final class RunStore: @unchecked Sendable {
     /// Writes what changed in the timeline since it was last written. The whole timeline is kept, however long.
     func saveEvents(_ id: UUID, _ events: [RunEvent]) throws {
         lock.lock()
+        guard !deleted.contains(id) else { lock.unlock(); return }
+        guard let log = openLog() else { lock.unlock(); throw RunStoreError.unavailable }
+        let before = writtenTimeline(id, log: log)
+        lock.unlock()
+        // Comparing and encoding a long timeline takes a while: done outside the lock, so reading another session's
+        // timeline (one you open) does not wait for it.
+        guard let change = TimelineChange.between(before, events) else { return }
+        let payloads = try Self.payloads(for: change, events)
+        lock.lock()
         defer { lock.unlock() }
         guard !deleted.contains(id) else { return }
-        guard let log = openLog() else { throw RunStoreError.unavailable }
-        let before = writtenTimeline(id, log: log)
-        guard let change = TimelineChange.between(before, events) else { return }
+        // Something else wrote this timeline in between: compare again with what is written now.
+        let current = writtenTimeline(id, log: log)
+        if current != before {
+            guard let fresh = TimelineChange.between(current, events) else { return }
+            try write(fresh, payloads: Self.payloads(for: fresh, events), of: id, log: log)
+        } else {
+            try write(change, payloads: payloads, of: id, log: log)
+        }
+    }
+
+    /// The encoded rows of a change: the whole timeline for a snapshot, else each new or changed event.
+    private static func payloads(for change: TimelineChange, _ events: [RunEvent]) throws -> [Data] {
+        switch change {
+        case .snapshot: return [try encoder.encode(events)]
+        case .rows(let rows, _): return try rows.map { try encoder.encode($0.1) }
+        }
+    }
+
+    /// Call with the lock held.
+    private func write(_ change: TimelineChange, payloads: [Data], of id: UUID, log: RunEventLog) throws {
         switch change {
         case .snapshot(let after):
-            try writeSnapshot(id, events, log: log)
+            try writeSnapshot(id, payload: payloads[0], log: log)
             written[id] = after
         case .rows(let rows, let after):
             if !rows.isEmpty {
                 let now = Date()
                 let saved = log.transaction {
-                    for (kind, event) in rows {
-                        guard let payload = try? Self.encoder.encode(event), log.append(id, kind, payload, at: now) != nil else { return false }
+                    for (row, payload) in zip(rows, payloads) {
+                        guard log.append(id, row.0, payload, at: now) != nil else { return false }
                     }
                     return true
                 }
@@ -123,13 +149,14 @@ final class RunStore: @unchecked Sendable {
 
     /// Adds one event at the end of the timeline right away (a message, a tool call), without waiting for the next save.
     func appendEvent(_ id: UUID, _ event: RunEvent) {
+        // Encoded before taking the lock, which reads of other timelines wait for.
+        guard let payload = try? Self.encoder.encode(event) else { return }
         lock.lock()
         defer { lock.unlock() }
         guard !deleted.contains(id), let log = openLog() else { return }
         var timeline = writtenTimeline(id, log: log)
         // Already written (an event appended twice): the next save notices any change.
-        guard timeline.fingerprints[event.id] == nil, let payload = try? Self.encoder.encode(event),
-              log.append(id, .event, payload) != nil else { return }
+        guard timeline.fingerprints[event.id] == nil, log.append(id, .event, payload) != nil else { return }
         timeline.add(event.id, Self.fingerprint(event))
         written[id] = timeline
     }
@@ -215,7 +242,10 @@ final class RunStore: @unchecked Sendable {
 
     /// One row with the whole timeline, replacing the session's earlier rows in the same transaction.
     private func writeSnapshot(_ id: UUID, _ events: [RunEvent], log: RunEventLog) throws {
-        let payload = try Self.encoder.encode(events)
+        try writeSnapshot(id, payload: Self.encoder.encode(events), log: log)
+    }
+
+    private func writeSnapshot(_ id: UUID, payload: Data, log: RunEventLog) throws {
         let saved = log.transaction {
             guard let seq = log.append(id, .snapshot, payload) else { return false }
             log.delete(id, through: seq - 1)

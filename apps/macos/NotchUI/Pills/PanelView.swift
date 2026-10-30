@@ -23,6 +23,10 @@ struct PanelView: View {
     /// Split view: the tab beside this one (`PanelSplitChoice`), and how wide it is.
     @AppStorage(PanelSplitChoice.key) private var split = ""
     @AppStorage(PanelSplitChoice.widthKey) private var splitWidth = PanelLayout.split
+    /// The width of the tab row, which the tab beside this one is fitted into. Measured all the time but kept in a box,
+    /// so a resize of the window does not redraw the panel on every frame; `contentWidth` is written (and redraws it) only
+    /// while that tab shows. Opening it redraws the panel anyway, which then reads the box.
+    @State private var measuredWidth = MeasuredWidth()
     @State private var contentWidth: Double = 0
     /// You work in the tab beside this one: the tab bar lights that tab and outlines this one, so you see which of the
     /// two you are in. It follows the pointer, but not while you type: then it stays with the field you type in until
@@ -71,7 +75,7 @@ struct PanelView: View {
                             .transition(.asymmetric(insertion: .opacity.animation(NookTheme.tabFade), removal: .identity))
                             .transaction(value: side) { $0.animation = nil }
                             .sidePanel(.trailing, width: $splitWidth, defaultWidth: PanelLayout.split,
-                                       available: contentWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle)
+                                       available: splitAvailable, rest: PanelLayout.minimumConversation + PanelSplit.handle)
                             .onHover { inside in
                                 pointerOnSide = inside
                                 followPointer(typing: NSApp.keyWindow?.firstResponder is NSText)
@@ -92,7 +96,12 @@ struct PanelView: View {
                     }
                 }
                 .animation(NookTheme.reveal, value: splitTab)
-                .onLayoutWidthChange { contentWidth = $0 }
+                // In layout steps (`onLayoutWidthChange`), and as state only while a split tab shows: it is read only
+                // by the split pane, and otherwise every step of a window resize ran this whole body again.
+                .onLayoutWidthChange { width in
+                    measuredWidth.value = width
+                    if splitTab != nil, contentWidth != width { contentWidth = width }
+                }
                 .padding(.top, headerInset > 0 ? PanelOrb.belowHeader : NookTheme.Spacing.xl)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Agents, the chat and Chats keep the footer under their list. A tab without one (Music) shows it at the
@@ -149,6 +158,13 @@ struct PanelView: View {
     private func followPointer(typing: Bool) {
         guard !typing, splitHover != pointerOnSide else { return }
         withAnimation(NookTheme.hover) { splitHover = pointerOnSide }
+    }
+
+    /// The room for the tab beside this one: the latest measure. Reading `contentWidth` is what redraws the panel when
+    /// the width changes while that tab shows.
+    private var splitAvailable: Double {
+        _ = contentWidth
+        return measuredWidth.value
     }
 
     /// The tab split view shows beside this one, if any.
@@ -289,6 +305,11 @@ struct PanelView: View {
         case .music: MusicTab()
         }
     }
+}
+
+/// A width read during layout without redrawing the view that holds it (see `PanelView.measuredWidth`).
+private final class MeasuredWidth {
+    var value: Double = 0
 }
 
 /// A permission request or multiple-choice question that comes in while the panel (or the main window) is open: one

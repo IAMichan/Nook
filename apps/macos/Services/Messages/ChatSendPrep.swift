@@ -179,4 +179,17 @@ enum ChatSendPrep {
         try png.write(to: out, options: .atomic)
         return out
     }
+
+    /// `save(_:)` off the main thread: a large screenshot's PNG and its write take long enough to stall the notch.
+    static func saveOffMain(_ image: NSImage, name: String = "image.png") async throws -> URL {
+        let picture = Picture(image: image)
+        return try await Task.detached(priority: .userInitiated) {
+            try ChatSendPrep.save(picture.image, name: name)
+        }.value
+    }
+
+    /// The picture only read while it is encoded, never changed, so handing it to another thread is safe.
+    private struct Picture: @unchecked Sendable {
+        let image: NSImage
+    }
 }

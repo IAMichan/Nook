@@ -66,20 +66,24 @@ struct PullRequestsPanel: View {
         GeometryReader { geometry in
             let total = Double(geometry.size.width)
             let split = geometry.size.width >= Self.splitWidth
-            Group {
-                if let opened = active, split, !maximized {
-                    HStack(alignment: .top, spacing: 0) {
-                        list(selected: opened.item.id)
-                            .frame(maxWidth: .infinity)
+            let beside = active != nil && split && !maximized
+            // The list keeps one place whether or not a pull request is open beside it: in two branches it was made
+            // again with each open and close, its rows and avatars with it, scrolled back to the top and refreshed.
+            HStack(alignment: .top, spacing: 0) {
+                if active == nil || beside {
+                    list(selected: beside ? active?.item.id : nil)
+                        .frame(maxWidth: .infinity)
+                }
+                if let opened = active {
+                    if beside {
                         detail(opened, split: true)
                             .sidePanel(.trailing, width: panelWidthBinding(total), defaultWidth: (total / 2).rounded(),
                                        minimum: Self.minimumPanel, available: total,
                                        rest: max(Self.minimumList, total * 0.3) + PanelSplit.handle)
+                    } else {
+                        detail(opened, split: split)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     }
-                } else if let opened = active {
-                    detail(opened, split: split)
-                } else {
-                    list(selected: nil)
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)

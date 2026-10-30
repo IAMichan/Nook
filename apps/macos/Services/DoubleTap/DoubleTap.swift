@@ -316,7 +316,8 @@ final class DoubleTap: ObservableObject {
         step(tr("doubletap.step.reading", appName))
         DoubleTapForm.wake(app)
         // A document or a text that is not a form (Word, Pages, a note): "fill this in" writes at the cursor there.
-        guard let form = DoubleTapForm.read(app) else {
+        let pid = app.processIdentifier
+        guard let form = await Task.detached(priority: .userInitiated, operation: { DoubleTapForm.read(pid: pid) }).value else {
             return await writeInstead(request: request, app: app, otherwise: tr("doubletap.noField"))
         }
         if form.focusIsSecure { return report(.info, tr("doubletap.secure")) }
@@ -364,7 +365,6 @@ final class DoubleTap: ObservableObject {
         }
         var submit: DoubleTapOutcome.Submit?
         if let button = form.submit {
-            let pid = app.processIdentifier
             submit = DoubleTapOutcome.Submit(label: button.label) {
                 // Pressed from the card: the same app must still run, and the button must still be there to press.
                 guard NSRunningApplication(processIdentifier: pid) != nil else { return false }
@@ -427,7 +427,11 @@ final class DoubleTap: ObservableObject {
         run?.app = appName
         step(tr("doubletap.step.reading", appName))
         DoubleTapForm.wake(app)
-        guard !DoubleTapForm.focusIsSecure(app), let document = DoubleTapDocument.read(app) else { return noCursor(fallback) }
+        let pid = app.processIdentifier
+        let document = await Task.detached(priority: .userInitiated) { () -> DoubleTapDocument? in
+            DoubleTapForm.focusIsSecure(pid: pid) ? nil : DoubleTapDocument.read(pid: pid)
+        }.value
+        guard let document else { return noCursor(fallback) }
 
         step(tr("doubletap.step.thinking", DoubleTapLogic.preview(request)))
         let screen = screenText(app.bundleIdentifier ?? "") ?? ""
@@ -507,7 +511,9 @@ final class DoubleTap: ObservableObject {
     /// (the desktop, a list, a button) or when it is a password field. An app that keeps its text from the accessibility
     /// layer (some Electron apps) but has a text focus gives an empty snapshot: Nook writes without the context.
     private static func cursor(in app: NSRunningApplication) async -> AutocompleteFieldSnapshot? {
-        guard !DoubleTapForm.focusIsSecure(app) else { return nil }
+        let pid = app.processIdentifier
+        let secure = await Task.detached(priority: .userInitiated, operation: { DoubleTapForm.focusIsSecure(pid: pid) }).value
+        guard !secure else { return nil }
         let height = NSScreen.screens.first?.frame.height ?? 0
         let screens = NSScreen.screens.map(\.frame)
         if let snapshot = await Task.detached(operation: { AutocompleteField.read(screenHeight: height, screens: screens) }).value {
@@ -570,7 +576,7 @@ struct DoubleTapOutcome {
 // MARK: - The form in front
 
 /// The text fields of the focused window of one app, read through the accessibility layer, with the elements to write to.
-@MainActor
+/// Not on the main actor: reading walks up to `maxNodes` elements of another app, so callers run it off the main thread.
 struct DoubleTapForm {
     struct Entry {
         var field: DoubleTapField
@@ -599,16 +605,16 @@ struct DoubleTapForm {
     }
 
     /// Whether the cursor is in a password field of the app.
-    static func focusIsSecure(_ app: NSRunningApplication) -> Bool {
-        let root = AXUIElementCreateApplication(app.processIdentifier)
+    static func focusIsSecure(pid: pid_t) -> Bool {
+        let root = AXUIElementCreateApplication(pid)
         _ = AXUIElementSetMessagingTimeout(root, 1.0)
         guard let focused = element(root, kAXFocusedUIElementAttribute) else { return false }
         return string(focused, kAXSubroleAttribute) == kAXSecureTextFieldSubrole || string(focused, kAXRoleAttribute) == "AXSecureTextField"
     }
 
     /// Nil when the app shows no window or no field.
-    static func read(_ app: NSRunningApplication) -> DoubleTapForm? {
-        let root = AXUIElementCreateApplication(app.processIdentifier)
+    static func read(pid: pid_t) -> DoubleTapForm? {
+        let root = AXUIElementCreateApplication(pid)
         _ = AXUIElementSetMessagingTimeout(root, 1.0)
         let focused: AXUIElement? = element(root, kAXFocusedUIElementAttribute)
         let focusIsSecure = focused.map { (string($0, kAXSubroleAttribute) ?? "") == kAXSecureTextFieldSubrole } ?? false
@@ -714,6 +720,9 @@ struct DoubleTapForm {
 
     private static func children(_ node: AXUIElement) -> [AXUIElement] {
         guard let value = copy(node, kAXChildrenAttribute), CFGetTypeID(value) == CFArrayGetTypeID() else { return [] }
-        return (value as? [AXUIElement]) ?? []
+        let children = (value as? [AXUIElement]) ?? []
+        // A child does not take the root's timeout: one hung element would otherwise wait the global default.
+        for child in children { AXUIElementSetMessagingTimeout(child, 1.0) }
+        return children
     }
 }

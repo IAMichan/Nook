@@ -127,10 +127,25 @@ final class WorkspaceWindowController {
 @MainActor
 final class WindowPresence: ObservableObject {
     @Published var shown = true
+    /// The window is being resized by hand, or goes into or out of full screen: its content is laid out again on every
+    /// frame of that, and nothing in it animates meanwhile (a side panel that folds as the window narrows, a list that
+    /// stacks), so each frame lays it out once instead of running springs on top.
+    @Published private(set) var resizing = false
 
     /// Minimized, the window shows nothing either: its content goes until it comes back out of the Dock. Closing is up to
     /// the window's owner.
     func follow(_ window: NSWindow) {
+        let center = NotificationCenter.default
+        for (name, resizing) in [(NSWindow.willStartLiveResizeNotification, true), (NSWindow.didEndLiveResizeNotification, false),
+                                 (NSWindow.willEnterFullScreenNotification, true), (NSWindow.didEnterFullScreenNotification, false),
+                                 (NSWindow.willExitFullScreenNotification, true), (NSWindow.didExitFullScreenNotification, false)] {
+            center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, self.resizing != resizing else { return }
+                    self.resizing = resizing
+                }
+            }
+        }
         NotificationCenter.default.addObserver(forName: NSWindow.didMiniaturizeNotification, object: window, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.shown = false }
         }
@@ -151,6 +166,9 @@ struct WindowContent<Content: View>: View {
     var body: some View {
         if presence.shown {
             content()
+                .transaction { [resizing = presence.resizing] transaction in
+                    if resizing { transaction.disablesAnimations = true }
+                }
         } else {
             background.frame(minWidth: minSize.width, minHeight: minSize.height)
         }

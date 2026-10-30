@@ -47,6 +47,9 @@ struct SessionComposer<Controls: View>: View {
     @FocusState private var ownFocus: Bool
     @State private var dropTargeted = false
     @State private var pasteMonitor = PasteMonitor()
+    /// Pasted pictures still being encoded: sending waits for them, or the message would go without the picture and the
+    /// picture land in the next one.
+    @State private var encodingPictures = 0
 
     /// The same composer that, while busy, queues what you type (Return or the queue button) for after the turn.
     func queueing(_ action: (() -> Void)?, alternate: (() -> Void)? = nil, label: String = tr("compose.queue"),
@@ -153,7 +156,7 @@ struct SessionComposer<Controls: View>: View {
 
     private var hasImages: Bool { !(imagesBinding?.wrappedValue.isEmpty ?? true) }
     private var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hasImages }
-    private var enabled: Bool { canSend && !sending && !isEmpty }
+    private var enabled: Bool { canSend && !sending && !isEmpty && encodingPictures == 0 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -278,7 +281,7 @@ struct SessionComposer<Controls: View>: View {
     private func sendKey(alternate: Bool) -> Bool {
         if chooseSelected() { return true }
         if alternate {
-            if busy, !isEmpty, let flipAction { fire(flipAction) }
+            if busy, !isEmpty, encodingPictures == 0, let flipAction { fire(flipAction) }
         } else if !busy, enabled {
             fire(onSend)
         }
@@ -332,7 +335,7 @@ struct SessionComposer<Controls: View>: View {
     }
 
     private func submit() {
-        if busy, let queueAction, !isEmpty { fire(queueAction) } else if enabled { fire(onSend) }
+        if busy, let queueAction, !isEmpty, encodingPictures == 0 { fire(queueAction) } else if enabled { fire(onSend) }
     }
 
     private var box: some View {
@@ -359,12 +362,7 @@ struct SessionComposer<Controls: View>: View {
             // When the box gets narrow (the chat beside an open app), the choices give up their words step by step,
             // so the row shrinks with the box instead of running out of it while keeping as much text as fits.
             if !choicesBelow {
-                ViewThatFits(in: .horizontal) {
-                    controlRow.environment(\.composerDensity, .full)
-                    controlRow.environment(\.composerDensity, .short)
-                    controlRow.environment(\.composerDensity, .marks)
-                    controlRow.environment(\.composerDensity, .icons)
-                }
+                controlRow
             }
         }
         // The send button sits 8 pt from the bottom and trailing edges, so with `Radius.composer` its circle runs
@@ -408,11 +406,11 @@ struct SessionComposer<Controls: View>: View {
     }
 
     /// The choices for the turn, then the extra button and send (or stop) on the right. The row starts a pill's own
-    /// padding further out, so the first choice's words line up with the text above it.
+    /// padding further out, so the first choice's words line up with the text above it. Send stays outside the fitting:
+    /// the choices get the width it leaves, which picks the same density as fitting the whole row did.
     private var controlRow: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            controls()
-            Spacer(minLength: NookTheme.Spacing.md)
+            ComposerDensityFit(content: controls(), minGap: NookTheme.Spacing.md)
             sendCluster
         }
         .padding(.leading, -NookTheme.Spacing.md)
@@ -420,12 +418,7 @@ struct SessionComposer<Controls: View>: View {
 
     /// The choices alone, in the tray under the box; they give up their words step by step like the row in the box.
     private var choicesRow: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: NookTheme.Spacing.xs) { controls(); Spacer(minLength: 0) }.environment(\.composerDensity, .full)
-            HStack(spacing: NookTheme.Spacing.xs) { controls(); Spacer(minLength: 0) }.environment(\.composerDensity, .short)
-            HStack(spacing: NookTheme.Spacing.xs) { controls(); Spacer(minLength: 0) }.environment(\.composerDensity, .marks)
-            HStack(spacing: NookTheme.Spacing.xs) { controls(); Spacer(minLength: 0) }.environment(\.composerDensity, .icons)
-        }
+        ComposerDensityFit(content: controls(), minGap: 0)
     }
 
     /// The extra button, then send, or stop and queue while the agent works.
@@ -434,7 +427,8 @@ struct SessionComposer<Controls: View>: View {
             if let trailingAccessory { trailingAccessory }
             if busy, let onStop {
                 if let queueAction, !isEmpty {
-                    roundButton(symbol: queueSymbol, label: queueLabel, active: true) { fire(queueAction) }
+                    roundButton(symbol: queueSymbol, label: queueLabel, active: encodingPictures == 0) { fire(queueAction) }
+                        .disabled(encodingPictures > 0)
                 }
                 roundButton(symbol: "stop.fill", label: tr("button.stop"), active: true, action: onStop)
             } else {
@@ -490,10 +484,12 @@ struct SessionComposer<Controls: View>: View {
         guard let imagesBinding else { return }
         pasteMonitor.start {
             guard focused.wrappedValue else { return false }
-            let pictures = ImageAttachment.fromPasteboard()
-            guard !pictures.isEmpty else { return false }
-            imagesBinding.wrappedValue += pictures
-            return true
+            let claimed = ImageAttachment.fromPasteboard { pictures in
+                encodingPictures = max(encodingPictures - 1, 0)
+                imagesBinding.wrappedValue += pictures
+            }
+            if claimed { encodingPictures += 1 }
+            return claimed
         }
     }
 
@@ -619,6 +615,30 @@ private struct RoomyText: View {
             Color.clear.frame(width: 0, height: 0)
         }
         .frame(minWidth: 0, idealWidth: 0, alignment: .leading)
+    }
+}
+
+/// The composer's choices at the widest density that fits. The choices are built once and measured four times: building
+/// them (menus and all) and the send button once per density cost four times that on every key.
+private struct ComposerDensityFit<Content: View>: View {
+    let content: Content
+    /// The least room after the last choice (before send).
+    let minGap: CGFloat
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            row.environment(\.composerDensity, .full)
+            row.environment(\.composerDensity, .short)
+            row.environment(\.composerDensity, .marks)
+            row.environment(\.composerDensity, .icons)
+        }
+    }
+
+    private var row: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            content
+            Spacer(minLength: minGap)
+        }
     }
 }
 

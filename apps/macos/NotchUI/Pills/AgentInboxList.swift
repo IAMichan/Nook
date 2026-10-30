@@ -84,9 +84,18 @@ struct AgentInboxList: View {
         if let id = runID(item) { return pullRequests.badge(id) ?? knownPullRequest(run: id).flatMap(linkBadge) }
         if let badge = pullRequests.badge(path: item.path, branch: item.branch) { return badge }
         let reply = item.id.hasPrefix("past:")
-            ? app.history.sessions.first { "past:" + $0.id == item.id }?.lastReply
+            ? pastSession(item.id)?.lastReply
             : app.hub.sessions.first { $0.id == item.id }?.lastReply
         return reply.flatMap(MarkdownBlock.lastGitHubPullRequest(in:)).flatMap(linkBadge)
+    }
+
+    /// The past session of a row ("past:" and the session's id, "agent:session"), compared by its parts: making the id
+    /// of every session in the history, for every row, on every redraw of the list was most of what drawing it cost.
+    private func pastSession(_ rowID: String) -> PastSession? {
+        let id = rowID.dropFirst(5)
+        guard let colon = id.firstIndex(of: ":") else { return nil }
+        let agent = id[..<colon], session = id[id.index(after: colon)...]
+        return app.history.sessions.first { $0.sessionID == session && $0.agent.rawValue == agent }
     }
 
     /// The watched pull request, the one Nook opened, else the last one the conversation links. Only a conversation

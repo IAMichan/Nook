@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// A pull request label: a dot in the label's own GitHub color and its name in a faint capsule.
@@ -38,9 +39,12 @@ struct LabelDot: View {
 }
 
 /// A GitHub account's picture, read from GitHub by login; its initials until the picture is in, or when there is none.
+/// The picture comes from `GitHubAvatarStore`, read in the first frame when it is in already: a lazy stack builds its
+/// rows again as they scroll back, and with `AsyncImage` each one loaded and flickered once more.
 struct GitHubAvatar: View {
     let login: String
     var size: CGFloat = 16
+    @State private var loaded: NSImage?
 
     private var url: URL? {
         guard !login.isEmpty, !login.hasSuffix("[bot]"),
@@ -49,9 +53,11 @@ struct GitHubAvatar: View {
     }
 
     var body: some View {
-        AsyncImage(url: url) { phase in
-            if let image = phase.image {
-                image.resizable().scaledToFill()
+        let source = url
+        let image = source.flatMap { GitHubAvatarStore.shared.cached($0) } ?? loaded
+        Group {
+            if let image {
+                Image(nsImage: image).resizable().scaledToFill()
             } else {
                 ChatPersonBadge(name: login, size: size)
             }
@@ -59,6 +65,63 @@ struct GitHubAvatar: View {
         .frame(width: size, height: size)
         .clipShape(Circle())
         .accessibilityHidden(true)
+        .task(id: source) {
+            guard let source, GitHubAvatarStore.shared.cached(source) == nil else { return }
+            loaded = nil
+            loaded = await GitHubAvatarStore.shared.image(for: source)
+        }
+    }
+}
+
+/// GitHub pictures already read, shared by every `GitHubAvatar`: each is asked for once however many rows show it at
+/// the same time, and read and decoded off the main thread. `NSCache` drops pictures under memory pressure.
+final class GitHubAvatarStore: @unchecked Sendable {
+    static let shared = GitHubAvatarStore()
+
+    private let cache: NSCache<NSURL, NSImage> = {
+        let cache = NSCache<NSURL, NSImage>()
+        cache.countLimit = 400
+        return cache
+    }()
+    private let lock = NSLock()
+    private var loading: [URL: Task<Void, Never>] = [:]
+    /// Pictures GitHub said it does not have, so a row does not ask again each time it is built.
+    private var missing: Set<URL> = []
+
+    func cached(_ url: URL) -> NSImage? { cache.object(forKey: url as NSURL) }
+
+    func image(for url: URL) async -> NSImage? {
+        if let image = cached(url) { return image }
+        lock.lock()
+        if missing.contains(url) {
+            lock.unlock()
+            return nil
+        }
+        let task: Task<Void, Never>
+        if let running = loading[url] {
+            task = running
+        } else {
+            task = Task.detached(priority: .utility) { [self] in await self.read(url) }
+            loading[url] = task
+        }
+        lock.unlock()
+        await task.value
+        return cached(url)
+    }
+
+    private func read(_ url: URL) async {
+        let answer = try? await URLSession.shared.data(from: url)
+        let found = answer.map { ($0.1 as? HTTPURLResponse)?.statusCode ?? 200 } == 200
+        if found, let data = answer?.0, let image = NSImage(data: data) {
+            // Decoded here, so the first draw on the main thread does not have to.
+            _ = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            cache.setObject(image, forKey: url as NSURL)
+        }
+        lock.lock()
+        loading[url] = nil
+        // Only a real answer without a picture; a failed request (offline) is asked again later.
+        if answer != nil, !found { missing.insert(url) }
+        lock.unlock()
     }
 }
 

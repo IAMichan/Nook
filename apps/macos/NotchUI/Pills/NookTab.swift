@@ -22,15 +22,25 @@ struct NookChatView: View {
     /// button sits in the same place on both tabs. A footer page (pull requests, usage) opens on Agents through it.
     var openOnAgents: ((String) -> Void)?
     @EnvironmentObject private var app: AppModel
-    @State private var question = ""
-    @State private var images: [ImageAttachment] = []
+    /// What you type, held without being observed: as state of this view every key drew the whole chat again (its list,
+    /// its messages, its split). Only the composer watches it (`Observing`).
+    @State private var composerState = NookComposerState()
+    private var question: String {
+        get { composerState.question }
+        nonmutating set { composerState.question = newValue }
+    }
+    private var images: [ImageAttachment] {
+        get { composerState.images }
+        nonmutating set { composerState.images = newValue }
+    }
     @State private var dropTargeted = false
     @StateObject private var composerModel = ComposerModel()
     @FocusState private var inputFocused: Bool
     /// Follows the answer while it streams, until you scroll away; the same rules as an agent session.
     @State private var scroll = ScrollModel()
     @State private var atEnd = true
-    @State private var scrollPhase: ScrollPhase = .idle
+    /// Read only by the handlers: as state, each start and stop of a scroll drew the whole chat again.
+    @State private var scrollPhase = Unobserved(ScrollPhase.idle)
     /// Where the conversation is scrolled, for the rail beside it that takes the place of a scroll bar.
     @State private var viewport = TimelineViewport()
     @State private var position = ScrollPosition()
@@ -164,7 +174,6 @@ struct NookChatView: View {
             // Wait briefly for the panel to acquire keyboard focus.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { inputFocused = true }
         }
-        .onChange(of: question) { _, text in ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: text) }
         .onDisappear { NookTabDraft.images = images }
     }
 
@@ -398,11 +407,11 @@ struct NookChatView: View {
                 }
             }
             .onScrollPhaseChange { _, phase in
-                scrollPhase = phase
+                scrollPhase.value = phase
                 if (phase == .interacting || phase == .decelerating) && !atEnd { scroll.userScrolled() }
             }
             .onChange(of: atEnd) { _, nowAtEnd in
-                if !nowAtEnd, scrollPhase == .interacting || scrollPhase == .decelerating { scroll.userScrolled() }
+                if !nowAtEnd, scrollPhase.value == .interacting || scrollPhase.value == .decelerating { scroll.userScrolled() }
             }
             // The lazy rows only learn their real height once laid out, and the notch is still growing while it opens:
             // as long as we follow the end, every change in size is caught up with, so the chat never opens halfway up.
@@ -497,35 +506,40 @@ struct NookChatView: View {
             // Questions asked while Nook answers wait in a tray tucked above the box, as an agent's do.
             VStack(spacing: 0) {
                 queuedTray
-                SessionComposer(
-                    text: $question,
-                    prompt: chat.isEmpty ? tr("home.inputPrompt") : tr("chat.followupPrompt"),
-                    busy: chat.busy,
-                    onStop: { app.stopChat() },
-                    focus: $inputFocused,
-                    onSend: send
-                ) {
-                    // The same row as the agents' choices: a plus menu and the model, then what Nook may do by itself
-                    // (an agent's access, ⇧Tab moves on) and the sources, split by a gap.
-                    ComposerMoreMenu(chat: chat)
-                    BrainChip()
-                    ComposerDivider()
-                    NookAccessMenu(focused: inputFocused)
-                    ComposerDivider()
-                    ScopeMenu(chat: chat)
-                }
-                .rich(composerModel, chatComposerConfig)
-                .trailing {
-                    NookIconButton(systemName: "mic", label: tr("button.talk"), size: 32) { viewModel.startListening() }
-                }
-                // While Nook answers, Return or the queue button puts the question in line instead of stopping the answer.
-                .queueing(chat.busy ? send : nil)
-                .images($images, asPaths: false, onFile: { app.askAbout($0) })
-                .zIndex(1)
+                Observing(composerState) { composer }
+                    .zIndex(1)
             }
         }
         // The attachment and the queued questions keep to the composer's column too.
         .chatColumn()
+    }
+
+    /// The box itself, drawn again for each key you type without the chat around it.
+    private var composer: some View {
+        SessionComposer(
+            text: $composerState.question,
+            prompt: chat.isEmpty ? tr("home.inputPrompt") : tr("chat.followupPrompt"),
+            busy: chat.busy,
+            onStop: { app.stopChat() },
+            focus: $inputFocused,
+            onSend: send
+        ) {
+            // The same row as the agents' choices: a plus menu and the model, then what Nook may do by itself
+            // (an agent's access, ⇧Tab moves on) and the sources, split by a gap.
+            ComposerMoreMenu(chat: chat)
+            BrainChip()
+            ComposerDivider()
+            NookAccessMenu(focused: inputFocused)
+            ComposerDivider()
+            ScopeMenu(chat: chat)
+        }
+        .rich(composerModel, chatComposerConfig)
+        .trailing {
+            NookIconButton(systemName: "mic", label: tr("button.talk"), size: 32) { viewModel.startListening() }
+        }
+        // While Nook answers, Return or the queue button puts the question in line instead of stopping the answer.
+        .queueing(chat.busy ? send : nil)
+        .images($composerState.images, asPaths: false, onFile: { app.askAbout($0) })
     }
 
     /// The questions waiting for the answer that runs, when there are any.
@@ -609,4 +623,17 @@ private struct ThreadScrollGeometry: Equatable {
 @MainActor
 private enum NookTabDraft {
     static var images: [ImageAttachment] = []
+}
+
+/// What you are writing to Nook: the question and its pictures. `NookChatView` holds it without observing it; each
+/// change to the text is kept as the chat's draft (`ComposerDraftStore` writes it out a moment later).
+@MainActor
+final class NookComposerState: ObservableObject {
+    @Published var question = "" {
+        didSet {
+            guard question != oldValue else { return }
+            ComposerDraftStore.shared.save(sessionID: NookChatView.draftKey, text: question)
+        }
+    }
+    @Published var images: [ImageAttachment] = []
 }

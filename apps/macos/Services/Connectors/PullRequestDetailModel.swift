@@ -14,10 +14,19 @@ final class PullRequestDetailModel: ObservableObject {
     let item: PullRequestItem
 
     @Published private(set) var detail: PullRequestDetail?
-    @Published private(set) var loading = false
     @Published private(set) var error: String?
-    /// When the shown summary was read.
-    @Published private(set) var fetchedAt: Date?
+    /// Whether a read runs and when the shown summary was read, published apart from the page: every poll sets both,
+    /// also when nothing changed, and on the model itself that drew the whole open tab again three times a poll. Only
+    /// the top bar's ⋯ menu shows them.
+    let status = PullRequestFetchStatus()
+    private(set) var loading: Bool {
+        get { status.loading }
+        set { if status.loading != newValue { status.loading = newValue } }
+    }
+    private(set) var fetchedAt: Date? {
+        get { status.fetchedAt }
+        set { status.fetchedAt = newValue }
+    }
     /// Set while a merge runs, so a refresh does not read the pull request halfway through it.
     var paused = false
 
@@ -234,4 +243,11 @@ final class PullRequestDetailModel: ObservableObject {
         }
         prefetching[entry] = Prefetch(summary: Task { _ = await summary.value }, done: done)
     }
+}
+
+/// Whether a pull request page reads GitHub now, and when it last did (see `PullRequestDetailModel.status`).
+@MainActor
+final class PullRequestFetchStatus: ObservableObject {
+    @Published var loading = false
+    @Published var fetchedAt: Date?
 }

@@ -326,10 +326,15 @@ struct ChatStickerView: View {
     let url: URL
     let name: String
     @Environment(\.chatMediaLive) private var live
+    /// Decoded off the main thread once its message comes into view: decoding it in the redraw stalled scrolling for
+    /// each sticker that came in.
+    @State private var decoded: NSImage?
+    /// The decode ran (and found no picture when `decoded` stays nil).
+    @State private var tried = false
 
     /// The sticker decoded, when its message is in view or it was decoded before.
     private var still: NSImage? {
-        live ? ChatMediaImages.image(url, side: Self.side * 2) : ChatMediaImages.cached(url, side: Self.side * 2)
+        ChatMediaImages.cached(url, side: Self.side * 2) ?? decoded
     }
 
     var body: some View {
@@ -346,7 +351,7 @@ struct ChatStickerView: View {
                     .resizable()
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fit)
-            } else if !live {
+            } else if !live || !tried {
                 ChatMediaStandIn(clear: true)
                     .aspectRatio(ChatMediaImages.pixelSize(url) ?? CGSize(width: 1, height: 1), contentMode: .fit)
             } else {
@@ -354,6 +359,14 @@ struct ChatStickerView: View {
                     .font(NookTheme.font(40))
                     .foregroundStyle(NookTheme.textSecondary)
             }
+        }
+        .task(id: live) {
+            guard live, still == nil, !ChatMediaImages.isAnimated(url) else { return }
+            let url = url
+            let image = await Task.detached(priority: .userInitiated) { ChatMediaImages.image(url, side: Self.side * 2) }.value
+            guard !Task.isCancelled else { return }
+            decoded = image
+            tried = true
         }
         .frame(maxWidth: Self.side, maxHeight: Self.side, alignment: .leading)
         .accessibilityElement()
@@ -422,7 +435,13 @@ struct AnimatedPicture: NSViewRepresentable {
         view.imageScaling = .scaleProportionallyUpOrDown
         view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-        view.image = NSImage(contentsOf: url)
+        // Read off the main thread: the whole file at once stalled scrolling for each moving sticker or GIF that came in.
+        let url = url
+        Task { @MainActor [weak view] in
+            let data = await Task.detached(priority: .userInitiated) { try? Data(contentsOf: url) }.value
+            guard let data, let view else { return }
+            view.image = NSImage(data: data)
+        }
         return view
     }
 

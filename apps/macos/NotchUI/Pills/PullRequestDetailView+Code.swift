@@ -106,7 +106,10 @@ extension PullRequestDetailView {
                 }
             }
             if let patch = file.patch, !patch.isEmpty {
-                DiffText(text: patch)
+                // Equatable: the page redraws on each poll and with the minute's tick, and every line of a long diff
+                // is a row of its own.
+                DiffText(text: patch, path: file.path)
+                    .equatable()
                     .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
                     .id(file.path)
             } else {
