@@ -72,10 +72,9 @@ struct PullRequestsPanel: View {
                         list(selected: opened.item.id)
                             .frame(maxWidth: .infinity)
                         detail(opened, split: true)
-                            .resizablePanel(width: panelWidthBinding(total), defaultWidth: (total / 2).rounded(),
-                                            minimum: Self.minimumPanel, available: total,
-                                            rest: max(Self.minimumList, total * 0.3) + PanelSplit.handle,
-                                            edge: .leading, divider: true)
+                            .sidePanel(.trailing, width: panelWidthBinding(total), defaultWidth: (total / 2).rounded(),
+                                       minimum: Self.minimumPanel, available: total,
+                                       rest: max(Self.minimumList, total * 0.3) + PanelSplit.handle)
                     }
                 } else if let opened = active {
                     detail(opened, split: split)
@@ -116,7 +115,7 @@ struct PullRequestsPanel: View {
                     if split {
                         ToolbarIconButton(maximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
                                           tr(maximized ? "agents.pulls.panel.restore" : "agents.pulls.panel.maximize"), toggleMaximized)
-                        ToolbarIconButton("sidebar.right", tr("agents.pr.closePanel")) { activeTab = nil }
+                        SidePanelCloseButton(help: tr("agents.pr.closePanel")) { activeTab = nil }
                     }
                 }
             }

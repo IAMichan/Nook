@@ -46,7 +46,7 @@ struct SidePanelTabBar<Value: Hashable, Add: View, Trailing: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             trailing()
         }
-        .frame(height: 32)
+        .frame(height: SidePanelMetrics.header)
     }
 }
 

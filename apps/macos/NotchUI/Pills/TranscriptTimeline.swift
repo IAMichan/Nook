@@ -170,23 +170,27 @@ struct TranscriptConversation: View {
                               directory: directory, wide: PanelLayout.wide($outputsWidth)) {
                     withAnimation(NookTheme.reveal) { diff = nil }
                 }
-                .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
-                                available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .sidePanel(.trailing, width: $outputsWidth, defaultWidth: PanelLayout.outputs, available: totalWidth,
+                           rest: PanelLayout.minimumConversation + PanelSplit.handle)
             } else if let preview {
                 FilePreviewPanel(path: preview, wide: PanelLayout.wide($outputsWidth)) {
                     withAnimation(NookTheme.reveal) { self.preview = nil }
                 }
                 .id(preview)
-                .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
-                                available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .sidePanel(.trailing, width: $outputsWidth, defaultWidth: PanelLayout.outputs, available: totalWidth,
+                           rest: PanelLayout.minimumConversation + PanelSplit.handle)
             }
         }
         // Exactly the width it is given, however wide a row inside wants to be: measuring a row that runs past the window
         // would hand the panels more room than there is and push everything off both sides.
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+        // The diff or file beside the conversation and the side panel's tools take turns on the right.
+        .sharesSessionSide(detailOpen: diff != nil || preview != nil,
+                           besideWidth: diff != nil || preview != nil ? SidePanelRoom.of(outputsWidth) : 0) {
+            diff = nil
+            preview = nil
+        }
         // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
         .environment(\.fileLinkBase, directory)
         // What the agent produced goes to the outputs tab of the side panel around the conversation (`SessionWorkbench`).

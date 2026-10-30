@@ -278,7 +278,7 @@ struct FolderChangesSheet: View {
     var body: some View {
         let files = model.changes.map(StackedDiffFile.init)
         VStack(spacing: 0) {
-            HStack(spacing: NookTheme.Spacing.sm) {
+            SidePanelToolbar {
                 Text(tr("agents.turn.changedFiles", files.count))
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textSecondary)
@@ -287,9 +287,6 @@ struct FolderChangesSheet: View {
                 ToolbarIconButton("arrow.clockwise", tr("agents.pulls.refresh")) { Task { await model.refresh() } }
                 StackedDiffToolbar(files: files, expanded: $expanded, showsTree: $showsTree)
             }
-            .padding(.horizontal, NookTheme.Spacing.sm)
-            .frame(height: 36)
-            NookDivider()
             if files.isEmpty {
                 StackedDiffNote(text: loaded ? tr("agents.git.noChanges") : tr("ws.timeline.working"))
             } else {

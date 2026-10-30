@@ -312,20 +312,19 @@ struct SessionTerminalsView: View {
         let shown = mine.first { $0.id == store.selected } ?? mine.last
         VStack(spacing: 0) {
             if mine.count > 1 {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: NookTheme.Spacing.xs) {
-                        ForEach(mine) { session in
-                            TerminalTab(session: session, selected: shown?.id == session.id) {
-                                store.selected = session.id
-                            } close: {
-                                store.close(session.id)
+                SidePanelToolbar {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: NookTheme.Spacing.xs) {
+                            ForEach(mine) { session in
+                                TerminalTab(session: session, selected: shown?.id == session.id) {
+                                    store.selected = session.id
+                                } close: {
+                                    store.close(session.id)
+                                }
                             }
                         }
                     }
-                    .padding(.horizontal, NookTheme.Spacing.md)
                 }
-                .padding(.vertical, NookTheme.Spacing.xs)
-                Divider()
             }
             if let shown {
                 TerminalHost(session: shown)

@@ -80,12 +80,9 @@ struct AgentRunPanel: View {
                     CommandConsolePanel(event: event) {
                         withAnimation(NookTheme.reveal) { self.consoleEventID = nil }
                     }
-                    // Like the side panel on the right: a line between it and the conversation, not a box around it.
-                    .padding(.trailing, NookTheme.Spacing.sm)
-                    .resizablePanel(width: $consoleWidth, defaultWidth: PanelLayout.console, minimum: PanelLayout.minimumPanel,
-                                    available: PanelLayout.room(totalWidth, besides: filePreview != nil ? outputsWidth : nil),
-                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .trailing, divider: true)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+                    .sidePanel(.leading, width: $consoleWidth, defaultWidth: PanelLayout.console,
+                               available: PanelLayout.room(totalWidth, besides: filePreview != nil || diffSelection != nil ? outputsWidth : nil),
+                               rest: PanelLayout.minimumConversation + PanelSplit.handle)
                 }
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                     header(run)
@@ -99,23 +96,28 @@ struct AgentRunPanel: View {
                                   load: run.isRemote ? nil : { turn, files in try await gitDiff(turn, files) }) {
                         withAnimation(NookTheme.reveal) { diffSelection = nil }
                     }
-                    .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
-                                    available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
-                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .sidePanel(.trailing, width: $outputsWidth, defaultWidth: PanelLayout.outputs,
+                               available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
+                               rest: PanelLayout.minimumConversation + PanelSplit.handle)
                 } else if let filePreview {
                     FilePreviewPanel(path: filePreview, wide: PanelLayout.wide($outputsWidth)) {
                         withAnimation(NookTheme.reveal) { self.filePreview = nil }
                     }
                     .id(filePreview)
-                    .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
-                                    available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
-                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .sidePanel(.trailing, width: $outputsWidth, defaultWidth: PanelLayout.outputs,
+                               available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
+                               rest: PanelLayout.minimumConversation + PanelSplit.handle)
                 }
             }
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+            // The diff or file beside the conversation and the side panel's tools take turns on the right.
+            .sharesSessionSide(detailOpen: diffSelection != nil || filePreview != nil,
+                               besideWidth: (consoleOpen ? SidePanelRoom.of(consoleWidth) : 0)
+                                   + (diffSelection != nil || filePreview != nil ? SidePanelRoom.of(outputsWidth) : 0)) {
+                diffSelection = nil
+                filePreview = nil
+            }
             // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
             .environment(\.fileLinkBase, run.isRemote ? nil : run.workingDirectory)
             // Selected words of an answer go with the reply as a chip above the composer (right-click › Quote in your
