@@ -61,7 +61,8 @@ final class AgentCoverageTests: XCTestCase {
         XCTAssertEqual(messages.map(\.kind), [.user, .tools, .assistant])
         // A command keeps what it printed, so the transcript can show it under the step.
         XCTAssertEqual(messages[1].steps, [AgentToolStep(id: "c1", name: "Shell", summary: "swift test", state: .done,
-                                                         command: "swift test\necho klaar", output: "ok")])
+                                                         command: "swift test\necho klaar", output: "ok",
+                                                         input: #"{"command":["bash","-lc","swift test\necho klaar"]}"#)])
     }
 
     func testGeminiChatWithThoughts() {

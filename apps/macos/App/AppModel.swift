@@ -21,6 +21,9 @@ final class AppModel: ObservableObject {
     var sessionListsCache: SessionListsCache?
     /// `agentSessions` and the lists it was made from (see there).
     var agentSessionsCache: (runs: [WorkspaceRun], sessions: [AgentSession], detected: [AgentSession], value: [AgentSession])?
+    /// For each session Nook runs, when its transcript was last written outside Nook as last followed (see
+    /// `followTerminalContinuations`): each change is read once.
+    var followedTranscripts: [UUID: Date] = [:]
     let voice = VoiceService()
     let screen = ScreenReader()
     let recap = RecapStore()
@@ -299,6 +302,10 @@ final class AppModel: ObservableObject {
                 self?.followTerminalContinuations()
                 self?.nameSessionsAfterAgents()
             }
+            .store(in: &bag)
+        // The same while the agent's own app or terminal works on it: each step it reports shows up, a few seconds apart.
+        hub.$sessions.throttle(for: .seconds(2), scheduler: RunLoop.main, latest: true)
+            .sink { [weak self] _ in self?.followTerminalContinuations() }
             .store(in: &bag)
         // When accounts are added or removed, history immediately reloads from the correct directories.
         profiles.$all.removeDuplicates().sink { [weak self] all in

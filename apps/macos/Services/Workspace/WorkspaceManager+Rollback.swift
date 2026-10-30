@@ -32,21 +32,32 @@ extension WorkspaceManager {
         }
     }
 
-    /// The conversation went on outside Nook under `session` (a resumed terminal chat): the next turn resumes that one,
-    /// and the messages written there that this session does not show yet are added.
-    func followContinuation(_ id: UUID, from previous: String, to session: String, messages: [AgentChatMessage]) {
+    /// The conversation went on outside Nook: in the agent's own app or terminal under the same session, or under
+    /// `session` (a resumed terminal chat), which the next turn then resumes. The turns written there that this session
+    /// does not show yet are added as a turn in Nook writes them, and steps it took over earlier take their new state
+    /// (see TranscriptFollow). `finished`: the agent is not working on it outside Nook right now.
+    func followContinuation(_ id: UUID, from previous: String, to session: String, messages: [AgentChatMessage],
+                            finished: Bool = true) {
         guard let run = run(id), !run.status.isActive, run.providerSessionID == previous else { return }
         loadTimeline(id)
-        let known = Set((events[id] ?? []).filter { $0.kind == .user || $0.kind == .assistant }
-            .map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) })
-        rememberEarlierSession(id, replacedBy: session)
-        update(id) { $0.providerSessionID = session }
-        noteConversationSession(id, session, keepsHistory: true)
-        for message in messages where message.kind == .user || message.kind == .assistant {
-            let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty, !known.contains(text) else { continue }
-            let kind: RunEvent.Kind = message.kind == .user ? .user : .assistant
-            append(id, RunEvent(kind: kind, text: text, state: kind == .assistant ? .done : nil))
+        if session != previous {
+            rememberEarlierSession(id, replacedBy: session)
+            update(id) { $0.providerSessionID = session }
+            noteConversationSession(id, session, keepsHistory: true)
+        }
+        for change in TranscriptFollow.changes(events: events[id] ?? [], messages: messages, finished: finished) {
+            switch change {
+            case .append(let event):
+                append(id, event)
+            case .update(let eventID, let event):
+                mutateEvent(id, eventID) { known in
+                    known.kind = event.kind
+                    known.text = event.text
+                    known.state = event.state
+                    known.output = event.output
+                    if event.detail != nil { known.detail = event.detail }
+                }
+            }
         }
     }
 

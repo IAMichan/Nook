@@ -412,6 +412,7 @@ targets:
       - path: Services/Workspace/TextGeneration.swift
       - path: Services/Workspace/GitCheckpoints.swift
       - path: Services/Workspace/ConversationRollback.swift
+      - path: Services/Workspace/TranscriptFollow.swift
       - path: Services/Workspace/GitQuickActions.swift
       - path: Services/Workspace/UsageLimits.swift
       - path: Services/Workspace/Antigravity.swift
