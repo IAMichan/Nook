@@ -21,6 +21,17 @@ enum CompletionPlacement {
         return caret
     }
 
+    /// The cursor from the box of the character before it and the app's box for the empty range at it, both as the app gives
+    /// them (Accessibility coordinates: origin top left, y growing downward). The character's right edge, on its line, unless
+    /// the cursor wrapped to the next line: then the empty range is a line *lower* and is where the next letter goes. An empty
+    /// range a line *higher* is the app answering for the line before (Apple Notes does at the end of a line), not a wrap.
+    static func caret(afterCharacter previous: CGRect, empty: CGRect?) -> CGRect {
+        if let empty, empty.height > 1, empty.width < 4, empty.minY - previous.minY > previous.height / 2 {
+            return CGRect(x: empty.minX, y: empty.minY, width: 0, height: empty.height)
+        }
+        return CGRect(x: previous.maxX, y: previous.minY, width: 0, height: previous.height)
+    }
+
     /// The field's frame, when it can be believed: it has a size and lies in its window. Some apps report a field at the
     /// screen's corner or with no size; such a frame would only put cards in the wrong place or turn a good cursor away.
     static func checkedField(_ field: CGRect?, window: CGRect?) -> CGRect? {

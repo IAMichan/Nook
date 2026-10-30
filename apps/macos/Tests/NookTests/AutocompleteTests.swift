@@ -946,6 +946,24 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertNil(CompletionPlacement.droppedCharacters(typed: "morning ", base: "Good ", actual: "Good x"))
         XCTAssertNil(CompletionPlacement.droppedCharacters(typed: "morning ", base: "Good ", actual: "Bad m"))
     }
+
+    func testCaretStaysOnTheLineWhenTheEmptyRangeIsALineHigher() {
+        // Measured in Apple Notes at the end of a line: the last character is on the line, the empty range one line up.
+        let previous = CGRect(x: -538.478515625, y: 572, width: 3.580078125, height: 16)
+        let empty = CGRect(x: -534.8984375, y: 556, width: 0, height: 16)
+        XCTAssertEqual(CompletionPlacement.caret(afterCharacter: previous, empty: empty), CGRect(x: -534.8984375, y: 572, width: 0, height: 16))
+    }
+
+    func testCaretFollowsAWrapToTheNextLine() {
+        // The word wrapped: the empty range is a line lower, at the start of that line.
+        let previous = CGRect(x: 600, y: 572, width: 4, height: 16)
+        let empty = CGRect(x: 20, y: 588, width: 0, height: 16)
+        XCTAssertEqual(CompletionPlacement.caret(afterCharacter: previous, empty: empty), CGRect(x: 20, y: 588, width: 0, height: 16))
+        // On the same line, or no empty range: the character's right edge.
+        XCTAssertEqual(CompletionPlacement.caret(afterCharacter: previous, empty: CGRect(x: 604, y: 573, width: 0, height: 16)),
+                       CGRect(x: 604, y: 572, width: 0, height: 16))
+        XCTAssertEqual(CompletionPlacement.caret(afterCharacter: previous, empty: nil), CGRect(x: 604, y: 572, width: 0, height: 16))
+    }
 }
 
 final class CompletionRankingTests: XCTestCase {
