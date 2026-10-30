@@ -105,7 +105,7 @@ struct SiteIcon: View {
 
     @MainActor @ViewBuilder
     private var icon: some View {
-        if let source, let app = SourceBrand.appIcon(for: source) {
+        if let source, let app = SourceBrand.appIcon(for: source, side: size * 1.15) {
             // App icons carry their own shape and a little margin: draw them a touch larger than a favicon.
             Image(nsImage: app)
                 .resizable()

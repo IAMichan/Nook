@@ -47,6 +47,9 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Fixed
 
+- Scrolling through every chat of every app in the Chats tab no longer stutters: a chat picture that comes in redraws
+  only the faces instead of the whole tab, app icons are drawn once into a small bitmap, the row's hover button is
+  made only under the pointer, and a chat that changes no longer makes every other row again.
 - A coding agent that `cd`s into a subfolder no longer shows up as two chats in Agents (one under the subfolder,
   one for its process): the session stays in the folder it started in, and the process scan matches it by process
   and parent folder (macOS and Tauri).
