@@ -29,13 +29,7 @@ struct TranscriptConversation: View {
     var directory: String? = nil
     /// Folds, groups and thoughts you opened.
     @State private var open: Set<String> = []
-    /// A file the agent read or wrote that you clicked: shown beside the conversation.
-    @State private var preview: String?
-    /// How wide the results are: drag the line beside them, double-click it to reset. Remembered, as in a Nook session.
-    @AppStorage("nook.agents.outputsWidth") private var outputsWidth = PanelLayout.outputs
-    @State private var totalWidth: Double = 0
-    /// The diff panel's choice of turn and file; nil while it is closed.
-    @State private var diff: TurnDiffSelection?
+    @Environment(\.sessionSide) private var sideLink
     /// Follows the end while the agent writes, until you scroll away; then a pill brings you back.
     @State private var scroll = ScrollModel()
     @State private var atEnd = true
@@ -165,46 +159,14 @@ struct TranscriptConversation: View {
                 }
                 .onDisappear { rememberVisit() }
             }
-            if let selection = diff, !turns.isEmpty {
-                TurnDiffPanel(turns: turns, selection: Binding(get: { diff ?? selection }, set: { diff = $0 }),
-                              directory: directory, wide: PanelLayout.wide($outputsWidth)) {
-                    withAnimation(NookTheme.reveal) { diff = nil }
-                }
-                .sidePanel(.trailing, width: $outputsWidth, defaultWidth: PanelLayout.outputs, available: totalWidth,
-                           rest: PanelLayout.minimumConversation + PanelSplit.handle)
-            } else if let preview {
-                FilePreviewPanel(path: preview, wide: PanelLayout.wide($outputsWidth)) {
-                    withAnimation(NookTheme.reveal) { self.preview = nil }
-                }
-                .id(preview)
-                .sidePanel(.trailing, width: $outputsWidth, defaultWidth: PanelLayout.outputs, available: totalWidth,
-                           rest: PanelLayout.minimumConversation + PanelSplit.handle)
-            }
         }
         // Exactly the width it is given, however wide a row inside wants to be: measuring a row that runs past the window
         // would hand the panels more room than there is and push everything off both sides.
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
-        .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
-        // The diff or file beside the conversation and the side panel's tools take turns on the right.
-        .sharesSessionSide(detailOpen: diff != nil || preview != nil,
-                           besideWidth: diff != nil || preview != nil ? SidePanelRoom.of(outputsWidth) : 0) {
-            diff = nil
-            preview = nil
-        }
         // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
         .environment(\.fileLinkBase, directory)
-        // What the agent produced goes to the outputs tab of the side panel around the conversation (`SessionWorkbench`).
-        .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(outputs: outputs))
-        // ⌘D: the latest turn's diff; again to close it.
-        .keyCommand("diff.toggle", enabled: !turns.isEmpty) {
-            withAnimation(NookTheme.reveal) {
-                if diff != nil {
-                    diff = nil
-                } else if let last = turns.last {
-                    openDiff(TurnDiffSelection(turn: last.id))
-                }
-            }
-        }
+        // What the agent produced goes to the outputs tab and diff panel of the side panel around the conversation (`SessionWorkbench`).
+        .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(outputs: outputs, turns: turns))
         .task(id: path + (working ? "#working" : "")) {
             // Another session in the same place: its conversation as read last time shows at once (never the previous
             // session's), and the read below brings it up to date.
@@ -278,7 +240,7 @@ struct TranscriptConversation: View {
                 // What the turn changed, under its answer: a click opens the diff beside the conversation.
                 if let turn = cards[message.id] {
                     TurnChangesCard(turn: turn, directory: directory) { file in
-                        openDiff(TurnDiffSelection(turn: turn.id, file: file))
+                        sideLink.openDiff(TurnDiffSelection(turn: turn.id, file: file))
                     }
                 }
             }
@@ -339,8 +301,8 @@ struct TranscriptConversation: View {
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             TranscriptWorkLine(symbol: TranscriptSymbols.symbol(step.name), label: text.verb, detail: text.detail, mono: text.mono,
                                failed: step.state == .failed, checks: Verification.check(step).map { [$0] } ?? [],
-                               open: opens ? open.contains(key) : nil, reveals: file.map { $0 == preview }, quietChevron: true) {
-                if let file { show(file) } else { toggle(key) }
+                               open: opens ? open.contains(key) : nil, reveals: file.map { $0 == sideLink.shownFile }, quietChevron: true) {
+                if let file { sideLink.showFile(file) } else { toggle(key) }
             }
             .help(file.map { tr("ws.file.show") + " · " + AgentPathFormat.tilde($0) } ?? Self.label(step))
             // Why it failed, right under it, then what it opens to.
@@ -364,22 +326,6 @@ struct TranscriptConversation: View {
     private func toggle(_ key: String) {
         withAnimation(NookTheme.reveal) {
             if open.contains(key) { open.remove(key) } else { open.insert(key) }
-        }
-    }
-
-    /// Opens a file in the side panel; the file that is open already closes again.
-    private func show(_ file: String) {
-        withAnimation(NookTheme.reveal) {
-            preview = preview == file ? nil : file
-            diff = nil
-        }
-    }
-
-    /// Opens the diff panel on a turn (and a file), in place of a file.
-    private func openDiff(_ selection: TurnDiffSelection) {
-        withAnimation(NookTheme.reveal) {
-            preview = nil
-            diff = selection
         }
     }
 
