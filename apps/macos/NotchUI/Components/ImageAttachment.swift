@@ -25,9 +25,41 @@ struct ImageAttachment: Identifiable, Equatable {
         return made
     }
 
+    /// Decoded once at full size when a sent picture is enlarged in the chat.
+    var fullImage: NSImage? {
+        let key = id as NSUUID
+        if let known = Self.fullImages.object(forKey: key) { return known }
+        guard let made = NSImage(data: data) else { return nil }
+        Self.fullImages.setObject(made, forKey: key)
+        return made
+    }
+
+    /// Proportional size for an enlarged chat picture: uncropped, fitted inside `maxWidth × maxHeight`, and at least
+    /// `minEdge` on its longest side so even a small picture visibly grows when clicked.
+    static func enlargedSize(
+        for image: NSImage,
+        maxWidth: CGFloat = 520,
+        maxHeight: CGFloat = 420,
+        minEdge: CGFloat = 240
+    ) -> CGSize {
+        let width = image.size.width
+        let height = image.size.height
+        guard width > 0, height > 0 else { return CGSize(width: maxWidth, height: maxHeight) }
+        let maxScale = min(maxWidth / width, maxHeight / height)
+        let minScale = minEdge / max(width, height)
+        let scale = min(maxScale, max(1, minScale))
+        return CGSize(width: round(width * scale), height: round(height * scale))
+    }
+
     private static let thumbnails: NSCache<NSUUID, NSImage> = {
         let cache = NSCache<NSUUID, NSImage>()
         cache.countLimit = 200
+        return cache
+    }()
+
+    private static let fullImages: NSCache<NSUUID, NSImage> = {
+        let cache = NSCache<NSUUID, NSImage>()
+        cache.countLimit = 40
         return cache
     }()
 
@@ -177,14 +209,32 @@ struct ImageAttachment: Identifiable, Equatable {
     }
 }
 
-/// The pictures of a message sent to an agent, read from disk and shown above its bubble. A click opens the picture.
+/// The pictures of a message sent to an agent, read from disk and shown above its bubble. A click enlarges a picture in
+/// place, and clicking it again shrinks it back to its normal size.
 struct MessagePictures: View {
     let urls: [URL]
+    @State private var enlargedURLs: Set<URL> = []
 
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(urls, id: \.self) { url in
-                MessagePicture(url: url)
+        Group {
+            if enlargedURLs.isEmpty {
+                HStack(spacing: NookTheme.Spacing.sm) { items }
+            } else {
+                VStack(alignment: .trailing, spacing: NookTheme.Spacing.sm) { items }
+            }
+        }
+    }
+
+    private var items: some View {
+        ForEach(urls, id: \.self) { url in
+            MessagePicture(url: url, enlarged: enlargedURLs.contains(url)) {
+                withAnimation(NookTheme.reveal) {
+                    if enlargedURLs.contains(url) {
+                        enlargedURLs.remove(url)
+                    } else {
+                        enlargedURLs.insert(url)
+                    }
+                }
             }
         }
     }
@@ -192,24 +242,62 @@ struct MessagePictures: View {
 
 private struct MessagePicture: View {
     let url: URL
+    let enlarged: Bool
+    let toggle: () -> Void
     @State private var image: NSImage?
     @State private var missing = false
+    @State private var hovering = false
+
+    private var label: String {
+        enlarged ? tr("button.shrink") : tr("button.enlarge")
+    }
 
     var body: some View {
-        Group {
+        ZStack(alignment: .topTrailing) {
             if let image {
-                Image(nsImage: image).resizable().scaledToFill()
+                if enlarged {
+                    let size = ImageAttachment.enlargedSize(for: image)
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: size.width, maxHeight: size.height)
+                } else {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 120, height: 120)
+                }
             } else {
                 Image(systemName: missing ? "photo.badge.exclamationmark" : "photo")
                     .foregroundStyle(NookTheme.textTertiary)
+                    .frame(width: 120, height: 120)
+            }
+            if image != nil && (hovering || enlarged) {
+                ChatPictureSizeBadge(enlarged: enlarged)
             }
         }
-        .frame(width: 120, height: 120)
         .background(NookTheme.smoke)
         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         .contentShape(Rectangle())
-        .onTapGesture { if !missing { NSWorkspace.shared.open(url) } }
-        .help(url.lastPathComponent)
+        .onHover { hovering = $0 }
+        .onTapGesture {
+            if image != nil { toggle() }
+        }
+        .contextMenu {
+            if !missing {
+                Button { toggle() } label: {
+                    Label(label, systemImage: enlarged ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                }
+                Button { NSWorkspace.shared.open(url) } label: {
+                    Label(tr("card.attachment.open"), systemImage: "arrow.up.forward.app")
+                }
+            }
+        }
+        .help(image == nil ? url.lastPathComponent : label)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label): \(url.lastPathComponent)")
+        .accessibilityAddTraits(.isButton)
         .task(id: url) {
             let url = url
             let data = await Task.detached(priority: .utility) { try? Data(contentsOf: url) }.value
@@ -217,6 +305,22 @@ private struct MessagePicture: View {
             image = loaded
             missing = loaded == nil
         }
+    }
+}
+
+/// Corner badge indicating that a chat picture can be enlarged or shrunk back to its normal size.
+struct ChatPictureSizeBadge: View {
+    let enlarged: Bool
+
+    var body: some View {
+        Image(systemName: enlarged ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+            .font(NookTheme.font(10, .semibold))
+            .foregroundStyle(NookTheme.paper)
+            .frame(width: 24, height: 24)
+            .background(Circle().fill(NookTheme.ink.opacity(0.65)))
+            .padding(NookTheme.Spacing.sm)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
@@ -263,22 +367,75 @@ struct ImageAttachmentStrip: View {
     }
 }
 
-/// The pictures in a sent message.
+/// The pictures in a sent message: clicking a picture enlarges it in place, and clicking it again shrinks it back.
 struct ImageMessageRow: View {
     let images: [ImageAttachment]
+    @State private var enlargedIDs: Set<UUID> = []
 
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(images) { image in
-                if let thumbnail = image.thumbnail {
-                    Image(nsImage: thumbnail)
+        Group {
+            if enlargedIDs.isEmpty {
+                HStack(spacing: NookTheme.Spacing.sm) { items }
+            } else {
+                VStack(alignment: .trailing, spacing: NookTheme.Spacing.sm) { items }
+            }
+        }
+    }
+
+    private var items: some View {
+        ForEach(images) { attachment in
+            SentAttachmentPicture(attachment: attachment, enlarged: enlargedIDs.contains(attachment.id)) {
+                withAnimation(NookTheme.reveal) {
+                    if enlargedIDs.contains(attachment.id) {
+                        enlargedIDs.remove(attachment.id)
+                    } else {
+                        enlargedIDs.insert(attachment.id)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct SentAttachmentPicture: View {
+    let attachment: ImageAttachment
+    let enlarged: Bool
+    let toggle: () -> Void
+    @State private var hovering = false
+
+    private var label: String {
+        enlarged ? tr("button.shrink") : tr("button.enlarge")
+    }
+
+    var body: some View {
+        if let displayImage = (enlarged ? attachment.fullImage : nil) ?? attachment.thumbnail {
+            ZStack(alignment: .topTrailing) {
+                if enlarged {
+                    let size = ImageAttachment.enlargedSize(for: displayImage)
+                    Image(nsImage: displayImage)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: size.width, maxHeight: size.height)
+                } else {
+                    Image(nsImage: displayImage)
                         .resizable()
                         .scaledToFill()
                         .frame(width: 96, height: 96)
-                        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
-                        .help(image.name)
+                }
+                if hovering || enlarged {
+                    ChatPictureSizeBadge(enlarged: enlarged)
                 }
             }
+            .background(NookTheme.smoke)
+            .clipShape(RoundedRectangle(cornerRadius: enlarged ? NookTheme.Radius.panel : NookTheme.Radius.card, style: .continuous))
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
+            .onTapGesture { toggle() }
+            .help(label)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(label): \(attachment.name)")
+            .accessibilityAddTraits(.isButton)
         }
     }
 }
