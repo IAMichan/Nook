@@ -10,6 +10,7 @@
     type RunAction, type RunDetail, type RunJob, type WorkflowRun,
   } from "../../../lib/actions";
   import { tr } from "../../../lib/i18n.svelte";
+  import RunSkeleton from "./RunSkeleton.svelte";
   import type { PullRequestCheck } from "../../../lib/pulls";
   import CheckLog from "../pulls/CheckLog.svelte";
   import { ago } from "../time";
@@ -133,7 +134,7 @@
       {#if error && !detail}
         <p class="err">{error}</p>
       {:else if !detail}
-        <span class="faint small">{tr("Jobs laden…", "Loading jobs…")}</span>
+        <RunSkeleton rows={3} jobs />
       {:else}
         {#each detail.jobs as j (j.id)}
           <!-- A job opens its steps and log here; without a page link it has nothing to read. -->

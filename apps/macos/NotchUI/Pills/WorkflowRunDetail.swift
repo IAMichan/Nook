@@ -199,7 +199,22 @@ struct WorkflowRunDetail: View {
                 .foregroundStyle(NookTheme.coralSoft)
                 .padding(.horizontal, NookTheme.Spacing.xs)
         } else if !loaded {
-            PatientSpinner().frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The jobs' shape while they are read: a heading and a few rows.
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                PullRequestGhostBar(width: 40, height: 9).padding(.horizontal, NookTheme.Spacing.xs)
+                ForEach([150, 110, 180] as [CGFloat], id: \.self) { width in
+                    HStack(spacing: NookTheme.Spacing.md) {
+                        Circle().fill(NookTheme.rowHover).frame(width: 13, height: 13)
+                        PullRequestGhostBar(width: width, height: 10)
+                        Spacer(minLength: NookTheme.Spacing.sm)
+                        PullRequestGhostBar(width: 72, height: 8)
+                    }
+                    .padding(.horizontal, NookTheme.Spacing.md)
+                    .padding(.vertical, NookTheme.Spacing.sm + 2)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(tr("actions.loading"))
         } else if jobs.isEmpty {
             ListEmptyNote(tr(current.isCompleted ? "actions.jobs.none" : "actions.jobs.waiting"), padding: NookTheme.Spacing.xs)
         } else {

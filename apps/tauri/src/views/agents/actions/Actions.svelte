@@ -12,6 +12,7 @@
   } from "../../../lib/actions";
   import { api } from "../../../lib/api";
   import { tr } from "../../../lib/i18n.svelte";
+  import RunSkeleton from "./RunSkeleton.svelte";
   import { pullRequests } from "../../../lib/pulls.svelte";
   import { ago } from "../time";
   import RepoPicker from "./RepoPicker.svelte";
@@ -195,7 +196,8 @@
       <strong>Actions</strong>
       <RepoPicker {repos} value={repo} onpick={pick} />
       <span class="spacer"></span>
-      {#if loading}<span class="faint small">{tr("Bezig…", "Loading…")}</span>{/if}
+      <!-- A first read has the list's skeleton; this only marks a refresh. -->
+      {#if loading && loaded}<span class="faint small">{tr("Bezig…", "Loading…")}</span>{/if}
       <button class="ghost" title={tr("Vernieuwen", "Refresh")} disabled={!repo || loading} onclick={() => reload++}>{tr("Vernieuwen", "Refresh")}</button>
       {#if repo}<button class="ghost" title={tr("Open de Actions van deze repository op GitHub", "Open this repository's Actions on GitHub")} onclick={() => open(`https://github.com/${repo}/actions`)}>{tr("Open op GitHub", "Open on GitHub")} ↗</button>{/if}
     </div>
@@ -210,7 +212,7 @@
       {#if reposLoaded}
         {@render empty(tr("Kies een repository", "Choose a repository"), tr("Kies er een in de lijst hierboven, of typ eigenaar/naam.", "Pick one in the list above, or type owner/name."))}
       {:else}
-        <p class="faint small">{tr("Repositories laden…", "Loading repositories…")}</p>
+        <RunSkeleton />
       {/if}
     {:else}
       <div class="filters">
@@ -232,7 +234,7 @@
           {#if error && !runs.length}
             <p class="err">{error}</p>
           {:else if !loaded}
-            <p class="faint small">{tr("Runs laden…", "Loading runs…")}</p>
+            <RunSkeleton />
           {:else if !runs.length}
             {#if workflow !== null || status !== "all"}
               {@render empty(tr("Geen runs gevonden", "No runs found"), tr("Niets past bij dit filter.", "Nothing matches this filter."), [tr("Wis filter", "Clear filter"), () => ((workflow = null), (status = "all"))])}
