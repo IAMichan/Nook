@@ -1091,6 +1091,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
         var socket = URLComponents(url: Self.base.appendingPathComponent("v1/ws"), resolvingAgainstBaseURL: false)
         socket?.scheme = "ws"
         if !live.isConnecting, let url = socket?.url { live.connect(url, token: token) }
+        if ChatLinker.shared.networks.isEmpty { await ChatLinker.shared.refresh() }
         do {
             var listed = ChatServiceData.chats(try await get("/v1/chats", ["limit": String(Self.chatCount)], token: token))
                 .filter { !skips($0.app) }
@@ -1104,7 +1105,8 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                 // Nothing new in it, but read (or marked unread) somewhere else since: only its count goes.
                 guard let reported = reportedUnread[chat.id], reported != chat.unread else { continue }
                 reportedUnread[chat.id] = chat.unread
-                result.append(BridgedChat(app: chat.app, name: chat.title, messages: [], unread: chat.unread))
+                let account = chat.account ?? ChatLinker.shared.accountName(for: chat.app)
+                result.append(BridgedChat(app: chat.app, name: chat.title, messages: [], unread: chat.unread, account: account))
             }
             // The chats read before one that fails are already marked seen: their messages must still go to the inbox, or
             // they never come again. The failed one stays stale and is read again at the next tick.
@@ -1138,8 +1140,9 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                 chatIDs[chat.app + "|" + chat.title] = chat.id
                 guard !messages.isEmpty || !deleted.isEmpty else { continue }
                 let picture = await local(chat.picture, token: token)
+                let account = chat.account ?? ChatLinker.shared.accountName(for: chat.app)
                 result.append(BridgedChat(app: chat.app, name: chat.title, messages: messages, unread: chat.unread, avatar: picture,
-                                          members: chat.members.isEmpty ? nil : chat.members, deleted: deleted))
+                                          members: chat.members.isEmpty ? nil : chat.members, deleted: deleted, account: account))
             }
             if let failure {
                 if result.isEmpty { throw failure }
@@ -1169,7 +1172,8 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
         let read = try await get(Self.path(id) + "/messages", ["limit": String(Self.olderStep), "before": String(millis)], token: token)
         let messages = await withFiles(ChatServiceData.messages(read, chat: chat).filter { $0.date < before }, token: token)
         let bridged = BridgedChat(app: app, name: name, messages: messages, unread: nil,
-                                  members: chat.members.isEmpty ? nil : chat.members)
+                                  members: chat.members.isEmpty ? nil : chat.members,
+                                  account: chat.account ?? ChatLinker.shared.accountName(for: app))
         // The helper may still hold older ones it brought in earlier, even when the app has nothing more to send.
         let stored = (read["items"] as? [Any])?.count ?? 0
         return (messages.isEmpty ? nil : bridged, more || stored >= Self.olderStep)

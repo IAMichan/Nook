@@ -31,6 +31,8 @@ enum ChatServiceData {
         var canReact = true
         /// Its network takes votes on polls from Nook (WhatsApp and Signal through the helper).
         var canVote = false
+        /// The account in its app (Instagram username, etc.), when the service gives one.
+        var account: String? = nil
     }
 
     /// The networks by the words in their name or account id ("instagramgo", "Facebook/Messenger", "Twitter/X"), most
@@ -60,12 +62,15 @@ enum ChatServiceData {
             let isGroup = chat["type"] as? String == "group"
             let people = (chat["participants"] as? [String: Any])?["items"] as? [[String: Any]] ?? []
             let abilities = chat["capabilities"] as? [String: Any]
+            let account = ((chat["account"] as? String) ?? ((chat["user"] as? [String: Any])?["username"] as? String))?
+                .trimmingCharacters(in: .whitespaces)
             return Chat(id: id, app: source, title: title, isGroup: isGroup, unread: unread,
                         last: ChatJSON.date(chat["lastActivity"]), picture: picture(chat), members: isGroup ? members(chat) : [],
                         me: people.first { $0["isSelf"] as? Bool == true }?["id"] as? String, people: names(people),
                         isPinned: chat["isPinned"] as? Bool == true, isMuted: chat["isMuted"] as? Bool == true,
                         canEdit: supports(abilities?["edit"]), canDelete: supports(abilities?["delete"]),
-                        canReact: supports(abilities?["reaction"]), canVote: chat["canVote"] as? Bool == true)
+                        canReact: supports(abilities?["reaction"]), canVote: chat["canVote"] as? Bool == true,
+                        account: (account?.isEmpty == false ? account : nil))
         }
     }
 

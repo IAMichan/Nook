@@ -48,6 +48,11 @@ final class ChatLinker: ObservableObject {
         if let failed = ChatHelper.shared.problem, !ChatHelper.shared.isRunning { problem = tr("chats.link.helperFailed", failed) }
     }
 
+    /// The account name for an app, while one is linked (Instagram username, etc.).
+    func accountName(for app: String) -> String? {
+        networks.first(where: { $0.app == app })?.accounts.first?.name
+    }
+
     // MARK: Logging in
 
     /// Starts linking an account in `network`, after your own click.

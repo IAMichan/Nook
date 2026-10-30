@@ -94,7 +94,8 @@ extension ChatsEntry {
         return ChatsEntry(id: thread.id, app: thread.app, name: thread.name, preview: preview,
                           last: max(thread.last, reaction?.date ?? .distantPast), read: thread.readState,
                           lastIsMine: reaction == nil && newest?.isMine ?? false, readKnown: readKnown, ticks: ticks,
-                          members: thread.members, handle: thread.handle, avatar: thread.avatar, account: thread.account,
+                          members: thread.members, handle: thread.handle, avatar: thread.avatar,
+                          account: thread.account ?? ChatLinker.shared.accountName(for: thread.app),
                           chatID: thread.chatID)
     }
 

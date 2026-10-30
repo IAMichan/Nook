@@ -261,12 +261,53 @@ func (a *API) chatJSON(ctx context.Context, room *Room) map[string]any {
 	if net != nil {
 		network = net.App
 	}
-	return map[string]any{
+	res := map[string]any{
 		"id": string(room.ID), "accountID": room.Bridge, "network": network, "title": title, "type": kind,
 		"unreadCount": room.Unread, "lastActivity": time.UnixMilli(room.LastTS).UTC().Format(time.RFC3339Nano),
 		"imgURL": a.mediaURL(room.Avatar), "participants": map[string]any{"items": people},
 		"isPinned": room.Pinned, "isMuted": room.Muted, "isArchived": room.Archived, "canVote": a.votes(ctx, net),
 	}
+	if account := a.accountName(ctx, net, room); account != "" {
+		res["account"] = account
+	}
+	return res
+}
+
+func loginAccountName(login *bridgev2.UserLogin) string {
+	if login == nil {
+		return ""
+	}
+	name := login.RemoteProfile.Username
+	if name == "" {
+		name = login.RemoteProfile.Name
+	}
+	if name == "" {
+		name = login.RemoteName
+	}
+	return name
+}
+
+func (a *API) accountName(ctx context.Context, net *Network, room *Room) string {
+	if net == nil {
+		return ""
+	}
+	if net.Bridge != nil {
+		if portal, err := net.Bridge.GetPortalByMXID(ctx, room.ID); err == nil && portal != nil {
+			if portal.Receiver != "" {
+				if login, err := net.Bridge.GetExistingUserLoginByID(ctx, portal.Receiver); err == nil && login != nil {
+					return loginAccountName(login)
+				}
+			}
+		}
+	}
+	if user, err := net.User(ctx); err == nil {
+		for _, login := range user.GetUserLogins() {
+			if name := loginAccountName(login); name != "" {
+				return name
+			}
+		}
+	}
+	return ""
 }
 
 func limitParam(r *http.Request, fallback, most int) int {
