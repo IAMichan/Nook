@@ -107,7 +107,10 @@ final class ActionsStore: ObservableObject {
     @Published private(set) var lastRead: Date?
 
     private var tokens: [String: String] = [:]
-    private var reading: Set<String> = []
+    /// The read under way per repository and workflow.
+    private var reads: [String: Task<Void, Never>] = [:]
+    /// Failed reads in a row per repository and workflow.
+    private var failures: [String: Int] = [:]
     private var cache: [String: (workflows: [Workflow], runs: [WorkflowRun])] = [:]
     private var pushedAt = Date.distantPast
     private static let repoKey = "nook.actions.repo"
@@ -164,19 +167,24 @@ final class ActionsStore: ObservableObject {
         errorKind = nil
     }
 
-    /// Reads the workflows and runs again. A read for a repository or workflow you have since left is thrown away.
+    /// Reads the workflows and runs again. The read is the store's own, not the caller's: the page restarts its loop
+    /// when it opens or picks a repository, and that must not cancel a request halfway and show it as an error. A
+    /// second caller waits for the read already under way. A read for a repository or workflow you have since left is
+    /// thrown away.
     func refresh() async {
         guard let repo else { return }
         let workflowID = self.workflowID
         let key = cacheKey
-        // One read per repository and workflow at a time; another one you switch to reads at once beside it.
-        guard !reading.contains(key) else { return }
-        reading.insert(key)
+        if let running = reads[key] { return await running.value }
+        let read = Task { await self.read(repo: repo, workflowID: workflowID, key: key) }
+        reads[key] = read
         loading = true
-        defer {
-            reading.remove(key)
-            loading = !reading.isEmpty
-        }
+        await read.value
+        reads[key] = nil
+        loading = !reads.isEmpty
+    }
+
+    private func read(repo: String, workflowID: Int?, key: String) async {
         do {
             let token: String
             if let known = tokens[repo] {
@@ -188,6 +196,7 @@ final class ActionsStore: ObservableObject {
             async let workflows = GitHubActions.workflows(repo: repo, token: token)
             let runs = try await GitHubActions.runs(repo: repo, workflowID: workflowID, token: token)
             let list = (try? await workflows) ?? self.workflows
+            failures[key] = 0
             guard repo == self.repo, workflowID == self.workflowID else { return }
             self.runs = runs
             self.workflows = list
@@ -197,13 +206,27 @@ final class ActionsStore: ObservableObject {
             lastRead = Date()
             loaded = true
         } catch {
-            guard repo == self.repo, workflowID == self.workflowID else { return }
-            loaded = true
+            if Self.isCancellation(error) { return }
             // A token that worked before may have lost access; the next read tries every account again.
             tokens[repo] = nil
+            let count = (failures[key] ?? 0) + 1
+            failures[key] = count
+            let kind = (error as? NookError)?.kind
+            // A passing failure (no connection for a moment, GitHub slow to answer) is tried again once at once and
+            // only shows when it happens twice in a row; a refused token shows straight away.
+            if count < 2 && kind != .auth {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                return await read(repo: repo, workflowID: workflowID, key: key)
+            }
+            guard repo == self.repo, workflowID == self.workflowID else { return }
+            loaded = true
             self.error = error.localizedDescription
-            errorKind = (error as? NookError)?.kind
+            errorKind = kind
         }
+    }
+
+    private static func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
     }
 
     /// The repositories you pushed to lately, read again at most every ten minutes.

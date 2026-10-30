@@ -93,7 +93,9 @@
         pushed = r.repos;
         available = r.available;
       })
-      .catch((e) => (error = String(e)))
+      .catch(() => {
+        // Only the picker's suggestions; the run list says what went wrong with the repository itself.
+      })
       .finally(() => (reposLoaded = true));
   });
 
@@ -130,6 +132,9 @@
     if (!name) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // Failed reads in a row: a passing one (no connection for a moment, GitHub slow) is tried again soon and only
+    // shows when it happens twice.
+    let failures = 0;
     const fetchRuns = async () => {
       // A hidden window does not need fresh runs; the next tick after it shows again reads them.
       if (!document.hidden) {
@@ -141,17 +146,19 @@
           runs = fresh.runs;
           account = fresh.account;
           error = null;
+          failures = 0;
         } catch (e) {
           if (cancelled) return;
-          error = String(e);
+          failures += 1;
+          if (failures >= 2) error = String(e);
         } finally {
           if (!cancelled) {
             loading = false;
-            loaded = true;
+            if (failures !== 1) loaded = true;
           }
         }
       }
-      timer = setTimeout(fetchRuns, runs.some(isLive) ? 10_000 : 60_000);
+      timer = setTimeout(fetchRuns, failures === 1 ? 1_500 : runs.some(isLive) ? 10_000 : 60_000);
     };
     fetchRuns();
     return () => {
