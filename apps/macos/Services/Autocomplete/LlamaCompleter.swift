@@ -6,14 +6,17 @@ import LlamaSwift
 /// - Every llama call runs on one serial queue; a new request makes the one before it stop at its next token.
 /// - The model's cache keeps the prompt of the last request: one more letter only has to read one more token. It has a slot
 ///   (a sequence) per field for the last few fields, so going back to one does not read its whole context again.
-/// - Greedy, with a certainty threshold: when the model is not sure, nothing is shown, and a suggestion ends where its
-///   certainty drops.
+/// - A certainty threshold: when the model is not sure, nothing is shown, and a suggestion ends where its certainty drops.
+/// - After a space, the greedy suggestion and the ones that start with the next likeliest tokens are written side by side in
+///   one batch, and the surest is shown (see `generateRanked`); mid-word, the greedy one alone.
 /// - Words the user writes often get a small bonus, so suggestions lean toward their own phrasing.
 /// - A chat model (one with a chat template that is not a base model) gets the prompt as a request in its own template, with
 ///   its answer begun by the text typed so far (`CompletionChat`); a base model reads it as a document.
 final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     let path: String
     var identity: String { path }
+    /// The greedy suggestion and `branchCount` others, in one batch (see `generateRanked`).
+    var candidateLimit: Int { 1 + Int(Self.branchCount) }
 
     private let queue = DispatchQueue(label: "nl.imdigital.nook.autocomplete", qos: .userInteractive)
     private let lock = NSLock()
@@ -51,8 +54,6 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     /// One batch for every decode, at most `readChunk` tokens.
     private var batch: llama_batch
     private var sampler: CompletionSampler
-    /// Where the last suggestion started: the prompt's length and the most likely first tokens there (see `branch`).
-    private var branchPoint: (length: Int, choices: [(token: llama_token, probability: Float)])?
     /// For models whose cache cannot be cut back (recurrent and hybrid ones): a saved copy of sequence 0 at a point in the
     /// prompt, to go on from instead of reading the whole prompt again.
     private var checkpoint: (tokens: [llama_token], data: [UInt8])?
@@ -100,7 +101,8 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     /// The cache the slots share: about two full prompts, or more shorter ones.
     static let cacheLength: UInt32 = 8_192
     static let fieldSlots: UInt32 = 4
-    /// Other ways the text could go on, written after each suggestion (see `branch`), in sequences after the field slots.
+    /// Other ways the text could go on, written alongside each suggestion (see `generateRanked`), in sequences after the field
+    /// slots.
     static let branchCount: UInt32 = 2
     /// A branch starts with a token at least this likely where the suggestion starts.
     private static let minBranchProbability: Float = 0.03
@@ -181,8 +183,20 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
                     llama_model_free(model)
                     return continuation.resume(throwing: NookError(tr("autocomplete.error.memory")))
                 }
-                continuation.resume(returning: LlamaCompleter(path: path, model: model, context: context))
+                let completer = LlamaCompleter(path: path, model: model, context: context)
+                completer.prepareSpelling()
+                continuation.resume(returning: completer)
             }
+        }
+    }
+
+    /// Builds the tables `healed` spells unusual words from (every token's bytes, by their first bytes) right after loading,
+    /// on the model's queue: built on the first name or rare word typed instead, they held up that suggestion by a few hundred
+    /// milliseconds with a 262 000-token vocabulary (Gemma). A request that comes meanwhile waits for them, as it would anyway.
+    private func prepareSpelling() {
+        queue.async {
+            _ = self.tokensByFirstByte
+            _ = self.tokensByFirstTwoBytes
         }
     }
 
@@ -192,19 +206,21 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     private func begin() -> Int { lock.withLock { latest += 1; return latest } }
     private func superseded(_ id: Int) -> Bool { lock.withLock { latest != id } }
 
-    /// Continues `prompt`; nil when superseded, not sure enough, or the model failed. Then, unless a newer request came,
-    /// writes the other ways the text could go on and hands them to `branches` (see `branch`).
+    /// Continues `prompt`; nil when superseded, not sure enough, or the model failed. With `options.candidates` above 1 (and
+    /// not mid-word, nobody waiting for words one by one), writes the candidates side by side, returns the surest and hands the
+    /// others to `branches` (see `generateRanked`).
     func complete(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?,
                   branches: (@Sendable ([CompletionResult]) -> Void)?) async -> CompletionResult? {
         let id = begin()
         return await withCheckedContinuation { continuation in
             queue.async {
                 let isCancelled = { self.superseded(id) }
-                let result = self.generate(prompt: prompt, options: options, partial: partial, isCancelled: isCancelled)
+                guard partial == nil, !options.heal, options.candidates > 1 else {
+                    return continuation.resume(returning: self.generate(prompt: prompt, options: options, partial: partial, isCancelled: isCancelled))
+                }
+                let (result, others) = self.generateRanked(prompt: prompt, options: options, isCancelled: isCancelled)
                 continuation.resume(returning: result)
-                guard let branches, let point = self.branchPoint, !isCancelled() else { return }
-                let found = self.branch(from: point, besides: result, options: options, isCancelled: isCancelled)
-                if !found.isEmpty, !isCancelled() { branches(found) }
+                if let branches, !others.isEmpty, !isCancelled() { branches(others) }
             }
         }
     }
@@ -402,55 +418,38 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         // the rest of that word the prompt stays the same, so the cache has nothing new to read.
         let healing = options.heal ? prompt.healed() : (prompt: prompt, pending: "")
         var required = Array(healing.pending.utf8)
-        branchPoint = nil
-        guard !isCancelled(), let length = prime(healing.prompt, reserve: options.maxTokens + 8, isCancelled: isCancelled) else { return nil }
+        guard !isCancelled(), prime(healing.prompt, reserve: options.maxTokens + 8, isCancelled: isCancelled) != nil else { return nil }
         var bytes: [UInt8] = []
-        var truncated = true
-        var unfinished = false
-        var started = false
-        var sure: Float = 1
+        var candidate = CompletionCandidate()
         var reported = 0
-        for step in 0..<(options.maxTokens + (required.isEmpty ? 0 : 6)) {
+        for _ in 0..<(options.maxTokens + (required.isEmpty ? 0 : 6)) {
             if isCancelled() { return nil }
             guard let logits = llama_get_logits_ith(context, -1) else { return nil }
-            // Mid-word the first tokens only spell the word already typed: no other way to go on from there.
-            if step == 0, required.isEmpty { branchPoint = (length, firstChoices(logits)) }
             let choice: (llama_token, Float)? = required.isEmpty ? mostLikely(logits) : healed(logits, required: required)
             guard let choice else { return nil }
             let (token, probability) = choice
-            if llama_vocab_is_eog(vocab, token) || llama_vocab_is_control(vocab, token) {
-                if !started { return nil }
-                truncated = false
-                break
-            }
-            var piece = self.piece(token)
-            if !required.isEmpty {
+            let isEnd = llama_vocab_is_eog(vocab, token) || llama_vocab_is_control(vocab, token)
+            var piece = isEnd ? [] : self.piece(token)
+            if !required.isEmpty, !isEnd {
                 // What spells the word that was already typed is not part of the suggestion.
                 let spelled = min(piece.count, required.count)
                 required.removeFirst(spelled)
                 piece.removeFirst(spelled)
             }
-            if !piece.isEmpty {
-                sure *= probability
-                if !started {
-                    if probability < options.minFirstProbability || sure < options.minSequenceProbability { return nil }
-                    started = true
-                } else if probability < options.minProbability || sure < options.minSequenceProbability {
-                    // Not sure any more: end here, and never in the middle of a word.
-                    unfinished = CompletionHealing.continuesWord(String(decoding: piece, as: UTF8.self))
-                    truncated = false
-                    break
-                }
+            if isEnd || !piece.isEmpty {
+                // Not sure any more: end here, and never in the middle of a word.
+                guard candidate.keep(probability: probability, isEnd: isEnd, firstBar: options.minFirstProbability, options: options,
+                                     continuesWord: CompletionHealing.continuesWord(String(decoding: piece, as: UTF8.self))) else { break }
             }
             if let newline = piece.firstIndex(where: { $0 == 0x0A || $0 == 0x0D }) {
                 bytes += piece[..<newline]
-                truncated = false
+                candidate.end()
                 break
             }
             bytes += piece
             let text = String(decoding: bytes, as: UTF8.self)
             if text.completionWordCount > options.maxWords {
-                truncated = false
+                candidate.end()
                 break
             }
             // Hand over each finished word right away, so the suggestion appears while the rest is still being written.
@@ -461,10 +460,103 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
             }
             guard decode([token]) else { break }
         }
-        guard started else { return nil }
         // The generated tokens stay in the cache; the shared-prefix check trims them on the next request.
-        let text = String(decoding: bytes, as: UTF8.self).replacingOccurrences(of: "\u{FFFD}", with: "")
-        return CompletionResult(text: text, truncated: truncated, unfinished: unfinished)
+        return candidate.result(text: String(decoding: bytes, as: UTF8.self))
+    }
+
+    /// Writes the greedy suggestion and the ones that start with the next most likely tokens side by side, one batch per token
+    /// (each in its own sequence, sharing the prompt in the cache): on the GPU a batch of three costs about what one token
+    /// does. Returns the one to show (see `CompletionRanking`) and the others, for the memo (see `CompletionMemo`): when the
+    /// user starts typing one of them instead, it shows at once.
+    private func generateRanked(prompt: CompletionPrompt, options: CompletionOptions,
+                                isCancelled: () -> Bool) -> (shown: CompletionResult?, others: [CompletionResult]) {
+        struct Sequence {
+            var seq: llama_seq_id
+            /// The token to read next: the last one kept.
+            var token: llama_token
+            var bytes: [UInt8] = []
+            var candidate = CompletionCandidate()
+        }
+        guard !isCancelled(), let length = prime(prompt, reserve: options.maxTokens + 8, isCancelled: isCancelled),
+              let logits = llama_get_logits_ith(context, -1) else { return (nil, []) }
+        let (mainToken, mainProbability) = mostLikely(logits)
+        let mainText = String(decoding: piece(mainToken), as: UTF8.self).trimmingCharacters(in: .whitespaces)
+        var sequences = [Sequence(seq: seq, token: mainToken)]
+        var firsts: [Float] = [mainProbability]
+        let others = min(options.candidates, candidateLimit) - 1
+        if !needsCheckpoints, others > 0 {
+            let starts = firstChoices(logits).filter { choice in
+                let text = String(decoding: piece(choice.token), as: UTF8.self).trimmingCharacters(in: .whitespaces)
+                // One that only spells the greedy word differently goes the same way. A greedy start that is only a space or
+                // a line break says nothing about the others.
+                return choice.token != mainToken && !text.isEmpty
+                    && (mainText.isEmpty || (!mainText.hasPrefix(text) && !text.hasPrefix(mainText)))
+            }.prefix(others)
+            for (index, start) in starts.enumerated() {
+                sequences.append(Sequence(seq: llama_seq_id(Self.fieldSlots) + llama_seq_id(index), token: start.token))
+                firsts.append(start.probability)
+            }
+        }
+        let memory = llama_get_memory(context)
+        let branches = sequences.dropFirst()
+        if !branches.isEmpty {
+            makeRoom(for: branches.count * (options.maxTokens + 1))
+            for branch in branches {
+                _ = llama_memory_seq_rm(memory, branch.seq, -1, -1)
+                llama_memory_seq_cp(memory, seq, branch.seq, 0, llama_pos(length))
+            }
+        }
+        defer { for branch in sequences.dropFirst() { _ = llama_memory_seq_rm(memory, branch.seq, -1, -1) } }
+
+        /// Takes `token` (with `probability`) as the next one of sequence `index`, or ends it there.
+        func take(_ token: llama_token, _ probability: Float, into index: Int) {
+            let isEnd = llama_vocab_is_eog(vocab, token) || llama_vocab_is_control(vocab, token)
+            let piece = isEnd ? [] : self.piece(token)
+            // The greedy one is shown only past the usual bar; the others were picked from the likeliest starts already.
+            let bar = index == 0 ? options.minFirstProbability : Self.minBranchProbability
+            guard sequences[index].candidate.keep(probability: probability, isEnd: isEnd, firstBar: bar, options: options,
+                                                  continuesWord: CompletionHealing.continuesWord(String(decoding: piece, as: UTF8.self)))
+            else { return }
+            if let newline = piece.firstIndex(where: { $0 == 0x0A || $0 == 0x0D }) {
+                sequences[index].bytes += piece[..<newline]
+                sequences[index].candidate.end()
+                return
+            }
+            sequences[index].bytes += piece
+            sequences[index].token = token
+            if String(decoding: sequences[index].bytes, as: UTF8.self).completionWordCount > options.maxWords {
+                sequences[index].candidate.end()
+            }
+        }
+
+        for index in sequences.indices { take(sequences[index].token, firsts[index], into: index) }
+        var position = length
+        for _ in 1..<max(options.maxTokens, 2) {
+            if isCancelled() { return (nil, []) }
+            let running = sequences.indices.filter { !sequences[$0].candidate.done }
+            guard !running.isEmpty else { break }
+            guard decode(running.map { (sequences[$0].token, sequences[$0].seq) }, at: position) else {
+                llama_memory_clear(memory, true)
+                slots = Array(repeating: Slot(), count: slots.count)
+                break
+            }
+            // The greedy one is in the field's own slot: its tokens stay in the cache like a single suggestion's.
+            if running.first == 0 { cached.append(sequences[0].token) }
+            position += 1
+            for (row, index) in running.enumerated() {
+                guard let logits = llama_get_logits_ith(context, Int32(row)) else {
+                    sequences[index].candidate.end()
+                    continue
+                }
+                let (token, probability) = mostLikely(logits)
+                take(token, probability, into: index)
+            }
+        }
+        let results = sequences.map { $0.candidate.result(text: String(decoding: $0.bytes, as: UTF8.self)) }
+        guard let pick = CompletionRanking.best(results, minFirstProbability: options.minFirstProbability) else {
+            return (nil, results.dropFirst().compactMap { $0 })
+        }
+        return (results[pick], results.indices.filter { $0 != pick }.compactMap { results[$0] })
     }
 
     /// The most likely token that fits the word still to be spelled, with its probability among the tokens that fit.
@@ -495,82 +587,6 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
             let probability = exp(logits[Int(token)] - maximum) / sum
             guard probability >= Self.minBranchProbability, !llama_vocab_is_eog(vocab, token), !llama_vocab_is_control(vocab, token) else { return nil }
             return (token, probability)
-        }
-    }
-
-    /// The other ways the text could go on where the last suggestion started: from each of the next most likely first tokens,
-    /// written greedily side by side in one batch (one sequence each, sharing the prompt in the cache), with the same bars as
-    /// a suggestion after its first token. When the user starts typing one of those words, its branch is shown at once (see
-    /// `CompletionMemo`) instead of waiting for the model.
-    private func branch(from point: (length: Int, choices: [(token: llama_token, probability: Float)]), besides main: CompletionResult?,
-                        options: CompletionOptions, isCancelled: () -> Bool) -> [CompletionResult] {
-        struct Branch {
-            var seq: llama_seq_id
-            var token: llama_token
-            var bytes: [UInt8]
-            var sure: Float = 1
-            var done = false
-            var truncated = true
-            var unfinished = false
-        }
-        let starts = point.choices.filter { choice in
-            let text = String(decoding: piece(choice.token), as: UTF8.self)
-            return text.contains { !$0.isWhitespace } && !(main?.text.hasPrefix(text) ?? false)
-        }.prefix(Int(Self.branchCount))
-        guard !starts.isEmpty, !needsCheckpoints, cached.count >= point.length else { return [] }
-        let memory = llama_get_memory(context)
-        let first = llama_seq_id(Self.fieldSlots)
-        var branches = starts.enumerated().map { index, start in
-            Branch(seq: first + llama_seq_id(index), token: start.token, bytes: piece(start.token))
-        }
-        makeRoom(for: branches.count * (options.maxTokens + 1))
-        for branch in branches {
-            _ = llama_memory_seq_rm(memory, branch.seq, -1, -1)
-            llama_memory_seq_cp(memory, seq, branch.seq, 0, llama_pos(point.length))
-        }
-        defer { for branch in branches { _ = llama_memory_seq_rm(memory, branch.seq, -1, -1) } }
-        var position = point.length
-        for _ in 0..<options.maxTokens {
-            if isCancelled() { return [] }
-            let running = branches.indices.filter { !branches[$0].done }
-            guard !running.isEmpty, decode(running.map { (branches[$0].token, branches[$0].seq) }, at: position) else { break }
-            position += 1
-            for (row, index) in running.enumerated() {
-                guard let logits = llama_get_logits_ith(context, Int32(row)) else {
-                    branches[index].done = true
-                    continue
-                }
-                let (token, probability) = mostLikely(logits)
-                if llama_vocab_is_eog(vocab, token) || llama_vocab_is_control(vocab, token) {
-                    branches[index].truncated = false
-                    branches[index].done = true
-                    continue
-                }
-                let piece = self.piece(token)
-                branches[index].sure *= probability
-                if probability < options.minProbability || branches[index].sure < options.minSequenceProbability {
-                    branches[index].unfinished = CompletionHealing.continuesWord(String(decoding: piece, as: UTF8.self))
-                    branches[index].truncated = false
-                    branches[index].done = true
-                    continue
-                }
-                if let newline = piece.firstIndex(where: { $0 == 0x0A || $0 == 0x0D }) {
-                    branches[index].bytes += piece[..<newline]
-                    branches[index].truncated = false
-                    branches[index].done = true
-                    continue
-                }
-                branches[index].bytes += piece
-                branches[index].token = token
-                if String(decoding: branches[index].bytes, as: UTF8.self).completionWordCount > options.maxWords {
-                    branches[index].truncated = false
-                    branches[index].done = true
-                }
-            }
-        }
-        return branches.map {
-            CompletionResult(text: String(decoding: $0.bytes, as: UTF8.self).replacingOccurrences(of: "\u{FFFD}", with: ""),
-                             truncated: $0.truncated, unfinished: $0.unfinished)
         }
     }
 

@@ -418,6 +418,10 @@ struct CompletionOptions: Equatable {
     /// The cursor is in the middle of a word: the engine reads the prompt without it and lets the model write it out again
     /// (token healing), so the word is not split into odd tokens that make the model guess wildly.
     var heal = false
+    /// How many suggestions to write side by side and pick the surest of (see `CompletionRanking`): the greedy one and ones
+    /// that start with the next likeliest tokens. 1 writes the greedy one alone. An engine writes as many as it can (see
+    /// `CompletionEngine.candidateLimit`), so this asks; it does not promise.
+    var candidates = 1
 
     /// - Parameter eagerness: 0 only very sure suggestions … 1 eager.
     init(maxWords: Int = 8, eagerness: Double = 0.5) {
@@ -447,6 +451,98 @@ struct CompletionResult: Equatable {
     var truncated: Bool
     /// Stopped in the middle of a word because the model was no longer sure.
     var unfinished = false
+    /// The mean log-probability of its tokens (0: sure of every one), when the engine measured it: to rank candidates that
+    /// start differently (see `CompletionRanking`).
+    var confidence: Float? = nil
+    /// How likely its first token was, when the engine measured it.
+    var firstProbability: Float? = nil
+}
+
+/// One suggestion while it is being written, token by token: whether it goes on, how sure the model is of it as a whole, and
+/// how it ended. The same rules for every engine and for every candidate written side by side, so their results can be ranked
+/// against each other (see `CompletionRanking`).
+struct CompletionCandidate: Equatable {
+    /// The product of its tokens' probabilities.
+    private(set) var sure: Float = 1
+    private(set) var logSum: Float = 0
+    /// Tokens kept.
+    private(set) var count = 0
+    private(set) var firstProbability: Float?
+    /// Stopped at the token limit: the last word may be cut off.
+    private(set) var truncated = true
+    /// Stopped in the middle of a word because the model was no longer sure.
+    private(set) var unfinished = false
+    private(set) var done = false
+    /// Its first token was the end, or too unlikely: nothing to show.
+    private(set) var rejected = false
+
+    /// Whether to keep the next token (with `probability`): false when the suggestion ends before it. `isEnd`: the model's
+    /// end-of-text or another control token. `firstBar`: how likely the first token must be (`minFirstProbability` for a
+    /// suggestion to show, less for one written only to be ranked or remembered). `continuesWord`: the token would go on with
+    /// the word before it, so ending here leaves a word unfinished.
+    mutating func keep(probability: Float, isEnd: Bool, firstBar: Float, options: CompletionOptions,
+                       continuesWord: @autoclosure () -> Bool) -> Bool {
+        let first = count == 0
+        let next = sure * probability
+        if isEnd || probability < (first ? firstBar : options.minProbability) || next < options.minSequenceProbability {
+            if first {
+                rejected = true
+            } else if !isEnd {
+                unfinished = continuesWord()
+            }
+            truncated = false
+            done = true
+            return false
+        }
+        if first { firstProbability = probability }
+        sure = next
+        logSum += log(max(probability, .leastNonzeroMagnitude))
+        count += 1
+        return true
+    }
+
+    /// Ends it after the token just kept: a line break, or enough words.
+    mutating func end() {
+        truncated = false
+        done = true
+    }
+
+    /// The result for its `text`; nil when it was rejected or kept nothing.
+    func result(text: String) -> CompletionResult? {
+        guard !rejected, count > 0 else { return nil }
+        return CompletionResult(text: text.replacingOccurrences(of: "\u{FFFD}", with: ""), truncated: truncated, unfinished: unfinished,
+                                confidence: logSum / Float(count), firstProbability: firstProbability)
+    }
+}
+
+/// Picks the suggestion to show from candidates written side by side: the greedy one (the most likely first token), and the
+/// ones that start with the next most likely tokens. Greedy picks each token on its own; a sentence that starts with the
+/// second likeliest word is sometimes much surer as a whole ("I'll be there at eight" over "the …" that peters out). Another
+/// candidate wins only when it clears the same bar for its first token, says at least as much, and is clearly surer per token.
+enum CompletionRanking {
+    /// How much higher another candidate's mean log-probability per token must be (in nats) to replace the greedy one: about a
+    /// third more likely per token, so a near tie keeps the greedy suggestion.
+    static let margin: Float = 0.3
+
+    /// The index of the candidate to show, nil when none clears the bar. `candidates[0]` is the greedy one (nil when it was
+    /// not sure enough to show); the rest are the others, in order of their first token.
+    static func best(_ candidates: [CompletionResult?], minFirstProbability: Float) -> Int? {
+        func usable(_ result: CompletionResult) -> Bool { !result.text.trimmingCharacters(in: .whitespaces).isEmpty }
+        var chosen: Int? = candidates.first.flatMap { $0.map(usable) == true ? 0 : nil }
+        for index in candidates.indices.dropFirst() {
+            guard let candidate = candidates[index], usable(candidate), let confidence = candidate.confidence,
+                  (candidate.firstProbability ?? 0) >= minFirstProbability else { continue }
+            guard let current = chosen.flatMap({ candidates[$0] }) else {
+                chosen = index
+                continue
+            }
+            if confidence > (current.confidence ?? -.infinity) + margin,
+               candidate.text.completionWordCount >= current.text.completionWordCount {
+                chosen = index
+            }
+        }
+        return chosen
+    }
 }
 
 /// The text before the cursor once the app has taken in a key, when the key alone says what it will be: a character typed, or

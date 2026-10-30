@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 /// Where suggestions go on screen, from what an app says through Accessibility. Apps answer in many ways and some answers are
 /// wrong: a rect in the screen's corner, a whole paragraph, a field as big as the page, a cursor left behind after scrolling.
@@ -65,5 +66,46 @@ enum CompletionPlacement {
             rest = rest[rest.index(after: index)...]
         }
         return got.count
+    }
+}
+
+/// The colour of the text an app reports at the cursor (sRGB), and the shade a suggestion is drawn in: a translucent version
+/// of it, so the suggestion reads as the rest of the line in that app's own colour (blue in a link, white in a dark editor)
+/// while it clearly is not typed yet.
+struct CompletionTextColor: Equatable, Sendable {
+    var red: Double
+    var green: Double
+    var blue: Double
+    var alpha: Double
+
+    /// How much of the text's colour a suggestion keeps.
+    static let ghostAlpha = 0.45
+
+    init(red: Double, green: Double, blue: Double, alpha: Double = 1) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.alpha = alpha
+    }
+
+    init?(cgColor: CGColor) {
+        guard let srgb = CGColorSpace(name: CGColorSpace.sRGB),
+              let converted = cgColor.converted(to: srgb, intent: .defaultIntent, options: nil),
+              let components = converted.components, components.count >= 4 else { return nil }
+        self.init(red: Double(components[0]), green: Double(components[1]), blue: Double(components[2]), alpha: Double(components[3]))
+    }
+
+    /// From the value of an attributed string's `AXForegroundColor` (a `CGColor`).
+    init?(axValue: Any) {
+        let value = axValue as CFTypeRef
+        guard CFGetTypeID(value) == CGColor.typeID else { return nil }
+        self.init(cgColor: value as! CGColor)
+    }
+
+    /// The suggestion's colour: this one, translucent. Nil when the app's colour says little (nearly transparent): the
+    /// system's placeholder grey is drawn instead.
+    var ghost: CompletionTextColor? {
+        guard alpha >= 0.5 else { return nil }
+        return CompletionTextColor(red: red, green: green, blue: blue, alpha: alpha * Self.ghostAlpha)
     }
 }

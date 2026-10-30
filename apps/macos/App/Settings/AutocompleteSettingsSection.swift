@@ -39,6 +39,7 @@ struct AutocompleteSettingsSection: View {
                     }
                 if store.prefs.enabled {
                     status
+                    obstacles
                     SettingToggle(tr("autocomplete.menuBarCount"), detail: tr("autocomplete.menuBarCountDetail"), isOn: $store.prefs.menuBarCount)
                 }
             } header: {
@@ -113,6 +114,26 @@ struct AutocompleteSettingsSection: View {
             }
         case .off:
             EmptyView()
+        }
+    }
+
+    /// What elsewhere on the Mac stands in the way: Secure Input held by another app, and macOS's own predictions. Looked at
+    /// again every few seconds while Settings is open, so a row goes away once it is solved.
+    private var obstacles: some View {
+        TimelineView(.periodic(from: .now, by: 3)) { _ in
+            let secure = CompletionSystemChecks.secureInput()
+            if secure.on {
+                StatusRow(title: tr("autocomplete.secureInput"),
+                          detail: secure.holder.map { tr("autocomplete.secureInputBy", $0) } ?? tr("autocomplete.secureInputUnknown"),
+                          state: .warning) { EmptyView() }
+            }
+            if CompletionSystemChecks.inlinePredictionsOn {
+                StatusRow(title: tr("autocomplete.inlinePrediction"), detail: tr("autocomplete.inlinePredictionDetail"), state: .todo) {
+                    Button(tr("autocomplete.inlinePrediction.open")) {
+                        if let url = CompletionSystemChecks.keyboardSettings { NSWorkspace.shared.open(url) }
+                    }
+                }
+            }
         }
     }
 
@@ -514,6 +535,7 @@ struct AutocompleteSettingsSection: View {
         }
         Toggle(tr("autocomplete.app.leaveTab"), isOn: rule.leaveTab)
         Toggle(tr("autocomplete.app.learn"), isOn: rule.learn)
+        Toggle(tr("autocomplete.app.neutralColor"), isOn: rule.neutralColor)
         TextField(tr("autocomplete.app.instructions"), text: rule.instructions, axis: .vertical).lineLimit(1...4)
         LabeledContent(tr("autocomplete.app.textSize")) {
             Slider(value: rule.fontScale, in: 0.6...1.6).frame(width: 160)

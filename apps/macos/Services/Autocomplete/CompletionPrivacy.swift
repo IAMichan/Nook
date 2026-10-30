@@ -1,7 +1,8 @@
 import Foundation
 
 /// Takes out what looks like a secret before text is kept as a writing sample or given to the model as context: card
-/// numbers, IBANs, Dutch citizen service numbers (BSN), API keys and tokens, private keys, passwords after "password:".
+/// numbers, IBANs, Dutch citizen service numbers (BSN), API keys and tokens, private keys, passwords after "password:" (in the
+/// five languages Nook speaks) or in a setting named after one, bearer tokens, logins and signatures in links.
 enum CompletionPrivacy {
     static let placeholder = "[redacted]"
 
@@ -16,7 +17,14 @@ enum CompletionPrivacy {
         (#"\b(?:ghp|gho|ghu|ghs|github_pat|glpat|xox[abprs]|AKIA|AIza|re_|whsec_)[A-Za-z0-9_\-]{12,}\b"#, Check.none),
         (#"\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b"#, Check.none),
         (#"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)"#, Check.none),
-        (#"(?i)\b(?:password|passwd|pwd|wachtwoord|secret|geheim|api[_-]?key|token|pincode|pin)\b\s*[:=]\s*\S+"#, Check.none),
+        (#"(?i)\b(?:password|passwd|pwd|passphrase|wachtwoord|passwort|kennwort|mot de passe|mdp|contraseña|clave|secret|geheim|api[_-]?key|token|pincode|pin)\b\s*[:=]\s*\S+"#, Check.none),
+        // A setting or environment variable named after a secret (DATABASE_PASSWORD=…, export GITHUB_TOKEN=…, "clientSecret": …):
+        // the word sits inside a longer name, where `\b` does not see it.
+        (#"(?i)\b[A-Za-z0-9_]*(?:password|passwd|secret|token|api_?key|access_?key|private_?key|credential)[A-Za-z0-9_]*"?\s*[:=]\s*"?[^\s",;]{4,}"#, Check.none),
+        (#"(?i)\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/\-]{16,}=*"#, Check.none),
+        // A login in a link (https://user:password@host) and a signed link's signature (?sig=…, X-Amz-Signature=…).
+        (#"\b[A-Za-z][A-Za-z0-9+.\-]*://[^\s/:@]+:[^\s/@]+@"#, Check.none),
+        (#"(?i)[?&][A-Za-z0-9_.\-]*sig(?:nature)?=[^&\s"'<>()\[\]]{8,}"#, Check.none),
     ]
 
     /// Any long run of letters and digits: catches keys without a known prefix, but also the identifiers tools hand back

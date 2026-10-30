@@ -3,8 +3,8 @@ import MLX
 import MLXLMCommon
 
 /// Autocomplete on the model Nook's brain already downloaded (MLX), so nothing else has to be downloaded. It works like
-/// `LlamaCompleter`: greedy with the certainty threshold, a bonus for the user's own words, other words to pick, and the
-/// suggestion handed over word by word while it is being written.
+/// `LlamaCompleter`: the certainty threshold, the surest of several candidates written side by side (after a space), a bonus
+/// for the user's own words, other words to pick, and the suggestion handed over word by word while it is being written.
 ///
 /// Speed comes from checkpoints: the cache is copied at fixed points of the prompt (every 64 tokens, `KVCache.copy()`), and
 /// each key continues from the newest checkpoint the new prompt still starts with. So a letter typed costs a few dozen
@@ -18,6 +18,9 @@ import MLXLMCommon
 final class BrainCompleter: CompletionEngine, @unchecked Sendable {
     let modelID: String
     var identity: String { CompletionSource.brainPrefix + modelID }
+    /// The greedy suggestion and two others, as rows of one batch (see `generateRanked`). A model whose cache cannot take rows
+    /// writes the greedy one alone.
+    var candidateLimit: Int { 3 }
 
     /// Short lock: the request counter and the word bonus. Never held while the model runs.
     private let lock = NSLock()
@@ -85,7 +88,8 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
         }
     }
 
-    /// Writes no branches: MLX runs one sequence at a time here.
+    /// With `options.candidates` above 1 (and not mid-word, nobody waiting for words one by one), writes the candidates as
+    /// rows of one batch, returns the surest and hands the others to `branches` (see `generateRanked`).
     func complete(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?,
                   branches: (@Sendable ([CompletionResult]) -> Void)?) async -> CompletionResult? {
         let id = begin()
@@ -97,6 +101,15 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
         guard !superseded(id) else { return nil }
         let owner = ObjectIdentifier(container)
         let stopStrings = ModelAdvisor.catalog.first { $0.id == modelID }?.family.stopTokens ?? []
+        if partial == nil, !options.heal, options.candidates > 1 {
+            let (result, others) = await container.perform { context -> (CompletionResult?, [CompletionResult]) in
+                self.work.withLock {
+                    self.generateRanked(context: context, owner: owner, prompt: prompt, options: options, stops: stopStrings) { self.superseded(id) }
+                }
+            }
+            if let branches, !others.isEmpty, !superseded(id) { branches(others) }
+            return result
+        }
         return await container.perform { context -> CompletionResult? in
             self.work.withLock {
                 self.generate(context: context, owner: owner, prompt: prompt, options: options, stops: stopStrings, partial: partial) {
@@ -238,17 +251,14 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
             }
             let stopIDs = stopIDs(context, stops)
             var kept: [Int] = []
-            var truncated = true
             var text = ""
             var reported = 0
-            var unfinished = false
-            var sure: Float = 1
+            var candidate = CompletionCandidate()
             var iterator = try TokenIterator(input: LMInput(tokens: MLXArray(fresh)), model: context.model, cache: layers,
                                              processor: nil, sampler: sampler, prefillStepSize: 512,
                                              maxTokens: options.maxTokens + (healing.pending.isEmpty ? 0 : 6))
             defer { keepBiasArray(sampler.biasArray, owner: owner) }
             var step = 0
-            var started = false
             while let token = iterator.next() {
                 let probability = step < sampler.probabilities.count ? sampler.probabilities[step] : 0
                 let spelling = step < sampler.spelling.count && sampler.spelling[step]
@@ -259,18 +269,11 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
                     kept.append(token)
                     continue
                 }
-                sure *= probability
-                if !started {
-                    if probability < options.minFirstProbability || sure < options.minSequenceProbability || stopIDs.contains(token) { return nil }
-                    started = true
-                }
-                if stopIDs.contains(token) { truncated = false; break }
-                if probability < options.minProbability || sure < options.minSequenceProbability {
-                    // Not sure any more: end here, and never in the middle of a word.
-                    unfinished = CompletionHealing.continuesWord(decode(context.tokenizer, [token], after: kept.last ?? all.last))
-                    truncated = false
-                    break
-                }
+                // Not sure any more (or the end): stop here, and never in the middle of a word.
+                guard candidate.keep(probability: probability, isEnd: stopIDs.contains(token), firstBar: options.minFirstProbability,
+                                     options: options,
+                                     continuesWord: CompletionHealing.continuesWord(decode(context.tokenizer, [token], after: kept.last ?? all.last)))
+                else { break }
                 kept.append(token)
                 text = decode(context.tokenizer, kept, after: all.last)
                 // The word already typed comes first: the suggestion is what follows it.
@@ -280,10 +283,13 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
                 }
                 if let newline = text.firstIndex(where: { $0 == "\n" || $0 == "\r" }) {
                     text = String(text[..<newline])
-                    truncated = false
+                    candidate.end()
                     break
                 }
-                if text.completionWordCount > options.maxWords { truncated = false; break }
+                if text.completionWordCount > options.maxWords {
+                    candidate.end()
+                    break
+                }
                 // Hand over each finished word right away, so the suggestion appears while the rest is still being written.
                 let finished = CompletionStreaming.finishedWords(text)
                 if finished > reported, let partial {
@@ -291,11 +297,141 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
                     partial(text)
                 }
             }
-            return CompletionResult(text: text.replacingOccurrences(of: "\u{FFFD}", with: ""), truncated: truncated, unfinished: unfinished)
+            return candidate.result(text: text)
         } catch {
             checkpoint = nil
             return nil
         }
+    }
+
+    /// Writes the greedy suggestion and the ones that start with the next likeliest tokens as rows of one batch: the prompt's
+    /// cache is repeated per row, and every step reads one token per row (`[rows, 1]`), all at the same position, so it costs
+    /// about what one row does. Returns the one to show (see `CompletionRanking`) and the others, for the memo. A model whose
+    /// cache is not of a kind known to take rows this way (see `batchable`) writes the greedy row alone.
+    private func generateRanked(context: ModelContext, owner: ObjectIdentifier, prompt: CompletionPrompt, options: CompletionOptions,
+                                stops: Set<String>, isCancelled: () -> Bool) -> (shown: CompletionResult?, others: [CompletionResult]) {
+        guard !isCancelled() else { return (nil, []) }
+        do {
+            guard let (layers, fresh, all) = try prime(context, owner: owner, prompt: prompt, isCancelled: isCancelled), !isCancelled() else { return (nil, []) }
+            // The rest of the prompt, as one row: the logits for the first token.
+            var state: LMOutput.State?
+            var logits: MLXArray
+            switch try context.model.prepare(LMInput(tokens: MLXArray(fresh)), cache: layers, windowSize: 512) {
+            case .tokens(let rest):
+                let output = context.model(rest[text: .newAxis], cache: layers, state: nil)
+                state = output.state
+                logits = output.logits[0..., -1, 0...]
+            case .logits(let output):
+                state = output.state
+                logits = output.logits[0..., -1, 0...]
+            }
+            let raw = logits.asType(.float32)
+            let bonus = bias(context.tokenizer, owner: owner)
+            let biasArray = bonus.bias.isEmpty ? nil : (bonus.array?.dim(-1) == raw.dim(-1) ? bonus.array : Self.biasArray(bonus.bias, size: raw.dim(-1)))
+            defer { keepBiasArray(biasArray, owner: owner) }
+            let stopIDs = stopIDs(context, stops)
+            let tokenizer = context.tokenizer
+
+            // The first token of each row: the greedy one, then the likeliest others that do not spell the same word.
+            let (mainToken, mainProbability) = Self.pick(raw, row: 0, bias: biasArray)
+            var starts: [(token: Int, probability: Float)] = [(mainToken, mainProbability)]
+            let others = min(options.candidates, candidateLimit) - 1
+            if others > 0, state == nil, Self.batchable(layers) {
+                let mainText = decode(tokenizer, [mainToken], after: all.last).trimmingCharacters(in: .whitespaces)
+                let shifted = exp(raw - raw.max(axis: -1, keepDims: true))
+                let total = shifted.sum().item(Float.self)
+                let order = argSort(-raw, axis: -1)[0, 0 ..< (others + 3)].asType(.int32).asArray(Int32.self).map(Int.init)
+                for token in order where starts.count <= others && token != mainToken && !stopIDs.contains(token) {
+                    let probability = shifted[0, token].item(Float.self) / total
+                    let text = decode(tokenizer, [token], after: all.last).trimmingCharacters(in: .whitespaces)
+                    guard probability >= Self.minBranchProbability, !text.isEmpty,
+                          mainText.isEmpty || (!mainText.hasPrefix(text) && !text.hasPrefix(mainText)) else { continue }
+                    starts.append((token, probability))
+                }
+            }
+            let rows = starts.count
+            if rows > 1 {
+                // The caches are classes: changing each one changes the cache the model reads.
+                for var layer in layers {
+                    // The meta state (a rotating cache's place in its window) stays; only the arrays get a row per candidate.
+                    let meta = layer.metaState
+                    layer.state = layer.state.map { concatenated(Array(repeating: $0, count: rows), axis: 0) }
+                    layer.metaState = meta
+                }
+            }
+
+            struct Row {
+                var token: Int
+                var kept: [Int] = []
+                var text = ""
+                var candidate = CompletionCandidate()
+            }
+            var sequences = starts.map { Row(token: $0.token) }
+            /// Takes `token` (with `probability`) as the next one of row `index`, or ends it there.
+            func take(_ token: Int, _ probability: Float, into index: Int) {
+                let bar = index == 0 ? options.minFirstProbability : Self.minBranchProbability
+                let previous = sequences[index].kept.last ?? all.last
+                guard sequences[index].candidate.keep(probability: probability, isEnd: stopIDs.contains(token), firstBar: bar, options: options,
+                                                      continuesWord: CompletionHealing.continuesWord(decode(tokenizer, [token], after: previous)))
+                else { return }
+                sequences[index].kept.append(token)
+                sequences[index].token = token
+                var text = decode(tokenizer, sequences[index].kept, after: all.last)
+                if let newline = text.firstIndex(where: { $0 == "\n" || $0 == "\r" }) {
+                    text = String(text[..<newline])
+                    sequences[index].candidate.end()
+                }
+                sequences[index].text = text
+                if text.completionWordCount > options.maxWords { sequences[index].candidate.end() }
+            }
+            for (index, start) in starts.enumerated() { take(start.token, start.probability, into: index) }
+            for _ in 1..<max(options.maxTokens, 2) {
+                if isCancelled() { return (nil, []) }
+                guard sequences.contains(where: { !$0.candidate.done }) else { break }
+                // Every row reads a token, also one that is done (its last again): the rows stay the same length.
+                let input = MLXArray(sequences.map { Int32($0.token) }).reshaped([rows, 1])
+                let output = context.model(LMInput.Text(tokens: input), cache: layers, state: state)
+                state = output.state
+                let step = output.logits[0..., -1, 0...].asType(.float32)
+                for index in sequences.indices where !sequences[index].candidate.done {
+                    let (token, probability) = Self.pick(step, row: index, bias: biasArray)
+                    take(token, probability, into: index)
+                }
+            }
+            let results = sequences.map { $0.candidate.result(text: $0.text) }
+            guard let pick = CompletionRanking.best(results, minFirstProbability: options.minFirstProbability) else {
+                return (nil, results.dropFirst().compactMap { $0 })
+            }
+            return (results[pick], results.indices.filter { $0 != pick }.compactMap { results[$0] })
+        } catch {
+            checkpoint = nil
+            return (nil, [])
+        }
+    }
+
+    /// Caches known to take a row per candidate by repeating their arrays: plain and rotating key-value caches (most models,
+    /// Gemma's sliding window). Others (quantized, chunked, the state of hybrid models) write the greedy row alone, rather than
+    /// risk a shape MLX would stop the app on.
+    private static func batchable(_ layers: [KVCache]) -> Bool {
+        !layers.isEmpty && layers.allSatisfy { type(of: $0) == KVCacheSimple.self || type(of: $0) == RotatingKVCache.self }
+    }
+
+    /// A candidate starts with a token at least this likely (as with the llama engine).
+    private static let minBranchProbability: Float = 0.03
+
+    /// The most likely token of `row` after the word bonus, with its probability before the bonus (softmax over all tokens).
+    private static func pick(_ logits: MLXArray, row: Int, bias: MLXArray?) -> (Int, Float) {
+        let raw = logits[row]
+        let scores = bias.map { raw + $0 } ?? raw
+        let token = argMax(scores, axis: -1).item(Int.self)
+        let shifted = exp(raw - raw.max())
+        return (token, (shifted[token] / shifted.sum()).item(Float.self))
+    }
+
+    private static func biasArray(_ bias: [Int: Float], size: Int) -> MLXArray {
+        var values = [Float](repeating: 0, count: size)
+        for (token, bonus) in bias where token >= 0 && token < size { values[token] = bonus }
+        return MLXArray(values)
     }
 
     private func rankedWords(context: ModelContext, owner: ObjectIdentifier, prompt: CompletionPrompt, excluding: String, count: Int,

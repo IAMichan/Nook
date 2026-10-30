@@ -18,7 +18,7 @@ final class GhostOverlay {
     private let inset = CGSize(width: 7, height: 4)
 
     /// Where the ghost is now, to move it along as letters are typed or words taken.
-    private var ghostState: (caret: CGRect, font: NSFont, verticalOffset: Double, limit: CGFloat)?
+    private var ghostState: (caret: CGRect, font: NSFont, color: NSColor, verticalOffset: Double, limit: CGFloat)?
 
     init() {
         panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
@@ -72,14 +72,22 @@ final class GhostOverlay {
         return fitted
     }
 
-    /// Grey text going on from the cursor, in the line itself. Returns what is shown (the words that fit), or "" when nothing fits.
+    /// The colour a suggestion is drawn in: a translucent shade of the app's text colour, or the system's placeholder grey when
+    /// the app does not say or the grey is asked for (`CompletionAppRule.neutralColor`, for apps that report a wrong colour).
+    static func color(for text: CompletionTextColor?, neutral: Bool) -> NSColor {
+        guard !neutral, let shade = text?.ghost else { return .placeholderTextColor }
+        return NSColor(srgbRed: shade.red, green: shade.green, blue: shade.blue, alpha: shade.alpha)
+    }
+
+    /// Text going on from the cursor, in the line itself. Returns what is shown (the words that fit), or "" when nothing fits.
     @discardableResult
-    func showGhost(_ text: String, at caret: CGRect, font: NSFont, limit: CGFloat?, verticalOffset: Double = 0) -> String {
+    func showGhost(_ text: String, at caret: CGRect, font: NSFont, color: NSColor = .placeholderTextColor, limit: CGFloat?,
+                   verticalOffset: Double = 0) -> String {
         let screen = NSScreen.screens.first { $0.frame.contains(CGPoint(x: caret.minX, y: caret.midY)) } ?? NSScreen.main
         let right = min(limit ?? .greatestFiniteMagnitude, (screen?.visibleFrame.maxX ?? caret.maxX + 2_000) - 2)
         let shown = Self.fitting(text, font: font, from: caret.minX, to: right)
         guard !shown.trimmingCharacters(in: .whitespaces).isEmpty else { hide(); return "" }
-        ghostState = (caret, font, verticalOffset, right)
+        ghostState = (caret, font, color, verticalOffset, right)
         draw(shown)
         return shown
     }
@@ -100,7 +108,7 @@ final class GhostOverlay {
 
     private func draw(_ text: String) {
         guard let state = ghostState else { return }
-        ghost.text = NSAttributedString(string: text, attributes: [.font: state.font, .foregroundColor: NSColor.placeholderTextColor])
+        ghost.text = NSAttributedString(string: text, attributes: [.font: state.font, .foregroundColor: state.color])
         let size = ghost.text.size()
         let height = max(state.caret.height, ceil(size.height))
         ghost.frame = CGRect(x: 0, y: 0, width: ceil(size.width) + 2, height: height)
