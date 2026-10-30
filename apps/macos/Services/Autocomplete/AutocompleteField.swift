@@ -29,6 +29,8 @@ struct AutocompleteFieldSnapshot {
     /// The font of the text at the cursor, so the suggestion looks like the text it continues.
     var fontName: String?
     var fontSize: CGFloat?
+    /// The colour of the text at the cursor, when the app says: the suggestion is a lighter shade of it.
+    var textColor: CompletionTextColor?
     /// A code editor or terminal inside an editor app (see `CompletionFieldKind`); only checked where it matters.
     var isCode = false
 
@@ -118,6 +120,7 @@ enum AutocompleteField {
         if let location = fontLocation, let font = font(in: element, at: location) {
             snapshot.fontName = font.name
             snapshot.fontSize = font.size
+            snapshot.textColor = font.color
         }
         var windowFrame: CGRect?
         if let window: AXUIElement = attribute(element, kAXWindowAttribute) {
@@ -183,6 +186,8 @@ enum AutocompleteField {
             snapshot.fontName = font.fontName
             snapshot.fontSize = font.pointSize
         }
+        let color = (textView.typingAttributes[.foregroundColor] as? NSColor) ?? textView.textColor
+        snapshot.textColor = color.flatMap { CompletionTextColor(cgColor: $0.cgColor) }
         return snapshot
     }
 
@@ -264,15 +269,16 @@ enum AutocompleteField {
         return value
     }
 
-    /// The font of one character, from the attributed string the app gives for it.
-    private static func font(in element: AXUIElement, at location: Int) -> (name: String?, size: CGFloat)? {
+    /// The font and colour of one character, from the attributed string the app gives for it.
+    private static func font(in element: AXUIElement, at location: Int) -> (name: String?, size: CGFloat, color: CompletionTextColor?)? {
         var range = CFRange(location: location, length: 1)
         guard let parameter = AXValueCreate(.cfRange, &range),
               let value = parameterized(element, kAXAttributedStringForRangeParameterizedAttribute, parameter),
               let attributed = value as? NSAttributedString, attributed.length > 0,
               let font = attributed.attribute(NSAttributedString.Key("AXFont"), at: 0, effectiveRange: nil) as? [String: Any],
               let size = (font["AXFontSize"] as? NSNumber).map({ CGFloat($0.doubleValue) }), size >= 6, size <= 96 else { return nil }
-        return (font["AXFontName"] as? String, size)
+        let color = attributed.attribute(NSAttributedString.Key("AXForegroundColor"), at: 0, effectiveRange: nil)
+        return (font["AXFontName"] as? String, size, color.flatMap(CompletionTextColor.init(axValue:)))
     }
 
     // MARK: Values

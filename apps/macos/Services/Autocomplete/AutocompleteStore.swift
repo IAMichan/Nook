@@ -1,8 +1,10 @@
 import Foundation
 import Combine
+import CryptoKit
 
 /// Autocomplete's settings (UserDefaults, one JSON value), statistics, writing samples and turned-down phrases (small files
-/// in Application Support/Nook/Autocomplete, readable only by you), its models folder, and the pauses.
+/// in Application Support/Nook/Autocomplete, readable only by you; the samples and phrases encrypted, see `CompletionSealing`),
+/// its models folder, and the pauses.
 @MainActor
 final class AutocompleteStore: ObservableObject {
     static let shared = AutocompleteStore()
@@ -32,6 +34,13 @@ final class AutocompleteStore: ObservableObject {
         defaults.set(Array(([character] + recentEmoji.filter { $0 != character }).prefix(16)), forKey: Self.recentEmojiKey)
     }
     private var statsSave: Task<Void, Never>?
+
+    /// The files with the user's own words, encrypted on disk (see `CompletionSealing`).
+    private static let sealedFiles: Set<String> = ["samples.json", "rejected-phrases.json"]
+    /// The key they are sealed with; nil when the Keychain could not give or keep one (they are then written plain, as before).
+    private var key: SymmetricKey?
+    /// Sealed files this launch cannot open because the Keychain did not give the key: kept as they are, never written over.
+    private var locked: Set<String> = []
 
     static var folder: URL { NookPaths.supportDirectory.appendingPathComponent("Autocomplete", isDirectory: true) }
     static var modelsFolder: URL {
@@ -71,9 +80,34 @@ final class AutocompleteStore: ObservableObject {
             defaults.set(true, forKey: "autocompleteDelayMigrated0")
         }
         self.prefs = prefs
-        stats = Self.load(CompletionStats.self, "stats.json") ?? CompletionStats()
-        samples = Self.load(CompletionSamples.self, "samples.json") ?? CompletionSamples()
-        phraseRejections = Self.load([String: Int].self, "rejected-phrases.json") ?? [:]
+        let key = Self.sealingKey()
+        var locked: Set<String> = []
+        var plain: Set<String> = []
+        stats = Self.load(CompletionStats.self, "stats.json", key: nil, locked: &locked, plain: &plain) ?? CompletionStats()
+        samples = Self.load(CompletionSamples.self, "samples.json", key: key, locked: &locked, plain: &plain) ?? CompletionSamples()
+        phraseRejections = Self.load([String: Int].self, "rejected-phrases.json", key: key, locked: &locked, plain: &plain) ?? [:]
+        self.key = key
+        self.locked = locked
+        // Written plain by an earlier version: sealed right away, not only at the next change.
+        if key != nil {
+            if plain.contains("samples.json") { save(samples, "samples.json") }
+            if plain.contains("rejected-phrases.json") { save(phraseRejections, "rejected-phrases.json") }
+        }
+    }
+
+    /// The key from the Keychain vault. A new one is made only when no sealed file exists yet: when the vault could not be
+    /// read (access denied this launch), a new key would make the files already sealed unreadable for good.
+    private static func sealingKey() -> SymmetricKey? {
+        if let stored = SecretStore.read(CompletionSealing.keyAccount) { return CompletionSealing.decode(stored) }
+        let anySealed = sealedFiles.contains { name in
+            (try? Data(contentsOf: folder.appendingPathComponent(name))).map(CompletionSealing.isSealed) ?? false
+        }
+        guard !anySealed else {
+            Log.storage.error("Autocomplete: the key for the writing samples is not in the Keychain; they stay as they are this launch")
+            return nil
+        }
+        let key = SymmetricKey(size: .bits256)
+        return SecretStore.write(CompletionSealing.encode(key), account: CompletionSealing.keyAccount) == errSecSuccess ? key : nil
     }
 
     // MARK: Counting and learning
@@ -106,6 +140,8 @@ final class AutocompleteStore: ObservableObject {
     }
 
     func forgetSamples() {
+        // Asked for: an old file this launch could not open goes too.
+        locked.subtract(Self.sealedFiles)
         samples.removeAll()
         save(samples, "samples.json")
         phraseRejections = [:]
@@ -153,20 +189,45 @@ final class AutocompleteStore: ObservableObject {
     // MARK: Files
 
     private func save<T: Encodable>(_ value: T, _ name: String) {
+        guard !locked.contains(name) else { return }
         do {
             try FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            try SafeStorage.write(try encoder.encode(value), to: Self.folder.appendingPathComponent(name))
+            var data = try encoder.encode(value)
+            if Self.sealedFiles.contains(name), let key { data = try CompletionSealing.seal(data, key: key) }
+            try SafeStorage.write(data, to: Self.folder.appendingPathComponent(name))
         } catch {
             Log.storage.error("Autocomplete: \(name, privacy: .public) not saved: \(error.localizedDescription, privacy: .public)")
         }
     }
 
-    private static func load<T: Decodable>(_ type: T.Type, _ name: String) -> T? {
+    /// - Parameters:
+    ///   - key: opens a sealed file; nil for a file that is never sealed.
+    ///   - locked: gets the name of a sealed file there is no key for (left alone this launch).
+    ///   - plain: gets the name of a file to be sealed that was still plain.
+    private static func load<T: Decodable>(_ type: T.Type, _ name: String, key: SymmetricKey?, locked: inout Set<String>,
+                                           plain: inout Set<String>) -> T? {
+        let url = folder.appendingPathComponent(name)
+        guard var data = try? Data(contentsOf: url) else { return nil }
+        if CompletionSealing.isSealed(data) {
+            guard let key else {
+                locked.insert(name)
+                return nil
+            }
+            guard let opened = CompletionSealing.open(data, key: key) else {
+                // Sealed with another key, or damaged: kept aside, as with any file that cannot be read.
+                SafeStorage.preserve(data, for: url)
+                Log.storage.error("Autocomplete: \(name, privacy: .public) could not be decrypted; kept aside")
+                return nil
+            }
+            data = opened
+        } else if sealedFiles.contains(name) {
+            plain.insert(name)
+        }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return SafeStorage.load(type, from: folder.appendingPathComponent(name), decoder: decoder).value
+        return SafeStorage.decode(type, data: data, original: url, decoder: decoder).value
     }
 }
 

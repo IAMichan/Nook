@@ -65,6 +65,9 @@ struct CompletionAppRule: Codable, Equatable {
     var fontScale = 1.0
     var verticalOffset = 0.0
     var learn = true
+    /// Draw suggestions in the system's grey instead of a shade of the app's text colour: for apps or sites that report a
+    /// colour that is not the one on screen.
+    var neutralColor = false
 }
 
 /// Settings for one website, by host name.

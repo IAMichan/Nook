@@ -1,4 +1,6 @@
 import XCTest
+import CryptoKit
+import CoreGraphics
 
 final class AutocompleteTests: XCTestCase {
     // MARK: GGUF
@@ -408,6 +410,26 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertFalse(clean.contains("hunter2"))
         XCTAssertFalse(clean.contains("sk-proj"))
         XCTAssertTrue(clean.hasPrefix("Mijn kaart [redacted]"))
+    }
+
+    func testSecretsInSettingsLinksAndOtherLanguagesAreTakenOut() {
+        let cases = [
+            "DATABASE_PASSWORD=hunter2hunter", "export GITHUB_TOKEN=abc123def456", #""clientSecret": "s3cr3tvalue""#,
+            "Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345", "https://michan:hunter2@example.com/repo",
+            "https://bucket.s3.amazonaws.com/f.pdf?X-Amz-Signature=0123456789abcdef", "Kennwort: Sommer2026", "mot de passe = soleil42",
+            "contraseña: verano2026",
+        ]
+        for text in cases {
+            let clean = CompletionPrivacy.sanitize(text, generic: false)
+            for secret in ["hunter2", "abc123def456", "s3cr3tvalue", "abcdefghijklmnop", "0123456789abcdef", "Sommer2026", "soleil42", "verano2026"] {
+                XCTAssertFalse(clean.contains(secret), "\(text) → \(clean)")
+            }
+        }
+    }
+
+    func testProseAboutSecretsStays() {
+        let text = "Ik stuur je het wachtwoord morgen, de token van de bus ligt op tafel. https://example.com/page?q=signature"
+        XCTAssertEqual(CompletionPrivacy.sanitize(text, generic: false), text)
     }
 
     func testOrdinaryNumbersStay() {
@@ -923,5 +945,112 @@ final class AutocompleteTests: XCTestCase {
         // Changed, not dropped: autocorrect or the user.
         XCTAssertNil(CompletionPlacement.droppedCharacters(typed: "morning ", base: "Good ", actual: "Good x"))
         XCTAssertNil(CompletionPlacement.droppedCharacters(typed: "morning ", base: "Good ", actual: "Bad m"))
+    }
+}
+
+final class CompletionRankingTests: XCTestCase {
+    private func result(_ text: String, confidence: Float, first: Float = 0.5) -> CompletionResult {
+        CompletionResult(text: text, truncated: false, confidence: confidence, firstProbability: first)
+    }
+
+    func testGreedyStaysOnANearTie() {
+        let candidates = [result(" the meeting is at", confidence: -0.6), result(" our meeting is at", confidence: -0.45)]
+        XCTAssertEqual(CompletionRanking.best(candidates, minFirstProbability: 0.2), 0)
+    }
+
+    func testClearlySurerCandidateWins() {
+        let candidates = [result(" the", confidence: -1.4), result(" I'll be there at eight", confidence: -0.3)]
+        XCTAssertEqual(CompletionRanking.best(candidates, minFirstProbability: 0.2), 1)
+    }
+
+    func testOtherCandidateMustSayAsMuchAndClearTheFirstBar() {
+        // Surer, but shorter: the greedy one says more.
+        XCTAssertEqual(CompletionRanking.best([result(" see you at the station", confidence: -0.9), result(" ok", confidence: -0.1)],
+                                              minFirstProbability: 0.2), 0)
+        // Surer and longer, but its first word was too unlikely to show on its own.
+        XCTAssertEqual(CompletionRanking.best([result(" the", confidence: -1.4), result(" maybe we can meet", confidence: -0.2, first: 0.1)],
+                                              minFirstProbability: 0.2), 0)
+    }
+
+    func testWithoutGreedyTheBestUsableOtherShows() {
+        let candidates: [CompletionResult?] = [nil, result(" thanks", confidence: -0.8), result(" thank you so much", confidence: -0.2)]
+        XCTAssertEqual(CompletionRanking.best(candidates, minFirstProbability: 0.2), 2)
+        XCTAssertNil(CompletionRanking.best([nil, result(" ", confidence: -0.1)], minFirstProbability: 0.2))
+    }
+}
+
+final class CompletionCandidateTests: XCTestCase {
+    private let options = CompletionOptions(maxWords: 8, eagerness: 0.5)
+
+    func testUnsureOrEndingFirstTokenShowsNothing() {
+        var unsure = CompletionCandidate()
+        XCTAssertFalse(unsure.keep(probability: 0.05, isEnd: false, firstBar: options.minFirstProbability, options: options, continuesWord: false))
+        XCTAssertNil(unsure.result(text: ""))
+        var ended = CompletionCandidate()
+        XCTAssertFalse(ended.keep(probability: 0.9, isEnd: true, firstBar: options.minFirstProbability, options: options, continuesWord: false))
+        XCTAssertTrue(ended.rejected)
+        // Written only to be ranked or remembered: a lower bar for its first token.
+        var other = CompletionCandidate()
+        XCTAssertTrue(other.keep(probability: 0.08, isEnd: false, firstBar: 0.03, options: options, continuesWord: false))
+    }
+
+    func testMeasuresConfidenceAndHowItEnded() throws {
+        var candidate = CompletionCandidate()
+        XCTAssertTrue(candidate.keep(probability: 0.8, isEnd: false, firstBar: options.minFirstProbability, options: options, continuesWord: false))
+        XCTAssertTrue(candidate.keep(probability: 0.5, isEnd: false, firstBar: options.minFirstProbability, options: options, continuesWord: false))
+        // Too unsure, in the middle of a word: it ends there, marked unfinished.
+        XCTAssertFalse(candidate.keep(probability: 0.01, isEnd: false, firstBar: options.minFirstProbability, options: options, continuesWord: true))
+        let result = try XCTUnwrap(candidate.result(text: " see you"))
+        XCTAssertFalse(result.truncated)
+        XCTAssertTrue(result.unfinished)
+        XCTAssertEqual(try XCTUnwrap(result.confidence), (log(0.8) + log(0.5)) / 2, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(result.firstProbability), 0.8, accuracy: 0.0001)
+    }
+
+    func testRunningOutOfTokensKeepsItTruncated() throws {
+        var candidate = CompletionCandidate()
+        _ = candidate.keep(probability: 0.9, isEnd: false, firstBar: options.minFirstProbability, options: options, continuesWord: false)
+        XCTAssertTrue(try XCTUnwrap(candidate.result(text: " hello")).truncated)
+        candidate.end()
+        XCTAssertFalse(try XCTUnwrap(candidate.result(text: " hello")).truncated)
+    }
+}
+
+final class CompletionTextColorTests: XCTestCase {
+    func testGhostIsATranslucentShadeOfTheText() throws {
+        let blue = try XCTUnwrap(CompletionTextColor(cgColor: CGColor(srgbRed: 0, green: 0.4, blue: 1, alpha: 1)))
+        let ghost = try XCTUnwrap(blue.ghost)
+        XCTAssertEqual(ghost.blue, 1, accuracy: 0.001)
+        XCTAssertEqual(ghost.green, 0.4, accuracy: 0.001)
+        XCTAssertEqual(ghost.alpha, CompletionTextColor.ghostAlpha, accuracy: 0.001)
+    }
+
+    func testReadsAccessibilityColorsOnly() throws {
+        XCTAssertNotNil(CompletionTextColor(axValue: CGColor(gray: 0.2, alpha: 1)))
+        XCTAssertNil(CompletionTextColor(axValue: "black"))
+        // A nearly transparent colour says nothing about what is on screen.
+        XCTAssertNil(CompletionTextColor(red: 0, green: 0, blue: 0, alpha: 0.1).ghost)
+    }
+}
+
+final class CompletionSealingTests: XCTestCase {
+    func testSealedDataOpensOnlyWithItsKey() throws {
+        let key = SymmetricKey(size: .bits256)
+        let plain = Data(#"{"samples":["Tot morgen!"]}"#.utf8)
+        let sealed = try CompletionSealing.seal(plain, key: key)
+        XCTAssertTrue(CompletionSealing.isSealed(sealed))
+        XCTAssertNil(sealed.range(of: Data("morgen".utf8)), "the words must not be readable on disk")
+        XCTAssertEqual(CompletionSealing.open(sealed, key: key), plain)
+        XCTAssertNil(CompletionSealing.open(sealed, key: SymmetricKey(size: .bits256)))
+        XCTAssertFalse(CompletionSealing.isSealed(plain))
+        XCTAssertNil(CompletionSealing.open(plain, key: key))
+    }
+
+    func testKeyRoundTripsThroughText() throws {
+        let key = SymmetricKey(size: .bits256)
+        let decoded = try XCTUnwrap(CompletionSealing.decode(CompletionSealing.encode(key)))
+        let sealed = try CompletionSealing.seal(Data("hoi".utf8), key: key)
+        XCTAssertEqual(CompletionSealing.open(sealed, key: decoded), Data("hoi".utf8))
+        XCTAssertNil(CompletionSealing.decode("not a key"))
     }
 }

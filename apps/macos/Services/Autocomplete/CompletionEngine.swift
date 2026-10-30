@@ -1,18 +1,25 @@
 import Foundation
 
 /// A model that continues text for autocomplete. Two kinds: `LlamaCompleter` (a GGUF file through llama.cpp) and
-/// `BrainCompleter` (the model Nook's brain downloaded, through MLX). Both work the same way: greedy, with a certainty
-/// threshold, the prompt kept in the model's cache between keys, a bonus for the user's own words, and other words to pick.
+/// `BrainCompleter` (the model Nook's brain downloaded, through MLX). Both work the same way: a certainty threshold, the
+/// prompt kept in the model's cache between keys, a bonus for the user's own words, and other words to pick. The llama engine
+/// also writes the candidates that start with the next likeliest words side by side and shows the surest (see
+/// `CompletionRanking`); the MLX engine writes one sequence, greedy.
 protocol CompletionEngine: AnyObject, Sendable {
     /// The source it runs (`CompletionSource.identity`).
     var identity: String { get }
+    /// How many suggestions it can write side by side to pick the surest (`CompletionOptions.candidates`, `CompletionRanking`).
+    /// 1: one greedy suggestion. Writing them one after another would multiply the wait, so an engine counts only what it
+    /// can write in one batch.
+    var candidateLimit: Int { get }
     /// Makes the running request stop at its next token.
     func cancel()
     /// Continues the text of `prompt`; nil when superseded, not sure enough, busy, or failed. `partial` gets the text so far
     /// each time another word is finished, so the suggestion can show before the model is done. A chat model reads the prompt
     /// as a request with its answer already begun (`CompletionChat`), a base model as a document.
     /// `branches` gets the other ways the text could go on (other first words), when the engine writes them, after the
-    /// suggestion and only while no newer request came.
+    /// suggestion and only while no newer request came. With `options.candidates` above 1 and room for it, they are written
+    /// alongside the suggestion and the surest of all is returned.
     func complete(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?,
                   branches: (@Sendable ([CompletionResult]) -> Void)?) async -> CompletionResult?
     /// Reads `prompt` into the model's cache ahead of the next key, without writing anything or stopping the running request.

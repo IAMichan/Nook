@@ -18,6 +18,10 @@ import MLXLMCommon
 final class BrainCompleter: CompletionEngine, @unchecked Sendable {
     let modelID: String
     var identity: String { CompletionSource.brainPrefix + modelID }
+    /// One sequence: `TokenIterator` writes one at a time, and candidates one after another would multiply the wait. To write
+    /// more, run them as rows of one batch (the prompt's cache repeated per row, a `[rows, 1]` input per step) and keep each
+    /// row's `CompletionCandidate`; `CompletionRanking` and the controller need no change.
+    var candidateLimit: Int { 1 }
 
     /// Short lock: the request counter and the word bonus. Never held while the model runs.
     private let lock = NSLock()
@@ -85,7 +89,7 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
         }
     }
 
-    /// Writes no branches: MLX runs one sequence at a time here.
+    /// Writes no branches and no other candidates (see `candidateLimit`).
     func complete(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?,
                   branches: (@Sendable ([CompletionResult]) -> Void)?) async -> CompletionResult? {
         let id = begin()
@@ -238,17 +242,14 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
             }
             let stopIDs = stopIDs(context, stops)
             var kept: [Int] = []
-            var truncated = true
             var text = ""
             var reported = 0
-            var unfinished = false
-            var sure: Float = 1
+            var candidate = CompletionCandidate()
             var iterator = try TokenIterator(input: LMInput(tokens: MLXArray(fresh)), model: context.model, cache: layers,
                                              processor: nil, sampler: sampler, prefillStepSize: 512,
                                              maxTokens: options.maxTokens + (healing.pending.isEmpty ? 0 : 6))
             defer { keepBiasArray(sampler.biasArray, owner: owner) }
             var step = 0
-            var started = false
             while let token = iterator.next() {
                 let probability = step < sampler.probabilities.count ? sampler.probabilities[step] : 0
                 let spelling = step < sampler.spelling.count && sampler.spelling[step]
@@ -259,18 +260,11 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
                     kept.append(token)
                     continue
                 }
-                sure *= probability
-                if !started {
-                    if probability < options.minFirstProbability || sure < options.minSequenceProbability || stopIDs.contains(token) { return nil }
-                    started = true
-                }
-                if stopIDs.contains(token) { truncated = false; break }
-                if probability < options.minProbability || sure < options.minSequenceProbability {
-                    // Not sure any more: end here, and never in the middle of a word.
-                    unfinished = CompletionHealing.continuesWord(decode(context.tokenizer, [token], after: kept.last ?? all.last))
-                    truncated = false
-                    break
-                }
+                // Not sure any more (or the end): stop here, and never in the middle of a word.
+                guard candidate.keep(probability: probability, isEnd: stopIDs.contains(token), firstBar: options.minFirstProbability,
+                                     options: options,
+                                     continuesWord: CompletionHealing.continuesWord(decode(context.tokenizer, [token], after: kept.last ?? all.last)))
+                else { break }
                 kept.append(token)
                 text = decode(context.tokenizer, kept, after: all.last)
                 // The word already typed comes first: the suggestion is what follows it.
@@ -280,10 +274,13 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
                 }
                 if let newline = text.firstIndex(where: { $0 == "\n" || $0 == "\r" }) {
                     text = String(text[..<newline])
-                    truncated = false
+                    candidate.end()
                     break
                 }
-                if text.completionWordCount > options.maxWords { truncated = false; break }
+                if text.completionWordCount > options.maxWords {
+                    candidate.end()
+                    break
+                }
                 // Hand over each finished word right away, so the suggestion appears while the rest is still being written.
                 let finished = CompletionStreaming.finishedWords(text)
                 if finished > reported, let partial {
@@ -291,7 +288,7 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
                     partial(text)
                 }
             }
-            return CompletionResult(text: text.replacingOccurrences(of: "\u{FFFD}", with: ""), truncated: truncated, unfinished: unfinished)
+            return candidate.result(text: text)
         } catch {
             checkpoint = nil
             return nil
