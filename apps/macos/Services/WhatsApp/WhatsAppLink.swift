@@ -1210,7 +1210,10 @@ final class WhatsAppLink: ObservableObject {
         let key = WAJID.normalized(chat)
         let counted = (inbox.conversations[key]?.unread ?? 0) + carried(key)
         if counted > 0 { return counted }
-        if markedUnread[key] != nil { return 1 }
+        // Marked unread by hand, until you read it or answer it (on the phone too).
+        if let mark = markedUnread[key], mark > (inbox.conversations[key]?.messages.last { $0.fromMe }?.date ?? .distantPast) {
+            return 1
+        }
         guard let known = known(key), known.unread > 0 else { return 0 }
         // Read in Nook, or on the phone, since the list's newest message.
         if let read = [readInNook[key], readInWhatsApp[key]].compactMap({ $0 }).max(), known.last <= read { return 0 }

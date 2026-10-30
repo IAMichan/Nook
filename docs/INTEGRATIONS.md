@@ -130,7 +130,8 @@ gateways push their changes themselves), and the action is logged under one name
 
 "Mark as read in <app>" reads the chat in Nook at once, and counts it as read in the app (and logs it so) only once the
 app took it. When the app refuses, a toast says why; so does an app that has no message of the chat to mark (a Telegram
-chat only its notifications brought, a Teams chat without a message Nook knows), instead of claiming it was read. What
+chat only its notifications brought, a Teams chat without a message Nook knows), instead of claiming it was read. Slack reads the chat's newest message from
+its server first: an empty answer there means there is nothing to mark, and it says nothing. What
 the app is told is what you saw when you clicked: a message that came in while the call went stays new. A chat you
 marked unread by hand (`InboxThread.markedUnread`) stays unread until you read it, whatever a lagging or windowed count
 of its app says at its next read. A chat that an app names twice is read with its twin (`ChatInbox.twins`), so the badge

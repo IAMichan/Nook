@@ -340,6 +340,21 @@ final class ChatSharedModelTests: XCTestCase {
         }
     }
 
+    func testAnsweringEndsAMarkedUnread() {
+        var inbox = ChatInbox()
+        var first = chat("Anna", id: "a", app: "slack", [message("1")])
+        first.unread = 0
+        inbox.merge(first)
+        let key = ChatInbox.key(app: "slack", id: "a")
+        inbox.markUnread(key, at: Date(timeIntervalSince1970: 1_100))
+        // You answer in Slack itself.
+        var answered = chat("Anna", id: "a", app: "slack", [message("1"), message("2", at: 200, mine: true)])
+        answered.unread = 0
+        inbox.merge(answered)
+        XCTAssertNil(inbox.threads[key]?.markedUnread)
+        XCTAssertEqual(inbox.threads[key]?.unread, 0)
+    }
+
     func testReadInTheAppKeepsWhatCameInMeanwhile() {
         var inbox = ChatInbox()
         var first = chat("Anna", id: "a", app: "telegram", [message("1")])
