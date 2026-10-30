@@ -50,8 +50,14 @@ struct PullRequestDetailView: View {
     @State var armedMerge = false
     @State var armToken = UUID()
     @State var merging = false
-    /// Scrolled past the title: the top folds to one line (number and title).
-    @State var condensed = false
+    /// Scrolled past the title: the top folds to one line (number and title). Held without
+    /// being observed (only the top watches it, see `headerBlock`): as state of this view, the fold built the open tab's
+    /// whole page again in the middle of a scroll.
+    @State var fold = PullRequestHeaderFold()
+    var condensed: Bool {
+        get { fold.condensed }
+        nonmutating set { if fold.condensed != newValue { fold.condensed = newValue } }
+    }
     /// The popover that says in full what may still hold the merge back.
     @State var showBlocker = false
     /// The popover under the Summary's Status line: everything GitHub weighs before a merge, one line each.
@@ -171,26 +177,27 @@ struct PullRequestDetailView: View {
     /// The top of the page, laid out: the crumbs with the page's actions, the title, who and when, the
     /// branches and the size, then the tabs, ruled off from the content that scrolls under it. Once the title is
     /// scrolled away the middle folds to one line and the crumbs show the number and title instead.
+    /// The fold is not animated: its height changing on every frame of a spring laid the page under it out again on
+    /// each one, in the middle of the scroll that set it off.
     var headerBlock: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            topBar
-            if condensed {
-                condensedLine
-                    .padding(.bottom, NookTheme.Spacing.sm)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            } else {
-                header
-                    .padding(.top, NookTheme.Spacing.xs)
-                    .padding(.bottom, NookTheme.Spacing.lg)
-                    .transition(.opacity)
-            }
-            if let detail {
+        Observing(fold) {
+            VStack(alignment: .leading, spacing: 0) {
+                topBar
+                if condensed {
+                    condensedLine
+                        .padding(.bottom, NookTheme.Spacing.sm)
+                } else {
+                    header
+                        .padding(.top, NookTheme.Spacing.xs)
+                        .padding(.bottom, NookTheme.Spacing.lg)
+                }
+                if let detail {
+                    NookDivider()
+                    tabs(detail).padding(.vertical, NookTheme.Spacing.sm)
+                }
                 NookDivider()
-                tabs(detail).padding(.vertical, NookTheme.Spacing.sm)
             }
-            NookDivider()
         }
-        .animation(NookTheme.reveal, value: condensed)
     }
 
     var topBar: some View {
@@ -627,4 +634,11 @@ struct PullRequestDetailView: View {
             condensed = false
         }
     }
+}
+
+/// Whether a pull request page's top is folded (`PullRequestDetailView.condensed`). Only the top observes it, so folding
+/// it draws the top again and not the tab under it (as `SessionDraftState` in `AgentSessionDetail`).
+@MainActor
+final class PullRequestHeaderFold: ObservableObject {
+    @Published var condensed = false
 }

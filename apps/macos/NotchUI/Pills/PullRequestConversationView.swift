@@ -24,7 +24,8 @@ struct PullRequestConversationList: View {
                 let hidden = PullRequestConversation.commentCount(all)
                 ListEmptyNote(hidden == 1 ? tr("agents.pr.comments.oneHidden") : tr("agents.pr.comments.allHidden", hidden))
             } else {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                // Lazy: a page of long Markdown comments is only laid out as it scrolls into view.
+                LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                     if !newestFirst { olderButton(hidden: page.hidden) }
                     ForEach(ordered) { item in
                         PullRequestConversationRow(item: item, now: now)

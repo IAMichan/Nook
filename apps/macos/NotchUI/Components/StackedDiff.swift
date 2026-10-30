@@ -38,7 +38,8 @@ struct StackedDiffToolbar: View {
                 .padding(.trailing, NookTheme.Spacing.xs)
             ToolbarIconButton(allOpen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
                               tr(allOpen ? "agents.diff.collapseAll" : "agents.diff.expandAll"), enabled: !files.isEmpty) {
-                withAnimation(NookTheme.reveal) { expanded = allOpen ? [] : Set(files.map(\.id)) }
+                // Not animated: fading every diff in at once laid all of them out on each frame.
+                expanded = allOpen ? [] : Set(files.map(\.id))
             }
             ToolbarIconButton(showsTree ? "sidebar.trailing" : "sidebar.right",
                               tr(showsTree ? "agents.diff.hideFiles" : "agents.diff.showFiles")) {
@@ -74,7 +75,6 @@ struct StackedDiffList<Content: View>: View {
                                 if expanded.contains(file.id) {
                                     StackedDiffBody(file: file, scope: scope, diff: diff, content: content)
                                         .padding(.bottom, NookTheme.Spacing.sm)
-                                        .transition(.opacity)
                                 }
                             } header: {
                                 StackedDiffHeader(file: file, open: expanded.contains(file.id)) { toggle(file) }
@@ -95,7 +95,9 @@ struct StackedDiffList<Content: View>: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             if showsTree {
                 NookDivider(vertical: true)
+                // Only when the files change: the tree is built again on each of its own draws.
                 StackedDiffTree(files: files) { reveal = $0 }
+                    .equatable()
                     .frame(width: 200)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
@@ -103,10 +105,10 @@ struct StackedDiffList<Content: View>: View {
         .background(WS.code)
     }
 
+    /// The diff is simply there (or gone); only the header's chevron turns. A whole diff fading in was laid out on every
+    /// frame of it.
     private func toggle(_ file: StackedDiffFile) {
-        withAnimation(NookTheme.reveal) {
-            if expanded.contains(file.id) { expanded.remove(file.id) } else { expanded.insert(file.id) }
-        }
+        if expanded.contains(file.id) { expanded.remove(file.id) } else { expanded.insert(file.id) }
     }
 }
 
@@ -159,9 +161,11 @@ private struct StackedDiffHeader: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            Image(systemName: open ? "chevron.down" : "chevron.right")
+            Image(systemName: "chevron.right")
                 .font(NookTheme.font(10, .bold))
                 .foregroundStyle(file.tint)
+                .rotationEffect(.degrees(open ? 90 : 0))
+                .animation(NookTheme.reveal, value: open)
                 .frame(width: 16)
             Text(file.path)
                 .font(NookTheme.TextStyle.detail)
@@ -237,10 +241,15 @@ private struct StackedDiffBody<Content: View>: View {
             }
         }
         .task(id: key) {
-            if let cached = DiffCache.diff(key) { text = cached }
+            if let cached = DiffCache.diff(key) {
+                text = cached
+                // Scrolled back into view (the lazy stack built it again): a diff read moments ago stands.
+                if StackedDiffReads.shared.isFresh(key) { return }
+            }
             do {
                 let fresh = try await diff(file)
                 DiffCache.store(fresh, key)
+                StackedDiffReads.shared.mark(key)
                 text = fresh
                 error = nil
             } catch let failure {
@@ -250,12 +259,37 @@ private struct StackedDiffBody<Content: View>: View {
     }
 }
 
+/// When each diff was last read, so one that scrolls out of view and back is not read again straight away.
+private final class StackedDiffReads: @unchecked Sendable {
+    static let shared = StackedDiffReads()
+    /// How long a diff read counts as current.
+    private let fresh: TimeInterval = 5
+    private var readAt: [String: Date] = [:]
+    private let lock = NSLock()
+
+    func isFresh(_ key: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return readAt[key].map { Date().timeIntervalSince($0) < fresh } ?? false
+    }
+
+    func mark(_ key: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        let now = Date()
+        readAt[key] = now
+        if readAt.count > 200 { readAt = readAt.filter { now.timeIntervalSince($0.value) < fresh } }
+    }
+}
+
 /// The files as a tree beside the diffs: folders of one child merged ("src/app"), each file in its state's color. A click
-/// on a file shows its diff.
-private struct StackedDiffTree: View {
+/// on a file shows its diff. Equatable on its files: `select` only sets the list's state, which stays the same.
+private struct StackedDiffTree: View, Equatable {
     let files: [StackedDiffFile]
     let select: (String) -> Void
     @State private var closed: Set<String> = []
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.files == rhs.files }
 
     var body: some View {
         let tree = ChangedFilesTree.build(files.map {
