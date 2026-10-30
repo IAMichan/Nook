@@ -103,12 +103,20 @@ struct NewSessionComposer: View {
                     .foregroundStyle(NookTheme.paper)
                     .underline(true, pattern: .dot, color: NookTheme.textTertiary)
             } content: {
-                if !recentProjects.isEmpty {
-                    DropdownHeader(title: tr("ws.new.recent"))
-                    ForEach(recentProjects, id: \.self) { path in
-                        DropdownRow(symbol: "folder", title: URL(fileURLWithPath: path).lastPathComponent, detail: AgentPathFormat.tilde(path),
-                                    chosen: project?.path == path) { select(path) }
+                let menu = projectMenu
+                if !menu.favorites.isEmpty {
+                    DropdownHeader(title: tr("ws.new.favorites"))
+                    ForEach(menu.favorites, id: \.self) { path in
+                        projectRow(path)
                     }
+                }
+                if !menu.recent.isEmpty {
+                    DropdownHeader(title: tr("ws.new.recent"))
+                    ForEach(menu.recent, id: \.self) { path in
+                        projectRow(path)
+                    }
+                }
+                if !menu.favorites.isEmpty || !menu.recent.isEmpty {
                     DropdownDivider()
                 }
                 DropdownRow(symbol: "folder.badge.plus", title: tr("ws.new.chooseFolder")) { chooseFolder() }
@@ -131,6 +139,17 @@ struct NewSessionComposer: View {
             }
         }
         .font(NookTheme.TextStyle.display)
+    }
+
+    private func projectRow(_ path: String) -> some View {
+        let chosen = project.map { WorkspacePathPolicy.normalize($0.path) == path } ?? false
+        return DropdownRow(symbol: "folder", title: URL(fileURLWithPath: path).lastPathComponent, detail: AgentPathFormat.tilde(path),
+                           chosen: chosen, favorite: favoriteBinding(path)) { select(path) }
+    }
+
+    private func favoriteBinding(_ path: String) -> Binding<Bool> {
+        Binding(get: { settings.isFavoriteProject(path) },
+                set: { if $0 != settings.isFavoriteProject(path) { settings.toggleFavoriteProject(path) } })
     }
 
     private var cloneRow: some View {
@@ -445,16 +464,11 @@ struct NewSessionComposer: View {
 
     // MARK: State
 
-    private var recentProjects: [String] {
-        var seen = Set<String>()
-        var result: [String] = []
-        for path in settings.recentProjects + app.history.sessions.map(\.cwd) where !path.isEmpty {
-            let normalized = WorkspacePathPolicy.normalize(path)
-            guard seen.insert(normalized).inserted, FileManager.default.fileExists(atPath: normalized) else { continue }
-            result.append(normalized)
-            if result.count == 10 { break }
-        }
-        return result
+    private var projectMenu: (favorites: [String], recent: [String]) {
+        ProjectSettings.projectMenu(
+            favorites: settings.favoriteProjects,
+            recent: [config.projectPath, settings.lastProject] + settings.recentProjects + app.history.sessions.map(\.cwd)
+        )
     }
 
     private var worktreeAllowed: Bool {
@@ -587,7 +601,8 @@ struct NewSessionComposer: View {
         config.isolation = settings.defaultIsolation
         config.worktreeRoot = settings.worktreeRoot
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { focused = true }
-        let initial = settings.lastProject.isEmpty ? recentProjects.first : settings.lastProject
+        let menu = projectMenu
+        let initial = settings.lastProject.isEmpty ? (menu.favorites.first ?? menu.recent.first) : settings.lastProject
         if let initial, FileManager.default.fileExists(atPath: initial) { select(initial) }
     }
 
@@ -679,6 +694,7 @@ struct NewSessionComposer: View {
         panel.message = tr("ws.new.chooseMessage")
         if let current = project?.path { panel.directoryURL = URL(fileURLWithPath: current) }
         guard panel.runAboveNotch() == .OK, let url = panel.url else { return }
+        settings.rememberProject(url.path)
         select(url.path)
     }
 

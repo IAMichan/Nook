@@ -96,7 +96,7 @@ struct OnboardingAgentsStep: View {
         let fm = FileManager.default
         let sessions = app.history.sessions.map { (folder: $0.cwd, date: $0.ended) }
             + app.workspace.runs.map { (folder: $0.projectPath, date: $0.updatedAt) }
-        return AgentReadiness.projectCandidates(sessions: sessions, known: ws.recentProjects,
+        return AgentReadiness.projectCandidates(sessions: sessions, known: ws.favoriteProjects + ws.recentProjects,
                                                 home: fm.homeDirectoryForCurrentUser.path, now: Date(),
                                                 gitRoot: { AgentReadiness.gitRoot(of: $0, fileExists: fm.fileExists(atPath:)) })
     }
@@ -114,7 +114,7 @@ struct OnboardingAgentsStep: View {
     }
 
     private func projectRow(_ candidate: AgentReadiness.ProjectCandidate) -> some View {
-        let added = candidate.added || ws.recentProjects.contains(candidate.path)
+        let added = candidate.added || ws.recentProjects.contains(candidate.path) || ws.isFavoriteProject(candidate.path)
         return HStack(spacing: NookTheme.Spacing.lg) {
             Image(systemName: "folder").foregroundStyle(NookTheme.textSecondary).frame(width: 20)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
