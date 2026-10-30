@@ -107,6 +107,49 @@ struct AcpToolCall: Equatable, Sendable {
     }
 }
 
+/// File reads the agent left open after it moved on. Antigravity's server (1.3.0) reads files with a host tool of its
+/// own in place of the built-in `view_file`, and closes such a call only when the turn ends, without its output: every
+/// read would spin for the whole turn. A model only goes on once its tool results are in, so a read announced before
+/// the agent wrote again (text, a thought) or started a later batch of tool calls is done. Calls announced in one go
+/// form a batch and may still run side by side; only reads are settled, since a command can keep running in the
+/// background.
+struct AcpOpenReads: Equatable, Sendable {
+    /// Reads of earlier batches, and of the batch being announced now.
+    private var earlier: [String] = []
+    private var batch: [String] = []
+
+    /// Takes in the next event; returns the reads that are now done.
+    mutating func settle(after event: AcpEvent) -> [String] {
+        switch event {
+        case .toolCall(let call):
+            let done = earlier
+            earlier = []
+            if call.kind == "read", call.status != "completed", call.status != "failed" { batch.append(call.id) }
+            return done
+        case .toolCallUpdate(let call):
+            guard call.status == "completed" || call.status == "failed" else { return [] }
+            earlier.removeAll { $0 == call.id }
+            batch.removeAll { $0 == call.id }
+            endBatch()
+            return []
+        case .messageChunk(let text), .thoughtChunk(let text):
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
+            let done = earlier + batch
+            earlier = []
+            batch = []
+            return done
+        case .userChunk, .plan, .usage, .permission, .commands, .configOptions, .currentMode, .unsupportedRequest:
+            endBatch()
+            return []
+        }
+    }
+
+    private mutating func endBatch() {
+        earlier += batch
+        batch = []
+    }
+}
+
 struct AcpDiff: Equatable, Sendable {
     var path: String
     var oldText: String?

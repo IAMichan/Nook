@@ -140,6 +140,7 @@ yourself.
 | Tool input in the row | ✓ | ✓ (also MCP and dynamic tools) | ✓ (also MCP) | ✓ | ✓ | ✓ |
 | Tool output in the row | ✓ | ✓ (commands live, MCP results) | ✓ (commands, MCP results) | ✓ | ✓ | ✓ |
 | Files a call changed | ✓ (Edit/Write) | ✓ (`fileChange`) | ✓ (`file_change`) | ✓ (call paths) | ✓ (replace/write_file) | ✓ (call paths) |
+| A read stops spinning once the agent moves on | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (`AcpOpenReads`: Antigravity 1.3.0 closes its `view_file` only at the end of the turn, without output) |
 
 Sessions in a terminal are read from the agent's own transcript (`AgentTranscript`). Claude Code and Codex give
 messages, thinking, steps with their outcome and output, compactions and errors. Gemini CLI's chat file gives messages,

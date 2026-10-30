@@ -282,6 +282,8 @@ final class WorkspaceManager: ObservableObject {
         var acpContinuations = 0
         /// ACP: what the agent thought this turn, kept for a turn whose only words went into its thinking.
         var acpThought = ""
+        /// ACP: file reads still open, settled once the agent moves on (see AcpOpenReads).
+        var acpOpenReads = AcpOpenReads()
         /// Claude Code: a steering message went in, so a result that says "aborted" ends a segment, not the turn.
         var steered = false
         var steeredUsage: [TurnUsage] = []
