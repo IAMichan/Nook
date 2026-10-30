@@ -297,6 +297,9 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     /// goes out with the next turn (see `ConversationRollback`).
     var conversation: ConversationLog? = nil
     var pendingRollback: PendingRollback? = nil
+    /// The agent's own conversation this session started from when it could not continue it (see
+    /// `carryOverConversation`): taking that conversation over again opens this session, not a second one.
+    var carriedOverFrom: String? = nil
     /// Stopped on a usage limit: since when, when the limit resets (nil: unknown), and whether the session then goes
     /// on by itself.
     var limitedAt: Date? = nil
@@ -361,7 +364,7 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
 
     /// Does `session` name this run's conversation: its current session id or an earlier one (a resumed chat gets a new id)?
     func isConversation(_ session: String) -> Bool {
-        providerSessionID == session || conversation?.earlierSessions?.contains(session) == true
+        providerSessionID == session || carriedOverFrom == session || conversation?.earlierSessions?.contains(session) == true
     }
 }
 

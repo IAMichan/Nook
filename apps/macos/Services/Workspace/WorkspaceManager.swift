@@ -702,7 +702,9 @@ final class WorkspaceManager: ObservableObject {
             lastChangeAt: nil,
             changedFiles: nil
         )
-        runs.insert(run, at: 0)
+        var adopted = run
+        if !continuesConversation { adopted.carriedOverFrom = sessionID }
+        runs.insert(adopted, at: 0)
         events[id] = []
         if fork { forkNext.insert(id) }
         settings.rememberProject(repoRoot ?? projectPath)

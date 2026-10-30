@@ -150,8 +150,9 @@ extension WorkspaceManager {
                     if loadID != nil, AgentErrorText.sessionGone(message) {
                         self.append(id, RunEvent(kind: .system, text: tr("ws.acp.noLoad", run.provider.displayName)))
                         self.update(id) { $0.providerSessionID = nil }
-                        // The new conversation starts from what happened so far.
-                        let carried = self.carryOverConversation(id, prompt: prompt)
+                        // The new conversation starts from what happened so far, with the message waiting for it.
+                        let waiting = prompt ?? self.warmPrompts.removeValue(forKey: id)
+                        let carried = self.carryOverConversation(id, prompt: waiting)
                         return self.openAcpSession(id, client, bridge: bridge, prompt: carried, executable: executable, signedIn: signedIn)
                     }
                     if !signedIn, AgentErrorText.needsSignIn(message), let method = client.authMethods.first {
@@ -403,19 +404,19 @@ extension WorkspaceManager {
         // What the session offers counts at once, in a turn or not.
         let settings = events.filter(\.isSessionState)
         if !settings.isEmpty { applyAcp(id, client, settings) }
-        let events = events.filter { !$0.isSessionState }
-        guard !events.isEmpty else { return }
+        let work = events.filter { !$0.isSessionState }
+        guard !work.isEmpty else { return }
         if turns[id] == nil, client.sessionID != nil, !client.replaying, run(id)?.status.isActive != true {
             // After its turn: kept until the agent shows it is really working again.
             // A request needs its answer now, turn or not.
-            for case .unsupportedRequest(let rpcID) in events { client.respondError(rpcID, message: "Nook does not provide this to agents.") }
-            acpWakeBuffer[id, default: []] += events.filter { if case .unsupportedRequest = $0 { return false } else { return true } }
-            guard events.contains(where: \.isWakeEvidence) else { return }
+            for case .unsupportedRequest(let rpcID) in work { client.respondError(rpcID, message: "Nook does not provide this to agents.") }
+            acpWakeBuffer[id, default: []] += work.filter { if case .unsupportedRequest = $0 { return false } else { return true } }
+            guard work.contains(where: \.isWakeEvidence) else { return }
             wakeAcp(id)
             let buffered = acpWakeBuffer.removeValue(forKey: id) ?? []
             applyAcp(id, client, buffered)
         } else {
-            applyAcp(id, client, events)
+            applyAcp(id, client, work)
         }
         if turns[id]?.unprompted == true { armAcpWakeFinish(id) }
     }
