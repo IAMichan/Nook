@@ -19,7 +19,13 @@ final class ChatCaptureService: ObservableObject {
         case failed(String)
     }
 
-    @Published private(set) var inbox: ChatInbox
+    @Published private(set) var inbox: ChatInbox {
+        didSet { inboxRevision &+= 1 }
+    }
+    /// Goes up with every change of `inbox`, once the change is in. What is made from the inbox and kept (the Chats
+    /// tab's list) checks it: `objectWillChange` comes before the change, and a list made again in that moment holds
+    /// the chats as they were (a row with yesterday's line under a chat that wrote today).
+    private(set) var inboxRevision = 0
     @Published private(set) var status: Status = .off
     /// Which apps feed the inbox (Settings › Connections): the known ones you did not switch off, and the ones you added.
     @Published private(set) var sources = MessagingApps.sources
