@@ -104,6 +104,12 @@ final class SearchCenter: ObservableObject {
         }
     }
 
+    /// Return came before the typing pause was over: scores what is typed now instead of waiting for the pause.
+    func searchNow() {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, searched != text else { return }
+        rerun()
+    }
+
     private func rerun() {
         let text = text
         let parsed = SearchQuery.parse(text)
