@@ -55,8 +55,12 @@ struct NotchRootView: View {
             // Open, or showing a conversation, the sides and bottom corners can be dragged to make the notch larger or smaller.
             .overlay { if viewModel.isResizable { NotchResizeHandles(viewModel: viewModel) } }
             // A slight expansion when hovering over the notch: it is alive, without bouncing.
+            // Only on the resting notch: opening ends the hover in the same update, and the hover's curve then took over
+            // the open spring for the panel's frame, clip and background (and scaled its text for a moment).
             .scaleEffect(hoverGrow ? 1.02 : 1, anchor: .top)
-            .animation(NookTheme.hover, value: hoverGrow)
+            .transaction(value: hoverGrow) { [resting = viewModel.state.isResting] transaction in
+                if resting { transaction.animation = NookTheme.hover }
+            }
         }
         .frame(
             width: viewModel.canvas.width,

@@ -117,6 +117,9 @@ struct PullRequestDetailView: View {
                     TimelineView(.periodic(from: .now, by: 60)) { context in
                         content(detail, now: context.date)
                     }
+                    // The new tab is simply there: in the spring that slides the tab bar's mark, the old and the new
+                    // page were both laid out on every frame.
+                    .transaction(value: tab) { $0.animation = nil }
                     // At the column's corner, not the window's; the empty rest of its frame lets clicks through.
                     if actions.panel != .write { writeButton(detail).pullRequestPageColumn(alignment: .trailing) }
                 }
@@ -200,12 +203,17 @@ struct PullRequestDetailView: View {
             if stack.count > 1 { stackMenu }
             if let detail {
                 primaryAction(detail)
-                // Refreshing is in the ⋯ menu, which spins while GitHub is asked.
-                PullRequestMoreMenu(state: actions, detail: detail, loading: model.loading, fetchedAt: model.fetchedAt) {
-                    Task { await model.refresh(activity: true) }
+                // Refreshing is in the ⋯ menu, which spins while GitHub is asked. It alone
+                // watches the reads, so a poll draws the menu again and not the page.
+                Observing(model.status) {
+                    PullRequestMoreMenu(state: actions, detail: detail, loading: model.loading, fetchedAt: model.fetchedAt) {
+                        Task { await model.refresh(activity: true) }
+                    }
                 }
-            } else if model.loading {
-                ProgressView().controlSize(.small)
+            } else {
+                Observing(model.status) {
+                    if model.loading { ProgressView().controlSize(.small) }
+                }
             }
             if let onMaximize {
                 ToolbarIconButton(maximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
@@ -610,8 +618,13 @@ struct PullRequestDetailView: View {
 
     func switchTo(_ value: Tab) {
         withAnimation(NookTheme.swap) { tab = value }
-        openFile = nil
-        openCheck = nil
-        condensed = false
+        // At once: the top unfolding over the new page made it lay out again on every frame of its spring.
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) {
+            openFile = nil
+            openCheck = nil
+            condensed = false
+        }
     }
 }

@@ -12,7 +12,8 @@ final class ShiftKeyMonitor: ObservableObject {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             let held = flags.contains(.shift) && !flags.contains(.command) && !flags.contains(.option) && !flags.contains(.control)
-            Task { @MainActor in self?.held = held }
+            // Only a change: every ⌘ or ⌥ press drew every pull request row again.
+            Task { @MainActor in if self?.held != held { self?.held = held } }
             return event
         }
     }

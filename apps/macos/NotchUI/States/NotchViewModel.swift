@@ -438,7 +438,13 @@ final class NotchViewModel: ObservableObject {
         }
         // Only where you can ask something: with the brain on this Mac, warming up loads a model of several gigabytes, and
         // opening the panel for the agents or the music is no reason for that.
-        if case .panel(let tab) = target, state.kind != "panel", tab == .chat || tab == .nook { app?.warmUp() }
+        // After the open spring: loading it in the same moment competed with the panel's first frames.
+        if case .panel(let tab) = target, state.kind != "panel", tab == .chat || tab == .nook {
+            Task { @MainActor [weak app = self.app] in
+                try? await Task.sleep(for: NookTheme.tabSettle)
+                app?.warmUp()
+            }
+        }
         if case .panel(let tab) = target {
             switch tab {
             case .chat, .agents, .inbox, .music: lastTab = tab
@@ -833,10 +839,11 @@ final class NotchViewModel: ObservableObject {
             break
         }
         guard openOnHover, inside, state.isResting, !holdsHoverOpen else { return }
-        // If an agent is running, hover opens a little faster.
+        // If an agent is running, hover opens a little faster. Long enough that passing the notch on the way to the menu
+        // bar does not open it; any longer and every open felt slow before it had even started.
         let working = agentsActive
         hoverTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: working ? 200_000_000 : 400_000_000)
+            try? await Task.sleep(nanoseconds: working ? 140_000_000 : 260_000_000)
             guard !Task.isCancelled, let self else { return }
             if self.pointerInside, self.state.isResting { self.show(.panel(self.homeTab()), inNotch: true) }
         }
@@ -851,7 +858,8 @@ final class NotchViewModel: ObservableObject {
     /// Where the panel opens: at the agent that waits for you, otherwise at the tab you used last. Predictable, no jumping.
     private func homeTab() -> PanelTab {
         if let waiting = app?.activeAgents.first(where: { $0.status == .waiting || $0.approvalID != nil }) {
-            selectedAgentID = waiting.id
+            // A published write redraws everything that watches the notch, also for the same value.
+            if selectedAgentID != waiting.id { selectedAgentID = waiting.id }
             return .agents
         }
         // Music only exists while a player is open.
@@ -863,7 +871,8 @@ final class NotchViewModel: ObservableObject {
     /// a player is open).
     func prepareWindow() {
         if let waiting = app?.activeAgents.first(where: { $0.status == .waiting || $0.approvalID != nil }) {
-            selectedAgentID = waiting.id
+            // A published write redraws everything that watches the notch, also for the same value.
+            if selectedAgentID != waiting.id { selectedAgentID = waiting.id }
             windowSheet = nil
             windowTab = .agents
         } else if windowTab == .music, app?.nowPlaying.current == nil {

@@ -1517,6 +1517,8 @@ private struct ChatsDetail: View, Equatable {
     }
 
     var body: some View {
+        // Made once per redraw: each read filters the hidden messages and lays the outbox over them again.
+        let bubbles = self.bubbles
         VStack(alignment: .leading, spacing: 0) {
             header
                 .padding(.bottom, NookTheme.Spacing.md)
@@ -1975,7 +1977,10 @@ private struct ChatsDetail: View, Equatable {
                     ChatEmojiButton(text: $reply)
                 },
                 above: {
-                    ChatComposerPanels(model: composer, sends: sends, chatStickers: shelfItems) { sendItem($0) }
+                    // Only while the sticker shelf is open: this is built with every key you type, and finding the
+                    // stickers walks the whole chat.
+                    ChatComposerPanels(model: composer, sends: sends,
+                                       chatStickers: composer.panel == .stickers ? shelfItems : []) { sendItem($0) }
                 },
                 idle: {
                     ChatMicButton(recorder: composer.recorder) { notice = $0.localizedDescription }

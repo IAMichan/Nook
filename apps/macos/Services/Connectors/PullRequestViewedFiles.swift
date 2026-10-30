@@ -63,12 +63,21 @@ struct PullRequestViewedFiles: Codable, Equatable, Sendable {
         marks = marks.filter { kept.contains($0.key) }
     }
 
+    /// The marks as last loaded or saved in this run. A pull request page asks for them each time SwiftUI makes the
+    /// page again (on every redraw of the list beside it, every frame of a side panel drag), and decoding them from
+    /// UserDefaults each time made those frames stutter.
+    private nonisolated(unsafe) static var kept: PullRequestViewedFiles?
+
     static func load(defaults: UserDefaults = .standard) -> PullRequestViewedFiles {
-        guard let data = defaults.data(forKey: defaultsKey) else { return PullRequestViewedFiles() }
-        return (try? JSONDecoder().decode(PullRequestViewedFiles.self, from: data)) ?? PullRequestViewedFiles()
+        if defaults === UserDefaults.standard, let kept { return kept }
+        let loaded = defaults.data(forKey: defaultsKey)
+            .flatMap { try? JSONDecoder().decode(PullRequestViewedFiles.self, from: $0) } ?? PullRequestViewedFiles()
+        if defaults === UserDefaults.standard { kept = loaded }
+        return loaded
     }
 
     func save(defaults: UserDefaults = .standard) {
+        if defaults === UserDefaults.standard { Self.kept = self }
         defaults.set(try? JSONEncoder().encode(self), forKey: Self.defaultsKey)
     }
 }

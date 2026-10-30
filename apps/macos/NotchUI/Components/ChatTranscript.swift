@@ -61,7 +61,8 @@ struct ChatTranscript: View, Equatable {
     /// The day lines and runs of what is drawn, worked out again only when the messages change.
     @State private var timeline = TranscriptTimelineMemo()
     /// Your fingers or the wheel move the chat (or it still glides from that): nothing else moves it meanwhile.
-    @State private var interacting = false
+    /// Read only by the handlers: as state, each start and stop of a scroll drew every message again.
+    @State private var interacting = Unobserved(false)
     /// When this chat was opened: what comes in the first moments (its newest messages, its pictures) is simply there,
     /// without the chat sliding past everything to reach it.
     @State private var openedAt = Date()
@@ -178,7 +179,7 @@ struct ChatTranscript: View, Equatable {
                 // well as where the last frame was: in the first layouts of a chat that just opened (its history and
                 // its read mark coming in together) that frame may not have reached the bottom yet, and the chat then
                 // stayed up in its history.
-                if new.content != old.content || new.container != old.container, old.nearBottom || atBottom, !interacting,
+                if new.content != old.content || new.container != old.container, old.nearBottom || atBottom, !interacting.value,
                    !loadingOlder, !drawingOlder {
                     var still = Transaction()
                     still.disablesAnimations = true
@@ -201,7 +202,7 @@ struct ChatTranscript: View, Equatable {
             }
             .onScrollPhaseChange { _, phase in
                 let moving = phase == .interacting || phase == .decelerating
-                if moving != interacting { interacting = moving }
+                interacting.value = moving
                 if phase == .interacting || phase == .decelerating, !scrolledByUser { userScrolled() }
             }
             .onChange(of: bubbles.last?.id) { previous, last in
@@ -255,7 +256,7 @@ struct ChatTranscript: View, Equatable {
             // Someone starts typing: their bubble comes into view under the last message.
             .onChange(of: typing != nil) { _, shown in
                 // Only while you are at the newest message: reading back, someone typing does not pull you down.
-                guard shown, atBottom, !interacting else { return }
+                guard shown, atBottom, !interacting.value else { return }
                 withAnimation(NookTheme.scroll) { proxy.scrollTo(ChatTypingBubble.id, anchor: .bottom) }
             }
             // Another chat starts at its newest message again: reaching its top counts only once you scroll there. The
@@ -264,7 +265,7 @@ struct ChatTranscript: View, Equatable {
             .onChange(of: contact) {
                 guard !fills else { return }
                 openedAt = Date()
-                interacting = false
+                interacting.value = false
                 scrolledByUser = false
                 reachedStart = false
                 atBottom = true

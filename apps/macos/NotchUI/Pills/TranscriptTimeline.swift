@@ -35,7 +35,8 @@ struct TranscriptConversation: View {
     @State private var atEnd = true
     /// The conversation is taller than the view: only then the rail with your messages shows.
     @State private var overflows = false
-    @State private var scrollPhase: ScrollPhase = .idle
+    /// Read only by the handlers: as state, each start and stop of a scroll drew every row of the conversation again.
+    @State private var scrollPhase = Unobserved(ScrollPhase.idle)
     /// The rows on screen, for where you left the conversation; not state, so scrolling does not redraw it.
     @State private var onScreen = VisibleTimelineRows()
     /// Where the conversation is scrolled, for the rail, and the position the rail scrolls it to when you drag it.
@@ -168,12 +169,12 @@ struct TranscriptConversation: View {
                     }
                 }
                 .onScrollPhaseChange { _, phase in
-                    scrollPhase = phase
+                    scrollPhase.value = phase
                     if (phase == .interacting || phase == .decelerating) && !atEnd { scroll.userScrolled() }
                 }
                 // A drag that began at the end, or the scroll wheel, leaves the end while you scroll: stop following.
                 .onChange(of: atEnd) { _, now in
-                    if !now, scrollPhase != .idle && scrollPhase != .animating { scroll.userScrolled() }
+                    if !now, scrollPhase.value != .idle && scrollPhase.value != .animating { scroll.userScrolled() }
                 }
                 // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
                 .composerInset(spacing: bottomBar == nil ? 0 : NookTheme.Spacing.xxxl) {
@@ -638,4 +639,11 @@ enum TranscriptCache {
         order.append(path)
         while order.count > limit { byPath[order.removeFirst()] = nil }
     }
+}
+
+/// A value a view keeps across redraws that it only reads in its handlers (where a scroll is, whether you drag it).
+/// Held in `@State`, writing it draws nothing again: written on every scroll, plain state redrew the whole view.
+final class Unobserved<Value> {
+    var value: Value
+    init(_ value: Value) { self.value = value }
 }
