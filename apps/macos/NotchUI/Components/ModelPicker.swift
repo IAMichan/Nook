@@ -168,4 +168,11 @@ enum ModelSearch {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
         return needle.isEmpty || names.contains { $0.lowercased().contains(needle) }
     }
+
+    /// Whether a model's ID says more than its name, so it is worth a line under it: "claude-opus-5-5" only spells
+    /// "Claude Opus 5.5" again, "claude-opus-4-1-20250805" adds a date.
+    static func idAddsToName(_ id: String, _ name: String) -> Bool {
+        func letters(_ text: String) -> String { text.lowercased().filter { $0.isLetter || $0.isNumber } }
+        return !id.isEmpty && letters(id) != letters(name)
+    }
 }

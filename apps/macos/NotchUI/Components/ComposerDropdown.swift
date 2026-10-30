@@ -430,7 +430,7 @@ struct AgentModelPicker: View {
                                title: name,
                                brand: BrandLogo.forName(option) ?? BrandLogo.forName(name) ?? BrandLogo.forName(current.displayName),
                                detail: app.modelUpdateNote(option, for: current)
-                                   ?? (family != nil || option.isEmpty || name == option ? nil : option),
+                                   ?? (family == nil && ModelSearch.idAddsToName(option, name) ? option : nil),
                                trailing: order.map { "\($0)" }
                                    ?? (choice?.isNew == true && choice?.needsUpdate == false ? tr("compose.modelNew") : nil),
                                chosen: multi ? order != nil : isChosen,
