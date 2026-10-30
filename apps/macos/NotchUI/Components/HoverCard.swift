@@ -46,9 +46,11 @@ struct HoverCardRow: View {
 }
 
 /// Opens a card next to the view once the pointer rests on it a moment, so sweeping over a list stays quiet.
-/// A click closes it again.
+/// A click closes it again. While `suppressed` (the pointer is on the row's own buttons) it stays closed: an open popover
+/// takes the first click outside it to close itself, so a click on such a button would otherwise do nothing.
 private struct HoverCardModifier<Card: View>: ViewModifier {
     let arrowEdge: Edge
+    let suppressed: Bool
     let card: () -> Card
     @State private var hovering = false
     @State private var showCard = false
@@ -61,13 +63,14 @@ private struct HoverCardModifier<Card: View>: ViewModifier {
                 schedule(inside)
             }
             .simultaneousGesture(TapGesture().onEnded { schedule(false) })
+            .onChange(of: suppressed) { _, _ in schedule(hovering) }
             .onDisappear { delay?.cancel() }
             .popover(isPresented: $showCard, arrowEdge: arrowEdge) { card() }
     }
 
     private func schedule(_ inside: Bool) {
         delay?.cancel()
-        guard inside else {
+        guard inside, !suppressed else {
             showCard = false
             return
         }
@@ -79,8 +82,9 @@ private struct HoverCardModifier<Card: View>: ViewModifier {
 }
 
 extension View {
-    /// Shows `card` in a popover after the pointer rests on this view for a moment.
-    func hoverCard<Card: View>(arrowEdge: Edge = .trailing, @ViewBuilder _ card: @escaping () -> Card) -> some View {
-        modifier(HoverCardModifier(arrowEdge: arrowEdge, card: card))
+    /// Shows `card` in a popover after the pointer rests on this view for a moment, unless `suppressed`.
+    func hoverCard<Card: View>(arrowEdge: Edge = .trailing, suppressed: Bool = false,
+                               @ViewBuilder _ card: @escaping () -> Card) -> some View {
+        modifier(HoverCardModifier(arrowEdge: arrowEdge, suppressed: suppressed, card: card))
     }
 }

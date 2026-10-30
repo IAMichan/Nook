@@ -570,6 +570,8 @@ struct AgentListRow: View {
     var pullRequest: PullRequestBadge? = nil
     let action: () -> Void
     @State private var hovering = false
+    /// The pointer is on the hover buttons.
+    @State private var onActions = false
 
     private var background: Color { NookTheme.rowFill(selected: selected, hovering: hovering) }
     private var dimmed: Bool { item.status == .finished || slim }
@@ -586,10 +588,12 @@ struct AgentListRow: View {
                     .padding(.trailing, NookTheme.Spacing.md)
                     .opacity(hovering ? 1 : 0)
                     .allowsHitTesting(hovering)
+                    .onHover { onActions = $0 }
             }
         }
         .onHover { hovering = $0 }
-        .hoverCard { AgentHoverCard(item: item) }
+        // Closed over the buttons, so their first click is not spent closing the card.
+        .hoverCard(suppressed: onActions) { AgentHoverCard(item: item) }
         .accessibilityElement(children: .combine)
         // The hover buttons are merged away above, so VoiceOver gets them as the row's actions.
         .accessibilityActions {
