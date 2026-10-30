@@ -287,24 +287,31 @@ func loginAccountName(login *bridgev2.UserLogin) string {
 	return name
 }
 
+// accountName is the linked account a chat belongs to: the login it was bridged for (a private chat), else the logins
+// that are in it (a group). With several logins of the network and none known for the chat it says nothing, so Nook
+// does not name the wrong account.
 func (a *API) accountName(ctx context.Context, net *Network, room *Room) string {
 	if net == nil {
 		return ""
 	}
 	if net.Bridge != nil {
 		if portal, err := net.Bridge.GetPortalByMXID(ctx, room.ID); err == nil && portal != nil {
-			if portal.Receiver != "" {
-				if login, err := net.Bridge.GetExistingUserLoginByID(ctx, portal.Receiver); err == nil && login != nil {
-					return loginAccountName(login)
+			if logins, err := net.Bridge.GetUserLoginsInPortal(ctx, portal.PortalKey); err == nil {
+				var names []string
+				for _, login := range logins {
+					if name := loginAccountName(login); name != "" && !slices.Contains(names, name) {
+						names = append(names, name)
+					}
+				}
+				if len(names) > 0 {
+					return strings.Join(names, ", ")
 				}
 			}
 		}
 	}
 	if user, err := net.User(ctx); err == nil {
-		for _, login := range user.GetUserLogins() {
-			if name := loginAccountName(login); name != "" {
-				return name
-			}
+		if logins := user.GetUserLogins(); len(logins) == 1 {
+			return loginAccountName(logins[0])
 		}
 	}
 	return ""

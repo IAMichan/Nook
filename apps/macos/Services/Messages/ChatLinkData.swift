@@ -132,6 +132,12 @@ enum ChatLinkData {
         return byApp.values.map(\.network).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    /// The name of the one account linked for `app`; nil with none or with several, where a chat must say its own.
+    static func onlyAccount(of app: String, in networks: [Network]) -> String? {
+        let accounts = networks.filter { $0.app == app }.flatMap(\.accounts)
+        return accounts.count == 1 ? accounts[0].name : nil
+    }
+
     static func account(_ json: [String: Any]) -> Account? {
         guard let id = json["accountID"] as? String, !id.isEmpty else { return nil }
         let user = json["user"] as? [String: Any] ?? [:]

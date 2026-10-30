@@ -48,9 +48,10 @@ final class ChatLinker: ObservableObject {
         if let failed = ChatHelper.shared.problem, !ChatHelper.shared.isRunning { problem = tr("chats.link.helperFailed", failed) }
     }
 
-    /// The account name for an app, while one is linked (Instagram username, etc.).
+    /// The account name for an app, while exactly one is linked (Instagram username, etc.). With more than one, a chat
+    /// that does not say its own account gets none, rather than the first one's name.
     func accountName(for app: String) -> String? {
-        networks.first(where: { $0.app == app })?.accounts.first?.name
+        ChatLinkData.onlyAccount(of: app, in: networks)
     }
 
     // MARK: Logging in
