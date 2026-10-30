@@ -527,7 +527,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
         let (account, chat) = try await webChat(name)
         var html = TeamsWebData.html(body)
-        if let replyTo, let answered = ChatCaptureService.shared.inbox.threads[ChatInbox.key(app: app, chat: name)]?
+        if let replyTo, let answered = ChatCaptureService.shared.loadedInbox.threads[ChatInbox.key(app: app, chat: name)]?
             .messages.first(where: { $0.id == replyTo }) {
             let author = answered.isMine ? account.session.me : authors[replyTo]
             let sender = answered.isMine ? account.session.name : (answered.sender.isEmpty ? name : answered.sender)
@@ -571,7 +571,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         guard let id = TeamsWebData.serviceID(message) else { throw NookError(tr("chat.compose.unsupported")) }
         let (account, chat) = try await webChat(name)
         var html = TeamsWebData.html(body)
-        if let quote = ChatCaptureService.shared.inbox.threads[ChatInbox.key(app: app, chat: name)]?
+        if let quote = ChatCaptureService.shared.loadedInbox.threads[ChatInbox.key(app: app, chat: name)]?
             .messages.first(where: { $0.id == message })?.quote, let answered = quote.id {
             let author = quote.mine ? account.session.me : authors[answered]
             let sender = quote.mine ? account.session.name : (quote.sender.isEmpty ? name : quote.sender)
@@ -599,7 +599,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
     /// or the chat list's newest one), as the website does. Nothing happens for a chat without any.
     func markRead(name: String) async throws {
         let (account, chat) = try await webChat(name)
-        var known = ChatCaptureService.shared.inbox.threads[ChatInbox.key(app: app, chat: name)]?.messages.map(\.id) ?? []
+        var known = ChatCaptureService.shared.loadedInbox.threads[ChatInbox.key(app: app, chat: name)]?.messages.map(\.id) ?? []
         if let preview = chat.preview?.id { known.append(preview) }
         guard let newest = TeamsWebData.newest(known) else { return }
         try await webAct("PUT", account: account, path: TeamsWebData.horizonPath(chat: chat.id),

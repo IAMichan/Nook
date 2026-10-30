@@ -140,11 +140,15 @@ final class AppUpdater: ObservableObject {
         }
         schedule()
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 20_000_000_000)
-            guard self.autoCheck else { return }
-            self.check()
+            try? await Task.sleep(nanoseconds: UInt64(Self.firstCheckDelay * 1_000_000_000))
+            self.checkIfStale()
         }
     }
+
+    /// The first check waits this long after launch, so it does not compete with Nook's start and the main window
+    /// opening with it (a check runs `git fetch` and a few other git commands).
+    private static let firstCheckDelay: TimeInterval = 20
+    private let startedAt = Date()
 
     private func schedule() {
         timer?.invalidate()
@@ -157,7 +161,8 @@ final class AppUpdater: ObservableObject {
 
     /// A check when the last one is a while ago: the footer calls this when it appears.
     func checkIfStale() {
-        guard autoCheck else { return }
+        // Right after launch the footer appears with the main window: the check `start` schedules comes soon after.
+        guard autoCheck, Date().timeIntervalSince(startedAt) >= Self.firstCheckDelay - 1 else { return }
         if let lastChecked, Date().timeIntervalSince(lastChecked) < Self.staleAfter { return }
         check()
     }

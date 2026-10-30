@@ -37,7 +37,7 @@ extension AppModel {
     /// chat in the Chats tab or in its own app.
     func presentCapturedChat(_ id: String) {
         let capture = ChatCaptureService.shared
-        guard let thread = capture.inbox.threads[id], let last = thread.messages.last(where: { !$0.isMine }) else { return }
+        guard let thread = capture.loadedInbox.threads[id], let last = thread.messages.last(where: { !$0.isMine }) else { return }
         let appName = MessagingApps.app(id: thread.app)?.name ?? thread.app
         let line = (thread.isGroup && !last.sender.isEmpty ? last.sender + ": " : "") + last.summary
         let token = Self.chatCardPrefix + id
@@ -59,7 +59,7 @@ extension AppModel {
     func copyCardReply(_ text: String, card: NookCard) {
         let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !reply.isEmpty, ChatDraft.instruction(in: reply) == nil,
-              let thread = ChatCaptureService.shared.inbox.threads[String(card.id.dropFirst(Self.chatCardPrefix.count))]
+              let thread = ChatCaptureService.shared.loadedInbox.threads[String(card.id.dropFirst(Self.chatCardPrefix.count))]
         else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(reply, forType: .string)
@@ -71,7 +71,7 @@ extension AppModel {
     /// The card of a chat from another app: its newest messages, Open (in the Chats tab), the app itself, and the same
     /// answer field as the Chats tab ("@nook …" lets Nook write it; what you send is copied for the app).
     private func showCapturedChatCard(_ id: String) {
-        guard let thread = ChatCaptureService.shared.inbox.threads[id] else { return }
+        guard let thread = ChatCaptureService.shared.loadedInbox.threads[id] else { return }
         Self.drawnChatCards[id] = thread
         let token = Self.chatCardPrefix + id
         let appName = MessagingApps.app(id: thread.app)?.name ?? thread.app
@@ -175,7 +175,7 @@ extension AppModel {
             if link.inbox.conversations[jid] != nil { return "wa|" + target.key }
         }
         let capture = ChatCaptureService.shared
-        guard let thread = capture.inbox.thread(named: name), capture.sources.isOn(thread.app) else { return nil }
+        guard let thread = capture.loadedInbox.thread(named: name), capture.sources.isOn(thread.app) else { return nil }
         return thread.id
     }
 
@@ -185,7 +185,7 @@ extension AppModel {
         var choices = WhatsAppAccounts.shared.connected.flatMap { $0.chatChoices() }
         if choices.isEmpty { choices = WhatsAppLink.shared.chatChoices() }
         let capture = ChatCaptureService.shared
-        for thread in capture.inbox.sorted where capture.sources.isOn(thread.app) {
+        for thread in capture.loadedInbox.sorted where capture.sources.isOn(thread.app) {
             let app = MessagingApps.app(id: thread.app)?.name ?? thread.app
             choices.append((thread.name, thread.unread > 0 ? app + " · " + tr("whatsapp.card.unread", thread.unread) : app))
         }

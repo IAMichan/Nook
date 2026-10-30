@@ -19,7 +19,9 @@ struct NookList: View {
 
     var body: some View {
         let items = chat.list(query: query, showArchived: false)
-        let archived = chat.list(query: query, showArchived: true)
+        // The archive (up to 500) is sorted only while its shelf is open; closed, it shows a count.
+        let archived = showArchived ? chat.list(query: query, showArchived: true) : []
+        let archivedCount = showArchived ? archived.count : chat.count(query: query, showArchived: true)
         let pinned = items.filter(\.pinned)
         let rest = items.filter { !$0.pinned }
         // The rows as shown, top to bottom: what select all and a ⇧-click range go by.
@@ -47,7 +49,7 @@ struct NookList: View {
                         ScrollView(showsIndicators: false) {
                             // Lazy: only the rows in view are built, and this list redraws while an answer streams in.
                             LazyVStack(alignment: .leading, spacing: 2) {
-                                if items.isEmpty && (archived.isEmpty || !showArchived) {
+                                if items.isEmpty && (archivedCount == 0 || !showArchived) {
                                     ListEmptyNote(tr("nooks.noMatches"), padding: NookTheme.Spacing.lg)
                                 }
                                 if !pinned.isEmpty {
@@ -63,8 +65,8 @@ struct NookList: View {
                         .frame(maxHeight: .infinity, alignment: .top)
                     }
                     // The archive sits at the foot of the list, as the settled sessions do in Agents, and opens upwards.
-                    if !archived.isEmpty {
-                        archiveShelf(archived, now: context.date, shown: shown)
+                    if archivedCount > 0 {
+                        archiveShelf(archived, count: archivedCount, now: context.date, shown: shown)
                     }
                 }
             }
@@ -76,6 +78,13 @@ struct NookList: View {
     }
 
     // MARK: Selecting several
+
+    /// The rows as `body` shows them, top to bottom, as they are right now.
+    private func shownNow() -> [UUID] {
+        let items = chat.list(query: query, showArchived: false)
+        let archived = showArchived ? chat.list(query: query, showArchived: true) : []
+        return (items.filter(\.pinned) + items.filter { !$0.pinned } + archived).map(\.id)
+    }
 
     /// A click on a row: opens it, or with ⌘, ⇧ or while selecting, picks it.
     private func click(_ conversation: Conversation, shown: [UUID]) {
@@ -139,7 +148,7 @@ struct NookList: View {
 
     /// The archive as a shelf docked at the foot of the list, like the settled sessions: a line with its count, opened
     /// with a click. Its header stays put and its rows open above it, scrolling on their own once they no longer fit.
-    private func archiveShelf(_ archived: [Conversation], now: Date, shown: [UUID]) -> some View {
+    private func archiveShelf(_ archived: [Conversation], count: Int, now: Date, shown: [UUID]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             if showArchived {
                 ViewThatFits(in: .vertical) {
@@ -152,7 +161,7 @@ struct NookList: View {
                 withAnimation(NookTheme.reveal) { showArchived.toggle() }
             } label: {
                 HStack(spacing: NookTheme.Spacing.md) {
-                    Text(tr("nooks.section.archived", archived.count))
+                    Text(tr("nooks.section.archived", count))
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.textTertiary)
                         .fixedSize()
@@ -196,8 +205,12 @@ struct NookList: View {
                 NookRow(conversation: conversation, selected: conversation.id == chat.activeID, now: now,
                         onPin: { chat.togglePin(conversation.id) },
                         onArchive: { chat.setArchived(!conversation.archived, conversation.id) }) {
-                    click(conversation, shown: shown)
+                    // Worked out at the click: the row is kept while it does not change (`.equatable()`), also when
+                    // the order around it does.
+                    click(conversation, shown: shownNow())
                 }
+                // The list redraws with every streamed word of an answer: only the row of that conversation changes.
+                .equatable()
                 .selectable(active: selection.isActive, selected: selection.contains(conversation.id)) {
                     withAnimation(NookTheme.reveal) { selection.toggle(conversation.id) }
                 }
@@ -230,7 +243,7 @@ struct NookList: View {
 
 /// One Nook in the list, built like a session row in the Agents tab: a soft card, the title with the status on the
 /// right, the last answer underneath. A conversation that asks nothing of you recedes, so what needs you stands out.
-private struct NookRow: View {
+private struct NookRow: View, Equatable {
     let conversation: Conversation
     let selected: Bool
     let now: Date
@@ -238,6 +251,16 @@ private struct NookRow: View {
     let onArchive: () -> Void
     let action: () -> Void
     @State private var hovering = false
+
+    /// What the row shows of its conversation; the actions do the same for the same one. A message's `revision` goes up
+    /// with each change to it, the streamed words of the answer too.
+    static func == (a: NookRow, b: NookRow) -> Bool {
+        let x = a.conversation, y = b.conversation
+        return a.selected == b.selected && a.now == b.now && x.id == y.id && x.title == y.title && x.updated == y.updated
+            && x.pinned == y.pinned && x.archived == y.archived && x.busy == y.busy && x.unread == y.unread
+            && x.messages.count == y.messages.count && x.messages.last?.id == y.messages.last?.id
+            && x.messages.last?.revision == y.messages.last?.revision && x.status == y.status
+    }
 
     private var background: Color { NookTheme.rowFill(selected: selected, hovering: hovering) }
     private var receded: Bool { conversation.status == .idle && !selected }

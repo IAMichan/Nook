@@ -113,7 +113,7 @@ final class NotchController {
         installMonitors()
 
         // Size changed? Re-evaluate whether pointer is still hovering over shape.
-        viewModel.$size
+        viewModel.surface.$size
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -126,14 +126,14 @@ final class NotchController {
         // loop pass), so every screen starts the same animation on the same frame.
 
         // perf: `show` of the same state redraws the notch on purpose (idle hide, a new outfit); the mirrors follow every one.
-        viewModel.$state
+        viewModel.surface.$state
             .sink { [weak self] state in self?.syncMirrors(to: state) }
             .store(in: &cancellables)
 
         // A card with text input immediately requests keyboard focus so typing works without clicking.
 
         // perf: the same state shown again also shows the notch again and takes the keyboard again.
-        viewModel.$state
+        viewModel.surface.$state
             .receive(on: RunLoop.main)
             .sink { [weak self] state in
                 // Shown first: a hidden notch cannot take the keyboard.

@@ -7,14 +7,19 @@ import AppKit
 /// what you share, or hidden until it is over.
 extension AppModel {
     func startQuietWatch() {
-        quietTick()
+        // The first read goes the timer's way (off the main thread, and only when it matters), so it does not hold up
+        // Nook's start and the main window opening with it. Leaving Nook out of captures applies right away all the same.
+        if quietWatchNeeded { quietTimerTick() } else { applyQuiet(QuietSituation()) }
         Timer.scheduledCoalesced(withTimeInterval: 2) { [weak self] _ in
             Task { @MainActor in self?.quietTimerTick() }
         }
-        // A changed choice applies right away, not on the next tick.
-        settings.$quietWhileSharing.removeDuplicates().map { _ in () }
-            .merge(with: settings.$quietInMeetings.removeDuplicates().map { _ in () }, settings.$quietUseCalendar.removeDuplicates().map { _ in () },
-                   settings.$hideFromCaptures.removeDuplicates().map { _ in () }, settings.$showInScreenshots.removeDuplicates().map { _ in () })
+        // A changed choice applies right away, not on the next tick. Each choice also sends its value as it is subscribed
+        // to, which is not a change: those five go.
+        settings.$quietWhileSharing.removeDuplicates().dropFirst().map { _ in () }
+            .merge(with: settings.$quietInMeetings.removeDuplicates().dropFirst().map { _ in () },
+                   settings.$quietUseCalendar.removeDuplicates().dropFirst().map { _ in () },
+                   settings.$hideFromCaptures.removeDuplicates().dropFirst().map { _ in () },
+                   settings.$showInScreenshots.removeDuplicates().dropFirst().map { _ in () })
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.quietTick() }
             .store(in: &bag)

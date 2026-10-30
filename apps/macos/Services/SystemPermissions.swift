@@ -170,9 +170,17 @@ final class PermissionMonitor: ObservableObject {
     private init() {
         granted = Self.check()
         activeObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refresh() }
+            // Nook coming forward right after a check (at launch, with the main window) has nothing new to find; coming
+            // back from System Settings, a while later, does.
+            MainActor.assumeIsolated {
+                guard let self, Date().timeIntervalSince(self.checkedAt) >= 1 else { return }
+                self.refresh()
+            }
         }
     }
+
+    /// When the permissions were last checked.
+    private var checkedAt = Date()
 
     func isGranted(_ permission: SystemPermission) -> Bool { granted[permission] ?? false }
 
@@ -180,6 +188,7 @@ final class PermissionMonitor: ObservableObject {
     /// (or stop) right away.
     func refresh() {
         let now = Self.check()
+        checkedAt = Date()
         let trusted = now[.accessibility] ?? false
         let keysChanged = [SystemPermission.accessibility, .inputMonitoring].contains { now[$0] != granted[$0] }
         if now != granted { granted = now }
