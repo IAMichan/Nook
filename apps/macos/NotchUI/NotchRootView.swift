@@ -293,10 +293,7 @@ struct NotchRootView: View {
         let ok: (() -> Void)? = viewModel.noticeSeconds == nil ? nil : { viewModel.acknowledgeNotice() }
         return HStack(spacing: 0) {
             HStack(spacing: NookTheme.Spacing.md) {
-                Image(systemName: tone.symbol)
-                    .font(NookTheme.font(13, .bold))
-                    .foregroundStyle(tone.color)
-                    .frame(width: 16)
+                NoticeMark(symbol: tone.symbol, tone: tone.color, agent: viewModel.doneAgent)
                 Text(message)
                     .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
@@ -344,7 +341,7 @@ struct NotchRootView: View {
 
             StripLine {
                 NookNotice(title: message, symbol: viewModel.doneTone.symbol, tone: viewModel.doneTone.color,
-                           actions: doneActions, countdown: viewModel.noticeSeconds, paused: noticePaused,
+                           agent: viewModel.doneAgent, actions: doneActions, countdown: viewModel.noticeSeconds, paused: noticePaused,
                            onOK: { viewModel.acknowledgeNotice() })
                 .id(viewModel.noticeStamp)
             }

@@ -13,6 +13,8 @@ struct NookNotice<Trailing: View>: View {
     /// The mark before the message; nil for none.
     var symbol: String? = nil
     var tone: Color = NookTheme.textSecondary
+    /// A coding agent the notice is about ("Claude Code"): its logo stands in for the mark, with `symbol` as a badge.
+    var agent: String? = nil
     /// The notice's own actions (View, Open, Stop), in the dark bar before the OK: the same in every notice.
     var actions: [NookNoticeAction] = []
     /// Seconds until the notice closes by itself: shows the OK with its ring. Nil: the notice waits for you.
@@ -33,11 +35,8 @@ struct NookNotice<Trailing: View>: View {
         // on its first line.
         HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
             HStack(alignment: wraps ? .top : .center, spacing: NookTheme.Spacing.md) {
-                if let symbol {
-                    Image(systemName: symbol)
-                        .font(NookTheme.font(13, .bold))
-                        .foregroundStyle(tone)
-                        .frame(width: 16)
+                if symbol != nil || agent != nil {
+                    NoticeMark(symbol: symbol, tone: tone, agent: agent)
                         .padding(.top, wraps ? 2 : 0)
                 }
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -71,10 +70,44 @@ struct NookNotice<Trailing: View>: View {
 
 extension NookNotice where Trailing == EmptyView {
     init(title: String, detail: String? = nil, symbol: String? = nil, tone: Color = NookTheme.textSecondary,
-         actions: [NookNoticeAction] = [], countdown: TimeInterval? = nil, paused: Bool = false,
+         agent: String? = nil, actions: [NookNoticeAction] = [], countdown: TimeInterval? = nil, paused: Bool = false,
          restart: AnyHashable? = nil, wraps: Bool = false, onOK: @escaping () -> Void = {}) {
-        self.init(title: title, detail: detail, symbol: symbol, tone: tone, actions: actions, countdown: countdown,
-                  paused: paused, restart: restart, wraps: wraps, onOK: onOK) { EmptyView() }
+        self.init(title: title, detail: detail, symbol: symbol, tone: tone, agent: agent, actions: actions,
+                  countdown: countdown, paused: paused, restart: restart, wraps: wraps, onOK: onOK) { EmptyView() }
+    }
+}
+
+/// The mark at the start of a notice: its state's symbol in the state color, or, for a notice about a coding agent,
+/// that agent's logo with the state as a small badge on its corner, so you see who it is before you read a word.
+/// `NookNotice` draws it, and so does the compact agent notice in the notch's own row.
+struct NoticeMark: View {
+    var symbol: String?
+    var tone: Color
+    var agent: String? = nil
+
+    var body: some View {
+        Group {
+            if let agent {
+                AgentLogo(agent: agent, size: 16)
+                    .overlay(alignment: .bottomTrailing) {
+                        if let symbol {
+                            Image(systemName: symbol)
+                                .font(NookTheme.font(6, .heavy))
+                                .foregroundStyle(NookTheme.ink)
+                                .frame(width: 10, height: 10)
+                                .background(Circle().fill(tone))
+                                .overlay(Circle().stroke(NookTheme.ink, lineWidth: 1.5))
+                                .offset(x: 4, y: 4)
+                        }
+                    }
+            } else if let symbol {
+                Image(systemName: symbol)
+                    .font(NookTheme.font(13, .bold))
+                    .foregroundStyle(tone)
+            }
+        }
+        .frame(width: 16, height: 16)
+        .accessibilityHidden(agent == nil)
     }
 }
 

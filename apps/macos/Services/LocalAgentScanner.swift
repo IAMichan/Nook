@@ -6,7 +6,8 @@ struct DetectedAgent: Hashable {
     let pid: Int32
     let name: String
     let cwd: String
-    /// CLAUDE_CONFIG_DIR or CODEX_HOME from process environment: which account it runs under. Empty if unknown.
+    /// The account folder from the process environment (CLAUDE_CONFIG_DIR, CODEX_HOME, GEMINI_CLI_HOME): which account
+    /// it runs under. Empty if unknown.
     var home: String = ""
 }
 
@@ -28,7 +29,8 @@ enum LocalAgentScanner {
         Kind(name: "OpenCode", commands: ["opencode"], packages: ["opencode-ai"]),
         Kind(name: "Copilot CLI", commands: ["copilot"], packages: ["@github/copilot"]),
         Kind(name: "Amp", commands: ["amp"], packages: ["@sourcegraph/amp"]),
-        Kind(name: "Cursor", commands: ["cursor-agent"], packages: []),
+        // Cursor's CLI also installs itself as `agent`; its binary stays `cursor-agent`, in ~/.local/share/cursor-agent.
+        Kind(name: "Cursor", commands: ["cursor-agent"], packages: ["cursor-agent/versions"]),
         Kind(name: "Antigravity", commands: ["agy"], packages: []),
         Kind(name: "Hermes", commands: ["hermes"], packages: ["hermes-agent", "hermes_cli"]),
         Kind(name: "Muse Code", commands: ["muse"], packages: []),
@@ -100,8 +102,11 @@ enum LocalAgentScanner {
         // The same line `ps -E` prints: the command line, then the environment.
         let line = (process.arguments + process.environment).joined(separator: " ")
         guard !AgentProcessEnvironment.isNookOwned(line) else { return nil }
-        let home = AgentProcessEnvironment.value(of: "CLAUDE_CONFIG_DIR", in: line)
-            ?? AgentProcessEnvironment.value(of: "CODEX_HOME", in: line) ?? ""
+        // The agent's own account variable (see AgentKind.homeVariable), as the folder its data is in.
+        let kind = AgentKind(agentName: name)
+        let home = kind.flatMap { kind in
+            kind.homeVariable.flatMap { AgentProcessEnvironment.value(of: $0, in: line) }.map { kind.home(fromVariable: $0) }
+        } ?? ""
         return (name, home)
     }
 

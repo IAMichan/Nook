@@ -524,7 +524,7 @@ struct NextTurnSettings: View {
         }
         Picker(tr("agents.run.model"), selection: Binding(get: { run.model }, set: { workspace.configure(run.id, model: $0) })) {
             ForEach(modelChoices, id: \.self) { model in
-                let choice = workspace.modelChoice(model, for: run.provider)
+                let choice = workspace.modelChoice(model, for: run.provider, profileID: run.profileID)
                 let name = model.isEmpty ? tr("ws.model.default") : choice?.name ?? model
                 // A model that needs a newer agent names the update and cannot be picked until then.
                 Text(choice?.requiredVersion.map { tr("ws.model.needsUpdate", name, run.provider.displayName, $0) } ?? name)
@@ -537,7 +537,7 @@ struct NextTurnSettings: View {
     /// The models offered for the next turn: the same menu as the composer's (favorites first, older models only while
     /// in use), with the session's model under the name it uses ("opus" stays "opus", so the picker shows it chosen).
     private var modelChoices: [String] {
-        workspace.menuModelIDs(for: run.provider, extra: [run.model])
+        workspace.menuModelIDs(for: run.provider, profileID: run.profileID, extra: [run.model])
             .filter { !workspace.hidesLegacyModel($0, for: run.provider, chosen: run.model) }
             .map { workspace.sameModel($0, run.model, for: run.provider) ? run.model : $0 }
     }

@@ -111,8 +111,8 @@ struct FileViewer: View {
             ToolbarIconButton("folder", tr("file.viewer.reveal")) { AppModel.shared.workspace.revealInFinder(target.path) }
             ToolbarIconButton("arrow.up.forward.app", tr("file.viewer.openEditor")) { AppModel.shared.workspace.openFile(target) }
         }
-        .padding(.horizontal, NookTheme.Spacing.md)
-        .frame(height: 34)
+        .padding(.horizontal, NookTheme.Spacing.sm)
+        .frame(height: SidePanelMetrics.toolbar)
         .background(NookTheme.canvas)
     }
 }
@@ -220,7 +220,7 @@ struct SessionFilePanel: View {
                 .id(target.path)
                 .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         } else {
-            Color.clear
+            WSEmptyState(symbol: "doc.text", title: tr("agents.tool.file.emptyTitle"), message: tr("agents.tool.file.emptyMessage"))
         }
     }
 }

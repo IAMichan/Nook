@@ -47,9 +47,10 @@ struct EditLines: Equatable, Sendable {
     static func of(tool: String, input: [String: Any]) -> EditLines? {
         var result = EditLines()
         switch tool.lowercased() {
-        case "edit", "replace":
+        case "edit" where input["edits"] == nil, "replace":
             result = between((input["old_string"] as? String) ?? "", (input["new_string"] as? String) ?? "")
-        case "multiedit":
+        // MultiEdit, and an ACP agent's edit that changed several places (AcpToolCall.editInput).
+        case "multiedit", "edit":
             guard let edits = input["edits"] as? [[String: Any]] else { return nil }
             for edit in edits {
                 result = result + between((edit["old_string"] as? String) ?? "", (edit["new_string"] as? String) ?? "")

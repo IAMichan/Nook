@@ -6,6 +6,10 @@ final class EffortLevelsTests: XCTestCase {
         XCTAssertEqual(EffortLevels.levels(for: .codex, model: "x", advertised: ["Minimal", "low", "low", "xhigh"]), ["minimal", "low", "xhigh"])
         XCTAssertEqual(EffortLevels.levels(for: .claude, model: nil), ["low", "medium", "high"])
         XCTAssertEqual(EffortLevels.levels(for: .gemini, model: nil), [])
+        // An ACP agent has exactly the levels its session offered, spelled as it sends them back.
+        for provider in [RunProvider.gemini, .antigravity, .opencode, .cursor, .grok, .acp] {
+            XCTAssertEqual(EffortLevels.levels(for: provider, model: nil, advertised: ["low", "High", "", "low"]), ["low", "High"])
+        }
         XCTAssertTrue(EffortLevels.isOffered("HIGH", for: .codex, model: nil))
         XCTAssertFalse(EffortLevels.isOffered("xhigh", for: .codex, model: nil))
         XCTAssertTrue(EffortLevels.isOffered("high", for: .claude, model: nil))

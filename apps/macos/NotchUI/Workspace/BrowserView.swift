@@ -396,11 +396,11 @@ struct BrowserView: View {
                     askAboutPage()
                 }
                 if let onClose {
-                    ToolbarIconButton("xmark", tr("embedded.close"), onClose)
+                    SidePanelCloseButton(help: tr("embedded.close"), action: onClose)
                 }
             }
             .padding(.horizontal, NookTheme.Spacing.xs)
-            .frame(height: 36)
+            .frame(height: SidePanelMetrics.toolbar)
             if let agent = store.openedBy {
                 HStack(spacing: NookTheme.Spacing.sm) {
                     AgentMark(agent: agent, account: nil, size: 12, ring: .clear)

@@ -462,11 +462,9 @@ struct ChatsTab: View {
                     // The same split as the Agents tab: a list you can widen, a line, and the open chat beside it.
                     list
                         .padding(.leading, NookTheme.Spacing.md)
-                        .padding(.trailing, NookTheme.Spacing.xs)
-                        .resizablePanel(width: $listWidth, defaultWidth: PanelLayout.chatsList, minimum: PanelLayout.minimumList,
-                                        available: max(totalWidth - sidebarWidth, 0),
-                                        rest: PanelLayout.minimumConversation + PanelSplit.handle,
-                                        edge: .trailing, divider: true)
+                        .sidePanel(.leading, width: $listWidth, defaultWidth: PanelLayout.chatsList, minimum: PanelLayout.minimumList,
+                                   available: max(totalWidth - sidebarWidth, 0),
+                                   rest: PanelLayout.minimumConversation + PanelSplit.handle)
                     Group {
                         if let current {
                             ChatsDetail(entry: current, photo: photo(current), capture: capture,

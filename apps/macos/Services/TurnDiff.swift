@@ -10,9 +10,10 @@ enum EditPatch {
     static func make(tool: String, input: [String: Any]) -> String? {
         let patch: String
         switch tool.lowercased() {
-        case "edit", "replace":
+        case "edit" where input["edits"] == nil, "replace":
             patch = hunk((input["old_string"] as? String) ?? "", (input["new_string"] as? String) ?? "")
-        case "multiedit":
+        // MultiEdit, and an ACP agent's edit that changed several places (AcpToolCall.editInput).
+        case "multiedit", "edit":
             guard let edits = input["edits"] as? [[String: Any]] else { return nil }
             patch = edits.map { hunk(($0["old_string"] as? String) ?? "", ($0["new_string"] as? String) ?? "") }
                 .filter { !$0.isEmpty }.joined(separator: "\n")

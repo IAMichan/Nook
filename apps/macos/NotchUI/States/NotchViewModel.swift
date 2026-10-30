@@ -26,6 +26,8 @@ final class NotchSurface: ObservableObject {
     @Published var doneTone: DoneTone = .done
     /// An agent notice in compact size: it stays in the notch's own row instead of a strip under it.
     @Published var doneInline = false
+    /// The coding agent the strip is about: its logo marks the strip (`NoticeMark`); nil for any other result.
+    @Published var doneAgent: String?
     /// A click on the step of a task opens the panel, which lists all its steps (Double Tap's `DoubleTapRunBar`).
     @Published var workOpensPanel = false
     /// New for every strip under the notch (a result, a suggestion, a moment), so its countdown starts over.
@@ -242,6 +244,10 @@ final class NotchViewModel: ObservableObject {
     private(set) var doneInline: Bool {
         get { surface.doneInline }
         set { if surface.doneInline != newValue { surface.doneInline = newValue } }
+    }
+    private(set) var doneAgent: String? {
+        get { surface.doneAgent }
+        set { if surface.doneAgent != newValue { surface.doneAgent = newValue } }
     }
     private(set) var workOpensPanel: Bool {
         get { surface.workOpensPanel }
@@ -613,12 +619,13 @@ final class NotchViewModel: ObservableObject {
     /// it at once. `button` and `action` add the strip's own button next to the OK (View, Open). `inline`: an agent
     /// notice that stays in the notch's own row when compact.
     func finish(_ message: String, button: String = tr("button.close"), tone: DoneTone = .done, inline: Bool = false,
-                seconds: TimeInterval = NotchViewModel.doneSeconds, action: (() -> Void)? = nil) {
+                agent: String? = nil, seconds: TimeInterval = NotchViewModel.doneSeconds, action: (() -> Void)? = nil) {
         workOpensPanel = false
         doneButtonTitle = button
         doneButtonAction = action
         doneTone = tone
         doneInline = inline
+        if doneAgent != agent { doneAgent = agent }
         show(.done(message))
         runNotice(seconds) { [weak self] in
             guard let self, case .done(let shown) = self.state, shown == message else { return }
@@ -651,6 +658,7 @@ final class NotchViewModel: ObservableObject {
         doneButtonAction = stop
         doneTone = .waiting
         doneInline = false
+        if doneAgent != nil { doneAgent = nil }
         if case .done(let shown) = state, shown == line { return }
         show(.done(line))
         // The step stays until the next one or `endWork`: no countdown, Stop decides.

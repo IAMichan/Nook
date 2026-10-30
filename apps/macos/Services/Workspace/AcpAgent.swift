@@ -24,12 +24,20 @@ enum AcpLaunch {
 /// What a session update or request becomes in Nook's timeline.
 enum AcpEvent: Equatable, Sendable {
     case messageChunk(String)
+    /// Your own words, as a loaded session replays them (`user_message_chunk`).
+    case userChunk(String)
     case thoughtChunk(String)
     case toolCall(AcpToolCall)
     case toolCallUpdate(AcpToolCall)
     case plan([RunTaskStep])
     case usage(used: Int, size: Int, costUSD: Double?)
     case permission(rpcID: RPCID, call: AcpToolCall, options: [AcpPermissionOption])
+    /// The agent's own `/` commands (`available_commands_update`).
+    case commands([AgentSlashCommand])
+    /// The session's config options changed (`config_option_update`), all of them: a new model can bring other levels.
+    case configOptions(JSONBox)
+    /// The agent switched its mode itself (`current_mode_update`).
+    case currentMode(String)
     /// A request Nook does not handle (`fs/…`, `terminal/…` are not advertised): answered with an error.
     case unsupportedRequest(RPCID)
 }
@@ -42,6 +50,14 @@ extension AcpEvent {
         case .messageChunk(let text): return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .toolCall(let call), .toolCallUpdate(let call): return call.status == "completed" || call.status == "failed"
         case .permission: return true
+        default: return false
+        }
+    }
+
+    /// What the session offers rather than work it does: kept also outside a turn and while a loaded session replays.
+    var isSessionState: Bool {
+        switch self {
+        case .commands, .configOptions, .currentMode: return true
         default: return false
         }
     }
@@ -59,6 +75,24 @@ struct AcpToolCall: Equatable, Sendable {
     var output: String
     /// Files the call changes (diff content) or touches (locations).
     var paths: [String]
+    /// What the call changed (`diff` content): the text it replaced (nil for a new file) and what it wrote.
+    var diffs: [AcpDiff] = []
+
+    /// The call's input with its changes in the form Nook's edit rows read (`old_string`/`new_string`, `edits` when it
+    /// changed more than one place), as Claude Code's Edit has them: the line count and the diff panel then work for every
+    /// ACP agent. Nil when the call changed nothing it said.
+    var editInput: JSONBox? {
+        guard !diffs.isEmpty else { return nil }
+        var input = (input?.object as? [String: Any]) ?? [:]
+        let edits: [[String: Any]] = diffs.map { ["file_path": $0.path, "old_string": $0.oldText ?? "", "new_string": $0.newText] }
+        if edits.count == 1 {
+            input.merge(edits[0]) { _, new in new }
+        } else {
+            input["file_path"] = diffs[0].path
+            input["edits"] = edits
+        }
+        return JSONBox(input)
+    }
 
     /// The tool name Nook's timeline groups by (see ToolCategory).
     var toolName: String {
@@ -71,6 +105,12 @@ struct AcpToolCall: Equatable, Sendable {
         default: return kind.isEmpty ? "tool" : kind
         }
     }
+}
+
+struct AcpDiff: Equatable, Sendable {
+    var path: String
+    var oldText: String?
+    var newText: String
 }
 
 struct AcpPermissionOption: Equatable, Sendable {
@@ -129,8 +169,49 @@ enum AcpRPC {
         return params
     }
 
-    static func promptParams(sessionID: String, text: String) -> [String: Any] {
-        ["sessionId": sessionID, "prompt": [["type": "text", "text": text]]]
+    static func promptParams(sessionID: String, text: String, attachments: [[String: Any]] = []) -> [String: Any] {
+        ["sessionId": sessionID, "prompt": [["type": "text", "text": text]] + attachments]
+    }
+
+    /// The pictures of a prompt as content blocks: the picture itself (`image`, base64) for an agent that takes them and a
+    /// type it knows, else a `resource_link` to its file, which every ACP agent reads. `read` gives a file's bytes.
+    static func attachments(_ files: [URL], images: Bool, read: (URL) -> Data?) -> [[String: Any]] {
+        files.map { file in
+            let type = mimeType(file)
+            if images, let type, let data = read(file), data.count <= maxImageBytes {
+                return ["type": "image", "mimeType": type, "data": data.base64EncodedString(), "uri": file.absoluteString]
+            }
+            var link: [String: Any] = ["type": "resource_link", "uri": file.absoluteString, "name": file.lastPathComponent]
+            if let type { link["mimeType"] = type }
+            return link
+        }
+    }
+
+    /// Larger pictures go as a link: a prompt is one JSON line.
+    static let maxImageBytes = 8 * 1024 * 1024
+
+    /// The picture types models read; others (HEIC, TIFF, BMP) go as a link to the file.
+    static func mimeType(_ file: URL) -> String? {
+        switch file.pathExtension.lowercased() {
+        case "png": return "image/png"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "gif": return "image/gif"
+        case "webp": return "image/webp"
+        default: return nil
+        }
+    }
+
+    /// The answer to a permission request the turn no longer waits for (Stop, a failed turn): the spec asks for one.
+    static let cancelledOutcome: [String: Any] = ["outcome": ["outcome": "cancelled"]]
+
+    /// `session/list` params: one page, from `cursor` on.
+    static func listParams(cursor: String?) -> [String: Any] {
+        cursor.map { ["cursor": $0] } ?? [:]
+    }
+
+    /// The sign-in methods `initialize` offers, in the agent's order.
+    static func authMethodIDs(_ initialize: [String: Any]) -> [String] {
+        ((initialize["authMethods"] as? [[String: Any]]) ?? []).compactMap { $0["id"] as? String }.filter { !$0.isEmpty }
     }
 
     /// The option to answer a permission request with: the kind you chose, or the closest one the agent offers.
@@ -197,6 +278,8 @@ enum AcpMapper {
         switch update["sessionUpdate"] as? String {
         case "agent_message_chunk":
             return text(update["content"]).map { [.messageChunk($0)] } ?? []
+        case "user_message_chunk":
+            return text(update["content"]).map { [.userChunk($0)] } ?? []
         case "agent_thought_chunk":
             return text(update["content"]).map { [.thoughtChunk($0)] } ?? []
         case "tool_call":
@@ -213,6 +296,13 @@ enum AcpMapper {
             }
             return [.usage(used: Int(ClaudeStreamParser.number(update["used"]) ?? 0),
                            size: Int(ClaudeStreamParser.number(update["size"]) ?? 0), costUSD: cost)]
+        case "available_commands_update":
+            return [.commands(AgentSlashCommand.acp(update["availableCommands"]))]
+        case "config_option_update":
+            guard let options = update["configOptions"] as? [[String: Any]] else { return [] }
+            return [.configOptions(JSONBox(options))]
+        case "current_mode_update":
+            return (update["currentModeId"] as? String).map { [.currentMode($0)] } ?? []
         default:
             return []
         }
@@ -221,11 +311,17 @@ enum AcpMapper {
     private static func toolCall(_ raw: [String: Any]) -> AcpToolCall {
         var output: [String] = []
         var paths: [String] = []
+        var diffs: [AcpDiff] = []
         for item in (raw["content"] as? [[String: Any]]) ?? [] {
             switch item["type"] as? String {
             case "content":
                 if let text = text(item["content"]) ?? (item["content"] as? [String: Any]).flatMap(McpUI.encode) { output.append(text) }
-            case "diff": if let path = item["path"] as? String { paths.append(path) }
+            case "diff":
+                guard let path = item["path"] as? String else { break }
+                if !paths.contains(path) { paths.append(path) }
+                if let newText = item["newText"] as? String {
+                    diffs.append(AcpDiff(path: path, oldText: item["oldText"] as? String, newText: newText))
+                }
             default: break
             }
         }
@@ -236,7 +332,8 @@ enum AcpMapper {
         if output.isEmpty, let rawOutput = raw["rawOutput"].flatMap(Self.rawOutput) { output.append(rawOutput) }
         return AcpToolCall(id: (raw["toolCallId"] as? String) ?? UUID().uuidString, title: (raw["title"] as? String) ?? "",
                            kind: (raw["kind"] as? String) ?? "", status: raw["status"] as? String,
-                           input: raw["rawInput"].map { JSONBox($0) }, output: output.joined(separator: "\n"), paths: paths)
+                           input: raw["rawInput"].map { JSONBox($0) }, output: output.joined(separator: "\n"), paths: paths,
+                           diffs: diffs)
     }
 
     /// rawOutput as text: a string as is, an object's error or output field, otherwise the object as JSON.
@@ -261,6 +358,79 @@ enum AcpMapper {
     }
 }
 
+/// What an ACP agent can do with its sessions, from `initialize`: load one again with its history replayed
+/// (`agentCapabilities.loadSession`), list them (`sessionCapabilities.list`) and resume one without the replay
+/// (`sessionCapabilities.resume`).
+struct AcpSessionCapabilities: Equatable, Sendable {
+    var load = false
+    var list = false
+    var resume = false
+    /// The agent takes pictures in a prompt (`promptCapabilities.image`); otherwise they go as links to their files.
+    var images = false
+
+    init(load: Bool = false, list: Bool = false, resume: Bool = false, images: Bool = false) {
+        self.load = load
+        self.list = list
+        self.resume = resume
+        self.images = images
+    }
+
+    init(initialize: [String: Any]) {
+        let agent = (initialize["agentCapabilities"] as? [String: Any]) ?? [:]
+        let session = (agent["sessionCapabilities"] as? [String: Any]) ?? [:]
+        // A capability is offered by an object ({}), and not by null or its absence.
+        load = (agent["loadSession"] as? Bool) ?? false
+        list = session["list"] is [String: Any]
+        resume = session["resume"] is [String: Any]
+        images = ((agent["promptCapabilities"] as? [String: Any])?["image"] as? Bool) ?? false
+    }
+
+    /// An earlier conversation can be continued: resumed, or loaded again.
+    var continues: Bool { load || resume }
+    /// The method that continues one: `session/resume` when offered (no history replayed, Nook keeps it), else `session/load`.
+    var continueMethod: String { resume ? "session/resume" : "session/load" }
+}
+
+/// A session an ACP agent lists (`session/list`): its id, folder, title and when it last changed.
+struct AcpListedSession: Equatable, Sendable {
+    var id: String
+    var cwd: String
+    var title: String
+    var updated: Date?
+
+    /// One page of `session/list`, and the cursor of the next one. A session without id or folder is left out.
+    static func page(_ result: [String: Any]) -> (sessions: [AcpListedSession], next: String?) {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        let sessions = ((result["sessions"] as? [[String: Any]]) ?? []).compactMap { entry -> AcpListedSession? in
+            guard let id = entry["sessionId"] as? String, !id.isEmpty, let cwd = entry["cwd"] as? String, !cwd.isEmpty else { return nil }
+            let updated = (entry["updatedAt"] as? String).flatMap { formatter.date(from: $0) ?? plain.date(from: $0) }
+            return AcpListedSession(id: id, cwd: cwd, title: (entry["title"] as? String) ?? "", updated: updated)
+        }
+        let next = (result["nextCursor"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        return (sessions, next)
+    }
+}
+
+/// What an agent's error says, read from its text (the JSON-RPC code does not reach Nook in every case).
+enum AgentErrorText {
+    /// The agent wants you to sign in first (ACP's "Authentication required", -32000).
+    static func needsSignIn(_ message: String) -> Bool {
+        let text = message.lowercased()
+        return ["authentication required", "auth required", "auth_required", "unauthenticated", "not authenticated",
+                "please authenticate", "requires authentication", "not logged in", "login required"].contains { text.contains($0) }
+    }
+
+    /// The conversation to continue is gone (cleared, made on another machine, or by an older version of the agent).
+    static func sessionGone(_ message: String) -> Bool {
+        let text = message.lowercased()
+        guard ["session", "thread", "conversation", "rollout"].contains(where: { text.contains($0) }) else { return false }
+        return ["not found", "no such", "does not exist", "doesn't exist", "unknown", "no rollout", "invalid", "missing"]
+            .contains { text.contains($0) }
+    }
+}
+
 /// What an agent wrote to stderr, without its own log. Lines in glog's form ("I1029 16:35:47.481079 8387 agent.py:109]
 /// Starting…", as Antigravity's server writes) are that log, not the error: info and warnings are dropped, an error
 /// keeps only its message.
@@ -279,12 +449,13 @@ enum AgentLogLines {
     private static let glogRegex = try? NSRegularExpression(pattern: #"^([IWEF])\d{4} \d{2}:\d{2}:\d{2}\.\d+\s+\d+\s+[^\]\s]+:\d+\]\s?(.*)$"#)
 }
 
-/// The requests that bring an ACP session's model and mode in line with the run, sent one after the other and answered
-/// before the prompt goes. Antigravity restarts its agent session to switch models: a prompt sent before that is done
-/// ends at once without a word.
+/// The requests that bring an ACP session's model, effort and mode in line with the run, sent one after the other and
+/// answered before the prompt goes. Antigravity restarts its agent session to switch models: a prompt sent before that is
+/// done ends at once without a word.
 enum AcpSessionSettings {
     enum Target: Equatable, Sendable {
         case model(String)
+        case effort(String)
         case mode(String)
     }
 
@@ -294,8 +465,10 @@ enum AcpSessionSettings {
         var target: Target
     }
 
-    /// The model first, then the mode; only what differs from what the session already uses.
+    /// The model first, then the effort (a new model can bring other levels), then the mode; only what differs from what
+    /// the session already uses, and an effort or mode only when the agent offers it.
     static func steps(session: String, info: [String: Any], model: String, appliedModel: String?,
+                      effort: String? = nil, appliedEffort: String? = nil,
                       mode: String?, appliedMode: String?) -> [Step] {
         var steps: [Step] = []
         let model = model.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -306,6 +479,11 @@ enum AcpSessionSettings {
             } else {
                 steps.append(Step(method: "session/set_model", params: ["sessionId": session, "modelId": model], target: .model(model)))
             }
+        }
+        if let effort, !effort.isEmpty, effort != appliedEffort, let option = effortOption(info),
+           let configID = option["id"] as? String, values(option).contains(effort) {
+            steps.append(Step(method: "session/set_config_option", params: ["sessionId": session, "configId": configID, "value": effort],
+                              target: .effort(effort)))
         }
         if let mode, mode != appliedMode {
             if let option = modeOption(info), let configID = option["id"] as? String {
@@ -321,6 +499,33 @@ enum AcpSessionSettings {
         return steps
     }
 
+    /// The thinking levels the session offers (its config option of category "thought_level"), in the agent's order and
+    /// under its own names; the current one is the default.
+    static func effortLevels(_ info: [String: Any]) -> [AgentModel] {
+        guard let option = effortOption(info) else { return [] }
+        let current = option["currentValue"] as? String
+        var seen = Set<String>()
+        return options(option).compactMap { entry -> AgentModel? in
+            guard let value = entry["value"] as? String, !value.isEmpty, seen.insert(value).inserted else { return nil }
+            let name = (entry["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? value
+            return AgentModel(id: value, name: name, isDefault: value == current)
+        }
+    }
+
+    /// The thinking level the session started with.
+    static func currentEffort(_ info: [String: Any]) -> String? {
+        effortOption(info)?["currentValue"] as? String
+    }
+
+    /// `info` with the config options the agent sent since (in a reply to `session/set_config_option` or in
+    /// `config_option_update`): always the complete list.
+    static func updating(_ info: [String: Any], configOptions: [[String: Any]]?) -> [String: Any] {
+        guard let configOptions else { return info }
+        var info = info
+        info["configOptions"] = configOptions
+        return info
+    }
+
     /// The model the session started with.
     static func currentModel(_ info: [String: Any]) -> String? {
         AgentModelCatalog.acp(info).first(where: \.isDefault)?.id
@@ -332,9 +537,9 @@ enum AcpSessionSettings {
     }
 
     /// The mode for a run that is not Antigravity's (whose modes follow its rights): the agent's plan mode in Plan mode,
-    /// otherwise the mode the session started with.
-    static func mode(plan: Bool, info: [String: Any]) -> String? {
-        guard plan else { return currentMode(info) }
+    /// otherwise the mode the session started with (`starting`: `info` follows the agent, and is in plan mode by then).
+    static func mode(plan: Bool, info: [String: Any], starting: String? = nil) -> String? {
+        guard plan else { return starting ?? currentMode(info) }
         return (values(modeOption(info) ?? [:]) + modeIDs(info)).first { $0.lowercased().contains("plan") }
     }
 
@@ -343,9 +548,18 @@ enum AcpSessionSettings {
             .first { ($0["category"] as? String) == "mode" && ($0["type"] as? String ?? "select") == "select" }
     }
 
-    private static func values(_ option: [String: Any]) -> [String] {
+    private static func effortOption(_ info: [String: Any]) -> [String: Any]? {
+        ((info["configOptions"] as? [[String: Any]]) ?? [])
+            .first { ($0["category"] as? String) == "thought_level" && ($0["type"] as? String ?? "select") == "select" }
+    }
+
+    /// A select option's choices, groups flattened.
+    private static func options(_ option: [String: Any]) -> [[String: Any]] {
         ((option["options"] as? [[String: Any]]) ?? []).flatMap { ($0["options"] as? [[String: Any]]) ?? [$0] }
-            .compactMap { $0["value"] as? String }
+    }
+
+    private static func values(_ option: [String: Any]) -> [String] {
+        options(option).compactMap { $0["value"] as? String }
     }
 
     private static func modeIDs(_ info: [String: Any]) -> [String] {
@@ -368,15 +582,22 @@ final class AcpClient: @unchecked Sendable {
         get { lock.withLock { _sessionID } }
         set { lock.withLock { _sessionID = newValue } }
     }
-    var canLoadSessions: Bool {
-        get { lock.withLock { _canLoad } }
-        set { lock.withLock { _canLoad = newValue } }
+    /// What the agent can do with its sessions (see `AcpSessionCapabilities`).
+    var sessionCapabilities: AcpSessionCapabilities {
+        get { lock.withLock { _capabilities } }
+        set { lock.withLock { _capabilities = newValue } }
     }
-    /// While `session/load` replays the conversation, its updates are not new: Nook already keeps the timeline.
+    /// While `session/load` replays the conversation, its updates are not new: Nook already keeps the timeline, unless
+    /// `keepsReplay` (a session Nook has no timeline of yet, which the replay then fills).
     var replaying: Bool {
         get { lock.withLock { _replaying } }
         set { lock.withLock { _replaying = newValue } }
     }
+    var keepsReplay: Bool {
+        get { lock.withLock { _keepsReplay } }
+        set { lock.withLock { _keepsReplay = newValue } }
+    }
+    private var _keepsReplay = false
     /// The session was just created: the next prompt carries the session instructions.
     var freshSession: Bool {
         get { lock.withLock { _fresh } }
@@ -396,12 +617,35 @@ final class AcpClient: @unchecked Sendable {
         get { lock.withLock { _mode } }
         set { lock.withLock { _mode = newValue } }
     }
+    /// The thinking level set on the session, and the one it started with (a run back on "Default" returns to it).
+    var appliedEffort: String? {
+        get { lock.withLock { _effort } }
+        set { lock.withLock { _effort = newValue } }
+    }
+    var startingEffort: String? {
+        get { lock.withLock { _startingEffort } }
+        set { lock.withLock { _startingEffort = newValue } }
+    }
+    /// The mode the session started with: leaving Plan mode returns to it.
+    var startingMode: String? {
+        get { lock.withLock { _startingMode } }
+        set { lock.withLock { _startingMode = newValue } }
+    }
+    /// How the agent lets you sign in (`initialize`'s `authMethods`): asked for once when a session needs it.
+    var authMethods: [String] {
+        get { lock.withLock { _authMethods } }
+        set { lock.withLock { _authMethods = newValue } }
+    }
+    private var _authMethods: [String] = []
+    private var _effort: String?
+    private var _startingEffort: String?
+    private var _startingMode: String?
     private var _info: [String: Any] = [:]
     private var _model: String?
     private var _mode: String?
     private var _fresh = false
     private var _sessionID: String?
-    private var _canLoad = false
+    private var _capabilities = AcpSessionCapabilities()
     private var _replaying = false
 
     init(spec: LaunchSpec) {
@@ -467,8 +711,41 @@ final class AcpClient: @unchecked Sendable {
             if let error { completion?(.failure(.server(error))) } else { completion?(.success(result ?? JSONBox([String: Any]()))) }
             return
         }
-        // Replayed history is dropped, except requests, which always need an answer.
-        if replaying, case .notification = message { return }
-        onMessage?(message, AcpMapper.events(message))
+        // Replayed history is dropped, except requests, which always need an answer, and what the session offers.
+        let events = AcpMapper.events(message)
+        if replaying, !keepsReplay, case .notification = message, !events.allSatisfy(\.isSessionState) { return }
+        onMessage?(message, events)
+    }
+}
+
+/// The conversation a loaded session replays, as messages for a timeline that has none yet: consecutive chunks of one
+/// side join into one message.
+struct AcpReplay: Equatable, Sendable {
+    enum Side: Equatable, Sendable { case user, agent }
+    private(set) var messages: [(side: Side, text: String)] = []
+
+    mutating func add(_ event: AcpEvent) {
+        switch event {
+        case .userChunk(let text): add(.user, text)
+        case .messageChunk(let text): add(.agent, text)
+        default: break
+        }
+    }
+
+    private mutating func add(_ side: Side, _ text: String) {
+        if let last = messages.last, last.side == side {
+            messages[messages.count - 1].text += text
+        } else {
+            messages.append((side, text))
+        }
+    }
+
+    /// The messages with text, trimmed.
+    var finished: [(side: Side, text: String)] {
+        messages.map { ($0.side, $0.text.trimmingCharacters(in: .whitespacesAndNewlines)) }.filter { !$0.text.isEmpty }
+    }
+
+    static func == (lhs: AcpReplay, rhs: AcpReplay) -> Bool {
+        lhs.messages.map(\.side) == rhs.messages.map(\.side) && lhs.messages.map(\.text) == rhs.messages.map(\.text)
     }
 }

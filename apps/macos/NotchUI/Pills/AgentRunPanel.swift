@@ -95,12 +95,9 @@ struct AgentRunPanel: View {
                     CommandConsolePanel(event: event) {
                         withAnimation(NookTheme.reveal) { self.consoleEventID = nil }
                     }
-                    // Like the side panel on the right: a line between it and the conversation, not a box around it.
-                    .padding(.trailing, NookTheme.Spacing.sm)
-                    .resizablePanel(width: $consoleWidth, defaultWidth: PanelLayout.console, minimum: PanelLayout.minimumPanel,
-                                    available: PanelLayout.room(totalWidth, besides: filePreview != nil ? outputsWidth : nil),
-                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .trailing, divider: true)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+                    .sidePanel(.leading, width: $consoleWidth, defaultWidth: PanelLayout.console,
+                               available: PanelLayout.room(totalWidth, besides: filePreview != nil || diffSelection != nil ? outputsWidth : nil),
+                               rest: PanelLayout.minimumConversation + PanelSplit.handle)
                 }
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                     header(run)
@@ -114,23 +111,28 @@ struct AgentRunPanel: View {
                                   load: run.isRemote ? nil : { turn, files in try await gitDiff(turn, files) }) {
                         withAnimation(NookTheme.reveal) { diffSelection = nil }
                     }
-                    .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
-                                    available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
-                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .sidePanel(.trailing, width: $outputsWidth, defaultWidth: PanelLayout.outputs,
+                               available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
+                               rest: PanelLayout.minimumConversation + PanelSplit.handle)
                 } else if let filePreview {
                     FilePreviewPanel(path: filePreview, wide: PanelLayout.wide($outputsWidth)) {
                         withAnimation(NookTheme.reveal) { self.filePreview = nil }
                     }
                     .id(filePreview)
-                    .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
-                                    available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
-                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .sidePanel(.trailing, width: $outputsWidth, defaultWidth: PanelLayout.outputs,
+                               available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
+                               rest: PanelLayout.minimumConversation + PanelSplit.handle)
                 }
             }
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+            // The diff or file beside the conversation and the side panel's tools take turns on the right.
+            .sharesSessionSide(detailOpen: diffSelection != nil || filePreview != nil,
+                               besideWidth: (consoleOpen ? SidePanelRoom.of(consoleWidth) : 0)
+                                   + (diffSelection != nil || filePreview != nil ? SidePanelRoom.of(outputsWidth) : 0)) {
+                diffSelection = nil
+                filePreview = nil
+            }
             // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
             .environment(\.fileLinkBase, run.isRemote ? nil : run.workingDirectory)
             // Selected words of an answer go with the reply as a chip above the composer (right-click › Quote in your
@@ -438,7 +440,8 @@ struct AgentRunPanel: View {
             workspace.runs.filter { $0.id != runID && !$0.archived }.map { ($0.id.uuidString.lowercased(), $0.title) }
         }
         // Only the commands this agent really has (see AgentCommands).
-        config.commands = AgentCommands.commands(for: run.provider, hasProject: true, surface: .agent)
+        config.commands = AgentCommands.commands(for: run.provider, hasProject: true, surface: .agent,
+                                                 offered: workspace.acpCommands[runID] ?? [])
         config.skills = skills
         config.pullRequests = { repo in await GitHubPullRequests.openPullRequests(repo: repo) }
         config.keepsBigPastes = true
@@ -470,8 +473,8 @@ struct AgentRunPanel: View {
     /// The reasoning effort for the next turns, only for agents that have it.
     @ViewBuilder
     private func effortMenu(_ run: WorkspaceRun) -> some View {
-        let levels = EffortLevels.levels(for: run.provider, model: run.model)
-        if let family = app.modelFamily(run.model, for: run.provider) {
+        let levels = workspace.effortLevels(for: run.provider, profileID: run.profileID, model: run.model)
+        if let family = app.modelFamily(run.model, for: run.provider, profileID: run.profileID) {
             // An agent that lists one model per thinking level: the level picks the model of that family.
             ComposerDivider()
             Menu {
@@ -495,11 +498,13 @@ struct AgentRunPanel: View {
                 }
                 ForEach(levels, id: \.self) { level in
                     Button { workspace.setEffort(runID, level) } label: {
-                        if run.effort == level { Label(tr(EffortLevels.label(level)), systemImage: "checkmark") } else { Text(tr(EffortLevels.label(level))) }
+                        let title = workspace.effortTitle(level, for: run.provider, profileID: run.profileID)
+                        if run.effort == level { Label(title, systemImage: "checkmark") } else { Text(title) }
                     }
                 }
             } label: {
-                ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(run.effort)))
+                ComposerPill(symbol: "gauge.with.dots.needle.33percent",
+                             text: workspace.effortTitle(run.effort, for: run.provider, profileID: run.profileID))
             }
             .composerMenu()
             .help(tr("compose.effort.help"))
@@ -511,9 +516,10 @@ struct AgentRunPanel: View {
     private func composerTrailing(_ run: WorkspaceRun) -> some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
             if let window = run.usage.contextWindow, let used = run.usage.contextTokens, window > 0 {
+                // Every agent that compacts on `/compact` (Claude Code, Codex, an ACP agent that offers it) gets the button.
+                let compacts = AgentCommands.canCompact(run.provider, offered: workspace.acpCommands[runID] ?? [])
                 ComposerContextRing(used: used, window: window,
-                                    onCompact: run.status.isActive || !(run.provider == .claude || run.provider == .codex) ? nil
-                                        : { workspace.send(runID, text: "/compact") })
+                                    onCompact: run.status.isActive || !compacts ? nil : { workspace.send(runID, text: "/compact") })
             }
             ComposerMic(text: $composerState.draft)
         }
@@ -1237,7 +1243,7 @@ struct AgentRunPanel: View {
     private func modelMenu(_ run: WorkspaceRun) -> some View {
         let profile = app.profile(for: run)
         let account = profile.map { AccountLabel.name($0, app: app) }
-        let model = run.model.isEmpty ? nil : app.modelMenuName(run.model, for: run.provider)
+        let model = run.model.isEmpty ? nil : app.modelMenuName(run.model, for: run.provider, profileID: run.profileID)
         let idle = workspace.canTransfer(runID)
         let providers = idle ? app.connectedProviders : [run.provider]
         return ComposerDropdown(width: providers.count > 1 ? 340 : 296, takesRoom: true) {

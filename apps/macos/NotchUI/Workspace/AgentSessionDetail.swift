@@ -340,7 +340,7 @@ struct AgentSessionDetail: View {
             let current = choice ?? original
             let shown = app.profiles.profile(id: current.profileID)
             let account = shown.map { AccountLabel.name($0, app: app) }
-            let model = current.model.isEmpty ? nil : app.modelName(current.model, for: current.provider)
+            let model = current.model.isEmpty ? nil : app.modelName(current.model, for: current.provider, profileID: current.profileID)
             let providers = app.connectedProviders
             ComposerDropdown(width: providers.count > 1 ? 340 : 296, takesRoom: true) {
                 ComposerPill(agent: current.provider.displayName, account: shown.map { AccountKind.of($0, app: app) },
@@ -394,18 +394,19 @@ struct AgentSessionDetail: View {
             }
             .disabled(turnSettings.mode == .plan)
             .help(permission.help(for: provider))
-            let levels = EffortLevels.levels(for: provider, model: choice?.model ?? "")
+            let levels = app.workspace.effortLevels(for: provider, profileID: choice?.profileID, model: choice?.model ?? "")
             if !levels.isEmpty {
                 ComposerDivider()
                 Menu {
                     ForEach([nil] + levels.map { Optional($0) }, id: \.self) { level in
                         Button { turnSettings.effort = level } label: {
-                            let title = tr(EffortLevels.label(level))
+                            let title = app.workspace.effortTitle(level, for: provider, profileID: choice?.profileID)
                             if turnSettings.effort == level { Label(title, systemImage: "checkmark") } else { Text(title) }
                         }
                     }
                 } label: {
-                    ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(turnSettings.effort)))
+                    ComposerPill(symbol: "gauge.with.dots.needle.33percent",
+                                 text: app.workspace.effortTitle(turnSettings.effort, for: provider, profileID: choice?.profileID))
                 }
                 .composerMenu()
                 .help(tr("compose.effort.help"))
@@ -680,7 +681,7 @@ struct AgentSessionDetail: View {
         if !profile.label.isEmpty { return profile.label }
         let account = app.history.profileAccounts[profile.id]
         if let org = account?.organization, !org.isEmpty { return org }
-        if account?.name == "API-sleutel" { return account?.name ?? "" }
+        if account?.name == AgentAccount.apiKeyName { return account?.name ?? "" }
         return tr("agents.personal")
     }
 

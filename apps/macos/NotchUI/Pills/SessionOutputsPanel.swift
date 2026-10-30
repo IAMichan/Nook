@@ -16,15 +16,8 @@ struct SessionOutputsPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             if outputs.isEmpty {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                    Text(tr("ws.outputs.empty.title")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
-                    Text(tr("ws.outputs.empty.body"))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(NookTheme.Spacing.lg)
-                Spacer(minLength: 0)
+                WSEmptyState(symbol: SessionTool.outputs.symbol, title: tr("ws.outputs.empty.title"),
+                             message: tr("ws.outputs.empty.body"))
             } else {
                 if outputs.count > 1 { list }
                 if let current {
@@ -199,22 +192,12 @@ struct FilePreviewPanel: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
+    /// The side panel's own header (`SidePanelHeader`), on the right of the conversation.
     private var header: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "doc.text").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
-            Text(URL(fileURLWithPath: path).lastPathComponent)
-                .font(NookTheme.TextStyle.strong)
-                .foregroundStyle(NookTheme.paper)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(AgentPathFormat.tilde(path))
-            Spacer(minLength: 4)
-            ToolbarIconButton(wide ? "arrow.right.to.line" : "arrow.left.to.line", tr(wide ? "ws.outputs.narrow" : "ws.outputs.widen")) {
-                withAnimation(NookTheme.reveal) { wide.toggle() }
-            }
-            ToolbarIconButton("xmark", tr("ws.outputs.close"), close)
+        SidePanelHeader(closeHelp: tr("ws.outputs.close"), wide: $wide, close: close) {
+            SidePanelTitle(symbol: "doc.text", title: URL(fileURLWithPath: path).lastPathComponent,
+                           help: AgentPathFormat.tilde(path))
         }
-        .frame(height: 30)
     }
 
     @ViewBuilder

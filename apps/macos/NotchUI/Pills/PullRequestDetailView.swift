@@ -212,7 +212,7 @@ struct PullRequestDetailView: View {
                                   tr(maximized ? "agents.pulls.panel.restore" : "agents.pulls.panel.maximize"), onMaximize)
             }
             if let onBack, inline {
-                ToolbarIconButton("sidebar.right", tr("agents.pr.closePanel"), onBack)
+                SidePanelCloseButton(help: tr("agents.pr.closePanel"), action: onBack)
             }
         }
         .frame(height: 32)
