@@ -268,6 +268,24 @@ final class MailChatDataTests: XCTestCase {
         }
     }
 
+    /// A mail Nook has no place for (read in an earlier round or launch, or moved) is looked for in every mailbox, the
+    /// ends of each in one go before any slow search, and comes back as `messageScript` gives it.
+    func testAMailWithoutAPlaceIsFoundByItsID() {
+        let script = MailChatData.findScript(77, span: 300)
+        let quick = script.range(of: "set ids to id of messages 1 thru hi of box")
+        let search = script.range(of: "set m to first message of box whose id is 77")
+        XCTAssertTrue(script.contains("repeat with acc in accounts"))
+        XCTAssertNotNil(quick)
+        XCTAssertNotNil(search)
+        XCTAssertTrue(quick!.lowerBound < search!.lowerBound, "the quick look first, the search through a mailbox last")
+        XCTAssertTrue(script.contains("set hi to 300") && script.contains("set lo to total - 300 + 1"))
+        XCTAssertTrue(script.contains("if m is missing value then return \"\""), "nothing when Mail no longer has it")
+        let row = MailChatData.Row(account: "Google", mailbox: "INBOX", id: 77, subject: "", person: "a@b.c", date: Date(),
+                                   read: false, fromMe: false, index: 5)
+        let tail = { (text: String) in String(text[text.range(of: "set out to \"\"")!.lowerBound...]) }
+        XCTAssertEqual(tail(script), tail(MailChatData.messageScript(row)), "the same lines as opening a mail at its place")
+    }
+
     #if os(macOS)
     /// Every Mail script compiles against Mail's dictionary: Mail's terms can turn plain-looking AppleScript into a syntax
     /// error (`message id 42` once broke opening a mail with -2741), which no string check catches.
@@ -277,7 +295,7 @@ final class MailChatDataTests: XCTestCase {
         var placeless = row
         placeless.index = nil
         let scripts = [MailChatData.accountsScript, MailChatData.readScript(account: "Google"),
-                       MailChatData.messageScript(row), MailChatData.messageScript(placeless),
+                       MailChatData.messageScript(row), MailChatData.messageScript(placeless), MailChatData.findScript(77),
                        MailChatData.bodiesScript([row, placeless]), MailChatData.markReadScript([row, placeless]),
                        "tell application \"Mail\"\nset m to \(MailChatData.reference(row))\nend tell"]
         for source in scripts {

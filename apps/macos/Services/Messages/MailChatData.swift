@@ -189,7 +189,80 @@ enum MailChatData {
         """
         tell application "Mail"
         \(locate(row))
-            set out to "SUBJECT|||" & (subject of m) & linefeed
+            set out to ""
+        \(messageOutput)
+        end tell
+        """
+    }
+
+    /// How many messages at each end of a mailbox `findScript` takes in one go, before it searches mailboxes one by one.
+    static let findSpan = 500
+
+    /// One message by its id alone, for a mail Nook has no place for: it came from an earlier read or an earlier launch,
+    /// or it moved to another mailbox. Every mailbox of every account, first the newest and oldest `span` mail of each in
+    /// one go (quick, and where a mail nearly always is), then a search through each mailbox. The same output as
+    /// `messageScript`, or nothing when Mail no longer has the message.
+    static func findScript(_ id: Int, span: Int = findSpan) -> String {
+        """
+        tell application "Mail"
+            set m to missing value
+            set boxes to {}
+            repeat with acc in accounts
+                try
+                    repeat with box in mailboxes of acc
+                        set end of boxes to contents of box
+                    end repeat
+                end try
+            end repeat
+            repeat with listed in boxes
+                if m is missing value then
+                    try
+                        set box to contents of listed
+                        set total to count of messages of box
+                        if total > 0 then
+                            set hi to \(span)
+                            if hi > total then set hi to total
+                            set ids to id of messages 1 thru hi of box
+                            repeat with k from 1 to (count of ids)
+                                if (item k of ids) is \(id) then
+                                    set m to message k of box
+                                    exit repeat
+                                end if
+                            end repeat
+                            if m is missing value and total > hi then
+                                set lo to total - \(span) + 1
+                                if lo <= hi then set lo to hi + 1
+                                set ids to id of messages lo thru total of box
+                                repeat with k from 1 to (count of ids)
+                                    if (item k of ids) is \(id) then
+                                        set m to message (lo + k - 1) of box
+                                        exit repeat
+                                    end if
+                                end repeat
+                            end if
+                        end if
+                    end try
+                end if
+            end repeat
+            repeat with listed in boxes
+                if m is missing value then
+                    try
+                        set box to contents of listed
+                        set m to \(byID(id, in: "box"))
+                    end try
+                end if
+            end repeat
+            if m is missing value then return ""
+            set out to ""
+        \(messageOutput)
+        end tell
+        """
+    }
+
+    /// Script lines that add message `m`, whole, to `out` and return it: "SUBJECT|||…", "FROM|||…", "DATE|||…",
+    /// "MSGID|||…", one "TO|||…", "CC|||…" and "ATT|||…" each, then "<<<BODY>>>" and the text.
+    private static let messageOutput = """
+            set out to out & "SUBJECT|||" & (subject of m) & linefeed
             set out to out & "FROM|||" & (sender of m) & linefeed
             set out to out & "DATE|||" & ((date received of m) as «class isot» as string) & linefeed
             try
@@ -215,9 +288,7 @@ enum MailChatData {
                 end repeat
             end try
             return out & "<<<BODY>>>" & linefeed & (content of m)
-        end tell
-        """
-    }
+    """
 
     /// A whole message, read from Mail when you open it in the mail view.
     struct Message: Equatable, Sendable {

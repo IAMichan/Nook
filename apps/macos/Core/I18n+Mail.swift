@@ -6,7 +6,7 @@ import Foundation
 let mailChatTranslations: [AppLanguage: [String: String]] = [
     .nl: [
         "chats.mail.tryAgain": "Opnieuw proberen",
-        "chats.mail.notReadYet": "Nook weet nog niet waar deze mail in Mail staat. Dat leest Nook binnen een minuut; probeer het dan opnieuw.",
+        "chats.mail.gone": "Nook vindt deze mail niet meer in Mail. Misschien is hij verwijderd.",
         "chats.mail.noSubject": "(geen onderwerp)",
         "chats.mail.count": "%ld mails",
         "chats.mail.me": "Ik",
@@ -50,7 +50,7 @@ let mailChatTranslations: [AppLanguage: [String: String]] = [
     ],
     .en: [
         "chats.mail.tryAgain": "Try again",
-        "chats.mail.notReadYet": "Nook does not know where this mail is in Mail yet. It reads that within a minute; try again then.",
+        "chats.mail.gone": "Nook no longer finds this mail in Mail. It may have been deleted.",
         "chats.mail.noSubject": "(no subject)",
         "chats.mail.count": "%ld mails",
         "chats.mail.me": "Me",
@@ -94,7 +94,7 @@ let mailChatTranslations: [AppLanguage: [String: String]] = [
     ],
     .de: [
         "chats.mail.tryAgain": "Erneut versuchen",
-        "chats.mail.notReadYet": "Nook weiß noch nicht, wo diese Mail in Mail liegt. Das liest Nook innerhalb einer Minute; versuche es dann erneut.",
+        "chats.mail.gone": "Nook findet diese Mail nicht mehr in Mail. Vielleicht wurde sie gelöscht.",
         "chats.mail.noSubject": "(kein Betreff)",
         "chats.mail.count": "%ld Mails",
         "chats.mail.me": "Ich",
@@ -138,7 +138,7 @@ let mailChatTranslations: [AppLanguage: [String: String]] = [
     ],
     .fr: [
         "chats.mail.tryAgain": "Réessayer",
-        "chats.mail.notReadYet": "Nook ne sait pas encore où se trouve cet e-mail dans Mail. Il le lit en moins d’une minute ; réessayez ensuite.",
+        "chats.mail.gone": "Nook ne trouve plus cet e-mail dans Mail. Il a peut-être été supprimé.",
         "chats.mail.noSubject": "(sans objet)",
         "chats.mail.count": "%ld e-mails",
         "chats.mail.me": "Moi",
@@ -182,7 +182,7 @@ let mailChatTranslations: [AppLanguage: [String: String]] = [
     ],
     .es: [
         "chats.mail.tryAgain": "Reintentar",
-        "chats.mail.notReadYet": "Nook aún no sabe dónde está este correo en Mail. Lo lee en menos de un minuto; vuelve a intentarlo entonces.",
+        "chats.mail.gone": "Nook ya no encuentra este correo en Mail. Puede que se haya eliminado.",
         "chats.mail.noSubject": "(sin asunto)",
         "chats.mail.count": "%ld correos",
         "chats.mail.me": "Yo",
