@@ -155,7 +155,7 @@ struct AgentInboxList: View {
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
             }
-            // What you settled sits at the foot of the list, above the footer, and opens upwards.
+            // What you settled sits at the foot of the list, above the footer, its header above its rows.
             if let settled = sections.first(where: { $0.kind == .settled }) {
                 settledShelf(settled, sections: sections, byID: byID, shown: shown)
             }
@@ -232,8 +232,8 @@ struct AgentInboxList: View {
         }
     }
 
-    /// The settled shelf, docked at the foot of the list: its header stays put and its rows open above it, scrolling
-    /// on their own once they no longer fit.
+    /// The settled shelf, docked at the foot of the list: opening it lifts its header and lays its rows out below,
+    /// scrolling on their own once they no longer fit.
     private func settledShelf(_ section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem],
                               shown: [String]) -> some View {
         let open = !collapsed.contains(section.kind)
@@ -251,6 +251,7 @@ struct AgentInboxList: View {
             }
         }
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            shelfHeader(section, sections: sections, byID: byID)
             if !rows(of: section).isEmpty {
                 ViewThatFits(in: .vertical) {
                     list
@@ -258,7 +259,6 @@ struct AgentInboxList: View {
                 }
                 .frame(maxHeight: 280)
             }
-            shelfHeader(section, sections: sections, byID: byID)
         }
         .modifier(DropTarget(kind: section.kind, section: section, list: self, sections: sections, byID: byID, row: nil))
     }
@@ -284,11 +284,9 @@ struct AgentInboxList: View {
                         .padding(.horizontal, NookTheme.Spacing.sm).padding(.vertical, NookTheme.Spacing.xxs)
                         .background(Capsule().fill(NookTheme.iris.opacity(0.14)))
                 }
-                // The docked settled shelf opens upwards: its chevron points up while closed, down while open.
-                let docked = section.kind == .settled
                 Image(systemName: "chevron.down")
                     .font(NookTheme.font(8.5, .bold))
-                    .rotationEffect(.degrees(open ? 0 : (docked ? 180 : -90)))
+                    .rotationEffect(.degrees(open ? 0 : -90))
                     .foregroundStyle(NookTheme.textTertiary)
             }
             .padding(.horizontal, NookTheme.Spacing.lg)
