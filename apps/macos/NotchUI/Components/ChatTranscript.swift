@@ -549,6 +549,25 @@ private struct ChatBubbleView: View, Equatable {
         .fixedSize()
     }
 
+    /// Room for the time where it falls in the bubble's flow: the stamp itself is drawn over it at the bubble's right
+    /// edge (`placedStamp`), so it always sits bottom right, however wide a quote, name or card makes the bubble.
+    private var stampSlot: some View {
+        stamp.hidden()
+            .accessibilityHidden(true)
+            .anchorPreference(key: ChatStampSlot.self, value: .bounds) { $0 }
+    }
+
+    /// The time on the slot's line, against the bubble's right edge.
+    private func placedStamp(_ slot: Anchor<CGRect>?) -> some View {
+        GeometryReader { proxy in
+            if let slot {
+                stamp
+                    .padding(.bottom, max(0, proxy.size.height - proxy[slot].maxY))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            }
+        }
+    }
+
     /// The file that came with the message, as itself once Nook has it, else a button that opens it.
     @ViewBuilder
     private func media(_ attachment: String) -> some View {
@@ -642,6 +661,12 @@ private struct ChatBubbleView: View, Equatable {
         }
     }
 
+    /// The link a text message shows a preview of.
+    private var link: URL? {
+        guard bubble.attachment == nil, bubble.poll == nil, bubble.call == nil else { return nil }
+        return ChatFormat.firstLink(bubble.text)
+    }
+
     private var content: some View {
         VStack(alignment: .leading, spacing: 2) {
             if first, !bubble.sender.isEmpty {
@@ -667,7 +692,7 @@ private struct ChatBubbleView: View, Equatable {
                         // Without text the time sits under the file, inside its width: the bubble is as wide as the file.
                         VStack(alignment: .trailing, spacing: NookTheme.Spacing.xs) {
                             media(attachment)
-                            if showsStamp { stamp }
+                            if showsStamp { stampSlot }
                         }
                     }
                 } else {
@@ -678,7 +703,7 @@ private struct ChatBubbleView: View, Equatable {
                 // A call its app noted: what kind, who rang and how long, with the time beside it.
                 HStack(alignment: .bottom, spacing: NookTheme.Spacing.md) {
                     ChatCallRow(call: call, fromMe: bubble.fromMe)
-                    if showsStamp { stamp }
+                    if showsStamp { stampSlot }
                 }
             } else if !bubble.text.isEmpty {
                 HStack(alignment: .lastTextBaseline, spacing: NookTheme.Spacing.md) {
@@ -700,19 +725,22 @@ private struct ChatBubbleView: View, Equatable {
                             .foregroundStyle(NookTheme.blue)
                         }
                     }
-                    if showsStamp { stamp }
+                    if showsStamp, link == nil { stampSlot }
                 }
             }
-            // A link shows what it leads to: the picture, video or sound itself, else the page's card.
-            if bubble.attachment == nil, bubble.poll == nil, bubble.call == nil, let link = ChatFormat.firstLink(bubble.text) {
+            // A link shows what it leads to: the picture, video or sound itself, else the page's card, with the time
+            // under it.
+            if let link {
                 ChatLinkPreview(url: link, fromMe: bubble.fromMe)
                     .padding(.top, NookTheme.Spacing.xxs)
+                if showsStamp { stampSlot }
             }
             if bubble.text.isEmpty, bubble.attachment == nil {
                 // A poll or an empty message: the time under it, on the right.
-                stamp.frame(maxWidth: bubble.poll == nil ? nil : CGFloat.infinity, alignment: .trailing)
+                stampSlot
             }
         }
+        .overlayPreferenceValue(ChatStampSlot.self) { placedStamp($0) }
         .padding(.horizontal, mediaOnly ? 0 : (bare ? NookTheme.Spacing.xs : NookTheme.Spacing.md + NookTheme.Spacing.xxs))
         .padding(.vertical, mediaOnly ? 0 : (bare ? NookTheme.Spacing.xxs : NookTheme.Spacing.sm))
         // Room for the tail on its side, on every bubble of the run, so their edges line up.
@@ -720,6 +748,12 @@ private struct ChatBubbleView: View, Equatable {
         .background(ChatBubbleShape(mine: bubble.fromMe, tailed: first, joinsBelow: !last)
             .fill(bare ? Color.clear : (bubble.fromMe ? NookTheme.chatMine : NookTheme.chatTheirs)))
     }
+}
+
+/// Where a bubble's time falls in its flow, so the time itself can be drawn at the bubble's right edge.
+private struct ChatStampSlot: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = nextValue() ?? value }
 }
 
 /// What can be done with one message, as far as the chat's app lets Nook: answer, react, forward, copy, change, see
