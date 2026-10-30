@@ -165,12 +165,27 @@ struct AgentsUsagePanel: View {
                     .foregroundStyle(NookTheme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                let groups = limitGroups(limits)
+                let groups = QuotaLimit.grouped(limits)
                 let plain = groups.first { $0.name.isEmpty }?.limits ?? []
-                let models = groups.filter { !$0.name.isEmpty }
+                let named = groups.filter { !$0.name.isEmpty }
+                // A group of real windows (Antigravity's "Gemini": 5 hours and Week) reads like Claude's windows, under
+                // the group's name; only a long list of per-model quotas goes in the table.
+                let windowed = named.filter { $0.limits.allSatisfy { $0.duration != nil } }
+                let models = named.filter { $0.limits.contains { $0.duration == nil } }
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                     ForEach(plain) { limit in
                         limitRow(limit, title: limit.label, accent: accent)
+                    }
+                    ForEach(windowed, id: \.name) { group in
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                            Text(group.name)
+                                .font(NookTheme.TextStyle.label)
+                                .foregroundStyle(NookTheme.textTertiary)
+                                .lineLimit(1)
+                            ForEach(group.limits) { limit in
+                                limitRow(limit, title: limit.window, accent: accent)
+                            }
+                        }
                     }
                     if !models.isEmpty {
                         modelTable(models, profile: profile, accent: accent)
@@ -226,21 +241,6 @@ struct AgentsUsagePanel: View {
                     .help(pace.map { tr("agents.usage.pace", Int(($0 * 100).rounded())) } ?? "")
             }
         }
-    }
-
-    /// Limits per model group ("Claude & GPT", "Gemini") in the order they come; plain windows ("5 hours") share one
-    /// unnamed group.
-    private func limitGroups(_ limits: [QuotaLimit]) -> [(name: String, limits: [QuotaLimit])] {
-        var result: [(name: String, limits: [QuotaLimit])] = []
-        for limit in limits {
-            let name = limit.group ?? ""
-            if let index = result.firstIndex(where: { $0.name == name }) {
-                result[index].limits.append(limit)
-            } else {
-                result.append((name, [limit]))
-            }
-        }
-        return result
     }
 
     /// "peak 82%", tinted like the limit it names.
