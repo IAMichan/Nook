@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 extension View {
@@ -54,19 +55,24 @@ private struct ResizablePanel: ViewModifier {
 }
 
 /// How a drag line moves what it resizes: right under the pointer, every step without animation (an animation still
-/// running from the last step makes the panel trail the pointer and stutter), on whole points, and only when the size
-/// really changed. The size lives in a `@State` while dragging and goes to its `@AppStorage` once, at the end: writing
-/// the stored value on every mouse event saves it each time and redraws every view that reads it.
+/// running from the last step makes the panel trail the pointer and stutter), on whole points, only when the size
+/// really changed, and at most once per frame of the screen (`DragFrame`). The size lives in a `@State` while dragging
+/// and goes to its `@AppStorage` once, at the end: writing the stored value on every mouse event saves it each time and
+/// redraws every view that reads it.
+@MainActor
 enum PanelDrag {
     static func step(_ live: Binding<Double?>, to value: Double) {
         let snapped = value.rounded()
-        guard live.wrappedValue != snapped else { return }
-        still { live.wrappedValue = snapped }
+        DragFrame.shared.schedule {
+            guard live.wrappedValue != snapped else { return }
+            still { live.wrappedValue = snapped }
+        }
     }
 
     /// Ends the drag: the stored size takes the dragged one, in the same transaction that lets go of the live one, so
     /// nothing jumps back for a frame.
     static func commit(_ live: Binding<Double?>, to stored: Binding<Double>) {
+        DragFrame.shared.flush()
         guard let value = live.wrappedValue else { return }
         still {
             if stored.wrappedValue != value { stored.wrappedValue = value }
@@ -80,6 +86,38 @@ enum PanelDrag {
         transaction.disablesAnimations = true
         withTransaction(transaction, change)
     }
+}
+
+/// Hands a drag's newest step to SwiftUI once per frame of the screen. A mouse reports far more often than the screen
+/// draws, and every step lays out what sits on both sides of the line: in split view that is two whole tabs. Laying
+/// them out for steps nobody sees made the line fall behind and jump; now only the last step before each frame counts.
+@MainActor
+private final class DragFrame: NSObject {
+    static let shared = DragFrame()
+    private var pending: (() -> Void)?
+    private var link: CADisplayLink?
+
+    func schedule(_ apply: @escaping () -> Void) {
+        pending = apply
+        if link == nil {
+            // Without a screen (none attached yet) there is no frame to wait for: the step goes at once.
+            guard let screen = NSScreen.main ?? NSScreen.screens.first else { return flush() }
+            let link = screen.displayLink(target: self, selector: #selector(frame))
+            link.add(to: .main, forMode: .common)
+            self.link = link
+        }
+        link?.isPaused = false
+    }
+
+    /// Applies the step still waiting, if any, right now: before the drag ends, so its last step is the one kept.
+    func flush() {
+        link?.isPaused = true
+        let apply = pending
+        pending = nil
+        apply?()
+    }
+
+    @objc private func frame() { flush() }
 }
 
 /// Where the resizable panels start out, and how much room the conversation beside them always keeps.

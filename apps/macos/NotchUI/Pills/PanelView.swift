@@ -59,8 +59,12 @@ struct PanelView: View {
                         .transaction(value: tab) { $0.animation = nil }
                         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     if let side = splitTab {
+                        // Swapping the two tabs: the same as switching tabs above, the old one goes at once and the new
+                        // one fades in, instead of two whole tabs laid out on every frame of the spring.
                         PanelSplitPane(viewModel: viewModel, tab: side, inWindow: inWindow, swap: { swapSplit(side) })
                             .id(side)
+                            .transition(.asymmetric(insertion: .opacity.animation(NookTheme.tabFade), removal: .identity))
+                            .transaction(value: side) { $0.animation = nil }
                             .sidePanel(.trailing, width: $splitWidth, defaultWidth: PanelLayout.split,
                                        available: contentWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle)
                     }
