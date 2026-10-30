@@ -22,11 +22,15 @@ protocol ChatBridge: AnyObject {
     /// Reads also while collecting chats (Settings › Chats) is off: an app switched on on its own (WhatsApp through the
     /// linked phone, which has its own switch and needs no Full Disk Access).
     var alwaysOn: Bool { get }
+    /// Reads a database on this Mac, not a service: a read that failed for a passing reason is tried again within
+    /// seconds (`ChatBackoff`), not after a minute.
+    var readsLocally: Bool { get }
 }
 
 extension ChatBridge {
     var bridgeID: String { app }
     var alwaysOn: Bool { false }
+    var readsLocally: Bool { false }
 }
 
 /// A bridge that scrolls back in a chat, as far as its app keeps the history: the batch of messages older than the
@@ -75,6 +79,7 @@ final class MessagesBridge: ChatHistoryBridge {
     let app = "messages"
     /// Often: a read first looks only at when the database changed, which costs nothing while it did not.
     let interval: TimeInterval = 2
+    let readsLocally = true
     private(set) var isWorking = false
     /// What goes besides text: every file as itself (a sticker as its picture, a voice message as an audio file), a
     /// place or a contact as text. Messages has no polls another app can send.
@@ -89,6 +94,9 @@ final class MessagesBridge: ChatHistoryBridge {
     private var path: String { AppDatabase.home + "/Library/Messages/chat.db" }
     private var lastRow: Int64?
     private var lastChange: Date?
+    /// A query of the read going on found the database locked and read it without its write-ahead log
+    /// (`AppDatabase.read`): the next turn reads again, also when the database did not change since.
+    private var partial = false
     /// Every chat read so far by its id in the database, with its name in Nook, for the unread counts.
     private var names: [String: String] = [:]
     /// The group chats among them, and their people (you left out) once asked, as Messages lists them.
@@ -173,6 +181,7 @@ final class MessagesBridge: ChatHistoryBridge {
         let change = [path, path + "-wal"]
             .compactMap { try? FileManager.default.attributesOfItem(atPath: $0)[.modificationDate] as? Date }.max()
         if lastRow != nil, change != nil, change == lastChange { return [] }
+        partial = false
         let contacts = await ContactDirectory.names()
         let recent = "m.ROWID > (SELECT COALESCE(MAX(ROWID), 0) - \(Self.window) FROM message)"
         let rows: [[String: Any]]
@@ -295,7 +304,8 @@ final class MessagesBridge: ChatHistoryBridge {
         lastRow = newest
         lastTapback = tapbackCursor
         if let editCursor { lastEdit = editCursor }
-        lastChange = change
+        // A read without the write-ahead log may have missed the newest message: the next turn reads again.
+        lastChange = partial ? nil : change
         isWorking = true
         // An iMessage and an sms conversation with the same person are one chat in Nook, with both their counts.
         var chats: [String: BridgedChat] = [:]
@@ -691,7 +701,9 @@ final class MessagesBridge: ChatHistoryBridge {
 
     private func query(_ sql: String) async throws -> [[String: Any]] {
         do {
-            return try await AppDatabase.query(path, sql, app: "Messages")
+            let read = try await AppDatabase.read(path, sql, app: "Messages")
+            if !read.complete { partial = true }
+            return read.rows
         } catch {
             isWorking = false
             throw error
@@ -710,6 +722,7 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge {
     let app = "whatsapp"
     /// Often: a read first looks only at when the database changed, which costs nothing while it did not.
     let interval: TimeInterval = 2
+    let readsLocally = true
     private(set) var isWorking = false
 
     private static let chats = 30
@@ -720,6 +733,8 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge {
 
     private var lastRow: Int64?
     private var lastChange: Date?
+    /// A query of the read going on read the database without its write-ahead log (see `MessagesBridge.partial`).
+    private var partial = false
     /// New rows that had nothing to show yet, with when Nook first saw them: WhatsApp writes a message's row before its
     /// text is decrypted, and fills it in a moment later. They are read again until they say something, so a message
     /// shows as soon as it is there, not only when its chat is opened. Given up after `waitingFor`.
@@ -752,6 +767,7 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge {
         let change = [Self.path, Self.path + "-wal"]
             .compactMap { try? FileManager.default.attributesOfItem(atPath: $0)[.modificationDate] as? Date }.max()
         if lastRow != nil, change != nil, change == lastChange { return [] }
+        partial = false
         let contacts = await ContactDirectory.names()
         // Private chats (0) and groups (1); not broadcast lists or status updates.
         let kinds = "s.ZSESSIONTYPE IN (0, 1)"
@@ -817,7 +833,8 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge {
             }
         }
         lastRow = newest
-        lastChange = change
+        // A read without the write-ahead log may have missed the newest message: the next turn reads again.
+        lastChange = partial ? nil : change
         isWorking = true
         return names.map { chat, name in
             let people = groupPeople[chat] ?? []
@@ -978,7 +995,9 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge {
 
     private func query(_ sql: String) async throws -> [[String: Any]] {
         do {
-            return try await AppDatabase.query(Self.path, sql, app: "WhatsApp")
+            let read = try await AppDatabase.read(Self.path, sql, app: "WhatsApp")
+            if !read.complete { partial = true }
+            return read.rows
         } catch {
             isWorking = false
             throw error

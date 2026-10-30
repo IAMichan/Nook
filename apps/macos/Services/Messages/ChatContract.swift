@@ -146,12 +146,18 @@ enum ChatAccountHealth: Equatable {
 /// that is longer), then twice as long after each failure in a row, up to a quarter of an hour. A service that refuses
 /// (a lost sign-in, a rate limit, no network) is then asked a few times an hour instead of every minute, and a read that
 /// works again starts over.
+///
+/// A database on this Mac (Messages, WhatsApp on this Mac) that failed for a passing reason (the app held its lock, or
+/// was writing the moment Nook read) starts at a few seconds instead: there is no service to spare, and a minute's wait
+/// is a minute a new message does not show. Without Full Disk Access (`local` false) it waits as any other.
 enum ChatBackoff {
     static let first: TimeInterval = 60
+    /// The first wait of a bridge that reads a database on this Mac, after a passing failure.
+    static let firstLocal: TimeInterval = 5
     static let longest: TimeInterval = 15 * 60
 
-    static func delay(interval: TimeInterval, failures: Int) -> TimeInterval {
-        let start = max(interval, first)
+    static func delay(interval: TimeInterval, failures: Int, local: Bool = false) -> TimeInterval {
+        let start = max(interval, local ? firstLocal : first)
         let doublings = Double(min(max(failures, 1) - 1, 16))
         return min(start * pow(2, doublings), max(longest, start))
     }

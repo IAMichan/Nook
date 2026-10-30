@@ -87,7 +87,13 @@ extension AppModel {
                           self?.viewModel.notify(thread.name + ": " + line, button: tr("notices.openChat"), action: open)
                       },
                       open: open,
-                      window: { [weak self] in self?.showChats(ChatsFocus(chat: id)) })
+                      window: { [weak self] in self?.showChats(ChatsFocus(chat: id)) },
+                      // Held back by the pacer (an earlier pop-up a moment ago), it still comes up while the chat is unread.
+                      stillNew: {
+                          let capture = ChatCaptureService.shared
+                          guard let thread = capture.loadedInbox.threads[id] else { return false }
+                          return thread.unread > 0 && capture.isShown(thread)
+                      })
     }
 
     /// Where a chat is, as its card, notice and search result say it: its app, and the account while the app has more

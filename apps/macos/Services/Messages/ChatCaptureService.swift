@@ -57,6 +57,10 @@ final class ChatCaptureService: ObservableObject {
     /// The chats on screen or waiting in line as a card (their keys in `inbox`): their apps are read quickly meanwhile,
     /// so a card follows its chat as fast for every app as WhatsApp's linked phone brings it.
     var watching: () -> Set<String> = { [] }
+    /// The chat open in the Chats tab (its key in `inbox`), nil while none is: its app is read as quickly as a card's,
+    /// so a message in the chat you are reading shows within seconds, also from an app read once a minute otherwise.
+    /// Not published: it changes what is read, not what is drawn.
+    var openChat: String?
     /// Only a message this recent is news; older ones that come in (a first look, a long sleep) are for the Chats tab.
     static let newsWindow: TimeInterval = 600
 
@@ -298,11 +302,15 @@ final class ChatCaptureService: ObservableObject {
             var lastRecord = inbox.lastRecord
             var changed = false
             var full = false
+            // Read without the write-ahead log (the database was locked): the newest notification may be missing.
+            var complete = true
             // At most a few pages in one go; the rest of a backlog (a look back, a long sleep) follows on the next looks.
             for _ in 0..<5 {
-                let rows = try await AppDatabase.query(databasePath, NotificationRecord.query(
+                let read = try await AppDatabase.read(databasePath, NotificationRecord.query(
                     after: lastRecord, since: Date().addingTimeInterval(-Self.firstLook)), app: tr("chats.capture.source"))
                 guard started == generation else { return }
+                let rows = read.rows
+                if !read.complete { complete = false }
                 for row in rows {
                     guard let record = NotificationRecord.integer(row["id"]) else { continue }
                     lastRecord = max(lastRecord ?? record, record)
@@ -345,7 +353,8 @@ final class ChatCaptureService: ObservableObject {
                 inbox.lastRecord = lastRecord
                 changed = true
             }
-            lastChange = change
+            // An incomplete look is not the database's state: the next tick looks again, even when it did not change.
+            lastChange = complete ? change : nil
             retryAt = nil
             if status != .running { status = .running }
             if changed {
@@ -391,14 +400,15 @@ final class ChatCaptureService: ObservableObject {
 
     /// Time between the quick reads after a bridged app's notification.
     private static let nudgeGap: TimeInterval = 5
-    /// Time between two reads at most of an app with a chat card up: its card shows a new message soon, also for an app
-    /// that is otherwise read once a minute (Slack, Teams) and without its notifications. Not shorter: one Slack read
-    /// asks for up to a dozen conversations, and Slack allows about fifty a minute.
+    /// Time between two reads at most of an app with a chat card up or a chat open: its card (or chat) shows a new
+    /// message soon, also for an app that is otherwise read once a minute (Slack, Teams) and without its notifications.
+    /// Not shorter: one Slack read asks for up to a dozen conversations, and Slack allows about fifty a minute.
     private static let watchGap: TimeInterval = 20
 
-    /// The apps of the chats with a card up.
+    /// The apps of the chats with a card up, and of the chat open in the Chats tab.
     private func watchedApps() -> Set<String> {
-        let ids = watching()
+        var ids = watching()
+        if let openChat { ids.insert(openChat) }
         guard !ids.isEmpty else { return [] }
         return Set(ids.compactMap { inbox.threads[$0]?.app })
     }
@@ -528,9 +538,11 @@ final class ChatCaptureService: ObservableObject {
                 if signedOut { bridgeSignedOut.insert(bridge.app) } else { bridgeSignedOut.remove(bridge.app) }
             }
             // Try again later, and later still each time it fails again: a minute, two, four… up to a quarter of an hour.
+            // A database on this Mac that failed for a passing reason (a lock) starts at seconds, not a minute.
             let failures = (bridgeFailures[bridge.bridgeID] ?? 0) + 1
             bridgeFailures[bridge.bridgeID] = failures
-            bridgeDue[bridge.bridgeID] = Date().addingTimeInterval(ChatBackoff.delay(interval: bridge.interval, failures: failures))
+            bridgeDue[bridge.bridgeID] = Date().addingTimeInterval(ChatBackoff.delay(
+                interval: bridge.interval, failures: failures, local: bridge.readsLocally && !signedOut))
         }
     }
 

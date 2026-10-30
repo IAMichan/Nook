@@ -139,9 +139,9 @@ enum WhatsAppSettings {
 // MARK: - Link
 
 /// WhatsApp, live: Nook talks to the local gateway the user runs (GOWA, which Nook can install and start, or OpenWA),
-/// receives new messages on a webhook bound to 127.0.0.1 (polling when none comes), and keeps the conversations in
-/// memory only: nothing of a message is written to disk or to a log, and everything is forgotten when Nook quits or
-/// WhatsApp is turned off. Only the votes on polls are kept on disk (`WAPollStore`: who chose which option, by poll id),
+/// receives new messages on a webhook bound to 127.0.0.1 (polling when none comes, and once a minute besides for a
+/// message the webhook dropped), and keeps the conversations in memory only: nothing of a message is written to disk
+/// or to a log, and everything is forgotten when Nook quits or WhatsApp is turned off. Only the votes on polls are kept on disk (`WAPollStore`: who chose which option, by poll id),
 /// since no gateway keeps them; they go when WhatsApp is turned off. Sending goes only to chats that are on the phone, a few a minute at most, and only after the
 /// user typed the answer or approved Nook's plan.
 ///
@@ -161,7 +161,7 @@ final class WhatsAppLink: ObservableObject {
     let account: String
     nonisolated static let webhookPath = "/whatsapp"
     /// A message older than this when it reaches Nook is a catch-up (after a sleep or an outage), never announced:
-    /// the webhook is instant and polling at most half a minute late.
+    /// the webhook is instant, and polling at most a minute late (`pollGap`, `safetyPollGap`).
     static let freshness: TimeInterval = 120
 
     enum Link: Equatable {
@@ -475,6 +475,12 @@ final class WhatsAppLink: ObservableObject {
         refresh()
     }
 
+    /// Ticks (of 5 s) between two polls while no webhook comes: a message shows within ten seconds then.
+    static let pollGap = 2
+    /// Ticks between two polls while the webhook works: once a minute, for a message whose delivery the gateway dropped.
+    /// The webhook keeps bringing ticks and typing while that happens, so it seeming alive says nothing about messages.
+    static let safetyPollGap = 12
+
     private func onTick() {
         tick += 1
         if link != .connected {
@@ -483,7 +489,9 @@ final class WhatsAppLink: ObservableObject {
             refresh()
         } else {
             if tick % 12 == 0 { refresh() }
-            if tick % 4 == 0 { poll() }
+            // With the webhook: half a minute apart from the status check, so the two never ask the gateway at once.
+            let due = webhookAlive ? tick % Self.safetyPollGap == Self.safetyPollGap / 2 : tick % Self.pollGap == 0
+            if due { poll() }
         }
     }
 
@@ -774,7 +782,7 @@ final class WhatsAppLink: ObservableObject {
     }
 
     private func poll() {
-        guard let provider, !polling, !webhookAlive, backfilled else { return }
+        guard let provider, !polling, backfilled else { return }
         polling = true
         let since = lastPoll.addingTimeInterval(-30)   // a little overlap; duplicates are dropped
         let started = Date()

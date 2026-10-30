@@ -70,8 +70,10 @@ extension AppModel {
     }
 
     /// The chat open in Nook (nil: none is). WhatsApp only says who types to a device that says it is online, as
-    /// WhatsApp Web does; every other app says it without (`ChatTypingCenter`), so nothing is told to them.
+    /// WhatsApp Web does; every other app says it without (`ChatTypingCenter`), so nothing is told to them. Every app's
+    /// open chat is read as quickly as a chat card meanwhile (`ChatCaptureService.openChat`).
     func setChatOnline(_ entry: ChatsEntry?) {
+        ChatCaptureService.shared.openChat = entry?.id
         let open = entry.flatMap { entry -> (WhatsAppLink, String)? in
             guard case .whatsApp(let key) = chatRoute(for: entry) else { return nil }
             return WhatsAppAccounts.shared.route(key)

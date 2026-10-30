@@ -79,6 +79,14 @@ final class ChatContractTests: XCTestCase {
         XCTAssertEqual(ChatBackoff.delay(interval: 3600, failures: 3), 3600, "never shorter than the bridge's own interval")
     }
 
+    func testADatabaseOnThisMacTriesAgainWithinSeconds() {
+        XCTAssertEqual(ChatBackoff.delay(interval: 2, failures: 1, local: true), 5, "a locked database is read again soon")
+        XCTAssertEqual(ChatBackoff.delay(interval: 2, failures: 2, local: true), 10)
+        XCTAssertEqual(ChatBackoff.delay(interval: 2, failures: 3, local: true), 20)
+        XCTAssertEqual(ChatBackoff.delay(interval: 2, failures: 30, local: true), 900, "one that keeps failing still waits up to a quarter of an hour")
+        XCTAssertEqual(ChatBackoff.delay(interval: 10, failures: 1, local: true), 10, "never shorter than the bridge's own interval")
+    }
+
     func testSlackTellsALostSignInFromOtherRefusals() {
         for reason in ["invalid_auth", "not_authed", "token_revoked", "token_expired", "account_inactive"] {
             XCTAssertTrue(SlackData.signedOut(["ok": false, "error": reason]), reason)
