@@ -319,8 +319,7 @@ struct DropdownList<Rows: View>: View {
 }
 
 /// Model picker of the agents, built on `ModelPickerPanel` as Nook's own brain picker is: the connected agents in the
-/// rail, and on the right the shown agent's accounts and its models, with a search field. Picking an account keeps the
-/// panel open until you pick a model.
+/// rail, one logo per account when an agent has several, and on the right the shown account's models, with a search field.
 struct AgentModelPicker: View {
     @EnvironmentObject private var app: AppModel
     /// Favorites and typed models live here: a star redraws the menu at once.
@@ -339,36 +338,75 @@ struct AgentModelPicker: View {
     /// Picking a model adds it to the comparison instead of replacing the chosen one.
     @State private var multi = false
 
+    /// One logo in the rail: an agent, or one of its accounts when it has several to pick from.
+    private struct Place: Hashable {
+        let provider: RunProvider
+        /// Nil when the agent shows once: it runs under the account in use, or else the preferred one.
+        let profileID: String?
+    }
+
+    /// Accounts get a logo of their own for a new session (a running session keeps its account).
+    private var splitsAccounts: Bool { providers.count > 1 || showsAccounts }
+
+    private var places: [Place] {
+        providers.flatMap { current -> [Place] in
+            let accounts = app.connectedProfiles(for: current)
+            guard splitsAccounts, accounts.count > 1 else { return [Place(provider: current, profileID: nil)] }
+            return accounts.map { Place(provider: current, profileID: $0.id) }
+        }
+    }
+
+    private var chosenPlace: Place {
+        let accounts = app.connectedProfiles(for: provider)
+        guard splitsAccounts, accounts.count > 1 else { return Place(provider: provider, profileID: nil) }
+        return Place(provider: provider, profileID: profileID ?? accounts.first?.id)
+    }
+
     var body: some View {
-        ModelPickerPanel(groups: [providers], chosen: provider, help: { $0.displayName },
+        ModelPickerPanel(groups: [places], chosen: chosenPlace, help: help(of:),
                          addHelp: tr("agents.picker.add"), add: { app.openSettings(section: .agents) },
                          onShow: { _ in query = "" },
-                         icon: { AgentMark(agent: $0.displayName, account: account(of: $0), size: 18, ring: DropdownStyle.panel) }) { current in
+                         icon: { AgentMark(agent: $0.provider.displayName, account: account(of: $0), size: 18, ring: DropdownStyle.panel) }) { current in
             models(of: current)
         }
     }
 
-    /// The account an agent runs under from here: the chosen one for the agent in use, else the one picking it would take.
-    private func account(of current: RunProvider) -> AccountKind? {
-        let accounts = app.connectedProfiles(for: current)
-        let profile = current == provider ? accounts.first(where: { $0.id == profileID }) ?? accounts.first : accounts.first
-        return profile.map { AccountKind.of($0, app: app) }
+    private func isChosen(_ place: Place) -> Bool { place == chosenPlace }
+
+    /// The account a place runs under: its own, the chosen one for the agent in use, else the one picking it would take.
+    private func profile(of place: Place) -> AgentProfile? {
+        let accounts = app.connectedProfiles(for: place.provider)
+        let id = place.profileID ?? (place.provider == provider ? profileID : nil)
+        return accounts.first(where: { $0.id == id }) ?? accounts.first
+    }
+
+    private func account(of place: Place) -> AccountKind? {
+        profile(of: place).map { AccountKind.of($0, app: app) }
     }
 
     /// The account whose models the list shows: an ACP agent you added has models of its own.
-    private func profileOf(_ current: RunProvider) -> String? {
-        let accounts = app.connectedProfiles(for: current)
-        return current == provider ? profileID ?? accounts.first?.id : accounts.first?.id
+    private func profileOf(_ place: Place) -> String? { profile(of: place)?.id }
+
+    /// The account to hand back with a pick: nil keeps the one in use.
+    private func pickedProfile(_ place: Place) -> String? { isChosen(place) ? nil : profileOf(place) }
+
+    /// The account's name, when its agent shows once per account.
+    private func accountLine(of place: Place) -> String? {
+        guard place.profileID != nil, let profile = profile(of: place) else { return nil }
+        return AccountLabel.line(profile, app: app)
     }
 
-    private func models(of current: RunProvider) -> some View {
+    private func help(of place: Place) -> String {
+        accountLine(of: place).map { "\(place.provider.displayName) · \($0)" } ?? place.provider.displayName
+    }
+
+    private func models(of current: Place) -> some View {
         let shownModels = filtered(current)
         let custom = customModel(current)
-        return ModelPickerColumn(title: current.displayName, query: $query,
+        return ModelPickerColumn(title: current.provider.displayName, detail: accountLine(of: current), query: $query,
                                  emptyNote: shownModels.isEmpty && custom == nil ? tr("compose.noModels") : nil,
                                  settingsTitle: tr("agents.picker.settings"),
                                  openSettings: { app.openSettings(section: .agents) }) {
-            accountRows(of: current)
             if let comparing { compareToggle(comparing) }
         } rows: {
             ForEach(shownModels, id: \.self) { option in
@@ -376,37 +414,23 @@ struct AgentModelPicker: View {
             }
             if let custom {
                 DropdownRow(symbol: "plus", title: tr("compose.useModel", custom), detail: tr("compose.useModelDetail")) {
-                    ws.rememberCustomModel(custom, for: current)
-                    choose(current, current == provider ? nil : app.connectedProfiles(for: current).first?.id, custom)
+                    ws.rememberCustomModel(custom, for: current.provider)
+                    choose(current.provider, pickedProfile(current), custom)
                 }
             }
         }
     }
 
-    /// The agent's accounts, for a new session (a running session keeps its account).
-    @ViewBuilder
-    private func accountRows(of current: RunProvider) -> some View {
-        let accounts = app.connectedProfiles(for: current)
-        if providers.count > 1 || showsAccounts, accounts.count > 1 {
-            ForEach(accounts) { account in
-                DropdownRow(agent: current.displayName, account: AccountKind.of(account, app: app),
-                            title: AccountLabel.line(account, app: app),
-                            chosen: current == provider && account.id == profileID, staysOpen: true) {
-                    choose(current, account.id, nil)
-                }
-            }
-            DropdownDivider()
-        }
-    }
-
-    private func modelRow(_ option: String, of current: RunProvider) -> some View {
+    private func modelRow(_ option: String, of place: Place) -> some View {
+        let current = place.provider
+        let profile = profileOf(place)
         // A model that comes in thinking levels shows once; its level is picked with the effort control.
-        let family = app.modelFamily(option, for: current, profileID: profileOf(current))
-        let name = app.modelMenuName(option, for: current, profileID: profileOf(current))
-        let choice = app.workspace.modelChoice(option, for: current, profileID: profileOf(current))
-        let isChosen = current == provider
+        let family = app.modelFamily(option, for: current, profileID: profile)
+        let name = app.modelMenuName(option, for: current, profileID: profile)
+        let choice = app.workspace.modelChoice(option, for: current, profileID: profile)
+        let isChosen = isChosen(place)
             && (app.workspace.sameModel(option, model, for: current) || family?.contains(model) == true)
-        let order = multi ? compareOrder(option, of: current, chosen: isChosen) : nil
+        let order = multi ? compareOrder(option, of: place, chosen: isChosen) : nil
         // A model that needs a newer agent says which update unlocks it, and cannot be picked until then.
         return DropdownRow(brand: BrandLogo.forName(option) ?? BrandLogo.forName(name) ?? BrandLogo.forName(current.displayName),
                            title: name,
@@ -419,11 +443,11 @@ struct AgentModelPicker: View {
                            staysOpen: multi,
                            favorite: option.isEmpty ? nil : favoriteBinding(option, for: current)) {
             if multi, let comparing {
-                toggleCompared(option, of: current, in: comparing)
+                toggleCompared(option, of: place, in: comparing)
                 return
             }
-            let picked = app.menuPick(option, keeping: current == provider ? model : "", for: current, profileID: profileOf(current))
-            choose(current, current == provider ? nil : app.connectedProfiles(for: current).first?.id, picked)
+            let picked = app.menuPick(option, keeping: self.isChosen(place) ? model : "", for: current, profileID: profile)
+            choose(current, pickedProfile(place), picked)
         }
     }
 
@@ -452,31 +476,32 @@ struct AgentModelPicker: View {
         ComparisonTarget(provider: provider, profileID: profileID ?? app.connectedProfiles(for: provider).first?.id ?? "", model: model)
     }
 
-    private func target(_ option: String, of current: RunProvider) -> ComparisonTarget {
-        if current == provider { return ComparisonTarget(provider: current, profileID: primaryTarget.profileID, model: option) }
-        return ComparisonTarget(provider: current, profileID: app.connectedProfiles(for: current).first?.id ?? "", model: option)
+    private func target(_ option: String, of place: Place) -> ComparisonTarget {
+        if isChosen(place) { return ComparisonTarget(provider: place.provider, profileID: primaryTarget.profileID, model: option) }
+        return ComparisonTarget(provider: place.provider, profileID: profileOf(place) ?? "", model: option)
     }
 
     /// Where a model stands in the comparison (1 is the chosen one), nil when it is not part of it.
-    private func compareOrder(_ option: String, of current: RunProvider, chosen: Bool) -> Int? {
+    private func compareOrder(_ option: String, of place: Place, chosen: Bool) -> Int? {
         if chosen { return 1 }
         let all = ModelComparison.targets(primary: primaryTarget, extras: comparing?.wrappedValue ?? [])
-        return all.firstIndex(of: target(option, of: current)).map { $0 + 1 }
+        return all.firstIndex(of: target(option, of: place)).map { $0 + 1 }
     }
 
-    private func toggleCompared(_ option: String, of current: RunProvider, in comparing: Binding<[ComparisonTarget]>) {
-        comparing.wrappedValue = ModelComparison.toggling(target(option, of: current), in: comparing.wrappedValue,
+    private func toggleCompared(_ option: String, of place: Place, in comparing: Binding<[ComparisonTarget]>) {
+        comparing.wrappedValue = ModelComparison.toggling(target(option, of: place), in: comparing.wrappedValue,
                                                           primary: primaryTarget)
     }
 
     /// Older models stay out of the list until you search for them, unless one is in use or a favorite.
-    private func filtered(_ current: RunProvider) -> [String] {
-        let all = app.menuModels(for: current, profileID: profileOf(current))
+    private func filtered(_ place: Place) -> [String] {
+        let current = place.provider
+        let profile = profileOf(place)
+        let all = app.menuModels(for: current, profileID: profile)
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !needle.isEmpty else {
-            return all.filter { !app.workspace.hidesLegacyModel($0, for: current, chosen: current == provider ? model : "") }
+            return all.filter { !app.workspace.hidesLegacyModel($0, for: current, chosen: isChosen(place) ? model : "") }
         }
-        let profile = profileOf(current)
         return all.filter {
             $0.lowercased().contains(needle) || app.modelMenuName($0, for: current, profileID: profile).lowercased().contains(needle)
         }
@@ -488,10 +513,10 @@ struct AgentModelPicker: View {
     }
 
     /// The search text as a model id of your own, when no listed model goes by that name.
-    private func customModel(_ current: RunProvider) -> String? {
+    private func customModel(_ place: Place) -> String? {
         guard let id = ModelPreferences.customID(query),
-              !app.menuModels(for: current, profileID: profileOf(current))
-                .contains(where: { app.workspace.sameModel($0, id, for: current) }) else { return nil }
+              !app.menuModels(for: place.provider, profileID: profileOf(place))
+                .contains(where: { app.workspace.sameModel($0, id, for: place.provider) }) else { return nil }
         return id
     }
 }
