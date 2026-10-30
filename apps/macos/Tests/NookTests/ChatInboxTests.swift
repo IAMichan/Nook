@@ -1066,6 +1066,14 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertFalse(instagram.accounts.first?.isConnected ?? true)
         XCTAssertEqual(instagram.accounts.first?.status, "Reconnect required")
         XCTAssertFalse(networks.first { $0.app == "telegram" }?.canLink ?? true, "a network at its limit links no more")
+        XCTAssertEqual(ChatLinkData.onlyAccount(of: "instagram", in: networks), "anna.ig")
+        XCTAssertNil(ChatLinkData.onlyAccount(of: "telegram", in: networks), "no account linked")
+        let two = ChatLinkData.networks(["items": [
+            ["id": "local-instagram", "type": "instagram", "provider": "local", "displayName": "Instagram", "status": "connected",
+             "accounts": [["accountID": "a", "status": "connected", "user": ["fullName": "Anna"]],
+                          ["accountID": "b", "status": "connected", "user": ["fullName": "Club"]]]],
+        ]])
+        XCTAssertNil(ChatLinkData.onlyAccount(of: "instagram", in: two), "with two accounts a chat is not given the first one's name")
     }
 
     func testLinkingSteps() {
