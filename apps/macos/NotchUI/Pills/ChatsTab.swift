@@ -144,8 +144,9 @@ extension ChatsEntry {
 
 /// `ChatsEntry.all`, made once and asked many times: the tab asks for it a dozen times while it draws (the list, the
 /// filters, the counts, the open chat), and making it goes through every chat. Kept across redraws and forgotten as soon
-/// as something it is made of changes (WhatsApp, the other chats, the chat helper's links, the language), so a redraw
-/// for anything else (the panel, contact photos, the app model) does not go through every chat again.
+/// as something it is made of changes (the chats, which apps are on, the chats you hid, the language; WhatsApp's linked
+/// accounts and the chat helper's links by `visibility`), so a redraw for anything else (the panel, contact photos, the
+/// app model) does not go through every chat again.
 @MainActor
 final class ChatsEntryMemo {
     private var entries: [ChatsEntry]?
@@ -792,6 +793,8 @@ struct ChatsTab: View {
                 DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .center) } }
             }
             .onScrollPhaseChange { _, phase in ChatsTab.listScrolling = phase != .idle }
+            // A list that goes while it scrolls leaves no other list without its hover fetch.
+            .onDisappear { ChatsTab.listScrolling = false }
             // Back from a chat while one column shows at a time: the list is where you left it, at that chat.
             .onAppear {
                 guard let id = returnTo ?? (revealSelection ? selection : nil) else { return }
@@ -1319,7 +1322,11 @@ private struct ChatsDetail: View, Equatable {
     /// alone. The closures do the same for the same chat.
     static func == (lhs: ChatsDetail, rhs: ChatsDetail) -> Bool {
         lhs.entry == rhs.entry && lhs.photo === rhs.photo && (lhs.onBack == nil) == (rhs.onBack == nil)
+            && lhs.language == rhs.language
     }
+
+    /// The language the chat is drawn in: a change of it draws the chat again.
+    let language = I18n.shared.currentLanguage
 
     /// Places "New messages" above the first of what was new, once the chat shows it.
     private func landNew() {

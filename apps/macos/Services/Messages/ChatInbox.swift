@@ -1077,10 +1077,16 @@ struct ChatInbox: Codable, Equatable, Sendable {
                 // Nook holds no messages of goes by when its app says it last had one.
                 let fresh = thread.messages.filter { !$0.isMine && $0.date > read }.count
                 thread.unread = thread.messages.isEmpty ? ((thread.activity ?? .distantPast) > read ? unread : 0) : min(unread, fresh)
-            } else if thread.markedUnread != nil {
-                // Marked unread by hand: only more from the app counts (new messages); its count going down is the app
-                // catching up on an older read, not you reading it.
-                thread.unread = max(thread.unread, unread, 1)
+            } else if let marked = thread.markedUnread {
+                if thread.messages.contains(where: { $0.isMine && $0.date > marked }) {
+                    // You answered since (on the phone, in the app): that reads it, as answering in Nook does.
+                    thread.markedUnread = nil
+                    thread.unread = unread
+                } else {
+                    // Marked unread by hand: only more from the app counts (new messages); its count going down is the
+                    // app catching up on an older read, not you reading it.
+                    thread.unread = max(thread.unread, unread, 1)
+                }
             } else if unread != thread.appUnread {
                 thread.unread = unread
             }
@@ -1160,13 +1166,15 @@ struct ChatInbox: Codable, Equatable, Sendable {
             return
         }
         guard var thread = threads[id] else { return }
-        let fresh = thread.messages.filter { !$0.isMine && $0.date > through }.count
+        // A read in Nook while the app was being told (you opened the chat meanwhile) still counts.
+        let read = max(thread.readInNook ?? through, through)
+        let fresh = thread.messages.filter { !$0.isMine && $0.date > read }.count
         thread.unread = fresh
-        thread.readInNook = max(thread.readInNook ?? through, through)
+        thread.readInNook = read
         thread.readInApp = through
         if thread.appUnread != nil { thread.appUnread = fresh }
         if fresh == 0, thread.waitsInApp == true { thread.waitsInApp = false }
-        if fresh == 0 { thread.markedUnread = nil }
+        thread.markedUnread = nil
         threads[id] = thread
     }
 

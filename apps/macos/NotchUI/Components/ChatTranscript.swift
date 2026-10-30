@@ -51,6 +51,8 @@ struct ChatTranscript: View, Equatable {
     /// long the chat is; scrolling back to the top draws the ones before them.
     @State private var drawnFrom: String?
     @State private var drawsAll = false
+    /// The language the day lines are written in: a change of it draws the chat again.
+    let language = I18n.shared.currentLanguage
     /// The oldest message before the app sent older ones: once they are in, the next page above it is drawn.
     @State private var olderAnchor: String?
     /// Older messages were just drawn above and the chat is being put back where you were: reaching the top again in
@@ -77,7 +79,7 @@ struct ChatTranscript: View, Equatable {
     /// Drawn again only when what it shows changed: the chat around it redraws for every key you type in its field.
     /// The actions only count by whether they are there: they do the same for the same messages.
     static func == (a: ChatTranscript, b: ChatTranscript) -> Bool {
-        a.bubbles == b.bubbles && a.contact == b.contact && a.fills == b.fills && a.typing == b.typing
+        a.bubbles == b.bubbles && a.language == b.language && a.contact == b.contact && a.fills == b.fills && a.typing == b.typing
             && a.newFrom == b.newFrom && (a.onReply == nil) == (b.onReply == nil) && (a.onReact == nil) == (b.onReact == nil)
             && (a.onEdit == nil) == (b.onEdit == nil) && (a.onDelete == nil) == (b.onDelete == nil)
             && (a.onVote == nil) == (b.onVote == nil) && (a.onLoadOlder == nil) == (b.onLoadOlder == nil)
@@ -210,7 +212,8 @@ struct ChatTranscript: View, Equatable {
                 let settling = !scrolledByUser && Date().timeIntervalSince(openedAt) < Self.settling
                 // Reading back, several messages at once (a bridge's read, an answer of yours replaced by the app's own,
                 // a message hidden) are no reason to pull you down either: only a chat still opening jumps to its newest.
-                if !arrived, scrolledByUser, !atBottom {
+                let sameChat = previous.map { old in bubbles.contains { $0.id == old } } ?? false
+                if !arrived, sameChat, scrolledByUser, !atBottom {
                     if bubbles.last?.fromMe == false { missed += 1 }
                     return
                 }
@@ -290,9 +293,10 @@ struct ChatTranscript: View, Equatable {
                 // A host that draws every message (a card) draws these too.
                 if !fills || anchor == nil { drawsAll = true }
                 if let anchor { proxy.scrollTo(anchor, anchor: .top) }
-            } else {
-                olderAnchor = nil
             }
+            // Older messages that change nothing drawn (all known already) leave no anchor behind for a later change;
+            // the ones that do are drawn well before this.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { olderAnchor = nil }
             reachedStart = !loaded
             loadingOlder = false
         }
