@@ -1439,6 +1439,11 @@ final class SlackBridge: ChatHistoryBridge {
     private var stale: [String: Set<String>] = [:]
     /// Your messages deleted from Nook, per conversation (their id in Nook), for the next read to drop from the chat.
     private var gone: [String: [String]] = [:]
+    /// Where you stand in each conversation as Slack says (`client.counts`), and the newest messages read of each (their
+    /// `ts`, whether yours), to count what is unread in Slack itself.
+    private var lastRead: [String: String] = [:]
+    private var recent: [String: [(ts: Double, mine: Bool)]] = [:]
+    private static let counted = 100
 
     var isReady: Bool { Self.auth != nil }
 
@@ -1456,6 +1461,8 @@ final class SlackBridge: ChatHistoryBridge {
         people = [:]
         stale = [:]
         gone = [:]
+        lastRead = [:]
+        recent = [:]
         isWorking = false
     }
 
@@ -1475,6 +1482,10 @@ final class SlackBridge: ChatHistoryBridge {
                 for conversation in conversations { active[conversation.id] = max(active[conversation.id] ?? 0, conversation.updated) }
                 conversationsAt = Date()
             }
+            // Where you stand in each conversation, as Slack's website asks it (Slack answers it for the website's sign-in):
+            // reading a chat in Slack reads it in Nook too. Without an answer Nook counts new messages itself.
+            let marks = (try? await call("client.counts", [:], auth: auth)).map(SlackData.readMarks) ?? [:]
+            var handed = Set<String>()
             var chats: [BridgedChat] = []
             // The conversations read before one that fails already moved `newest` on: their messages must still go to the
             // inbox, or they never come again. The failed one is read again next time; a rate limit or a lost sign-in
@@ -1526,10 +1537,19 @@ final class SlackBridge: ChatHistoryBridge {
                     people[conversation.id] = json.map { SlackData.members($0, users: users, me: me) } ?? []
                 }
                 let members = people[conversation.id] ?? []
+                remember(messages, in: conversation.id)
+                handed.insert(conversation.id)
                 chats.append(BridgedChat(app: app, name: SlackData.chatName(conversation, users: users, me: me),
-                                         messages: messages, unread: nil, avatar: picture, members: members.isEmpty ? nil : members,
-                                         deleted: deleted))
+                                         messages: messages, unread: unread(conversation.id, marks: marks), avatar: picture,
+                                         members: members.isEmpty ? nil : members, deleted: deleted))
             }
+            // A chat read (or marked unread) in Slack since, without a new message: its count follows.
+            for conversation in conversations where !handed.contains(conversation.id) && recent[conversation.id] != nil
+                && marks[conversation.id] != nil && marks[conversation.id] != lastRead[conversation.id] {
+                chats.append(BridgedChat(app: app, name: SlackData.chatName(conversation, users: users, me: me), messages: [],
+                                         unread: unread(conversation.id, marks: marks)))
+            }
+            if !marks.isEmpty { lastRead = marks }
             if chats.isEmpty, let failure { throw failure }
             isWorking = true
             return chats
@@ -1537,6 +1557,22 @@ final class SlackBridge: ChatHistoryBridge {
             isWorking = false
             throw error
         }
+    }
+
+    /// The newest messages read of a conversation, to count from.
+    private func remember(_ messages: [InboxMessage], in conversation: String) {
+        var known = recent[conversation] ?? []
+        for message in messages {
+            let ts = message.date.timeIntervalSince1970
+            if !known.contains(where: { $0.ts == ts }) { known.append((ts, message.isMine)) }
+        }
+        recent[conversation] = Array(known.sorted { $0.ts < $1.ts }.suffix(Self.counted))
+    }
+
+    /// The conversation's unread count in Slack itself, when Slack said where you stand; nil lets Nook count.
+    private func unread(_ conversation: String, marks: [String: String]) -> Int? {
+        guard let read = marks[conversation] else { return nil }
+        return SlackData.unread(recent[conversation] ?? [], lastRead: read)
     }
 
     /// The conversation Nook shows as `name`.

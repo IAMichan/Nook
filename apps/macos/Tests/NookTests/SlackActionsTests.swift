@@ -102,4 +102,28 @@ final class SlackActionsTests: XCTestCase {
         XCTAssertNil(SlackData.newestTS(["messages": []]))
         XCTAssertEqual(SlackData.error(["ok": false, "error": "missing_scope", "needed": "chat:write"]), "missing_scope (chat:write)")
     }
+
+    /// A huddle shows as a call once it ended, or as missed; one still going says nothing yet.
+    func testAHuddleIsACall() {
+        let ended: [String: Any] = ["subtype": "huddle_thread", "room": ["date_start": 1_700_000_000, "date_end": 1_700_000_125, "has_ended": true]]
+        XCTAssertEqual(SlackData.huddle(ended)?.seconds, 125)
+        XCTAssertEqual(SlackData.huddle(ended).flatMap { ChatFormat.call($0.line) }?.seconds, 125, "reads back as a call")
+        let missed: [String: Any] = ["subtype": "huddle_thread", "room": ["date_start": 1_700_000_000, "was_missed": true]]
+        XCTAssertEqual(SlackData.huddle(missed)?.missed, true)
+        XCTAssertNotNil(SlackData.huddle(missed).flatMap { ChatFormat.call($0.line) })
+        let going: [String: Any] = ["subtype": "huddle_thread", "room": ["date_start": 1_700_000_000, "has_ended": false]]
+        XCTAssertNil(SlackData.huddle(going))
+        XCTAssertNil(SlackData.huddle(["text": "hi"]))
+    }
+
+    /// Slack's own read position counts what is unread in Slack itself.
+    func testReadMarksCountUnread() {
+        let json: [String: Any] = ["ok": true, "ims": [["id": "D1", "last_read": "1700000010.000100"]],
+                                   "mpims": [["id": "G1", "last_read": "0000000000.000000"]], "channels": [["id": "C1", "last_read": "1"]]]
+        XCTAssertEqual(SlackData.readMarks(json), ["D1": "1700000010.000100", "G1": "0000000000.000000"])
+        let read = Date(timeIntervalSince1970: 1_700_000_010.000100).timeIntervalSince1970
+        let messages = [(ts: read, mine: false), (ts: 1_700_000_020.0, mine: false), (ts: 1_700_000_030.0, mine: true)]
+        XCTAssertEqual(SlackData.unread(messages, lastRead: "1700000010.000100"), 1, "the read one and yours are not unread")
+        XCTAssertEqual(SlackData.unread(messages, lastRead: "1700000030.000000"), 0)
+    }
 }

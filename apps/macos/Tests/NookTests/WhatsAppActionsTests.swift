@@ -49,6 +49,13 @@ final class WhatsAppActionsTests: XCTestCase {
         XCTAssertEqual(pin.path, "/chats/pin")
         XCTAssertEqual(pin.json?["pin"] as? Bool, false)
 
+        let mute = WAAction.openwaMute(true, chatId: "x@g.us")
+        XCTAssertEqual(mute.path, "/chats/mute")
+        XCTAssertEqual(mute.json?["muteUntil"] as? Int64, 253_402_300_799_000, "muted for good, never 0")
+        let unmute = WAAction.openwaMute(false, chatId: "x@g.us")
+        let body = String(data: try! JSONSerialization.data(withJSONObject: unmute.json ?? [:], options: .sortedKeys), encoding: .utf8)
+        XCTAssertEqual(body, #"{"chatId":"x@g.us","muteUntil":null}"#, "OpenWA unmutes with null")
+
         let archive = WAAction.openwaArchive("x@g.us")
         XCTAssertEqual(archive.path, "/chats/archive")
         XCTAssertEqual(archive.json?["archive"] as? Bool, true)
@@ -64,6 +71,8 @@ final class WhatsAppActionsTests: XCTestCase {
     func testOpenWAsChatListSaysWhichArePinned() {
         let data = Data(#"[{"id":"1@c.us","name":"A","pinned":true},{"id":"2@g.us","name":"B","pinned":false},{"id":"3@c.us"}]"#.utf8)
         XCTAssertEqual(WAOpenWA.pinned(data), ["1@c.us": true, "2@g.us": false])
+        let muted = Data(#"[{"id":"1@c.us","muted":true,"muteExpiration":0},{"id":"2@g.us","muted":false},{"id":"3@c.us"}]"#.utf8)
+        XCTAssertEqual(WAOpenWA.muted(muted), ["1@c.us": true, "2@g.us": false])
     }
 
     func testAnEditChangesTheTextInTheChat() {

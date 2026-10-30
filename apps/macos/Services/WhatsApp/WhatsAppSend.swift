@@ -234,6 +234,13 @@ enum WAAction {
         WASendRequest(path: "/chats/pin", json: ["chatId": chatId, "pin": pinned])
     }
 
+    /// OpenWA mutes until a moment in epoch milliseconds (0 is refused), so "for good" is the last day of year 9999, and
+    /// unmutes with `null`.
+    static func openwaMute(_ muted: Bool, chatId: String) -> WASendRequest {
+        let until: Int64? = muted ? 253_402_300_799_000 : nil
+        return WASendRequest(path: "/chats/mute", json: ["chatId": chatId, "muteUntil": until])
+    }
+
     static func openwaArchive(_ chatId: String) -> WASendRequest {
         WASendRequest(path: "/chats/archive", json: ["chatId": chatId, "archive": true])
     }

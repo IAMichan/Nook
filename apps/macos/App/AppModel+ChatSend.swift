@@ -56,10 +56,10 @@ extension AppModel {
         switch route {
         case .whatsApp(let key):
             let (link, jid) = WhatsAppAccounts.shared.route(key)
-            // Muting is not offered by either gateway.
+            // Muting goes through OpenWA; GOWA has no call for it.
             return ChatAbilities(send: true, sends: link.sends, reply: true, react: true, edit: link.canEdit, delete: link.canDelete,
-                                 markRead: link.isConnected, pin: link.canPin, mute: false, archive: link.canArchive,
-                                 pinned: link.isPinned(jid), vote: link.canVote)
+                                 markRead: link.isConnected, pin: link.canPin, mute: link.canMuteInWhatsApp, archive: link.canArchive,
+                                 pinned: link.isPinned(jid), muted: link.isMutedInWhatsApp(jid), vote: link.canVote)
         case .telegram(let id):
             let telegram = capture.telegramBridge
             return ChatAbilities(send: true, sends: ChatOutgoing.Kind.everything, reply: true, react: true, edit: true, delete: true,
@@ -340,9 +340,12 @@ extension AppModel {
         let capture = ChatCaptureService.shared
         try await runInChat(.mute, route: route, name: name, result: muted ? "gedempt" : "niet meer gedempt") {
             switch route {
+            case .whatsApp(let key):
+                let (link, jid) = WhatsAppAccounts.shared.route(key)
+                try await link.setMutedInWhatsApp(muted, chat: jid)
             case .telegram(let id): try capture.telegramBridge.setMuted(muted, chat: id)
             case .linked(let id): try await capture.serviceBridge.setMuted(muted, chat: id)
-            case .whatsApp, .teams, .slack, .messages, .snapchat: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
+            case .teams, .slack, .messages, .snapchat: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
             }
         }
     }

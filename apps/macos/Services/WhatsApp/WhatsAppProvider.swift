@@ -1,6 +1,7 @@
 // Adapted from open-source code under the MIT License, Copyright (c) 2026 Louis Raillé (see THIRD-PARTY-NOTICES.md).
 
 import Foundation
+import os
 
 // The local gateways Nook can talk to for WhatsApp: GOWA and OpenWA. Each call goes to the URL set in
 // Settings (127.0.0.1 by default) and nowhere else: nothing from WhatsApp's own servers. A
@@ -78,6 +79,9 @@ protocol WhatsAppProvider: Sendable {
     func setPinned(_ pinned: Bool, chat: String) async throws
     /// Archives the chat on the phone.
     func archive(_ chat: String) async throws
+    /// Whether this gateway can mute a chat on the phone, and mutes it (for good) or unmutes it.
+    var canMute: Bool { get }
+    func setMuted(_ muted: Bool, chat: String) async throws
     /// The phone's contacts with their names, so members and readers show by name; empty when the gateway cannot say.
     func contacts() async -> [WAContact]
     /// Says this device is online while `chat` is open in Nook, or no longer: WhatsApp only says who is typing to a
@@ -107,6 +111,8 @@ extension WhatsAppProvider {
     func delete(_ message: String, chat: String) async throws { throw WAError.refused("delete") }
     func setPinned(_ pinned: Bool, chat: String) async throws { throw WAError.refused("pin") }
     func archive(_ chat: String) async throws { throw WAError.refused("archive") }
+    var canMute: Bool { false }
+    func setMuted(_ muted: Bool, chat: String) async throws { throw WAError.refused("mute") }
 }
 
 extension ChatAttachment {
@@ -701,7 +707,10 @@ actor OpenWAProvider: WhatsAppProvider {
         return WAAvatar.openwaChannels(data)
     }
 
-    nonisolated var canVote: Bool { true }
+    /// OpenWA votes on the whatsapp-web.js engine; the Baileys engine answers 501. Nook does not know the engine until
+    /// then: after a 501 polls are only shown, as on a gateway that cannot vote.
+    nonisolated var canVote: Bool { voting.withLock { $0 } }
+    private nonisolated let voting = OSAllocatedUnfairLock(initialState: true)
 
     nonisolated var sends: Set<ChatOutgoing.Kind> { ChatOutgoing.Kind.everything }
 
@@ -714,7 +723,14 @@ actor OpenWAProvider: WhatsAppProvider {
     }
 
     func vote(chat: String, poll: String, choice: [String]) async throws {
-        _ = try await scoped("POST", "/messages/vote-poll", json: ["chatId": Self.openwaId(chat), "pollMessageId": poll, "options": choice])
+        let id = try await sid()
+        let (data, code) = try await http.call("POST", "/api/sessions/\(id)/messages/vote-poll",
+                                               json: ["chatId": Self.openwaId(chat), "pollMessageId": poll, "options": choice])
+        if code == 501 {
+            voting.withLock { $0 = false }
+            throw WAError.refused(tr("chat.poll.engine"))
+        }
+        try check(data, code)
     }
 
     // Editing, deleting, pinning and archiving: OpenWA's /messages/edit and /delete, /chats/pin and /archive.
@@ -733,6 +749,13 @@ actor OpenWAProvider: WhatsAppProvider {
 
     func setPinned(_ pinned: Bool, chat: String) async throws {
         try await perform(WAAction.openwaPin(pinned, chatId: Self.openwaId(chat)))
+    }
+
+    // Muting: OpenWA's /chats/mute, on either engine. GOWA has no such call (yet).
+    nonisolated var canMute: Bool { true }
+
+    func setMuted(_ muted: Bool, chat: String) async throws {
+        try await perform(WAAction.openwaMute(muted, chatId: Self.openwaId(chat)))
     }
 
     func archive(_ chat: String) async throws {
@@ -756,8 +779,10 @@ actor OpenWAProvider: WhatsAppProvider {
     func chats(limit: Int) async throws -> [WAChatInfo] {
         let data = try await scoped("GET", "/chats")
         let pinned = WAOpenWA.pinned(data)
+        let muted = WAOpenWA.muted(data)
         return WAOpenWA.chats(data).prefix(limit)
-            .map { WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread, pinned: pinned[$0.jid]) }
+            .map { WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread, pinned: pinned[$0.jid],
+                              muted: muted[$0.jid]) }
     }
 
     func media(chat: String, message: String) async throws -> WAFile {

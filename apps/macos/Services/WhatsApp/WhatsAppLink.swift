@@ -269,6 +269,9 @@ final class WhatsAppLink: ObservableObject {
     /// What this account sorts its gateway's messages by: the notice rules every chat app follows, for this account's
     /// own chats (`ChatNoticeRulesStore.filters(account:)`). A hidden chat is not even kept.
     @Published private(set) var filters: WAFilters
+    /// The chats muted on the phone, as far as Nook knows: muted from Nook, or so in the gateway's chat list (OpenWA).
+    /// Not WhatsApp's notice rules in Nook (`mute(_:)`), which only quiet the chat here.
+    @Published private(set) var mutedChats: Set<String> = []
     /// The chats pinned on the phone, as far as Nook knows (see `WhatsAppSettings.pinnedChats`).
     @Published private(set) var pinnedChats: Set<String> {
         didSet { if pinnedChats != oldValue { WhatsAppSettings.setPinnedChats(pinnedChats, account: account) } }
@@ -442,6 +445,7 @@ final class WhatsAppLink: ObservableObject {
             inbox.clear()
             knownChats = []
             pinnedChats = []
+            mutedChats = []
             onForget?()
         }
     }
@@ -678,6 +682,12 @@ final class WhatsAppLink: ObservableObject {
             var pins = pinnedChats
             for chat in told { if chat.pinned == true { pins.insert(chat.jid) } else { pins.remove(chat.jid) } }
             pinnedChats = pins
+        }
+        let muteTold = knownChats.filter { $0.muted != nil }
+        if !muteTold.isEmpty {
+            var muted = mutedChats
+            for chat in muteTold { if chat.muted == true { muted.insert(chat.jid) } else { muted.remove(chat.jid) } }
+            mutedChats = muted
         }
         // Channels come in under their number ("+120363…"): the channel list names them and says where their picture is.
         for channel in await provider.channels() where gen == generation {
@@ -1405,6 +1415,26 @@ final class WhatsAppLink: ObservableObject {
     var canDelete: Bool { isConnected && provider?.canDelete == true }
     var canPin: Bool { isConnected && provider?.canPin == true }
     var canArchive: Bool { isConnected && provider?.canArchive == true }
+    var canMuteInWhatsApp: Bool { isConnected && provider?.canMute == true }
+
+    /// Whether the chat is muted on the phone, as far as Nook knows (see `mutedChats`).
+    func isMutedInWhatsApp(_ chat: String) -> Bool { mutedChats.contains(WAJID.normalized(chat)) }
+
+    /// Mutes the chat on the phone for good, or unmutes it, after your own click.
+    func setMutedInWhatsApp(_ muted: Bool, chat: String) async throws {
+        guard let provider, isConnected else { throw NookError(statusLine) }
+        guard provider.canMute else { throw NookError(tr("chat.compose.unsupported")) }
+        let key = WAJID.normalized(chat)
+        let gen = generation
+        do {
+            try await provider.setMuted(muted, chat: key)
+        } catch let error as WAError {
+            throw Self.actionSentence(error)
+        }
+        guard gen == generation else { return }
+        if muted { mutedChats.insert(key) } else { mutedChats.remove(key) }
+        Log.connectors.info("WhatsApp: chat \(muted ? "muted" : "unmuted")")
+    }
 
     /// Whether the chat is pinned on the phone, as far as Nook knows: pinned from Nook, or so in the gateway's chat
     /// list. False when that is not known.

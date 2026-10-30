@@ -202,21 +202,24 @@ enum TeamsWebData {
         ChatJSON.date(message["composetime"]) ?? ChatJSON.date(message["originalarrivaltime"])
     }
 
-    /// A chat's messages, oldest first: text and rich text only (no calls, no one joining), deleted ones left out; a
-    /// message with only files shows their names.
+    /// A chat's messages, oldest first: text, rich text and calls (no one joining), deleted ones left out; a message with
+    /// only files shows their names.
     static func messages(_ json: [String: Any], chat: TeamsData.Chat, me: String) -> [InboxMessage] {
         let all = json["messages"] as? [[String: Any]] ?? []
         // Who is who, by the names their messages carry: the emoji name their people by id only.
-        var names: [String: String] = [:]
-        for message in all {
-            if let id = contact(message["from"]), let name = message["imdisplayname"] as? String, !name.isEmpty { names[id] = name }
-        }
+        let names = displayNames(json)
         let messages: [InboxMessage] = all.compactMap { message in
             guard let id = message["id"] as? String, let type = message["messagetype"] as? String,
-                  type == "Text" || type.hasPrefix("RichText"), let sent = date(message) else { return nil }
+                  type == "Text" || type.hasPrefix("RichText") || type == "Event/Call", let sent = date(message) else { return nil }
             let properties = message["properties"] as? [String: Any] ?? [:]
             if properties["deletetime"] != nil { return nil }
             let content = (message["content"] as? String) ?? ""
+            if type == "Event/Call" {
+                // A call shows as every app's call, once it ended or was missed.
+                let mine = contact(message["from"]) == me
+                guard let ring = Self.call(content, mine: mine) else { return nil }
+                return InboxMessage(id: "teams-\(id)", sender: "", text: ring.line, date: sent, fromMe: mine)
+            }
             let answer: (html: String, quote: InboxQuote?) = type == "Text" ? (content, nil) : reply(content, me: me)
             var text = (type == "Text" ? answer.html : TeamsData.plain(html: answer.html)).trimmingCharacters(in: .whitespacesAndNewlines)
             if text.isEmpty { text = files(properties["files"]) }
@@ -230,6 +233,57 @@ enum TeamsWebData {
             return inbox
         }
         return messages.sorted { $0.date < $1.date }
+    }
+
+    /// Who is who in a chat's history, by the names their messages carry (`imdisplayname`), by their id ("8:orgid:…").
+    static func displayNames(_ json: [String: Any]) -> [String: String] {
+        var names: [String: String] = [:]
+        for message in json["messages"] as? [[String: Any]] ?? [] {
+            if let id = contact(message["from"]), let name = message["imdisplayname"] as? String, !name.isEmpty { names[id] = name }
+        }
+        return names
+    }
+
+    /// How far each other member read the chat (`/v1/threads/{id}/consumptionhorizons`: "<message id>;<time>;<…>",
+    /// the message id being when it arrived, in milliseconds), by their id. You are left out.
+    static func horizons(_ json: [String: Any], me: String) -> [String: Int64] {
+        var horizons: [String: Int64] = [:]
+        for entry in json["consumptionhorizons"] as? [[String: Any]] ?? [] {
+            guard let id = entry["id"] as? String, id != me, let mark = entry["consumptionhorizon"] as? String,
+                  let first = mark.split(separator: ";").first, let upTo = Int64(first), upTo > 0 else { continue }
+            horizons[id] = upTo
+        }
+        return horizons
+    }
+
+    /// Your messages read as far as each member says (`horizons`): who read each, by name in a group, and two ticks
+    /// once everyone did. Teams keeps read receipts only where they are on (and in chats of up to 20 people).
+    static func read(_ messages: [InboxMessage], horizons: [String: Int64], group: Bool, names: [String: String]) -> [InboxMessage] {
+        guard !horizons.isEmpty else { return messages }
+        return messages.map { message in
+            guard message.isMine, let id = Int64(message.id.dropFirst("teams-".count)) else { return message }
+            var message = message
+            let readers = horizons.filter { $0.value >= id }.keys.sorted().map { member in
+                ChatReader(name: group ? names[member] ?? member : "", receipt: .read, key: member)
+            }
+            guard !readers.isEmpty else { return message }
+            message.readers = readers
+            if readers.count == horizons.count { message.receipt = .read }
+            return message
+        }
+    }
+
+    /// A call in a chat (`Event/Call`: a `<partlist type="ended">` with each person's `<duration>` in seconds, or
+    /// `type="missed"`) as every app's call; nil while it is going on (`type="started"`). `mine`: you rang.
+    static func call(_ content: String, mine: Bool) -> ChatCall? {
+        let options: String.CompareOptions = [.regularExpression, .caseInsensitive]
+        guard let open = content.range(of: "<partlist[^>]*>", options: options) else { return nil }
+        let kind = attribute("type", in: String(content[open]))?.lowercased()
+        let missed = kind == "missed"
+        guard missed || kind == "ended" else { return nil }
+        let seconds = content.range(of: #"<duration>\s*[\d.]+\s*</duration>"#, options: options)
+            .flatMap { Double(content[$0].filter { $0.isNumber || $0 == "." }) }
+        return ChatCall(missed: missed, outgoing: mine, seconds: missed ? nil : seconds)
     }
 
     /// The answer a message's rich text holds (`<blockquote itemtype="http://schema.skype.com/Reply" itemid="{id}">`

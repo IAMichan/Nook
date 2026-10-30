@@ -458,7 +458,13 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
             fetched.insert(chat.id)
             guard !chat.name.isEmpty else { continue }
             sources[ChatInbox.key(app: app, chat: chat.name)] = .web(account: account.id, chat: chat)
-            let messages = TeamsWebData.messages(answer, chat: chat, me: session.me)
+            var messages = TeamsWebData.messages(answer, chat: chat, me: session.me)
+            // How far the others read it: your messages get their ticks and readers, as in every app that says so.
+            if messages.contains(where: \.isMine), let horizons = try? await webGet(
+                session.base + "/v1/threads/" + ChatJSON.segment(chat.id) + "/consumptionhorizons", token: session.token, account: account.id) {
+                messages = TeamsWebData.read(messages, horizons: TeamsWebData.horizons(horizons, me: session.me), group: chat.isGroup,
+                                             names: TeamsWebData.displayNames(answer))
+            }
             // Messages deleted since (here or in Teams) leave the chat in Nook too.
             result.append(BridgedChat(app: app, name: chat.name, messages: messages,
                                       unread: TeamsData.unread(messages, readUntil: chat.readUntil), listed: true,
