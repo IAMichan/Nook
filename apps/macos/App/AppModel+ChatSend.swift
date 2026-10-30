@@ -225,6 +225,22 @@ extension AppModel {
         }
         await answeredInChat(route, name: name, thread: thread)
     }
+
+    /// A message forwarded to another chat, after your own click: its file (with its text as the caption where that
+    /// goes) and its text, through that chat's own route, as if you sent them there. The chat it goes to stays as it
+    /// was: forwarding is no answer, so it is not marked read.
+    func forwardChatMessage(_ forward: ChatForward, to entry: ChatsEntry) async throws {
+        guard let route = chatRoute(for: entry) else { throw NookError(tr(ChatAction.Refusal.unsupported.rawValue)) }
+        guard let parts = forward.parts(sends: chatSends(route)) else {
+            throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
+        }
+        if let attachment = parts.attachment {
+            try await sendChatItem(.file(attachment), route: route, chat: entry.name)
+        }
+        if !parts.text.isEmpty {
+            try await sendChatText(parts.text, route: route, chat: entry.name)
+        }
+    }
 }
 
 // MARK: Doing things in a chat

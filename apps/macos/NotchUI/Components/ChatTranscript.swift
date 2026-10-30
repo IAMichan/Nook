@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 /// A line marks where a new day starts; messages one person sends in a row sit close together under their name (each
 /// person in a group in a color of their own); links open; a message of only emoji shows large; a long message folds
 /// open with "Read more". More than fits scrolls back through the history, starting at the newest message. Each
-/// message's text can be selected; right-click a bubble to copy the message or the whole chat. A message that answers
+/// message's text can be selected; right-click a bubble for the same menu its chevron opens. A message that answers
 /// another quotes it at its top, and the emoji people put on it sit under it. Where the chat can be answered, the pointer
 /// on a bubble shows a button to answer that message and one to react with an emoji. Used by the chat card in the notch
 /// and by the Chats tab.
@@ -26,6 +26,8 @@ struct ChatTranscript: View, Equatable {
     /// "Edit" and "Delete for everyone" on your own messages, where the chat's app takes them; nil shows neither.
     var onEdit: ((ChatBubble) -> Void)? = nil
     var onDelete: ((ChatBubble) -> Void)? = nil
+    /// Sending a message on to other chats. Nil where the host has no chats to send it to: no "Forward".
+    var onForward: ((ChatBubble) -> Void)? = nil
     /// Voting on a poll with your new choice. Nil where the chat's app cannot take a vote from Nook: the poll then
     /// shows its counts and says to vote in the app.
     var onVote: ((ChatBubble, [String]) -> Void)? = nil
@@ -81,6 +83,7 @@ struct ChatTranscript: View, Equatable {
             && a.newFrom == b.newFrom && (a.onReply == nil) == (b.onReply == nil) && (a.onReact == nil) == (b.onReact == nil)
             && (a.onEdit == nil) == (b.onEdit == nil) && (a.onDelete == nil) == (b.onDelete == nil)
             && (a.onVote == nil) == (b.onVote == nil) && (a.onLoadOlder == nil) == (b.onLoadOlder == nil)
+            && (a.onForward == nil) == (b.onForward == nil)
     }
 
     /// The messages laid out: the newest `page` (from the first new one, when that is further back), or from `drawnFrom`.
@@ -343,35 +346,10 @@ struct ChatTranscript: View, Equatable {
                                        onOpen: { onOpen(bubble) }, onZoom: { onZoom(bubble) },
                                        onReply: replyAction(bubble), onReact: reactAction(bubble),
                                        onEdit: editAction(bubble), onDelete: deleteAction(bubble),
+                                       onForward: forwardAction(bubble),
                                        onCopyChat: { Pasteboard.copy(ChatBubble.transcript(bubbles, contact: contact)) },
                                        onVote: voteAction(bubble))
                             .equatable()
-                            .contextMenu {
-                                if let reply = replyAction(bubble) {
-                                    Button(tr("chat.reply")) { reply() }
-                                }
-                                if let react = reactAction(bubble) {
-                                    Menu(tr("chat.react")) {
-                                        ForEach(ChatReactions.quick, id: \.self) { emoji in
-                                            Button(emoji) { react(emoji) }
-                                        }
-                                    }
-                                }
-                                if let edit = editAction(bubble) {
-                                    Button(tr("chat.edit")) { edit() }
-                                }
-                                if let picture = picture(bubble) {
-                                    Button(tr("chat.copyImage")) { Pasteboard.copyImage(picture, fallback: bubble.image) }
-                                }
-                                if !bubble.copyText.isEmpty {
-                                    Button(tr("whatsapp.copy.message")) { Pasteboard.copy(bubble.copyText) }
-                                }
-                                Button(tr("whatsapp.copy.chat")) { Pasteboard.copy(ChatBubble.transcript(bubbles, contact: contact)) }
-                                if let delete = deleteAction(bubble) {
-                                    Divider()
-                                    Button(tr("chat.deleteMessage"), role: .destructive) { delete() }
-                                }
-                            }
                             // A new run starts with room above it; the messages of one run sit close together, so who
                             // said what reads at a glance.
                             .padding(.top, row.id == top ? 0 : (first ? NookTheme.Spacing.lg : NookTheme.Spacing.xxs))
@@ -411,19 +389,16 @@ struct ChatTranscript: View, Equatable {
         return { onDelete(bubble) }
     }
 
+    /// Sending the message on to other chats: a message that has arrived, not a poll or a call (those belong to their chat).
+    private func forwardAction(_ bubble: ChatBubble) -> (() -> Void)? {
+        guard let onForward, !bubble.local, bubble.poll == nil, bubble.call == nil else { return nil }
+        return { onForward(bubble) }
+    }
+
     /// Changing your own message's text, where its app takes that: in the message's menu.
     private func editAction(_ bubble: ChatBubble) -> (() -> Void)? {
         guard let onEdit, bubble.fromMe, !bubble.local, !bubble.text.isEmpty, bubble.poll == nil, bubble.call == nil else { return nil }
         return { onEdit(bubble) }
-    }
-
-    /// The picture file a bubble shows (a photo, a sticker or a still GIF), for "Copy image"; nil for anything else.
-    private func picture(_ bubble: ChatBubble) -> URL? {
-        switch bubble.media {
-        case .photo(let url), .sticker(let url): return url
-        case .gif(let url): return ChatMediaImages.isPicture(url) ? url : nil
-        case .file, .photoComing, .video, .audio: return nil
-        }
     }
 
     private func reactAction(_ bubble: ChatBubble) -> ((String) -> Void)? {
@@ -474,6 +449,7 @@ private struct ChatBubbleView: View, Equatable {
     let onReact: ((String) -> Void)?
     let onEdit: (() -> Void)?
     let onDelete: (() -> Void)?
+    let onForward: (() -> Void)?
     let onCopyChat: () -> Void
     let onVote: (([String]) -> Void)?
     @State private var expanded = false
@@ -497,7 +473,14 @@ private struct ChatBubbleView: View, Equatable {
         a.bubble == b.bubble && a.first == b.first && a.last == b.last && a.newest == b.newest
             && (a.onReply == nil) == (b.onReply == nil) && (a.onReact == nil) == (b.onReact == nil)
             && (a.onEdit == nil) == (b.onEdit == nil) && (a.onDelete == nil) == (b.onDelete == nil)
-            && (a.onVote == nil) == (b.onVote == nil)
+            && (a.onVote == nil) == (b.onVote == nil) && (a.onForward == nil) == (b.onForward == nil)
+    }
+
+    /// What the chevron's menu and a right-click on the bubble offer: one menu, so both always show the same.
+    private var menuItems: MessageMenuItems {
+        MessageMenuItems(bubble: bubble, onReply: onReply, onReact: onReact, onForward: onForward, onEdit: onEdit,
+                         onDelete: onDelete, onInfo: bubble.fromMe && bubble.ticks != nil ? { showingInfo = true } : nil,
+                         onCopyChat: onCopyChat)
     }
 
     private var emojiOnly: Bool { bubble.attachment == nil && ChatTimeline.isEmojiOnly(bubble.text) }
@@ -603,9 +586,7 @@ private struct ChatBubbleView: View, Equatable {
                 VStack(alignment: bubble.fromMe ? .trailing : .leading, spacing: NookTheme.Spacing.xxs) {
                     content
                         .overlay(alignment: .topTrailing) {
-                            MessageMenuButton(bubble: bubble, onReply: onReply, onEdit: onEdit, onDelete: onDelete,
-                                              onInfo: bubble.fromMe && bubble.ticks != nil ? { showingInfo = true } : nil,
-                                              onCopyChat: onCopyChat, onPicture: bare)
+                            MessageMenuButton(bubble: bubble, items: menuItems, onPicture: bare)
                                 .padding(NookTheme.Spacing.xs)
                                 .opacity(hovering ? 1 : 0)
                                 .allowsHitTesting(hovering)
@@ -626,6 +607,8 @@ private struct ChatBubbleView: View, Equatable {
             }
         }
         .onHover { hovering = $0 }
+        // A right-click on the message opens the chevron's own menu.
+        .contextMenu { menuItems }
         .environment(\.chatMediaLive, near)
         .chatNearView($near)
         .task(id: near ? bubble.file : nil) {
@@ -739,15 +722,68 @@ private struct ChatBubbleView: View, Equatable {
     }
 }
 
-/// The small chevron in a message's top corner while the pointer is on it: its menu answers, copies, changes or deletes
-/// the message and shows its info (who has it, who read it), as far as the chat's app lets Nook. The same for every app.
-private struct MessageMenuButton: View {
+/// What can be done with one message, as far as the chat's app lets Nook: answer, react, forward, copy, change, see
+/// its info, copy the chat, delete. The same for every app, and the same in the chevron's menu and on a right-click.
+private struct MessageMenuItems: View {
     let bubble: ChatBubble
     let onReply: (() -> Void)?
+    let onReact: ((String) -> Void)?
+    let onForward: (() -> Void)?
     let onEdit: (() -> Void)?
     let onDelete: (() -> Void)?
     let onInfo: (() -> Void)?
     let onCopyChat: () -> Void
+
+    /// The picture file a bubble shows (a photo, a sticker or a still GIF), for "Copy image"; nil for anything else.
+    private var picture: URL? {
+        switch bubble.media {
+        case .photo(let url), .sticker(let url): return url
+        case .gif(let url): return ChatMediaImages.isPicture(url) ? url : nil
+        case .file, .photoComing, .video, .audio: return nil
+        }
+    }
+
+    var body: some View {
+        if let onReply {
+            Button { onReply() } label: { Label(tr("chat.reply"), systemImage: "arrowshape.turn.up.left") }
+        }
+        if let onReact {
+            Menu {
+                ForEach(ChatReactions.quick, id: \.self) { emoji in
+                    Button(emoji) { onReact(emoji) }
+                }
+            } label: { Label(tr("chat.react"), systemImage: "face.smiling") }
+        }
+        if let onForward {
+            Button { onForward() } label: { Label(tr("chat.forward"), systemImage: "arrowshape.turn.up.right") }
+        }
+        if !bubble.copyText.isEmpty {
+            Button { Pasteboard.copy(bubble.copyText) } label: { Label(tr("whatsapp.copy.message"), systemImage: "doc.on.doc") }
+        }
+        if let picture {
+            Button { Pasteboard.copyImage(picture, fallback: bubble.image) } label: {
+                Label(tr("chat.copyImage"), systemImage: "photo.on.rectangle")
+            }
+        }
+        if let onEdit {
+            Button { onEdit() } label: { Label(tr("chat.edit"), systemImage: "pencil") }
+        }
+        if let onInfo {
+            Button { onInfo() } label: { Label(tr("chat.info.title"), systemImage: "info.circle") }
+        }
+        Button { onCopyChat() } label: { Label(tr("whatsapp.copy.chat"), systemImage: "text.bubble") }
+        if let onDelete {
+            Divider()
+            Button(role: .destructive) { onDelete() } label: { Label(tr("chat.deleteMessage"), systemImage: "trash") }
+        }
+    }
+}
+
+/// The small chevron in a message's top corner while the pointer is on it: it opens the message's menu
+/// (`MessageMenuItems`), which a right-click on the message opens too.
+private struct MessageMenuButton: View {
+    let bubble: ChatBubble
+    let items: MessageMenuItems
     /// On a photo, a sticker or an emoji (no bubble): a dark disc, so it reads on any picture.
     let onPicture: Bool
     @State private var hovering = false
@@ -773,23 +809,7 @@ private struct MessageMenuButton: View {
 
     var body: some View {
         Menu {
-            if let onReply {
-                Button { onReply() } label: { Label(tr("chat.reply"), systemImage: "arrowshape.turn.up.left") }
-            }
-            if !bubble.copyText.isEmpty {
-                Button { Pasteboard.copy(bubble.copyText) } label: { Label(tr("whatsapp.copy.message"), systemImage: "doc.on.doc") }
-            }
-            if let onEdit {
-                Button { onEdit() } label: { Label(tr("chat.edit"), systemImage: "pencil") }
-            }
-            if let onInfo {
-                Button { onInfo() } label: { Label(tr("chat.info.title"), systemImage: "info.circle") }
-            }
-            Button { onCopyChat() } label: { Label(tr("whatsapp.copy.chat"), systemImage: "text.bubble") }
-            if let onDelete {
-                Divider()
-                Button(role: .destructive) { onDelete() } label: { Label(tr("chat.deleteMessage"), systemImage: "trash") }
-            }
+            items
         } label: {
             Image(systemName: "chevron.down")
                 .font(NookTheme.font(9, .bold))
@@ -917,7 +937,7 @@ enum ChatReactions {
 }
 
 /// The message a bubble answers, at the bubble's top: a bar, who wrote it and the start of its text.
-private struct QuotedMessage: View {
+struct QuotedMessage: View {
     let quote: BubbleQuote
 
     private var tint: Color { quote.mine ? NookTheme.mint : NookTheme.blue }

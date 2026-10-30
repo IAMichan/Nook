@@ -1375,6 +1375,8 @@ private struct ChatsDetail: View, Equatable {
     @ObservedObject private var typing = ChatTypingCenter.shared
     /// The collected chat whose removal waits for a yes.
     @State private var removing: String?
+    /// The message being forwarded and the chats it can go to, while the picker is open over the chat.
+    @State private var forwarding: (bubble: ChatBubble, forward: ChatForward, targets: [ChatForwardPicker.Target])?
     /// The chats Nook writes in through the linked chat service, for what can be done in this one.
     @ObservedObject private var linked = ChatCaptureService.shared.serviceBridge
     /// Files waiting to go, the poll, place, contact or sticker panel, and the voice recorder.
@@ -1533,6 +1535,7 @@ private struct ChatsDetail: View, Equatable {
                                    onReact: abilities.react ? react : nil,
                                    onEdit: abilities.edit ? edit : nil,
                                    onDelete: { deleting = $0 },
+                                   onForward: startForward,
                                    onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil,
                                    typing: typing.line(entry.id), newFrom: newFrom)
                         .equatable()
@@ -1549,6 +1552,14 @@ private struct ChatsDetail: View, Equatable {
                 ChatPhotoZoom(url: url, preview: image, name: zoomed.attachment ?? "",
                               onClose: { withAnimation(NookTheme.reveal) { self.zoomed = nil } },
                               onOpen: { self.zoomed = nil; open(zoomed) })
+                    .transition(.opacity)
+            }
+        }
+        .overlay {
+            if let forwarding {
+                ChatForwardPicker(quote: forwarding.bubble.quote(contact: entry.name), targets: forwarding.targets,
+                                  onCancel: { withAnimation(NookTheme.reveal) { self.forwarding = nil } },
+                                  onForward: { forward(forwarding.forward, to: $0) })
                     .transition(.opacity)
             }
         }
@@ -1613,7 +1624,9 @@ private struct ChatsDetail: View, Equatable {
     /// Escape first shrinks an enlarged photo back, closes a poll, place, contact or sticker panel, and lets go of a
     /// message being changed or quoted; only then does it close the chat.
     private func escape() {
-        if zoomed != nil {
+        if forwarding != nil {
+            withAnimation(NookTheme.reveal) { forwarding = nil }
+        } else if zoomed != nil {
             withAnimation(NookTheme.reveal) { zoomed = nil }
         } else if composer.panel != nil {
             composer.closePanel()
@@ -1649,6 +1662,54 @@ private struct ChatsDetail: View, Equatable {
     }
 
     /// The field answers this message: it shows above the field until the answer goes.
+    /// Opens the forward picker for a message: every chat Nook can write in, of every app, each marked by whether it
+    /// takes the message's file. A file Nook does not have on this Mac cannot go, so its message is not forwarded half.
+    private func startForward(_ bubble: ChatBubble) {
+        let (file, kind): (URL?, ChatMedia.Kind?) = {
+            switch bubble.media {
+            case .photo(let url): return (url, .photo)
+            case .video(let url): return (url, .video)
+            case .gif(let url): return (url, .gif)
+            case .sticker(let url): return (url, .sticker)
+            case .audio(let url, _): return (url, .audio)
+            case .file, .photoComing: return (bubble.attachment == nil ? nil : bubble.file, nil)
+            }
+        }()
+        guard bubble.attachment == nil || file != nil,
+              let forward = ChatForward(text: bubble.text, file: file, kind: kind) else {
+            ToastCenter.shared.warning(tr("chat.forward.notHere"))
+            return
+        }
+        let targets = ChatsEntry.all(capture: capture).compactMap { target -> ChatForwardPicker.Target? in
+            guard let route = app.chatRoute(for: target) else { return nil }
+            return ChatForwardPicker.Target(entry: target, fits: forward.fits(app.chatSends(route)))
+        }
+        withAnimation(NookTheme.reveal) { forwarding = (bubble, forward, targets) }
+    }
+
+    /// Sends the message to each chosen chat in turn, after your click on Forward; a toast says how it went.
+    private func forward(_ forward: ChatForward, to targets: [ChatsEntry]) {
+        withAnimation(NookTheme.reveal) { forwarding = nil }
+        enqueue {
+            var failed: [String] = []
+            var lastError: Error?
+            for target in targets {
+                do {
+                    try await app.forwardChatMessage(forward, to: target)
+                } catch {
+                    failed.append(target.name)
+                    lastError = error
+                }
+            }
+            if let lastError {
+                ToastCenter.shared.error(lastError, title: tr("chat.forward.failed", failed.joined(separator: ", ")))
+            } else {
+                ToastCenter.shared.success(targets.count == 1 ? tr("chat.forward.done", targets[0].name)
+                                                              : tr("chat.forward.doneMany", targets.count))
+            }
+        }
+    }
+
     private func quote(_ bubble: ChatBubble) {
         withAnimation(NookTheme.reveal) { replyingTo = bubble }
         replyFocused = true
