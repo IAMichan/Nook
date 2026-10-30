@@ -99,6 +99,8 @@ final class ActionsStore: ObservableObject {
         didSet { UserDefaults.standard.set(added, forKey: Self.addedKey) }
     }
     @Published private(set) var pushed: [String] = []
+    /// The repositories you pushed to were read once, so a page without a repository can say to pick one.
+    @Published private(set) var repositoriesLoaded = false
     @Published private(set) var loading = false
     /// The first read of this repository and workflow, with nothing to show yet.
     @Published private(set) var loaded = false
@@ -212,6 +214,7 @@ final class ActionsStore: ObservableObject {
         pushedAt = Date()
         let fresh = await GitHubActions.pushedRepositories()
         if !fresh.isEmpty { pushed = fresh }
+        repositoriesLoaded = true
         // Nothing picked yet: the repository you pushed to last.
         if repo == nil, let first = fresh.first { select(first) }
     }

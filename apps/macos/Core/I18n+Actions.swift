@@ -46,6 +46,7 @@ let actionsTranslations: [AppLanguage: [String: String]] = [
         "actions.jobs": "Jobs",
         "actions.jobs.none": "This run has no jobs.",
         "actions.jobs.waiting": "The jobs start in a moment.",
+        "actions.loading": "Loading runs…",
         "actions.job.open": "Show steps and log",
     ],
     .nl: [
@@ -91,6 +92,7 @@ let actionsTranslations: [AppLanguage: [String: String]] = [
         "actions.jobs": "Jobs",
         "actions.jobs.none": "Deze run heeft geen jobs.",
         "actions.jobs.waiting": "De jobs beginnen zo.",
+        "actions.loading": "Runs laden…",
         "actions.job.open": "Stappen en log tonen",
     ],
     .de: [
@@ -136,6 +138,7 @@ let actionsTranslations: [AppLanguage: [String: String]] = [
         "actions.jobs": "Jobs",
         "actions.jobs.none": "Dieser Lauf hat keine Jobs.",
         "actions.jobs.waiting": "Die Jobs starten gleich.",
+        "actions.loading": "Läufe werden geladen…",
         "actions.job.open": "Schritte und Log anzeigen",
     ],
     .fr: [
@@ -181,6 +184,7 @@ let actionsTranslations: [AppLanguage: [String: String]] = [
         "actions.jobs": "Jobs",
         "actions.jobs.none": "Cette exécution n'a aucun job.",
         "actions.jobs.waiting": "Les jobs démarrent dans un instant.",
+        "actions.loading": "Chargement des exécutions…",
         "actions.job.open": "Afficher les étapes et le journal",
     ],
     .es: [
@@ -226,6 +230,7 @@ let actionsTranslations: [AppLanguage: [String: String]] = [
         "actions.jobs": "Jobs",
         "actions.jobs.none": "Esta ejecución no tiene jobs.",
         "actions.jobs.waiting": "Los jobs empiezan en un momento.",
+        "actions.loading": "Cargando ejecuciones…",
         "actions.job.open": "Mostrar pasos y registro",
     ],
 ]
