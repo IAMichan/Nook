@@ -92,3 +92,4 @@ When you make something the user should look at (an image, a rendered HTML page,
 - **Write it inside the repository, in `.scratch/`** (for example `.scratch/nook-insta/post.png`). That folder is git-ignored. Do not write it to `/tmp`, `/private/tmp`, or another folder outside the working directory: the app's side panel only opens files inside the working directory, so a path there leads nowhere.
 - **Hand it over, don't just name it.** If your tools can send a file to the user (for Claude Code: `SendUserFile`, with `display: "render"` for images, HTML, and PDFs), send it as soon as it is ready. Otherwise give the repository-relative path (`.scratch/…`) so the user can click it.
 - Never commit anything from `.scratch/`; move a file into the tracked tree only when the user asks for it to become part of the project.
+- `.scratch/` is for things the user looks at, not for builds: never point `-derivedDataPath` there. Build with `./scripts/xcode.sh` (section 4).
