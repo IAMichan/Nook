@@ -38,6 +38,9 @@ enum MailChatData {
         var date: Date
         var read: Bool
         var fromMe: Bool
+        /// Where it stood in its mailbox when it was read (`message n of mailbox`): finding it there is instant, while
+        /// finding it by its id makes Mail search the whole mailbox (`locate`). Nil when the read did not say.
+        var index: Int? = nil
 
         /// Its id in Nook.
         var nookID: String { "mail-\(id)" }
@@ -71,8 +74,9 @@ enum MailChatData {
                             "Messages envoyés", "Éléments envoyés", "Enviados", "Elementos enviados", "Mensajes enviados"]
 
     /// One account's newest inbox mail and its newest sent mail, in bulk (one Apple Event per property per mailbox, as
-    /// `MailStats.recentScript` does). Lines: "IN|||mailbox|||id|||subject|||sender|||date|||read", and
-    /// "OUT|||mailbox|||id|||subject|||recipient|||date" with the first recipient as "Name <address>".
+    /// `MailStats.recentScript` does). Lines: "IN|||mailbox|||id|||subject|||sender|||date|||read|||place", and
+    /// "OUT|||mailbox|||id|||subject|||recipient|||date|||place" with the first recipient as "Name <address>", the place
+    /// being where the message stands in its mailbox.
     /// No handlers: `SystemControl` runs every script inside a `with timeout` block, where a handler cannot be defined.
     static func readScript(account: String, inbox: Int = perInbox, sent: Int = perSent) -> String {
         let names = sentNames.map(MailStats.quote).joined(separator: ", ")
@@ -128,7 +132,7 @@ enum MailChatData {
                             try
                                 set stamp to ((item i of dts) as «class isot» as string)
                                 if boxKind is "IN" then
-                                    set out to out & "IN|||" & boxName & "|||" & (item i of ids) & "|||" & (item i of subs) & "|||" & (item i of snds) & "|||" & stamp & "|||" & (item i of rds) & linefeed
+                                    set out to out & "IN|||" & boxName & "|||" & (item i of ids) & "|||" & (item i of subs) & "|||" & (item i of snds) & "|||" & stamp & "|||" & (item i of rds) & "|||" & (lo + i - 1) & linefeed
                                 else
                                     set who to ""
                                     try
@@ -138,7 +142,7 @@ enum MailChatData {
                                             set who to (name of r) & " <" & (address of r) & ">"
                                         end try
                                     end try
-                                    if who is not "" then set out to out & "OUT|||" & boxName & "|||" & (item i of ids) & "|||" & (item i of subs) & "|||" & who & "|||" & stamp & linefeed
+                                    if who is not "" then set out to out & "OUT|||" & boxName & "|||" & (item i of ids) & "|||" & (item i of subs) & "|||" & who & "|||" & stamp & "|||" & (lo + i - 1) & linefeed
                                 end if
                             end try
                         end repeat
@@ -157,7 +161,8 @@ enum MailChatData {
         for row in rows {
             lines.append("""
             try
-                set body to content of \(reference(row))
+            \(locate(row))
+                set body to content of m
                 if (length of body) > \(length) then set body to text 1 thru \(length) of body
                 set out to out & "<<<BODY>>>\(row.id)" & linefeed & body & linefeed
             end try
@@ -171,7 +176,7 @@ enum MailChatData {
     static func markReadScript(_ rows: [Row]) -> String {
         var lines = ["tell application \"Mail\""]
         for row in rows {
-            lines.append("try\n    set read status of \(reference(row)) to true\nend try")
+            lines.append("try\n\(locate(row))\n    set read status of m to true\nend try")
         }
         lines.append("end tell")
         return lines.joined(separator: "\n")
@@ -183,7 +188,7 @@ enum MailChatData {
     static func messageScript(_ row: Row) -> String {
         """
         tell application "Mail"
-            set m to \(reference(row))
+        \(locate(row))
             set out to "SUBJECT|||" & (subject of m) & linefeed
             set out to out & "FROM|||" & (sender of m) & linefeed
             set out to out & "DATE|||" & ((date received of m) as «class isot» as string) & linefeed
@@ -354,6 +359,40 @@ enum MailChatData {
         "message id \(row.id) of mailbox \(MailStats.quote(row.mailbox)) of account \(MailStats.quote(row.account))"
     }
 
+    /// How far below its place a message is looked for: mail that came in since it was read moves it down.
+    static let drift = 40
+
+    /// Script lines that put one message in `m`, fast: at the place it had when it was read, else among the next
+    /// `drift` places (new mail moved it), and only then by its id, which makes Mail search the whole mailbox and can take
+    /// minutes in a large one (a Gmail inbox).
+    static func locate(_ row: Row) -> String {
+        let box = "mailbox \(MailStats.quote(row.mailbox)) of account \(MailStats.quote(row.account))"
+        guard let index = row.index, index > 0 else { return "    set m to message id \(row.id) of \(box)" }
+        return """
+            set box to \(box)
+            set m to missing value
+            try
+                set candidate to message \(index) of box
+                if (id of candidate) is \(row.id) then set m to candidate
+            end try
+            if m is missing value then
+                try
+                    set total to count of messages of box
+                    set hi to \(index + drift)
+                    if hi > total then set hi to total
+                    set nearby to id of messages \(index) thru hi of box
+                    repeat with k from 1 to (count of nearby)
+                        if (item k of nearby) is \(row.id) then
+                            set m to message (\(index) + k - 1) of box
+                            exit repeat
+                        end if
+                    end repeat
+                end try
+            end if
+            if m is missing value then set m to message id \(row.id) of box
+        """
+    }
+
     // MARK: Parsing
 
     static func accounts(_ raw: String) -> [Account] {
@@ -386,8 +425,10 @@ enum MailChatData {
             let person = parts[4].trimmingCharacters(in: .whitespaces)
             guard !address(person).isEmpty else { return nil }
             let read = !incoming || (parts.count > 6 && parts[6].trimmingCharacters(in: .whitespaces) == "true")
+            let place = incoming ? 7 : 6
+            let index = parts.count > place ? Int(parts[place].trimmingCharacters(in: .whitespaces)) : nil
             return Row(account: account.name, mailbox: parts[1], id: id, subject: parts[3], person: person, date: date,
-                       read: read, fromMe: !incoming || own.contains(address(person)))
+                       read: read, fromMe: !incoming || own.contains(address(person)), index: index)
         }
     }
 

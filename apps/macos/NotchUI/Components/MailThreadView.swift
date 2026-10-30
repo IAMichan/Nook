@@ -26,11 +26,15 @@ struct MailThreadView: View {
     /// How many mails at the end are new: they open too.
     var unread: Int = 0
     /// Reads a mail whole from Mail by its id in Nook; nil for a mail app Nook only knows by its notifications.
-    var load: ((String) async -> MailChatData.Message?)?
+    var load: ((String) async throws -> MailChatData.Message)?
     var onAction: (MailThreadAction, InboxMessage, MailChatData.Message?) -> Void
 
     @State private var open: Set<String> = []
     @State private var loaded: [String: MailChatData.Message] = [:]
+    /// Why a mail could not come from Mail, by its id: the card says so and offers to try again, instead of loading on.
+    @State private var failed: [String: String] = [:]
+    /// Each "Try again" asks Mail once more.
+    @State private var attempts: [String: Int] = [:]
     @State private var placed = false
 
     /// The subject the conversation is about: the newest mail's, without "Re:" and the like.
@@ -49,10 +53,12 @@ struct MailThreadView: View {
                     ForEach(messages) { message in
                         MailMessageCard(message: message, contact: contact, whole: loaded[message.id],
                                         isOpen: open.contains(message.id), canLoad: load != nil,
+                                        failure: failed[message.id],
                                         onToggle: { toggle(message) },
+                                        onRetry: { retry(message) },
                                         onAction: { onAction($0, message, loaded[message.id]) })
                             .id(message.id)
-                            .task(id: open.contains(message.id)) { await read(message) }
+                            .task(id: "\(open.contains(message.id)) \(attempts[message.id] ?? 0)") { await read(message) }
                     }
                 }
                 .padding(.vertical, NookTheme.Spacing.lg)
@@ -105,8 +111,18 @@ struct MailThreadView: View {
 
     /// An open mail is read whole from Mail, once.
     private func read(_ message: InboxMessage) async {
-        guard open.contains(message.id), loaded[message.id] == nil, let load else { return }
-        if let whole = await load(message.id) { loaded[message.id] = whole }
+        guard open.contains(message.id), loaded[message.id] == nil, failed[message.id] == nil, let load else { return }
+        do {
+            loaded[message.id] = try await load(message.id)
+        } catch {
+            guard !Task.isCancelled else { return }
+            failed[message.id] = error.localizedDescription
+        }
+    }
+
+    private func retry(_ message: InboxMessage) {
+        failed[message.id] = nil
+        attempts[message.id, default: 0] += 1
     }
 
     /// "Re: Fwd: Offerte" → "Offerte".
@@ -129,7 +145,10 @@ struct MailMessageCard: View {
     let isOpen: Bool
     /// The whole mail can come from Mail: until it does, a spinner where its text has nothing yet.
     var canLoad = true
+    /// Why the whole mail did not come from Mail; nil while it comes or came.
+    var failure: String? = nil
     let onToggle: () -> Void
+    var onRetry: () -> Void = {}
     let onAction: (MailThreadAction) -> Void
 
     @State private var hovering = false
@@ -272,8 +291,9 @@ struct MailMessageCard: View {
     @ViewBuilder
     private var content: some View {
         let text = self.text
+        if let failure, whole == nil { failureLine(failure) }
         if text.own.isEmpty, text.quoted.isEmpty {
-            if whole == nil, canLoad { PatientSpinner().frame(height: 40) } else {
+            if whole == nil, canLoad, failure == nil { PatientSpinner().frame(height: 40) } else if failure == nil {
                 Text(tr("chats.mail.empty"))
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
@@ -297,6 +317,21 @@ struct MailMessageCard: View {
                         .opacity(0.75)
                         .transition(.opacity)
                 }
+            }
+        }
+    }
+
+    /// The whole mail did not come: why, and what to do about it. The start of its text, when the conversation has it,
+    /// still shows under it.
+    private func failureLine(_ reason: String) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            Text(reason)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: NookTheme.Spacing.sm) {
+                SmallGhostButton(title: tr("chats.mail.tryAgain"), action: onRetry)
+                SmallGhostButton(title: tr("button.openInMail")) { onAction(.openInMail) }
             }
         }
     }

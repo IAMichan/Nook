@@ -24,8 +24,9 @@ final class MailBridge: ChatBridge, ObservableObject {
     /// Bodies already read, by Mail's id: a message's text does not change, so it is read once.
     private var bodies: [Int: String] = [:]
     private static let bodiesKept = 2_000
-    /// New bodies read per round: the rest follow at the next, so one read never keeps Mail busy for long.
-    private static let bodiesPerRead = 30
+    /// New bodies read per round: the rest follow at the next, so one read never keeps Mail busy for long (Mail answers
+    /// one script at a time, and a mail you open waits behind it).
+    private static let bodiesPerRead = 10
     /// What each chat (by its `chatID`) needs to answer and to mark read: whom, from which address, the newest subject,
     /// and its unread messages.
     private struct Target {
@@ -133,16 +134,26 @@ final class MailBridge: ChatBridge, ObservableObject {
         MailChatData.mailID(nookID).map { places[$0] != nil || opened[$0] != nil } ?? false
     }
 
+    /// How long one mail may take to come from Mail: its text may still have to come from the server.
+    private static let openTimeout: TimeInterval = 30
+
     /// The whole message (headers, attachments, all of its text), read from Mail the first time it opens in the mail
-    /// view and kept after that. Nil when Mail does not have it (any longer) or is closed.
-    func message(_ nookID: String) async -> MailChatData.Message? {
-        guard let id = MailChatData.mailID(nookID) else { return nil }
+    /// view and kept after that, found at its place in its mailbox (`MailChatData.locate`). Throws a sentence that says
+    /// why when it cannot: Mail is closed, Nook has not read where the mail is yet, or Mail did not answer in time.
+    func message(_ nookID: String) async throws -> MailChatData.Message {
+        guard let id = MailChatData.mailID(nookID) else { throw NookError(tr("chats.mail.notFound")) }
         if let kept = opened[id] { return kept }
-        guard let row = places[id], isReady else { return nil }
-        let result = await ScriptText.run(MailChatData.messageScript(row), timeout: 15)
-        guard let raw = result.text, let message = MailChatData.message(raw) else { return nil }
+        guard ScriptText.isRunning(MailSender.mailBundleID) else { throw NookError(tr("chats.mail.openMail")) }
+        guard let row = places[id] else { throw NookError(tr("chats.mail.notReadYet")) }
+        let result = await ScriptText.run(MailChatData.messageScript(row), timeout: Self.openTimeout)
+        guard let raw = result.text else {
+            throw problem(result.errorNumber, result.errorMessage, timeout: Self.openTimeout)
+        }
+        guard let message = MailChatData.message(raw) else { throw NookError(tr("chats.mail.notFound")) }
         if opened.count >= Self.openedKept { opened = [:] }
         opened[id] = message
+        // Its text is kept for the conversation too, so the line under a folded mail shows it.
+        if bodies[id]?.isEmpty ?? true { bodies[id] = String(message.body.prefix(MailChatData.bodyLength)) }
         return message
     }
 
