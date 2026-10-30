@@ -109,6 +109,10 @@ final class MessagesBridge: ChatHistoryBridge {
     private var lastTapback: Int64?
     /// Whether the database has `associated_message_emoji` (a tapback with any emoji); an older one does not.
     private var customTapbacks = true
+    /// The newest edit or unsend looked at, on Messages' own clock, and whether the database keeps them at all
+    /// (`date_edited`, `date_retracted`: a database from before messages could be edited does not).
+    private var lastEdit: Int64?
+    private var keepsEdits = true
 
     var isReady: Bool { FileManager.default.fileExists(atPath: path) }
 
@@ -189,6 +193,7 @@ final class MessagesBridge: ChatHistoryBridge {
         var messages: [String: [InboxMessage]] = [:]
         var newest = lastRow ?? 0
         let (retapped, tapbackCursor) = try await tapped()
+        let (changedRows, unsent, editCursor) = try await changed(since: recent)
         let unnamed = try await groupNames(rows, contacts: contacts)
         let files = try await attachments(rows)
         let extra = try await extras(rows, contacts: contacts)
@@ -226,6 +231,36 @@ final class MessagesBridge: ChatHistoryBridge {
                 messages[known.chat, default: []].append(known.message)
             }
         }
+        // Messages read earlier that were edited since (their new text) or unsent ("Undo Send"): the chat shows the new
+        // text, or drops the message, as for every app (`BridgedChat.deleted`).
+        var dropped: [String: [String]] = [:]
+        let readNow = Set(rows.compactMap { NotificationRecord.integer($0["id"]) })
+        let edited = changedRows.filter { row in
+            NotificationRecord.integer(row["id"]).map { !readNow.contains($0) } ?? false
+        }
+        if !edited.isEmpty {
+            let changedFiles = try await attachments(edited)
+            let changedExtras = try await extras(edited, contacts: contacts)
+            for row in edited {
+                guard let id = NotificationRecord.integer(row["id"]) else { continue }
+                let chat = AppData.string(row["chat"])
+                guard names[chat] != nil else { continue }
+                if unsent.contains(id) {
+                    dropped[chat, default: []].append("imessage-\(id)")
+                    mine[id] = nil
+                    seen[AppData.string(row["guid"])] = nil
+                    continue
+                }
+                guard let built = build(row, media: changedFiles[id], extras: changedExtras, contacts: contacts) else { continue }
+                remember(row, chat: chat, message: built.inbox)
+                if built.message.fromMe, mine[id] != nil {
+                    var tracked = built.inbox
+                    tracked.reactions = nil
+                    mine[id] = (chat, tracked)
+                }
+                messages[chat, default: []].append(built.inbox)
+            }
+        }
         trimSeen()
         // Your earlier messages whose ticks moved since (delivered, read): the chat shows them now.
         let fresh = Set(rows.compactMap { NotificationRecord.integer($0["id"]) })
@@ -259,6 +294,7 @@ final class MessagesBridge: ChatHistoryBridge {
         // the same messages and tapbacks again next time, instead of losing them.
         lastRow = newest
         lastTapback = tapbackCursor
+        if let editCursor { lastEdit = editCursor }
         lastChange = change
         isWorking = true
         // An iMessage and an sms conversation with the same person are one chat in Nook, with both their counts.
@@ -266,6 +302,7 @@ final class MessagesBridge: ChatHistoryBridge {
         for (chat, name) in names {
             var merged = chats[name] ?? BridgedChat(app: app, name: name, messages: [], unread: 0)
             merged.messages += messages[chat] ?? []
+            merged.deleted += dropped[chat] ?? []
             merged.unread = (merged.unread ?? 0) + (unread[chat] ?? 0)
             if let people = members[chat], !people.isEmpty { merged.members = people }
             chats[name] = merged
@@ -390,6 +427,32 @@ final class MessagesBridge: ChatHistoryBridge {
     /// The messages read earlier (by guid) that got a tapback, or lost one, since the last look, and where the next look
     /// starts (kept by `read` once all of it worked). The first read only marks where to look from: the tapbacks until
     /// then come with its own messages.
+    /// The messages (in the window the reads look at, `recent`) edited or unsent since the last read, as full rows, with
+    /// the unsent ones among them by row, and how far this read looked. The first read only notes where it starts.
+    private func changed(since recent: String) async throws -> (rows: [[String: Any]], unsent: Set<Int64>, cursor: Int64?) {
+        guard keepsEdits else { return ([], [], nil) }
+        let stamp = "MAX(COALESCE(m.date_edited, 0), COALESCE(m.date_retracted, 0))"
+        do {
+            guard let lastEdit else {
+                let top = try await query("SELECT COALESCE(MAX(\(stamp)), 0) AS top FROM message m")
+                return ([], [], top.first.flatMap { NotificationRecord.integer($0["top"]) } ?? 0)
+            }
+            let marks = try await query("""
+            SELECT m.ROWID AS id, \(stamp) AS changed, COALESCE(m.date_retracted, 0) AS retracted FROM message m
+            WHERE \(recent) AND COALESCE(m.associated_message_type, 0) = 0 AND \(stamp) > \(lastEdit)
+            """)
+            guard !marks.isEmpty else { return ([], [], lastEdit) }
+            let cursor = marks.compactMap { NotificationRecord.integer($0["changed"]) }.max() ?? lastEdit
+            let unsent = Set(marks.filter { (AppData.number($0["retracted"]) ?? 0) != 0 }.compactMap { NotificationRecord.integer($0["id"]) })
+            let ids = marks.compactMap { NotificationRecord.integer($0["id"]) }.sorted().map(String.init).joined(separator: ",")
+            return (try await query(Self.select + " WHERE m.ROWID IN (\(ids))"), unsent, cursor)
+        } catch where error.localizedDescription.contains("no such column") {
+            // A database from before messages could be edited or unsent: nothing changes after it is read.
+            keepsEdits = false
+            return ([], [], nil)
+        }
+    }
+
     private func tapped() async throws -> (targets: Set<String>, cursor: Int64) {
         guard let lastTapback else {
             let top = try await query("SELECT COALESCE(MAX(ROWID), 0) AS top FROM message")

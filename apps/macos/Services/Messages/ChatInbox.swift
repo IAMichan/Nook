@@ -987,6 +987,10 @@ struct ChatInbox: Codable, Equatable, Sendable {
             guard let index = indexByID[message.id] else { continue }
             // An edited message, or one first known from a chat list's preview, now read in full.
             if !message.text.isEmpty, thread.messages[index].text != message.text { thread.messages[index].text = message.text }
+            // Who wrote it, by a better name than before (the app learned it since: WhatsApp's names from Contacts and
+            // the phone come after its first messages).
+            if !message.sender.isEmpty, thread.messages[index].sender != message.sender { thread.messages[index].sender = message.sender }
+            if let sender = message.senderID, thread.messages[index].senderID != sender { thread.messages[index].senderID = sender }
             if message.media != nil, thread.messages[index].media != message.media { thread.messages[index].media = message.media }
             if message.poll != nil, thread.messages[index].poll != message.poll { thread.messages[index].poll = message.poll }
             if message.quote != nil, thread.messages[index].quote != message.quote { thread.messages[index].quote = message.quote }

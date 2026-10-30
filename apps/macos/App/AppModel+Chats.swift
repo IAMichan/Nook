@@ -174,8 +174,12 @@ extension AppModel {
         guard hadUnread, ChatNoticeRulesStore.shared.rules.readsOnReply(thread.app),
               let route = chatRoute(for: thread), chatAbilities(route).markRead else { return }
         Task { [weak self] in
-            try? await self?.markReadInChatApp(route, name: thread.name)
-            ChatCaptureService.shared.markReadInApp(id)
+            // Read in the app only when the app took it: a refusal leaves the chat read in Nook alone, with "Mark as read
+            // in <app>" still offered.
+            do {
+                try await self?.markReadInChatApp(route, name: thread.name)
+                ChatCaptureService.shared.markReadInApp(id)
+            } catch {}
         }
     }
 
@@ -183,7 +187,8 @@ extension AppModel {
     /// draft teaches memory nothing about you.
     private func letNookAnswer(_ id: String) {
         guard let thread = ChatCaptureService.shared.inbox.threads[id] else { return }
-        markChatReadInNook(ChatsEntry.entry(thread))
+        // Read as Read on the card reads it: in Nook, and in the app where Settings › Chats says so.
+        readFromCard(id)
         // WhatsApp's linked phone is read by its key across accounts; every other chat by its name and app.
         let focus: Prefetch.Call
         if case .whatsApp(let key) = chatRoute(for: thread) {

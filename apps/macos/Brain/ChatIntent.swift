@@ -99,8 +99,10 @@ struct ChatIntent: Equatable {
 
         var kinds: [Kind] = []
         // "Stuur Anna een bericht op Telegram", "reply to Tom in Slack": a message in another chat app, sent with chat_send.
+        // "Tell", "ask" and "message" only as the request's first word ("ask Tom in Slack…"), "reply" only to someone:
+        // "read the latest message in Teams", "the last reply in Slack" and "tell me what Tom said in Slack" read a chat.
         let namesOtherApp = !has(#"e-?mail|\bmail"#)
-            && has(#"(stuur|verstuur|beantwoord|antwoord|schrijf|zeg|vraag|send|reply|write|tell|ask|message|schick|sende|schreib|sag|frag)\b[^.?!]{0,60}\b(via|op|on|through|in|über|bei|auf)\s+(\#(Self.otherChatApps))\b"#)
+            && has(#"(\b(stuur|verstuur|beantwoord|schrijf|send|write|schick|sende|schreib)|\b(reply|antwoord) (to|aan|op)|^(message|tell|ask|zeg|vraag|sag|frag)\s+(?!me\b|mij\b|mir\b|moi\b))\b[^.?!]{0,60}\b(via|op|on|through|in|über|bei|auf)\s+(\#(Self.otherChatApps))\b"#)
         intent.otherChatApp = namesOtherApp
         intent.namesWhatsApp = has(#"whats-?app|\bappje|app-?bericht|app-?groep|groeps-?app|^app\b|\bapp (hem|haar|ze|him|her|them|ihm|ihr)\b"#)
         // "App Lisa dat ik later ben", "stuur via WhatsApp…", "WhatsApp Jan": a chat message, not a mail.
@@ -179,7 +181,7 @@ struct ChatIntent: Equatable {
         // "Post this on LinkedIn", "deel dit op Reddit": a request to post on a site that opens with the posting verb itself.
         // "I saw a post on Reddit" names a site too, but asks for nothing.
         let postsNow = posts && polite.range(of: #"^(post|posten|plaats|publiceer|deel|tweet|publish|share|poste|veröffentliche|teile|publie|partage|publica|comparte)\b"#, options: .regularExpression) != nil
-        intent.wantsAction = !kinds.isEmpty && (imperative || asksPolitely || embedded || postsNow || editsScreen)
+        intent.wantsAction = !kinds.isEmpty && (imperative || asksPolitely || embedded || postsNow || editsScreen || namesOtherApp)
 
         let greeting = text.range(of: #"^(hoi|hallo|hey|hi|hello|yo|goedemorgen|goedemiddag|goedenavond|dank( je)?( wel)?|bedankt|thanks|thank you|thx|ok(é|e|ay)?|top|super|prima|cool|nice|haha|moin|guten (morgen|tag|abend)|danke)\b[\s\p{P}\p{So}]*(nook)?[\s\p{P}\p{So}]*$"#, options: .regularExpression) != nil
         intent.isSmallTalk = kinds.isEmpty && greeting

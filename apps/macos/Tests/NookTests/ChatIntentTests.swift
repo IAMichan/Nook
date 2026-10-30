@@ -141,6 +141,11 @@ final class ChatIntentTests: XCTestCase {
         XCTAssertEqual(action("App Lisa dat ik later ben"), "whatsapp_send", "WhatsApp stays WhatsApp's own tool")
         XCTAssertEqual(action("Stuur een mail via Teams naar Jan"), "compose_mail", "a mail stays a mail")
         XCTAssertNil(action("Vraag Jan over Slack"), "asks about Slack, sends nothing")
+        XCTAssertNotEqual(action("Can you read the latest message from Tom in Teams?"), "chat_send", "reads a chat")
+        XCTAssertNotEqual(action("Can you add a task in Teams"), "chat_send", "\"task\" holds \"ask\"")
+        XCTAssertNotEqual(action("Tell me what Tom said in Slack"), "chat_send", "reads a chat")
+        XCTAssertEqual(action("Ask Tom in Slack whether the build is green"), "chat_send")
+        XCTAssertNotEqual(action("Can you show the last reply from Tom in Slack"), "chat_send", "reads a chat")
         // A follow-up sends where the message was meant to go.
         let history = [
             ChatTurn(fromUser: true, text: "Stuur Anna een bericht op Telegram dat ik later ben"),

@@ -300,6 +300,11 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
             }
         case "messageViewers", "users":
             if let extra = object["@extra"] as? String, extra.hasPrefix("viewers:") { viewed(TelegramData.viewers(object), extra: extra) }
+        case "messageReadDateRead":
+            if let extra = object["@extra"] as? String, extra.hasPrefix("readdate:"), let seconds = TelegramData.int64(object["read_date"]),
+               seconds > 0 {
+                viewed([(user: 0, date: Date(timeIntervalSince1970: Double(seconds)))], extra: "viewers:" + extra.dropFirst("readdate:".count))
+            }
         case "updateChatAction":
             // Telegram repeats an action every few seconds while it lasts, and lets it go after six without a word.
             if let action = TelegramData.chatAction(object), action.user != meID, let chat = chats[action.chat], !chat.title.isEmpty {
@@ -501,16 +506,22 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
         }
     }
 
-    /// Who read your newest messages in a group: asked of Telegram for those it says were read since the last ask.
-    /// Telegram answers only for the last week, and in groups of up to 100 people; elsewhere the message keeps its ticks.
+    /// Who read your newest messages in a group, or when the other person read them in a private chat: asked of
+    /// Telegram for those it says were read since the last ask. Telegram answers only for the last week (a group of up
+    /// to 100 people), or when neither of you hides when you read (`getMessageReadDate`); elsewhere the message keeps its
+    /// ticks.
     private func askViewers(in chat: Int64) {
-        guard let group = chats[chat], group.isGroup, group.readOutbox > 0 else { return }
+        guard let group = chats[chat], group.readOutbox > 0 else { return }
         let week = Date().addingTimeInterval(-7 * 86_400)
         for message in (messages[chat] ?? []).filter({ $0.isMine && $0.date > week }).suffix(Self.viewed) {
             guard let ids = TelegramData.ids(message.id), ids.message <= group.readOutbox,
                   viewersAsked[message.id] != group.readOutbox else { continue }
             viewersAsked[message.id] = group.readOutbox
-            send(["@type": "getMessageViewers", "chat_id": chat, "message_id": ids.message, "@extra": "viewers:\(message.id)"])
+            if group.isGroup {
+                send(["@type": "getMessageViewers", "chat_id": chat, "message_id": ids.message, "@extra": "viewers:\(message.id)"])
+            } else {
+                send(["@type": "getMessageReadDate", "chat_id": chat, "message_id": ids.message, "@extra": "readdate:\(message.id)"])
+            }
         }
         if viewersAsked.count > 500 { viewersAsked.removeAll() }
     }
@@ -519,8 +530,10 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
     private func viewed(_ viewers: [(user: Int64, date: Date?)], extra: String) {
         let id = String(extra.dropFirst("viewers:".count))
         guard let ids = TelegramData.ids(id), let index = messages[ids.chat]?.firstIndex(where: { $0.id == id }) else { return }
+        // In a private chat (user 0) the reader is the chat itself, unnamed, as every app's private chat shows it.
         let readers = viewers.filter { $0.user != meID }.map { viewer in
-            ChatReader(name: users[viewer.user] ?? String(viewer.user), receipt: .read, date: viewer.date, key: String(viewer.user))
+            viewer.user == 0 ? ChatReader(name: "", receipt: .read, date: viewer.date)
+                : ChatReader(name: users[viewer.user] ?? String(viewer.user), receipt: .read, date: viewer.date, key: String(viewer.user))
         }
         guard messages[ids.chat]?[index].readers != readers else { return }
         messages[ids.chat]?[index].readers = readers

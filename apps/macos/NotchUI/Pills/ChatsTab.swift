@@ -61,18 +61,19 @@ extension ChatsEntry {
         let hidden = ChatHiddenMessages.shared
         // One chat, one row: an app that names the same chat twice (a chat without a topic is named after whoever wrote
         // last) leaves two threads holding the same messages. The one a bridge reads stays (it keeps getting the new
-        // messages and the app's own name), else the fuller one.
+        // messages and the app's own name), else the fuller one. A chat its app knows by an id is never named twice, and
+        // two of them may share a message (one group in two linked WhatsApp accounts): they stay two rows.
         var keeper: [String: InboxThread] = [:]
         let threads = capture.inbox.sorted.filter(capture.isShown)
         for thread in threads {
-            guard let id = thread.messages.last?.id else { continue }
+            guard thread.chatID == nil, let id = thread.messages.last?.id else { continue }
             let key = thread.app + "|" + id
             if let kept = keeper[key], !ChatsEntry.isBetter(thread, than: kept) { continue }
             keeper[key] = thread
         }
         var entries: [ChatsEntry] = []
         for thread in threads {
-            if let id = thread.messages.last?.id, keeper[thread.app + "|" + id]?.id != thread.id { continue }
+            if thread.chatID == nil, let id = thread.messages.last?.id, keeper[thread.app + "|" + id]?.id != thread.id { continue }
             entries.append(entry(thread, hidden: hidden))
         }
         return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
