@@ -116,6 +116,8 @@ final class WorkspaceManager: ObservableObject {
     var acpIdleClose: [UUID: Task<Void, Never>] = [:]
     /// ACP: what the agent sent after its turn ended, until it shows it is really working again (see wakeAcp).
     var acpWakeBuffer: [UUID: [AcpEvent]] = [:]
+    /// ACP: the conversation a loaded session replays into a timeline that has none yet (a session the agent listed).
+    var acpReplays: [UUID: AcpReplay] = [:]
     /// ACP: ends a turn the agent started by itself, once it has been quiet for a moment.
     var acpWakeFinish: [UUID: Task<Void, Never>] = [:]
     /// Sessions with work still running in the background: they stay open longer between turns (see BackgroundWork).
@@ -133,6 +135,12 @@ final class WorkspaceManager: ObservableObject {
     @Published var selectedRunID: UUID?
     /// The models each agent offers itself (Codex `model/list`, ACP sessions); see WorkspaceManager+Models.
     @Published var agentModels: [RunProvider: [AgentModel]] = [:]
+    /// The models of each ACP agent you added, by its `AgentProfile.id`: each runs its own command line and models.
+    @Published var customAgentModels: [String: [AgentModel]] = [:]
+    /// The thinking levels each ACP agent offers (its "thought_level" config option), by `effortKey`.
+    @Published var agentEfforts: [String: [AgentModel]] = [:]
+    /// The `/` commands each ACP session announced (`available_commands_update`).
+    @Published var acpCommands: [UUID: [AgentSlashCommand]] = [:]
     /// The open pull request of a session's branch, when GitHub says there is one (for the git button).
     @Published var openPullRequests: [UUID: URL] = [:]
     /// The same for sessions Nook only sees, by repository root.
@@ -150,6 +158,8 @@ final class WorkspaceManager: ObservableObject {
     /// Comments on a session's diff, waiting to go to the agent together.
     @Published var reviewComments: [UUID: [ReviewComment]] = [:]
     var modelsRefreshed: [RunProvider: Date] = [:]
+    /// When each agent account was last asked for its sessions (see `listAgentSessions`).
+    var sessionsListed: [String: Date] = [:]
     /// The model manifest in use: the bundled one, or a newer valid copy from Nook's repository (see
     /// WorkspaceManager+ModelManifest).
     @Published var modelManifest: ModelManifest?
@@ -288,6 +298,8 @@ final class WorkspaceManager: ObservableObject {
         // Agents' process groups are written down; the ones a crashed Nook left behind are stopped.
         ProcessGroupLedger.install()
         agentModels = AgentModelStore(url: Self.modelStoreURL).load()
+        customAgentModels = AgentModelStore(url: Self.customModelStoreURL).loadRaw()
+        agentEfforts = AgentModelStore(url: Self.effortStoreURL).loadRaw()
         modelManifest = ModelManifest.preferred(bundled: .bundled(), cached: ModelManifestStore(url: Self.manifestStoreURL).load())
         // The session list can be long: read it off the main thread so launching Nook does not wait for it.
         Task.detached(priority: .userInitiated) { [weak self] in
@@ -625,7 +637,8 @@ final class WorkspaceManager: ObservableObject {
     /// Already taken over? Returns that session instead of adding a second one.
     @discardableResult
     func adopt(provider: RunProvider, sessionID: String, profileID: String, directory: String, title: String,
-               history: [(kind: RunEvent.Kind, text: String)] = [], fork: Bool = false) async throws -> UUID {
+               history: [(kind: RunEvent.Kind, text: String)] = [], fork: Bool = false,
+               continuesConversation: Bool = true) async throws -> UUID {
         if !fork, let existing = runs.first(where: { $0.provider == provider && $0.isConversation(sessionID) }) {
             if existing.archived { setArchived(existing.id, false) }
             selectedRunID = existing.id
@@ -680,7 +693,8 @@ final class WorkspaceManager: ObservableObject {
             instructions: "",
             status: .completed,
             statusDetail: nil,
-            providerSessionID: sessionID,
+            // An agent that cannot load this conversation itself starts a new one from it (see carryOverConversation).
+            providerSessionID: continuesConversation ? sessionID : nil,
             createdAt: now,
             updatedAt: now,
             archived: false,
@@ -690,7 +704,9 @@ final class WorkspaceManager: ObservableObject {
             lastChangeAt: nil,
             changedFiles: nil
         )
-        runs.insert(run, at: 0)
+        var adopted = run
+        if !continuesConversation { adopted.carriedOverFrom = sessionID }
+        runs.insert(adopted, at: 0)
         events[id] = []
         if fork { forkNext.insert(id) }
         settings.rememberProject(repoRoot ?? projectPath)
@@ -703,6 +719,7 @@ final class WorkspaceManager: ObservableObject {
         // The starting point for what the next turns change.
         captureCheckpoint(id)
         if clean.isEmpty, !opening.isEmpty { generateTitle(id) }
+        if !continuesConversation { carryOverConversation(id, prompt: nil) }
         return id
     }
 
@@ -765,6 +782,14 @@ final class WorkspaceManager: ObservableObject {
         return true
     }
 
+    /// Whether this turn goes to Codex over app-server (rather than `codex exec`, or another agent).
+    func usesCodexServer(_ run: WorkspaceRun, _ executable: String) -> Bool {
+        switch run.provider {
+        case .codex: return settings.codexAppServer && !codexExecOnly.contains(executable)
+        case .claude, .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return false
+        }
+    }
+
     /// False when the message could not be taken (empty, the session cannot continue, or a turn is running).
     @discardableResult
     private func send(_ id: UUID, text: String, shown: Bool) -> Bool {
@@ -798,8 +823,9 @@ final class WorkspaceManager: ObservableObject {
         // What the timeline shows: your words, without a handoff summary or the context envelope of references.
         let visible = ContextRefs.visible(clean)
         displayPrompt[id] = run.pendingHandoff == nil && visible == clean ? nil : visible
-        // What MCP apps told the agent goes with this turn: Codex takes it as context of its own, the others ahead of it.
-        let appContext = run.provider == .codex ? "" : McpApp.contextPreamble(takeMcpAppContexts(id))
+        // What MCP apps told the agent goes with this turn: Codex over app-server takes it as context of its own, every
+        // other agent (Codex over `codex exec` too) ahead of the message.
+        let appContext = usesCodexServer(run, executable) ? "" : McpApp.contextPreamble(takeMcpAppContexts(id))
         launchTurn(id, prompt: appContext + ContextHandoff.compose(handoff: run.pendingHandoff, message: clean), executable: executable,
                    showPrompt: !shown)
         return true
@@ -1027,7 +1053,7 @@ final class WorkspaceManager: ObservableObject {
         if let tasks = self.run(id)?.tasks, RunTasks.isFinished(tasks) { update(id) { $0.tasks = nil } }
         guard var run = run(id) else { return }
         // Codex speaks app-server when it can: approvals, questions, steering and live reasoning.
-        if run.provider == .codex, settings.codexAppServer, !codexExecOnly.contains(executable) {
+        if usesCodexServer(run, executable) {
             launchCodexServerTurn(id, prompt: prompt, executable: executable, showPrompt: showPrompt)
             return
         }

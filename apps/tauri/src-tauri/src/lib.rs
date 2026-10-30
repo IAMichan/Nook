@@ -284,6 +284,7 @@ pub fn run() {
             commands::workspace::workspace_overview,
             commands::workspace::workspace_save_settings,
             commands::workspace::workspace_forget_project,
+            commands::workspace::workspace_toggle_favorite_project,
             commands::workspace::workspace_timeline,
             commands::workspace::workspace_queue,
             commands::workspace::workspace_inspect,

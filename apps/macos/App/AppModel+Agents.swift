@@ -67,16 +67,20 @@ extension AppModel {
     }
 
     func canContinueInNook(_ session: PastSession) -> Bool {
-        nookProvider(for: session.agent) != nil && !session.cwd.isEmpty
+        (nookProvider(for: session.agent) != nil || summaryProvider(for: session.agent) != nil) && !session.cwd.isEmpty
+    }
+
+    /// The agent Nook runs for a kind whose own conversations it cannot load (Antigravity's live in its app): such a past
+    /// session continues in a new conversation that starts from its transcript.
+    func summaryProvider(for kind: AgentKind) -> RunProvider? {
+        guard nookProvider(for: kind) == nil, let provider = RunProvider(kind: kind), history.executables[kind] != nil else { return nil }
+        return provider
     }
 
     /// Can Nook resume or send a message to this past session?
     func canReply(to session: PastSession) -> Bool {
-        if canContinueInNook(session) { return true }
-        if session.agent == .antigravity {
-            return AntigravityClient.isAvailable && !session.sessionID.isEmpty
-        }
-        return false
+        if session.agent == .antigravity, AntigravityClient.isAvailable, !session.sessionID.isEmpty { return true }
+        return canContinueInNook(session)
     }
 
     /// Sends a reply into an active agent session (or adopts it into Workspace if supported). `choice`: another agent,
@@ -96,7 +100,8 @@ extension AppModel {
     /// Resumes an earlier session or sends a message to it.
     func reply(to session: PastSession, message: String, choice: AgentChoice? = nil,
                settings: AgentTurnSettings? = nil) async throws {
-        if session.agent == .antigravity {
+        // Antigravity's own conversation goes on in its app while that runs; otherwise in Nook, from its transcript.
+        if session.agent == .antigravity, AntigravityClient.isAvailable {
             guard !session.sessionID.isEmpty else {
                 throw NookError(tr("agents.nook.noConversation"))
             }
@@ -155,7 +160,8 @@ extension AppModel {
     @discardableResult
     func continueInNook(_ session: PastSession, message: String? = nil, choice: AgentChoice? = nil,
                         settings: AgentTurnSettings? = nil) async throws -> UUID {
-        guard let provider = nookProvider(for: session.agent) else {
+        let continues = nookProvider(for: session.agent) != nil
+        guard let provider = nookProvider(for: session.agent) ?? summaryProvider(for: session.agent) else {
             throw NookError(tr("agents.nook.unsupported", session.agent.name))
         }
         let folder = session.resumeFolder
@@ -165,7 +171,7 @@ extension AppModel {
         let profile = self.profile(for: session) ?? profiles.preferredProfile(session.agent)
         let earlier = await earlierConversation(path: session.path, prompt: session.lastPrompt, reply: session.lastReply)
         let id = try await workspace.adopt(provider: provider, sessionID: session.sessionID, profileID: profile.id,
-                                           directory: folder, title: session.title, history: earlier)
+                                           directory: folder, title: session.title, history: earlier, continuesConversation: continues)
         try applyChoice(choice, to: id)
         applySettings(settings, to: id)
         if let message, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { workspace.send(id, text: message) }

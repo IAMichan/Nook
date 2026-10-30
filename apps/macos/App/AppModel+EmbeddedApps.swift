@@ -25,7 +25,7 @@ extension AppModel {
         case .chat(let name):
             // A chat from another app (Telegram, LinkedIn…) has no card: it opens in the Chats tab.
             if WhatsAppAccounts.shared.resolve(name) == nil,
-               let id = chatsEntryID(named: name), let thread = ChatCaptureService.shared.inbox.threads[id] {
+               let id = chatsEntryID(named: name), let thread = ChatCaptureService.shared.loadedInbox.threads[id] {
                 chat.append(ChatMessage(role: .nook, text: tr("chats.openedChat", thread.name)))
                 showChats(ChatsFocus(chat: id))
                 return true

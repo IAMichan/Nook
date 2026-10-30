@@ -185,7 +185,7 @@ extension AppModel {
             }
         }
         let capture = ChatCaptureService.shared
-        for thread in capture.inbox.sorted where capture.sources.isOn(thread.app) {
+        for thread in capture.loadedInbox.sorted where capture.sources.isOn(thread.app) {
             let app = MessagingApps.app(id: thread.app)?.name ?? thread.app
             var flags: Set<String> = thread.isGroup ? ["group"] : []
             if thread.unread > 0 { flags.insert("unread") }

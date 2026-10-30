@@ -97,14 +97,21 @@ enum SourceBrand {
         return icon
     }
 
-    /// The icon as a small fixed-size image for menu items, or nil while there is none (yet).
+    /// The icon as a small fixed-size image for menu items, or nil while there is none (yet). Made once per icon: a menu
+    /// asks again on every redraw of the view that holds it, and a new image each time makes it update every item.
     @MainActor
     static func menuImage(for id: String, domain: String? = nil, size: CGFloat = 16) -> NSImage? {
         let source = appIcon(for: id) ?? (domain ?? self.domain(for: id)).flatMap { FaviconStore.shared.image(for: $0) }
         guard let source else { return nil }
-        return NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+        let key = "\(id)|\(domain ?? "")|\(size)"
+        if let cached = menuImages[key], cached.source === source { return cached.image }
+        let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
             source.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
             return true
         }
+        menuImages[key] = (source, image)
+        return image
     }
+
+    @MainActor private static var menuImages: [String: (source: NSImage, image: NSImage)] = [:]
 }

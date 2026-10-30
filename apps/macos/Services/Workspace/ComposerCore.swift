@@ -69,6 +69,8 @@ struct ComposerCommand: Equatable, Sendable, Identifiable {
     /// The text it puts in the box ("/plan" turns on Plan mode instead and puts nothing).
     var insertion: String
     var action: Action
+    /// What it does, in the words of the agent that offers it; Nook's own commands are described in `I18n`.
+    var detail: String? = nil
 
     enum Action: Equatable, Sendable {
         /// Put `insertion` in the box.

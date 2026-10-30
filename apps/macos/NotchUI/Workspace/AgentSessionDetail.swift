@@ -117,22 +117,15 @@ struct AgentSessionDetail: View {
         return app.history.sessions.first { $0.agent == kind && $0.cwd == session.cwd }
     }
 
-    /// The earlier record of this conversation, for its title and branch.
-    private func known(_ session: AgentSession) -> PastSession? {
-        if let transcript = transcript(for: session) { return transcript }
-        guard let id = app.conversationID(for: session) else { return nil }
-        return app.history.sessions.first { $0.isConversation(id) }
-    }
-
-    private func title(for session: AgentSession) -> String {
-        let named = AgentFormat.sessionTitle(session, known: known(session))
+    private func title(for session: AgentSession, known: PastSession?) -> String {
+        let named = AgentFormat.sessionTitle(session, known: known)
         return named.isEmpty ? session.name : named
     }
 
     /// The session as the conversation view needs it: with the transcript of a session that was already running.
-    private func withTranscript(_ session: AgentSession) -> AgentSession {
+    private func withTranscript(_ session: AgentSession, _ transcript: PastSession?) -> AgentSession {
         var shown = session
-        if let transcript = transcript(for: session) {
+        if let transcript {
             if shown.transcriptPath.isEmpty { shown.transcriptPath = transcript.path }
             if shown.lastPrompt.isEmpty { shown.lastPrompt = transcript.lastPrompt }
             if shown.lastReply.isEmpty { shown.lastReply = transcript.lastReply }
@@ -142,9 +135,11 @@ struct AgentSessionDetail: View {
     }
 
     private func liveDetail(_ session: AgentSession) -> some View {
-        let shown = withTranscript(session)
+        // The earlier record of this conversation (its transcript, title and branch), looked up once per redraw.
+        let past = transcript(for: session)
+        let shown = withTranscript(session, past)
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            header(folder: session.project, title: title(for: session), directory: session.cwd,
+            header(folder: session.project, title: title(for: session, known: past), directory: session.cwd,
                    agentWorking: session.status == .running || session.status == .waiting)
 
             if shown.transcriptPath.isEmpty && !session.steps.isEmpty {
@@ -163,19 +158,19 @@ struct AgentSessionDetail: View {
 
             if app.demoMode {
                 Spacer(minLength: 0)
-                liveBottomBar(session, shown: shown)
+                liveBottomBar(session, shown: shown, known: past)
             } else {
                 // Every agent Nook can answer (Antigravity too, through its agent API), not only the ones it takes over.
                 AgentConversation(session: shown, onReply: app.canReply(to: session) ? { answer in
                     perform { try await app.reply(to: session, message: answer) }
-                } : nil, bottomBar: AnyView(liveBottomBar(session, shown: shown)))
+                } : nil, bottomBar: AnyView(liveBottomBar(session, shown: shown, known: past)))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     /// What sits under a live session's conversation: an approval, or the composer with its error line and tray.
-    private func liveBottomBar(_ session: AgentSession, shown: AgentSession) -> some View {
+    private func liveBottomBar(_ session: AgentSession, shown: AgentSession, known: PastSession?) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {
                 let approval = ApprovalCenter.make(request)
@@ -187,7 +182,7 @@ struct AgentSessionDetail: View {
             } else {
                 errorLine
                 VStack(spacing: 0) {
-                    pullRequestTray(pullRequest(cwd: session.cwd, branch: known(session).flatMap { $0.branch.isEmpty ? nil : $0.branch } ?? GitHead.branch(for: session.cwd) ?? "", reply: pullRequestText(shown)))
+                    pullRequestTray(pullRequest(cwd: session.cwd, branch: known.flatMap { $0.branch.isEmpty ? nil : $0.branch } ?? GitHead.branch(for: session.cwd) ?? "", reply: pullRequestText(shown)))
                     liveComposer(shown).zIndex(1)
                 }
                 // The tray keeps to the box's column, so it follows the box when that is narrower than the panel.
@@ -345,7 +340,7 @@ struct AgentSessionDetail: View {
             let current = choice ?? original
             let shown = app.profiles.profile(id: current.profileID)
             let account = shown.map { AccountLabel.name($0, app: app) }
-            let model = current.model.isEmpty ? nil : app.modelName(current.model, for: current.provider)
+            let model = current.model.isEmpty ? nil : app.modelName(current.model, for: current.provider, profileID: current.profileID)
             let providers = app.connectedProviders
             ComposerDropdown(width: providers.count > 1 ? 340 : 296, takesRoom: true) {
                 ComposerPill(agent: current.provider.displayName, account: shown.map { AccountKind.of($0, app: app) },
@@ -399,18 +394,19 @@ struct AgentSessionDetail: View {
             }
             .disabled(turnSettings.mode == .plan)
             .help(permission.help(for: provider))
-            let levels = EffortLevels.levels(for: provider, model: choice?.model ?? "")
+            let levels = app.workspace.effortLevels(for: provider, profileID: choice?.profileID, model: choice?.model ?? "")
             if !levels.isEmpty {
                 ComposerDivider()
                 Menu {
                     ForEach([nil] + levels.map { Optional($0) }, id: \.self) { level in
                         Button { turnSettings.effort = level } label: {
-                            let title = tr(EffortLevels.label(level))
+                            let title = app.workspace.effortTitle(level, for: provider, profileID: choice?.profileID)
                             if turnSettings.effort == level { Label(title, systemImage: "checkmark") } else { Text(title) }
                         }
                     }
                 } label: {
-                    ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(turnSettings.effort)))
+                    ComposerPill(symbol: "gauge.with.dots.needle.33percent",
+                                 text: app.workspace.effortTitle(turnSettings.effort, for: provider, profileID: choice?.profileID))
                 }
                 .composerMenu()
                 .help(tr("compose.effort.help"))
@@ -685,7 +681,7 @@ struct AgentSessionDetail: View {
         if !profile.label.isEmpty { return profile.label }
         let account = app.history.profileAccounts[profile.id]
         if let org = account?.organization, !org.isEmpty { return org }
-        if account?.name == "API-sleutel" { return account?.name ?? "" }
+        if account?.name == AgentAccount.apiKeyName { return account?.name ?? "" }
         return tr("agents.personal")
     }
 

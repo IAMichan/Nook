@@ -127,6 +127,8 @@ final class WorkspaceSettings: ObservableObject {
     @Published var lastProject: String {
         didSet { defaults.set(lastProject, forKey: "ws.lastProject") }
     }
+    /// Favorite project folders: listed first in the project menu and never dropped.
+    @Published private(set) var favoriteProjects: [String]
     /// Previously selected projects, newest first.
     @Published private(set) var recentProjects: [String]
     /// What project folders set for themselves on top of the defaults above (see `ProjectSettings`).
@@ -169,6 +171,7 @@ final class WorkspaceSettings: ObservableObject {
         scheduledTasksEnabled = defaults.object(forKey: "ws.scheduledTasksEnabled") as? Bool ?? false
         scheduledWebhookPort = defaults.object(forKey: "ws.scheduledWebhookPort") as? Int ?? 0
         lastProject = defaults.string(forKey: "ws.lastProject") ?? ""
+        favoriteProjects = defaults.stringArray(forKey: "ws.favoriteProjects") ?? []
         recentProjects = defaults.stringArray(forKey: "ws.recentProjects") ?? []
         projectOverrides = defaults.data(forKey: "ws.projectOverrides")
             .flatMap { try? JSONDecoder().decode(ProjectOverrides.self, from: $0) } ?? ProjectOverrides()
@@ -183,9 +186,21 @@ final class WorkspaceSettings: ObservableObject {
     }
 
     func forgetProject(_ path: String) {
-        recentProjects.removeAll { $0 == path }
+        let normalized = WorkspacePathPolicy.normalize(path)
+        recentProjects.removeAll { $0 == path || WorkspacePathPolicy.normalize($0) == normalized }
         defaults.set(recentProjects, forKey: "ws.recentProjects")
-        if lastProject == path { lastProject = "" }
+        favoriteProjects.removeAll { $0 == path || WorkspacePathPolicy.normalize($0) == normalized }
+        defaults.set(favoriteProjects, forKey: "ws.favoriteProjects")
+        if lastProject == path || WorkspacePathPolicy.normalize(lastProject) == normalized { lastProject = "" }
+    }
+
+    func isFavoriteProject(_ path: String) -> Bool {
+        ProjectSettings.isFavorite(path, in: favoriteProjects, normalize: WorkspacePathPolicy.normalize)
+    }
+
+    func toggleFavoriteProject(_ path: String) {
+        favoriteProjects = ProjectSettings.togglingFavorite(path, in: favoriteProjects, normalize: WorkspacePathPolicy.normalize)
+        defaults.set(favoriteProjects, forKey: "ws.favoriteProjects")
     }
 
     func model(for provider: RunProvider) -> String { defaultModels[provider.rawValue] ?? "" }
@@ -206,9 +221,10 @@ final class WorkspaceSettings: ObservableObject {
 
     func profile(for provider: RunProvider) -> String? { defaultProfiles[provider.rawValue] }
 
-    /// The effort last chosen for this agent, while the agent still offers it.
+    /// The effort last chosen for this agent, while the agent still offers it. An ACP agent's levels are the ones its
+    /// session offered: the level stays, and a session that does not offer it skips it (see `AcpSessionSettings`).
     func effort(for provider: RunProvider) -> String? {
-        defaultEfforts[provider.rawValue].flatMap { EffortLevels.isOffered($0, for: provider, model: nil) ? $0 : nil }
+        defaultEfforts[provider.rawValue].flatMap { provider.usesACP || EffortLevels.isOffered($0, for: provider, model: nil) ? $0 : nil }
     }
 
     func setEffort(_ effort: String?, for provider: RunProvider) { defaultEfforts[provider.rawValue] = effort }

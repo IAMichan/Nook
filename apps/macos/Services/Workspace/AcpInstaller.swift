@@ -103,17 +103,46 @@ enum AcpInstaller {
         }
     }
 
-    /// Removes the downloads no agent uses any more: the versions an update replaced, once Nook started again (an agent
-    /// still running from one when it was updated has stopped by then).
-    static func prune(keeping folders: [String]) {
+    /// The downloads no agent uses any more: the versions an update replaced, once Nook started again (an agent still
+    /// running from one when it was updated has stopped by then). `setAside` moves them out of the way.
+    static func stale(keeping folders: [String]) -> [String] {
         let manager = FileManager.default
         let kept = Set(folders.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
+        var stale: [String] = []
         for agent in (try? manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? [] {
             for version in (try? manager.contentsOfDirectory(at: agent, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
             where !kept.contains(version.standardizedFileURL.path) {
-                uninstall(version.path)
+                stale.append(version.path)
             }
         }
+        return stale
+    }
+
+    /// Where `setAside` moves the downloads that go: hidden, so no agent and no listing sees them.
+    static var trash: URL { root.appendingPathComponent(".removing", isDirectory: true) }
+
+    /// Moves these downloads into `trash` right away (a rename, at once), with their agent's folder once empty, so an
+    /// install that makes the same version again while they are being deleted is never deleted with them. Deleting the
+    /// trash (`emptyTrash`, a whole node tree per version) can then wait for the background.
+    static func setAside(_ folders: [String]) {
+        guard !folders.isEmpty else { return }
+        let manager = FileManager.default
+        let base = root.standardizedFileURL.path + "/"
+        try? manager.createDirectory(at: trash, withIntermediateDirectories: true)
+        for folder in folders {
+            let url = URL(fileURLWithPath: folder).standardizedFileURL
+            guard url.path.hasPrefix(base) else { continue }
+            try? manager.moveItem(at: url, to: trash.appendingPathComponent(UUID().uuidString, isDirectory: true))
+            let parent = url.deletingLastPathComponent()
+            if parent.path.hasPrefix(base), (try? manager.contentsOfDirectory(atPath: parent.path))?.isEmpty == true {
+                try? manager.removeItem(at: parent)
+            }
+        }
+    }
+
+    /// Deletes what `setAside` moved away, also what an earlier launch left there.
+    static func emptyTrash() {
+        try? FileManager.default.removeItem(at: trash)
     }
 
     private static func unpack(_ tool: String, _ arguments: [String]) throws {

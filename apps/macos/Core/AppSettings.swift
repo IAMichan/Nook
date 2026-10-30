@@ -331,6 +331,11 @@ final class AppSettings: ObservableObject {
     @Published var hideWhenIdle: Bool {
         didSet { UserDefaults.standard.set(hideWhenIdle, forKey: "hideWhenIdle") }
     }
+    /// Whether the main window opens every time Nook starts, also when it was closed when Nook quit. On by default: the
+    /// window is where most of the work happens.
+    @Published var openWindowAtLaunch: Bool {
+        didSet { UserDefaults.standard.set(openWindowAtLaunch, forKey: "openWindowAtLaunch") }
+    }
     /// What Nook does while you share your screen (Settings › Notifications › Meetings and screen sharing).
     @Published var quietWhileSharing: QuietBehavior {
         didSet { UserDefaults.standard.set(quietWhileSharing.rawValue, forKey: "quietWhileSharing") }
@@ -647,6 +652,7 @@ final class AppSettings: ObservableObject {
         buddyTone = BuddyTone(rawValue: defaults.string(forKey: "buddyTone") ?? "") ?? .warm
         birthday = defaults.string(forKey: "birthday") ?? ""
         hideWhenIdle = defaults.bool(forKey: "hideWhenIdle")
+        openWindowAtLaunch = defaults.object(forKey: "openWindowAtLaunch") as? Bool ?? true
         quietWhileSharing = QuietBehavior(rawValue: defaults.string(forKey: "quietWhileSharing") ?? "") ?? .hideFromShare
         // Leaving the notch out of a share is a choice for sharing only; a meeting knows normal, quiet and hide.
         let meeting = QuietBehavior(rawValue: defaults.string(forKey: "quietInMeetings") ?? "") ?? .quiet

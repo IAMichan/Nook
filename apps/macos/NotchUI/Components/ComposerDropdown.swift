@@ -88,7 +88,7 @@ struct DropdownRow: View {
     var disabledReason: String? = nil
     /// Keeps the panel open after the click (several choices in a row).
     var staysOpen = false
-    /// A star at the end of the row (the model menus): filled while the choice is a favorite, nil for none.
+    /// A star at the end of the row (models and project folders): filled while the choice is a favorite, nil for none.
     var favorite: Binding<Bool>? = nil
     let action: () -> Void
     @Environment(\.closeDropdown) private var close
@@ -366,6 +366,12 @@ struct AgentModelPicker: View {
         return profile.map { AccountKind.of($0, app: app) }
     }
 
+    /// The account whose models the list shows: an ACP agent you added has models of its own.
+    private func profileOf(_ current: RunProvider) -> String? {
+        let accounts = app.connectedProfiles(for: current)
+        return current == provider ? profileID ?? accounts.first?.id : accounts.first?.id
+    }
+
     @ViewBuilder
     private func models(of current: RunProvider) -> some View {
         let accounts = app.connectedProfiles(for: current)
@@ -389,9 +395,9 @@ struct AgentModelPicker: View {
         DropdownList(emptyNote: shownModels.isEmpty && custom == nil ? tr("compose.noModels") : nil) {
             ForEach(shownModels, id: \.self) { option in
                 // A model that comes in thinking levels shows once; its level is picked with the effort control.
-                let family = app.modelFamily(option, for: current)
-                let name = app.modelMenuName(option, for: current)
-                let choice = app.workspace.modelChoice(option, for: current)
+                let family = app.modelFamily(option, for: current, profileID: profileOf(current))
+                let name = app.modelMenuName(option, for: current, profileID: profileOf(current))
+                let choice = app.workspace.modelChoice(option, for: current, profileID: profileOf(current))
                 let isChosen = current == provider
                     && (app.workspace.sameModel(option, model, for: current) || family?.contains(model) == true)
                 let order = multi ? compareOrder(option, of: current, chosen: isChosen) : nil
@@ -410,7 +416,7 @@ struct AgentModelPicker: View {
                         toggleCompared(option, of: current, in: comparing)
                         return
                     }
-                    let picked = app.menuPick(option, keeping: current == provider ? model : "", for: current)
+                    let picked = app.menuPick(option, keeping: current == provider ? model : "", for: current, profileID: profileOf(current))
                     choose(current, current == provider ? nil : app.connectedProfiles(for: current).first?.id, picked)
                 }
             }
@@ -469,12 +475,15 @@ struct AgentModelPicker: View {
 
     /// Older models stay out of the list until you search for them, unless one is in use or a favorite.
     private func filtered(_ current: RunProvider) -> [String] {
-        let all = app.menuModels(for: current)
+        let all = app.menuModels(for: current, profileID: profileOf(current))
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !needle.isEmpty else {
             return all.filter { !app.workspace.hidesLegacyModel($0, for: current, chosen: current == provider ? model : "") }
         }
-        return all.filter { $0.lowercased().contains(needle) || app.modelMenuName($0, for: current).lowercased().contains(needle) }
+        let profile = profileOf(current)
+        return all.filter {
+            $0.lowercased().contains(needle) || app.modelMenuName($0, for: current, profileID: profile).lowercased().contains(needle)
+        }
     }
 
     private func favoriteBinding(_ model: String, for current: RunProvider) -> Binding<Bool> {
@@ -485,7 +494,8 @@ struct AgentModelPicker: View {
     /// The search text as a model id of your own, when no listed model goes by that name.
     private func customModel(_ current: RunProvider) -> String? {
         guard let id = ModelPreferences.customID(query),
-              !app.menuModels(for: current).contains(where: { app.workspace.sameModel($0, id, for: current) }) else { return nil }
+              !app.menuModels(for: current, profileID: profileOf(current))
+                .contains(where: { app.workspace.sameModel($0, id, for: current) }) else { return nil }
         return id
     }
 }
