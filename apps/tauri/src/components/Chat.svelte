@@ -47,7 +47,7 @@
   <div class="messages" bind:this={scroller} onscroll={onScroll}><div class="reading-column">
     {#if empty}
       <div class="empty">
-        <div class="welcome-orb"><Orb size={compact ? 44 : 64} /></div>
+        <div class="welcome-orb"><Orb size={compact ? 44 : 64} movable /></div>
         <div class="greeting"><span class="eyebrow">{tr("EEN RUIMTE VOOR ALLES", "A LITTLE SPACE FOR EVERYTHING")}</span><h1>{tr("Waar denk je aan?", "What is on your mind?")}</h1><p>{tr("Denk het door. Maak een plan. Zet de volgende stap.", "Think it through. Make a plan. Take the next step.")}</p></div>
         {#if welcome}
           <div class="welcome">
