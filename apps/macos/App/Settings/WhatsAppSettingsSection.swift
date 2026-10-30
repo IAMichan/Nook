@@ -3,7 +3,7 @@ import AppKit
 
 /// Settings › Accounts & connections › WhatsApp, live: link the phone through a local gateway so Nook can show new
 /// messages in the notch, answer them and send messages after your OK. The same three parts as the WhatsApp sheet in
-/// Settings › Chats: the accounts, what reaches you, and the gateway (folded away).
+/// Settings › Connections: the accounts, what reaches you, and the gateway (folded away).
 struct WhatsAppLinkSection: View {
     @ObservedObject private var accounts = WhatsAppAccounts.shared
     @State private var enabled = WhatsAppSettings.enabled

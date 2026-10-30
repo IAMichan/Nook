@@ -37,6 +37,24 @@ struct PullRequestDetail: Equatable, Sendable {
     var canPush: Bool? = nil
     /// The people and teams asked for a review who have not answered yet, as GitHub lists them.
     var requestedReviewers: [String] = []
+    /// The teams among `requestedReviewers`: a team has no picture of its own, so the page draws it differently.
+    var requestedTeams: [String] = []
+    /// The people the pull request is assigned to.
+    var assignees: [String] = []
+    /// The milestone it belongs to, if any.
+    var milestone: String? = nil
+    /// The owner of the head branch's repository when the pull request comes from a fork ("ada" for `ada:feature`); nil
+    /// when head and base are the same repository, or the fork is gone.
+    var headOwner: String? = nil
+    /// Auto-merge, once someone turned it on: GitHub merges by itself when everything it waits for is in.
+    var autoMerge: PullRequestAutoMerge? = nil
+    /// The conversation is locked: only people with write access can still comment. GitHub's reason ("too heated",
+    /// "off-topic", "resolved", "spam") when one was given.
+    var locked = false
+    var lockReason: String? = nil
+    /// The issues this pull request closes when it merges ("Closes #12" in its description, or linked by hand), from
+    /// GraphQL with the timeline.
+    var linkedIssues: [PullRequestLinkedIssue] = []
     var labels: [String] = []
     /// Each label's color as six hex digits, as the list's rows have them.
     var labelColors: [String: String] = [:]
@@ -57,6 +75,7 @@ struct PullRequestDetail: Equatable, Sendable {
         events = activity.events
         commits = activity.commits
         files = activity.files
+        linkedIssues = activity.issues
         activityLoaded = true
     }
 
@@ -64,7 +83,7 @@ struct PullRequestDetail: Equatable, Sendable {
     func keepingActivity(of old: PullRequestDetail?) -> PullRequestDetail {
         guard !activityLoaded, let old, old.activityLoaded else { return self }
         var result = self
-        result.apply(PullRequestActivity(events: old.events, commits: old.commits, files: old.files))
+        result.apply(PullRequestActivity(events: old.events, commits: old.commits, files: old.files, issues: old.linkedIssues))
         return result
     }
 
@@ -131,11 +150,31 @@ struct PullRequestDetail: Equatable, Sendable {
     }
 }
 
+/// Auto-merge on a pull request: how GitHub will merge it, and who turned it on.
+struct PullRequestAutoMerge: Equatable, Sendable {
+    /// Nil when GitHub names a method Nook does not know.
+    let method: PullRequestMergeMethod?
+    let enabledBy: String
+}
+
 /// The part of a pull request that takes the most requests to read: the timeline, the commits and the files.
 struct PullRequestActivity: Equatable, Sendable {
     var events: [PullRequestEvent] = []
     var commits: [PullRequestCommit] = []
     var files: [PullRequestFile] = []
+    var issues: [PullRequestLinkedIssue] = []
+}
+
+/// An issue a pull request closes when it merges.
+struct PullRequestLinkedIssue: Identifiable, Equatable, Sendable {
+    /// "owner/name" of the issue's repository; it can be another repository than the pull request's.
+    let repo: String
+    let number: Int
+    let title: String
+    let open: Bool
+    let url: URL?
+
+    var id: String { "\(repo)#\(number)" }
 }
 
 /// One entry on the timeline page: an event, or the commits one person added one after the other, shown as one.
@@ -265,6 +304,11 @@ struct PullRequestCommit: Identifiable, Equatable, Sendable {
     var id: String { sha }
     var shortSHA: String { String(sha.prefix(7)) }
     var subject: String { message.components(separatedBy: "\n").first ?? message }
+    /// The message under the subject, without the blank line between them; empty for a one-line message.
+    var details: String {
+        guard let end = message.firstIndex(of: "\n") else { return "" }
+        return message[end...].trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 }
 
 struct PullRequestFile: Identifiable, Equatable, Sendable {
@@ -310,8 +354,24 @@ enum PullRequestDetailParser {
             headSHA: (head["sha"] as? String) ?? "", additions: int(pull["additions"]) ?? 0, deletions: int(pull["deletions"]) ?? 0,
             changedFiles: int(pull["changed_files"]) ?? 0, created: date(pull["created_at"]), updated: date(pull["updated_at"]),
             mergeable: pull["mergeable"] as? Bool, mergeState: ((pull["mergeable_state"] as? String) ?? "unknown").lowercased())
+        detail.requestedTeams = ((pull["requested_teams"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
         detail.requestedReviewers = ((pull["requested_reviewers"] as? [[String: Any]]) ?? []).compactMap { $0["login"] as? String }
-            + ((pull["requested_teams"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
+            + detail.requestedTeams
+        detail.assignees = ((pull["assignees"] as? [[String: Any]]) ?? []).compactMap { $0["login"] as? String }
+        detail.milestone = ((pull["milestone"] as? [String: Any])?["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        // A fork's branch is named with its owner, as GitHub does ("ada:feature"); the fork may since have been deleted.
+        if let headRepo = head["repo"] as? [String: Any], let headName = headRepo["full_name"] as? String,
+           !repo.isEmpty, headName.lowercased() != repo.lowercased() {
+            detail.headOwner = ((headRepo["owner"] as? [String: Any])?["login"] as? String)
+                ?? headName.split(separator: "/").first.map(String.init)
+        }
+        detail.locked = (pull["locked"] as? Bool) == true
+        detail.lockReason = (pull["active_lock_reason"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        if let auto = pull["auto_merge"] as? [String: Any] {
+            detail.autoMerge = PullRequestAutoMerge(
+                method: (auto["merge_method"] as? String).flatMap(PullRequestMergeMethod.init(rawValue:)),
+                enabledBy: login(auto["enabled_by"]))
+        }
         detail.labels = ((pull["labels"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
         detail.labelColors = PullRequestGraphQL.labelColors((pull["labels"] as? [[String: Any]]) ?? [])
         detail.nodeID = (pull["node_id"] as? String) ?? ""
@@ -458,6 +518,40 @@ enum PullRequestDetailParser {
         return try? JSONSerialization.data(withJSONObject: [
             "query": query, "variables": ["owner": parts[0], "name": parts[1], "number": number],
         ])
+    }
+
+    /// The GraphQL request for the issues the pull request closes. Its own request, so a host without the field (an old
+    /// GitHub Enterprise) still gets the threads' state.
+    static func linkedIssuesBody(repo: String, number: Int) -> Data? {
+        let parts = repo.split(separator: "/", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+        let query = """
+        query($owner: String!, $name: String!, $number: Int!) {
+          repository(owner: $owner, name: $name) {
+            pullRequest(number: $number) {
+              closingIssuesReferences(first: 25) { nodes { number title state url repository { nameWithOwner } } }
+            }
+          }
+        }
+        """
+        return try? JSONSerialization.data(withJSONObject: [
+            "query": query, "variables": ["owner": parts[0], "name": parts[1], "number": number],
+        ])
+    }
+
+    /// The issues from the answer to `linkedIssuesBody`, in GitHub's order; empty when it had none or failed.
+    static func linkedIssues(_ answer: Any?) -> [PullRequestLinkedIssue] {
+        let data = (answer as? [String: Any])?["data"] as? [String: Any]
+        let pull = ((data?["repository"] as? [String: Any])?["pullRequest"] as? [String: Any])
+        let nodes = ((pull?["closingIssuesReferences"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []
+        return nodes.compactMap { node in
+            guard let number = int(node["number"]) else { return nil }
+            return PullRequestLinkedIssue(
+                repo: ((node["repository"] as? [String: Any])?["nameWithOwner"] as? String) ?? "",
+                number: number, title: (node["title"] as? String) ?? "",
+                open: ((node["state"] as? String) ?? "OPEN").uppercased() == "OPEN",
+                url: (node["url"] as? String).flatMap(URL.init(string:)))
+        }
     }
 
     /// The threads' state from the answer to `reviewThreadsBody`, by the event id of each thread's first comment.

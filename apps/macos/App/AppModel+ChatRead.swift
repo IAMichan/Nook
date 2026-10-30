@@ -9,7 +9,7 @@ enum ChatReadHandoff: Equatable {
     case opensApp
 }
 
-/// Every chat works the same way, whatever its app: opening it reads it in Nook (Settings › Chats can turn that off),
+/// Every chat works the same way, whatever its app: opening it reads it in Nook (Settings › Connections can turn that off),
 /// which nobody else sees and which stays after a restart; "Mark as read in <app>" is your own click that passes it on to
 /// the app, so the chat is read on your phone too and the people who wrote can see it. "Mark as unread" is Nook's alone.
 extension AppModel {

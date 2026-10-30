@@ -1,6 +1,6 @@
 import Foundation
 
-// Texts for memory (Settings › Memory, the remember and forget tools, notices under an answer).
+// Texts for memory (Settings › Assistant, the remember and forget tools, notices under an answer).
 // Numbers use %ld, text uses %@.
 
 let memoryTranslations: [AppLanguage: [String: String]] = [
@@ -60,14 +60,14 @@ let memoryTranslations: [AppLanguage: [String: String]] = [
         "memory.rejected.secret": "Wachtwoorden, codes en sleutels onthoudt Nook nooit.",
         "memory.rejected.instruction": "Dit lijkt een opdracht; Nook onthoudt alleen feiten en voorkeuren.",
         "memory.rejected.link": "Links onthoudt Nook niet; zet ze in een notitie.",
-        "memory.rejected.pinned": "Deze herinnering heb je vastgezet; pas hem aan bij Instellingen › Geheugen.",
+        "memory.rejected.pinned": "Deze herinnering heb je vastgezet; pas hem aan bij Instellingen › Assistent.",
         "memory.result.added": "Onthouden: %@",
         "memory.result.known": "Wist ik al: %@",
         "memory.result.replaced": "Aangepast: %@",
         "memory.result.forgot": "%ld vergeten: %@",
         "memory.forget.none": "Daar onthoud ik niets over.",
         "memory.notice.habit": "\"%@\" ingevuld als %@, zoals je meestal kiest.",
-        "memory.notice.learned": "Onthouden: %@ (beheer bij Instellingen › Geheugen)"
+        "memory.notice.learned": "Onthouden: %@ (beheer bij Instellingen › Assistent)"
     ],
     .en: [
         "settings.section.memory": "Memory",
@@ -125,14 +125,14 @@ let memoryTranslations: [AppLanguage: [String: String]] = [
         "memory.rejected.secret": "Nook never remembers passwords, codes or keys.",
         "memory.rejected.instruction": "This looks like an instruction; Nook only remembers facts and preferences.",
         "memory.rejected.link": "Nook does not remember links; put them in a note.",
-        "memory.rejected.pinned": "You pinned this memory; change it in Settings › Memory.",
+        "memory.rejected.pinned": "You pinned this memory; change it in Settings › Assistant.",
         "memory.result.added": "Remembered: %@",
         "memory.result.known": "Already known: %@",
         "memory.result.replaced": "Updated: %@",
         "memory.result.forgot": "%ld forgotten: %@",
         "memory.forget.none": "I don't remember anything about that.",
         "memory.notice.habit": "Filled in \"%@\" as %@, as you usually choose.",
-        "memory.notice.learned": "Remembered: %@ (manage in Settings › Memory)"
+        "memory.notice.learned": "Remembered: %@ (manage in Settings › Assistant)"
     ],
     .de: [
         "settings.section.memory": "Gedächtnis",
@@ -190,13 +190,13 @@ let memoryTranslations: [AppLanguage: [String: String]] = [
         "memory.rejected.secret": "Passwörter, Codes und Schlüssel merkt sich Nook nie.",
         "memory.rejected.instruction": "Das sieht nach einer Anweisung aus; Nook merkt sich nur Fakten und Vorlieben.",
         "memory.rejected.link": "Links merkt sich Nook nicht; leg sie in einer Notiz ab.",
-        "memory.rejected.pinned": "Diese Erinnerung hast du angeheftet; ändere sie unter Einstellungen › Gedächtnis.",
+        "memory.rejected.pinned": "Diese Erinnerung hast du angeheftet; ändere sie unter Einstellungen › Assistent.",
         "memory.result.added": "Gemerkt: %@",
         "memory.result.known": "Wusste ich schon: %@",
         "memory.result.replaced": "Geändert: %@",
         "memory.result.forgot": "%ld vergessen: %@",
         "memory.forget.none": "Dazu habe ich mir nichts gemerkt.",
         "memory.notice.habit": "\"%@\" als %@ eingetragen, wie du es meist wählst.",
-        "memory.notice.learned": "Gemerkt: %@ (verwalten unter Einstellungen › Gedächtnis)"
+        "memory.notice.learned": "Gemerkt: %@ (verwalten unter Einstellungen › Assistent)"
     ]
 ]

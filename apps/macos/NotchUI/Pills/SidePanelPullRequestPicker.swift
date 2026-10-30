@@ -51,6 +51,9 @@ struct SidePanelPullRequestPicker: View {
 
     var body: some View {
         let groups = groups
+        // Where each pull request stands in a stack, per account, worked out once instead of once per row.
+        let stacks = Dictionary(store.accounts.map { ($0.id, PullRequestStack.positions(in: items(of: $0.id))) },
+                                uniquingKeysWith: { first, _ in first })
         VStack(spacing: 0) {
             PullRequestSearchBar(filter: $filterStore.filter, accounts: store.accounts, prompt: tr("agents.pr.pick.search"),
                                  watching: !watching.entries.isEmpty, style: .inline) {
@@ -81,7 +84,7 @@ struct SidePanelPullRequestPicker: View {
                                 .padding(.top, NookTheme.Spacing.md)
                             ForEach(group.items, id: \.item.id) { request in
                                 PullRequestRow(item: request.item, role: group.role, showRepo: true, accountID: request.account,
-                                               stack: PullRequestStack.position(of: request.item, in: items(of: request.account))) {
+                                               stack: stacks[request.account]?[request.item.id]) {
                                     choose(request)
                                 }
                             }

@@ -28,22 +28,26 @@ extension Color {
 /// badge informs without shouting. Change a token here and every panel, card and setting follows.
 ///
 /// The ramp is pure grey (no blue cast): a near-black canvas (#0A0A0A), raised
-/// surfaces about 3 % lighter, separation by tonal steps and 4–8 % white fills instead of grey panels or heavy lines.
+/// surfaces about 4–8 % lighter, separation by tonal steps and 4–8 % white fills instead of grey panels or heavy lines.
 /// Color is kept for state (a status mark and its word, errors, diff +/−) and for links; everything else is neutral.
+///
+/// Clear before calm: every text color reads at WCAG AA (4.5:1 or more) on every surface up to `smoke`, so even the
+/// quietest metadata (`textTertiary`) is legible at a glance, and a selected row stands a full step above a hovered one
+/// (with `selectionMark` at its edge), so where you are never depends on a shade you can barely see.
 enum NookTheme {
     // Colors: the surface ramp, darkest to lightest.
     static let notch = Color.black
-    static let graphite = Color(hex: 0x171717)
-    static let smoke = Color(hex: 0x1F1F1F)
+    static let graphite = Color(hex: 0x1A1A1A)
+    static let smoke = Color(hex: 0x242424)
     static let field = Color(hex: 0x111111)
-    static let line = Color(hex: 0x181818)
-    static let line2 = Color(hex: 0x232323)
+    static let line = Color(hex: 0x1E1E1E)
+    static let line2 = Color(hex: 0x2C2C2C)
 
     static let paper = Color(hex: 0xF5F5F5)
     static let ink = Color(hex: 0x0B0B0D)
     static let eyeInk = Color(hex: 0x050507)
-    static let textSecondary = Color(hex: 0x999999)
-    static let textTertiary = Color(hex: 0x6E6E6E)
+    static let textSecondary = Color(hex: 0xA8A8A8)
+    static let textTertiary = Color(hex: 0x8C8C8C)
 
     /// Nook's own color. Soft white by default; the user can pick another in Settings › Appearance.
     static let defaultAccentHex: UInt32 = 0xF4F3F7
@@ -77,22 +81,22 @@ enum NookTheme {
     /// A lifted surface: sidebars, menus, the composer.
     static let surface = Color(hex: 0x121212)
     /// The faintest divider between regions of a panel.
-    static let hairline = Color(hex: 0x181818)
+    static let hairline = Color(hex: 0x1E1E1E)
     /// The line between the items of a list (a chat in the Chats tab): a step brighter than `line2`, so
     /// each item reads as its own.
-    static let separator = Color(hex: 0x2B2B2B)
+    static let separator = Color(hex: 0x323232)
     /// The stroke of a text field or tray at rest.
-    static let fieldStroke = Color(hex: 0x1C1C1C)
+    static let fieldStroke = Color(hex: 0x282828)
     /// Body text that reads a little softer than `paper`, without dropping to `textSecondary`.
-    static let textStrong = Color(hex: 0xD6D6D6)
+    static let textStrong = Color(hex: 0xDADADA)
     /// Muted text that shimmers or sits in a disabled control.
-    static let textMuted = Color(hex: 0x878787)
+    static let textMuted = Color(hex: 0x999999)
     /// Links, renamed files, and diff hunk headers.
     static let blue = Color(hex: 0x8FB3F0)
 
     /// Your own message in a conversation: a soft fill about 4 % lighter than the canvas, no edge (the agent's answer has
     /// no bubble at all).
-    static let bubble = Color(hex: 0x171717)
+    static let bubble = Color(hex: 0x1C1C1C)
     /// A chat app's message bubbles in the Chats tab and chat cards: yours a deep green of Nook's mint, theirs a grey a
     /// step above the canvas. Solid, so who said what reads at a glance, as in the chat apps themselves.
     static let chatMine = Color(hex: 0x17493A)
@@ -124,13 +128,17 @@ enum NookTheme {
 
     // List rows and cards: at rest, under the pointer, and selected.
     static let rowRest = Color(hex: 0x0A0A0A)
-    static let rowHover = Color(hex: 0x141414)
-    static let rowSelected = Color(hex: 0x1A1A1A)
+    static let rowHover = Color(hex: 0x181818)
+    static let rowSelected = Color(hex: 0x242424)
 
     /// The fill of a list row: `rowSelected` when selected, `rowHover` under the pointer, `rest` otherwise.
     static func rowFill(selected: Bool, hovering: Bool, rest: Color = rowRest) -> Color {
         selected ? rowSelected : (hovering ? rowHover : rest)
     }
+
+    /// The bar at the leading edge of a selected list row, in Nook's accent. With `rowSelected` it marks where you are
+    /// in a list without relying on the fill alone (`View.selectionMark`).
+    static let selectionMarkWidth: CGFloat = 3
 
     /// Corner radii. Pick the token that names the element, not the number: a chip inside a card is always rounder
     /// than a hairline and flatter than the card.
@@ -244,7 +252,36 @@ private struct HoverLift: ViewModifier {
     }
 }
 
+/// The accent bar at the leading edge of a selected row (see `View.selectionMark`).
+private struct SelectionMark: ViewModifier {
+    var selected: Bool
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .leading) {
+            // Animated on its own, so the row's content does not move with the mark.
+            ZStack {
+                if selected {
+                    Capsule()
+                        .fill(NookTheme.iris)
+                        .frame(width: NookTheme.selectionMarkWidth)
+                        .padding(.vertical, NookTheme.Spacing.md)
+                        .transition(.opacity)
+                }
+            }
+            .animation(NookTheme.reveal, value: selected)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
 extension View {
+    /// Marks the selected row of a list with a short accent bar at its leading edge, on top of `rowSelected`, so the
+    /// selection reads at a glance in every list (Agents, Chats, pull requests) in the same way.
+    func selectionMark(_ selected: Bool) -> some View {
+        modifier(SelectionMark(selected: selected))
+    }
+
     /// The shared hover state of Nook's buttons and chips: a slight lift with `NookTheme.hover`, none with Reduce Motion.
     func hoverLift(_ hovering: Bool, scale: CGFloat = 1.01) -> some View {
         modifier(HoverLift(hovering: hovering, scale: scale))
