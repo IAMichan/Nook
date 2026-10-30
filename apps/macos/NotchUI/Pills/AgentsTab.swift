@@ -130,6 +130,12 @@ struct AgentsTab: View {
                 .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
+        // Switching sessions is a hard cut: the next one shows with its panels in place, nothing slides in. Inside the
+        // list's own animation, so that one only plays when you put the list away or bring it back.
+        .transaction(value: selectedID(selection)) { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+        }
         .animation(NookTheme.reveal, value: listShown)
         // Looking at a session counts as having seen what it finished, also with the list put away.
         // Leaving a session counts too: what finished while you watched it is not "new".
@@ -143,6 +149,7 @@ struct AgentsTab: View {
         .onChange(of: selectedID(selection)) { old, new in
             visits.visit(old)
             visits.visit(new)
+            prefetchNeighbours(of: new, in: entries)
         }
         // Exactly the width it is given, however wide a row inside wants to be: measuring a row that runs past the window
         // would hand the panels more room than there is and push everything off both sides.
@@ -260,6 +267,19 @@ struct AgentsTab: View {
         case .worktrees: return AgentsPage.worktrees
         case .simulator: return AgentsPage.simulator
         case .new: return "new"
+        }
+    }
+
+    /// Reads the timelines of the sessions above and below the one that opened, off the main thread, so stepping
+    /// through the list with the keyboard opens each without a hitch (the pointer resting on a row does the same).
+    private func prefetchNeighbours(of id: String, in entries: ListEntries) {
+        let ids = (entries.running + entries.earlier).map(\.id)
+        guard !app.demoMode, let index = ids.firstIndex(of: id) else { return }
+        for neighbour in [index - 1, index + 1] where ids.indices.contains(neighbour) {
+            let next = ids[neighbour]
+            if next.hasPrefix("run:"), let run = UUID(uuidString: String(next.dropFirst(4))) {
+                app.workspace.prefetchTimeline(run)
+            }
         }
     }
 
