@@ -129,14 +129,15 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
     }
 
     /// Arguments for a login that opens your browser by itself and quits once you signed in, so Nook runs it without a
-    /// Terminal window. Nil for agents whose login only works in their interactive screen (Gemini CLI, OpenCode, Grok)
-    /// and for Antigravity, which Nook signs in over ACP.
+    /// Terminal window. Nil for agents whose login only works in their interactive screen (Gemini CLI, OpenCode) and for
+    /// Antigravity, which Nook signs in over ACP. Grok's `grok login` opens auth.x.ai in the browser.
     var browserLoginArguments: [String]? {
         switch self {
         case .claude: return ["auth", "login"]
         case .codex: return ["login"]
         case .cursor: return ["login"]
-        case .gemini, .antigravity, .opencode, .grok, .acp: return nil
+        case .grok: return ["login"]
+        case .gemini, .antigravity, .opencode, .acp: return nil
         }
     }
 
@@ -390,7 +391,7 @@ final class AgentHistory: ObservableObject {
     @Published private(set) var profileAccounts: [String: AgentAccount] = [:]
     /// Per account: tokens and sessions for today and this week.
     @Published private(set) var profileUsage: [String: AgentUsageSummary] = [:]
-    /// Every agent's tokens per hour and model over the last 90 days, for Settings › Usage.
+    /// Every agent's tokens per hour and model over the last 90 days, for Settings › Coding agents.
     @Published private(set) var ledger = UsageLedger()
     /// Which agents are installed on this Mac (presence of ~/.claude or ~/.codex).
     @Published private(set) var installed: Set<AgentKind> = []

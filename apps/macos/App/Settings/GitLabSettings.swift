@@ -1,9 +1,9 @@
 import SwiftUI
 import AppKit
 
-/// GitLab in Settings › Connections, in the same shapes as every other service: a connected host is a row under
-/// "Your connections" that opens its manage sheet, and the card in the catalogue opens the step-by-step setup
-/// (make a token, paste it, Nook checks it with GitLab).
+/// GitLab in Settings › Accounts & connections, in the same shapes as every other service: a connected host is a row
+/// that opens its manage sheet, and the Add sheet opens the step-by-step setup (make a token, paste it, Nook checks it
+/// with GitLab).
 struct GitLabHostRow: View {
     let host: String
     var onChange: () -> Void = {}
@@ -11,24 +11,12 @@ struct GitLabHostRow: View {
     @State private var showManage = false
 
     var body: some View {
-        Button { showManage = true } label: {
-            HStack(spacing: NookTheme.Spacing.lg) {
-                ServiceTile(domain: "gitlab.com", fallback: "key.fill", tint: NookTheme.iris, size: 30)
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    Text("GitLab")
-                    Text(GitLabStatus.detail(host: host, check: check))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(check == .rejected ? ConnectionHealth.needsYou.color : NookTheme.textSecondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 8)
-                HealthPill(health: GitLabStatus.health(check))
-            }
-            .contentShape(Rectangle())
+        ServiceRowLayout(domain: "gitlab.com", symbol: "key.fill", tint: NookTheme.iris, title: "GitLab",
+                         detail: GitLabStatus.detail(host: host, check: check), status: GitLabStatus.health(check).status) {
+            Button(check == .rejected ? tr("settings2.fix") : tr("settings2.manage")) { showManage = true }
+                .controlSize(.small)
+                .help(tr("settings2.service.manageHelp", "GitLab"))
         }
-        .buttonStyle(.plain)
-        .help(tr("settings2.service.manageHelp", "GitLab"))
-        .padding(.vertical, 3)
         .task(id: host) { await refresh() }
         .sheet(isPresented: $showManage, onDismiss: {
             onChange()
@@ -42,25 +30,6 @@ struct GitLabHostRow: View {
         guard let token = GitLabCredentials.token(host: host) else { return }
         check = nil
         check = await GitLabCredentials.check(host: host, token: token)
-    }
-}
-
-/// The GitLab card in the catalogue: click, and the setup sheet walks through the token.
-struct GitLabCard: View {
-    var onChange: () -> Void = {}
-    @State private var showSetup = false
-
-    var body: some View {
-        GalleryCard(title: "GitLab", detail: tr("gitlab.tagline")) {
-            ServiceTile(domain: "gitlab.com", fallback: "key.fill", tint: NookTheme.iris, size: 34)
-        } accessory: {
-            ConnectMethodBadge(method: .key)
-        } action: {
-            showSetup = true
-        }
-        .sheet(isPresented: $showSetup, onDismiss: onChange) {
-            GitLabSetupSheet()
-        }
     }
 }
 
@@ -92,6 +61,7 @@ struct GitLabSetupSheet: View {
     var managing: String? = nil
 
     @Environment(\.dismiss) private var dismiss
+    @StateObject private var keyCatcher = ClipboardKeyCatcher()
     @State private var host = "gitlab.com"
     @State private var showSelfHosted = false
     @State private var token = ""
@@ -169,13 +139,24 @@ struct GitLabSetupSheet: View {
             }
             Button {
                 if let tokenPage { NSWorkspace.shared.open(tokenPage) }
+                keyCatcher.watch()
             } label: {
                 Label(tr("gitlab.openTokens"), systemImage: "arrow.up.forward.app")
             }
+            .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            SettingNote(tr("brain.key.autoPaste"))
         }
         SetupStep(number: 2, title: tr("gitlab.step.paste"), done: saved) {
             tokenField
+        }
+        // The token copied on GitLab's page, picked up on the way back and checked at once.
+        .onDisappear { keyCatcher.stop() }
+        // perf: `caught` is set once per copied key and reset right after, so every value is a new key.
+        .onReceive(keyCatcher.$caught.compactMap { $0 }) { copied in
+            token = copied
+            keyCatcher.caught = nil
+            save()
         }
         SetupStep(number: 3, title: tr("gitlab.step.check"), done: check?.isValid ?? false) {
             result

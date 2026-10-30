@@ -26,7 +26,7 @@ final class AgentParityTests: XCTestCase {
         "App/AppModel+Agents.swift": 6,
         "App/AppModel+Workspace.swift": 4,
         "App/AppModel.swift": 1,
-        "App/Settings/SettingsView+Brain.swift": 5,
+        "App/Settings/SettingsView+Brain.swift": 4,
         "App/SettingsAccounts.swift": 7,
         "Brain/AIProvider.swift": 3,
         "Brain/BrainService.swift": 2,

@@ -453,3 +453,36 @@ enum BackgroundWork {
         return message
     }
 }
+
+extension AgentToolStep {
+    /// A tool call of a session Nook runs as a step of an agent's own transcript, so both read alike ("Ran npm test",
+    /// "Edited Login.swift") in the shared work lines (`TranscriptWorkLine`). The event's title is "Tool · what it was
+    /// about"; the input gives the command, the file and a task list.
+    init(event: RunEvent) {
+        let tool = event.tool ?? ""
+        var title = event.text
+        if title.hasPrefix("↳ ") { title.removeFirst(2) }
+        let summary: String
+        if let range = title.range(of: " · ") {
+            summary = String(title[range.upperBound...])
+        } else {
+            summary = title == tool ? "" : title
+        }
+        self.init(id: event.id.uuidString, name: tool, summary: summary)
+        switch event.state ?? .done {
+        case .failed, .denied: state = .failed
+        case .running, .pending: state = .running
+        default: state = .done
+        }
+        let input = AgentActivity.input(event.detail) ?? [:]
+        command = ToolSummary.command(input)
+        path = ToolSummary.path(input)
+        file = path
+        lines = state == .failed ? nil : EditLines.of(event)
+        tasks = SessionOutputs.taskList(tool: tool, input: input)
+        output = event.output.map(McpUI.stripped).flatMap { $0.isEmpty ? nil : $0 }
+        if state == .failed {
+            error = output?.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init)
+        }
+    }
+}

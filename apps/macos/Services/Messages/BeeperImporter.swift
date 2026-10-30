@@ -2,7 +2,7 @@ import Foundation
 import AppKit
 import Security
 
-/// Moves someone from Beeper to Nook, once, after their own click in Settings › Chats (see `BeeperImport` for what
+/// Moves someone from Beeper to Nook, once, after their own click in Settings › Connections (see `BeeperImport` for what
 /// comes over and what cannot). It reads Beeper Desktop's local API with the token Nook already kept for it, or one
 /// pasted in Settings, and nothing else: the API is on this Mac. When the move is done the token is forgotten and Nook
 /// never asks Beeper again.

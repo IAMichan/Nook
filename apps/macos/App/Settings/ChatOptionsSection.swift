@@ -3,13 +3,10 @@ import AppKit
 import Security
 import UniformTypeIdentifiers
 
-/// Settings › Chats: every chat app at a glance first (which are linked, as whom, and the others with a Link button that
-/// walks a link through its steps in `ChatAppSheet`), then the notifications Nook collects from any other app, how
-/// reading works, and the GIF key. Someone coming from Beeper first sees what Nook can bring over from it.
-struct ChatsSettingsSection: View {
-    @EnvironmentObject private var app: AppModel
+/// The chat options at the end of Settings › Accounts & connections: the notifications Nook collects from apps it does
+/// not link, how reading works, and the GIF key. The chat apps themselves are linked above, like everything else.
+struct ChatOptionsSection: View {
     @ObservedObject private var capture = ChatCaptureService.shared
-    @ObservedObject private var beeper = BeeperImporter.shared
     @State private var typed = ""
     @State private var notice: String?
     /// The last thing typed could not be added: its note reads as a warning.
@@ -20,12 +17,6 @@ struct ChatsSettingsSection: View {
 
     var body: some View {
         Group {
-            if beeper.isOffered {
-                BeeperImportSection(setCollecting: setCollecting)
-            }
-
-            ChatAppsSection(setCollecting: setCollecting)
-
             Section {
                 SettingToggle(tr("chats.settings.collect"), detail: tr("chats.settings.collectDetail"),
                               isOn: Binding(get: { capture.enabled }, set: { setCollecting($0) }))
@@ -47,10 +38,12 @@ struct ChatsSettingsSection: View {
                 Text(tr("chats.settings.reading"))
             }
 
+            // GIFs work with Nook's own key; a key of your own is only for whoever runs into its limit, folded away.
             Section {
-                giphyRow
-            } header: {
-                SettingsSectionTitle(tr("chats.giphy.title"), info: tr("chats.giphy.footer"))
+                DisclosureGroup(tr("chats.giphy.title")) {
+                    giphyRow
+                }
+                .help(tr("chats.giphy.footer"))
             }
         }
     }
@@ -182,8 +175,7 @@ struct ChatsSettingsSection: View {
     }
 
     private func setCollecting(_ on: Bool) {
-        capture.enabled = on
-        if let source = app.connectors.source(id: ChatInboxConnector.sourceID) { app.connectors.refresh(source) }
+        ChatCollecting.set(on)
     }
 
     private func addTyped() {
