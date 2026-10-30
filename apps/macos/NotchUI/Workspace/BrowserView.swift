@@ -332,29 +332,85 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
 }
 
 /// Hosts the browser's web view in a container without an intrinsic size, so the window's layout does not loop.
+/// Holds a web view that several places can show, such as the chat corner and the side panel. A web view can only be in
+/// one of them: the place shown last has it, and a place that leaves the screen hands it back to the one shown before it.
+/// Without that, a place on its way out (the corner card during its closing animation) could take the web view back
+/// after the new place got it, and the page would go black once the card was gone.
 private final class WebViewContainer: NSView {
+    let webView: WKWebView
+    /// The places showing each web view, oldest first.
+    private static var hosts: [ObjectIdentifier: [WeakContainer]] = [:]
+    private struct WeakContainer { weak var view: WebViewContainer? }
+
+    init(webView: WKWebView) {
+        self.webView = webView
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
     override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric) }
+
+    private var key: ObjectIdentifier { ObjectIdentifier(webView) }
+
+    /// Shown here now: this place is the newest, so it takes the web view.
+    func claim() {
+        var list = (Self.hosts[key] ?? []).filter { $0.view != nil && $0.view !== self }
+        list.append(WeakContainer(view: self))
+        Self.hosts[key] = list
+        attach()
+    }
+
+    /// Takes the web view back unless a newer place has it, also one still being put on screen.
+    func reclaimIfOrphaned() {
+        guard webView.superview !== self, window != nil else { return }
+        if let holder = webView.superview as? WebViewContainer, holder.isNewer(than: self) { return }
+        attach()
+    }
+
+    private func isNewer(than other: WebViewContainer) -> Bool {
+        let list = Self.hosts[key] ?? []
+        guard let mine = list.firstIndex(where: { $0.view === self }) else { return false }
+        guard let theirs = list.firstIndex(where: { $0.view === other }) else { return true }
+        return mine > theirs
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            // Put on screen (also a tab shown once more): this is now the place shown last.
+            claim()
+            return
+        }
+        // Off screen: the newest place still on screen gets the web view back.
+        let list = (Self.hosts[key] ?? []).filter { $0.view != nil && $0.view !== self }
+        Self.hosts[key] = list
+        guard webView.superview === self, let next = list.last(where: { $0.view?.window != nil })?.view else { return }
+        next.attach()
+    }
+
+    private func attach() {
+        guard webView.superview !== self else { return }
+        webView.removeFromSuperview()
+        webView.translatesAutoresizingMaskIntoConstraints = true
+        webView.frame = bounds
+        webView.autoresizingMask = [.width, .height]
+        addSubview(webView)
+    }
 }
 
 struct WebViewHost: NSViewRepresentable {
     let webView: WKWebView
 
     func makeNSView(context: Context) -> NSView {
-        let container = WebViewContainer()
-        attach(to: container)
+        let container = WebViewContainer(webView: webView)
+        container.claim()
         return container
     }
 
     func updateNSView(_ container: NSView, context: Context) {
-        if webView.superview !== container { attach(to: container) }
-    }
-
-    private func attach(to container: NSView) {
-        webView.removeFromSuperview()
-        webView.translatesAutoresizingMaskIntoConstraints = true
-        webView.frame = container.bounds
-        webView.autoresizingMask = [.width, .height]
-        container.addSubview(webView)
+        (container as? WebViewContainer)?.reclaimIfOrphaned()
     }
 }
 
