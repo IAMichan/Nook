@@ -97,6 +97,35 @@ enum SourceBrand {
         return icon
     }
 
+    @MainActor private static var sizedIcons: [String: (source: NSImage, image: NSImage)] = [:]
+
+    /// The app's icon drawn once into a bitmap of `side` points on this screen. The workspace icon holds every size up to
+    /// 1024 pixels and is rendered again each time a view draws it: a list with an app icon on every row (Chats, all
+    /// apps) paid for that on every row that scrolled into view.
+    @MainActor
+    static func appIcon(for id: String, side: CGFloat) -> NSImage? {
+        guard let icon = appIcon(for: id) else { return nil }
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        let pixels = Int((side * scale).rounded(.up))
+        let key = "\(id)|\(pixels)"
+        if let cached = sizedIcons[key], cached.source === icon { return cached.image }
+        guard pixels > 0, let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels,
+                                                     bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                                     colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+        else { return icon }
+        rep.size = NSSize(width: side, height: side)
+        NSGraphicsContext.saveGraphicsState()
+        let context = NSGraphicsContext(bitmapImageRep: rep)
+        context?.imageInterpolation = .high
+        NSGraphicsContext.current = context
+        icon.draw(in: NSRect(x: 0, y: 0, width: side, height: side), from: .zero, operation: .sourceOver, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+        let image = NSImage(size: rep.size)
+        image.addRepresentation(rep)
+        sizedIcons[key] = (icon, image)
+        return image
+    }
+
     /// The icon as a small fixed-size image for menu items, or nil while there is none (yet). Made once per icon: a menu
     /// asks again on every redraw of the view that holds it, and a new image each time makes it update every item.
     @MainActor
