@@ -79,23 +79,31 @@ enum AgentActivityText {
 struct VerificationChips: View {
     let checks: [VerificationCheck]
 
+    /// With their words while they fit beside what they follow, only their marks in a narrow conversation.
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            chips(labelled: true).fixedSize()
+            chips(labelled: false).fixedSize()
+        }
+    }
+
+    private func chips(labelled: Bool) -> some View {
         HStack(spacing: NookTheme.Spacing.xs) {
             ForEach(checks, id: \.kind) { check in
                 HStack(spacing: 3) {
                     Image(systemName: Self.symbol(check.outcome)).font(NookTheme.font(8.5, .bold))
-                    Text(Self.text(check)).lineLimit(1)
+                    if labelled { Text(Self.text(check)).lineLimit(1) }
                 }
                 .font(NookTheme.TextStyle.caption)
                 .foregroundStyle(Self.color(check.outcome))
                 .padding(.horizontal, NookTheme.Spacing.sm)
                 .padding(.vertical, NookTheme.Spacing.xxs)
                 .background(Capsule().fill(Self.color(check.outcome).opacity(0.12)))
-                .help(check.command)
+                .help(labelled ? check.command : Self.text(check) + " · " + check.command)
                 .accessibilityElement(children: .combine)
+                .accessibilityLabel(Self.text(check))
             }
         }
-        .fixedSize()
     }
 
     static func text(_ check: VerificationCheck) -> String {

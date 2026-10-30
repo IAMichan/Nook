@@ -277,3 +277,31 @@ extension View {
             .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
     }
 }
+
+/// What something says beside its buttons (a confirmation, a recovery card, a banner): the buttons on the right while
+/// the text keeps a readable width (`readable`) beside them, and on a line of their own under it in a narrow tab, instead
+/// of the text squeezed to a word per line next to buttons that never shrink.
+struct AdaptiveActionRow<Message: View, Actions: View>: View {
+    var spacing: CGFloat = NookTheme.Spacing.md
+    var alignment: VerticalAlignment = .center
+    /// The narrowest the message may get before the buttons move under it.
+    var readable: CGFloat = 180
+    @ViewBuilder let message: () -> Message
+    @ViewBuilder let actions: () -> Actions
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: alignment, spacing: spacing) {
+                message().frame(minWidth: 0, idealWidth: readable, maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: NookTheme.Spacing.sm) { actions() }.fixedSize()
+            }
+            VStack(alignment: .leading, spacing: spacing) {
+                message().frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    Spacer(minLength: 0)
+                    actions()
+                }
+            }
+        }
+    }
+}

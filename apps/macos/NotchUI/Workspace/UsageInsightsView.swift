@@ -209,7 +209,18 @@ struct UsageOverviewBlocks: View {
         }
     }
 
+    /// The whole width while every column fits; in a narrow tab (one column per agent adds up) it scrolls sideways
+    /// instead of squeezing the dates to nothing.
     private func dayTable(_ insights: UsageInsights) -> some View {
+        ViewThatFits(in: .horizontal) {
+            dayRows(insights)
+            ScrollView(.horizontal, showsIndicators: false) {
+                dayRows(insights).fixedSize(horizontal: true, vertical: false)
+            }
+        }
+    }
+
+    private func dayRows(_ insights: UsageInsights) -> some View {
         let agents = insights.agents.map(\.agent)
         return VStack(spacing: 0) {
             UsageTableHeader(columns: [window.hourly ? tr("usage.breakdown.hour") : tr("usage.breakdown.day")]
@@ -320,16 +331,23 @@ struct UsageShareBar: View {
                     }
                 }
                 .frame(height: 6)
-                HStack(spacing: NookTheme.Spacing.lg) {
-                    ForEach(visible) { segment in
-                        HStack(spacing: NookTheme.Spacing.xs) {
-                            RoundedRectangle(cornerRadius: NookTheme.Radius.chip / 3).fill(segment.color).frame(width: 7, height: 7)
-                            Text(segment.label).foregroundStyle(NookTheme.textSecondary)
-                            Text(format(segment.value)).foregroundStyle(NookTheme.paper).monospacedDigit()
-                        }
-                    }
+                // One line while it fits, otherwise as many to a line as fit.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: NookTheme.Spacing.lg) { legend(visible) }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: NookTheme.Spacing.lg, alignment: .leading)],
+                              alignment: .leading, spacing: NookTheme.Spacing.xs) { legend(visible) }
                 }
                 .font(NookTheme.TextStyle.detail)
+            }
+        }
+    }
+
+    private func legend(_ visible: [Segment]) -> some View {
+        ForEach(visible) { segment in
+            HStack(spacing: NookTheme.Spacing.xs) {
+                RoundedRectangle(cornerRadius: NookTheme.Radius.chip / 3).fill(segment.color).frame(width: 7, height: 7)
+                Text(segment.label).foregroundStyle(NookTheme.textSecondary).lineLimit(1)
+                Text(format(segment.value)).foregroundStyle(NookTheme.paper).monospacedDigit().lineLimit(1)
             }
         }
     }

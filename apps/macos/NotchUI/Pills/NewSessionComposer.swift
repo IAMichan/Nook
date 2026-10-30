@@ -94,10 +94,32 @@ struct NewSessionComposer: View {
 
     // MARK: Heading
 
+    /// One line while it fits; in a narrow column the folder moves to a line of its own under the question, instead of
+    /// the question being squeezed to a word per line beside a long folder name.
     private var heading: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 0) {
+                headingLead
+                projectPicker
+            }
+            VStack(spacing: NookTheme.Spacing.xxs) {
+                headingLead
+                projectPicker
+            }
+        }
+        .font(NookTheme.TextStyle.display)
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, NookTheme.Spacing.lg)
+    }
+
+    private var headingLead: some View {
+        Text(tr("compose.heading"))
+            .foregroundStyle(NookTheme.paper)
+    }
+
+    /// The folder (or machine) the session works in, then the question mark, kept together on one line.
+    private var projectPicker: some View {
         HStack(spacing: 0) {
-            Text(tr("compose.heading"))
-                .foregroundStyle(NookTheme.paper)
             ComposerDropdown(width: 320) {
                 Text(projectLabel)
                     .foregroundStyle(NookTheme.paper)
@@ -138,7 +160,6 @@ struct NewSessionComposer: View {
                 ProgressView().controlSize(.small).padding(.leading, NookTheme.Spacing.md)
             }
         }
-        .font(NookTheme.TextStyle.display)
     }
 
     private func projectRow(_ path: String) -> some View {
@@ -181,11 +202,14 @@ struct NewSessionComposer: View {
     private var remoteRow: some View {
         HStack(spacing: NookTheme.Spacing.md) {
             Image(systemName: "server.rack").foregroundStyle(NookTheme.textTertiary)
-            Text(tr("ws.remote.folder", remoteMachine?.name ?? "")).foregroundStyle(NookTheme.textSecondary).fixedSize()
+            // A long machine name gives way, so the field keeps room to type a path.
+            Text(tr("ws.remote.folder", remoteMachine?.name ?? "")).foregroundStyle(NookTheme.textSecondary)
+                .lineLimit(1).truncationMode(.middle)
             TextField("~/code/app", text: $remoteFolder)
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.code)
                 .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+                .frame(minWidth: 140)
                 .frame(height: 30)
                 .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
             NookIconButton(systemName: "xmark", label: tr("button.cancel"), size: 26) { remoteMachine = nil }
@@ -372,7 +396,7 @@ struct NewSessionComposer: View {
                     TextField("", text: $config.baseBranch, prompt: Text(tr("ws.remote.baseCurrent")))
                         .textFieldStyle(.plain)
                         .font(NookTheme.TextStyle.detail)
-                        .frame(width: 150)
+                        .frame(minWidth: 90, maxWidth: 150)
                         .help(tr("ws.remote.baseHelp"))
                 }
             } else {
@@ -382,12 +406,15 @@ struct NewSessionComposer: View {
 
                 if config.isolation == .worktree, let branches = project?.branches, !branches.isEmpty {
                     ComposerDropdown(width: 280) {
+                        // A long branch name is cut short, so the row stays inside a narrow tab.
                         ComposerPill(symbol: "arrow.triangle.branch", dot: nil, text: tr("compose.from", config.baseBranch))
+                            .frame(maxWidth: 220)
                     } content: {
                         BranchPicker(branches: sortedBranches(branches), selected: config.baseBranch) { config.baseBranch = $0 }
                     }
                 } else if let branch = project?.currentBranch {
                     ComposerPill(symbol: "arrow.triangle.branch", dot: nil, text: branch, showsChevron: false)
+                        .frame(maxWidth: 220)
                 }
             }
         }

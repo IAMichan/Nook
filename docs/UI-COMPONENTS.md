@@ -181,6 +181,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `NookDivider` | `PanelBlocks.swift` | The one line between rows or regions, horizontal (with an `inset`) or `vertical` |
 | `NookRowSeparator` | `PanelBlocks.swift` | The clearer line between the items of a list (the Chats tab), in `NookTheme.separator`; placed before every item but the first |
 | `PanelNoticeBar` | `PanelBlocks.swift` | A `NookNotice` under the tabs (a permission request, an agent's question, a short note): symbol, title, a line, and its `NookNoticeActions`; `tone` tints a risky one, `countdown` adds the OK for a note that closes by itself |
+| `AdaptiveActionRow` | `PanelBlocks.swift` | Text beside its buttons (a confirmation, a recovery card, a banner, a sheet's footer): the buttons on the right while the text keeps a readable width, on a line of their own under it in a narrow tab or split view. Use it for every such row instead of an `HStack` with a `Spacer` and buttons, which squeezes the text to a word per line |
 | `.panelCard()` | `PanelBlocks.swift` | The quiet card that groups rows: field fill, panel corners, no stroke |
 | `NookIconButton` | `NookButtons.swift` | Round symbol button (mic, close, play) |
 | `ToolbarIconButton` | `NookButtons.swift` | Small borderless symbol button in a panel header, a row, or under a message, with hover feedback; `width`/`height` for a tighter row and `enabled` for a dimmed one. Never hand-roll a `.plain` button around a lone `Image` |

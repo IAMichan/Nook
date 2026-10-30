@@ -195,17 +195,19 @@ struct CICheckLogView: View {
 
     /// Under a running job's steps: that this is followed live, and where the log comes from.
     private var liveFooter: some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
-            Image(systemName: "circle.fill")
-                .font(NookTheme.font(6))
-                .foregroundStyle(NookTheme.mint)
-                .symbolEffect(.pulse, options: .repeating)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(tr("ws.ci.live")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textStrong)
-                Text(tr("ws.ci.running")).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+        AdaptiveActionRow(spacing: NookTheme.Spacing.sm) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Image(systemName: "circle.fill")
+                    .font(NookTheme.font(6))
+                    .foregroundStyle(NookTheme.mint)
+                    .symbolEffect(.pulse, options: .repeating)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(tr("ws.ci.live")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textStrong)
+                    Text(tr("ws.ci.running")).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            Spacer(minLength: NookTheme.Spacing.sm)
+        } actions: {
             if let url = check.url {
                 SmallGhostButton(title: tr("ws.ci.watchOnGitHub")) { NSWorkspace.shared.open(url) }
             }

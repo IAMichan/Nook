@@ -77,9 +77,12 @@ struct AgentCommandPalette: View {
                 .frame(maxHeight: 320)
             }
         }
-        .frame(width: 480)
+        // As wide as a narrow tab allows, never wider than the usual 480.
+        .frame(maxWidth: .infinity)
+        .frame(maxWidth: 480)
         .cardBackground(NookTheme.graphite, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet, style: .continuous)
         .shadow(color: .black.opacity(0.5), radius: 24, y: 8)
+        .padding(.horizontal, NookTheme.Spacing.lg)
         .focusOnAppear($focused)
         .onChange(of: query) { _, _ in index = 0 }
         .onKeyPress(.downArrow) { index = min(index + 1, max(0, list.count - 1)); return .handled }

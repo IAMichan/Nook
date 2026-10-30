@@ -79,7 +79,8 @@ private struct MusicBar: View {
                 MusicTransport(info: info, service: service)
                 MusicScrubBar(info: info, style: .inline) { service.seek(to: $0) }
             }
-            .frame(width: 330)
+            // Narrower in a narrow tab (split view), so the track and the buttons beside it stay on screen.
+            .frame(minWidth: 180, idealWidth: 330, maxWidth: 330)
 
             HStack(spacing: NookTheme.Spacing.xs) {
                 if let volume = info.volume {
@@ -118,7 +119,8 @@ private struct MusicFullPlayer: View {
     var body: some View {
         VStack(spacing: 0) {
             GeometryReader { geo in
-                let side = min(216, max(110, geo.size.height - 28))
+                // By the height, and in a narrow tab by the width too, so the details beside it keep their room.
+                let side = min(216, max(110, geo.size.height - 28), max(88, geo.size.width * 0.34))
                 HStack(spacing: 32) {
                     cover(side: side)
                     details
@@ -184,12 +186,18 @@ private struct MusicFullPlayer: View {
                 .padding(.top, NookTheme.Spacing.xs)
             MusicScrubBar(info: info, style: .stacked) { service.seek(to: $0) }
                 .padding(.top, NookTheme.Spacing.xl + NookTheme.Spacing.xs)
-            HStack(spacing: NookTheme.Spacing.lg) {
-                MusicTransport(info: info, service: service, large: true)
-                Spacer(minLength: NookTheme.Spacing.md)
-                if let volume = info.volume {
-                    MusicVolumeControl(volume: volume, width: 96) { service.setVolume($0) }
+            // The volume beside the transport while there is room; in a narrow tab the large transport alone, then the
+            // small one.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: NookTheme.Spacing.lg) {
+                    MusicTransport(info: info, service: service, large: true)
+                    Spacer(minLength: NookTheme.Spacing.md)
+                    if let volume = info.volume {
+                        MusicVolumeControl(volume: volume, width: 96) { service.setVolume($0) }
+                    }
                 }
+                MusicTransport(info: info, service: service, large: true)
+                MusicTransport(info: info, service: service)
             }
             .padding(.top, NookTheme.Spacing.md)
         }
@@ -254,15 +262,12 @@ private struct MusicUpcomingStrip: View {
                         .padding(.horizontal, NookTheme.Spacing.xs)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    HStack(spacing: NookTheme.Spacing.sm) {
-                        ForEach(Array(tracks.prefix(Self.count).enumerated()), id: \.offset) { _, track in
-                            MusicUpcomingChip(track: track) { service.play(track, fromQueue: showsQueue) }
-                                .frame(maxWidth: .infinity)
-                        }
-                        // Keep the columns even when there are fewer tracks.
-                        ForEach(0..<max(0, Self.count - tracks.count), id: \.self) { _ in
-                            Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
-                        }
+                    // Four in a row, fewer in a narrow tab, so each keeps room for its title.
+                    ViewThatFits(in: .horizontal) {
+                        chips(Self.count)
+                        chips(3)
+                        chips(2)
+                        chips(1)
                     }
                 }
             }
@@ -273,6 +278,20 @@ private struct MusicUpcomingStrip: View {
         .overlay(alignment: .top) {
             NookDivider().padding(.horizontal, NookTheme.Spacing.xs)
         }
+    }
+
+    /// `count` columns, each at least wide enough for a title; empty columns keep them even with fewer tracks.
+    private func chips(_ count: Int) -> some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            ForEach(Array(tracks.prefix(count).enumerated()), id: \.offset) { _, track in
+                MusicUpcomingChip(track: track) { service.play(track, fromQueue: showsQueue) }
+                    .frame(maxWidth: .infinity)
+            }
+            ForEach(0..<max(0, count - tracks.count), id: \.self) { _ in
+                Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
+            }
+        }
+        .frame(minWidth: CGFloat(count) * 150)
     }
 
     private var emptyText: String {

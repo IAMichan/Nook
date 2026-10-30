@@ -174,9 +174,10 @@ struct CommitSheet: View {
             }
             if let error { Text(error).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coralSoft) }
             if let done { Text(tr("ws.commit.done", done)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.mint) }
-            HStack {
+            AdaptiveActionRow {
                 Text(tr("ws.commit.note")).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
-                Spacer()
+                    .fixedSize(horizontal: false, vertical: true)
+            } actions: {
                 SmallGhostButton(title: tr("button.cancel")) { close() }.keyboardShortcut(.cancelAction)
                 SmallPrimaryButton(title: tr("ws.commit.action", included.count)) { commit() }
                     .keyboardShortcut(.defaultAction)
@@ -184,7 +185,8 @@ struct CommitSheet: View {
             }
         }
         .padding(embedded ? 0 : 18)
-        .frame(width: 560)
+        // In the panel it takes the width of the tab, however narrow; on its own it keeps its usual 560.
+        .frame(width: embedded ? nil : 560)
         .frame(maxWidth: .infinity, alignment: embedded ? .topLeading : .center)
         .task {
             if let folder { folderStatus = await workspace.folderStatus(folder) }
@@ -286,7 +288,8 @@ struct PullRequestSheet: View {
             }
         }
         .padding(embedded ? 0 : 18)
-        .frame(width: 560)
+        // In the panel it takes the width of the tab, however narrow; on its own it keeps its usual 560.
+        .frame(width: embedded ? nil : 560)
         .frame(maxWidth: .infinity, alignment: embedded ? .topLeading : .center)
         .task {
             if let runID {
