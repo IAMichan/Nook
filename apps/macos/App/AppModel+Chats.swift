@@ -182,12 +182,13 @@ extension AppModel {
         markChatReadInNook(entry)
         guard hadUnread, ChatNoticeRulesStore.shared.rules.readsOnReply(thread.app),
               let route = chatRoute(for: thread), chatAbilities(route).markRead else { return }
+        let through = ChatCaptureService.shared.readMark(id)
         Task { [weak self] in
             // Read in the app only when the app took it: a refusal leaves the chat read in Nook alone, with "Mark as read
             // in <app>" still offered.
             do {
                 try await self?.markReadInChatApp(route, name: thread.name)
-                ChatCaptureService.shared.markReadInApp(id)
+                ChatCaptureService.shared.markReadInApp(id, through: through)
             } catch {}
         }
     }

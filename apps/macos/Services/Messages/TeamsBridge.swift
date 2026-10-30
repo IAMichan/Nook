@@ -619,7 +619,8 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         let (account, chat) = try await webChat(name)
         var known = ChatCaptureService.shared.loadedInbox.threads[ChatInbox.key(app: app, chat: name)]?.messages.map(\.id) ?? []
         if let preview = chat.preview?.id { known.append(preview) }
-        guard let newest = TeamsWebData.newest(known) else { return }
+        // No message Teams knows: saying it was read would be untrue.
+        guard let newest = TeamsWebData.newest(known) else { throw NookError(tr("chats.markReadInApp.nothing", "Teams", "Teams")) }
         try await webAct("PUT", account: account, path: TeamsWebData.horizonPath(chat: chat.id),
                          json: TeamsWebData.horizon(newest: newest.id, arrived: newest.arrived))
         changedHere.insert(chat.id)

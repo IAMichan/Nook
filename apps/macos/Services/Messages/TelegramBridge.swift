@@ -545,7 +545,8 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
     /// shows as a toast, as every other chat action's does.
     func markRead(chat: Int64) throws {
         let ids = (messages[chat] ?? []).filter { !$0.isMine }.suffix(100).compactMap { TelegramData.ids($0.id)?.message }
-        guard !ids.isEmpty else { return }
+        // Nothing Telegram knows by its id (a chat only its notifications brought): saying it was read would be untrue.
+        guard !ids.isEmpty else { throw NookError(tr("chats.markReadInApp.nothing", "Telegram", "Telegram")) }
         try act(["@type": "viewMessages", "chat_id": chat, "message_ids": ids, "force_read": true], chat: chat)
     }
 

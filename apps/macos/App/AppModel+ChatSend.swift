@@ -164,9 +164,16 @@ extension AppModel {
     func answeredInChat(_ route: ChatRoute, name: String, thread: String?, told: Bool = false) async {
         // Without the chat's id this was one part of a send that reads the chat once, at its end.
         guard let thread else { return }
-        ChatCaptureService.shared.markRead(thread)
-        guard !told, ChatNoticeRulesStore.shared.rules.readsOnReply(chatAppID(route)), chatAbilities(route).markRead else { return }
-        try? await markReadInChatApp(route, name: name)
+        let capture = ChatCaptureService.shared
+        capture.markRead(thread)
+        let through = capture.readMark(thread)
+        guard ChatNoticeRulesStore.shared.rules.readsOnReply(chatAppID(route)), chatAbilities(route).markRead else { return }
+        // The app heard it with the answer, or hears it now: the chat is read there too, not only once its bridge
+        // reads the app again.
+        if !told {
+            guard (try? await markReadInChatApp(route, name: name)) != nil else { return }
+        }
+        capture.markReadInApp(thread, through: through)
     }
 
     // MARK: Sending

@@ -271,6 +271,101 @@ final class ChatSharedModelTests: XCTestCase {
         XCTAssertEqual(inbox.threads[key]?.unread, 1, "only what came after the read is new")
     }
 
+    func testReadPassedOnToTheAppHoldsBeforeTheBridgesWord() {
+        let newest = Date(timeIntervalSince1970: 100)
+        XCTAssertEqual(ChatReadState.of(unread: 0, appUnread: 3, newestIncoming: newest, readInNook: newest, readInApp: newest,
+                                        waitsInApp: true), .read, "the bridge has not read the app again yet")
+        XCTAssertEqual(ChatReadState.of(unread: 0, appUnread: nil, newestIncoming: newest.addingTimeInterval(1),
+                                        readInNook: newest, readInApp: newest, waitsInApp: true), .readInNook,
+                       "a newer message waits in the app again")
+    }
+
+    func testMarkReadInAppSticksForEveryApp() {
+        for app in ["whatsapp", "telegram", "slack", "instagram"] {
+            var inbox = ChatInbox()
+            var first = chat("Anna", id: "a", app: app, [message("1", at: 1_000)])
+            first.unread = 1
+            first.waitsInApp = true
+            inbox.merge(first)
+            let key = ChatInbox.key(app: app, id: "a")
+            inbox.markReadInApp(key, at: Date(timeIntervalSince1970: 2_000))
+            XCTAssertEqual(inbox.threads[key]?.readState, .read, app)
+            // The bridge's next read still says the old word: read stays read.
+            var stale = chat("Anna", id: "a", app: app, [message("1", at: 1_000)])
+            stale.unread = 1
+            stale.waitsInApp = true
+            inbox.merge(stale)
+            XCTAssertEqual(inbox.threads[key]?.readState, .read, app)
+        }
+    }
+
+    func testReadHoldsAgainstAMessageDatedAhead() {
+        var inbox = ChatInbox()
+        // The phone says the chat last moved a minute ahead of this Mac's clock, by a message Nook holds not yet.
+        let ahead = Date(timeIntervalSince1970: 2_060)
+        var first = chat("Anna", id: "a", [message("1")])
+        first.unread = 1
+        first.activity = ahead
+        inbox.merge(first)
+        let key = ChatInbox.key(app: "whatsapp", id: "a")
+        inbox.markRead(key, at: Date(timeIntervalSince1970: 2_000))
+        inbox.forgetMessages(of: [key])
+        var again = chat("Anna", id: "a", [])
+        again.unread = 1
+        again.activity = ahead
+        inbox.merge(again)
+        XCTAssertEqual(inbox.threads[key]?.unread, 0, "what was read is not new again")
+    }
+
+    func testMarkedUnreadHoldsAgainstALaggingCount() {
+        for app in ["slack", "teams", "messages", "whatsapp"] {
+            var inbox = ChatInbox()
+            var first = chat("Anna", id: "a", app: app, [message("1")])
+            first.unread = 1
+            inbox.merge(first)
+            let key = ChatInbox.key(app: app, id: "a")
+            inbox.markReadInApp(key, at: Date(timeIntervalSince1970: 2_000))
+            // The app's next read still counts the old message, then catches up.
+            var lagging = chat("Anna", id: "a", app: app, [message("1")])
+            lagging.unread = 1
+            inbox.merge(lagging)
+            inbox.markUnread(key, at: Date(timeIntervalSince1970: 2_100))
+            var caughtUp = chat("Anna", id: "a", app: app, [message("1")])
+            caughtUp.unread = 0
+            inbox.merge(caughtUp)
+            XCTAssertEqual(inbox.threads[key]?.readState, .unread(1), "\(app): marked unread stays unread")
+            inbox.markRead(key, at: Date(timeIntervalSince1970: 2_200))
+            XCTAssertNil(inbox.threads[key]?.markedUnread, app)
+            XCTAssertEqual(inbox.threads[key]?.unread, 0, app)
+        }
+    }
+
+    func testReadInTheAppKeepsWhatCameInMeanwhile() {
+        var inbox = ChatInbox()
+        var first = chat("Anna", id: "a", app: "telegram", [message("1")])
+        first.unread = 1
+        inbox.merge(first)
+        let key = ChatInbox.key(app: "telegram", id: "a")
+        inbox.markRead(key, at: Date(timeIntervalSince1970: 1_500))
+        let through = inbox.threads[key]?.readInNook
+        // A message comes in while the app is being told.
+        var meanwhile = chat("Anna", id: "a", app: "telegram", [message("1"), message("2", at: 900)])
+        meanwhile.unread = 1
+        inbox.merge(meanwhile)
+        inbox.markReadInApp(key, at: Date(timeIntervalSince1970: 2_000), through: through)
+        XCTAssertEqual(inbox.threads[key]?.unread, 1, "the message that came in meanwhile stays new")
+        XCTAssertEqual(inbox.threads[key]?.readState, .unread(1))
+    }
+
+    func testTwinsAreTheThreadsWithTheSameNewestMessage() {
+        var inbox = ChatInbox()
+        inbox.merge(chat("Jan", app: "teams", [message("x")]))
+        inbox.merge(chat("Piet", app: "teams", [message("x")]))
+        inbox.merge(chat("Kees", app: "teams", [message("y")]))
+        let jan = ChatInbox.key(app: "teams", chat: "Jan")
+        XCTAssertEqual(inbox.twins(of: jan), [ChatInbox.key(app: "teams", chat: "Piet")])
+    }
+
     func testAChatWithoutMessagesGoesByWhenItLastHadOne() {
         var inbox = ChatInbox()
         var listed = chat("Bob", id: "b", [])
