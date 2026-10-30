@@ -209,6 +209,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `AgentStatusBadge`, `RowBadgeBackground`, `SteppedPulseDot` | `StatusStyleView.swift` | Session state in rows |
 | `HoverCard`, `.hoverCard(_:)` | `HoverCard.swift` | Detail popover on hover |
 | `DropdownHeader`, `DropdownRow`, `DropdownDivider`, `ComposerDropdown` | `ComposerDropdown.swift` | Menus of the composer and pickers; `DropdownRow(favorite:)` adds a favorite star (the model menus) |
+| `ModelPickerDropdown`, `ModelPickerPanel`, `ModelPickerColumn` | `ModelPicker.swift` | The one model picker: the agents' (`AgentModelPicker`: a new session, a running one, a conversation continued in Nook) and Nook's own brain in the chat (`BrainChip`). One width, a rail of places with a "+" that opens Settings, and a column with the place's name, an optional line on what it is, rows above the search (accounts, several models), the search, the models and a Settings link. The panel takes the height its rows ask for, so wrapped text grows it. A new model choice anywhere uses these three; never build a second model menu |
 | `NookAccessMenu` | `NookAccessMenu.swift` | What Nook may do by itself (`NookAccess`: Ask first, Small things right away, More by itself) as a choice in a composer, the Nook chat's and the Double Tap field's counterpart of an agent's access menu; ⇧Tab (`composer.access`) moves to the next level while its composer has the keyboard. Next to `BrainChip` wherever you write to Nook |
 | `ComposerTray`, `ComposerTrayDivider` | `ComposerTray.swift` | The tray tucked behind the composer box: under it for a new session (folder and branch), above it for a running one (watched pull request, queued messages). Anything that belongs to the next message goes in here instead of a loose strip. `SessionComposer.choicesBelowBox()` puts the agent, model and mode choices in such a tray, so the box stays one line (the chat of a running session uses it) |
 | `ComposerQuoteChips` | `ComposerQuoteChips.swift` | Passages of an answer picked for the next message (right-click › Quote in Your Message / Ask About This on a selection, or ⇧⌘L / ⌘L), as removable chips in the `ComposerTray` above the box; they go out as Markdown quotes in front of what you type (`ComposerQuotes`) |
@@ -255,6 +256,11 @@ started, so a card that closed before you looked can still be read and opened. A
 agent that finished, a request, a message) is kept with `AppModel.logNotice` where it is decided, before the card, strip
 or banner shows, so one held back by quiet mode or a busy notch is kept as well. Toasts, the results of what you did,
 are not kept there.
+
+Next to the bell, split view (`PanelSplitButton` and `PanelSplitPane` in `NotchUI/Pills/PanelSplit.swift`) shows a
+second tab (the Nook chat, Agents, Chats or Music) on the right of the current one, as a resizable `.sidePanel`. The
+choice and width are remembered (`PanelSplitChoice`) and shared by the notch and the main window; the tab you are on
+never shows beside itself. Show a tab beside another through it; do not build a second split.
 
 ## Settings — `apps/macos/App/Settings`
 

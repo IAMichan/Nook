@@ -3,7 +3,7 @@ import SwiftUI
 // Composer dropdowns in Nook: the quiet pill as trigger, and instead of a system menu a dark panel with rows.
 // A section header, rows with an icon or logo, a title and a description, a faint fill on the chosen row (no check
 // mark), disabled rows that say why, and a search field for long lists. The model pickers (agents, and Nook's own
-// brain in the chat) share one split layout: a narrow rail of places on the left, their models on the right.
+// brain in the chat) share one split layout: a narrow rail of places on the left, their models on the right (ModelPicker.swift).
 
 /// A composer choice that opens a custom dropdown panel under its pill.
 struct ComposerDropdown<Trigger: View, Content: View>: View {
@@ -21,9 +21,12 @@ struct ComposerDropdown<Trigger: View, Content: View>: View {
             .buttonStyle(.plain)
             .fixedSize(horizontal: !flexible, vertical: true)
             .popover(isPresented: $open, arrowEdge: .bottom) {
+                // The panel takes the height its rows ask for at this width, so wrapped text grows it instead of
+                // being cut off, and it follows when a search or another place changes what it shows.
                 VStack(alignment: .leading, spacing: 0) { content() }
                     .padding(4)
                     .frame(width: width, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
                     .background(DropdownStyle.panel)
                     .environment(\.closeDropdown, { open = false })
             }
@@ -194,7 +197,6 @@ struct RailDropdown<Place: Hashable, Icon: View, Footer: View, Detail: View>: Vi
     let groups: [[Place]]
     /// The place in use; the panel opens on it.
     let chosen: Place
-    var maxHeight: CGFloat
     let help: (Place) -> String
     /// Called when you switch to another place in the rail (to clear a search, say).
     let onShow: (Place) -> Void
@@ -205,14 +207,13 @@ struct RailDropdown<Place: Hashable, Icon: View, Footer: View, Detail: View>: Vi
     private var hasFooter = true
     @State private var shown: Place?
 
-    init(groups: [[Place]], chosen: Place, maxHeight: CGFloat = 320,
+    init(groups: [[Place]], chosen: Place,
          help: @escaping (Place) -> String, onShow: @escaping (Place) -> Void,
          @ViewBuilder icon: @escaping (Place) -> Icon,
          @ViewBuilder footer: @escaping () -> Footer,
          @ViewBuilder detail: @escaping (Place) -> Detail) {
         self.groups = groups
         self.chosen = chosen
-        self.maxHeight = maxHeight
         self.help = help
         self.onShow = onShow
         self.icon = icon
@@ -224,12 +225,15 @@ struct RailDropdown<Place: Hashable, Icon: View, Footer: View, Detail: View>: Vi
     private var filledGroups: [[Place]] { groups.filter { !$0.isEmpty } }
 
     var body: some View {
-        HStack(spacing: 0) {
-            if hasFooter || filledGroups.joined().count > 1 { rail }
+        // Rail and column are as tall as the taller of the two, at the height they ask for: the rail's line runs to the
+        // bottom with the "+" there, and a short column stays at the top instead of floating in the middle.
+        HStack(alignment: .top, spacing: 0) {
+            if hasFooter || filledGroups.joined().count > 1 { rail.frame(maxHeight: .infinity) }
             VStack(alignment: .leading, spacing: 0) { detail(current) }
                 .padding(.horizontal, 4)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(maxHeight: maxHeight)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var rail: some View {
@@ -272,11 +276,11 @@ struct RailDropdown<Place: Hashable, Icon: View, Footer: View, Detail: View>: Vi
 }
 
 extension RailDropdown where Footer == EmptyView {
-    init(groups: [[Place]], chosen: Place, maxHeight: CGFloat = 320,
+    init(groups: [[Place]], chosen: Place,
          help: @escaping (Place) -> String, onShow: @escaping (Place) -> Void,
          @ViewBuilder icon: @escaping (Place) -> Icon,
          @ViewBuilder detail: @escaping (Place) -> Detail) {
-        self.init(groups: groups, chosen: chosen, maxHeight: maxHeight, help: help, onShow: onShow,
+        self.init(groups: groups, chosen: chosen, help: help, onShow: onShow,
                   icon: icon, footer: { EmptyView() }, detail: detail)
         hasFooter = false
     }
@@ -314,8 +318,9 @@ struct DropdownList<Rows: View>: View {
     }
 }
 
-/// Model picker: the connected agents in the rail on the left, and on the right the shown agent's accounts and its
-/// models, with a search field. Picking an account or model keeps the panel open until you pick a model.
+/// Model picker of the agents, built on `ModelPickerPanel` as Nook's own brain picker is: the connected agents in the
+/// rail, and on the right the shown agent's accounts and its models, with a search field. Picking an account keeps the
+/// panel open until you pick a model.
 struct AgentModelPicker: View {
     @EnvironmentObject private var app: AppModel
     /// Favorites and typed models live here: a star redraws the menu at once.
@@ -331,32 +336,16 @@ struct AgentModelPicker: View {
     var comparing: Binding<[ComparisonTarget]>? = nil
     let choose: (RunProvider, String?, String?) -> Void
     @State private var query = ""
-    @Environment(\.closeDropdown) private var close
     /// Picking a model adds it to the comparison instead of replacing the chosen one.
     @State private var multi = false
 
     var body: some View {
-        RailDropdown(groups: [providers], chosen: provider, help: { $0.displayName }, onShow: { _ in query = "" },
-                     icon: { AgentMark(agent: $0.displayName, account: account(of: $0), size: 18, ring: DropdownStyle.panel) },
-                     footer: { addButton }) { current in
+        ModelPickerPanel(groups: [providers], chosen: provider, help: { $0.displayName },
+                         addHelp: tr("agents.picker.add"), add: { app.openSettings(section: .agents) },
+                         onShow: { _ in query = "" },
+                         icon: { AgentMark(agent: $0.displayName, account: account(of: $0), size: 18, ring: DropdownStyle.panel) }) { current in
             models(of: current)
         }
-    }
-
-    /// Connecting another agent happens in Settings, as adding an external AI does for Nook's own brain.
-    private var addButton: some View {
-        Button {
-            close()
-            app.openSettings(section: .agents)
-        } label: {
-            Image(systemName: "plus")
-                .font(NookTheme.font(12, .medium))
-                .foregroundStyle(NookTheme.textTertiary)
-                .frame(width: 32, height: 32)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(tr("agents.picker.add"))
     }
 
     /// The account an agent runs under from here: the chosen one for the agent in use, else the one picking it would take.
@@ -372,12 +361,33 @@ struct AgentModelPicker: View {
         return current == provider ? profileID ?? accounts.first?.id : accounts.first?.id
     }
 
-    @ViewBuilder
     private func models(of current: RunProvider) -> some View {
+        let shownModels = filtered(current)
+        let custom = customModel(current)
+        return ModelPickerColumn(title: current.displayName, query: $query,
+                                 emptyNote: shownModels.isEmpty && custom == nil ? tr("compose.noModels") : nil,
+                                 settingsTitle: tr("agents.picker.settings"),
+                                 openSettings: { app.openSettings(section: .agents) }) {
+            accountRows(of: current)
+            if let comparing { compareToggle(comparing) }
+        } rows: {
+            ForEach(shownModels, id: \.self) { option in
+                modelRow(option, of: current)
+            }
+            if let custom {
+                DropdownRow(symbol: "plus", title: tr("compose.useModel", custom), detail: tr("compose.useModelDetail")) {
+                    ws.rememberCustomModel(custom, for: current)
+                    choose(current, current == provider ? nil : app.connectedProfiles(for: current).first?.id, custom)
+                }
+            }
+        }
+    }
+
+    /// The agent's accounts, for a new session (a running session keeps its account).
+    @ViewBuilder
+    private func accountRows(of current: RunProvider) -> some View {
         let accounts = app.connectedProfiles(for: current)
-        // A running session keeps its account: only a new session shows the choice.
         if providers.count > 1 || showsAccounts, accounts.count > 1 {
-            DropdownHeader(title: current.displayName)
             ForEach(accounts) { account in
                 DropdownRow(agent: current.displayName, account: AccountKind.of(account, app: app),
                             title: AccountLabel.line(account, app: app),
@@ -387,48 +397,34 @@ struct AgentModelPicker: View {
             }
             DropdownDivider()
         }
-        if let comparing { compareToggle(comparing) }
-        if !(providers.count > 1 || showsAccounts) || accounts.count <= 1 { DropdownHeader(title: current.displayName) }
-        DropdownSearch(placeholder: tr("compose.searchModels"), text: $query)
-        let shownModels = filtered(current)
-        let custom = customModel(current)
-        DropdownList(emptyNote: shownModels.isEmpty && custom == nil ? tr("compose.noModels") : nil) {
-            ForEach(shownModels, id: \.self) { option in
-                // A model that comes in thinking levels shows once; its level is picked with the effort control.
-                let family = app.modelFamily(option, for: current, profileID: profileOf(current))
-                let name = app.modelMenuName(option, for: current, profileID: profileOf(current))
-                let choice = app.workspace.modelChoice(option, for: current, profileID: profileOf(current))
-                let isChosen = current == provider
-                    && (app.workspace.sameModel(option, model, for: current) || family?.contains(model) == true)
-                let order = multi ? compareOrder(option, of: current, chosen: isChosen) : nil
-                // A model that needs a newer agent says which update unlocks it, and cannot be picked until then.
-                DropdownRow(brand: BrandLogo.forName(option) ?? BrandLogo.forName(name) ?? BrandLogo.forName(current.displayName),
-                            title: name,
-                            detail: app.modelUpdateNote(option, for: current)
-                                ?? (family != nil || option.isEmpty || name == option ? nil : option),
-                            trailing: order.map { "\($0)" }
-                                ?? (choice?.isNew == true && choice?.needsUpdate == false ? tr("compose.modelNew") : nil),
-                            chosen: multi ? order != nil : isChosen,
-                            disabledReason: app.modelUpdateHelp(option, for: current),
-                            staysOpen: multi,
-                            favorite: option.isEmpty ? nil : favoriteBinding(option, for: current)) {
-                    if multi, let comparing {
-                        toggleCompared(option, of: current, in: comparing)
-                        return
-                    }
-                    let picked = app.menuPick(option, keeping: current == provider ? model : "", for: current, profileID: profileOf(current))
-                    choose(current, current == provider ? nil : app.connectedProfiles(for: current).first?.id, picked)
-                }
+    }
+
+    private func modelRow(_ option: String, of current: RunProvider) -> some View {
+        // A model that comes in thinking levels shows once; its level is picked with the effort control.
+        let family = app.modelFamily(option, for: current, profileID: profileOf(current))
+        let name = app.modelMenuName(option, for: current, profileID: profileOf(current))
+        let choice = app.workspace.modelChoice(option, for: current, profileID: profileOf(current))
+        let isChosen = current == provider
+            && (app.workspace.sameModel(option, model, for: current) || family?.contains(model) == true)
+        let order = multi ? compareOrder(option, of: current, chosen: isChosen) : nil
+        // A model that needs a newer agent says which update unlocks it, and cannot be picked until then.
+        return DropdownRow(brand: BrandLogo.forName(option) ?? BrandLogo.forName(name) ?? BrandLogo.forName(current.displayName),
+                           title: name,
+                           detail: app.modelUpdateNote(option, for: current)
+                               ?? (family != nil || option.isEmpty || name == option ? nil : option),
+                           trailing: order.map { "\($0)" }
+                               ?? (choice?.isNew == true && choice?.needsUpdate == false ? tr("compose.modelNew") : nil),
+                           chosen: multi ? order != nil : isChosen,
+                           disabledReason: app.modelUpdateHelp(option, for: current),
+                           staysOpen: multi,
+                           favorite: option.isEmpty ? nil : favoriteBinding(option, for: current)) {
+            if multi, let comparing {
+                toggleCompared(option, of: current, in: comparing)
+                return
             }
-            if let custom {
-                DropdownRow(symbol: "plus", title: tr("compose.useModel", custom), detail: tr("compose.useModelDetail")) {
-                    ws.rememberCustomModel(custom, for: current)
-                    choose(current, current == provider ? nil : app.connectedProfiles(for: current).first?.id, custom)
-                }
-            }
+            let picked = app.menuPick(option, keeping: current == provider ? model : "", for: current, profileID: profileOf(current))
+            choose(current, current == provider ? nil : app.connectedProfiles(for: current).first?.id, picked)
         }
-        DropdownDivider()
-        DropdownRow(symbol: "gearshape", title: tr("agents.picker.settings")) { app.openSettings(section: .agents) }
     }
 
     // MARK: Several models
