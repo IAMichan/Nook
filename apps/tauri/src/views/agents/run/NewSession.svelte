@@ -41,17 +41,46 @@
   const profile = $derived(profiles.find((p) => p.id === config.profileId));
   const levels = $derived(effortLevels(config.provider));
 
-  const recent = $derived.by(() => {
+  const favorites = $derived.by(() => {
     const seen = new Set<string>();
     const out: string[] = [];
-    for (const path of [...(settings?.recentProjects ?? []), ...(agents.history?.sessions ?? []).map((s) => s.cwd)]) {
+    for (const path of settings?.favoriteProjects ?? []) {
       if (!path || seen.has(path)) continue;
       seen.add(path);
       out.push(path);
-      if (out.length === 10) break;
     }
     return out;
   });
+
+  const recent = $derived.by(() => {
+    const seen = new Set<string>(favorites);
+    const limit = Math.max(3, 10 - favorites.length);
+    const out: string[] = [];
+    for (const path of [config.projectPath, settings?.lastProject ?? "", ...(settings?.recentProjects ?? []), ...(agents.history?.sessions ?? []).map((s) => s.cwd)]) {
+      if (!path || seen.has(path)) continue;
+      seen.add(path);
+      out.push(path);
+      if (out.length === limit) break;
+    }
+    return out;
+  });
+
+  function isFavorite(path: string): boolean {
+    return favorites.includes(path);
+  }
+
+  function toggleFavorite(path: string) {
+    if (!settings) return;
+    const current = settings.favoriteProjects ?? [];
+    const next = current.includes(path) ? current.filter((p) => p !== path) : [...current, path];
+    workspaceApi
+      .saveSettings({
+        ...$state.snapshot(settings),
+        favoriteProjects: next,
+      })
+      .then(() => workspace.refresh())
+      .catch(() => {});
+  }
 
   const worktreeAllowed = $derived(!!project && project.verdict === "ok" && !!project.repoRoot && project.hasCommits && !!workspace.overview?.gitAvailable);
   const worktreeBlocked = $derived(
@@ -94,7 +123,7 @@
     config.isolation = settings!.defaultIsolation;
     config.worktreeRoot = settings!.worktreeRoot;
     requestAnimationFrame(() => textarea?.focus());
-    const initial = settings!.lastProject || recent[0];
+    const initial = settings!.lastProject || favorites[0] || recent[0];
     if (initial) select(initial);
   }
 
@@ -230,11 +259,25 @@
       </button>
       {#if menu === "project"}
         <div class="menu" role="menu" tabindex="-1" onclick={stop} onkeydown={() => {}}>
+          {#if favorites.length}
+            <div class="mhead">Favorieten</div>
+            {#each favorites as path (path)}
+              <div class="mrow" class:chosen={project?.path === path}>
+                <button class="mitem" onclick={() => select(path)}><span>{projectName(path)}</span><span class="faint small">{path}</span></button>
+                <button class="star starred" title="Uit favorieten halen" aria-label="Uit favorieten halen" onclick={() => toggleFavorite(path)}>★</button>
+              </div>
+            {/each}
+          {/if}
           {#if recent.length}
             <div class="mhead">Recent</div>
             {#each recent as path (path)}
-              <button class:chosen={project?.path === path} onclick={() => select(path)}><span>{projectName(path)}</span><span class="faint small">{path}</span></button>
+              <div class="mrow" class:chosen={project?.path === path}>
+                <button class="mitem" onclick={() => select(path)}><span>{projectName(path)}</span><span class="faint small">{path}</span></button>
+                <button class="star" title="Aan favorieten toevoegen" aria-label="Aan favorieten toevoegen" onclick={() => toggleFavorite(path)}>☆</button>
+              </div>
             {/each}
+          {/if}
+          {#if favorites.length || recent.length}
             <hr />
           {/if}
           <button onclick={chooseFolder}>Kies map…</button>
@@ -402,6 +445,14 @@
   .menu.right { left: auto; right: 0; }
   .menu button { background: none; border: none; text-align: left; padding: 6px 8px; border-radius: 7px; display: flex; flex-direction: column; gap: 1px; font-size: 12.5px; }
   .menu button:hover:not(:disabled), .menu button.chosen { background: var(--smoke); }
+  .mrow { display: flex; align-items: center; border-radius: 7px; }
+  .mrow:hover, .mrow.chosen { background: var(--smoke); }
+  .mrow .mitem { flex: 1; min-width: 0; }
+  .mrow .mitem:hover { background: none; }
+  .mrow .star { opacity: 0; padding: 4px 8px; color: var(--text3); font-size: 13px; align-items: center; justify-content: center; }
+  .mrow:hover .star, .mrow .star.starred { opacity: 1; }
+  .mrow .star.starred { color: var(--paper); }
+  .mrow .star:hover { background: none; color: var(--paper); }
   .menu hr { border: none; border-top: 1px solid var(--line2); margin: 4px 0; width: 100%; }
   .mhead { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; padding: 4px; }
   .scrolllist { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; }

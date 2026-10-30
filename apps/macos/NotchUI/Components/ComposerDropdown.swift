@@ -88,7 +88,7 @@ struct DropdownRow: View {
     var disabledReason: String? = nil
     /// Keeps the panel open after the click (several choices in a row).
     var staysOpen = false
-    /// A star at the end of the row (the model menus): filled while the choice is a favorite, nil for none.
+    /// A star at the end of the row (models and project folders): filled while the choice is a favorite, nil for none.
     var favorite: Binding<Bool>? = nil
     let action: () -> Void
     @Environment(\.closeDropdown) private var close

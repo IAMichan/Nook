@@ -112,6 +112,7 @@ export interface WorkspaceSettings {
   steerByDefault: boolean;
   autoResumeLimited: boolean;
   lastProject: string;
+  favoriteProjects?: string[];
   recentProjects: string[];
 }
 

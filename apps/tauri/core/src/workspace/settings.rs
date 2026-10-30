@@ -34,6 +34,8 @@ pub struct WorkspaceSettings {
     /// Een sessie die op een gebruikslimiet stopte, gaat vanzelf verder zodra de limiet vrij is (standaard uit).
     pub auto_resume_limited: bool,
     pub last_project: String,
+    /// Favoriete projectmappen: bovenaan in het projectmenu en raken nooit weg.
+    pub favorite_projects: Vec<String>,
     /// Eerder gekozen projecten, nieuwste eerst.
     pub recent_projects: Vec<String>,
 }
@@ -55,6 +57,7 @@ impl Default for WorkspaceSettings {
             steer_by_default: true,
             auto_resume_limited: false,
             last_project: String::new(),
+            favorite_projects: vec![],
             recent_projects: vec![],
         }
     }
@@ -96,8 +99,21 @@ impl WorkspaceSettings {
 
     pub fn forget_project(&mut self, path: &str) {
         self.recent_projects.retain(|p| p != path);
+        self.favorite_projects.retain(|p| p != path);
         if self.last_project == path {
             self.last_project.clear();
+        }
+    }
+
+    pub fn toggle_favorite_project(&mut self, path: &str) {
+        let clean = path.trim();
+        if clean.is_empty() {
+            return;
+        }
+        if self.favorite_projects.iter().any(|p| p == clean) {
+            self.favorite_projects.retain(|p| p != clean);
+        } else {
+            self.favorite_projects.push(clean.into());
         }
     }
 
@@ -131,8 +147,14 @@ mod tests {
         assert_eq!(s.recent_projects.len(), 12);
         assert_eq!(s.recent_projects[0], "/p3");
         assert_eq!(s.last_project, "/p3");
+        s.toggle_favorite_project("/p3");
+        s.toggle_favorite_project("/p5");
+        assert_eq!(s.favorite_projects, vec!["/p3", "/p5"]);
+        s.toggle_favorite_project("/p5");
+        assert_eq!(s.favorite_projects, vec!["/p3"]);
         s.forget_project("/p3");
         assert!(s.last_project.is_empty());
+        assert!(s.favorite_projects.is_empty());
         assert!(!s.recent_projects.contains(&"/p3".to_string()));
         let back: WorkspaceSettings = serde_json::from_str(r#"{"showCost":false,"unknown":1}"#).unwrap();
         assert!(!back.show_cost);

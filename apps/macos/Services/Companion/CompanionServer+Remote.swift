@@ -98,7 +98,11 @@ extension CompanionServer {
     }
 
     private func recentProjects(_ settings: WorkspaceSettings) -> [String] {
-        settings.recentProjects.filter { FileManager.default.fileExists(atPath: $0) }
+        var seen = Set<String>()
+        return (settings.favoriteProjects + settings.recentProjects).filter { path in
+            let normalized = WorkspacePathPolicy.normalize(path)
+            return !normalized.isEmpty && seen.insert(normalized).inserted && FileManager.default.fileExists(atPath: normalized)
+        }
     }
 
     /// Your default for this agent, except "allow everything": a session started from a phone always keeps asking.

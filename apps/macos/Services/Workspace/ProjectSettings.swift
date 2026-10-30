@@ -147,11 +147,59 @@ enum ProjectSettings {
         return to + name.dropFirst(from.count)
     }
 
-    /// The project folders the scope picker offers: the recent ones, then any other folder that still has overrides.
-    static func scopeChoices(recent: [String], overrides: ProjectOverrides, limit: Int = 12) -> [String] {
+    /// Whether `path` is among `favorites` once both are normalized.
+    static func isFavorite(_ path: String, in favorites: [String],
+                           normalize: (String) -> String = ProjectOverrides.normalize) -> Bool {
+        let clean = normalize(path)
+        guard !clean.isEmpty else { return false }
+        return favorites.contains { normalize($0) == clean }
+    }
+
+    /// Adds `path` to `favorites`, or removes it when it is already one, keeping the order of the rest.
+    static func togglingFavorite(_ path: String, in favorites: [String],
+                                 normalize: (String) -> String = ProjectOverrides.normalize) -> [String] {
+        let clean = normalize(path)
+        guard !clean.isEmpty else { return favorites }
+        let normalized = favorites.map(normalize).filter { !$0.isEmpty }
+        if normalized.contains(clean) {
+            return normalized.filter { $0 != clean }
+        }
+        return normalized + [clean]
+    }
+
+    /// The folders the new-session menu offers: your favorites on top (never dropped), then the recent ones that are not
+    /// already favorites, up to `limit` in total (and at least three recent ones when there are more).
+    static func projectMenu(favorites: [String], recent: [String],
+                            exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+                            normalize: (String) -> String = WorkspacePathPolicy.normalize,
+                            limit: Int = 10) -> (favorites: [String], recent: [String]) {
+        var seen: Set<String> = []
+        var starred: [String] = []
+        for path in favorites where !path.isEmpty {
+            let clean = normalize(path)
+            guard !clean.isEmpty, seen.insert(clean).inserted, exists(clean) else { continue }
+            starred.append(clean)
+        }
+        let recentLimit = max(3, limit - starred.count)
+        var recents: [String] = []
+        for path in recent where !path.isEmpty {
+            let clean = normalize(path)
+            guard !clean.isEmpty, seen.insert(clean).inserted, exists(clean) else { continue }
+            recents.append(clean)
+            if recents.count == recentLimit { break }
+        }
+        return (starred, recents)
+    }
+
+    /// The project folders the scope picker offers: the favorite and recent ones, then any other folder that still has overrides.
+    static func scopeChoices(favorites: [String] = [], recent: [String], overrides: ProjectOverrides, limit: Int = 12) -> [String] {
         var seen: Set<String> = []
         var result: [String] = []
-        for path in recent.map(ProjectOverrides.normalize) where !path.isEmpty && result.count < limit && seen.insert(path).inserted {
+        for path in favorites.map(ProjectOverrides.normalize) where !path.isEmpty && seen.insert(path).inserted {
+            result.append(path)
+        }
+        let recentLimit = max(limit, result.count)
+        for path in recent.map(ProjectOverrides.normalize) where !path.isEmpty && result.count < recentLimit && seen.insert(path).inserted {
             result.append(path)
         }
         // A folder with overrides is never dropped, however long ago it was used.
