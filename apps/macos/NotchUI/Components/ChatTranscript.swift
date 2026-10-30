@@ -56,6 +56,16 @@ struct ChatTranscript: View {
     @State private var drawingOlder = false
     /// The day lines and runs of what is drawn, worked out again only when the messages change.
     @State private var timeline = TranscriptTimelineMemo()
+    /// Your fingers or the wheel move the chat (or it still glides from that): nothing else moves it meanwhile.
+    @State private var interacting = false
+    /// When this chat was opened: what comes in the first moments (its newest messages, its pictures) is simply there,
+    /// without the chat sliding past everything to reach it.
+    @State private var openedAt = Date()
+
+    /// The end of the chat, under its last message and whoever is typing: where the chat stays while you are there.
+    private static let bottomID = "\u{1}bottom"
+    /// How long after opening a chat what comes in does not glide in.
+    private static let settling: TimeInterval = 2
 
     /// How many messages a chat lays out when it opens, and how many more each time you reach the top.
     static let page = 60
@@ -115,6 +125,9 @@ struct ChatTranscript: View {
                         loadOlderButton { loadOlder(proxy) }
                     }
                     stack
+                    Color.clear
+                        .frame(height: 0)
+                        .id(Self.bottomID)
                 }
             }
             .scrollIndicators(.never)
@@ -137,6 +150,14 @@ struct ChatTranscript: View {
                                          container: geometry.containerSize.height,
                                          content: geometry.contentSize.height)
             } action: { old, new in
+                // The chat grew while you were at its newest message (pictures appearing, a chat's history or a new
+                // message arriving): it stays at the newest at once, instead of sliding up through the whole chat.
+                if new.content != old.content, old.nearBottom, !interacting, !loadingOlder, !drawingOlder {
+                    var still = Transaction()
+                    still.disablesAnimations = true
+                    withTransaction(still) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+                    return
+                }
                 if new.offset < old.offset - 0.5, new.content == old.content, new.container == old.container {
                     userScrolled()
                 }
@@ -147,6 +168,8 @@ struct ChatTranscript: View {
                 }
             }
             .onScrollPhaseChange { _, phase in
+                let moving = phase == .interacting || phase == .decelerating
+                if moving != interacting { interacting = moving }
                 if phase == .interacting || phase == .decelerating, !scrolledByUser { userScrolled() }
             }
             .onChange(of: bubbles.last?.id) { previous, last in
@@ -154,7 +177,9 @@ struct ChatTranscript: View {
                 // A new message (or one you just sent) glides into view. Another chat, or a chat's history arriving
                 // at once, is not a new message: it is simply there, at its newest, without scrolling past everything.
                 let arrived = previous.map { old in bubbles.suffix(4).contains { $0.id == old } } ?? false
-                if arrived {
+                // Just opened: the newest messages its app sends now are part of opening it, not news to glide to.
+                let settling = !scrolledByUser && Date().timeIntervalSince(openedAt) < Self.settling
+                if arrived, !settling {
                     // Reading back: the chat stays where you are, and the button counts what came in. Your own
                     // message always brings you down to it.
                     guard atBottom || bubbles.last?.fromMe == true else {
@@ -175,6 +200,8 @@ struct ChatTranscript: View {
             }
             // Another chat starts at its newest message again: reaching its top counts only once you scroll there.
             .onChange(of: contact) {
+                openedAt = Date()
+                interacting = false
                 scrolledByUser = false
                 reachedStart = false
                 atBottom = true
