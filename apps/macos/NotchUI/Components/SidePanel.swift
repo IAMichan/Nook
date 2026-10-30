@@ -49,6 +49,18 @@ extension View {
             .transition(.move(edge: leading ? Edge.leading : Edge.trailing).combined(with: .opacity))
     }
 
+    /// Makes this a tab's list on the left: a side panel beside the conversation (`sidePanel`), or the whole width while
+    /// the tab shows one column at a time (`PanelLayout.stacks`).
+    @ViewBuilder
+    func listPanel(stacked: Bool, width: Binding<Double>, defaultWidth: Double, available: Double, rest: Double) -> some View {
+        if stacked {
+            frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            sidePanel(.leading, width: width, defaultWidth: defaultWidth, minimum: PanelLayout.minimumList,
+                      available: available, rest: rest)
+        }
+    }
+
     /// Makes this a panel of fixed `width` on the right of what it sits beside (the docked session panel): the same
     /// line and gap as a resizable one, without the drag.
     func fixedSidePanel(width: CGFloat) -> some View {
@@ -144,6 +156,18 @@ struct SidePanelCloseButton: View {
 
     var body: some View {
         ToolbarIconButton("xmark", help, action)
+    }
+}
+
+/// The first button of a conversation's header while its tab shows one column at a time (`PanelLayout.stacks`): back
+/// to the list, the same chevron on every tab.
+struct PanelBackButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        ToolbarIconButton("chevron.left", tr("a11y.back")) {
+            withAnimation(NookTheme.reveal) { action() }
+        }
     }
 }
 

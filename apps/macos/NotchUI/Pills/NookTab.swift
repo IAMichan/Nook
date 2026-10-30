@@ -41,6 +41,9 @@ struct NookChatView: View {
     @AppStorage("nook.embeddedApp.chatWidth") private var chatWidth = EmbeddedSplit.defaultChatWidth
     @State private var totalWidth: Double = 0
     @State private var dragStartWidth: Double?
+    /// Too narrow for the list and the chat side by side (`PanelLayout.stacks`): the list shows instead of the chat,
+    /// after the back button in the chat's header, until you pick a Nook.
+    @State private var listOnly = false
     /// How wide the list of Nooks is, in the notch and in the main window: drag the line beside it. Remembered.
     @AppStorage("nook.chat.listWidth") private var listWidth = PanelLayout.chatList
     @AppStorage("nook.chat.windowListWidth") private var windowListWidth = PanelLayout.chatListWindow
@@ -51,7 +54,8 @@ struct NookChatView: View {
     var body: some View {
         // The same split as the Agents tab: the list on the left, a thin line, the conversation on the right. With an app
         // open ("@open whatsapp") the app takes the list's place on the right, and the chat narrows beside it.
-        let listShown = (!chat.history.isEmpty || !compact) && !sideOpen
+        let stacked = PanelLayout.stacks(totalWidth)
+        let listShown = (!chat.history.isEmpty || !compact) && !sideOpen && (!stacked || listOnly)
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 0) {
                 if listShown {
@@ -59,27 +63,29 @@ struct NookChatView: View {
                         NookList(chat: chat)
                         footer
                     }
-                    .sidePanel(.leading, width: compact ? $listWidth : $windowListWidth,
+                    .listPanel(stacked: stacked, width: compact ? $listWidth : $windowListWidth,
                                defaultWidth: compact ? PanelLayout.chatList : PanelLayout.chatListWindow,
-                               minimum: PanelLayout.minimumList, available: totalWidth,
-                               rest: PanelLayout.minimumConversation + PanelSplit.handle)
-                    .padding(.trailing, compact ? NookTheme.Spacing.md : NookTheme.Spacing.lg)
+                               available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle)
+                    .padding(.trailing, stacked ? 0 : compact ? NookTheme.Spacing.md : NookTheme.Spacing.lg)
                 }
-                VStack(alignment: .leading, spacing: 0) {
-                    if chat.isEmpty {
-                        emptyState
-                        inputBar
-                            .padding(.top, NookTheme.Spacing.md)
-                    } else {
-                        header
-                            .padding(.bottom, NookTheme.Spacing.xs)
-                        thread
+                if !(stacked && listShown) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if chat.isEmpty {
+                            if stacked && !chat.history.isEmpty { listButton }
+                            emptyState
+                            inputBar
+                                .padding(.top, NookTheme.Spacing.md)
+                        } else {
+                            header
+                                .padding(.bottom, NookTheme.Spacing.xs)
+                            thread
+                        }
                     }
+                    // In the main window the conversation keeps a readable width, centered in the room beside the list.
+                    .frame(maxWidth: compact ? nil : PanelLayout.readableChat)
+                    .frame(maxWidth: compact ? nil : .infinity)
+                    .frame(width: sideOpen ? EmbeddedSplit.chatWidth(chatWidth, total: totalWidth) : nil)
                 }
-                // In the main window the conversation keeps a readable width, centered in the room beside the list.
-                .frame(maxWidth: compact ? nil : PanelLayout.readableChat)
-                .frame(maxWidth: compact ? nil : .infinity)
-                .frame(width: sideOpen ? EmbeddedSplit.chatWidth(chatWidth, total: totalWidth) : nil)
                 if sideOpen {
                     EmbeddedSplitHandle(
                         onDrag: { offset in
@@ -112,6 +118,8 @@ struct NookChatView: View {
         // would hand the panels more room than there is and push everything off both sides.
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+        // Picking a Nook (or starting one) in the list shows it in place of the list.
+        .onChange(of: chat.activeID) { _, _ in listOnly = false }
         .overlay {
             if dropTargeted {
                 RoundedRectangle(cornerRadius: NookTheme.Radius.sheet)
@@ -220,12 +228,18 @@ struct NookChatView: View {
 
     // MARK: Header
 
+    /// Back from the chat to the list of Nooks, while the tab shows one of them at a time.
+    private var listButton: some View {
+        PanelBackButton { listOnly = true }
+    }
+
     /// The conversation's title (double-click to rename it), the status while it works, and the conversation's menu on
     /// the right. The tab and the list already say this is Nook, so the title stands on its own.
     @ViewBuilder
     private var header: some View {
         if let conversation = chat.active {
             HStack(spacing: NookTheme.Spacing.md) {
+                if PanelLayout.stacks(totalWidth) { listButton }
                 if renaming {
                     TextField(tr("ws.title.placeholder"), text: $titleDraft)
                         .textFieldStyle(.plain)
