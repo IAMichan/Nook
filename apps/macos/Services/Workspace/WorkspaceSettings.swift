@@ -207,10 +207,15 @@ final class WorkspaceSettings: ObservableObject {
 
     func setModel(_ model: String, for provider: RunProvider) { defaultModels[provider.rawValue] = model }
 
-    func favoriteModels(for provider: RunProvider) -> [String] { favoriteModels[provider.rawValue] ?? [] }
+    func favoriteModels(for provider: RunProvider) -> [String] { favoriteModels(forKey: provider.rawValue) }
 
-    func toggleFavoriteModel(_ model: String, for provider: RunProvider) {
-        favoriteModels[provider.rawValue] = ModelPreferences.toggling(model, in: favoriteModels(for: provider))
+    func toggleFavoriteModel(_ model: String, for provider: RunProvider) { toggleFavoriteModel(model, forKey: provider.rawValue) }
+
+    /// Favorites of another model picker than an agent's (Nook's own brain: "brain.<place>").
+    func favoriteModels(forKey key: String) -> [String] { favoriteModels[key] ?? [] }
+
+    func toggleFavoriteModel(_ model: String, forKey key: String) {
+        favoriteModels[key] = ModelPreferences.toggling(model, in: favoriteModels(forKey: key))
     }
 
     func customModels(for provider: RunProvider) -> [String] { customModels[provider.rawValue] ?? [] }

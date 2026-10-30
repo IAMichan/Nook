@@ -1,24 +1,29 @@
 import SwiftUI
 
 /// Shows which model Nook thinks with, and whether that is on this Mac or with an external service.
-/// Opens Nook's own dropdown: on the left a rail with "On your Mac" and every external AI that is set up, on the right
-/// its models. Switching to an external AI happens right here; adding one (a key) still happens in Settings › Brain.
+/// Opens the same `ModelPicker` as the agents: on the left a rail with "On your Mac" and every external AI that is set
+/// up, on the right its models. Switching to an external AI happens right here; adding one (a key) still happens in
+/// Settings › Brain.
 struct BrainChip: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var settings = AppSettings.shared
     @State private var servers: [ServerModel] = []
 
-    /// The maker's mark for the model in use: from the model's own name first ("claude-haiku", "Qwen 3"), else its provider.
-    private var logo: BrandLogo? {
-        if settings.useLocal {
-            return BrandLogo.forName(settings.brainLabel)
-        }
+    /// The maker's mark for a local model: from the model's own name ("Qwen 3"), else its server.
+    private var localLogo: BrandLogo? {
+        if settings.useLocal { return BrandLogo.forName(settings.brainLabel) }
         return BrandLogo.forName(settings.activeProviderModel) ?? BrandLogo.forProvider(settings.provider)
     }
 
     var body: some View {
         ModelPickerDropdown {
-            ComposerPill(symbol: logo == nil ? (settings.isLocalBrain ? "cpu" : "cloud") : nil, brand: logo, text: settings.brainLabel)
+            if settings.isLocalBrain {
+                ComposerPill(symbol: localLogo == nil ? "cpu" : nil, brand: localLogo, text: settings.brainLabel)
+            } else {
+                ComposerPill(agent: BrainPicker.shortTitle(settings.provider),
+                             account: BrainPicker.account(of: settings.provider, app: app), text: settings.brainLabel,
+                             short: settings.activeProviderModel.isEmpty ? nil : settings.activeProviderModel)
+            }
         } content: {
             BrainPicker(servers: servers)
         }
@@ -27,22 +32,19 @@ struct BrainChip: View {
     }
 }
 
-/// A place a brain can live: this Mac, or one external service.
-private enum BrainPlace: Hashable {
-    case mac
-    case external(AIProvider)
-}
-
 /// The panel behind the brain chip.
 private struct BrainPicker: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var local = EmbeddedModel.shared
+    /// Favorites live with the agents' (`WorkspaceSettings`): a star redraws the menu at once.
+    @ObservedObject private var ws = WorkspaceSettings.shared
     let servers: [ServerModel]
-    @State private var query = ""
     @State private var fetched: [AIProvider: [String]] = [:]
     @State private var fetching = false
     @State private var fetchError: String?
+
+    private static let macID = "mac"
 
     /// External services that can answer right now: a key is saved, or the coding agent of a subscription is installed.
     private var externals: [AIProvider] {
@@ -53,121 +55,87 @@ private struct BrainPicker: View {
         }
     }
 
-    private var active: BrainPlace { settings.isLocalBrain ? .mac : .external(settings.provider) }
-
-    var body: some View {
-        ModelPickerPanel(groups: [[BrainPlace.mac], externals.map(BrainPlace.external)], chosen: active,
-                         help: Self.title(of:), addHelp: tr("brain.chip.addExternal"),
-                         add: { app.openSettings(section: .brain) },
-                         onShow: { _ in
-                             query = ""
-                             fetchError = nil
-                         },
-                         icon: placeIcon) { place in
-            switch place {
-            case .mac: macModels
-            case .external(let provider): externalModels(provider)
-            }
-        }
+    private var macPlace: ModelPickerPlace {
+        ModelPickerPlace(id: Self.macID, name: tr("brain.chip.installed"), detail: tr("brain.chip.localDetail"), isLocal: true)
     }
 
-    // MARK: Rail
+    private func place(_ provider: AIProvider) -> ModelPickerPlace {
+        ModelPickerPlace(id: provider.rawValue, name: Self.shortTitle(provider), account: Self.account(of: provider, app: app))
+    }
 
-    @ViewBuilder
-    private func placeIcon(_ place: BrainPlace) -> some View {
-        switch place {
-        case .mac:
-            Image(systemName: "laptopcomputer")
-                .font(NookTheme.font(13, .medium))
-                .foregroundStyle(NookTheme.paper)
-        case .external(let provider):
-            BrandMark(logo: BrandLogo.forProvider(provider), size: 17)
-                .accountBadge(account(of: provider), size: 17, ring: DropdownStyle.panel)
+    var body: some View {
+        ModelPicker(places: [macPlace] + externals.map(place), chosen: settings.isLocalBrain ? macPlace : place(settings.provider),
+                    addHelp: tr("brain.chip.addExternal"), settingsTitle: tr("brain.chip.settings"),
+                    openSettings: { app.openSettings(section: .brain) }) { shown, query in
+            if let provider = AIProvider(rawValue: shown.id) { return externalModels(provider, query: query) }
+            return macModels(query: query)
         }
     }
 
     /// How a service is reached: through your account (personal or work) for a subscription, else an API key.
     /// Tells apart the two marks of one maker in the rail (Claude Code and the Claude API, ChatGPT and the OpenAI API…).
-    private func account(of provider: AIProvider) -> AccountKind {
+    static func account(of provider: AIProvider, app: AppModel) -> AccountKind {
         guard let kind = provider.subscriptionAgent else { return .apiKey }
         return AccountKind.of(app.profiles.preferredProfile(kind), app: app)
     }
 
-    private static func title(of place: BrainPlace) -> String {
-        switch place {
-        case .mac: return tr("brain.chip.installed")
-        case .external(let provider): return shortTitle(provider)
-        }
-    }
-
     // MARK: On this Mac
 
-    private var macModels: some View {
-        let apple = AppleIntelligence.isAvailable && matches(AppleModel.title)
-        let installed = ModelAdvisor.catalog.filter { local.installed.contains($0.id) && matches($0.title) }
-        let shownServers = servers.filter { matches($0.name) }
-        return ModelPickerColumn(title: tr("brain.chip.installed"), detail: tr("brain.chip.localDetail"), query: $query,
-                                 emptyNote: emptyMacNote(shown: apple || !installed.isEmpty || !shownServers.isEmpty),
-                                 settingsTitle: tr("brain.chip.settings"),
-                                 openSettings: { app.openSettings(section: .brain) }) {
-            if apple {
-                DropdownRow(brand: BrandLogo.forName("Apple"), title: AppleModel.title,
-                            chosen: settings.useLocal && settings.localModel == AppleModel.id) {
-                    settings.selection = BrainSelection(runtime: .mlx, provider: settings.provider, model: AppleModel.id)
-                }
-            }
-            ForEach(installed) { option in
-                DropdownRow(brand: BrandLogo.forName(option.title) ?? BrandLogo.forName(option.id),
-                            title: option.title, chosen: settings.useLocal && settings.localModel == option.id) {
-                    settings.selection = BrainSelection(runtime: .mlx, provider: settings.provider, model: option.id)
-                }
-            }
-            ForEach(shownServers, id: \.name) { model in
-                let provider: AIProvider = model.server == .ollama ? .ollama : .lmstudio
-                DropdownRow(brand: BrandLogo.forName(model.name) ?? BrandLogo.forProvider(provider), title: model.name,
-                            trailing: Self.shortTitle(provider),
-                            chosen: !settings.useLocal && settings.provider == provider && settings.activeProviderModel == model.name) {
-                    settings.selection = BrainSelection(runtime: model.server == .ollama ? .ollama : .lmstudio,
-                                                        provider: provider, model: model.name)
-                }
-            }
+    private func macModels(query: String) -> ModelPickerList {
+        var models: [ModelPickerItem] = []
+        if AppleIntelligence.isAvailable, ModelSearch.matches(query, AppleModel.title) {
+            models.append(item(AppleModel.id, title: AppleModel.title, brand: BrandLogo.forName("Apple"), place: Self.macID,
+                               chosen: settings.useLocal && settings.localModel == AppleModel.id) {
+                settings.selection = BrainSelection(runtime: .mlx, provider: settings.provider, model: AppleModel.id)
+            })
         }
-    }
-
-    /// Nothing on this Mac at all, or nothing that matches the search.
-    private func emptyMacNote(shown: Bool) -> String? {
-        guard !shown else { return nil }
+        for option in ModelAdvisor.catalog where local.installed.contains(option.id) && ModelSearch.matches(query, option.title) {
+            models.append(item(option.id, title: option.title, brand: BrandLogo.forName(option.title) ?? BrandLogo.forName(option.id),
+                               place: Self.macID, chosen: settings.useLocal && settings.localModel == option.id) {
+                settings.selection = BrainSelection(runtime: .mlx, provider: settings.provider, model: option.id)
+            })
+        }
+        for model in servers where ModelSearch.matches(query, model.name) {
+            let provider: AIProvider = model.server == .ollama ? .ollama : .lmstudio
+            models.append(item(model.name, title: model.name, brand: BrandLogo.forName(model.name) ?? BrandLogo.forProvider(provider),
+                               trailing: Self.shortTitle(provider), place: Self.macID,
+                               chosen: !settings.useLocal && settings.provider == provider && settings.activeProviderModel == model.name) {
+                settings.selection = BrainSelection(runtime: model.server == .ollama ? .ollama : .lmstudio,
+                                                    provider: provider, model: model.name)
+            })
+        }
         let nothingInstalled = !AppleIntelligence.isAvailable && servers.isEmpty
             && !ModelAdvisor.catalog.contains { local.installed.contains($0.id) }
-        return nothingInstalled ? tr("brain.chip.noLocal") : tr("compose.noModels")
-    }
-
-    private func matches(_ name: String) -> Bool {
-        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
-        return needle.isEmpty || name.lowercased().contains(needle)
+        return ModelPickerList(models: favoritesFirst(models, place: Self.macID),
+                               emptyNote: nothingInstalled ? tr("brain.chip.noLocal") : nil)
     }
 
     // MARK: External
 
-    private func externalModels(_ provider: AIProvider) -> some View {
-        let shownModels = models(for: provider).filter(matches)
-        return ModelPickerColumn(title: Self.shortTitle(provider), detail: tr("brain.chip.externalDetail", Self.shortTitle(provider)),
-                                 query: $query, emptyNote: shownModels.isEmpty ? tr("compose.noModels") : nil,
-                                 settingsTitle: tr("brain.chip.settings"),
-                                 openSettings: { app.openSettings(section: .brain) }) {
-            ForEach(shownModels, id: \.self) { id in
-                DropdownRow(brand: BrandLogo.forName(id) ?? BrandLogo.forProvider(provider), title: id,
-                            chosen: !settings.isLocalBrain && settings.provider == provider && settings.activeProviderModel == id) {
-                    settings.selection = BrainSelection(runtime: .external, provider: provider, model: id)
-                }
-            }
-            if !provider.isSubscription && fetched[provider] == nil {
-                DropdownRow(symbol: fetching ? "hourglass" : "arrow.clockwise", title: tr("button.fetchModels"),
-                            detail: fetchError, staysOpen: true) {
-                    Task { await fetchModels(provider) }
-                }
+    private func externalModels(_ provider: AIProvider, query: String) -> ModelPickerList {
+        let list = models(for: provider)
+        let models = list.filter { ModelSearch.matches(query, $0) }.map { id in
+            item(id, title: id, brand: BrandLogo.forName(id) ?? BrandLogo.forProvider(provider), place: provider.rawValue,
+                 chosen: !settings.isLocalBrain && settings.provider == provider && settings.activeProviderModel == id) {
+                settings.selection = BrainSelection(runtime: .external, provider: provider, model: id)
             }
         }
+        var actions: [ModelPickerItem] = []
+        // The search text as a model id of your own, when no listed model goes by that name.
+        if let custom = ModelPreferences.customID(query), !list.contains(where: { $0.caseInsensitiveCompare(custom) == .orderedSame }) {
+            actions.append(ModelPickerItem(id: "custom:" + custom, title: tr("compose.useModel", custom), symbol: "plus",
+                                           detail: tr("compose.useModelDetail")) {
+                settings.selection = BrainSelection(runtime: .external, provider: provider, model: custom)
+            })
+        }
+        if !provider.isSubscription && fetched[provider] == nil {
+            actions.append(ModelPickerItem(id: "fetch", title: tr("button.fetchModels"),
+                                           symbol: fetching ? "hourglass" : "arrow.clockwise", detail: fetchError,
+                                           staysOpen: true) {
+                Task { await fetchModels(provider) }
+            })
+        }
+        return ModelPickerList(models: favoritesFirst(models, place: provider.rawValue), actions: actions)
     }
 
     /// The models to offer for a service: the one it uses now, then the fetched list or the well-known ones.
@@ -191,6 +159,25 @@ private struct BrainPicker: View {
             fetchError = error.localizedDescription
         }
     }
+
+    // MARK: Rows
+
+    /// A model row, with the star the agents' rows have.
+    private func item(_ id: String, title: String, brand: BrandLogo?, trailing: String? = nil, place: String, chosen: Bool,
+                      pick: @escaping () -> Void) -> ModelPickerItem {
+        let key = Self.favoritesKey(place)
+        let favorite = Binding(get: { ws.favoriteModels(forKey: key).contains(id) },
+                               set: { if $0 != ws.favoriteModels(forKey: key).contains(id) { ws.toggleFavoriteModel(id, forKey: key) } })
+        return ModelPickerItem(id: id, title: title, brand: brand, trailing: trailing, chosen: chosen, favorite: favorite, pick: pick)
+    }
+
+    /// Favorites on top, as in the agents' lists; otherwise the order stays.
+    private func favoritesFirst(_ items: [ModelPickerItem], place: String) -> [ModelPickerItem] {
+        let favorites = ws.favoriteModels(forKey: Self.favoritesKey(place))
+        return items.filter { favorites.contains($0.id) } + items.filter { !favorites.contains($0.id) }
+    }
+
+    private static func favoritesKey(_ place: String) -> String { "brain.\(place)" }
 
     /// "Claude Code" instead of "Claude Code (je abonnement)", "Ollama" instead of "Ollama (op je Mac)".
     static func shortTitle(_ provider: AIProvider) -> String {
