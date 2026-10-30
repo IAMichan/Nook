@@ -73,68 +73,80 @@ enum MailChatData {
     /// One account's newest inbox mail and its newest sent mail, in bulk (one Apple Event per property per mailbox, as
     /// `MailStats.recentScript` does). Lines: "IN|||mailbox|||id|||subject|||sender|||date|||read", and
     /// "OUT|||mailbox|||id|||subject|||recipient|||date" with the first recipient as "Name <address>".
+    /// No handlers: `SystemControl` runs every script inside a `with timeout` block, where a handler cannot be defined.
     static func readScript(account: String, inbox: Int = perInbox, sent: Int = perSent) -> String {
         let names = sentNames.map(MailStats.quote).joined(separator: ", ")
         return """
         tell application "Mail"
             set acc to account \(MailStats.quote(account))
             set out to ""
-            repeat with box in (mailboxes of acc whose name is "INBOX" or name is "Inbox")
-                set out to out & my listRows(box, \(inbox), "IN")
-            end repeat
             set sentNames to {\(names)}
+            set boxes to {}
+            set kinds to {}
+            repeat with box in (mailboxes of acc whose name is "INBOX" or name is "Inbox")
+                set end of boxes to contents of box
+                set end of kinds to "IN"
+            end repeat
             repeat with box in mailboxes of acc
                 try
-                    if sentNames contains (name of box) then set out to out & my listRows(box, \(sent), "OUT")
+                    if sentNames contains (name of box) then
+                        set end of boxes to contents of box
+                        set end of kinds to "OUT"
+                    end if
+                end try
+            end repeat
+            repeat with n from 1 to (count of boxes)
+                set box to item n of boxes
+                set boxKind to item n of kinds
+                if boxKind is "IN" then
+                    set wanted to \(inbox)
+                else
+                    set wanted to \(sent)
+                end if
+                try
+                    set total to count of messages of box
+                    if total > 0 then
+                        set lo to 1
+                        set hi to total
+                        if total > wanted then
+                            set hi to wanted
+                            -- Mail usually lists the newest first; if not, take the other end.
+                            if (date received of message 1 of box) < (date received of message total of box) then
+                                set lo to total - (wanted - 1)
+                                set hi to total
+                            end if
+                        end if
+                        set boxName to name of box
+                        set ids to id of messages lo thru hi of box
+                        set subs to subject of messages lo thru hi of box
+                        set dts to date received of messages lo thru hi of box
+                        if boxKind is "IN" then
+                            set snds to sender of messages lo thru hi of box
+                            set rds to read status of messages lo thru hi of box
+                        end if
+                        repeat with i from 1 to (count of ids)
+                            try
+                                set stamp to ((item i of dts) as «class isot» as string)
+                                if boxKind is "IN" then
+                                    set out to out & "IN|||" & boxName & "|||" & (item i of ids) & "|||" & (item i of subs) & "|||" & (item i of snds) & "|||" & stamp & "|||" & (item i of rds) & linefeed
+                                else
+                                    set who to ""
+                                    try
+                                        set r to first to recipient of message (lo + i - 1) of box
+                                        set who to (address of r)
+                                        try
+                                            set who to (name of r) & " <" & (address of r) & ">"
+                                        end try
+                                    end try
+                                    if who is not "" then set out to out & "OUT|||" & boxName & "|||" & (item i of ids) & "|||" & (item i of subs) & "|||" & who & "|||" & stamp & linefeed
+                                end if
+                            end try
+                        end repeat
+                    end if
                 end try
             end repeat
             return out
         end tell
-
-        on listRows(box, wanted, which)
-            tell application "Mail"
-                set out to ""
-                set total to count of messages of box
-                if total is 0 then return ""
-                set lo to 1
-                set hi to total
-                if total > wanted then
-                    set hi to wanted
-                    -- Mail usually lists the newest first; if not, take the other end.
-                    if (date received of message 1 of box) < (date received of message total of box) then
-                        set lo to total - (wanted - 1)
-                        set hi to total
-                    end if
-                end if
-                set boxName to name of box
-                set ids to id of messages lo thru hi of box
-                set subs to subject of messages lo thru hi of box
-                set dts to date received of messages lo thru hi of box
-                if which is "IN" then
-                    set snds to sender of messages lo thru hi of box
-                    set rds to read status of messages lo thru hi of box
-                end if
-                repeat with i from 1 to (count of ids)
-                    try
-                        set stamp to ((item i of dts) as «class isot» as string)
-                        if which is "IN" then
-                            set out to out & "IN|||" & boxName & "|||" & (item i of ids) & "|||" & (item i of subs) & "|||" & (item i of snds) & "|||" & stamp & "|||" & (item i of rds) & linefeed
-                        else
-                            set who to ""
-                            try
-                                set r to first to recipient of message (lo + i - 1) of box
-                                set who to (address of r)
-                                try
-                                    set who to (name of r) & " <" & (address of r) & ">"
-                                end try
-                            end try
-                            if who is not "" then set out to out & "OUT|||" & boxName & "|||" & (item i of ids) & "|||" & (item i of subs) & "|||" & who & "|||" & stamp & linefeed
-                        end if
-                    end try
-                end repeat
-                return out
-            end tell
-        end listRows
         """
     }
 
