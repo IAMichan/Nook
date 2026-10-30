@@ -251,6 +251,8 @@ private struct NookRow: View, Equatable {
     let onArchive: () -> Void
     let action: () -> Void
     @State private var hovering = false
+    /// The pointer is on the hover buttons.
+    @State private var onActions = false
 
     /// What the row shows of its conversation; the actions do the same for the same one. A message's `revision` goes up
     /// with each change to it, the streamed words of the answer too.
@@ -275,9 +277,11 @@ private struct NookRow: View, Equatable {
                 .padding(.trailing, NookTheme.Spacing.md)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
+                .onHover { onActions = $0 }
         }
         .onHover { hovering = $0 }
-        .hoverCard { NookHoverCard(conversation: conversation) }
+        // Closed over the buttons, so their first click is not spent closing the card.
+        .hoverCard(suppressed: onActions) { NookHoverCard(conversation: conversation) }
         .animation(NookTheme.hover, value: hovering)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(conversation.title), \(statusText)")
