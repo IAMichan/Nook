@@ -38,8 +38,56 @@ final class FolderGitModel: ObservableObject {
     private var refs: Refs?
     private static let refsMaxAge: TimeInterval = 60
 
+    /// What the last model of a folder read, so a session you switch back to shows its branch, changes and panel at
+    /// once (and takes the same height) while the refresh brings it up to date, instead of filling in row by row.
+    private struct Snapshot: Sendable {
+        var root: String?
+        var status: GitStatus?
+        var branches: [String]
+        var remotes: [String]
+        var base: String?
+        var changes: [GitFileChange]
+        var comparedTo: String?
+        var refs: Refs?
+    }
+    private static let snapshots = SnapshotStore()
+
+    /// Locked rather than main-actor bound: a view creates its model in its (nonisolated) initializer.
+    private final class SnapshotStore: @unchecked Sendable {
+        private let lock = NSLock()
+        private var byDirectory: [String: Snapshot] = [:]
+        private var order: [String] = []
+        private let limit = 24
+
+        func get(_ directory: String) -> Snapshot? {
+            lock.lock(); defer { lock.unlock() }
+            return byDirectory[directory]
+        }
+
+        func set(_ snapshot: Snapshot, for directory: String) {
+            lock.lock(); defer { lock.unlock() }
+            byDirectory[directory] = snapshot
+            order.removeAll { $0 == directory }
+            order.append(directory)
+            while order.count > limit { byDirectory[order.removeFirst()] = nil }
+        }
+    }
+
+    /// The refresh under way: the session panel and the branch button ask together as a session opens, and share it.
+    private var refreshing: Task<Void, Never>?
+
     nonisolated init(directory: String) {
         self.directory = directory
+        if let known = Self.snapshots.get(directory) {
+            _root = Published(initialValue: known.root)
+            _status = Published(initialValue: known.status)
+            _branches = Published(initialValue: known.branches)
+            _remotes = Published(initialValue: known.remotes)
+            _base = Published(initialValue: known.base)
+            _changes = Published(initialValue: known.changes)
+            comparedTo = known.comparedTo
+            refs = known.refs
+        }
     }
 
     var isRepository: Bool { root != nil && status != nil }
@@ -49,6 +97,14 @@ final class FolderGitModel: ObservableObject {
     var removed: Int { changes.compactMap(\.removed).reduce(0, +) }
 
     func refresh() async {
+        if let refreshing { return await refreshing.value }
+        let task = Task { await read() }
+        refreshing = task
+        await task.value
+        refreshing = nil
+    }
+
+    private func read() async {
         if git == nil { git = await Task.detached(priority: .utility) { GitService.shared }.value }
         guard let git, !directory.isEmpty, FileManager.default.fileExists(atPath: directory) else {
             root = nil
@@ -89,6 +145,8 @@ final class FolderGitModel: ObservableObject {
         if base != result.base { base = result.base }
         if changes != result.changes { changes = result.changes }
         comparedTo = result.comparedTo
+        Self.snapshots.set(Snapshot(root: root, status: status, branches: branches, remotes: remotes, base: base,
+                                    changes: changes, comparedTo: comparedTo, refs: refs), for: directory)
     }
 
     func checkout(_ branch: String) {

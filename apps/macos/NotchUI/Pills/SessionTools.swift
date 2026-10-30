@@ -196,6 +196,13 @@ extension EnvironmentValues {
     @Entry var sessionPullRequest: URL?
 }
 
+/// The size the last session workbench measured (`SessionWorkbench` is generic, so it cannot hold it itself).
+@MainActor
+private enum SessionWorkbenchSize {
+    static var width: Double = 0
+    static var height: Double = 0
+}
+
 /// Where a tool panel sits next to the conversation: what it shows and which tabs it has open in the view model.
 private struct SessionPanelSlot {
     let tool: ReferenceWritableKeyPath<NotchViewModel, SessionTool>
@@ -228,8 +235,10 @@ struct SessionWorkbench<Conversation: View>: View {
     @AppStorage("nook.agents.toolWidth") private var toolWidth = PanelLayout.tool
     @AppStorage("nook.agents.outputsWidth") private var outputsWidth = PanelLayout.outputs
     @AppStorage("nook.agents.bottomHeight") private var bottomHeight = BottomPanelLayout.standard
-    @State private var totalWidth: Double = 0
-    @State private var totalHeight: Double = 0
+    /// Starts at the size the last session measured: each session gets its own workbench, and starting from zero docked
+    /// the session panel only after the first layout, sliding it in on every switch.
+    @State private var totalWidth: Double = SessionWorkbenchSize.width
+    @State private var totalHeight: Double = SessionWorkbenchSize.height
     @State private var dragStart: Double?
     /// What the conversation found the agent produced (`SessionOutputsReport`), and the output the outputs tab shows.
     @State private var outputs = SessionOutputsReport()
@@ -307,7 +316,10 @@ struct SessionWorkbench<Conversation: View>: View {
                 }
             }
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { totalHeight = $0 }
+            .onGeometryChange(for: Double.self) { Double($0.size.height) } action: {
+                totalHeight = $0
+                SessionWorkbenchSize.height = $0
+            }
             // Under the covering panel the conversation keeps its place (and what you typed) but takes no clicks.
             .allowsHitTesting(!covering)
             .accessibilityHidden(covering)
@@ -357,7 +369,14 @@ struct SessionWorkbench<Conversation: View>: View {
                     .transition(.opacity)
             }
         }
-        .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+        .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { width in
+            SessionWorkbenchSize.width = width
+            // The first measurement of a session that just opened lays it out as it is: the panels are there at once,
+            // they do not slide in.
+            var transaction = Transaction()
+            transaction.disablesAnimations = totalWidth == 0
+            withTransaction(transaction) { totalWidth = width }
+        }
         // The branch button in the conversation's header and the docked session panel both read it.
         .environment(\.sessionPullRequest, outputs.pullRequest)
         .animation(NookTheme.reveal, value: side == .conversation)
