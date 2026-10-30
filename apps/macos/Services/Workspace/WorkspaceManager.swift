@@ -273,6 +273,7 @@ final class WorkspaceManager: ObservableObject {
     var checkpointIndices: [UUID: Int] = [:]
     /// When the worktree cleanup rules last looked (see WorkspaceManager+WorktreeCleanup).
     var worktreeCleanupAt: Date?
+    var buildLeftoversAt: Date?
     /// Writes an entry to the audit log (tool, arguments, result); configured by AppModel.
     var onAudit: ((String, String, String) -> Void)?
     var sessionApprovals: [UUID: SessionApprovals] = [:]
@@ -330,6 +331,7 @@ final class WorkspaceManager: ObservableObject {
                 guard let self else { return }
                 self.checkPullRequestWatches()
                 self.applyWorktreeCleanup()
+                self.sweepBuildLeftovers()
             }
         }
         Task.detached(priority: .utility) {

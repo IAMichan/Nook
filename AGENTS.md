@@ -73,7 +73,7 @@ After touching anything under `apps/macos`, run the performance check too, and w
 
 How the CI workflows are organized, and how they avoid spending runner minutes on work that cannot tell us anything new, is described in [`docs/CI.md`](docs/CI.md).
 
-To build and test the full macOS app with Xcode, use the wrapper (it runs `xcodegen` when the project is missing):
+To build and test the full macOS app with Xcode, use the wrapper (it runs `xcodegen` first):
 
 ```sh
 ./scripts/xcode.sh build

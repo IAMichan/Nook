@@ -681,6 +681,8 @@ struct WorkspaceSettingsSection: View {
                 Text(tr("settings.ws.days", 7)).tag(7)
                 Text(tr("settings.ws.days", 30)).tag(30)
             }
+            Toggle(tr("settings.ws.buildLeftovers"), isOn: $ws.buildLeftoverCleanup)
+                .help(tr("settings.ws.buildLeftovers.help"))
         } header: {
             SettingsSectionTitle(tr("ws.section.tidy"), info: tr("settings.ws.worktreeCleanup.footer"))
         }

@@ -401,6 +401,7 @@ targets:
       - path: Services/Workspace/TerminalLinks.swift
       - path: Services/Workspace/WorktreeCleanup.swift
       - path: Services/Workspace/DiskUsage.swift
+      - path: Services/Workspace/BuildLeftovers.swift
       - path: Services/Workspace/ComposerLists.swift
       - path: Services/Workspace/CommitStyle.swift
       - path: Services/Workspace/RemoteHostDiscovery.swift

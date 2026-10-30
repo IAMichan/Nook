@@ -72,6 +72,10 @@ final class WorkspaceSettings: ObservableObject {
     @Published var worktreeCleanupDays: Int {
         didSet { defaults.set(worktreeCleanupDays, forKey: "ws.worktreeCleanupDays") }
     }
+    /// Remove builds agents left in temporary folders and DerivedData of removed worktrees (`BuildLeftovers`).
+    @Published var buildLeftoverCleanup: Bool {
+        didSet { defaults.set(buildLeftoverCleanup, forKey: "ws.buildLeftoverCleanup") }
+    }
     var worktreeCleanupRules: WorktreeCleanup.Rules {
         WorktreeCleanup.Rules(onMergedPullRequest: worktreeCleanupOnMerge, daysAfterSettled: worktreeCleanupDays)
     }
@@ -161,6 +165,7 @@ final class WorkspaceSettings: ObservableObject {
         worktreeCleanupOnMerge = defaults.object(forKey: "ws.worktreeCleanupOnMerge") as? Bool ?? true
         // A week after a session settled (finished or archived, and quiet) its worktree goes too, under the same rules.
         worktreeCleanupDays = defaults.object(forKey: "ws.worktreeCleanupDays") as? Int ?? 7
+        buildLeftoverCleanup = defaults.object(forKey: "ws.buildLeftoverCleanup") as? Bool ?? true
         showCost = defaults.object(forKey: "ws.showCost") as? Bool ?? true
         agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true
         codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true
