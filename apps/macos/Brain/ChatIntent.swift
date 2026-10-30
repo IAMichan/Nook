@@ -39,9 +39,20 @@ struct ChatIntent: Equatable {
             if kind == .event, moves { return "update_event" }
             // "Wat weet je over mij?" asks, it does not store anything.
             if kind == .memory { if forgets { return "forget" }; if recalls { continue } }
+            // A message in another chat app than WhatsApp goes through the shared chat tool.
+            if kind == .chatWrite, otherChatApp, !namesWhatsApp { return "chat_send" }
             if let action = Self.actionByKind[kind] { return action }
         }
         return nil
+    }
+
+    /// The action to propose among the tools offered (`names`): `primaryAction`, or the shared chat_send when a chat
+    /// message is asked for while WhatsApp's own tool is not there (no phone linked, but another chat app can be written
+    /// in). Nil when the tool for it is not offered.
+    func action(among names: [String]) -> String? {
+        guard let action = primaryAction else { return nil }
+        if names.contains(action) { return action }
+        return action == "whatsapp_send" && !namesWhatsApp && names.contains("chat_send") ? "chat_send" : nil
     }
 
     /// "Move my meeting", "verplaats de afspraak": an existing event changes.
@@ -57,6 +68,13 @@ struct ChatIntent: Equatable {
     /// "Schrijf een antwoord aan Arjan op WhatsApp dat ik kan versturen", "geef een voorbeeld": the user wants the text of
     /// the chat message itself. Nook still proposes sending it, but the text is the answer even when no action comes.
     private(set) var wantsDraft = false
+    /// "Stuur Anna een bericht op Telegram": the chat message is for a chat app other than WhatsApp (`chat_send`).
+    private(set) var otherChatApp = false
+    /// The request names WhatsApp itself ("app Lisa", "via WhatsApp", "in de appgroep"): only WhatsApp's tool sends it.
+    private(set) var namesWhatsApp = false
+
+    /// Chat apps besides WhatsApp a message can be sent in, as people name them.
+    private static let otherChatApps = "telegram|slack|teams|signal|instagram|insta|messenger|imessage|berichten-?app|messages|discord|linkedin|snapchat"
 
     // MARK: Recognition
 
@@ -80,6 +98,11 @@ struct ChatIntent: Equatable {
         func has(_ pattern: String) -> Bool { text.range(of: pattern, options: .regularExpression) != nil }
 
         var kinds: [Kind] = []
+        // "Stuur Anna een bericht op Telegram", "reply to Tom in Slack": a message in another chat app, sent with chat_send.
+        let namesOtherApp = !has(#"e-?mail|\bmail"#)
+            && has(#"(stuur|verstuur|beantwoord|antwoord|schrijf|zeg|vraag|send|reply|write|tell|ask|message|schick|sende|schreib|sag|frag)\b[^.?!]{0,60}\b(via|op|on|through|in|über|bei|auf)\s+(\#(Self.otherChatApps))\b"#)
+        intent.otherChatApp = namesOtherApp
+        intent.namesWhatsApp = has(#"whats-?app|\bappje|app-?bericht|app-?groep|groeps-?app|^app\b|\bapp (hem|haar|ze|him|her|them|ihm|ihr)\b"#)
         // "App Lisa dat ik later ben", "stuur via WhatsApp…", "WhatsApp Jan": a chat message, not a mail.
         let writesChat = has(#"^(app|whatsapp)\s+\p{L}+(\s+\p{L}+)?\s*(:|\b(dat|om|of|that|to|if|dass|ob)\b)"#)
             || has(#"(stuur|verstuur|beantwoord|antwoord|schrijf|send|reply|write|schick|sende|schreib)\b[^.?!]{0,60}\b(whats-?app|appje|app-?bericht)"#)
@@ -87,6 +110,7 @@ struct ChatIntent: Equatable {
             || has(#"\b(app|whatsapp) (hem|haar|ze|him|her|them|ihm|ihr)\b"#)
             // "Verstuur een bericht naar de Doorsturen groep": a message to a group is a chat message, unless it says mail.
             || !has(#"e-?mail|\bmail"#) && has(#"(stuur|verstuur|schrijf|send|write|schick|sende|schreib)\b[^.?!]{0,60}\b(groep|group|gruppe|app-?groep|groepsapp|groeps-?chat|group ?chat|gruppenchat)\b"#)
+            || namesOtherApp
         let writesMail = !writesChat && (has(#"(schrijf|stuur|verstuur|beantwoord|antwoord|maak|write|send|draft|reply|answer|schreib|sende|beantworte)\b[^.?!]{0,40}\b(e-?mail|mail|mailtje|bericht)"#)
             || has(#"\b(e-?mail|mail)(tje)? (naar|aan|to|an)\b"#) || has(#"^(mail|e-?mail) \p{L}+"#) || has(#"\b(reply to|antwoord op|reageer op)\b"#))
         // Remembering something lasting is memory; "onthoud dat ik morgen moet bellen" is a task and stays a reminder.
@@ -202,6 +226,13 @@ struct ChatIntent: Equatable {
         }
         guard let carried else { return intent }
         intent.kinds = [carried] + intent.kinds.filter { $0 != carried && !(carried == .chatWrite && $0 == .chats) }
+        // The chat app the conversation named last, so "Verzend" sends where the message was meant to go.
+        if carried == .chatWrite, let named = recent.lazy.map({ detect($0.text) }).first(where: { earlier in
+            earlier.otherChatApp || earlier.namesWhatsApp || earlier.kinds.contains(.chatWrite) || earlier.kinds.contains(.chats)
+        }) {
+            intent.otherChatApp = intent.otherChatApp || named.otherChatApp
+            intent.namesWhatsApp = intent.namesWhatsApp || named.namesWhatsApp
+        }
         intent.wantsAction = true
         intent.isSmallTalk = false
         return intent
@@ -358,7 +389,7 @@ struct ChatIntent: Equatable {
         .clipboard: ["read_clipboard"],
         .memory: ["remember", "forget", "recall_memory"],
         .web: ["get_weather", "search_web", "read_webpage"],
-        .chatWrite: ["whatsapp_send", "whatsapp_live", "send_to_source", "search_contacts"],
+        .chatWrite: ["whatsapp_send", "chat_send", "whatsapp_live", "chat_inbox", "send_to_source", "search_contacts"],
         .chats: ["whatsapp_live", "chat_inbox", "search_whatsapp", "read_whatsapp", "whatsapp_open_chats", "search_messages", "read_messages", "messages_open_chats", "read_app"]
     ]
 

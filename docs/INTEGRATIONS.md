@@ -80,6 +80,7 @@ needs a column in that matrix.
 | "@chat Name" brings up the chat's card | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Vote on a poll (`ChatAbilities.vote`) | – (GOWA has no vote call yet) | ✓ | – (Messages has no polls another app can answer) | ✓ (`setPollAnswer`) | – (the helper has no vote call) | – (no polls) | – (no polls) | – (no polls) |
 | An action the app refused says why (under the field or as a toast), never a silent success | ✓ | ✓ | ✓ | ✓ (every request is tagged, `act`) | ✓ | ✓ | ✓ | ✓ |
+| Nook answers in the chat when you ask it to (`chat_send`, through `chatRoute` and `runInChat`; you approve the text first) | ✓ (also `whatsapp_send`) | ✓ (also `whatsapp_send`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | A lost sign-in is told apart from a passing failure (reading waits, Settings asks to sign in again) | ✓ (the gateway's status) | ✓ (the gateway's status) | – (no sign-in; Full Disk Access) | ✓ (TDLib's state) | ✓ (the helper's status) | ✓ (`SlackData.signedOut`) | ✓ (`TeamsData.signInGone`, a passing refusal keeps the sign-in) | ✓ |
 
 ### One inbox for every app
