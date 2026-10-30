@@ -48,7 +48,7 @@ struct ImageAttachment: Identifiable, Equatable {
         let maxScale = min(maxWidth / width, maxHeight / height)
         let minScale = minEdge / max(width, height)
         let scale = min(maxScale, max(1, minScale))
-        return CGSize(width: round(width * scale), height: round(height * scale))
+        return CGSize(width: max(1, round(width * scale)), height: max(1, round(height * scale)))
     }
 
     private static let thumbnails: NSCache<NSUUID, NSImage> = {
