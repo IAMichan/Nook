@@ -25,6 +25,29 @@ enum CompletionEmojiCatalog {
         return nil
     }
 
+    /// Text emoticons and the emoji they stand for. Those of a colon and letters (`:D`, `:P`, `:O`) are names to the picker
+    /// already: the picker puts their emoji first (see `choices`).
+    static let emoticons: [String: String] = [
+        ":)": "🙂", ":-)": "🙂", ";)": "😉", ";-)": "😉", ":(": "😞", ":-(": "😞", ":'(": "😢", ":’(": "😢",
+        ":D": "😄", ":-D": "😄", "xD": "😆", "XD": "😆", ":P": "😛", ":-P": "😛", ":p": "😛", ":-p": "😛", ";P": "😜", ";p": "😜",
+        ":O": "😮", ":-O": "😮", ":o": "😮", ":*": "😘", ":-*": "😘", ":|": "😐", ":-|": "😐", ":/": "😕", ":-/": "😕",
+        ":S": "😖", "B-)": "😎", "^_^": "😊", "^^": "😊", "-_-": "😑", "o_O": "😳", "O_o": "😳", ":$": "😳",
+        "<3": "❤️", "</3": "💔", ">:(": "😠", ":-$": "😳", ":-S": "😖", ":-o": "😮", ";-P": "😜", ";-p": "😜",
+    ]
+
+    /// The emoticon just typed at the end of `text`, with its emoji: it starts a word (so "http://" or "10:30" are not one) and
+    /// nothing follows it yet.
+    static func emoticon(endingAt text: String) -> (emoticon: String, emoji: String)? {
+        for length in stride(from: 4, through: 2, by: -1) {
+            let candidate = String(text.suffix(length))
+            guard candidate.count == length, let emoji = emoticons[candidate] else { continue }
+            let before = text.dropLast(length).last
+            guard before == nil || before!.isWhitespace else { continue }
+            return (candidate, emoji)
+        }
+        return nil
+    }
+
     /// Exact matches, then names starting with it, then names containing it; most used first within each.
     static func search(_ query: String, limit: Int = 5) -> [CompletionEmoji] {
         let needle = query.lowercased()
@@ -44,7 +67,12 @@ enum CompletionEmojiCatalog {
         let fitting = contextual(for: context)
         guard query.isEmpty else {
             // Every match first, then the cut: the fitting ones lead, best fit first (not in the order of their names).
-            let matches = search(query, limit: .max)
+            var matches = search(query, limit: .max)
+            // ":D" is a grin before it is a name starting with d.
+            if let character = emoticons[":" + query], let face = all.first(where: { $0.character == character }) {
+                matches.removeAll { $0 == face }
+                return Array(([face] + fitting.filter { matches.contains($0) } + matches.filter { !fitting.contains($0) }).prefix(limit))
+            }
             return Array((fitting.filter { matches.contains($0) } + matches.filter { !fitting.contains($0) }).prefix(limit))
         }
         let used = recent.compactMap { character in all.first { $0.character == character } }

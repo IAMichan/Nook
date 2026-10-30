@@ -377,6 +377,18 @@
         <option value="5">👍🏿</option>
       </select>
     </label>
+    <label class="row">
+      <span>Emoji voor emoticons<br /><small class="faint">Typ :-) of &lt;3 en Tab zet de emoji ervoor in de plaats.</small></span>
+      <input type="checkbox" checked={ac.emoticons} onchange={(e) => save({ emoticons: e.currentTarget.checked })} />
+    </label>
+  </div>
+
+  <h3>Spelling</h3>
+  <div class="group">
+    <label class="row">
+      <span>Brits of Amerikaans, zoals jij schrijft<br /><small class="faint">Suggesties volgen je eigen Engelse spelling: colour of color, organise of organize.</small></span>
+      <input type="checkbox" checked={ac.matchSpelling} onchange={(e) => save({ matchSpelling: e.currentTarget.checked })} />
+    </label>
   </div>
 
   <h3>Nog niet op Windows</h3>

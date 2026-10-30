@@ -132,7 +132,14 @@ pub fn choices(query: &str, usage: &EmojiUsage, limit: usize, context: &str) -> 
     if !query.is_empty() {
         let found = search(query, limit);
         let (first, rest): (Vec<_>, Vec<_>) = found.into_iter().partition(|e| fitting.contains(e));
-        return first.into_iter().chain(rest).collect();
+        let mut result: Vec<&'static Emoji> = first.into_iter().chain(rest).collect();
+        // ":D" is a grin before it is a name starting with d.
+        if let Some(face) = emoticon_emoji(&format!(":{query}")).and_then(find) {
+            result.retain(|e| *e != face);
+            result.insert(0, face);
+            result.truncate(limit);
+        }
+        return result;
     }
     let mut result: Vec<&'static Emoji> = Vec::new();
     let used = usage.recent.iter().chain(usage.most_used().iter()).filter_map(|c| find(c)).collect::<Vec<_>>();
@@ -145,6 +152,75 @@ pub fn choices(query: &str, usage: &EmojiUsage, limit: usize, context: &str) -> 
         }
     }
     result
+}
+
+/// Text emoticons and the emoji they stand for, as on the Mac. Those of a colon and letters (`:D`, `:P`, `:O`) are names to
+/// the picker already: the picker puts their emoji first (see `choices`).
+pub const EMOTICONS: &[(&str, &str)] = &[
+    (":)", "🙂"),
+    (":-)", "🙂"),
+    (";)", "😉"),
+    (";-)", "😉"),
+    (":(", "😞"),
+    (":-(", "😞"),
+    (":'(", "😢"),
+    (":’(", "😢"),
+    (":D", "😄"),
+    (":-D", "😄"),
+    ("xD", "😆"),
+    ("XD", "😆"),
+    (":P", "😛"),
+    (":-P", "😛"),
+    (":p", "😛"),
+    (":-p", "😛"),
+    (";P", "😜"),
+    (";p", "😜"),
+    (":O", "😮"),
+    (":-O", "😮"),
+    (":o", "😮"),
+    (":*", "😘"),
+    (":-*", "😘"),
+    (":|", "😐"),
+    (":-|", "😐"),
+    (":/", "😕"),
+    (":-/", "😕"),
+    (":S", "😖"),
+    ("B-)", "😎"),
+    ("^_^", "😊"),
+    ("^^", "😊"),
+    ("-_-", "😑"),
+    ("o_O", "😳"),
+    ("O_o", "😳"),
+    (":$", "😳"),
+    ("<3", "❤️"),
+    ("</3", "💔"),
+    (">:(", "😠"),
+    (":-$", "😳"),
+    (":-S", "😖"),
+    (":-o", "😮"),
+    (";-P", "😜"),
+    (";-p", "😜"),
+];
+
+fn emoticon_emoji(text: &str) -> Option<&'static str> {
+    EMOTICONS.iter().find(|(e, _)| *e == text).map(|(_, emoji)| *emoji)
+}
+
+/// The emoticon just typed at the end of `text`, with its emoji: it starts a word (so "http://" or "10:30" are not one)
+/// and nothing follows it yet.
+pub fn emoticon(text: &str) -> Option<(String, &'static str)> {
+    let chars: Vec<char> = text.chars().collect();
+    for length in (2..=4).rev() {
+        if chars.len() < length {
+            continue;
+        }
+        let candidate: String = chars[chars.len() - length..].iter().collect();
+        let Some(emoji) = emoticon_emoji(&candidate) else { continue };
+        if chars.len() == length || chars[chars.len() - length - 1].is_whitespace() {
+            return Some((candidate, emoji));
+        }
+    }
+    None
 }
 
 /// The emoji with a skin tone: 0 for the default, 1…5 light to dark.
@@ -193,18 +269,38 @@ pub struct Picker {
     pub selected: usize,
     /// The text before the colon, for the emoji that fit it. In memory only.
     pub context: String,
+    /// The characters the chosen emoji takes the place of: the colon and the name, or the emoticon.
+    pub replaces: usize,
+    /// Opened for an emoticon just typed (":-)"): typing on closes it.
+    pub emoticon: bool,
 }
 
 impl Picker {
     /// `None` when no emoji has that name: a colon with nothing behind it is just a colon.
     pub fn open(query: &str, context: &str, usage: &EmojiUsage) -> Option<Self> {
         let choices = choices(query, usage, COLUMNS * ROWS, context);
-        (!choices.is_empty()).then(|| Self { query: query.into(), choices, selected: 0, context: context.into() })
+        (!choices.is_empty()).then(|| Self {
+            query: query.into(),
+            choices,
+            selected: 0,
+            context: context.into(),
+            replaces: query.chars().count() + 1,
+            emoticon: false,
+        })
+    }
+
+    /// The emoji for an emoticon at the end of `before`, to take with the accept key in its place. `None` when none was
+    /// just typed.
+    pub fn for_emoticon(before: &str) -> Option<Self> {
+        let (emoticon, character) = emoticon(before)?;
+        let face = find(character)?;
+        let replaces = emoticon.chars().count();
+        Some(Self { query: emoticon, choices: vec![face], selected: 0, context: String::new(), replaces, emoticon: true })
     }
 
     /// Typing on in the name, or Delete: the choices again, without reading the field. `false` closes the picker.
     pub fn retype(&mut self, query: String, usage: &EmojiUsage) -> bool {
-        if query.chars().count() > 30 {
+        if self.emoticon || query.chars().count() > 30 {
             return false;
         }
         let choices = choices(&query, usage, COLUMNS * ROWS, &self.context);
@@ -234,7 +330,7 @@ impl Picker {
 
     /// Return takes the selection once two letters are typed, so ":D" and Return still sends the message.
     pub fn return_takes(&self) -> bool {
-        self.query.chars().count() >= 2
+        !self.emoticon && self.query.chars().count() >= 2
     }
 }
 
@@ -770,5 +866,25 @@ mod tests {
         assert_eq!(layout.hit(8.0 + 34.0 * 8.5, 8.0 + 1.0, 5), None);
         assert_eq!(PickerLayout::new(3).rows, 1);
         assert!(layout.height() > layout.cell * 4.0);
+    }
+
+    #[test]
+    fn emoticon_at_the_end_of_a_word() {
+        assert_eq!(emoticon("see you :-)").map(|e| e.1), Some("🙂"));
+        assert_eq!(emoticon("love you <3").map(|e| e.0), Some("<3".to_string()));
+        assert_eq!(emoticon(";)").map(|e| e.1), Some("😉"));
+        assert_eq!(emoticon("see https:/"), None);
+        assert_eq!(emoticon("(see note:)"), None);
+        assert_eq!(emoticon("done :) "), None);
+    }
+
+    #[test]
+    fn emoticon_picker_replaces_the_emoticon_and_closes_on_typing() {
+        let mut picker = Picker::for_emoticon("ok :-(").expect("a sad face");
+        assert_eq!(picker.choices[0].character, "😞");
+        assert_eq!(picker.replaces, 3);
+        assert!(!picker.return_takes());
+        assert!(!picker.retype(":-(a".into(), &EmojiUsage::default()));
+        assert_eq!(choices("D", &EmojiUsage::default(), 8, "")[0].character, "😄");
     }
 }

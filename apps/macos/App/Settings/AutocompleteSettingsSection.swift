@@ -522,6 +522,7 @@ struct AutocompleteSettingsSection: View {
     private func note(for bundleID: String) -> String? {
         if store.isPaused(app: bundleID) { return tr("autocomplete.apps.paused") }
         let rule = store.prefs.app(bundleID)
+        if store.prefs.onlyAgentPrompts(inApp: bundleID) { return tr("autocomplete.apps.agentPromptsOnly") }
         if rule.enabled == .inherit, CompletionPreferences.offByDefault.contains(bundleID) { return tr("autocomplete.apps.defaultOff") }
         if isOn(bundleID), CompletionPreferences.proseOnly.contains(bundleID) { return tr("autocomplete.apps.proseOnly") }
         if !rule.instructions.isEmpty { return tr("autocomplete.apps.hasInstructions") }
@@ -540,6 +541,9 @@ struct AutocompleteSettingsSection: View {
         Toggle(tr("autocomplete.app.leaveTab"), isOn: rule.leaveTab)
         Toggle(tr("autocomplete.app.learn"), isOn: rule.learn)
         Toggle(tr("autocomplete.app.neutralColor"), isOn: rule.neutralColor)
+        Picker(tr("autocomplete.app.insertMode"), selection: rule.insertMode) {
+            ForEach(CompletionInsertMode.allCases) { Text(tr("autocomplete.insert.\($0.rawValue)")).tag($0) }
+        }
         TextField(tr("autocomplete.app.instructions"), text: rule.instructions, axis: .vertical).lineLimit(1...4)
         LabeledContent(tr("autocomplete.app.textSize")) {
             Slider(value: rule.fontScale, in: 0.6...1.6).frame(width: 160)
@@ -643,9 +647,15 @@ struct AutocompleteSettingsSection: View {
                         Text(CompletionEmojiCatalog.render(CompletionEmoji(character: "👍", shortcodes: [], toneable: true), skinTone: tone)).tag(tone)
                     }
                 }
+                Toggle(tr("autocomplete.emoticons"), isOn: $store.prefs.emoticons)
             }
             SettingToggle(tr("autocomplete.typos"), detail: tr("autocomplete.typosDetail"), isOn: $store.prefs.typos)
-            if store.prefs.typos { Toggle(tr("autocomplete.typoFixes"), isOn: $store.prefs.showTypoFixes) }
+            if store.prefs.typos {
+                Toggle(tr("autocomplete.typoFixes"), isOn: $store.prefs.showTypoFixes)
+                Toggle(tr("autocomplete.holdOnTypo"), isOn: $store.prefs.holdOnTypo)
+            }
+            SettingToggle(tr("autocomplete.matchSpelling"), detail: tr("autocomplete.matchSpellingDetail"), isOn: $store.prefs.matchSpelling)
+            SettingToggle(tr("autocomplete.agentPrompts"), detail: tr("autocomplete.agentPromptsDetail"), isOn: $store.prefs.agentPromptsInTerminals)
             SettingToggle(tr("autocomplete.alternatives"), detail: tr("autocomplete.alternativesDetail"), isOn: $store.prefs.wordAlternatives)
             if store.prefs.wordAlternatives {
                 Toggle(tr("autocomplete.alternativesAuto"), isOn: $store.prefs.autoAlternatives)

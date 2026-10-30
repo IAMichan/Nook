@@ -448,6 +448,8 @@ targets:
       - path: Services/Autocomplete/CompletionSuggestion.swift
       - path: Services/Autocomplete/CompletionSampling.swift
       - path: Services/Autocomplete/CompletionPreferences.swift
+      - path: Services/Autocomplete/CompletionTerminal.swift
+      - path: Services/Autocomplete/CompletionSpelling.swift
       - path: Services/Autocomplete/CompletionKeyGate.swift
       - path: Services/Autocomplete/CompletionPower.swift
       - path: Services/Autocomplete/CompletionEmoji.swift

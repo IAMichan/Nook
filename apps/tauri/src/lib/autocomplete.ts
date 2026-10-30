@@ -41,6 +41,8 @@ export interface AutocompleteSettings {
   sites: Record<string, SiteRule>;
   emoji: boolean;
   skinTone: number;
+  emoticons: boolean;
+  matchSpelling: boolean;
   acceptWord: string;
   acceptAll: string;
 }

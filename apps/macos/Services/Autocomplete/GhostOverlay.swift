@@ -309,6 +309,35 @@ enum AutocompleteTypos {
                    typedOn: tail.last?.isLetter == true)
     }
 
+    /// The word being typed, and whether it looked misspelled: checked again only when it changes.
+    @MainActor private static var lastSuspect: (word: String, languages: [String], suspect: Bool)?
+
+    /// Whether the word being typed (the letters right before the cursor) already looks misspelled: none of the user's
+    /// languages knows it, nor any word that starts with it. A suggestion would only finish the mistake ("recieve" → "recieved"),
+    /// so none comes until the word is fixed or finished. Short words, names and words with capitals inside are left alone.
+    @MainActor static func suspectsWordBeingTyped(in before: String, known: Set<String> = []) -> Bool {
+        guard let word = CompletionTextAnalysis.wordBeingTyped(in: before), !known.contains(word.lowercased()) else { return false }
+        let languages = languages(of: before)
+        if let last = lastSuspect, last.word == word, last.languages == languages { return last.suspect }
+        let suspect = isUnknownStart(word, languages: languages)
+        lastSuspect = (word, languages, suspect)
+        return suspect
+    }
+
+    @MainActor private static func isUnknownStart(_ word: String, languages: [String]) -> Bool {
+        let checker = NSSpellChecker.shared
+        guard !languages.isEmpty, !checker.hasLearnedWord(word) else { return false }
+        let range = NSRange(location: 0, length: (word as NSString).length)
+        for language in languages {
+            let miss = checker.checkSpelling(of: word, startingAt: 0, language: language, wrap: false, inSpellDocumentWithTag: 0, wordCount: nil)
+            if miss.location == NSNotFound { return false }
+            // The start of a longer word ("organisat" for "organisation") is not a typo yet.
+            let completions = checker.completions(forPartialWordRange: range, in: word, language: language, inSpellDocumentWithTag: 0) ?? []
+            if !completions.isEmpty { return false }
+        }
+        return true
+    }
+
     @MainActor private static func correction(of word: String, languages: [String]) -> String? {
         let checker = NSSpellChecker.shared
         guard let primary = languages.first, !checker.hasLearnedWord(word) else { return nil }
