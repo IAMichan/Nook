@@ -81,9 +81,14 @@ pub fn workspace_overview(state: State<'_, WorkspaceState>) -> Overview {
 }
 
 #[tauri::command]
-pub fn workspace_save_settings(app: tauri::AppHandle, state: State<'_, WorkspaceState>, settings: WorkspaceSettings) {
+pub fn workspace_save_settings(app: tauri::AppHandle, state: State<'_, WorkspaceState>, mut settings: WorkspaceSettings) {
+    let mut current = lock(&state.settings);
+    settings.favorite_projects = current.favorite_projects.clone();
+    settings.recent_projects = current.recent_projects.clone();
+    settings.last_project = current.last_project.clone();
     settings.save_to(&WorkspaceSettings::file());
-    *lock(&state.settings) = settings;
+    *current = settings;
+    drop(current);
     let _ = app.emit("workspace-changed", ());
 }
 

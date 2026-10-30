@@ -30,6 +30,7 @@
   let menu = $state<"" | "project" | "agent" | "permission" | "effort" | "where" | "branch">("");
   let branchQuery = $state("");
   let textarea = $state<HTMLTextAreaElement>();
+  let selectionRequest = 0;
   let prepared = false;
 
   const settings = $derived(workspace.settings);
@@ -121,8 +122,9 @@
     requestAnimationFrame(() => textarea?.focus());
     const candidates = settings!.lastProject ? [settings!.lastProject] : [...favorites, ...recent];
     for (const path of candidates) {
-      await select(path);
-      if (project?.verdict === "ok") break;
+      const result = await select(path);
+      if (result === "stale") return;
+      if (result === "ok") break;
     }
   }
 
@@ -171,23 +173,29 @@
       .catch(() => {});
   }
 
-  async function select(path: string) {
+  async function select(path: string): Promise<"ok" | "failed" | "stale"> {
+    const request = ++selectionRequest;
     menu = "";
     config.projectPath = path;
     inspecting = true;
     error = null;
     try {
       const info = await workspaceApi.inspect(path);
+      if (request !== selectionRequest) return "stale";
       project = info;
       config.projectPath = info.path;
       const canWorktree = !!info.repoRoot && info.hasCommits && !!workspace.overview?.gitAvailable;
       if (!canWorktree) config.isolation = "folder";
       else if (config.isolation === "folder" && settings?.defaultIsolation === "worktree") config.isolation = "worktree";
       config.baseBranch = info.defaultBase && info.branches.includes(info.defaultBase) ? info.defaultBase : (info.currentBranch ?? info.branches[0] ?? "");
+      return info.verdict === "ok" ? "ok" : "failed";
     } catch (e) {
+      if (request !== selectionRequest) return "stale";
       error = String(e);
+      return "failed";
+    } finally {
+      if (request === selectionRequest) inspecting = false;
     }
-    inspecting = false;
   }
 
   async function chooseFolder() {
