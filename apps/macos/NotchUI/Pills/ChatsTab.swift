@@ -331,6 +331,10 @@ struct ChatsTab: View {
     @MainActor static var listScrolling = false
     /// The open chat: the one you opened last, also after the tab was closed or Nook restarted; nil shows none.
     @State private var selection: String? = ChatsTab.lastOpened
+    /// A mail being written, in the pane where a conversation shows (`MailComposeView`); nil while none is.
+    @State private var composing: MailDraft?
+    /// A mail you started and left by opening a chat: New mail brings it back.
+    @State private var parkedMail: MailDraft?
     /// One app's chats only (its source id), or all.
     @State private var filter: String?
     /// Within the chosen app, one of its accounts only (by its name), while the app has chats in more than one.
@@ -399,7 +403,7 @@ struct ChatsTab: View {
                 HStack(alignment: .top, spacing: 0) {
                     // Too narrow for both (split view, a small window): the open chat over the whole width with a back
                     // button, else the sidebar and the list.
-                    if !stacked || current == nil {
+                    if !stacked || !detailShown {
                         sidebar
                         sidebarHandle
                         // The same split as the Agents tab: a list you can widen, a line, and the open chat beside it.
@@ -409,12 +413,18 @@ struct ChatsTab: View {
                                        available: max(totalWidth - sidebarWidth, 0),
                                        rest: PanelLayout.minimumConversation + PanelSplit.handle)
                     }
-                    if !stacked || current != nil {
+                    if !stacked || detailShown {
                         Group {
-                            if let current {
+                            if composing != nil {
+                                MailComposeView(draft: Binding(get: { composing ?? app.newMailDraft() },
+                                                               set: { composing = $0 }),
+                                                senders: app.mailSenders, onSend: sendComposed, onOpenInMail: openComposed,
+                                                onClose: discardComposed)
+                            } else if let current {
                                 ChatsDetail(entry: current, photo: photo(current), capture: capture,
                                             onMarkUnread: { markUnread(current) }, onClose: closeChat,
-                                            onBack: stacked ? closeChat : nil)
+                                            onBack: stacked ? closeChat : nil,
+                                            onCompose: { draft in withAnimation(NookTheme.reveal) { composing = draft } })
                                     .equatable()
                                     .id(current.id)
                             } else {
@@ -439,7 +449,7 @@ struct ChatsTab: View {
                         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     }
                 }
-                .animation(NookTheme.reveal, value: stacked && current != nil)
+                .animation(NookTheme.reveal, value: stacked && detailShown)
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -466,6 +476,11 @@ struct ChatsTab: View {
         .onChange(of: view) { _, _ in keptInView = [] }
         .onChange(of: account) { _, _ in keptInView = [] }
         .onChange(of: selection) { old, id in
+            // Opening a chat puts a mail being written aside; New mail brings it back.
+            if id != nil, let draft = composing {
+                parkedMail = Self.isBlank(draft) ? nil : draft
+                composing = nil
+            }
             ChatsTab.lastOpened = id
             openedAt = Date()
             if let old { keptInView.insert(old) }
@@ -510,6 +525,55 @@ struct ChatsTab: View {
     }
 
     /// Escape (see `ChatsDetail`): the open chat closes; the list stays.
+    /// A conversation or a mail being written fills the pane beside the list.
+    private var detailShown: Bool { current != nil || composing != nil }
+
+    /// New mail: the one you put aside, else an empty one from the open mail chat's account.
+    private func startMail() {
+        withAnimation(NookTheme.reveal) {
+            composing = parkedMail ?? app.newMailDraft(chatID: current?.chatID)
+            parkedMail = nil
+        }
+    }
+
+    private static func isBlank(_ draft: MailDraft) -> Bool {
+        [draft.to, draft.cc, draft.subject, draft.body].allSatisfy { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    /// Sends the mail being written, after your click; it closes a moment after Mail took it.
+    private func sendComposed() {
+        guard let draft = composing else { return }
+        composing?.state = .sending
+        Task {
+            do {
+                try await app.sendNewMail(draft)
+                guard composing?.id == draft.id else { return }
+                composing?.state = .sent
+                try? await Task.sleep(for: .seconds(1.2))
+                if composing?.id == draft.id { withAnimation(NookTheme.reveal) { composing = nil } }
+            } catch {
+                if composing?.id == draft.id { composing?.state = .failed(error.localizedDescription) }
+            }
+        }
+    }
+
+    /// Hands the mail being written to Mail to finish there, and closes it here.
+    private func openComposed() {
+        guard let draft = composing else { return }
+        Task {
+            do {
+                try await app.openNewMailInMail(draft)
+                if composing?.id == draft.id { withAnimation(NookTheme.reveal) { composing = nil } }
+            } catch {
+                if composing?.id == draft.id { composing?.state = .failed(error.localizedDescription) }
+            }
+        }
+    }
+
+    private func discardComposed() {
+        withAnimation(NookTheme.reveal) { composing = nil }
+    }
+
     private func closeChat() {
         guard selection != nil else { return }
         if stacked { returnTo = selection }
@@ -719,6 +783,10 @@ struct ChatsTab: View {
     private var listHeader: some View {
         let fresh = inApp.filter { $0.read.isUnread }
         return PanelListHeader(listTitle) {
+            // A mail app's list writes new mail too, as a mail app does.
+            if let filter, MailChatData.apps.contains(filter) {
+                PanelNewButton(label: tr("chats.mail.new"), active: composing != nil) { startMail() }
+            }
             if !fresh.isEmpty {
                 ToolbarIconButton("checkmark.circle", tr("chats.markAllReadInNook")) { app.markAllChatsReadInNook(fresh) }
             }
@@ -1279,6 +1347,10 @@ private struct ChatsDetail: View, Equatable {
     var onClose: () -> Void = {}
     /// Back to the list, while the tab shows one column at a time; nil while the list sits beside the chat.
     var onBack: (() -> Void)? = nil
+    /// A mail chat's answer to everyone or forward: the tab writes it in the pane (`MailComposeView`).
+    var onCompose: (MailDraft) -> Void = { _ in }
+    /// How many messages were new as the chat opened, for the mail view to open them.
+    private let newWhenOpened: Int
     @EnvironmentObject private var app: AppModel
     @State private var reply = ""
     @State private var notice: String?
@@ -1313,8 +1385,11 @@ private struct ChatsDetail: View, Equatable {
     @State private var newFrom: String?
 
     init(entry: ChatsEntry, photo: NSImage?, capture: ChatCaptureService,
-         onMarkUnread: @escaping () -> Void = {}, onClose: @escaping () -> Void = {}, onBack: (() -> Void)? = nil) {
+         onMarkUnread: @escaping () -> Void = {}, onClose: @escaping () -> Void = {}, onBack: (() -> Void)? = nil,
+         onCompose: @escaping (MailDraft) -> Void = { _ in }) {
         self.entry = entry
+        self.onCompose = onCompose
+        self.newWhenOpened = entry.unread
         self.photo = photo
         self.capture = capture
         self.onMarkUnread = onMarkUnread
@@ -1400,6 +1475,37 @@ private struct ChatsDetail: View, Equatable {
     /// "For everyone" is offered for your own message in an app that takes it; "for me" for every message.
     private func canDeleteForEveryone(_ bubble: ChatBubble) -> Bool { bubble.fromMe && abilities.delete && route != nil }
 
+    /// A mail app's conversation as mail (`MailThreadView`): every mail whole, read from Mail as it opens.
+    private var mailThread: some View {
+        let thread = capture.inbox.threads[entry.id]
+        let messages = hiddenMessages.visible(thread?.messages ?? [], in: entry.id) { $0.id }
+        let mail = capture.mailBridge
+        let load: ((String) async -> MailChatData.Message?)? = entry.app == mail.app ? { await mail.message($0) } : nil
+        return MailThreadView(messages: messages, contact: entry.name, account: thread?.account, unread: newWhenOpened,
+                              load: load) { action, message, whole in
+            mailAction(action, message, whole)
+        }
+    }
+
+    /// Answer goes to the field under the conversation, where Nook answers through Mail; everything else in the pane or
+    /// in Mail. A chat Nook cannot answer in (a mail app it knows by its notifications) answers in a new mail.
+    private func mailAction(_ action: MailThreadAction, _ message: InboxMessage, _ whole: MailChatData.Message?) {
+        switch action {
+        case .reply where route != nil:
+            replyFocused = true
+        case .reply, .replyAll, .forward:
+            var draft = app.mailDraft(action == .forward ? .forward : .replyAll, for: message, whole: whole,
+                                      contact: entry.name, chatID: entry.chatID)
+            if action == .reply, let first = draft.to.components(separatedBy: ",").first {
+                draft.to = first.trimmingCharacters(in: .whitespaces)
+                draft.cc = ""
+            }
+            onCompose(draft)
+        case .openInMail:
+            app.openMailMessage(whole, app: entry.app)
+        }
+    }
+
     /// What the choice says each way does, in this chat's app.
     private func deleteDetail(_ bubble: ChatBubble) -> String {
         var forMe: String
@@ -1417,17 +1523,22 @@ private struct ChatsDetail: View, Equatable {
             // right. Each bubble stays narrow enough to read (`ChatBubbleView.maxWidth`), however wide the window is.
             VStack(spacing: 0) {
                 if bubbles.isEmpty { emptyChat }
-                ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
-                               onOpen: { open($0) }, onZoom: { zoom($0) },
-                               onReply: abilities.reply ? quote : nil,
-                               onReact: abilities.react ? react : nil,
-                               onEdit: abilities.edit ? edit : nil,
-                               onDelete: { deleting = $0 },
-                               onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil,
-                               typing: typing.line(entry.id), newFrom: newFrom)
-                    .equatable()
-                    .padding(.horizontal, NookTheme.Spacing.xs)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if MailChatData.apps.contains(entry.app) {
+                    mailThread
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
+                                   onOpen: { open($0) }, onZoom: { zoom($0) },
+                                   onReply: abilities.reply ? quote : nil,
+                                   onReact: abilities.react ? react : nil,
+                                   onEdit: abilities.edit ? edit : nil,
+                                   onDelete: { deleting = $0 },
+                                   onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil,
+                                   typing: typing.line(entry.id), newFrom: newFrom)
+                        .equatable()
+                        .padding(.horizontal, NookTheme.Spacing.xs)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
                 footer
                     .padding(.top, NookTheme.Spacing.sm)
             }

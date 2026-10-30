@@ -177,6 +177,178 @@ enum MailChatData {
         return lines.joined(separator: "\n")
     }
 
+    /// One whole message, as the mail view shows it when you open it: its headers, its attachments by name, and its
+    /// whole text (the list only keeps the start). Lines "SUBJECT|||…", "FROM|||…", "DATE|||…", "MSGID|||…", one
+    /// "TO|||…", "CC|||…" and "ATT|||…" each, then "<<<BODY>>>" and the text.
+    static func messageScript(_ row: Row) -> String {
+        """
+        tell application "Mail"
+            set m to \(reference(row))
+            set out to "SUBJECT|||" & (subject of m) & linefeed
+            set out to out & "FROM|||" & (sender of m) & linefeed
+            set out to out & "DATE|||" & ((date received of m) as «class isot» as string) & linefeed
+            try
+                set out to out & "MSGID|||" & (message id of m) & linefeed
+            end try
+            repeat with r in to recipients of m
+                set who to (address of r)
+                try
+                    set who to (name of r) & " <" & (address of r) & ">"
+                end try
+                set out to out & "TO|||" & who & linefeed
+            end repeat
+            repeat with r in cc recipients of m
+                set who to (address of r)
+                try
+                    set who to (name of r) & " <" & (address of r) & ">"
+                end try
+                set out to out & "CC|||" & who & linefeed
+            end repeat
+            try
+                repeat with a in mail attachments of m
+                    set out to out & "ATT|||" & (name of a) & linefeed
+                end repeat
+            end try
+            return out & "<<<BODY>>>" & linefeed & (content of m)
+        end tell
+        """
+    }
+
+    /// A whole message, read from Mail when you open it in the mail view.
+    struct Message: Equatable, Sendable {
+        var subject: String
+        var from: String
+        var to: [String] = []
+        var cc: [String] = []
+        var date: Date?
+        /// The message's own id ("<abc@host>" without the brackets), to open it in Mail itself.
+        var messageID: String = ""
+        var attachments: [String] = []
+        var body: String
+
+        /// Mail's own link to the message: opens it in Mail.
+        var mailURL: URL? {
+            guard !messageID.isEmpty,
+                  let id = ("<" + messageID + ">").addingPercentEncoding(withAllowedCharacters: .alphanumerics) else { return nil }
+            return URL(string: "message://" + id)
+        }
+    }
+
+    /// Parses `messageScript` output; nil when it holds no message.
+    static func message(_ raw: String, calendar: Calendar = .current) -> Message? {
+        guard let marker = raw.range(of: "<<<BODY>>>") else { return nil }
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = calendar.timeZone
+        parser.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        var message = Message(subject: "", from: "", body: "")
+        for line in raw[..<marker.lowerBound].components(separatedBy: .newlines) {
+            let parts = line.components(separatedBy: "|||")
+            guard parts.count >= 2 else { continue }
+            let value = parts.dropFirst().joined(separator: "|||").trimmingCharacters(in: .whitespaces)
+            switch parts[0] {
+            case "SUBJECT": message.subject = value
+            case "FROM": message.from = value
+            case "DATE": message.date = parser.date(from: String(value.prefix(19)))
+            case "MSGID": message.messageID = value.trimmingCharacters(in: CharacterSet(charactersIn: "<>"))
+            case "TO" where !value.isEmpty: message.to.append(value)
+            case "CC" where !value.isEmpty: message.cc.append(value)
+            case "ATT" where !value.isEmpty: message.attachments.append(value)
+            default: continue
+            }
+        }
+        var body = String(raw[marker.upperBound...])
+        if body.hasPrefix("\n") { body.removeFirst() }
+        message.body = body
+        return message
+    }
+
+    /// A message's text in two parts: what this mail says itself, and the earlier mail it quotes (from the first quoted
+    /// line or quote header on), each with its blank lines folded. Line ends of any kind become one.
+    static func split(_ body: String) -> (own: String, quoted: String) {
+        let lines = body.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+            .components(separatedBy: "\n")
+        let start = lines.firstIndex { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            return trimmed.hasPrefix(">") || isQuoteHeader(trimmed)
+        }
+        let own = start.map { Array(lines[..<$0]) } ?? lines
+        let quoted = start.map { Array(lines[$0...]) } ?? []
+        return (tidy(own), tidy(quoted))
+    }
+
+    /// Lines without trailing spaces, at most one blank line in a row, none at the start or end.
+    static func tidy(_ lines: [String]) -> String {
+        var kept: [String] = []
+        for line in lines {
+            let clean = line.replacingOccurrences(of: "\u{00A0}", with: " ")
+            let trimmed = String(clean.reversed().drop(while: { $0 == " " || $0 == "\t" }).reversed())
+            if trimmed.isEmpty, kept.last?.isEmpty ?? true { continue }
+            kept.append(trimmed)
+        }
+        while kept.last?.isEmpty == true { kept.removeLast() }
+        return kept.joined(separator: "\n")
+    }
+
+    /// The subject and the start of the text of a message as the chat keeps it (`text(subject:body:)`): the subject is
+    /// the first line in bold.
+    static func parts(_ text: String) -> (subject: String, body: String) {
+        let lines = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        guard let first = lines.first, first.count > 2, first.hasPrefix("*"), first.hasSuffix("*") else { return ("", text) }
+        return (String(first.dropFirst().dropLast()), lines.count > 1 ? lines[1] : "")
+    }
+
+    // MARK: Writing
+
+    /// A new mail as the mail view opens it to write: whom, the subject and the text, ready to change before it goes.
+    struct Compose: Equatable, Sendable {
+        var to: String = ""
+        var cc: String = ""
+        var subject: String = ""
+        var body: String = ""
+    }
+
+    /// The subject of a forwarded mail: "Fwd: " in front, once.
+    static func forwardSubject(_ subject: String) -> String {
+        let trimmed = subject.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+        if ["fwd:", "fw:", "wg:", "doorst:", "tr:", "rv:"].contains(where: lower.hasPrefix) { return trimmed }
+        return "Fwd: " + trimmed
+    }
+
+    /// An answer to everyone on a mail: the one who wrote it and everyone it went to, without your own addresses and
+    /// without anyone twice.
+    static func replyAll(to message: Message, own: Set<String>) -> Compose {
+        var seen = own
+        func keep(_ people: [String]) -> [String] {
+            people.filter { person in
+                let who = address(person)
+                return !who.isEmpty && seen.insert(who).inserted
+            }
+        }
+        let to = keep([message.from] + message.to)
+        let cc = keep(message.cc)
+        return Compose(to: to.joined(separator: ", "), cc: cc.joined(separator: ", "),
+                       subject: replySubject(message.subject))
+    }
+
+    /// A mail forwarded: its subject with "Fwd: ", and under a line for your own words its headers and its whole text.
+    /// `labels` names the headers in the app's language (from, date, subject, to).
+    static func forward(_ message: Message, date: String, labels: (header: String, from: String, date: String, subject: String,
+                                                                  to: String)) -> Compose {
+        var lines = ["", "", labels.header, "\(labels.from): \(message.from)"]
+        if !date.isEmpty { lines.append("\(labels.date): \(date)") }
+        lines.append("\(labels.subject): \(message.subject)")
+        if !message.to.isEmpty { lines.append("\(labels.to): \(message.to.joined(separator: ", "))") }
+        lines += ["", message.body.replacingOccurrences(of: "\r\n", with: "\n")]
+        return Compose(subject: forwardSubject(message.subject), body: lines.joined(separator: "\n"))
+    }
+
+    /// The id Mail knows a message by, from its id in Nook ("mail-123" → 123); nil for any other message.
+    static func mailID(_ nookID: String) -> Int? {
+        nookID.hasPrefix("mail-") ? Int(nookID.dropFirst(5)) : nil
+    }
+
     /// Mail's reference to one message: by its id in its mailbox, which stays the same as new mail comes in.
     static func reference(_ row: Row) -> String {
         "message id \(row.id) of mailbox \(MailStats.quote(row.mailbox)) of account \(MailStats.quote(row.account))"

@@ -129,7 +129,7 @@ final class MailChatDataTests: XCTestCase {
         let row = MailChatData.Row(account: "Work", mailbox: "INBOX", id: 1, subject: "", person: "a@b.c", date: Date(),
                                    read: false, fromMe: false)
         let scripts = [MailChatData.accountsScript, MailChatData.readScript(account: "Work"), MailChatData.bodiesScript([row]),
-                       MailChatData.markReadScript([row])]
+                       MailChatData.markReadScript([row]), MailChatData.messageScript(row)]
         for script in scripts {
             let lines = script.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
             XCTAssertFalse(lines.contains { $0.hasPrefix("on ") || $0.hasPrefix("to ") }, script)
@@ -163,5 +163,72 @@ final class MailChatDataTests: XCTestCase {
         XCTAssertEqual(ChatNoticeRules.kinds(of: "mail"), [.channel])
         XCTAssertTrue(rules.kindIsQuiet(.channel, app: "mail"))
         XCTAssertFalse(rules.kindIsQuiet(.person, app: "mail"))
+    }
+
+    // MARK: The mail view
+
+    func testAWholeMessageIsReadWithItsHeaders() {
+        let raw = """
+        SUBJECT|||Offerte ||| versie 2
+        FROM|||Lisa de Vries <lisa@example.com>
+        DATE|||2026-10-28T09:15:00
+        MSGID|||<abc@example.com>
+        TO|||Me <me@work.nl>
+        TO|||bram@x.nl
+        CC|||Anna <anna@x.nl>
+        ATT|||offerte.pdf
+        <<<BODY>>>
+        Hoi,
+
+        Zie bijlage.
+        """
+        guard let message = MailChatData.message(raw, calendar: utc) else { return XCTFail("no message") }
+        XCTAssertEqual(message.subject, "Offerte ||| versie 2", "a subject may hold the separator itself")
+        XCTAssertEqual(message.from, "Lisa de Vries <lisa@example.com>")
+        XCTAssertEqual(message.to, ["Me <me@work.nl>", "bram@x.nl"])
+        XCTAssertEqual(message.cc, ["Anna <anna@x.nl>"])
+        XCTAssertEqual(message.attachments, ["offerte.pdf"])
+        XCTAssertEqual(message.messageID, "abc@example.com")
+        XCTAssertEqual(message.date, Date(timeIntervalSince1970: 1_793_178_900))
+        XCTAssertEqual(message.body, "Hoi,\n\nZie bijlage.")
+        XCTAssertEqual(message.mailURL?.absoluteString, "message://%3Cabc%40example%2Ecom%3E")
+        XCTAssertNil(MailChatData.message("SUBJECT|||x"), "no text marker, no message")
+    }
+
+    func testTheOwnTextAndTheQuotedMailAreApart() {
+        let body = "Ja, prima.\r\n\r\n\r\nGroet  \r\nOn Tue, Lisa wrote:\r\n> Kan het dinsdag?\r\n>\r\n> Lisa"
+        let parts = MailChatData.split(body)
+        XCTAssertEqual(parts.own, "Ja, prima.\n\nGroet")
+        XCTAssertEqual(parts.quoted, "On Tue, Lisa wrote:\n> Kan het dinsdag?\n>\n> Lisa")
+        XCTAssertEqual(MailChatData.split("Alleen dit.").quoted, "")
+    }
+
+    func testTheSubjectAndTextOfAKeptMessage() {
+        XCTAssertEqual(MailChatData.parts("*Offerte*\nZie bijlage.\nGroet").subject, "Offerte")
+        XCTAssertEqual(MailChatData.parts("*Offerte*\nZie bijlage.\nGroet").body, "Zie bijlage.\nGroet")
+        XCTAssertEqual(MailChatData.parts("*Offerte*").body, "")
+        XCTAssertEqual(MailChatData.parts("Gewoon tekst").subject, "")
+        XCTAssertEqual(MailChatData.mailID("mail-42"), 42)
+        XCTAssertNil(MailChatData.mailID("wa-42"))
+    }
+
+    func testAnAnswerToEveryoneLeavesYouOut() {
+        let message = MailChatData.Message(subject: "Planning", from: "Lisa <lisa@x.nl>",
+                                           to: ["Me <ME@work.nl>", "Bram <bram@x.nl>", "lisa@x.nl"], cc: ["anna@x.nl", "me@work.nl"],
+                                           body: "")
+        let compose = MailChatData.replyAll(to: message, own: ["me@work.nl"])
+        XCTAssertEqual(compose.to, "Lisa <lisa@x.nl>, Bram <bram@x.nl>", "the writer first, nobody twice, not you")
+        XCTAssertEqual(compose.cc, "anna@x.nl")
+        XCTAssertEqual(compose.subject, "Re: Planning")
+    }
+
+    func testAForwardCarriesTheWholeMail() {
+        let message = MailChatData.Message(subject: "Re: Planning", from: "Lisa <lisa@x.nl>", to: ["bram@x.nl"], body: "Dinsdag?")
+        let compose = MailChatData.forward(message, date: "28 Oct 2026", labels: ("--- Forwarded ---", "From", "Date", "Subject", "To"))
+        XCTAssertEqual(compose.subject, "Fwd: Re: Planning")
+        XCTAssertEqual(compose.to, "")
+        XCTAssertEqual(compose.body, "\n\n--- Forwarded ---\nFrom: Lisa <lisa@x.nl>\nDate: 28 Oct 2026\nSubject: Re: Planning\nTo: bram@x.nl\n\nDinsdag?")
+        XCTAssertEqual(MailChatData.forwardSubject("Fwd: x"), "Fwd: x")
+        XCTAssertEqual(MailChatData.forwardSubject("WG: x"), "WG: x")
     }
 }
