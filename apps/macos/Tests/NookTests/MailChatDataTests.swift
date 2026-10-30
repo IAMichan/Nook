@@ -117,7 +117,8 @@ final class MailChatDataTests: XCTestCase {
         let row = MailChatData.Row(account: "Lisa \"Work\"", mailbox: "INBOX", id: 42, subject: "", person: "a@b.c",
                                    date: Date(), read: false, fromMe: false)
         XCTAssertEqual(MailChatData.reference(row), "message id 42 of mailbox \"INBOX\" of account \"Lisa \\\"Work\\\"\"")
-        XCTAssertTrue(MailChatData.markReadScript([row]).contains("set read status of message id 42"))
+        XCTAssertTrue(MailChatData.markReadScript([row]).contains("set m to message id 42"))
+        XCTAssertTrue(MailChatData.markReadScript([row]).contains("set read status of m to true"))
         XCTAssertTrue(MailChatData.bodiesScript([row]).contains("<<<BODY>>>42"))
         XCTAssertTrue(MailChatData.readScript(account: "Work").contains("account \"Work\""))
         XCTAssertTrue(MailChatData.readScript(account: "Work").contains("\"Sent Items\""))
@@ -230,5 +231,40 @@ final class MailChatDataTests: XCTestCase {
         XCTAssertEqual(compose.body, "\n\n--- Forwarded ---\nFrom: Lisa <lisa@x.nl>\nDate: 28 Oct 2026\nSubject: Re: Planning\nTo: bram@x.nl\n\nDinsdag?")
         XCTAssertEqual(MailChatData.forwardSubject("Fwd: x"), "Fwd: x")
         XCTAssertEqual(MailChatData.forwardSubject("WG: x"), "WG: x")
+    }
+
+    // MARK: Finding a mail fast
+
+    func testRowsKeepTheirPlaceInTheMailbox() {
+        let raw = """
+        IN|||INBOX|||101|||Offerte|||Lisa <lisa@x.nl>|||2026-10-28T09:15:00|||false|||3
+        OUT|||Sent|||201|||Re: Offerte|||Lisa <lisa@x.nl>|||2026-10-28T10:15:00|||12
+        IN|||INBOX|||102|||Oud|||Bram <bram@x.nl>|||2026-10-28T09:15:00|||true
+        """
+        let rows = MailChatData.rows(raw, account: work, calendar: utc)
+        XCTAssertEqual(rows.map(\.index), [3, 12, nil], "a line from before places were read still reads")
+        XCTAssertTrue(MailChatData.readScript(account: "Work").contains("& \"|||\" & (lo + i - 1) & linefeed"))
+    }
+
+    func testAMailIsLookedForAtItsPlaceFirst() {
+        var row = MailChatData.Row(account: "Google", mailbox: "INBOX", id: 77, subject: "", person: "a@b.c", date: Date(),
+                                   read: false, fromMe: false, index: 5)
+        let script = MailChatData.locate(row)
+        let place = script.range(of: "message 5 of box")
+        let near = script.range(of: "id of messages 5 thru hi of box")
+        let search = script.range(of: "message id 77 of box")
+        XCTAssertNotNil(place)
+        XCTAssertNotNil(near)
+        XCTAssertNotNil(search)
+        XCTAssertTrue(place!.lowerBound < near!.lowerBound && near!.lowerBound < search!.lowerBound,
+                      "its place, then just below it, and only then the search through the whole mailbox")
+        XCTAssertTrue(script.contains("set hi to \(5 + MailChatData.drift)"))
+
+        row.index = nil
+        XCTAssertEqual(MailChatData.locate(row).trimmingCharacters(in: .whitespaces),
+                       "set m to message id 77 of mailbox \"INBOX\" of account \"Google\"", "no place: by its id")
+        for script in [MailChatData.messageScript(row), MailChatData.bodiesScript([row]), MailChatData.markReadScript([row])] {
+            XCTAssertTrue(script.contains("set m to message id 77"), script)
+        }
     }
 }

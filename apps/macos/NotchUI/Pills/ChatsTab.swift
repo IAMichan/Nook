@@ -1482,7 +1482,7 @@ private struct ChatsDetail: View, Equatable {
         let thread = capture.inbox.threads[entry.id]
         let messages = hiddenMessages.visible(thread?.messages ?? [], in: entry.id) { $0.id }
         let mail = capture.mailBridge
-        let load: ((String) async -> MailChatData.Message?)? = entry.app == mail.app ? { await mail.message($0) } : nil
+        let load: ((String) async throws -> MailChatData.Message)? = entry.app == mail.app ? { try await mail.message($0) } : nil
         return MailThreadView(messages: messages, contact: entry.name, account: thread?.account, unread: newWhenOpened,
                               load: load) { action, message, whole in
             mailAction(action, message, whole)

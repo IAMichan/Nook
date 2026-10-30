@@ -5,6 +5,8 @@ import Foundation
 
 let mailChatTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "chats.mail.tryAgain": "Opnieuw proberen",
+        "chats.mail.notReadYet": "Nook weet nog niet waar deze mail in Mail staat. Dat leest Nook binnen een minuut; probeer het dan opnieuw.",
         "chats.mail.noSubject": "(geen onderwerp)",
         "chats.mail.count": "%ld mails",
         "chats.mail.me": "Ik",
@@ -47,6 +49,8 @@ let mailChatTranslations: [AppLanguage: [String: String]] = [
         "chats.mail.muteNewslettersDetail": "Mail van no-reply-adressen, nieuwsbrieven en meldingen staat in de Chats-tab, maar meldt zich niet.",
     ],
     .en: [
+        "chats.mail.tryAgain": "Try again",
+        "chats.mail.notReadYet": "Nook does not know where this mail is in Mail yet. It reads that within a minute; try again then.",
         "chats.mail.noSubject": "(no subject)",
         "chats.mail.count": "%ld mails",
         "chats.mail.me": "Me",
@@ -89,6 +93,8 @@ let mailChatTranslations: [AppLanguage: [String: String]] = [
         "chats.mail.muteNewslettersDetail": "Mail from no-reply addresses, newsletters and notifications shows in the Chats tab, but does not notify you.",
     ],
     .de: [
+        "chats.mail.tryAgain": "Erneut versuchen",
+        "chats.mail.notReadYet": "Nook weiß noch nicht, wo diese Mail in Mail liegt. Das liest Nook innerhalb einer Minute; versuche es dann erneut.",
         "chats.mail.noSubject": "(kein Betreff)",
         "chats.mail.count": "%ld Mails",
         "chats.mail.me": "Ich",
@@ -131,6 +137,8 @@ let mailChatTranslations: [AppLanguage: [String: String]] = [
         "chats.mail.muteNewslettersDetail": "Mails von No-Reply-Adressen, Newsletter und Benachrichtigungen stehen im Tab Chats, melden sich aber nicht.",
     ],
     .fr: [
+        "chats.mail.tryAgain": "Réessayer",
+        "chats.mail.notReadYet": "Nook ne sait pas encore où se trouve cet e-mail dans Mail. Il le lit en moins d’une minute ; réessayez ensuite.",
         "chats.mail.noSubject": "(sans objet)",
         "chats.mail.count": "%ld e-mails",
         "chats.mail.me": "Moi",
@@ -173,6 +181,8 @@ let mailChatTranslations: [AppLanguage: [String: String]] = [
         "chats.mail.muteNewslettersDetail": "Les e-mails d’adresses no-reply, les newsletters et les notifications figurent dans l’onglet Discussions, sans vous avertir.",
     ],
     .es: [
+        "chats.mail.tryAgain": "Reintentar",
+        "chats.mail.notReadYet": "Nook aún no sabe dónde está este correo en Mail. Lo lee en menos de un minuto; vuelve a intentarlo entonces.",
         "chats.mail.noSubject": "(sin asunto)",
         "chats.mail.count": "%ld correos",
         "chats.mail.me": "Yo",
