@@ -48,10 +48,22 @@ struct ChatMedia: Codable, Equatable, Sendable {
         let ext = ((name ?? "") as NSString).pathExtension.lowercased()
         if gif || type == "image/gif" || ext == "gif" { return .gif }
         if voice { return .voice }
-        if type.hasPrefix("image/") || ["jpg", "jpeg", "png", "heic", "heif", "webp", "tiff", "bmp"].contains(ext) { return .photo }
+        if type.hasPrefix("image/") || Self.pictureExtensions.contains(ext) { return .photo }
         if type.hasPrefix("video/") || ["mp4", "mov", "m4v"].contains(ext) { return .video }
         if type.hasPrefix("audio/") || ["m4a", "mp3", "aac", "caf", "wav", "ogg", "opus", "amr"].contains(ext) { return .audio }
         return .file
+    }
+
+    /// The names a photo ends in, also when its app sends it as a document.
+    private static let pictureExtensions: Set<String> = ["jpg", "jpeg", "jfif", "png", "heic", "heif", "webp", "tif", "tiff",
+                                                         "bmp", "avif"]
+
+    /// How the chat shows the file: as its kind, except a document that is a photo, a GIF, a video or a sound by its
+    /// name (a photo sent "as a document" in WhatsApp, a picture attached to a Slack or Teams message), which shows as
+    /// that, the same in every app.
+    var shownKind: Kind {
+        guard kind == .file else { return kind }
+        return Self.kind(mimeType: nil, name: name.flatMap { $0.isEmpty ? nil : $0 } ?? path)
     }
 
     /// The largest file a bridge fetches by itself to show in a chat; a larger one opens in its app.

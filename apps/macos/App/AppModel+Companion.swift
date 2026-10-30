@@ -43,7 +43,9 @@ extension AppModel {
             let lines = bubble.text.isEmpty ? 0 : min(12, max(1, (bubble.text.count + 47) / 48))
             let file: CGFloat
             switch bubble.media {
-            case .photo, .video: file = (bubble.image.map(Self.photoHeight) ?? 135) + 4
+            case .photo(let url): file = ((bubble.image?.size ?? ChatMediaImages.pixelSize(url)).map(Self.photoHeight) ?? 135) + 4
+            case .video: file = (bubble.image.map { Self.photoHeight($0.size) } ?? 135) + 4
+            case .photoComing: file = 135 + 4
             case .gif: file = ChatGIFView.maxHeight + 4
             case .sticker: file = ChatStickerView.side + 4
             case .audio: file = 44
@@ -56,9 +58,9 @@ extension AppModel {
     }
 
     /// How tall a bubble's photo stands: fitted in 240 × 180.
-    static func photoHeight(_ image: NSImage) -> CGFloat {
-        guard image.size.width > 0, image.size.height > 0 else { return 0 }
-        return min(180, 240 * image.size.height / image.size.width)
+    static func photoHeight(_ size: CGSize) -> CGFloat {
+        guard size.width > 0, size.height > 0 else { return 0 }
+        return min(180, 240 * size.height / size.width)
     }
 }
 
