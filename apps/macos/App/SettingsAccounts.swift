@@ -20,7 +20,8 @@ struct AccountsSettingsSection: View {
                 }
             }
             Menu {
-                ForEach(kinds.filter { $0.supportsProfiles && $0 != .gemini && $0 != .antigravity }) { kind in
+                // Every agent with account folders (Claude Code, Codex, Gemini CLI): see AgentKind.homeVariable.
+                ForEach(kinds.filter(\.supportsProfiles)) { kind in
                     Button(kind.name) { adding = kind }
                 }
             } label: {
@@ -29,9 +30,9 @@ struct AccountsSettingsSection: View {
             .menuStyle(.borderlessButton)
             .fixedSize()
         } header: {
-            // Gemini CLI and Antigravity hold one account each; that is said behind the ⓘ instead of under each.
+            // The agents that hold one account each (Antigravity) say so behind the ⓘ instead of under each.
             SettingsSectionTitle(tr("settings.agents.accounts"),
-                                 info: tr("accounts.geminiSingle") + "\n\n" + tr("accounts.antigravitySingle"))
+                                 info: kinds.compactMap(\.singleAccountNote).map { tr($0) }.joined(separator: "\n\n"))
         }
         .sheet(item: $adding) { kind in
             AddAccountSheet(kind: kind)
@@ -386,13 +387,16 @@ private struct AddAccountSheet: View {
                         if method == .cli {
                             SettingNote(tr("accounts.signInStepDetail", kind.shortName))
                         }
-                        DisclosureGroup(isExpanded: Binding(get: { method == .apiKey },
-                                                            set: { method = $0 ? .apiKey : .cli })) {
-                            SecureField(tr("accounts.keyPlaceholder"), text: $key)
-                                .textFieldStyle(.roundedBorder)
-                                .padding(.top, NookTheme.Spacing.xs)
-                        } label: {
-                            Text(tr("accounts.useKeyInstead"))
+                        // A key instead, for the agents Nook keeps one for (AgentKind.takesAPIKeyAccounts).
+                        if kind.takesAPIKeyAccounts {
+                            DisclosureGroup(isExpanded: Binding(get: { method == .apiKey },
+                                                                set: { method = $0 ? .apiKey : .cli })) {
+                                SecureField(tr("accounts.keyPlaceholder"), text: $key)
+                                    .textFieldStyle(.roundedBorder)
+                                    .padding(.top, NookTheme.Spacing.xs)
+                            } label: {
+                                Text(tr("accounts.useKeyInstead"))
+                            }
                         }
                     }
                 }

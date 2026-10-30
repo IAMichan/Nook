@@ -37,7 +37,7 @@ needs a column in that matrix.
 | Chat apps | WhatsApp (phone link via GOWA or OpenWA, WhatsApp Desktop, chat helper), Messages (iMessage/SMS), Telegram, Slack, Teams, Snapchat (its website, `SnapchatBridge`), and the chat helper's networks (Signal, Instagram, Messenger, LinkedIn, X, Discord, Google Chat) | `InboxMessage`/`InboxThread` (`ChatInbox.swift`), `ChatReceipts.swift`, `ChatTyping.swift`, `ChatBubble` + `ChatTranscript`, `ChatsEntry`/`ChatsTab` |
 | WhatsApp gateways | GOWA, OpenWA | `WhatsAppProvider` (`WhatsAppProvider.swift`), `WAWebhookEvent` (`WhatsAppGateway.swift`) |
 | Chat helper networks | every bridge in `apps/chatd` | `apps/chatd` (bridgev2 `MatrixAPI` in `matrix.go`, the `/v1` API, the `/v1/ws` live line) → `ChatServiceData` |
-| Coding agents | Claude Code, Claude Desktop, Codex, Gemini CLI, Antigravity, Cursor, Grok, OpenCode, the ACP agents you add, Copilot CLI, Muse Code, Amp, Hermes ([`AGENTS.md`](AGENTS.md)) | `ProviderCapabilities` (`WorkspaceModels.swift`), `AgentConfigInstaller`, the hook event protocol, the session rows in the notch; for sessions Nook runs, `AgentSignal`/`AgentTimeline` (`AgentTimeline.swift`); for sessions in a terminal, `AgentChatMessage`/`AgentToolStep` (`AgentTranscript.swift`) |
+| Coding agents | Claude Code, Claude Desktop, Codex, Gemini CLI, Antigravity, Cursor, Grok, OpenCode, the ACP agents you add, Copilot CLI, Muse Code, Amp, Hermes ([`AGENTS.md`](AGENTS.md)) | `ProviderCapabilities` (`WorkspaceModels.swift`), `AgentModelMenu` (models, aliases, levels and effort per agent; an ACP agent you added by its profile), `AcpSessionSettings` and `AcpSessionCapabilities` (`AcpAgent.swift`), `AgentConfigInstaller`, the hook event protocol, the session rows in the notch; for sessions Nook runs, `AgentSignal`/`AgentTimeline` (`AgentTimeline.swift`); for sessions in a terminal, `AgentChatMessage`/`AgentToolStep` (`AgentTranscript.swift`) |
 | Connectors | everything registered with `SourceCatalog.register` | `SourceCatalog` (metadata, tools, aliases, intents) |
 | AI providers | the providers behind the Brain | `AIProvider`, the single `prepareRun` pipeline |
 | Platforms | `apps/macos`, `apps/ios`, `apps/linux`, `apps/windows`, `apps/android`, `apps/tauri` | `packages/protocol`, the companion protocol ([`COMPANION.md`](COMPANION.md)) |
@@ -110,19 +110,20 @@ check the agent's protocol before you write `–`.
 | Fork keeps the conversation | ✓ (`--fork-session`) | – (from a summary) | – (from a summary) | – (same) | – (same) | – (same) | – (same) | – (same) |
 | Fork from an earlier turn | ✓ | – | – | – | – | – | – | – |
 | Going back also rolls back the conversation | ✓ | ✓ (`thread/rollback`) | – (only the files) | – (same) | – (same) | – (same) | – (same) | – (same) |
-| Effort level | ✓ (`--effort`) | ✓ | ? | ? | ? | ? | ? | ? |
-| The agent's own `/` commands (`/compact`, `/goal`) | ✓ | ✓ | ? (ACP `available_commands_update` is not read yet) | ? (same) | ? (same) | ? (same) | ? (same) | ? (same) |
+| Effort level | ✓ (`--effort`) | ✓ | ✓ (the session's `thought_level` config option, when it offers one; not in the headless fallback) | ✓ (same; a model listed per level is picked with the same control) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
+| The agent's own `/` commands (`/compact`, `/goal`) | ✓ | ✓ | ✓ (`available_commands_update`) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
 | A model or mode picked in an open session counts from the next message | ✓ (live) | ✓ (`turn/start`) | ✓ (`session/set_config_option` or `session/set_model`, answered before the prompt) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
-| Model list | ✓ | ✓ | ✓ | – (typed name) | – (typed name) | – (typed name) | – (typed name) | – (typed name) |
+| Model list | ✓ | ✓ | ✓ | ✓ (what its session lists, kept for the next one) | ✓ (same) | ✓ (same) | ✓ (`initialize`) | ✓ (same as OpenCode, per agent you added) |
 | Nook's tools (bridge) | ✓ (`claude mcp add`) | ✓ (`codex mcp add`) | ✓ | ✓ (`session/new` `mcpServers`) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
 | One notice when a turn ends (`AgentStatusNotice`: the agent's logo, what the session is about, its last reply, changed lines; paced by `NoticePacer`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (sessions in Nook) | ✓ (same) |
 | Progress in the notch from a terminal (hooks) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (no hooks) | – (no hooks) |
-| Past sessions from disk | ✓ | ✓ | ✓ | ✓ | – (`session/load`) | – (same) | – (same) | – (same) |
-| Resume a past session | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (`session/load`) |
-| Several accounts side by side | ✓ (`CLAUDE_CONFIG_DIR`) | ✓ (`CODEX_HOME`) | – (no home variable) | – (same) | – (same) | – (same) | – (same) | – (same) |
+| Past sessions (`ProviderCapabilities.pastSessions`) | ✓ (disk) | ✓ (disk) | ✓ (disk, `.json` and from 0.33 `.jsonl`) | ✓ (disk) | ✓ (`session/list`) | ✓ (disk: `~/.cursor/chats` and `agent-transcripts`; its ACP server has no `session/list`) | ? (`session/list` when Grok offers it; not checked) | ✓ (`session/list` when the agent offers it) |
+| Resume a past session | ✓ | ✓ | ✓ | ✓ (in the Antigravity app while it runs; otherwise in Nook, a new conversation that starts from its transcript) | ✓ | ✓ | ✓ | ✓ (`session/load`) |
+| A conversation the agent no longer knows starts anew from a summary of the timeline, said in it | ? | ✓ (`thread/resume`) | ✓ (`session/load`) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
+| Several accounts side by side | ✓ (`CLAUDE_CONFIG_DIR`) | ✓ (`CODEX_HOME`) | ✓ (`GEMINI_CLI_HOME`, Gemini CLI 0.25 and newer: the folder around an account's `.gemini`) | – (one Google sign-in per Antigravity; each Nook account keeps its own profile folder for its sessions) | – (same) | – (same) | – (same) | – (same) |
 | Subscription limits | ✓ | ✓ | – | ✓ | – | – | – | – |
-| A turn that failed on an expired login offers to sign in again (`AgentSignInFailure`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (signs in itself, in its next session) |
-| Signing in happens in your browser, without a Terminal window, and the failed turn runs again afterwards (`AgentKind.browserLoginArguments`) | ✓ (`claude auth login`) | ✓ (`codex login`) | – (Terminal: `gemini` only signs in in its interactive screen) | ✓ (over ACP) | – (Terminal: `opencode auth login` asks which provider) | ✓ (`cursor-agent login`) | ✓ (`grok login`) | – (signs in itself, in its next session) |
+| A turn that failed on an expired login offers to sign in again (`AgentSignInFailure`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (signs in itself: `authenticate` with its first `authMethods` entry when a session asks for it) |
+| Signing in happens in your browser, without a Terminal window, and the failed turn runs again afterwards (`AgentKind.browserLoginArguments`) | ✓ (`claude auth login`) | ✓ (`codex login`) | – (Terminal: `gemini` only signs in in its interactive screen) | ✓ (over ACP) | – (Terminal: `opencode auth login` asks which provider) | ✓ (`cursor-agent login`) | ✓ (`grok login`) | – (signs in itself: `authenticate` with its first `authMethods` entry when a session asks for it) |
 
 ## Coding agent timeline
 
@@ -195,9 +196,5 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
 - **The GitHub dashboard in Chats (Tauri).** Pull requests and reviews sorted by what needs you, issues assigned to you,
   approving, commenting and asking for changes, and the merge rights check exist for GitHub only. GitLab merge requests
   are still only watched and opened in the browser; Nook has no GitLab review or merge actions yet.
-
-- **Coding agents over ACP: effort and the agent's own `/` commands.** Claude Code and Codex offer an effort level and
-  their `/compact` and `/goal` in the `/` list. ACP agents announce their commands in `available_commands_update` and
-  their options in the session's config options; `AcpMapper` reads neither yet.
 
 Add an item here when a change cannot reach every member yet.
