@@ -20,6 +20,8 @@ struct WAChatInfo: Equatable, Sendable {
     var unread: Int = 0
     /// Whether the chat is pinned on the phone, when the gateway says (OpenWA); nil when it does not.
     var pinned: Bool? = nil
+    /// Whether the chat is muted on the phone, when the gateway says (OpenWA); nil when it does not.
+    var muted: Bool? = nil
 }
 
 /// What a message holds besides text: a label is shown, and the file itself is only fetched when the notch card shows it
@@ -1963,12 +1965,17 @@ enum WAOpenWA {
     }
 
     /// The same list's `pinned` flags, by the chat's id as OpenWA gives it: only the chats that carry one.
-    static func pinned(_ data: Data) -> [String: Bool] {
+    static func pinned(_ data: Data) -> [String: Bool] { flags("pinned", data) }
+
+    /// The same list's `muted` flags, as `pinned`.
+    static func muted(_ data: Data) -> [String: Bool] { flags("muted", data) }
+
+    private static func flags(_ field: String, _ data: Data) -> [String: Bool] {
         guard let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { return [:] }
         var out: [String: Bool] = [:]
         for c in list {
-            guard let id = c["id"] as? String, !id.isEmpty, let pinned = c["pinned"] as? Bool else { continue }
-            out[id] = pinned
+            guard let id = c["id"] as? String, !id.isEmpty, let flag = c[field] as? Bool else { continue }
+            out[id] = flag
         }
         return out
     }

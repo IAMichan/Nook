@@ -275,6 +275,11 @@ final class NookChat: ObservableObject {
         ConversationList.visible(conversations.filter { !$0.isEmpty || $0.busy }, query: query, showArchived: showArchived)
     }
 
+    /// How many `list` would give, without sorting them: the archive shelf shows its count while it is closed.
+    func count(query: String, showArchived: Bool) -> Int {
+        ConversationList.matching(conversations.filter { !$0.isEmpty || $0.busy }, query: query, showArchived: showArchived).count
+    }
+
     var hasArchived: Bool { conversations.contains { $0.archived && !$0.isEmpty } }
 
     /// Active recently? Prevents panel from closing automatically.

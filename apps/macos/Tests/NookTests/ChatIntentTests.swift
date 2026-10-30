@@ -133,6 +133,31 @@ final class ChatIntentTests: XCTestCase {
         XCTAssertNotEqual(action("Verstuur een bericht naar Jan"), "whatsapp_send", "no group, no WhatsApp: stays as it was")
     }
 
+    /// A message in another chat app goes through the shared chat_send, the same as WhatsApp's goes through its own tool.
+    func testMessageInAnotherChatAppUsesTheSharedTool() {
+        XCTAssertEqual(action("Stuur Anna een bericht op Telegram dat ik later ben"), "chat_send")
+        XCTAssertEqual(action("Reply to Tom in Slack that the build is green"), "chat_send")
+        XCTAssertEqual(action("Sende Lena eine Nachricht auf Signal"), "chat_send")
+        XCTAssertEqual(action("App Lisa dat ik later ben"), "whatsapp_send", "WhatsApp stays WhatsApp's own tool")
+        XCTAssertEqual(action("Stuur een mail via Teams naar Jan"), "compose_mail", "a mail stays a mail")
+        XCTAssertNil(action("Vraag Jan over Slack"), "asks about Slack, sends nothing")
+        XCTAssertNotEqual(action("Can you read the latest message from Tom in Teams?"), "chat_send", "reads a chat")
+        XCTAssertNotEqual(action("Can you add a task in Teams"), "chat_send", "\"task\" holds \"ask\"")
+        XCTAssertNotEqual(action("Tell me what Tom said in Slack"), "chat_send", "reads a chat")
+        XCTAssertEqual(action("Ask Tom in Slack whether the build is green"), "chat_send")
+        XCTAssertNotEqual(action("Can you show the last reply from Tom in Slack"), "chat_send", "reads a chat")
+        // A follow-up sends where the message was meant to go.
+        let history = [
+            ChatTurn(fromUser: true, text: "Stuur Anna een bericht op Telegram dat ik later ben"),
+            ChatTurn(fromUser: false, text: "Wil je dit bericht versturen?"),
+        ]
+        XCTAssertEqual(ChatIntent.detect("Verzend", history: history).primaryAction, "chat_send")
+        // Without WhatsApp's own tool a chat message goes through chat_send, unless it names WhatsApp.
+        XCTAssertEqual(ChatIntent.detect("Send a message to the family group").action(among: ["chat_send"]), "chat_send")
+        XCTAssertNil(ChatIntent.detect("App Lisa dat ik later ben").action(among: ["chat_send"]))
+        XCTAssertEqual(ChatIntent.detect("App Lisa dat ik later ben").action(among: ["whatsapp_send", "chat_send"]), "whatsapp_send")
+    }
+
     func testPreparedWithoutAnActionIsCaught() {
         XCTAssertTrue(ChatIntent.claimsPrepared("Ik heb het bericht \"Vestuur\" voorbereid en klaar om te sturen naar de WhatsApp-groep genaamd \"Doosturen\"."))
         XCTAssertTrue(ChatIntent.claimsPrepared("I've prepared the WhatsApp message to Lisa."))

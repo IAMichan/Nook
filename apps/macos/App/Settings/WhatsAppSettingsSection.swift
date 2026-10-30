@@ -27,7 +27,7 @@ struct WhatsAppLinkSection: View {
 
         // Once linked, what reaches you gets a section of its own.
         if enabled, accounts.isConnected {
-            Section { WhatsAppNoticeRows() }
+            Section { ChatAppNoticeRows(app: "whatsapp", setCollecting: { _ in }) }
         }
     }
 }
@@ -60,35 +60,6 @@ struct WhatsAppInstallRow: View {
         case .done(let version): return tr("whatsapp.install.done", version)
         case .failed(let why): return why
         }
-    }
-}
-
-/// What reaches you from WhatsApp, in every account: the main switch, the rule per kind of chat, then every chat on its
-/// own (louder or quieter than its kind), and whether answering reads the chat.
-struct WhatsAppNoticeRows: View {
-    @ObservedObject private var link = WhatsAppLink.shared
-    /// Whether WhatsApp may notify is one of the switches in Settings › Notifications, the same one shown here.
-    @ObservedObject private var settings = AppSettings.shared
-    @State private var markRead = WhatsAppSettings.markReadOnReply
-
-    private var notify: Binding<Bool> {
-        Binding(get: { settings.noticeRules.isOn(.chats, app: "whatsapp") },
-                set: { settings.noticeRules.set(.chats, app: "whatsapp", on: $0) })
-    }
-
-    var body: some View {
-        SettingToggle(tr("whatsapp.settings.notify"), detail: tr("whatsapp.settings.notifyDetail"), isOn: notify)
-        if notify.wrappedValue {
-            SettingToggle(tr("whatsapp.settings.muteGroups"), detail: tr("whatsapp.settings.muteGroupsDetail"),
-                          isOn: Binding(get: { link.filters.muteGroups }, set: { link.filters.muteGroups = $0 }))
-            SettingToggle(tr("whatsapp.settings.muteStatus"), detail: tr("whatsapp.settings.muteStatusDetail"),
-                          isOn: Binding(get: { link.filters.muteStatus }, set: { link.filters.muteStatus = $0 }))
-            SettingToggle(tr("whatsapp.settings.muteChannels"), detail: tr("whatsapp.settings.muteChannelsDetail"),
-                          isOn: Binding(get: { link.filters.muteChannels }, set: { link.filters.muteChannels = $0 }))
-            WhatsAppChatModeList()
-        }
-        SettingToggle(tr("whatsapp.settings.markRead"), detail: tr("whatsapp.settings.markReadDetail"), isOn: $markRead)
-            .onChange(of: markRead) { _, value in WhatsAppSettings.markReadOnReply = value }
     }
 }
 
@@ -154,92 +125,6 @@ struct WhatsAppGatewayRows: View {
         case .portBusy: return tr("whatsapp.webhook.portBusy", WhatsAppSettings.port)
         case .refused(let why): return tr("whatsapp.webhook.refused", why)
         }
-    }
-}
-
-/// Every chat with its own choice: automatic (the rule of its kind), always, or never. Hidden chats can come back
-/// one by one. The chats of every linked account, and the choices hold in each.
-struct WhatsAppChatModeList: View {
-    @ObservedObject private var link = WhatsAppLink.shared
-    @ObservedObject private var accounts = WhatsAppAccounts.shared
-    @State private var query = ""
-    @State private var open = false
-
-    private var chats: [(jid: String, name: String)] {
-        let needle = query.trimmingCharacters(in: .whitespaces)
-        return accounts.chatsForSettings.filter { !link.filters.ignored.contains($0.jid) }
-            .filter { needle.isEmpty || $0.name.localizedCaseInsensitiveContains(needle) }
-    }
-
-    private var hidden: [(jid: String, name: String)] {
-        let names = Dictionary(accounts.chatsForSettings.map { ($0.jid, $0.name) }, uniquingKeysWith: { first, _ in first })
-        return link.filters.ignored.sorted().map { ($0, names[$0] ?? WAJID.displayNumber($0)) }
-    }
-
-    var body: some View {
-        DisclosureGroup(isExpanded: $open) {
-            if accounts.chatsForSettings.isEmpty {
-                SettingNote(tr("whatsapp.settings.noChats"))
-            } else {
-                NookSearchField(prompt: tr("whatsapp.settings.chatSearch"), text: $query, style: .inline)
-                ForEach(chats, id: \.jid) { chat in
-                    row(chat.jid, name: chat.name)
-                }
-            }
-            if !hidden.isEmpty {
-                Text(tr("whatsapp.settings.hidden"))
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .padding(.top, NookTheme.Spacing.sm)
-                ForEach(hidden, id: \.jid) { chat in
-                    HStack(spacing: 10) {
-                        avatar(chat.name)
-                        Text(chat.name).lineLimit(1)
-                        Spacer(minLength: 8)
-                        Button(tr("whatsapp.settings.showAgain")) { link.filters.ignored.remove(chat.jid) }
-                            .controlSize(.small)
-                    }
-                }
-            }
-        } label: {
-            SettingLabel(tr("whatsapp.settings.perChat"), hint: tr("whatsapp.settings.perChatDetail"))
-        }
-    }
-
-    private func row(_ jid: String, name: String) -> some View {
-        let kind = WAJID.kind(jid)
-        return HStack(spacing: 10) {
-            avatar(name)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(name).lineLimit(1)
-                Text(tr("whatsapp.kind.\(kind.rawValue)")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
-            }
-            Spacer(minLength: 8)
-            Picker("", selection: Binding(get: { link.filters.mode(for: jid) }, set: { link.filters.setMode($0, for: jid) })) {
-                Text(tr("whatsapp.mode.automatic")).tag(WAChatMode.automatic)
-                Text(tr("whatsapp.mode.loud")).tag(WAChatMode.loud)
-                Text(tr("whatsapp.mode.muted")).tag(WAChatMode.muted)
-            }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .controlSize(.small)
-            .fixedSize()
-            .help(tr("whatsapp.mode.help", kindRule(kind)))
-        }
-        .padding(.vertical, 1)
-    }
-
-    /// What automatic means for this kind right now, for the picker's tooltip.
-    private func kindRule(_ kind: WAJID.Kind) -> String {
-        link.filters.kindIsQuiet(kind == .person ? "x@s.whatsapp.net" : kind == .group ? "x@g.us" : kind == .status ? "status@broadcast" : "x@newsletter")
-            ? tr("whatsapp.mode.muted") : tr("whatsapp.mode.loud")
-    }
-
-    private func avatar(_ name: String) -> some View {
-        Circle()
-            .fill(NookTheme.smoke)
-            .overlay(Text(WAJID.initials(name)).font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textSecondary))
-            .frame(width: 22, height: 22)
     }
 }
 

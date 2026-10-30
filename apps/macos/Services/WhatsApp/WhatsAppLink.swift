@@ -85,30 +85,6 @@ enum WhatsAppSettings {
         defaults.set(try? JSONEncoder().encode(carry), forKey: key("whatsappUnreadCarry", account: account))
     }
 
-    /// Read receipts when a message is answered or marked read in the notch; never on mere reception.
-    static var markReadOnReply: Bool {
-        get { defaults.object(forKey: "whatsappMarkRead") as? Bool ?? true }
-        set { defaults.set(newValue, forKey: "whatsappMarkRead") }
-    }
-    static var filters: WAFilters {
-        get {
-            let modes = (defaults.dictionary(forKey: "whatsappChatModes") as? [String: String] ?? [:])
-                .compactMapValues(WAChatMode.init(rawValue:))
-            return WAFilters(muteGroups: defaults.object(forKey: "whatsappMuteGroups") as? Bool ?? true,
-                             muteStatus: defaults.object(forKey: "whatsappMuteStatus") as? Bool ?? true,
-                             muteChannels: defaults.object(forKey: "whatsappMuteChannels") as? Bool ?? true,
-                             ignored: Set(defaults.stringArray(forKey: "whatsappIgnored") ?? []),
-                             modes: modes)
-        }
-        set {
-            defaults.set(newValue.muteGroups, forKey: "whatsappMuteGroups")
-            defaults.set(newValue.muteStatus, forKey: "whatsappMuteStatus")
-            defaults.set(newValue.muteChannels, forKey: "whatsappMuteChannels")
-            defaults.set(Array(newValue.ignored).sorted(), forKey: "whatsappIgnored")
-            defaults.set(newValue.modes.mapValues(\.rawValue), forKey: "whatsappChatModes")
-        }
-    }
-
     /// The chats pinned on the phone as far as Nook knows, by their JID: the ones you pinned from Nook, and what the
     /// gateway's chat list says (OpenWA). Forgotten when WhatsApp is turned off.
     static func pinnedChats(account: String) -> Set<String> {
@@ -290,14 +266,12 @@ final class WhatsAppLink: ObservableObject {
         config.timeoutIntervalForRequest = 20
         return URLSession(configuration: config)
     }()
-    /// One set of choices for every account: a kind of chat or a chat muted or hidden is so in each.
-    @Published var filters = WhatsAppSettings.filters {
-        didSet {
-            guard filters != oldValue else { return }
-            WhatsAppSettings.filters = filters
-            for other in WhatsAppAccounts.shared.links where other !== self && other.filters != filters { other.filters = filters }
-        }
-    }
+    /// What this account sorts its gateway's messages by: the notice rules every chat app follows, for this account's
+    /// own chats (`ChatNoticeRulesStore.filters(account:)`). A hidden chat is not even kept.
+    @Published private(set) var filters: WAFilters
+    /// The chats muted on the phone, as far as Nook knows: muted from Nook, or so in the gateway's chat list (OpenWA).
+    /// Not WhatsApp's notice rules in Nook (`mute(_:)`), which only quiet the chat here.
+    @Published private(set) var mutedChats: Set<String> = []
     /// The chats pinned on the phone, as far as Nook knows (see `WhatsAppSettings.pinnedChats`).
     @Published private(set) var pinnedChats: Set<String> {
         didSet { if pinnedChats != oldValue { WhatsAppSettings.setPinnedChats(pinnedChats, account: account) } }
@@ -310,6 +284,9 @@ final class WhatsAppLink: ObservableObject {
     var onReceipt: ((_ chat: String) -> Void)?
     /// You read a chat on the phone: what Nook still had waiting for it goes.
     var onReadElsewhere: ((_ chat: String) -> Void)?
+    /// This account let go of everything it kept (WhatsApp turned off, the account removed): the shared inbox lets go
+    /// of its chats' messages too (`WhatsAppGatewayBridge`).
+    var onForget: (() -> Void)?
 
     /// A chat of this account as the rest of Nook knows it (see `WAChatKey`).
     func chatKey(_ jid: String) -> String { WAChatKey.make(jid, account: account) }
@@ -366,6 +343,7 @@ final class WhatsAppLink: ObservableObject {
             Date().timeIntervalSince($0.value.last) < ChatReadMarks.maxAge
         }
         pinnedChats = WhatsAppSettings.pinnedChats(account: account)
+        filters = ChatNoticeRulesStore.shared.filters(account: account)
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)
             .sink { [weak self] _ in DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self?.wake() } }
             .store(in: &bag)
@@ -467,6 +445,8 @@ final class WhatsAppLink: ObservableObject {
             inbox.clear()
             knownChats = []
             pinnedChats = []
+            mutedChats = []
+            onForget?()
         }
     }
 
@@ -630,10 +610,10 @@ final class WhatsAppLink: ObservableObject {
                 guard person != me.map(WAJID.normalized) else { continue }
                 if typing.active {
                     let name = typing.name.isEmpty ? names?.name(typing.from) ?? "" : typing.name
-                    ChatTypingCenter.shared.typing(chat: "wa|" + chatKey(key), person: person, name: group ? name : "",
+                    ChatTypingCenter.shared.typing(chat: ChatInbox.key(app: "whatsapp", id: chatKey(key)), person: person, name: group ? name : "",
                                                    kind: typing.recording ? .recording : .text)
                 } else {
-                    ChatTypingCenter.shared.stopped(chat: "wa|" + chatKey(key), person: person)
+                    ChatTypingCenter.shared.stopped(chat: ChatInbox.key(app: "whatsapp", id: chatKey(key)), person: person)
                 }
             }
         case .readElsewhere(let chat)?:
@@ -702,6 +682,12 @@ final class WhatsAppLink: ObservableObject {
             var pins = pinnedChats
             for chat in told { if chat.pinned == true { pins.insert(chat.jid) } else { pins.remove(chat.jid) } }
             pinnedChats = pins
+        }
+        let muteTold = knownChats.filter { $0.muted != nil }
+        if !muteTold.isEmpty {
+            var muted = mutedChats
+            for chat in muteTold { if chat.muted == true { muted.insert(chat.jid) } else { muted.remove(chat.jid) } }
+            mutedChats = muted
         }
         // Channels come in under their number ("+120363…"): the channel list names them and says where their picture is.
         for channel in await provider.channels() where gen == generation {
@@ -778,7 +764,7 @@ final class WhatsAppLink: ObservableObject {
             let key = WAJID.normalized(message.chat)
             // Their message is here: they stopped typing it.
             if !message.fromMe {
-                ChatTypingCenter.shared.stopped(chat: "wa|" + chatKey(key), person: WAJID.isGroup(key) ? WAJID.normalized(message.sender) : key)
+                ChatTypingCenter.shared.stopped(chat: ChatInbox.key(app: "whatsapp", id: chatKey(key)), person: WAJID.isGroup(key) ? WAJID.normalized(message.sender) : key)
             }
             let outcome = next.add(message, filters: filters, quietBefore: quietBefore)
             if !keys.contains(key) { keys.append(key) }
@@ -1161,16 +1147,21 @@ final class WhatsAppLink: ObservableObject {
     }
 
     /// "Mark as read", by hand: read in Nook and in WhatsApp, so the people who wrote see that you read it (blue ticks
-    /// where they have them). Always sent: you chose to.
-    func markReadInWhatsApp(_ chat: String) {
+    /// where they have them). Always sent: you chose to. Read in Nook at once; a gateway that refuses (or a phone that is
+    /// not linked) throws with a sentence you can act on, as every other chat app's "Mark as read" does.
+    func markReadInWhatsApp(_ chat: String) async throws {
         let key = WAJID.normalized(chat)
         readInNook[key] = Date()
-        readInWhatsApp[key] = Date()
         inbox.markRead(key)
         clearMarkedUnread(key)
-        guard let provider, isConnected else { return }
+        guard let provider, isConnected else { throw NookError(statusLine) }
         let last = inbox.conversations[key]?.messages.last { !$0.fromMe }?.id
-        Task { try? await provider.markRead(chat: key, lastIncoming: last) }
+        do {
+            try await provider.markRead(chat: key, lastIncoming: last)
+        } catch let error as WAError {
+            throw Self.actionSentence(error)
+        }
+        readInWhatsApp[key] = Date()
     }
 
     /// The unread count a chat shows in Nook: what came in while Nook ran, else what WhatsApp itself counts (when the
@@ -1183,16 +1174,6 @@ final class WhatsAppLink: ObservableObject {
         guard let known = known(key), known.unread > 0 else { return 0 }
         if let read = readInNook[key], known.last <= read { return 0 }
         return known.unread
-    }
-
-    /// Unread messages in the chats the pill shows, also those still unread from before a restart.
-    var visibleUnread: Int {
-        let visible = inbox.visible(filters: filters)
-        let shown = Set(visible.map(\.id))
-        return visible.reduce(0) { $0 + $1.unread } + carriedUnread.keys.reduce(0) { total, key in
-            // The same chats the pill lists: a quiet group that mentioned you counts too.
-            shown.contains(key) || (!filters.ignored.contains(key) && !filters.isQuiet(key)) ? total + carried(key) : total
-        }
     }
 
     /// What a chat still counts unread from before Nook restarted: nothing once it was read or answered in since.
@@ -1214,6 +1195,27 @@ final class WhatsAppLink: ObservableObject {
         WhatsAppSettings.setUnreadCarry(kept, account: account)
     }
 
+    // MARK: The shared inbox
+
+    /// What the shared inbox needs of a chat besides its messages (`WhatsAppExport.Facts`): where it stands by this
+    /// link's own count and marks, its picture, whether the phone lists it, and the files fetched for `messages`.
+    func exportFacts(_ jid: String, account name: String?, messages: [WAMessage]) -> WhatsAppExport.Facts {
+        let key = WAJID.normalized(jid)
+        var facts = WhatsAppExport.Facts(key: chatKey(key))
+        facts.account = name
+        facts.unread = unread(key)
+        facts.waitsInApp = waitsInWhatsApp(key)
+        facts.readKnown = readIsKnown(key)
+        facts.avatar = avatars[key]
+        let listed = known(key)
+        facts.listed = listed != nil
+        facts.activity = listed?.last
+        for message in messages {
+            if let file = previews[message.id]?.file.path { facts.files[message.id] = file }
+        }
+        return facts
+    }
+
     /// Marks the chat unread in Nook (WhatsApp itself keeps it as it is).
     func markUnread(_ chat: String) {
         let key = WAJID.normalized(chat)
@@ -1230,7 +1232,7 @@ final class WhatsAppLink: ObservableObject {
         clearMarkedUnread(key)
         guard let provider, let conversation = inbox.conversations[key] else { return }
         inbox.markRead(key)
-        guard hadUnread, WhatsAppSettings.markReadOnReply else { return }
+        guard hadUnread, ChatNoticeRulesStore.shared.rules.readsOnReply("whatsapp") else { return }
         let last = conversation.messages.last { !$0.fromMe }?.id
         Task { try? await provider.markRead(chat: key, lastIncoming: last) }
     }
@@ -1268,23 +1270,6 @@ final class WhatsAppLink: ObservableObject {
         return unique
     }
 
-    /// The chats "@chat …" offers, newest first: those that wrote lately (with how many are new), then the
-    /// others on the phone. Never the ones you chose never to see.
-    func chatChoices() -> [(name: String, detail: String)] {
-        var seen: Set<String> = []
-        var choices: [(name: String, detail: String)] = []
-        let label = WhatsAppAccounts.shared.context(of: self)
-        for conversation in inbox.sorted where seen.insert(conversation.id).inserted {
-            choices.append((conversation.name, conversation.unread > 0
-                ? label + " · " + tr("whatsapp.card.unread", conversation.unread) : label))
-        }
-        for chat in knownChats.sorted(by: { $0.last > $1.last })
-        where !filters.ignored.contains(chat.jid) && seen.insert(chat.jid).inserted {
-            choices.append((chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name, label))
-        }
-        return choices
-    }
-
     /// Sends a text to a chat, as an answer to its message `replyTo` when set. Throws with a sentence the user can act on.
     @discardableResult
     func send(_ text: String, to recipient: String, replyTo: String? = nil,
@@ -1307,7 +1292,7 @@ final class WhatsAppLink: ObservableObject {
             mine.replyTo = replyTo
             inbox.add(mine, filters: filters, name: target.name)
             // Answering reads the conversation.
-            if WhatsAppSettings.markReadOnReply {
+            if ChatNoticeRulesStore.shared.rules.readsOnReply("whatsapp") {
                 let last = inbox.conversations[target.jid]?.messages.last { !$0.fromMe }?.id
                 Task { try? await provider.markRead(chat: target.jid, lastIncoming: last) }
             }
@@ -1430,6 +1415,26 @@ final class WhatsAppLink: ObservableObject {
     var canDelete: Bool { isConnected && provider?.canDelete == true }
     var canPin: Bool { isConnected && provider?.canPin == true }
     var canArchive: Bool { isConnected && provider?.canArchive == true }
+    var canMuteInWhatsApp: Bool { isConnected && provider?.canMute == true }
+
+    /// Whether the chat is muted on the phone, as far as Nook knows (see `mutedChats`).
+    func isMutedInWhatsApp(_ chat: String) -> Bool { mutedChats.contains(WAJID.normalized(chat)) }
+
+    /// Mutes the chat on the phone for good, or unmutes it, after your own click.
+    func setMutedInWhatsApp(_ muted: Bool, chat: String) async throws {
+        guard let provider, isConnected else { throw NookError(statusLine) }
+        guard provider.canMute else { throw NookError(tr("chat.compose.unsupported")) }
+        let key = WAJID.normalized(chat)
+        let gen = generation
+        do {
+            try await provider.setMuted(muted, chat: key)
+        } catch let error as WAError {
+            throw Self.actionSentence(error)
+        }
+        guard gen == generation else { return }
+        if muted { mutedChats.insert(key) } else { mutedChats.remove(key) }
+        Log.connectors.info("WhatsApp: chat \(muted ? "muted" : "unmuted")")
+    }
 
     /// Whether the chat is pinned on the phone, as far as Nook knows: pinned from Nook, or so in the gateway's chat
     /// list. False when that is not known.
@@ -1530,28 +1535,20 @@ final class WhatsAppLink: ObservableObject {
     }
 
     func ignore(_ chat: String) {
-        let key = WAJID.normalized(chat)
-        filters.ignored.insert(key)
-        inbox.remove(key)
+        ChatNoticeRulesStore.shared.setHidden(true, chat: ChatInbox.key(app: "whatsapp", id: chatKey(WAJID.normalized(chat))))
     }
 
     /// Keeps the chat but stops it from reaching you (the card's Mute).
     func mute(_ chat: String) {
-        filters.setMode(.muted, for: chat)
+        ChatNoticeRulesStore.shared.setMode(.muted, for: ChatInbox.key(app: "whatsapp", id: chatKey(WAJID.normalized(chat))))
     }
 
-    /// Every chat the Settings list can name: the ones with messages, then the gateway's list, newest first.
-    var chatsForSettings: [(jid: String, name: String)] {
-        var seen = Set<String>()
-        var result: [(jid: String, name: String)] = []
-        for conversation in inbox.sorted where seen.insert(conversation.id).inserted {
-            result.append((conversation.id, conversation.name))
-        }
-        for chat in knownChats where seen.insert(chat.jid).inserted {
-            let fallback = WAJID.kind(chat.jid) == .status ? tr("whatsapp.kind.status") : WAJID.displayNumber(chat.jid)
-            result.append((chat.jid, chat.name.isEmpty ? fallback : chat.name))
-        }
-        return result
+    /// The notice rules changed (`ChatNoticeRulesStore`): this account follows them, and lets go of a chat now hidden.
+    func applyNoticeRules() {
+        let next = ChatNoticeRulesStore.shared.filters(account: account)
+        guard next != filters else { return }
+        filters = next
+        for jid in next.ignored where inbox.conversations[jid] != nil { inbox.remove(jid) }
     }
 
     /// One check from Settings' "Test": what the gateway says, in a sentence.

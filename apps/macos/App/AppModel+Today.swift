@@ -6,8 +6,20 @@ import NaturalLanguage
 
 /// What the home screen shows (Today) and the Settings window.
 extension AppModel {
+    /// Asked several times per redraw of the panel (the tabs' count, Nook's ring and mood): made again only when a list it
+    /// comes from changed. An unchanged list is the same array, which compares at once.
     var agentSessions: [AgentSession] {
         if demoMode { return DemoContent.agents }
+        if let cache = agentSessionsCache, cache.runs == workspace.runs, cache.sessions == hub.sessions,
+           cache.detected == hub.detected {
+            return cache.value
+        }
+        let value = makeAgentSessions()
+        agentSessionsCache = (workspace.runs, hub.sessions, hub.detected, value)
+        return value
+    }
+
+    private func makeAgentSessions() -> [AgentSession] {
         // A chat you continued in Nook is listed once, as the Nook session, not also as the session its app reported.
         let runs = workspace.runs.filter { !$0.archived }.compactMap { run -> (agent: String, conversations: Set<String>)? in
             guard let current = run.providerSessionID, !current.isEmpty else { return nil }

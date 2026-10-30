@@ -81,9 +81,14 @@ pub fn workspace_overview(state: State<'_, WorkspaceState>) -> Overview {
 }
 
 #[tauri::command]
-pub fn workspace_save_settings(app: tauri::AppHandle, state: State<'_, WorkspaceState>, settings: WorkspaceSettings) {
+pub fn workspace_save_settings(app: tauri::AppHandle, state: State<'_, WorkspaceState>, mut settings: WorkspaceSettings) {
+    let mut current = lock(&state.settings);
+    settings.favorite_projects = current.favorite_projects.clone();
+    settings.recent_projects = current.recent_projects.clone();
+    settings.last_project = current.last_project.clone();
     settings.save_to(&WorkspaceSettings::file());
-    *lock(&state.settings) = settings;
+    *current = settings;
+    drop(current);
     let _ = app.emit("workspace-changed", ());
 }
 
@@ -92,6 +97,15 @@ pub fn workspace_forget_project(state: State<'_, WorkspaceState>, path: String) 
     let mut s = lock(&state.settings);
     s.forget_project(&path);
     s.save_to(&WorkspaceSettings::file());
+}
+
+#[tauri::command]
+pub fn workspace_toggle_favorite_project(app: tauri::AppHandle, state: State<'_, WorkspaceState>, path: String) {
+    let mut s = lock(&state.settings);
+    s.toggle_favorite_project(&path);
+    s.save_to(&WorkspaceSettings::file());
+    drop(s);
+    let _ = app.emit("workspace-changed", ());
 }
 
 #[tauri::command]

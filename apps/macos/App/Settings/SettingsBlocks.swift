@@ -467,7 +467,7 @@ struct WorkspaceSettingsSection: View {
     private var scopePicker: some View {
         Picker(tr("settings.scope.title"), selection: $scope) {
             Text(tr("settings.scope.global")).tag("")
-            ForEach(ProjectSettings.scopeChoices(recent: ws.recentProjects, overrides: ws.projectOverrides), id: \.self) { path in
+            ForEach(ProjectSettings.scopeChoices(favorites: ws.favoriteProjects, recent: ws.recentProjects, overrides: ws.projectOverrides), id: \.self) { path in
                 Text(URL(fileURLWithPath: path).lastPathComponent).tag(path).help(AgentPathFormat.tilde(path))
             }
         }

@@ -18,9 +18,7 @@ struct NoticeEntry: Equatable, Identifiable {
         case agents
         /// A conversation with Nook.
         case conversation(UUID)
-        /// A WhatsApp chat, by its id.
-        case whatsApp(String)
-        /// A chat from another app in the Chats tab, by its id there ("telegram|anna").
+        /// A chat in the Chats tab, by its id there ("telegram|anna", "whatsapp#<chat key>"): the same for every app.
         case chat(String)
         /// Nothing to open: the entry is only read.
         case nowhere

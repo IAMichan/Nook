@@ -586,6 +586,7 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "ws.new.pickWorkspace": "Wähle ein Projekt oder einen Ordner",
         "ws.new.planReadOnly": "Im Plan-Modus liest der Agent nur.",
         "ws.new.provider": "Agent",
+        "ws.new.favorites": "Favoriten",
         "ws.new.recent": "Zuletzt",
         "ws.new.sharedAllow": "Ich weiß, trotzdem im selben Ordner starten",
         "ws.new.sharedBlocked": "Wähle einen Worktree oder bestätige den geteilten Ordner.",

@@ -16,6 +16,10 @@ final class WhatsAppAccounts: ObservableObject {
     var onMessage: ((_ chat: String) -> Void)? { didSet { links.forEach(wire) } }
     var onReceipt: ((_ chat: String) -> Void)? { didSet { links.forEach(wire) } }
     var onReadElsewhere: ((_ chat: String) -> Void)? { didSet { links.forEach(wire) } }
+    /// An account let go of everything it kept (WhatsApp turned off), by its id (see `WhatsAppLink.onForget`).
+    var onForget: ((_ account: String) -> Void)? { didSet { links.forEach(wire) } }
+    /// An account was removed in Settings, by its id: what Nook shows of it goes.
+    var onRemove: ((_ account: String) -> Void)?
 
     private var watching: [AnyCancellable] = []
 
@@ -69,6 +73,7 @@ final class WhatsAppAccounts: ObservableObject {
         WhatsAppSettings.accounts.removeAll { $0.id == id }
         links.remove(at: index)
         watch()
+        onRemove?(id)
         // The accounts after it moved down one webhook port: only they start over.
         for later in links[index...] { later.settingsChanged() }
         Log.connectors.info("WhatsApp: account removed")
@@ -149,22 +154,14 @@ final class WhatsAppAccounts: ObservableObject {
         return unique
     }
 
-    /// New messages in every account, for the dot on the Chats tab.
-    var visibleUnread: Int { connected.reduce(0) { $0 + $1.visibleUnread } }
-
-    /// Every chat of every linked account, for Settings' list per chat: the chat's JID (the choice holds in every
-    /// account), once.
-    var chatsForSettings: [(jid: String, name: String)] {
-        var seen = Set<String>()
-        return links.flatMap(\.chatsForSettings).filter { seen.insert($0.jid).inserted }
-    }
-
     // MARK: Private
 
     private func wire(_ link: WhatsAppLink) {
         link.onMessage = onMessage
         link.onReceipt = onReceipt
         link.onReadElsewhere = onReadElsewhere
+        let account = link.account
+        link.onForget = { [weak self] in self?.onForget?(account) }
     }
 
     /// A change in any account is a change here, so a view watching every account redraws for each.

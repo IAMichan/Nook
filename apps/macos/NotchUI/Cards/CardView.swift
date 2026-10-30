@@ -302,13 +302,14 @@ struct CardView: View {
             // A message card's chat can be answered: each message can be quoted in the field, or get an emoji.
             ChatTranscript(bubbles: bubbles, contact: card.title, onOpen: onOpen,
                            onZoom: { bubble in withAnimation(NookTheme.reveal) { zoomed = bubble } },
-                           onReply: quoteAction, onReact: card.chatReply && card.replyCopiesTo == nil ? onReact : nil)
+                           onReply: quoteAction,
+                           onReact: card.chatReply && card.replyCopiesTo == nil && card.chatReacts ? onReact : nil)
         }
     }
 
     /// Quotes a message of a message card's chat in its field; nil for any other card.
     private var quoteAction: ((ChatBubble) -> Void)? {
-        guard card.chatReply, card.replyCopiesTo == nil else { return nil }
+        guard card.chatReply, card.replyCopiesTo == nil, card.chatQuotes else { return nil }
         return { bubble in
             withAnimation(NookTheme.reveal) { replyingTo = bubble }
             replyFocused = true

@@ -23,11 +23,12 @@ extension AppModel {
             Task { await closeEmbeddedApp() }
             chat.append(ChatMessage(role: .nook, text: title.map { tr("embedded.closed", $0) } ?? tr("embedded.nothingOpen")))
         case .chat(let name):
-            // A chat from another app (Telegram, LinkedIn…) has no card: it opens in the Chats tab.
+            // Every chat Nook has opens as the card a new message brings up (its messages so far and a field to answer),
+            // the same for every app; WhatsApp's linked phone fetches the chat first (`openWhatsAppChat`).
             if WhatsAppAccounts.shared.resolve(name) == nil,
-               let id = chatsEntryID(named: name), let thread = ChatCaptureService.shared.inbox.threads[id] {
-                chat.append(ChatMessage(role: .nook, text: tr("chats.openedChat", thread.name)))
-                showChats(ChatsFocus(chat: id))
+               let id = chatsEntryID(named: name), let thread = ChatCaptureService.shared.loadedInbox.threads[id] {
+                chat.append(ChatMessage(role: .nook, text: tr("whatsapp.open.card", thread.name)))
+                presentChat(id, asked: true)
                 return true
             }
             openWhatsAppChat(name)
@@ -199,7 +200,10 @@ extension AppModel {
                 self.chat.append(ChatMessage(role: .nook, text: tr("whatsapp.open.empty", name)))
                 return
             }
-            self.presentWhatsApp(chat, asked: true)
+            // The chat as the shared inbox has it once the link's news is in, then its card as every app's.
+            let capture = ChatCaptureService.shared
+            await capture.readAndWait(capture.whatsAppGatewayBridge)
+            self.presentChat(ChatInbox.key(app: capture.whatsAppGatewayBridge.app, id: link.chatKey(chat)), asked: true)
         }
     }
 

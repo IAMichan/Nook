@@ -165,6 +165,63 @@ struct ChatAccountRow<Actions: View>: View {
     }
 }
 
+/// A linked account of a chat app in its sheet, the same for every app (Telegram, Teams, Slack, Messages, Snapchat):
+/// its state comes from one rule (`ChatAccountHealth`): reading, switched off in Nook, failing for a passing reason, or
+/// signed out. Signed out offers "Sign in again" where the app has a way to (`signInAgain`), and every app that can be
+/// signed out of offers it behind a confirmation (`signOut`). `problem` and `signedOut` are this account's own (an app
+/// with several accounts, Teams); without them the app's last read decides.
+struct ChatLinkedAccountRow<Actions: View>: View {
+    let app: String
+    let title: String
+    /// The line while all is well.
+    let detail: String
+    var problem: String?
+    var signedOut: Bool?
+    var signInAgain: (() -> Void)?
+    var signOut: (() -> Void)?
+    @ViewBuilder var actions: () -> Actions
+    @ObservedObject private var capture = ChatCaptureService.shared
+
+    private var health: ChatAccountHealth {
+        let own = problem
+        return ChatAccountHealth.of(collecting: capture.enabled, shown: capture.sources.isOn(app),
+                                    problem: own ?? capture.bridgeProblems[app],
+                                    signedOut: own != nil ? signedOut == true : capture.bridgeSignedOut.contains(app))
+    }
+
+    private var status: ServiceStatus {
+        switch health {
+        case .working: return .connected
+        case .off: return .off
+        case .failing: return .unreachable
+        case .signedOut: return .expired
+        }
+    }
+
+    var body: some View {
+        let health = self.health
+        ChatAccountRow(app: app, title: title, detail: health.detail(working: detail, off: tr("chats.account.off")),
+                       status: status, detailIsError: health.isProblem) {
+            actions()
+            if case .signedOut = health, let signInAgain {
+                Button(tr("chats.teams.signInAgainButton"), action: signInAgain).controlSize(.small)
+            }
+            if let signOut {
+                ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title), action: signOut)
+                    .controlSize(.small)
+            }
+        }
+    }
+}
+
+extension ChatLinkedAccountRow where Actions == EmptyView {
+    init(app: String, title: String, detail: String, problem: String? = nil, signedOut: Bool? = nil,
+         signInAgain: (() -> Void)? = nil, signOut: (() -> Void)? = nil) {
+        self.init(app: app, title: title, detail: detail, problem: problem, signedOut: signedOut, signInAgain: signInAgain,
+                  signOut: signOut) { EmptyView() }
+    }
+}
+
 /// A service connected through its official MCP server and OAuth: Connect opens the service's own sign-in page and
 /// brings you back here, with the state shown at once.
 struct MCPServiceRow: View {

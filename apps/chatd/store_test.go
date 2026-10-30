@@ -142,3 +142,43 @@ func TestWhoReadWhichMessage(t *testing.T) {
 		t.Fatalf("kept %d reads for one person", count)
 	}
 }
+
+// A poll is one of the chat's messages; each vote points at it, and each person's newest vote is their choice.
+func TestStorePollVotes(t *testing.T) {
+	store, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	room := id.RoomID("!p:" + serverName)
+	friend := id.UserID("@whatsapp_friend:" + serverName)
+	start := time.UnixMilli(2_000_000)
+	if err = store.CreateRoom(room, "local-whatsapp", "Group", "", false, start); err != nil {
+		t.Fatal(err)
+	}
+	poll := &event.PollStartEventContent{PollStart: event.PollStart{Kind: "org.matrix.msc3381.poll.disclosed", MaxSelections: 1,
+		Question: event.MSC1767Message{Text: "Lunch?"},
+		Answers:  []event.PollOption{{ID: "a", MSC1767Message: event.MSC1767Message{Text: "Pizza"}}, {ID: "b", MSC1767Message: event.MSC1767Message{Text: "Sushi"}}}}}
+	pollID, _ := store.Add("", room, friend, event.EventUnstablePollStart, &event.Content{Parsed: poll}, start.Add(time.Second), "")
+	vote := func(answers ...string) *event.Content {
+		return &event.Content{Parsed: &event.PollResponseEventContent{RelatesTo: event.RelatesTo{Type: event.RelReference, EventID: pollID},
+			Response: event.PollResponse{Answers: answers}}}
+	}
+	_, _ = store.Add("", room, friend, event.EventUnstablePollResponse, vote("a"), start.Add(2*time.Second), "")
+	_, _ = store.Add("", room, friend, event.EventUnstablePollResponse, vote("b"), start.Add(3*time.Second), "")
+
+	list, _ := store.Messages(room, 10)
+	if len(list) != 1 || list[0].ID != pollID {
+		t.Fatalf("the poll is not among the messages: %+v", list)
+	}
+	if _, ok := list[0].Content.Parsed.(*event.PollStartEventContent); !ok {
+		t.Fatalf("the poll reads back as %T", list[0].Content.Parsed)
+	}
+	votes, _ := store.Votes(pollID)
+	if len(votes) != 2 {
+		t.Fatalf("%d votes, want 2", len(votes))
+	}
+	last, ok := votes[1].Content.Parsed.(*event.PollResponseEventContent)
+	if !ok || len(last.Response.Answers) != 1 || last.Response.Answers[0] != "b" {
+		t.Fatalf("the newest vote is not last: %+v", votes[1].Content.Parsed)
+	}
+}

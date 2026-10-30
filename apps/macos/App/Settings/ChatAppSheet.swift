@@ -462,15 +462,8 @@ struct ChatOwnLinkSteps: View {
         let app = capture.snapchatBridge.app
         SetupStep(number: 1, title: tr("chats.own.snapchat.step"), done: snapchat.isSignedIn) {
             if snapchat.isSignedIn {
-                let problem = capture.bridgeProblems[app]
-                StatusRow(title: tr("chats.snapchat.connected"), detail: problem ?? tr("chats.snapchat.connectedDetail"),
-                          state: problem == nil ? .done : .error) {
-                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", "Snapchat")) {
-                        snapchat.signOut()
-                        capture.snapchatBridge.reset()
-                        capture.bridgeChanged(app)
-                    }
-                }
+                ChatLinkedAccountRow(app: app, title: tr("chats.snapchat.connected"), detail: tr("chats.snapchat.connectedDetail"),
+                                     signOut: { capture.signOutSnapchat() })
             } else {
                 detail(tr("chats.snapchat.signInDetail"))
                 SettingNote(tr("chats.link.risk", "Snapchat"), tone: .warning)
@@ -521,7 +514,6 @@ struct ChatOwnAccounts: View {
     @ObservedObject private var capture = ChatCaptureService.shared
     @ObservedObject private var telegram = ChatCaptureService.shared.telegramBridge
     @ObservedObject private var teams = ChatCaptureService.shared.teamsBridge
-    @ObservedObject private var snapchat = SnapchatWebSession.shared
 
     var body: some View {
         switch app {
@@ -534,48 +526,13 @@ struct ChatOwnAccounts: View {
         case capture.slackBridge.app:
             SlackSettingsRows(setCollecting: setCollecting, showsToken: false)
         case capture.messagesBridge.app:
-            ChatAccountRow(app: app, title: tr("chats.manage.thisMac"), detail: tr("chats.link.ownWay.messagesDone")) { EmptyView() }
+            ChatLinkedAccountRow(app: app, title: tr("chats.manage.thisMac"), detail: tr("chats.link.ownWay.messagesDone"))
         case capture.snapchatBridge.app:
-            let problem = capture.bridgeProblems[app]
-            ChatAccountRow(app: app, title: tr("chats.snapchat.connected"), detail: problem ?? tr("chats.snapchat.connectedDetail"),
-                           status: problem == nil ? .connected : .unreachable, detailIsError: problem != nil) {
-                ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", "Snapchat")) {
-                    snapchat.signOut()
-                    capture.snapchatBridge.reset()
-                    capture.bridgeChanged(app)
-                }
-                .controlSize(.small)
-            }
+            ChatLinkedAccountRow(app: app, title: tr("chats.snapchat.connected"), detail: tr("chats.snapchat.connectedDetail"),
+                                 signOut: { capture.signOutSnapchat() })
             SettingNote(tr("chats.snapchat.howItReads"))
         default:
             EmptyView()
-        }
-    }
-}
-
-/// What a linked app does in Nook, the same for every app: its chats in the Chats tab, and its new messages in the
-/// notch. WhatsApp adds its own rules (per kind of chat, per chat, reading when you answer).
-struct ChatAppNoticeRows: View {
-    let app: String
-    let setCollecting: (Bool) -> Void
-    @ObservedObject private var capture = ChatCaptureService.shared
-    @ObservedObject private var settings = AppSettings.shared
-
-    private var name: String { MessagingApps.app(id: app)?.name ?? app }
-
-    var body: some View {
-        if app == "whatsapp" {
-            // A linked phone brings WhatsApp's chats by itself: only what reaches you is to choose.
-            WhatsAppNoticeRows()
-        } else {
-            SettingToggle(tr("chats.apps.showInChats", name), detail: tr("chats.manage.showDetail"),
-                          isOn: Binding(get: { capture.enabled && capture.sources.isOn(app) }, set: { on in
-                              capture.setSource(app, on: on)
-                              if on, !capture.enabled { setCollecting(true) }
-                          }))
-            SettingToggle(tr("chats.manage.notify"), detail: tr("chats.manage.notifyDetail", name),
-                          isOn: Binding(get: { settings.noticeRules.isOn(.chats, app: app) },
-                                        set: { settings.noticeRules.set(.chats, app: app, on: $0) }))
         }
     }
 }

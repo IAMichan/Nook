@@ -30,6 +30,7 @@
   let menu = $state<"" | "project" | "agent" | "permission" | "effort" | "where" | "branch">("");
   let branchQuery = $state("");
   let textarea = $state<HTMLTextAreaElement>();
+  let selectionRequest = 0;
   let prepared = false;
 
   const settings = $derived(workspace.settings);
@@ -41,17 +42,42 @@
   const profile = $derived(profiles.find((p) => p.id === config.profileId));
   const levels = $derived(effortLevels(config.provider));
 
-  const recent = $derived.by(() => {
+  function cleanProjectPath(raw: string): string {
+    const trimmed = raw.trim();
+    return trimmed.length > 1 ? trimmed.replace(/[\\/]+$/, "") : trimmed;
+  }
+
+  const favorites = $derived.by(() => {
     const seen = new Set<string>();
     const out: string[] = [];
-    for (const path of [...(settings?.recentProjects ?? []), ...(agents.history?.sessions ?? []).map((s) => s.cwd)]) {
+    for (const raw of settings?.favoriteProjects ?? []) {
+      const path = cleanProjectPath(raw);
       if (!path || seen.has(path)) continue;
       seen.add(path);
       out.push(path);
-      if (out.length === 10) break;
     }
     return out;
   });
+
+  const recent = $derived.by(() => {
+    const seen = new Set<string>(favorites);
+    const limit = Math.max(3, 10 - favorites.length);
+    const out: string[] = [];
+    for (const raw of [config.projectPath, settings?.lastProject ?? "", ...(settings?.recentProjects ?? []), ...(agents.history?.sessions ?? []).map((s) => s.cwd)]) {
+      const path = cleanProjectPath(raw);
+      if (!path || seen.has(path)) continue;
+      seen.add(path);
+      out.push(path);
+      if (out.length === limit) break;
+    }
+    return out;
+  });
+
+  function toggleFavorite(path: string) {
+    const clean = cleanProjectPath(path);
+    if (!clean) return;
+    workspaceApi.toggleFavoriteProject(clean).catch(() => {});
+  }
 
   const worktreeAllowed = $derived(!!project && project.verdict === "ok" && !!project.repoRoot && project.hasCommits && !!workspace.overview?.gitAvailable);
   const worktreeBlocked = $derived(
@@ -94,8 +120,12 @@
     config.isolation = settings!.defaultIsolation;
     config.worktreeRoot = settings!.worktreeRoot;
     requestAnimationFrame(() => textarea?.focus());
-    const initial = settings!.lastProject || recent[0];
-    if (initial) select(initial);
+    const candidates = settings!.lastProject ? [settings!.lastProject] : [...favorites, ...recent];
+    for (const path of candidates) {
+      const result = await select(path);
+      if (result === "stale") return;
+      if (result === "ok") break;
+    }
   }
 
   function choose(p: RunProvider, account: string | null) {
@@ -143,23 +173,29 @@
       .catch(() => {});
   }
 
-  async function select(path: string) {
+  async function select(path: string): Promise<"ok" | "failed" | "stale"> {
+    const request = ++selectionRequest;
     menu = "";
     config.projectPath = path;
     inspecting = true;
     error = null;
     try {
       const info = await workspaceApi.inspect(path);
+      if (request !== selectionRequest) return "stale";
       project = info;
       config.projectPath = info.path;
       const canWorktree = !!info.repoRoot && info.hasCommits && !!workspace.overview?.gitAvailable;
       if (!canWorktree) config.isolation = "folder";
       else if (config.isolation === "folder" && settings?.defaultIsolation === "worktree") config.isolation = "worktree";
       config.baseBranch = info.defaultBase && info.branches.includes(info.defaultBase) ? info.defaultBase : (info.currentBranch ?? info.branches[0] ?? "");
+      return info.verdict === "ok" ? "ok" : "failed";
     } catch (e) {
+      if (request !== selectionRequest) return "stale";
       error = String(e);
+      return "failed";
+    } finally {
+      if (request === selectionRequest) inspecting = false;
     }
-    inspecting = false;
   }
 
   async function chooseFolder() {
@@ -230,11 +266,25 @@
       </button>
       {#if menu === "project"}
         <div class="menu" role="menu" tabindex="-1" onclick={stop} onkeydown={() => {}}>
+          {#if favorites.length}
+            <div class="mhead">Favorites</div>
+            {#each favorites as path (path)}
+              <div class="mrow" class:chosen={cleanProjectPath(project?.path ?? "") === path}>
+                <button class="mitem" onclick={() => select(path)}><span>{projectName(path)}</span><span class="faint small">{path}</span></button>
+                <button class="star starred" title="Remove from favorites" aria-label="Remove from favorites" onclick={() => toggleFavorite(path)}>★</button>
+              </div>
+            {/each}
+          {/if}
           {#if recent.length}
             <div class="mhead">Recent</div>
             {#each recent as path (path)}
-              <button class:chosen={project?.path === path} onclick={() => select(path)}><span>{projectName(path)}</span><span class="faint small">{path}</span></button>
+              <div class="mrow" class:chosen={cleanProjectPath(project?.path ?? "") === path}>
+                <button class="mitem" onclick={() => select(path)}><span>{projectName(path)}</span><span class="faint small">{path}</span></button>
+                <button class="star" title="Add to favorites" aria-label="Add to favorites" onclick={() => toggleFavorite(path)}>☆</button>
+              </div>
             {/each}
+          {/if}
+          {#if favorites.length || recent.length}
             <hr />
           {/if}
           <button onclick={chooseFolder}>Kies map…</button>
@@ -402,6 +452,14 @@
   .menu.right { left: auto; right: 0; }
   .menu button { background: none; border: none; text-align: left; padding: 6px 8px; border-radius: 7px; display: flex; flex-direction: column; gap: 1px; font-size: 12.5px; }
   .menu button:hover:not(:disabled), .menu button.chosen { background: var(--smoke); }
+  .mrow { display: flex; align-items: center; border-radius: 7px; }
+  .mrow:hover, .mrow.chosen { background: var(--smoke); }
+  .mrow .mitem { flex: 1; min-width: 0; }
+  .mrow .mitem:hover { background: none; }
+  .mrow .star { opacity: 0; padding: 4px 8px; color: var(--text3); font-size: 13px; align-items: center; justify-content: center; }
+  .mrow:hover .star, .mrow .star:focus-visible, .mrow .star.starred { opacity: 1; }
+  .mrow .star.starred, .mrow .star:focus-visible { color: var(--paper); }
+  .mrow .star:hover { background: none; color: var(--paper); }
   .menu hr { border: none; border-top: 1px solid var(--line2); margin: 4px 0; width: 100%; }
   .mhead { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; padding: 4px; }
   .scrolllist { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; }

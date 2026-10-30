@@ -193,7 +193,7 @@ enum EmbeddedAppCatalog {
 
     /// The app for a name as people type it: "WhatsApp", "whats app", "wa", "Google Calendar". An app installed on this
     /// Mac comes first; "whatsapp web" asks for the web version even then.
-    static func find(_ raw: String, installed: [EmbeddedApp] = InstalledMacApps.all) -> EmbeddedApp? {
+    static func find(_ raw: String, installed: [EmbeddedApp] = InstalledMacApps.current) -> EmbeddedApp? {
         let name = key(raw)
         guard !name.isEmpty else { return nil }
         let named = { (apps: [EmbeddedApp], name: String) in
@@ -208,9 +208,19 @@ enum EmbeddedAppCatalog {
 
     /// Everything the `@` list offers: the Mac apps on this Mac, then the web apps that are not installed as one.
     static func available(installed: [EmbeddedApp] = InstalledMacApps.all) -> [EmbeddedApp] {
+        // The chat's composer asks on every redraw, also while an answer streams in; the installed apps rarely change,
+        // and an unchanged list is the same array, which compares at once.
+        availableLock.lock()
+        defer { availableLock.unlock() }
+        if let lastAvailable, lastAvailable.installed == installed { return lastAvailable.apps }
         let shadowed = Set(installed.flatMap { $0.aliases.map(key) })
-        return installed + all.filter { !shadowed.contains(key($0.id)) }
+        let apps = installed + all.filter { !shadowed.contains(key($0.id)) }
+        lastAvailable = (installed, apps)
+        return apps
     }
+
+    private static let availableLock = NSLock()
+    nonisolated(unsafe) private static var lastAvailable: (installed: [EmbeddedApp], apps: [EmbeddedApp])?
 
     /// The apps whose name starts with (then contains) what was typed, for the `@` list.
     static func matching(_ query: String, in apps: [EmbeddedApp] = all) -> [EmbeddedApp] {
@@ -271,7 +281,7 @@ enum EmbeddedAppCatalog {
     /// - "@chat Jan": one chat by its name ("@open chat Jan" reads the same).
     /// - "@close": puts the app next to the chat away.
     /// Nil for everything else, so a normal question that happens to start with "@" still goes to the brain.
-    static func command(in raw: String, installed: [EmbeddedApp] = InstalledMacApps.all) -> EmbeddedAppCommand? {
+    static func command(in raw: String, installed: [EmbeddedApp] = InstalledMacApps.current) -> EmbeddedAppCommand? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = text.lowercased()
         func groups(_ pattern: String) -> [String]? {
@@ -472,15 +482,43 @@ enum InstalledMacApps {
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var cached: (apps: [EmbeddedApp], at: Date)?
+    nonisolated(unsafe) private static var refreshing = false
 
-    /// Scanned again at most once a minute, so an app installed meanwhile shows up.
+    /// Scanned again at most once a minute, so an app installed meanwhile shows up. Only the first scan makes the caller
+    /// wait: after that the list it has is returned at once and a new scan runs in the background, as the chat's composer
+    /// asks for it on every redraw (also while an answer streams in) and a scan reads five folders.
     static var all: [EmbeddedApp] {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached {
+            if Date().timeIntervalSince(cached.at) >= 60, !refreshing {
+                refreshing = true
+                DispatchQueue.global(qos: .utility).async { refresh() }
+            }
+            return cached.apps
+        }
+        let apps = make(paths: scan())
+        cached = (apps, Date())
+        return apps
+    }
+
+    /// The list as it is now, for an app you asked to open: scanned again (and waited for) when the last scan is over a
+    /// minute old, so an app installed meanwhile opens as the Mac app. `all` is for what redraws.
+    static var current: [EmbeddedApp] {
         lock.lock()
         defer { lock.unlock() }
         if let cached, Date().timeIntervalSince(cached.at) < 60 { return cached.apps }
         let apps = make(paths: scan())
         cached = (apps, Date())
         return apps
+    }
+
+    private static func refresh() {
+        let apps = make(paths: scan())
+        lock.lock()
+        cached = (apps, Date())
+        refreshing = false
+        lock.unlock()
     }
 
     /// The `.app` bundles in `folders`, and one folder deeper in /Applications ("/Applications/Microsoft Office/…").
