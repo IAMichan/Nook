@@ -17,7 +17,7 @@ struct BrainChip: View {
     }
 
     var body: some View {
-        ComposerDropdown(width: 340, takesRoom: true) {
+        ModelPickerDropdown {
             ComposerPill(symbol: logo == nil ? (settings.isLocalBrain ? "cpu" : "cloud") : nil, brand: logo, text: settings.brainLabel)
         } content: {
             BrainPicker(servers: servers)
@@ -43,7 +43,6 @@ private struct BrainPicker: View {
     @State private var fetched: [AIProvider: [String]] = [:]
     @State private var fetching = false
     @State private var fetchError: String?
-    @Environment(\.closeDropdown) private var close
 
     /// External services that can answer right now: a key is saved, or the coding agent of a subscription is installed.
     private var externals: [AIProvider] {
@@ -57,12 +56,14 @@ private struct BrainPicker: View {
     private var active: BrainPlace { settings.isLocalBrain ? .mac : .external(settings.provider) }
 
     var body: some View {
-        RailDropdown(groups: [[BrainPlace.mac], externals.map(BrainPlace.external)], chosen: active, maxHeight: 360,
-                     help: Self.title(of:), onShow: { _ in
-                         query = ""
-                         fetchError = nil
-                     },
-                     icon: placeIcon, footer: { addButton }) { place in
+        ModelPickerPanel(groups: [[BrainPlace.mac], externals.map(BrainPlace.external)], chosen: active,
+                         help: Self.title(of:), addHelp: tr("brain.chip.addExternal"),
+                         add: { app.openSettings(section: .brain) },
+                         onShow: { _ in
+                             query = ""
+                             fetchError = nil
+                         },
+                         icon: placeIcon) { place in
             switch place {
             case .mac: macModels
             case .external(let provider): externalModels(provider)
@@ -92,21 +93,6 @@ private struct BrainPicker: View {
         return AccountKind.of(app.profiles.preferredProfile(kind), app: app)
     }
 
-    private var addButton: some View {
-        Button {
-            close()
-            app.openSettings(section: .brain)
-        } label: {
-            Image(systemName: "plus")
-                .font(NookTheme.font(12, .medium))
-                .foregroundStyle(NookTheme.textTertiary)
-                .frame(width: 32, height: 32)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(tr("brain.chip.addExternal"))
-    }
-
     private static func title(of place: BrainPlace) -> String {
         switch place {
         case .mac: return tr("brain.chip.installed")
@@ -116,19 +102,15 @@ private struct BrainPicker: View {
 
     // MARK: On this Mac
 
-    @ViewBuilder
     private var macModels: some View {
-        DropdownHeader(title: tr("brain.chip.installed"))
-        Text(tr("brain.chip.localDetail"))
-            .font(NookTheme.TextStyle.detail)
-            .foregroundStyle(NookTheme.textTertiary)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 8)
-            .padding(.bottom, 4)
-        let installed = ModelAdvisor.catalog.filter { local.installed.contains($0.id) }
-        let empty = !AppleIntelligence.isAvailable && installed.isEmpty && servers.isEmpty
-        DropdownList(maxHeight: 240, emptyNote: empty ? tr("brain.chip.noLocal") : nil) {
-            if AppleIntelligence.isAvailable {
+        let apple = AppleIntelligence.isAvailable && matches(AppleModel.title)
+        let installed = ModelAdvisor.catalog.filter { local.installed.contains($0.id) && matches($0.title) }
+        let shownServers = servers.filter { matches($0.name) }
+        return ModelPickerColumn(title: tr("brain.chip.installed"), detail: tr("brain.chip.localDetail"), query: $query,
+                                 emptyNote: emptyMacNote(shown: apple || !installed.isEmpty || !shownServers.isEmpty),
+                                 settingsTitle: tr("brain.chip.settings"),
+                                 openSettings: { app.openSettings(section: .brain) }) {
+            if apple {
                 DropdownRow(brand: BrandLogo.forName("Apple"), title: AppleModel.title,
                             chosen: settings.useLocal && settings.localModel == AppleModel.id) {
                     settings.selection = BrainSelection(runtime: .mlx, provider: settings.provider, model: AppleModel.id)
@@ -140,7 +122,7 @@ private struct BrainPicker: View {
                     settings.selection = BrainSelection(runtime: .mlx, provider: settings.provider, model: option.id)
                 }
             }
-            ForEach(servers, id: \.name) { model in
+            ForEach(shownServers, id: \.name) { model in
                 let provider: AIProvider = model.server == .ollama ? .ollama : .lmstudio
                 DropdownRow(brand: BrandLogo.forName(model.name) ?? BrandLogo.forProvider(provider), title: model.name,
                             trailing: Self.shortTitle(provider),
@@ -150,41 +132,42 @@ private struct BrainPicker: View {
                 }
             }
         }
-        settingsRow
+    }
+
+    /// Nothing on this Mac at all, or nothing that matches the search.
+    private func emptyMacNote(shown: Bool) -> String? {
+        guard !shown else { return nil }
+        let nothingInstalled = !AppleIntelligence.isAvailable && servers.isEmpty
+            && !ModelAdvisor.catalog.contains { local.installed.contains($0.id) }
+        return nothingInstalled ? tr("brain.chip.noLocal") : tr("compose.noModels")
+    }
+
+    private func matches(_ name: String) -> Bool {
+        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
+        return needle.isEmpty || name.lowercased().contains(needle)
     }
 
     // MARK: External
 
-    @ViewBuilder
     private func externalModels(_ provider: AIProvider) -> some View {
-        DropdownHeader(title: Self.shortTitle(provider))
-        Text(tr("brain.chip.externalDetail", Self.shortTitle(provider)))
-            .font(NookTheme.TextStyle.detail)
-            .foregroundStyle(NookTheme.textTertiary)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 8)
-            .padding(.bottom, 4)
-        let list = models(for: provider)
-        if list.count > 6 {
-            DropdownSearch(placeholder: tr("compose.searchModels"), text: $query)
-        }
-        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
-        let shownModels = needle.isEmpty ? list : list.filter { $0.lowercased().contains(needle) }
-        DropdownList(maxHeight: 220, emptyNote: shownModels.isEmpty ? tr("compose.noModels") : nil) {
+        let shownModels = models(for: provider).filter(matches)
+        return ModelPickerColumn(title: Self.shortTitle(provider), detail: tr("brain.chip.externalDetail", Self.shortTitle(provider)),
+                                 query: $query, emptyNote: shownModels.isEmpty ? tr("compose.noModels") : nil,
+                                 settingsTitle: tr("brain.chip.settings"),
+                                 openSettings: { app.openSettings(section: .brain) }) {
             ForEach(shownModels, id: \.self) { id in
                 DropdownRow(brand: BrandLogo.forName(id) ?? BrandLogo.forProvider(provider), title: id,
                             chosen: !settings.isLocalBrain && settings.provider == provider && settings.activeProviderModel == id) {
                     settings.selection = BrainSelection(runtime: .external, provider: provider, model: id)
                 }
             }
-        }
-        if !provider.isSubscription && fetched[provider] == nil {
-            DropdownRow(symbol: fetching ? "hourglass" : "arrow.clockwise", title: tr("button.fetchModels"),
-                        detail: fetchError, staysOpen: true) {
-                Task { await fetchModels(provider) }
+            if !provider.isSubscription && fetched[provider] == nil {
+                DropdownRow(symbol: fetching ? "hourglass" : "arrow.clockwise", title: tr("button.fetchModels"),
+                            detail: fetchError, staysOpen: true) {
+                    Task { await fetchModels(provider) }
+                }
             }
         }
-        settingsRow
     }
 
     /// The models to offer for a service: the one it uses now, then the fetched list or the well-known ones.
@@ -206,15 +189,6 @@ private struct BrainPicker: View {
             if list.isEmpty { fetchError = tr("settings.brain.noModelsFound") }
         } catch {
             fetchError = error.localizedDescription
-        }
-    }
-
-    // MARK: Shared
-
-    private var settingsRow: some View {
-        Group {
-            DropdownDivider()
-            DropdownRow(symbol: "gearshape", title: tr("brain.chip.settings")) { app.openSettings(section: .brain) }
         }
     }
 
