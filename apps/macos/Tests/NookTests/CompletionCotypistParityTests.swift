@@ -152,4 +152,55 @@ final class CompletionCotypistParityTests: XCTestCase {
         XCTAssertEqual(CompletionTerminal.kittyFont("font_family      Fira Code\nfont_size 12.5"), CompletionTerminal.Font(name: "Fira Code", size: 12.5))
         XCTAssertNil(CompletionTerminal.kittyFont("font_family monospace"))
     }
+
+    // MARK: Emoji people and tones
+
+    func testEmojiGenderJoinsTheSign() {
+        let shrug = CompletionEmoji(character: "🤷", shortcodes: ["shrug"], toneable: true)
+        XCTAssertEqual(CompletionEmojiCatalog.render(shrug, skinTone: 0, gender: 1), "🤷\u{200D}♀\u{FE0F}")
+        XCTAssertEqual(CompletionEmojiCatalog.render(shrug, skinTone: 3, gender: 2), "🤷🏽\u{200D}♂\u{FE0F}")
+        XCTAssertEqual(CompletionEmojiCatalog.render(shrug, skinTone: 0), "🤷")
+        let thumbs = CompletionEmoji(character: "👍", shortcodes: ["+1"], toneable: true)
+        XCTAssertEqual(CompletionEmojiCatalog.render(thumbs, skinTone: 1, gender: 2), "👍🏻")
+    }
+
+    func testNeutralVariantFollowsEachTonedEmoji() {
+        let thumbs = CompletionEmoji(character: "👍", shortcodes: ["+1"], toneable: true)
+        let heart = CompletionEmoji(character: "❤️", shortcodes: ["heart"], toneable: false)
+        let shown = CompletionEmojiCatalog.withNeutralVariants([thumbs, heart], skinTone: 2)
+        XCTAssertEqual(shown.map { CompletionEmojiCatalog.render($0, skinTone: 2) }, ["👍🏼", "👍", "❤️"])
+        XCTAssertEqual(CompletionEmojiCatalog.withNeutralVariants([thumbs], skinTone: 0), [thumbs])
+    }
+
+    // MARK: Recorded texts, force-activate, settings
+
+    func testOneRecordedTextIsDeleted() {
+        var samples = CompletionSamples()
+        samples.add("A first message that is long enough", app: "a")
+        samples.add("A second message, also long enough", app: "b")
+        samples.remove(samples.samples[0])
+        XCTAssertEqual(samples.samples.map(\.app), ["b"])
+    }
+
+    func testSuggestNowKeyIsTakenWhereItCanForce() {
+        var gate = CompletionKeyGate()
+        let key = CompletionShortcut(keyCode: 49, modifiers: CompletionShortcut.control, label: "⌃Space")
+        gate.suggestNow = key
+        let press = CompletionKeyPress(code: 49, modifiers: CompletionShortcut.control, characters: " ")
+        XCTAssertFalse(gate.swallows(press))
+        gate.canForce = true
+        XCTAssertTrue(gate.swallows(press))
+    }
+
+    func testLaterSettingsDefaults() throws {
+        let prefs = CompletionPreferences.decode(try JSONSerialization.data(withJSONObject: ["enabled": true]))
+        XCTAssertEqual(prefs.emojiGender, 0)
+        XCTAssertFalse(prefs.neutralEmoji)
+        XCTAssertEqual(prefs.loraAdapterPath, "")
+        XCTAssertTrue(CompletionPreferences.passwordManagers.isSubset(of: CompletionPreferences.offByDefault))
+        var rule = CompletionAppRule()
+        rule.insertMode = .spaceKey
+        let decoded = try JSONDecoder().decode(CompletionAppRule.self, from: JSONEncoder().encode(rule))
+        XCTAssertEqual(decoded.insertMode, .spaceKey)
+    }
 }

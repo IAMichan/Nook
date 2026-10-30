@@ -2,7 +2,7 @@ import Foundation
 
 /// What the user wrote, so suggestions sound like them. Only on this Mac, secrets taken out first, deletable in Settings.
 struct CompletionSamples: Codable, Equatable {
-    struct Sample: Codable, Equatable {
+    struct Sample: Codable, Equatable, Hashable {
         var app: String
         var text: String
         var date: Date
@@ -30,6 +30,11 @@ struct CompletionSamples: Codable, Equatable {
     }
 
     mutating func removeAll() { samples.removeAll() }
+
+    /// One sample, deleted in Settings.
+    mutating func remove(_ sample: Sample) {
+        if let index = samples.firstIndex(of: sample) { samples.remove(at: index) }
+    }
 
     var count: Int { samples.count }
 

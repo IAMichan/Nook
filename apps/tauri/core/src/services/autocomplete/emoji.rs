@@ -223,6 +223,21 @@ pub fn emoticon(text: &str) -> Option<(String, &'static str)> {
     None
 }
 
+/// People that come as a woman or a man too, joined with ♀ or ♂ (as on the Mac).
+pub const GENDERED: &[&str] = &[
+    "🤦", "🤷", "🙋", "🏃", "🚶", "🙇", "🙆", "🙅", "💁", "🙎", "🙍", "💆", "💇", "🧏", "🧍", "🧎", "🧘", "🏊", "🚴", "🏄", "🤸", "🧗",
+    "🧖", "🤽", "🚣", "🤾", "🤹", "💂", "👷", "👮", "🧙", "🧚", "🧛", "🧜", "🧝", "🦸", "🦹", "🧞", "🧟",
+];
+
+/// The emoji with a skin tone and, for the people that come in both, a gender: 0 as it is, 1 a woman, 2 a man (🤷 → 🤷‍♀️).
+pub fn render_person(emoji: &Emoji, tone: u8, gender: u8) -> String {
+    let rendered = render(emoji, tone);
+    if !(1..=2).contains(&gender) || !GENDERED.contains(&emoji.character.as_str()) {
+        return rendered;
+    }
+    format!("{rendered}\u{200D}{}\u{FE0F}", if gender == 1 { '♀' } else { '♂' })
+}
+
 /// The emoji with a skin tone: 0 for the default, 1…5 light to dark.
 pub fn render(emoji: &Emoji, tone: u8) -> String {
     if !emoji.toneable || !(1..=5).contains(&tone) {
@@ -835,6 +850,10 @@ mod tests {
         assert_eq!(render(thumbs, 3), "👍\u{1F3FD}");
         assert_eq!(render(find("✌️").unwrap(), 1), "✌\u{1F3FB}");
         assert_eq!(render(find("😂").unwrap(), 3), "😂");
+        let shrug = find("🤷").unwrap();
+        assert_eq!(render_person(shrug, 0, 1), "🤷\u{200D}♀\u{FE0F}");
+        assert_eq!(render_person(shrug, 3, 2), "🤷\u{1F3FD}\u{200D}♂\u{FE0F}");
+        assert_eq!(render_person(thumbs, 1, 2), "👍\u{1F3FB}");
     }
 
     #[test]

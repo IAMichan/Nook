@@ -186,15 +186,37 @@ enum CompletionEmojiCatalog {
     ]
 
     /// - Parameter tone: 0 for the default, 1…5 light to dark.
-    static func render(_ emoji: CompletionEmoji, skinTone tone: Int) -> String {
-        guard emoji.toneable, (1...5).contains(tone), let modifier = Unicode.Scalar(0x1F3FA + tone),
-              let first = emoji.character.unicodeScalars.first else { return emoji.character }
-        var scalars = String.UnicodeScalarView()
-        scalars.append(first)
-        scalars.append(modifier)
-        // A variation selector right after the base goes; the rest (joined sequences) stays.
-        scalars.append(contentsOf: emoji.character.unicodeScalars.dropFirst().drop { $0.value == 0xFE0F })
-        return String(scalars)
+    /// - Parameter gender: 0 as the emoji is, 1 a woman, 2 a man, for the people that come in both (🤷 → 🤷‍♀️).
+    static func render(_ emoji: CompletionEmoji, skinTone tone: Int, gender: Int = 0) -> String {
+        var rendered = emoji.character
+        if emoji.toneable, (1...5).contains(tone), let modifier = Unicode.Scalar(0x1F3FA + tone), let first = emoji.character.unicodeScalars.first {
+            var scalars = String.UnicodeScalarView()
+            scalars.append(first)
+            scalars.append(modifier)
+            // A variation selector right after the base goes; the rest (joined sequences) stays.
+            scalars.append(contentsOf: emoji.character.unicodeScalars.dropFirst().drop { $0.value == 0xFE0F })
+            rendered = String(scalars)
+        }
+        guard (1...2).contains(gender), gendered.contains(emoji.character) else { return rendered }
+        return rendered + "\u{200D}" + (gender == 1 ? "♀" : "♂") + "\u{FE0F}"
+    }
+
+    /// People that come as a woman or a man too, joined with ♀ or ♂.
+    static let gendered: Set<String> = [
+        "🤦", "🤷", "🙋", "🏃", "🚶", "🙇", "🙆", "🙅", "💁", "🙎", "🙍", "💆", "💇", "🧏", "🧍", "🧎", "🧘", "🏊", "🚴", "🏄",
+        "🤸", "🧗", "🧖", "🤽", "🚣", "🤾", "🤹", "💂", "👷", "👮", "🧙", "🧚", "🧛", "🧜", "🧝", "🦸", "🦹", "🧞", "🧟",
+    ]
+
+    /// The picker's choices with each emoji that takes a skin tone also once in the default yellow right after it, when a tone
+    /// is chosen: for a message where the default fits better.
+    static func withNeutralVariants(_ choices: [CompletionEmoji], skinTone tone: Int) -> [CompletionEmoji] {
+        guard (1...5).contains(tone) else { return choices }
+        return choices.flatMap { emoji -> [CompletionEmoji] in
+            guard emoji.toneable else { return [emoji] }
+            var neutral = emoji
+            neutral.toneable = false
+            return [emoji, neutral]
+        }
     }
 
     static let all: [CompletionEmoji] = table.split(separator: "\n").compactMap { line in

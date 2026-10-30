@@ -125,6 +125,8 @@ pub struct AutocompleteSettings {
     pub emoji: bool,
     /// 0 yellow, 1…5 light to dark.
     pub skin_tone: u8,
+    /// 0 as the emoji is, 1 a woman, 2 a man (see `emoji::GENDERED`).
+    pub emoji_gender: u8,
     /// A text emoticon just typed (":-)", "<3") offers its emoji.
     pub emoticons: bool,
     /// Suggestions in British or American spelling, as the user writes (see `spelling`).
@@ -158,6 +160,7 @@ impl Default for AutocompleteSettings {
             sites: BTreeMap::new(),
             emoji: true,
             skin_tone: 0,
+            emoji_gender: 0,
             emoticons: true,
             match_spelling: true,
             accept_word: "Tab".into(),

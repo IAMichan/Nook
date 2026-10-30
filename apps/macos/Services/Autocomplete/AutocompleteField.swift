@@ -444,6 +444,14 @@ enum AutocompleteTyper {
     /// - Parameter mode: `.oneByOne` for apps that take only the first character of each key event.
     @MainActor static func type(_ text: String, mode: CompletionInsertMode = .keys) {
         if mode == .paste { return paste(text) }
+        if mode == .spaceKey {
+            // Each space a press of the space bar, the text between as usual.
+            for (index, part) in text.split(separator: " ", omittingEmptySubsequences: false).enumerated() {
+                if index > 0 { press(keyCode: 49, flags: []) }
+                if !part.isEmpty { type(String(part)) }
+            }
+            return
+        }
         let source = CGEventSource(stateID: .combinedSessionState)
         let pieces: [[UInt16]] = mode == .oneByOne ? text.map { Array(String($0).utf16) } : chunks(of: Array(text.utf16))
         for piece in pieces {

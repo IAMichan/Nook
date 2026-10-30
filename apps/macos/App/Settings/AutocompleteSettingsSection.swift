@@ -129,8 +129,11 @@ struct AutocompleteSettingsSection: View {
             }
             if CompletionSystemChecks.inlinePredictionsOn {
                 StatusRow(title: tr("autocomplete.inlinePrediction"), detail: tr("autocomplete.inlinePredictionDetail"), state: .todo) {
-                    Button(tr("autocomplete.inlinePrediction.open")) {
-                        if let url = CompletionSystemChecks.keyboardSettings { NSWorkspace.shared.open(url) }
+                    HStack {
+                        Button(tr("autocomplete.inlinePrediction.turnOff")) { CompletionSystemChecks.turnOffInlinePredictions() }
+                        Button(tr("autocomplete.inlinePrediction.open")) {
+                            if let url = CompletionSystemChecks.keyboardSettings { NSWorkspace.shared.open(url) }
+                        }
                     }
                 }
             }
@@ -176,6 +179,21 @@ struct AutocompleteSettingsSection: View {
                     Button(tr("autocomplete.rescan")) { autocomplete.refresh() }
                     Button(tr("button.openFolder")) { NSWorkspace.shared.open(AutocompleteStore.modelsFolder) }
                 }
+            }
+            if !store.prefs.modelPath.hasPrefix(CompletionSource.brainPrefix) {
+                LabeledContent(tr("autocomplete.lora")) {
+                    HStack {
+                        Text(store.prefs.loraAdapterPath.isEmpty ? tr("autocomplete.lora.none") : URL(fileURLWithPath: store.prefs.loraAdapterPath).lastPathComponent)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .lineLimit(1)
+                        Button(tr("autocomplete.lora.choose")) { chooseFile(adapter: true) }
+                        if !store.prefs.loraAdapterPath.isEmpty {
+                            Button(tr("autocomplete.lora.remove")) { store.prefs.loraAdapterPath = "" }
+                        }
+                    }
+                }
+                .help(tr("autocomplete.lora.detail"))
+                .onChange(of: store.prefs.loraAdapterPath) { _, _ in autocomplete.refresh() }
             }
         } header: {
             SettingsSectionTitle(tr("autocomplete.section.model"), info: tr("autocomplete.modelFooter"))
@@ -333,7 +351,8 @@ struct AutocompleteSettingsSection: View {
         autocomplete.forget(file)
     }
 
-    private func chooseFile() {
+    /// - Parameter adapter: a LoRA adapter for the model instead of the model itself.
+    private func chooseFile(adapter: Bool = false) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
@@ -341,7 +360,7 @@ struct AutocompleteSettingsSection: View {
         if let gguf = UTType(filenameExtension: "gguf") { panel.allowedContentTypes = [gguf] }
         panel.directoryURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        store.prefs.modelPath = url.path
+        if adapter { store.prefs.loraAdapterPath = url.path } else { store.prefs.modelPath = url.path }
     }
 
     // MARK: Suggestions
@@ -427,6 +446,37 @@ struct AutocompleteSettingsSection: View {
             .confirmationDialog(tr("autocomplete.forgetConfirm"), isPresented: $confirmForget) {
                 Button(tr("autocomplete.forget"), role: .destructive) { store.forgetSamples(); autocomplete.applyPersonalization() }
             }
+            if store.samples.count > 0 {
+                DisclosureGroup(tr("autocomplete.samples.show")) {
+                    ForEach(Array(store.samples.samples.reversed().prefix(Self.samplesShown)), id: \.self) { sample in
+                        sampleRow(sample)
+                    }
+                    if store.samples.count > Self.samplesShown {
+                        SettingNote(tr("autocomplete.samples.more", store.samples.count - Self.samplesShown))
+                    }
+                }
+            }
+        }
+    }
+
+    /// The newest recorded texts listed in Settings.
+    private static let samplesShown = 100
+
+    /// One recorded text: where and when it was written, the text, and a button to delete it.
+    private func sampleRow(_ sample: CompletionSamples.Sample) -> some View {
+        HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(appName(sample.app) + " · " + sample.date.formatted(date: .abbreviated, time: .shortened))
+                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                Text(sample.text).lineLimit(3).textSelection(.enabled)
+            }
+            Spacer()
+            ConfirmedButton(symbol: "trash", title: tr("autocomplete.samples.delete"), question: tr("autocomplete.samples.deleteQuestion")) {
+                store.forgetSample(sample)
+                autocomplete.applyPersonalization()
+            }
+            .labelled(tr("autocomplete.samples.delete"))
+            .buttonStyle(.borderless)
         }
     }
 
@@ -645,6 +695,13 @@ struct AutocompleteSettingsSection: View {
                 Picker(tr("autocomplete.skinTone"), selection: $store.prefs.skinTone) {
                     ForEach(0...5, id: \.self) { tone in
                         Text(CompletionEmojiCatalog.render(CompletionEmoji(character: "👍", shortcodes: [], toneable: true), skinTone: tone)).tag(tone)
+                    }
+                }
+                if store.prefs.skinTone > 0 { Toggle(tr("autocomplete.neutralEmoji"), isOn: $store.prefs.neutralEmoji) }
+                Picker(tr("autocomplete.emojiGender"), selection: $store.prefs.emojiGender) {
+                    ForEach(0...2, id: \.self) { gender in
+                        Text(CompletionEmojiCatalog.render(CompletionEmoji(character: "🤷", shortcodes: [], toneable: true), skinTone: store.prefs.skinTone,
+                                                           gender: gender) + "  " + tr("autocomplete.emojiGender.\(gender)")).tag(gender)
                     }
                 }
                 Toggle(tr("autocomplete.emoticons"), isOn: $store.prefs.emoticons)
@@ -895,6 +952,7 @@ struct AutocompleteKeysSection: View {
             CompletionKeyRecorder(title: tr("autocomplete.key.toggleAll"), shortcut: $store.prefs.toggleAll, fallback: nil, allowsOff: true)
             CompletionKeyRecorder(title: tr("autocomplete.key.toggleApp"), shortcut: $store.prefs.toggleApp, fallback: nil, allowsOff: true)
             CompletionKeyRecorder(title: tr("autocomplete.key.suggestNow"), shortcut: $store.prefs.suggestNow, fallback: nil, allowsOff: true)
+            SettingNote(tr("autocomplete.key.suggestNowNote"))
             Picker(tr("autocomplete.escape"), selection: $store.prefs.escape) {
                 ForEach(CompletionEscape.allCases) { Text(tr("autocomplete.escape.\($0.rawValue)")).tag($0) }
             }

@@ -60,6 +60,8 @@ enum CompletionInsertMode: String, Codable, CaseIterable, Identifiable {
     case keys
     /// One character per key event from the start.
     case oneByOne
+    /// Key events, with every space a press of the space bar: for apps that drop a space typed as a character.
+    case spaceKey
     /// Through the clipboard and ⌘V, with what was on the clipboard put back right after: for apps that mangle typed text
     /// (some web editors drop or reorder fast key events).
     case paste
@@ -120,6 +122,8 @@ struct CompletionPreferences: Codable, Equatable {
 
     // Model: a GGUF path, "brain:<id>" for the brain's model, or empty for automatic (see CompletionSource.resolve).
     var modelPath = ""
+    /// A LoRA adapter (GGUF) for a GGUF model, applied on top of it; empty for none. The brain's MLX model takes none.
+    var loraAdapterPath = ""
 
     // Context
     var windowContext = true
@@ -154,6 +158,10 @@ struct CompletionPreferences: Codable, Equatable {
     var emoticons = true
     /// 0 yellow, 1…5 light to dark.
     var skinTone = 0
+    /// 0 as the emoji is, 1 a woman, 2 a man (see `CompletionEmojiCatalog.gendered`).
+    var emojiGender = 0
+    /// With a skin tone chosen, each emoji in the picker in the default yellow too.
+    var neutralEmoji = false
 
     // Typos
     var typos = true
@@ -188,6 +196,11 @@ struct CompletionPreferences: Codable, Equatable {
         "org.alacritty", "com.github.wez.wezterm", "com.apple.dt.Xcode", "dev.zed.Zed", "com.jetbrains.intellij", "com.sublimetext.4",
         "com.1password.1password", "com.agilebits.onepassword7", "com.bitwarden.desktop", "com.apple.keychainaccess",
         "com.apple.Passwords"
+    ]
+
+    /// Password managers: never a suggestion, not even when asked for with the `suggestNow` key.
+    static let passwordManagers: Set<String> = [
+        "com.1password.1password", "com.agilebits.onepassword7", "com.bitwarden.desktop", "com.apple.keychainaccess", "com.apple.Passwords",
     ]
 
     /// Code editors built on the web (VS Code and its forks): suggestions in their chat inputs and other prose fields (Claude

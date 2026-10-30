@@ -162,6 +162,10 @@ final class AutocompleteController: ObservableObject {
         return union
     }
 
+    /// The app whose focused field the `suggestNow` key turned suggestions on in, where they are off (the app, the site or a
+    /// small field): like Cotypist's force-activate, it stays on for that field until the focus moves to another field or app.
+    private var forcedApp: pid_t? { didSet { publishTapState() } }
+
     private var keyTap: AutocompleteKeyTap?
     /// Key window changes (whether keys typed in Nook are its own) and settings or pauses, for the key tap's state.
     private var tapStateObservers: [NSObjectProtocol] = []
@@ -177,6 +181,8 @@ final class AutocompleteController: ObservableObject {
     private var idleTask: Task<Void, Never>?
 
     private var completer: (any CompletionEngine)?
+    /// The LoRA adapter the loaded GGUF model runs with (see `CompletionPreferences.loraAdapterPath`).
+    private var loadedAdapter = ""
     private var loading: (identity: String, task: Task<(any CompletionEngine)?, Never>)?
 
     /// How often to re-read the field while the app takes in a key, and how many times. An app that reports its changes (see
@@ -237,7 +243,7 @@ final class AutocompleteController: ObservableObject {
             let usual = CompletionSource.resolve(stored: prefs.modelPath, files: found, brainModels: brainModels, preferredBrain: preferred)
             if case .gguf(let file) = usual { lighterModel = CompletionModelLocator.lighter(than: file, candidates: found) } else { lighterModel = nil }
             let model = power.lighterModel ? lighterModel.map(CompletionSource.gguf) ?? usual : usual
-            if model?.identity != activeModel?.identity { unload() }
+            if model?.identity != activeModel?.identity || (completer != nil && loadedAdapter != prefs.loraAdapterPath) { unload() }
             activeModel = model
             guard prefs.enabled else { return }
             guard trusted, start() else {
@@ -376,6 +382,7 @@ final class AutocompleteController: ObservableObject {
         // Nook's own fields are read through AppKit (see `AutocompleteField.readOwn`), not watched through accessibility.
         fieldObserver.watch(own ? nil : app?.processIdentifier)
         store.offUntilSwitch = nil
+        forcedApp = nil
         if lastSite != nil { lastSite = nil }
         fieldContext = nil
         windowText = nil
@@ -415,8 +422,18 @@ final class AutocompleteController: ObservableObject {
             // An app Nook never reads (a password manager, or one picked in Settings › Privacy) gets no suggestions either.
             return false
         }
+        if forcedApp == app.processIdentifier { return !power.paused }
         let enabled = prefs.isEnabled(inApp: bundleID) || prefs.onlyAgentPrompts(inApp: bundleID)
         return enabled && !store.isPaused(app: bundleID) && !power.paused
+    }
+
+    /// Whether the `suggestNow` key can turn suggestions on in the focused field of `app`, where they are off: never in a
+    /// password manager, an app Nook does not read, under Secure Input, or with nothing to suggest with.
+    private func canForce(in app: NSRunningApplication?) -> Bool {
+        guard let app, prefs.enabled, prefs.suggestNow != nil, !IsSecureEventInputEnabled(), activeModel != nil, !power.paused else { return false }
+        if app.processIdentifier == ProcessInfo.processInfo.processIdentifier { return ownFieldFocused }
+        if let bundleID = app.bundleIdentifier, ScreenReader.excludedBundles.contains(bundleID) { return false }
+        return !CompletionPreferences.passwordManagers.contains(app.bundleIdentifier ?? "")
     }
 
     var isPausedEverywhere: Bool { store.isPaused(app: nil) }
@@ -468,6 +485,7 @@ final class AutocompleteController: ObservableObject {
         gate.toggleApp = prefs.toggleApp
         gate.alternatives = prefs.wordAlternatives ? prefs.alternatives : nil
         gate.suggestNow = prefs.suggestNow
+        gate.canForce = !gate.active && canForce(in: app)
         gate.canHold = canHoldAcceptKey
         gate.holding = heldKey != nil
         if let alternatives {
@@ -543,6 +561,13 @@ final class AutocompleteController: ObservableObject {
         if key.matches(prefs.toggleAll) { togglePauseEverywhere(); return true }
         if key.matches(prefs.toggleApp), let bundleID { togglePause(app: bundleID); return true }
         if prefs.wordAlternatives, key.matches(prefs.alternatives) { showAlternatives(); return true }
+        // Asked for where suggestions are off: on for this field from now on (see `forcedApp`).
+        if key.matches(prefs.suggestNow), !isActive(in: app), canForce(in: app), let app {
+            forcedApp = app.processIdentifier
+            dismiss()
+            refreshProposal(eager: true)
+            return true
+        }
 
         guard isActive(in: app) else { dismiss(); return false }
         // Asked for: a suggestion for the text as it is, with the lower bar of a request (see `holdAcceptKey`).
@@ -634,8 +659,7 @@ final class AutocompleteController: ObservableObject {
                 if !commandLike, let query = emojiQuery(picker.query, after: key) {
                     readToken += 1
                     refreshWork?.cancel()
-                    let choices = CompletionEmojiCatalog.choices(for: query, recent: store.recentEmoji, limit: Self.emojiColumns * 4,
-                                                                 context: picker.context)
+                    let choices = emojiChoices(for: query, context: picker.context)
                     if choices.isEmpty {
                         dismiss()
                     } else {
@@ -901,7 +925,7 @@ final class AutocompleteController: ObservableObject {
     /// when there is none and the terminal is not turned on for the shell as well.
     private func agentPrompt(_ snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication) -> AutocompleteFieldSnapshot? {
         guard let bundleID = app.bundleIdentifier, CompletionTerminal.apps.contains(bundleID) else { return snapshot }
-        let shellToo = prefs.isEnabled(inApp: bundleID)
+        let shellToo = prefs.isEnabled(inApp: bundleID) || forcedApp == app.processIdentifier
         guard prefs.agentPromptsInTerminals, let prompt = CompletionTerminal.agentPrompt(before: snapshot.before, after: snapshot.after) else {
             return shellToo ? snapshot : nil
         }
@@ -974,6 +998,7 @@ final class AutocompleteController: ObservableObject {
         case .focus:
             // Another field: its text is not the one read last, and its context can go into the model before the first key.
             lastRead = nil
+            forcedApp = nil
             scheduleWarm(after: 0.05)
         }
     }
@@ -1084,14 +1109,15 @@ final class AutocompleteController: ObservableObject {
     private func propose(for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication, continuing: Bool = false) {
         // Runs for every keystroke: publish only a new site, so Settings does not redraw while you type.
         if lastSite != snapshot.site { lastSite = snapshot.site }
-        guard prefs.isEnabled(onSite: snapshot.site), !skipsCode(snapshot, in: app) else { return }
+        let forced = forcedApp == app.processIdentifier
+        guard forced || prefs.isEnabled(onSite: snapshot.site), !skipsCode(snapshot, in: app) else { return }
         record(snapshot, app: app.bundleIdentifier)
         if snapshot.hasSelection { return }
-        if !prefs.smallFields, let field = snapshot.fieldFrame, field.width > 0, field.width < 150 { return }
+        if !forced, !prefs.smallFields, let field = snapshot.fieldFrame, field.width > 0, field.width < 150 { return }
 
         if prefs.emoji, let anchor = snapshot.cardAnchor, let query = CompletionEmojiCatalog.query(in: snapshot.before) {
             let context = String(snapshot.before.dropLast(query.count + 1))
-            let choices = CompletionEmojiCatalog.choices(for: query, recent: store.recentEmoji, limit: Self.emojiColumns * 4, context: context)
+            let choices = emojiChoices(for: query, context: context)
             // A colon with no emoji by that name is just a colon.
             guard !choices.isEmpty else { return }
             let picker = EmojiPicker(query: query, choices: choices, anchor: anchor, context: context)
@@ -1423,10 +1449,18 @@ final class AutocompleteController: ObservableObject {
         }
     }
 
+    /// The picker's emoji for a name, with the default yellow of each next to it when asked for (see `neutralEmoji`).
+    private func emojiChoices(for query: String, context: String) -> [CompletionEmoji] {
+        let limit = Self.emojiColumns * 4
+        let choices = CompletionEmojiCatalog.choices(for: query, recent: store.recentEmoji, limit: limit, context: context)
+        guard prefs.neutralEmoji else { return choices }
+        return Array(CompletionEmojiCatalog.withNeutralVariants(choices, skinTone: prefs.skinTone).prefix(limit))
+    }
+
     /// Types the emoji at `index` in place of the colon and the name.
     private func take(_ index: Int, from picker: EmojiPicker) {
         let emoji = picker.choices[index]
-        let rendered = CompletionEmojiCatalog.render(emoji, skinTone: prefs.skinTone)
+        let rendered = CompletionEmojiCatalog.render(emoji, skinTone: prefs.skinTone, gender: prefs.emojiGender)
         dismiss()
         AutocompleteTyper.replace(last: picker.query.count + 1, with: rendered, mode: insertMode(frontApp?.bundleIdentifier))
         store.recordAccepted(rendered, first: true, app: frontApp?.bundleIdentifier)
@@ -1457,7 +1491,7 @@ final class AutocompleteController: ObservableObject {
     /// The picker under the cursor: a grid of emoji with the selected one marked, the numbers 1 to 9 in the row with the
     /// selection, and the selected one's name below.
     private func showEmojiPicker(_ picker: EmojiPicker) {
-        let emoji = picker.choices.map { CompletionEmojiCatalog.render($0, skinTone: prefs.skinTone) }
+        let emoji = picker.choices.map { CompletionEmojiCatalog.render($0, skinTone: prefs.skinTone, gender: prefs.emojiGender) }
         let name = ":\(picker.choices[picker.selected].shortcodes[0]):"
         overlay.showEmojiPicker(emoji, selected: picker.selected, columns: Self.emojiColumns, name: name,
                                 hint: "1–9  ←→↑↓  " + prefs.acceptWord.label + " ↩", below: picker.anchor)
@@ -1611,19 +1645,21 @@ final class AutocompleteController: ObservableObject {
     private func loadedCompleter(for model: CompletionSource) async -> (any CompletionEngine)? {
         let identity = model.identity
         if let completer, completer.identity == identity { return completer }
+        let adapter = prefs.loraAdapterPath
         if let loading, loading.identity == identity { return await loading.task.value }
         state = .loading
         let task = Task { () -> (any CompletionEngine)? in
             do {
                 let loaded: any CompletionEngine
                 switch model {
-                case .gguf(let file): loaded = try await LlamaCompleter.load(path: file.url.path)
+                case .gguf(let file): loaded = try await LlamaCompleter.load(path: file.url.path, adapter: adapter)
                 // The brain's model is loaded by the brain itself, on the first suggestion; nothing to wait for here.
                 case .brain(let id, _): loaded = BrainCompleter(modelID: id)
                 }
                 // Another model was chosen while this one loaded: let it go.
                 guard activeModel?.identity == identity else { return nil }
                 completer = loaded
+                loadedAdapter = adapter
                 applyPersonalization()
                 state = .ready
                 return loaded

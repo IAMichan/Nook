@@ -9,6 +9,14 @@ enum CompletionSystemChecks {
         (UserDefaults.standard.object(forKey: "NSAutomaticInlinePredictionEnabled") as? Bool) ?? true
     }
 
+    /// Turns macOS's inline predictions off for the user, as the switch in Keyboard settings does. Apps that are open pick it
+    /// up when they start again.
+    static func turnOffInlinePredictions() {
+        CFPreferencesSetValue("NSAutomaticInlinePredictionEnabled" as CFString, kCFBooleanFalse, kCFPreferencesAnyApplication,
+                              kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        CFPreferencesSynchronize(kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+    }
+
     /// Keyboard settings, where the predictions are turned off (Text Input › Edit).
     static let keyboardSettings = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")
 

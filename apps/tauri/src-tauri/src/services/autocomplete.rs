@@ -316,16 +316,16 @@ fn create_ghost(app: &AppHandle, input: &Arc<dyn TextInput>) {
     }
 }
 
-fn choice_list(picker: &Picker, tone: u8) -> Vec<EmojiChoice> {
+fn choice_list(picker: &Picker, tone: u8, gender: u8) -> Vec<EmojiChoice> {
     picker
         .choices
         .iter()
-        .map(|e| EmojiChoice { emoji: emoji::render(e, tone), name: e.shortcodes.first().cloned().unwrap_or_default() })
+        .map(|e| EmojiChoice { emoji: emoji::render_person(e, tone, gender), name: e.shortcodes.first().cloned().unwrap_or_default() })
         .collect()
 }
 
 /// The picker card under the caret. Returns where it is (physical pixels), for the hook's click test.
-fn show_card(app: &AppHandle, input: &Arc<dyn TextInput>, open: &OpenPicker, tone: u8) -> Option<ScreenRect> {
+fn show_card(app: &AppHandle, input: &Arc<dyn TextInput>, open: &OpenPicker, tone: u8, gender: u8) -> Option<ScreenRect> {
     let window = app.get_webview_window(GHOST)?;
     let rect = ScreenRect {
         x: open.caret.x,
@@ -337,7 +337,7 @@ fn show_card(app: &AppHandle, input: &Arc<dyn TextInput>, open: &OpenPicker, ton
         "autocomplete-ghost",
         serde_json::json!({
             "kind": "picker",
-            "choices": choice_list(&open.picker, tone),
+            "choices": choice_list(&open.picker, tone, gender),
             "selected": open.picker.selected,
             "query": open.picker.query,
             "layout": open.layout,
@@ -568,7 +568,7 @@ impl Controller {
     fn redraw_picker(&mut self) {
         let tone = self.settings.autocomplete.skin_tone;
         let Some(open) = self.picker.as_ref() else { return };
-        let card = show_card(&self.app, &self.input, open, tone);
+        let card = show_card(&self.app, &self.input, open, tone, self.settings.autocomplete.emoji_gender);
         self.input.set_picker(card, open.picker.return_takes());
         let app = open.app.clone();
         self.arm_for(&app);
@@ -578,7 +578,7 @@ impl Controller {
     fn take_emoji(&mut self, index: usize) {
         let Some(open) = self.picker.take() else { return };
         let Some(chosen) = open.picker.choices.get(index).copied() else { return self.close_picker() };
-        let rendered = emoji::render(chosen, self.settings.autocomplete.skin_tone);
+        let rendered = emoji::render_person(chosen, self.settings.autocomplete.skin_tone, self.settings.autocomplete.emoji_gender);
         self.close_picker();
         if let Err(e) = self.input.replace_text(open.picker.replaces, &rendered) {
             log::warn!("Aanvullen: {e}");
@@ -971,7 +971,7 @@ pub fn playground_emoji(app: &AppHandle, text: &str) -> Option<EmojiChoices> {
     let keep = text.chars().count().saturating_sub(query.chars().count() + 1);
     let context: String = text.chars().take(keep).collect();
     let picker = Picker::open(&query, &context, &app.state::<Autocomplete>().usage())?;
-    Some(EmojiChoices { query, choices: choice_list(&picker, settings.autocomplete.skin_tone) })
+    Some(EmojiChoices { query, choices: choice_list(&picker, settings.autocomplete.skin_tone, settings.autocomplete.emoji_gender) })
 }
 
 /// The models on the local server autocomplete uses, for the model picker.

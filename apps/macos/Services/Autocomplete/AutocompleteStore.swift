@@ -139,6 +139,11 @@ final class AutocompleteStore: ObservableObject {
         return true
     }
 
+    func forgetSample(_ sample: CompletionSamples.Sample) {
+        samples.remove(sample)
+        save(samples, "samples.json")
+    }
+
     func forgetSamples() {
         // Asked for: an old file this launch could not open goes too.
         locked.subtract(Self.sealedFiles)

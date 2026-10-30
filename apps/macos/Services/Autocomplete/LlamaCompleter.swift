@@ -156,7 +156,9 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     }
 
     /// Loads the model off the main thread (a second or two for a small one).
-    static func load(path: String) async throws -> LlamaCompleter {
+    /// - Parameter adapter: a LoRA adapter (GGUF) made for this model, applied at full strength. One that does not load
+    ///   (made for another model) is left out, and the model runs without it.
+    static func load(path: String, adapter: String? = nil) async throws -> LlamaCompleter {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 _ = backendReady
@@ -182,6 +184,15 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
                 guard let context = llama_init_from_model(model, params) else {
                     llama_model_free(model)
                     return continuation.resume(throwing: NookError(tr("autocomplete.error.memory")))
+                }
+                if let adapter, !adapter.isEmpty {
+                    if let lora = llama_adapter_lora_init(model, adapter) {
+                        var adapters: [OpaquePointer?] = [lora]
+                        var scales: [Float] = [1]
+                        llama_set_adapters_lora(context, &adapters, 1, &scales)
+                    } else {
+                        Log.autocomplete.error("LoRA adapter did not load for this model; running without it")
+                    }
                 }
                 let completer = LlamaCompleter(path: path, model: model, context: context)
                 completer.prepareSpelling()
