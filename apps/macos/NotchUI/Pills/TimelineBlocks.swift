@@ -90,9 +90,10 @@ struct QueuedMessagesStrip: View {
     /// neither can happen right now.
     var sendNow: ((UUID) -> Void)? = nil
     @State private var collapsed = false
+    @State private var hovered: UUID?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             Button { withAnimation(NookTheme.reveal) { collapsed.toggle() } } label: {
                 HStack(spacing: NookTheme.Spacing.sm) {
                     Image(systemName: "chevron.down")
@@ -108,8 +109,8 @@ struct QueuedMessagesStrip: View {
                         .truncationMode(.tail)
                 }
                 .foregroundStyle(NookTheme.textSecondary)
-                .padding(.horizontal, NookTheme.Spacing.md)
-                .padding(.vertical, 3)
+                .padding(.horizontal, NookTheme.Spacing.sm)
+                .padding(.vertical, NookTheme.Spacing.xxs)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -124,33 +125,71 @@ struct QueuedMessagesStrip: View {
         }
     }
 
+    /// One waiting message: its place in line, its text, and its actions. The actions show under the pointer (and while
+    /// the message is open in the box), on the row's own fill so the text runs out softly underneath them.
     private func row(_ message: QueuedMessage, index: Int) -> some View {
         let isEditing = editing == message.id
+        let showsActions = hovered == message.id || isEditing
+        let fill = NookTheme.rowFill(selected: isEditing, hovering: hovered == message.id, rest: .clear)
         return HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: isEditing ? "pencil" : "clock").font(NookTheme.font(10, .semibold))
-            Text(ToolSummary.oneLine(ContextRefs.visible(message.text), 120)).lineLimit(1)
-            Spacer(minLength: 6)
-            HStack(spacing: NookTheme.Spacing.md) {
-                if let move, queue.count > 1 {
-                    iconButton("chevron.up", tr("compose.queue.up"), enabled: index > 0) { move(message.id, index - 1) }
-                    iconButton("chevron.down", tr("compose.queue.down"), enabled: index < queue.count - 1) { move(message.id, index + 1) }
-                }
-                if let edit { iconButton("pencil", tr("compose.queue.edit"), enabled: !isEditing) { edit(message.id) } }
-                if let sendNow { iconButton("paperplane.fill", tr("compose.queue.sendNow"), enabled: !isEditing) { sendNow(message.id) } }
-                iconButton("xmark", tr("compose.queue.remove"), enabled: true) { remove(message.id) }
+            position(index, editing: isEditing)
+            Text(ToolSummary.oneLine(ContextRefs.visible(message.text), 120))
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(isEditing ? NookTheme.paper : NookTheme.textStrong)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .overlay(alignment: .trailing) {
+            actions(message, index: index, isEditing: isEditing)
+                .rowActionsBackdrop(fill)
+                .opacity(showsActions ? 1 : 0)
+                .allowsHitTesting(showsActions)
+        }
+        .padding(.horizontal, NookTheme.Spacing.sm)
+        .padding(.vertical, NookTheme.Spacing.xs)
+        .contentShape(Rectangle())
+        // The tray above the composer is the card; the row under the pointer and the one open in the box stand out of it.
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(fill))
+        .onHover { inside in
+            if inside { hovered = message.id } else if hovered == message.id { hovered = nil }
+        }
+        .animation(NookTheme.hover, value: showsActions)
+        .accessibilityElement(children: .contain)
+    }
+
+    /// Its place in line ("1", "2"…), or a pencil while it is open in the box.
+    private func position(_ index: Int, editing: Bool) -> some View {
+        ZStack {
+            Circle().fill(editing ? NookTheme.graphite : NookTheme.smoke)
+            if editing {
+                Image(systemName: "pencil").font(NookTheme.font(9, .bold))
+            } else {
+                Text("\(index + 1)").font(NookTheme.rounded(10, .semibold)).monospacedDigit()
             }
         }
-        .contentShape(Rectangle())
-        .font(NookTheme.TextStyle.detail)
-        .foregroundStyle(isEditing ? NookTheme.paper : NookTheme.textSecondary)
-        .padding(.horizontal, NookTheme.Spacing.md)
-        .padding(.vertical, NookTheme.Spacing.xs)
-        // The tray above the composer is the card; only the message open in the box stands out of it.
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(isEditing ? NookTheme.smoke : Color.clear))
+        .foregroundStyle(editing ? NookTheme.paper : NookTheme.textSecondary)
+        .frame(width: 18, height: 18)
+        .accessibilityHidden(true)
+    }
+
+    /// Send now first (what you reach for most), then edit and remove; moving up and down after a line of their own.
+    private func actions(_ message: QueuedMessage, index: Int, isEditing: Bool) -> some View {
+        HStack(spacing: NookTheme.Spacing.xxs) {
+            if let sendNow { iconButton("paperplane.fill", tr("compose.queue.sendNow"), enabled: !isEditing) { sendNow(message.id) } }
+            if let edit { iconButton("pencil", tr("compose.queue.edit"), enabled: !isEditing) { edit(message.id) } }
+            iconButton("xmark", tr("compose.queue.remove"), enabled: true) { remove(message.id) }
+            if let move, queue.count > 1 {
+                NookDivider(vertical: true)
+                    .frame(height: 12)
+                    .padding(.horizontal, NookTheme.Spacing.xxs)
+                iconButton("arrow.up", tr("compose.queue.up"), enabled: index > 0) { move(message.id, index - 1) }
+                iconButton("arrow.down", tr("compose.queue.down"), enabled: index < queue.count - 1) { move(message.id, index + 1) }
+            }
+        }
     }
 
     private func iconButton(_ symbol: String, _ label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        ToolbarIconButton(symbol, label, height: 18, width: 18, enabled: enabled, action)
+        ToolbarIconButton(symbol, label, height: 22, width: 22, enabled: enabled, action)
     }
 }
 

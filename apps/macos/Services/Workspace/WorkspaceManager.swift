@@ -1026,6 +1026,21 @@ final class WorkspaceManager: ObservableObject {
         refreshGit(id)
     }
 
+    /// A message you send yourself: it goes out now only when the agent is truly free, otherwise it waits in line.
+    /// Busy covers more than a running status: the process of the turn that just ended can still be closing, its
+    /// snapshot can still be made, or earlier messages can still be waiting; this one goes behind them. Nothing is
+    /// dropped: a message that cannot go out waits in the queue. True when it went out now.
+    @discardableResult
+    func submit(_ id: UUID, text: String) -> Bool {
+        guard let run = run(id) else { return false }
+        let waiting = queued[id].map { !$0.isEmpty && !$0.isHeld } ?? false
+        let busy = run.status.isActive || processes[id] != nil || checkpointing.contains(id) || waiting
+        if !busy, send(id, text: text, shown: false) { return true }
+        enqueue(id, text: text)
+        sendQueued(id)
+        return false
+    }
+
     /// Keeps a message for when the current turn is done: you keep typing while the agent works.
     func enqueue(_ id: UUID, text: String) {
         guard run(id) != nil else { return }

@@ -526,8 +526,7 @@ final class CompanionServer: ObservableObject {
             // composer steers), else in line for after the turn.
             let outcome: String
             if !run.status.isActive {
-                workspace.send(runID, text: text)
-                outcome = "sent"
+                outcome = workspace.submit(runID, text: text) ? "sent" : "queued"
             } else if request.steer == true, workspace.canSteer(runID), workspace.steer(runID, text: text) {
                 outcome = "steered"
             } else {

@@ -999,7 +999,8 @@ struct AgentRunPanel: View {
             images = []
             let message = quotes.message(outgoing.send)
             quotes.removeAll()
-            workspace.send(runID, text: message)
+            // Still finishing the last turn (or messages wait in line): this one waits too, never sent past them.
+            workspace.submit(runID, text: message)
         }
         // Codex over app-server and Claude Code take a new message during the turn (steering); others get it after the turn.
         // Return does what you chose in Settings, Cmd+Return the other.
