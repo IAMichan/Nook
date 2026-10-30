@@ -18,7 +18,8 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(MessagingApps.app(bundleID: "com.facebook.archon")?.id, "messenger")
         XCTAssertEqual(MessagingApps.app(bundleID: "org.whispersystems.signal-desktop")?.id, "signal")
         XCTAssertEqual(MessagingApps.app(bundleID: "com.apple.MobileSMS")?.id, "messages")
-        XCTAssertNil(MessagingApps.app(bundleID: "com.apple.mail"))
+        XCTAssertEqual(MessagingApps.app(bundleID: "com.apple.mail")?.id, "mail", "mail is in the Chats tab too")
+        XCTAssertNil(MessagingApps.app(bundleID: "com.apple.Notes"))
     }
 
     func testWebAppsInTheDockByTheirName() {
@@ -218,7 +219,7 @@ final class ChatInboxTests: XCTestCase {
     }
 
     func testNotChats() {
-        XCTAssertNil(ChatCapture.notice(notification("com.apple.mail", title: "Anna", body: "Invoice")))
+        XCTAssertNil(ChatCapture.notice(notification("com.apple.Notes", title: "Anna", body: "Invoice")))
         XCTAssertNil(ChatCapture.notice(notification("com.google.Chrome", title: "Build failed", subtitle: "github.com", body: "main")))
         XCTAssertNil(ChatCapture.notice(notification("ru.keepcoder.Telegram", title: "Anna", body: "")), "nothing said")
         XCTAssertNil(ChatCapture.notice(notification("com.google.Chrome", title: "Instagram", subtitle: "instagram.com",

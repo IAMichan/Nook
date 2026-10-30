@@ -4,7 +4,7 @@ import WebKit
 
 /// Linking one chat app, or managing it once it is linked, in numbered steps. Nook links the apps it reads itself in its
 /// own way, with nothing else needed: WhatsApp with a QR code from your phone, Teams with a code from Microsoft, Slack
-/// with a token, Messages from this Mac, Snapchat from its website. Telegram, Instagram, Messenger, Signal, X and LinkedIn link through the chat
+/// with a token, Messages from this Mac, Snapchat from its website, mail from the Mail app with every account in it. Telegram, Instagram, Messenger, Signal, X and LinkedIn link through the chat
 /// service on this Mac (Nook's own helper: your phone number and a code, logging in on the app's own website, or a QR
 /// code), which is also offered as another way for the rest while it runs. A build without the helper
 /// links Telegram itself, through TDLib.
@@ -345,6 +345,7 @@ struct ChatOwnLinkSteps: View {
     @ObservedObject private var whatsAppAccounts = WhatsAppAccounts.shared
     @ObservedObject private var installer = WhatsAppGOWAInstaller.shared
     @ObservedObject private var snapchat = SnapchatWebSession.shared
+    @ObservedObject private var mail = ChatCaptureService.shared.mailBridge
     @State private var whatsAppOptions = false
 
     var body: some View {
@@ -372,6 +373,8 @@ struct ChatOwnLinkSteps: View {
             messagesStep
         case capture.snapchatBridge.app:
             snapchatStep
+        case mail.app:
+            mailStep
         default:
             EmptyView()
         }
@@ -477,6 +480,25 @@ struct ChatOwnLinkSteps: View {
         }
     }
 
+    // MARK: Mail
+
+    @ViewBuilder
+    private var mailStep: some View {
+        SetupStep(number: 1, title: tr("chats.own.mail.step"), done: mail.isLinked) {
+            if mail.isLinked {
+                MailAccountRows()
+            } else {
+                detail(tr("chats.mail.linkDetail"))
+                Button(tr("chats.mail.link")) {
+                    if !capture.enabled { setCollecting(true) }
+                    capture.linkMail()
+                }
+                .buttonStyle(.borderedProminent)
+                SettingNote(tr("chats.mail.howItReads"))
+            }
+        }
+    }
+
     // MARK: Messages
 
     @ViewBuilder
@@ -531,9 +553,45 @@ struct ChatOwnAccounts: View {
             ChatLinkedAccountRow(app: app, title: tr("chats.snapchat.connected"), detail: tr("chats.snapchat.connectedDetail"),
                                  signOut: { capture.signOutSnapchat() })
             SettingNote(tr("chats.snapchat.howItReads"))
+        case capture.mailBridge.app:
+            MailAccountRows()
         default:
             EmptyView()
         }
+    }
+}
+
+/// Mail's accounts once it is linked: one row per account in the Mail app (whatever kind it is: iCloud, Gmail, Outlook,
+/// Exchange, Yahoo, IMAP), a way to add another (in System Settings, where Mail takes its accounts from), and unlinking
+/// Mail behind a confirmation. Mail itself and its accounts stay as they are.
+struct MailAccountRows: View {
+    @ObservedObject private var capture = ChatCaptureService.shared
+    @ObservedObject private var mail = ChatCaptureService.shared.mailBridge
+
+    var body: some View {
+        let app = mail.app
+        if mail.accounts.isEmpty {
+            ChatLinkedAccountRow(app: app, title: tr("chats.mail.connected"), detail: tr("chats.mail.connectedDetail"))
+        } else {
+            ForEach(mail.accounts, id: \.name) { account in
+                ChatLinkedAccountRow(app: app, title: account.name,
+                                     detail: account.addresses.isEmpty ? tr("chats.mail.connectedDetail")
+                                         : account.addresses.joined(separator: ", "))
+            }
+        }
+        if !ScriptText.isRunning(MailSender.mailBundleID) {
+            SettingNote(tr("chats.mail.openMail"), tone: .warning)
+        }
+        HStack(spacing: NookTheme.Spacing.sm) {
+            Button(tr("chats.mail.addAccount")) {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.Internet-Accounts-Settings.extension") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            ConfirmedButton(tr("chats.mail.unlink"), question: tr("chats.mail.unlinkQuestion"), action: { capture.unlinkMail() })
+        }
+        .controlSize(.small)
+        SettingNote(tr("chats.mail.howItReads"))
     }
 }
 

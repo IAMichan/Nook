@@ -34,7 +34,7 @@ needs a column in that matrix.
 
 | Family | Members | Shared shape (build features here) |
 |---|---|---|
-| Chat apps | WhatsApp (phone link via GOWA or OpenWA, WhatsApp Desktop, chat helper), Messages (iMessage/SMS), Telegram, Slack, Teams, Snapchat (its website, `SnapchatBridge`), and the chat helper's networks (Signal, Instagram, Messenger, LinkedIn, X, Discord, Google Chat) | One shared inbox for every app: `InboxMessage`/`InboxThread`/`BridgedChat` (`ChatInbox.swift`) filled by a `ChatBridge` per app (WhatsApp's linked phone too: `WhatsAppGatewayBridge`), `ChatContract.swift` (abilities, actions), `ChatNoticeRules`, `ChatReceipts.swift`, `ChatTyping.swift`, `ChatBubble` + `ChatTranscript`, `ChatsEntry`/`ChatsTab`, one chat card (`AppModel+Chats.swift`) |
+| Chat apps | WhatsApp (phone link via GOWA or OpenWA, WhatsApp Desktop, chat helper), Messages (iMessage/SMS), Telegram, Slack, Teams, Snapchat (its website, `SnapchatBridge`), Mail (every account in the Mail app, `MailBridge`; Outlook, Gmail, Spark and Proton Mail through their notifications), and the chat helper's networks (Signal, Instagram, Messenger, LinkedIn, X, Discord, Google Chat) | One shared inbox for every app: `InboxMessage`/`InboxThread`/`BridgedChat` (`ChatInbox.swift`) filled by a `ChatBridge` per app (WhatsApp's linked phone too: `WhatsAppGatewayBridge`), `ChatContract.swift` (abilities, actions), `ChatNoticeRules`, `ChatReceipts.swift`, `ChatTyping.swift`, `ChatBubble` + `ChatTranscript`, `ChatsEntry`/`ChatsTab`, one chat card (`AppModel+Chats.swift`) |
 | WhatsApp gateways | GOWA, OpenWA | `WhatsAppProvider` (`WhatsAppProvider.swift`), `WAWebhookEvent` (`WhatsAppGateway.swift`) |
 | Chat helper networks | every bridge in `apps/chatd` | `apps/chatd` (bridgev2 `MatrixAPI` in `matrix.go`, the `/v1` API, the `/v1/ws` live line) → `ChatServiceData` |
 | Coding agents | Claude Code, Claude Desktop, Codex, Gemini CLI, Antigravity, Cursor, Grok, OpenCode, the ACP agents you add, Copilot CLI, Muse Code, Amp, Hermes ([`AGENTS.md`](AGENTS.md)) | `ProviderCapabilities` (`WorkspaceModels.swift`), `AgentModelMenu` (models, aliases, levels and effort per agent; an ACP agent you added by its profile), `AcpSessionSettings` and `AcpSessionCapabilities` (`AcpAgent.swift`), `AgentConfigInstaller`, the hook event protocol, the session rows in the notch; for sessions Nook runs, `AgentSignal`/`AgentTimeline` (`AgentTimeline.swift`); for sessions in a terminal, `AgentChatMessage`/`AgentToolStep` (`AgentTranscript.swift`) |
@@ -46,44 +46,44 @@ needs a column in that matrix.
 
 `✓` = shown, `–` = the app does not say it (left out on purpose), `?` = not checked yet.
 
-| Feature | WhatsApp (GOWA) | WhatsApp (OpenWA) | Messages | Telegram | Chat helper networks | Slack | Teams | Snapchat |
-|---|---|---|---|---|---|---|---|---|
-| Ticks on every message of yours | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (one tick, no receipts) | ✓ (two once read, from each member's read horizon) | ✓ (one tick, no receipts) |
-| Who read it, in a group | ✓ (per member) | ✓ (`message.receipt`, Baileys engine) | – | ✓ (`getMessageViewers`) | ✓ (`seen` per person) | – (Slack keeps no read receipts) | ✓ (`consumptionhorizons`, where read receipts are on, up to 20 people) | – (the website does not say per person) |
-| When they read it, in a private chat | ✓ (receipt arrival) | ✓ (receipt arrival) | ✓ (`date_read`) | ✓ (`getMessageReadDate`, unless either of you hides it) | ✓ (`seen` time) | – (Slack keeps no read receipts) | – (the read horizon says that, not when) | – (only "Opened" in the list, without a time) |
-| Who is typing | ✓ (`chat_presence`, while a chat is open) | ✓ (`presence.update`, Baileys engine, while a chat is open) | – (not in the database) | ✓ (`updateChatAction`) | ✓ (bridgev2 `MarkTyping`) | – (only over a real-time socket Nook does not hold) | – (Graph does not say) | – (not read from the page yet) |
-| Photo caption in the chat list | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (the list shows a status, not the message) |
-| People by name, not by number | ✓ (your Contacts, then `/user/my/contacts`) | ✓ (your Contacts, then `/contacts`) | ✓ (Contacts) | ✓ (Telegram's names) | ✓ (the network's names) | ✓ | ✓ | ✓ (Snapchat's names) |
-| Opened chat read from the app at once | ✓ (the chat's history) | ✓ (the chat's history) | ✓ | ✓ | ✓ (that chat read again) | ✓ | ✓ | ✓ |
-| Notch card follows its chat live (its app read at least every 20 s while the card is up or waits, `ChatCaptureService.watching`) | ✓ (live) | ✓ (live) | ✓ (every 2 s) | ✓ (every 3 s) | ✓ (live line, else every 10 s) | ✓ (every 20 s, else 60 s) | ✓ (every 20 s, else 60 s) | ✓ (every 20 s, else 30 s) |
-| Shared links shown short (`[url](url)` → `site/path`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Edit, delete and info from the message's ⌄ menu (↑ in an empty field edits) | ✓ (when the gateway can) | ✓ (when the gateway can) | – from Nook (Messages lets no other app edit); an edit or unsend made in Messages shows (`date_edited`, `date_retracted`) | ✓ | ✓ (where the network allows it) | ✓ | ✓ | – (the website takes only new text) |
-| Link previews and embeds (picture, video, sound, page card) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Calls shown as a call row (kind, who rang, how long; `ChatFormat.call`) | ✓ (the gateway's call line) | ✓ (the gateway's call line) | – (FaceTime calls are not in the chat database) | ✓ (`messageCall`) | ✓ (the bridge's call notice) | ✓ (huddles, `huddle_thread`) | ✓ (`Event/Call`, signed in through the website) | – (not read from the page yet) |
-| Mark as unread, also a chat without messages in Nook yet | ✓ (`markedUnread`) | ✓ (`markedUnread`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Read in the app or on the phone → read in Nook at once, its waiting card and macOS notification gone | ✓ (`readElsewhere`) | ✓ (the phone's chat list counting nothing new, `WAInbox.readInGateway`; within five minutes) | ✓ (unread count) | ✓ (unread count) | ✓ (unread count, also without a new message) | ✓ (`client.counts`, signed in through the website; a pasted token: –) | ✓ (`readUntil`) | ✓ (the list's unread mark) |
-| A chat Nook can only read says what is missing and links it (`ChatLimitsLine`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Emoji on messages | ✓ | ✓ | ✓ (tapbacks) | ✓ | ✓ | ✓ | ✓ | – (the website does not show them) |
-| Who put each emoji there (tooltip, and a list on click) | ✓ (the chat's names) | ✓ (the chat's names) | ✓ (Contacts) | ✓ (`recent_sender_ids`, the last few) | ✓ (the chat's people) | ✓ | ✓ (Graph `displayName`; the web app by the names in the chat) | – (the website does not show emoji) |
-| Your emoji sent as the app's own (never a placeholder there) | ✓ (any emoji) | ✓ (any emoji) | – (Messages takes no emoji from Nook) | ✓ (TDLib refuses what the chat does not allow) | ✓ (the bridge sends the emoji) | ✓ (Slack's names; one it lacks is refused with a clear message) | ✓ (`TeamsEmoji`, Microsoft's 3,114 keys incl. skin tones; one it lacks is refused) | – (the website takes no emoji) |
-| Emoji that only a notification says ("Reacted 👍 to …"), put on that message | ✓ (WhatsApp on this Mac, whose database Nook does not read them from) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Someone's new emoji on your message as the chat list's line ("Reacted with 👍 to …", `ChatReactionNote`) | ✓ (the gateway's reaction event) | ✓ (the gateway's reaction event) | ✓ (tapbacks) | ✓ | ✓ | ✓ | ✓ | – (the website does not show emoji) |
-| A message the app writes before its text (WhatsApp on this Mac) read again until it says something | ✓ (`waiting`, 10 minutes) | n/a (the gateways send finished messages) | n/a | n/a | n/a | n/a | n/a | n/a |
-| Delete for me (any message; hidden in Nook on this Mac) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) | ✓ (also in Telegram, for you) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) |
-| Real ticks on older messages | ✓ for receipts Nook received (kept on this Mac, `WAReceiptStore`) | ✓ same | ✓ (the database) | ✓ ("read up to") | ✓ (kept per person in `apps/chatd`) | – (Slack keeps no read receipts) | ✓ (read horizons, each time the chat is read) | – |
-| More than one account (a business number, a second phone), its chats side by side and named by account | ✓ (a GOWA device per account, `WhatsAppAccounts`) | ✓ (an OpenWA session per account) | – (one Apple account on this Mac) | – (one TDLib login so far) | – (one login per network so far) | – (one workspace so far) | ✓ (every signed-in account) | – (one website session) |
-| Its card in the notch answered in place: the field sends to the chat, a message can be quoted and get an emoji, a file opens, Read, Let Nook answer, Quiet, Hide | ✓ | ✓ | ✓ (text; no quotes or emoji, which Messages takes from no app) | ✓ | ✓ | ✓ | ✓ (text, quotes, emoji) | ✓ (text) |
-| Notice rules: groups quiet unless they mention you, per chat automatic/always/never, hidden chats, a badge without quiet chats (`ChatNoticeRules`) | ✓ (also status updates and channels) | ✓ (same) | ✓ (groups; no mentions in the database) | ✓ (groups; mentions not read yet) | ✓ (groups; mentions not read yet) | ✓ (groups; mentions not read yet) | ✓ (groups; mentions not read yet) | ✓ (groups) |
-| Answering (or Read on the card) also reads the chat in the app, a choice per app (`readsOnReply`) | ✓ | ✓ | – (Messages lets no other app mark read) | ✓ | ✓ | ✓ | ✓ | – (the website takes only new text) |
-| Read in the app drops the chat's card still waiting in line (`onReadElsewhere`) | ✓ | ✓ | ✓ | ✓ | ✓ (unread count) | ✓ (`client.counts`, signed in through the website) | ✓ | ✓ |
-| A video's first frame and a document's first page in its bubble (`ChatFileThumbnails`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (Nook fetches no files from Teams yet) | – (the website shows no files to Nook) |
-| A picture sent as a document shows as a photo, and a photo still on its way as a photo tile, not a file row (`ChatMedia.shownKind`, `BubbleMedia.photoComing`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (Nook fetches no files from Teams yet) | – (the website shows no files to Nook) |
-| "@chat Name" brings up the chat's card | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Vote on a poll (`ChatAbilities.vote`) | – (GOWA has no vote call; whatsmeow has `BuildPollVote`, so it needs GOWA to add one) | ✓ (whatsapp-web.js engine; the Baileys engine answers 501 and polls are then only shown) | – (Messages has no polls another app can answer) | ✓ (`setPollAnswer`) | ✓ WhatsApp and Signal (`PollHandlingNetworkAPI`); – the other networks, whose connectors take no votes | – (no polls) | – (no polls) | – (no polls) |
-| Pin, mute and archive the chat in its app | ✓ pin, archive; – mute (GOWA has no call; whatsmeow has `BuildMute`) | ✓ (`/chats/pin`, `/chats/mute`, `/chats/archive`) | – (Messages lets no other app) | ✓ | ✓ | – (only through Slack's own web-client methods, not built) | – (no chat pin or mute Nook can reach; hiding needs a Graph write scope) | – (the website offers none) |
-| An action the app refused says why (under the field or as a toast), never a silent success | ✓ | ✓ | ✓ | ✓ (every request is tagged, `act`) | ✓ | ✓ | ✓ | ✓ |
-| Nook answers in the chat when you ask it to (`chat_send`, through `chatRoute` and `runInChat`; you approve the text first) | ✓ (also `whatsapp_send`) | ✓ (also `whatsapp_send`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| A lost sign-in is told apart from a passing failure (reading waits, Settings asks to sign in again) | ✓ (the gateway's status) | ✓ (the gateway's status) | – (no sign-in; Full Disk Access) | ✓ (TDLib's state) | ✓ (the helper's status) | ✓ (`SlackData.signedOut`) | ✓ (`TeamsData.signInGone`, a passing refusal keeps the sign-in) | ✓ |
+| Feature | WhatsApp (GOWA) | WhatsApp (OpenWA) | Messages | Telegram | Chat helper networks | Slack | Teams | Snapchat | Mail (Mail app) |
+|---|---|---|---|---|---|---|---|---|---|
+| Ticks on every message of yours | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (one tick, no receipts) | ✓ (two once read, from each member's read horizon) | ✓ (one tick, no receipts) | ✓ (one tick once it is in Sent; mail keeps no read receipts) |
+| Who read it, in a group | ✓ (per member) | ✓ (`message.receipt`, Baileys engine) | – | ✓ (`getMessageViewers`) | ✓ (`seen` per person) | – (Slack keeps no read receipts) | ✓ (`consumptionhorizons`, where read receipts are on, up to 20 people) | – (the website does not say per person) | – (mail keeps no read receipts) |
+| When they read it, in a private chat | ✓ (receipt arrival) | ✓ (receipt arrival) | ✓ (`date_read`) | ✓ (`getMessageReadDate`, unless either of you hides it) | ✓ (`seen` time) | – (Slack keeps no read receipts) | – (the read horizon says that, not when) | – (only "Opened" in the list, without a time) | – (mail keeps no read receipts) |
+| Who is typing | ✓ (`chat_presence`, while a chat is open) | ✓ (`presence.update`, Baileys engine, while a chat is open) | – (not in the database) | ✓ (`updateChatAction`) | ✓ (bridgev2 `MarkTyping`) | – (only over a real-time socket Nook does not hold) | – (Graph does not say) | – (not read from the page yet) | – (mail has none) |
+| Photo caption in the chat list | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (the list shows a status, not the message) | – (Nook reads no attachments from Mail yet) |
+| People by name, not by number | ✓ (your Contacts, then `/user/my/contacts`) | ✓ (your Contacts, then `/contacts`) | ✓ (Contacts) | ✓ (Telegram's names) | ✓ (the network's names) | ✓ | ✓ | ✓ (Snapchat's names) | ✓ (the name in the sender's address) |
+| Opened chat read from the app at once | ✓ (the chat's history) | ✓ (the chat's history) | ✓ | ✓ | ✓ (that chat read again) | ✓ | ✓ | ✓ | ✓ (Mail read again) |
+| Notch card follows its chat live (its app read at least every 20 s while the card is up or waits, `ChatCaptureService.watching`) | ✓ (live) | ✓ (live) | ✓ (every 2 s) | ✓ (every 3 s) | ✓ (live line, else every 10 s) | ✓ (every 20 s, else 60 s) | ✓ (every 20 s, else 60 s) | ✓ (every 20 s, else 30 s) | ✓ (Mail read again at once on its notification, else every 20 s, else 60 s) |
+| Shared links shown short (`[url](url)` → `site/path`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Edit, delete and info from the message's ⌄ menu (↑ in an empty field edits) | ✓ (when the gateway can) | ✓ (when the gateway can) | – from Nook (Messages lets no other app edit); an edit or unsend made in Messages shows (`date_edited`, `date_retracted`) | ✓ | ✓ (where the network allows it) | ✓ | ✓ | – (the website takes only new text) | – (sent mail cannot be changed) |
+| Link previews and embeds (picture, video, sound, page card) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (Nook reads no attachments from Mail yet) |
+| Calls shown as a call row (kind, who rang, how long; `ChatFormat.call`) | ✓ (the gateway's call line) | ✓ (the gateway's call line) | – (FaceTime calls are not in the chat database) | ✓ (`messageCall`) | ✓ (the bridge's call notice) | ✓ (huddles, `huddle_thread`) | ✓ (`Event/Call`, signed in through the website) | – (not read from the page yet) | – (no calls) |
+| Mark as unread, also a chat without messages in Nook yet | ✓ (`markedUnread`) | ✓ (`markedUnread`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Read in the app or on the phone → read in Nook at once, its waiting card and macOS notification gone | ✓ (`readElsewhere`) | ✓ (the phone's chat list counting nothing new, `WAInbox.readInGateway`; within five minutes) | ✓ (unread count) | ✓ (unread count) | ✓ (unread count, also without a new message) | ✓ (`client.counts`, signed in through the website; a pasted token: –) | ✓ (`readUntil`) | ✓ (the list's unread mark) | ✓ (read status) |
+| A chat Nook can only read says what is missing and links it (`ChatLimitsLine`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Emoji on messages | ✓ | ✓ | ✓ (tapbacks) | ✓ | ✓ | ✓ | ✓ | – (the website does not show them) | – (no emoji) |
+| Who put each emoji there (tooltip, and a list on click) | ✓ (the chat's names) | ✓ (the chat's names) | ✓ (Contacts) | ✓ (`recent_sender_ids`, the last few) | ✓ (the chat's people) | ✓ | ✓ (Graph `displayName`; the web app by the names in the chat) | – (the website does not show emoji) | – (no emoji) |
+| Your emoji sent as the app's own (never a placeholder there) | ✓ (any emoji) | ✓ (any emoji) | – (Messages takes no emoji from Nook) | ✓ (TDLib refuses what the chat does not allow) | ✓ (the bridge sends the emoji) | ✓ (Slack's names; one it lacks is refused with a clear message) | ✓ (`TeamsEmoji`, Microsoft's 3,114 keys incl. skin tones; one it lacks is refused) | – (the website takes no emoji) | – (no emoji) |
+| Emoji that only a notification says ("Reacted 👍 to …"), put on that message | ✓ (WhatsApp on this Mac, whose database Nook does not read them from) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (no emoji) |
+| Someone's new emoji on your message as the chat list's line ("Reacted with 👍 to …", `ChatReactionNote`) | ✓ (the gateway's reaction event) | ✓ (the gateway's reaction event) | ✓ (tapbacks) | ✓ | ✓ | ✓ | ✓ | – (the website does not show emoji) | – (no emoji) |
+| A message the app writes before its text (WhatsApp on this Mac) read again until it says something | ✓ (`waiting`, 10 minutes) | n/a (the gateways send finished messages) | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
+| Delete for me (any message; hidden in Nook on this Mac) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) | ✓ (also in Telegram, for you) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) |
+| Real ticks on older messages | ✓ for receipts Nook received (kept on this Mac, `WAReceiptStore`) | ✓ same | ✓ (the database) | ✓ ("read up to") | ✓ (kept per person in `apps/chatd`) | – (Slack keeps no read receipts) | ✓ (read horizons, each time the chat is read) | – | – (mail keeps no read receipts) |
+| More than one account (a business number, a second phone), its chats side by side and named by account | ✓ (a GOWA device per account, `WhatsAppAccounts`) | ✓ (an OpenWA session per account) | – (one Apple account on this Mac) | – (one TDLib login so far) | – (one login per network so far) | – (one workspace so far) | ✓ (every signed-in account) | – (one website session) | ✓ (every account in the Mail app: iCloud, Gmail, Outlook and Exchange, Yahoo, IMAP and POP, each chat named by its account) |
+| Its card in the notch answered in place: the field sends to the chat, a message can be quoted and get an emoji, a file opens, Read, Let Nook answer, Quiet, Hide | ✓ | ✓ | ✓ (text; no quotes or emoji, which Messages takes from no app) | ✓ | ✓ | ✓ | ✓ (text, quotes, emoji) | ✓ (text) | ✓ (text, sent as a reply from the chat's account) |
+| Notice rules: groups quiet unless they mention you, per chat automatic/always/never, hidden chats, a badge without quiet chats (`ChatNoticeRules`) | ✓ (also status updates and channels) | ✓ (same) | ✓ (groups; no mentions in the database) | ✓ (groups; mentions not read yet) | ✓ (groups; mentions not read yet) | ✓ (groups; mentions not read yet) | ✓ (groups; mentions not read yet) | ✓ (groups) | ✓ (no groups; newsletters and notifications are its channels, quiet by default) |
+| Answering (or Read on the card) also reads the chat in the app, a choice per app (`readsOnReply`) | ✓ | ✓ | – (Messages lets no other app mark read) | ✓ | ✓ | ✓ | ✓ | – (the website takes only new text) | ✓ |
+| Read in the app drops the chat's card still waiting in line (`onReadElsewhere`) | ✓ | ✓ | ✓ | ✓ | ✓ (unread count) | ✓ (`client.counts`, signed in through the website) | ✓ | ✓ | ✓ (read status) |
+| A video's first frame and a document's first page in its bubble (`ChatFileThumbnails`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (Nook fetches no files from Teams yet) | – (the website shows no files to Nook) | – (no attachments yet) |
+| A picture sent as a document shows as a photo, and a photo still on its way as a photo tile, not a file row (`ChatMedia.shownKind`, `BubbleMedia.photoComing`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (Nook fetches no files from Teams yet) | – (the website shows no files to Nook) | – (Nook reads no attachments from Mail yet) |
+| "@chat Name" brings up the chat's card | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Vote on a poll (`ChatAbilities.vote`) | – (GOWA has no vote call; whatsmeow has `BuildPollVote`, so it needs GOWA to add one) | ✓ (whatsapp-web.js engine; the Baileys engine answers 501 and polls are then only shown) | – (Messages has no polls another app can answer) | ✓ (`setPollAnswer`) | ✓ WhatsApp and Signal (`PollHandlingNetworkAPI`); – the other networks, whose connectors take no votes | – (no polls) | – (no polls) | – (no polls) | – (no polls) |
+| Pin, mute and archive the chat in its app | ✓ pin, archive; – mute (GOWA has no call; whatsmeow has `BuildMute`) | ✓ (`/chats/pin`, `/chats/mute`, `/chats/archive`) | – (Messages lets no other app) | ✓ | ✓ | – (only through Slack's own web-client methods, not built) | – (no chat pin or mute Nook can reach; hiding needs a Graph write scope) | – (the website offers none) | – (Mail lets no other app pin, mute or archive a conversation) |
+| An action the app refused says why (under the field or as a toast), never a silent success | ✓ | ✓ | ✓ | ✓ (every request is tagged, `act`) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Nook answers in the chat when you ask it to (`chat_send`, through `chatRoute` and `runInChat`; you approve the text first) | ✓ (also `whatsapp_send`) | ✓ (also `whatsapp_send`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (`chat_send`, as a reply through Mail) |
+| A lost sign-in is told apart from a passing failure (reading waits, Settings asks to sign in again) | ✓ (the gateway's status) | ✓ (the gateway's status) | – (no sign-in; Full Disk Access) | ✓ (TDLib's state) | ✓ (the helper's status) | ✓ (`SlackData.signedOut`) | ✓ (`TeamsData.signInGone`, a passing refusal keeps the sign-in) | ✓ | – (no sign-in: Mail's own accounts; a refused Automation permission says how to give it) |
 
 ### One inbox for every app
 
@@ -99,6 +99,22 @@ link tells which message is news (live, not history, not a catch-up after the Ma
 A chat its app knows by an id of its own (`BridgedChat.chatID`, WhatsApp's chat key across accounts) is kept by it, so a
 new name never splits it and two chats with one name stay two. Ids from before (`wa|<key>`) are read as the new ones
 (`ChatIDMigration`) wherever something was kept under them (hidden messages, drafts, the chat opened last).
+
+### Mail
+
+Mail is a chat app like the others. `MailBridge` reads the Mail app on this Mac, and with it every account Mail holds,
+whatever kind: iCloud, Gmail, Outlook and Exchange, Yahoo, any IMAP or POP account. Each person you write with is one
+chat per account (`MailChatData.chatID`, `<account>~<address>`): their mail from the account's inbox, yours from its
+Sent mailbox, each message as its subject in bold over the start of its own text (the quoted earlier mail left out,
+`MailChatData.text`). With more than one account each chat is named by its account, as WhatsApp's are. Newsletters and
+notifications (`MailChatData.isAutomated`) are the app's channels and stay quiet by default (`ChatNoticeRules`).
+
+Nook reads Mail only after you linked it in Settings › Chats › Mail (the first read asks for Automation), and only while
+Mail is open, as the Mail connector does: it never starts Mail in the background. An answer goes out through Mail
+(`MailSender`) as a reply to the chat's newest mail from the chat's account; "Mark as read" sets Mail's read status,
+which tells the server. Mail apps Nook cannot read itself (Outlook for Mac, Gmail and Outlook on the web, Spark, Proton
+Mail) are members by their notifications: `ChatCapture.mailNotice` reads the subject from them the same way. Mail has no
+emoji, edits, polls, typing or read receipts another app can reach, and Nook reads no attachments from it yet.
 
 ### One way for every action
 
@@ -259,6 +275,9 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
   bridgev2 connector for it exists. It shows the chat list and the messages of chats you load in Nook, and answers with
   text. Files, emoji, edits, deletions, pinning, muting, archiving, read receipts and typing are not offered for it
   (`ChatAbilities(send: true)`), and its messages carry the time Nook first saw them, since the website shows none.
+- **Mail** is read from the Mail app (`MailBridge`), every account in it, while Mail is open. Attachments, scrolling back
+  past the newest 60 inbox and 40 sent messages per account, and Outlook for Mac's or a web mailbox's own accounts (they
+  come in by their notifications only, and can not be answered from Nook) are not there yet.
 - **CI logs of GitLab merge requests.** A GitHub check's steps and log open in Nook (`CICheckLogView` on the Mac,
   `CheckLog.svelte` in `apps/tauri`). A watched GitLab merge request still opens its pipelines page in the browser:
   Nook does not read GitLab job traces yet.

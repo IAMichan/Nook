@@ -56,12 +56,14 @@ final class ChatCaptureService: ObservableObject {
 
     /// The apps Nook reads itself, with their history (`ChatBridge`): Messages from this Mac, Slack with a token,
     /// Telegram through TDLib once you logged in, Teams through Microsoft Graph once you signed in, Instagram through its
-    /// own web API once you logged in on it inside Nook, Snapchat from its website once you signed in on it inside Nook.
+    /// own web API once you logged in on it inside Nook, Snapchat from its website once you signed in on it inside Nook,
+    /// and every mail account in the Mail app once you linked Mail.
     let messagesBridge = MessagesBridge()
     let slackBridge = SlackBridge()
     let telegramBridge = TelegramBridge()
     let teamsBridge = TeamsBridge()
     let snapchatBridge = SnapchatBridge()
+    let mailBridge = MailBridge()
     /// WhatsApp from the WhatsApp app on this Mac while no phone is linked, and every app linked through Nook's own chat
     /// helper.
     let whatsAppDesktopBridge = WhatsAppDesktopBridge()
@@ -71,7 +73,7 @@ final class ChatCaptureService: ObservableObject {
     /// The chat helper goes last: an app another bridge reads is left to that one.
     private var bridges: [ChatBridge] {
         [messagesBridge, whatsAppGatewayBridge, whatsAppDesktopBridge, slackBridge, telegramBridge, teamsBridge, snapchatBridge,
-         serviceBridge]
+         mailBridge, serviceBridge]
     }
 
     /// Whether a chat shows in Nook (the Chats tab, cards, search, the companion, what Nook reads), the same rule for
@@ -565,6 +567,20 @@ final class ChatCaptureService: ObservableObject {
         SnapchatWebSession.shared.signOut()
         snapchatBridge.reset()
         bridgeChanged(snapchatBridge.app)
+    }
+
+    /// Links the Mail app: every account in it is read from now on (the first read asks for permission under
+    /// Automation), and Mail's chats are switched on.
+    func linkMail() {
+        mailBridge.setLinked(true)
+        loggedIn(mailBridge.app)
+    }
+
+    /// Stops reading the Mail app, after your own confirmation: what was read is forgotten and its row offers to link
+    /// it again. Mail itself and its accounts stay as they are.
+    func unlinkMail() {
+        mailBridge.setLinked(false)
+        bridgeChanged(mailBridge.app)
     }
 
     /// The Slack token changed in Settings: read Slack again from the start.

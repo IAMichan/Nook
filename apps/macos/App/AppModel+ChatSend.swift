@@ -5,7 +5,9 @@ import Foundation
 /// Where what you send in a chat goes: WhatsApp through the linked phone's gateway (by the chat's key across accounts,
 /// `WAChatKey`), Telegram through TDLib, Teams through
 /// the website's session, Slack through its web API, Messages through the Messages app on this Mac (the last three by
-/// the chat's name in Nook), Snapchat through its website (by the chat's name too), or any app the chat helper on this Mac links (Instagram, Messenger, Signal…). A chat
+/// the chat's name in Nook), Snapchat through its website (by the chat's name too), mail through the Mail app (by the
+/// chat's id, one person in one account, `MailChatData.chatID`), or any app the chat helper on this Mac links (Instagram,
+/// Messenger, Signal…). A chat
 /// without one is only read: its text is copied for its own app instead.
 enum ChatRoute: Equatable {
     case whatsApp(String)
@@ -14,6 +16,7 @@ enum ChatRoute: Equatable {
     case slack(String)
     case messages(String)
     case snapchat(String)
+    case mail(String)
     case linked(String)
 
     var isWhatsApp: Bool {
@@ -46,6 +49,7 @@ extension AppModel {
         if app == capture.slackBridge.app, capture.slackBridge.canSend(name: name) { return .slack(name) }
         if app == capture.messagesBridge.app, capture.messagesBridge.canSend(name: name) { return .messages(name) }
         if app == capture.snapchatBridge.app, capture.snapchatBridge.canSend(name: name) { return .snapchat(name) }
+        if app == capture.mailBridge.app, let id = chatID, capture.mailBridge.canSend(chatID: id) { return .mail(id) }
         return nil
     }
 
@@ -79,6 +83,10 @@ extension AppModel {
         case .snapchat:
             // Snapchat for Web takes typed text from Nook, and nothing else Nook can reach.
             return ChatAbilities(send: true)
+        case .mail:
+            // Mail sends your answer as a reply and marks mail read; it has no emoji, edits, polls or pinning another
+            // app can reach.
+            return ChatAbilities(send: true, markRead: true)
         case .linked(let id):
             let bridge = capture.serviceBridge
             // A chat the helper does not list (any more) offers only what every network takes: text.
@@ -128,6 +136,7 @@ extension AppModel {
         case .slack: return capture.slackBridge.app
         case .messages: return capture.messagesBridge.app
         case .snapchat: return capture.snapchatBridge.app
+        case .mail: return capture.mailBridge.app
         case .linked: return capture.serviceBridge.app
         }
     }
@@ -176,6 +185,7 @@ extension AppModel {
             case .slack(let chat): try await capture.slackBridge.send(text: text, to: chat, replyTo: replyTo)
             case .messages(let chat): try await capture.messagesBridge.send(text: text, to: chat)
             case .snapchat(let chat): try await capture.snapchatBridge.send(text: text, to: chat)
+            case .mail(let chat): try await capture.mailBridge.send(text: text, to: chat)
             case .linked(let id): try await capture.serviceBridge.send(text: text, to: id, replyTo: replyTo)
             }
         }
@@ -198,7 +208,7 @@ extension AppModel {
             case .slack(let chat): try await capture.slackBridge.send(outgoing, to: chat, replyTo: replyTo)
             case .messages(let chat): try await capture.messagesBridge.send(outgoing, to: chat)
             case .linked(let id): try await capture.serviceBridge.send(outgoing, to: id, replyTo: replyTo)
-            case .teams, .snapchat:
+            case .teams, .snapchat, .mail:
                 // Their abilities offer nothing besides text, so `runInChat` stops before this.
                 throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
             }
@@ -235,6 +245,7 @@ extension AppModel {
             case .teams(let chat): try await capture.teamsBridge.markRead(name: chat)
             case .slack(let chat): try await capture.slackBridge.markRead(name: chat)
             case .linked(let id): try await capture.serviceBridge.markRead(id)
+            case .mail(let chat): try await capture.mailBridge.markRead(chatID: chat)
             case .messages, .snapchat: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
             }
         }
@@ -255,7 +266,7 @@ extension AppModel {
             case .teams(let chat): try await capture.teamsBridge.react(emoji, to: bubble.id, in: chat, mine: mine)
             case .slack(let chat): try await capture.slackBridge.react(emoji, to: bubble.id, in: chat, mine: mine)
             case .linked(let id): try await capture.serviceBridge.react(emoji, to: bubble.id, in: id, mine: mine)
-            case .messages, .snapchat: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
+            case .messages, .snapchat, .mail: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
             }
             // WhatsApp's link shows it in its chat itself, which the shared inbox then takes over.
             if let thread, !route.isWhatsApp { capture.toggleReaction(emoji, on: bubble.id, in: thread) }
@@ -272,7 +283,7 @@ extension AppModel {
                 try await link.vote(choice, poll: bubble.id, chat: jid)
             case .telegram: try capture.telegramBridge.vote(choice, message: bubble.id)
             case .linked(let id): try await capture.serviceBridge.vote(choice, on: bubble.id, in: id)
-            case .teams, .slack, .messages, .snapchat: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
+            case .teams, .slack, .messages, .snapchat, .mail: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
             }
         }
     }
@@ -289,7 +300,7 @@ extension AppModel {
             case .teams(let chat): try await capture.teamsBridge.edit(bubble.id, in: chat, to: text)
             case .slack(let chat): try await capture.slackBridge.edit(bubble.id, in: chat, to: text)
             case .linked(let id): try await capture.serviceBridge.edit(bubble.id, in: id, to: text)
-            case .messages, .snapchat: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
+            case .messages, .snapchat, .mail: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
             }
         }
     }
@@ -306,7 +317,7 @@ extension AppModel {
             case .teams(let chat): try await capture.teamsBridge.delete(bubble.id, in: chat)
             case .slack(let chat): try await capture.slackBridge.delete(bubble.id, in: chat)
             case .linked(let id): try await capture.serviceBridge.delete(bubble.id, in: id)
-            case .messages, .snapchat: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
+            case .messages, .snapchat, .mail: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
             }
         }
     }
@@ -332,7 +343,7 @@ extension AppModel {
                 try await link.setPinned(pinned, chat: jid)
             case .telegram(let id): try capture.telegramBridge.setPinned(pinned, chat: id)
             case .linked(let id): try await capture.serviceBridge.setPinned(pinned, chat: id)
-            case .teams, .slack, .messages, .snapchat: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
+            case .teams, .slack, .messages, .snapchat, .mail: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
             }
         }
     }
@@ -347,7 +358,7 @@ extension AppModel {
                 try await link.setMutedInWhatsApp(muted, chat: jid)
             case .telegram(let id): try capture.telegramBridge.setMuted(muted, chat: id)
             case .linked(let id): try await capture.serviceBridge.setMuted(muted, chat: id)
-            case .teams, .slack, .messages, .snapchat: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
+            case .teams, .slack, .messages, .snapchat, .mail: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
             }
         }
     }
@@ -363,7 +374,7 @@ extension AppModel {
                 try await link.archive(jid)
             case .telegram(let id): try capture.telegramBridge.archive(id)
             case .linked(let id): try await capture.serviceBridge.archive(id)
-            case .teams, .slack, .messages, .snapchat: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
+            case .teams, .slack, .messages, .snapchat, .mail: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
             }
         }
         if let thread { capture.remove(thread) }
