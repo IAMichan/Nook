@@ -427,7 +427,8 @@ struct SessionComposer<Controls: View>: View {
             if let trailingAccessory { trailingAccessory }
             if busy, let onStop {
                 if let queueAction, !isEmpty {
-                    roundButton(symbol: queueSymbol, label: queueLabel, active: true) { fire(queueAction) }
+                    roundButton(symbol: queueSymbol, label: queueLabel, active: encodingPictures == 0) { fire(queueAction) }
+                        .disabled(encodingPictures > 0)
                 }
                 roundButton(symbol: "stop.fill", label: tr("button.stop"), active: true, action: onStop)
             } else {
