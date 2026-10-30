@@ -24,6 +24,9 @@ struct PullRequestItem: Identifiable, Equatable, Codable, Sendable {
     var review: Review = .none
     /// The branch conflicts with its base (GitHub's `mergeable` is CONFLICTING).
     var conflict = false
+    /// False while GitHub is still working out `mergeable` (UNKNOWN, as after another pull request merged into the
+    /// base): `conflict` then says nothing, and the store keeps the one it knew (see `keepingConflicts`). Not saved.
+    var conflictKnown = true
     var labels: [String] = []
     /// Each label's color as GitHub's six hex digits ("d73a4a"), for the colored chips and the Labels filter.
     var labelColors: [String: String] = [:]
@@ -114,6 +117,31 @@ extension AccountPullRequests {
         account.mine = kept(mine, old.mine)
         account.reviews = kept(reviews, old.reviews)
         return account
+    }
+
+    /// Open rows whose mergeability GitHub has not worked out yet keep the conflict `old` showed for them, so a merge
+    /// into the base does not make every other pull request on it look mergeable until GitHub has looked again.
+    static func keepingConflicts(_ accounts: [AccountPullRequests], from old: [AccountPullRequests]) -> [AccountPullRequests] {
+        var known: [String: Bool] = [:]
+        for account in old {
+            for item in account.mine + account.reviews + account.watched where item.state == .open { known[item.id] = item.conflict }
+        }
+        guard known.values.contains(true) else { return accounts }
+        func kept(_ items: [PullRequestItem]) -> [PullRequestItem] {
+            items.map { item in
+                guard !item.conflictKnown, item.state == .open, let conflict = known[item.id] else { return item }
+                var item = item
+                item.conflict = conflict
+                return item
+            }
+        }
+        return accounts.map { account in
+            var account = account
+            account.mine = kept(account.mine)
+            account.reviews = kept(account.reviews)
+            account.watched = kept(account.watched)
+            return account
+        }
     }
 
     /// The closed and merged rows replaced by the ones just read; the open rows stay as they are.
@@ -394,6 +422,7 @@ enum PullRequestGraphQL {
                                    deletions: (node["deletions"] as? NSNumber)?.intValue,
                                    review: review(node["reviewDecision"] as? String),
                                    conflict: (node["mergeable"] as? String) == "CONFLICTING",
+                                   conflictKnown: (node["mergeable"] as? String).map { $0 != "UNKNOWN" } ?? false,
                                    labels: labels.compactMap { $0["name"] as? String },
                                    labelColors: labelColors(labels),
                                    headBranch: (node["headRefName"] as? String) ?? "",

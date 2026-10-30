@@ -322,6 +322,42 @@ final class PullRequestDetailTests: XCTestCase {
         XCTAssertEqual(arrived.keepingActivity(of: old).files, [])
     }
 
+    func testAConflictStaysWhileGitHubWorksMergeabilityOutAgain() throws {
+        var object = try json(pull)
+        object["mergeable"] = false
+        object["mergeable_state"] = "dirty"
+        let conflicted = try XCTUnwrap(PullRequestDetailParser.detail(pull: object))
+
+        // Another pull request merged into the base: GitHub forgets for a moment.
+        object["mergeable"] = NSNull()
+        object["mergeable_state"] = "unknown"
+        let computing = try XCTUnwrap(PullRequestDetailParser.detail(pull: object))
+        XCTAssertFalse(computing.conflicted)
+        let kept = computing.keepingConflict(of: conflicted)
+        XCTAssertTrue(kept.conflicted)
+        XCTAssertFalse(kept.canMerge)
+        XCTAssertEqual(kept.mergeNote, "agents.pr.note.conflict")
+        XCTAssertEqual(PullRequestReadiness(kept)?.verdict, .blocked)
+        XCTAssertNil(kept.mergeable, "still asks GitHub again soon")
+
+        let clean = try XCTUnwrap(PullRequestDetailParser.detail(pull: try json(pull)))
+        XCTAssertFalse(computing.keepingConflict(of: clean).conflicted, "nothing to keep from a clean read")
+        XCTAssertFalse(computing.keepingConflict(of: nil).conflicted)
+        object["head"] = ["ref": "feature/merge", "sha": "fff0000"]
+        let pushed = try XCTUnwrap(PullRequestDetailParser.detail(pull: object))
+        XCTAssertFalse(pushed.keepingConflict(of: conflicted).conflicted, "a new head may have resolved it")
+        object["mergeable"] = true
+        object["mergeable_state"] = "clean"
+        let resolved = try XCTUnwrap(PullRequestDetailParser.detail(pull: object))
+        XCTAssertFalse(resolved.keepingConflict(of: conflicted).conflicted, "GitHub's own answer wins")
+
+        // The row keeps its conflict mark too while the page cannot say.
+        var row = PullRequestItem(repo: "acme/app", number: 12, title: "", url: nil, draft: false, updated: nil, author: "ada")
+        row.conflict = true
+        XCTAssertTrue(row.updated(from: computing).conflict)
+        XCTAssertFalse(row.updated(from: clean).conflict)
+    }
+
     func testTimelineGroupsCommitsInRuns() {
         func commit(_ sha: String, _ author: String) -> PullRequestEvent {
             PullRequestEvent(id: "commit-" + sha, kind: .commit(sha: sha), author: author, body: sha, date: nil, url: nil)

@@ -66,6 +66,9 @@ struct PullRequestDetail: Equatable, Sendable {
     var lineCommentCount: Int? = nil
     /// False until the timeline, commits and files have arrived: the summary shows first, the rest follows.
     var activityLoaded = true
+    /// GitHub is working out mergeability again (`mergeable` is nil, as after another pull request merged into the
+    /// base), and the last read of this same head was a conflict: it still counts as one until GitHub says otherwise.
+    var conflictPending = false
 
     var id: String { "\(repo)#\(number)" }
     var isOpen: Bool { state == .open || state == .draft }
@@ -77,6 +80,16 @@ struct PullRequestDetail: Equatable, Sendable {
         files = activity.files
         linkedIssues = activity.issues
         activityLoaded = true
+    }
+
+    /// A fresh summary in which GitHub is still working out mergeability keeps the conflict of the read before it, when
+    /// that read was of the same head. A merge into the base makes GitHub forget for a moment; that is not a resolution.
+    /// A new head may have resolved it, so after a push it says "checking" instead.
+    func keepingConflict(of old: PullRequestDetail?) -> PullRequestDetail {
+        guard mergeable == nil, mergeState != "dirty", let old, old.headSHA == headSHA, old.conflicted else { return self }
+        var result = self
+        result.conflictPending = true
+        return result
     }
 
     /// The activity a fresh summary keeps from the read before it, until its own activity arrives.
@@ -114,7 +127,7 @@ struct PullRequestDetail: Equatable, Sendable {
             }
         }
     }
-    var conflicted: Bool { mergeable == false || mergeState == "dirty" }
+    var conflicted: Bool { mergeable == false || mergeState == "dirty" || (mergeable == nil && conflictPending) }
 
     /// Whether the merge button can be pressed. GitHub has the last word (branch protection, an admin bypass), so only
     /// what certainly fails is held back here.
@@ -691,7 +704,8 @@ extension PullRequestItem {
         case .open, .draft: item.state = .open
         }
         item.draft = detail.state == .draft
-        item.conflict = detail.state == .open && detail.conflicted
+        // While GitHub works mergeability out again, the row keeps the conflict it knew.
+        item.conflict = detail.state == .open && (detail.conflicted || (detail.mergeable == nil && item.conflict))
         return item
     }
 }

@@ -373,7 +373,8 @@ final class PullRequestStore: ObservableObject {
         mergedHere = mergedHere.filter { $0.value > cutoff }
         // Yours and your reviews show as soon as they are in; the closed ones and the watched rows from last time stay
         // until the background pass has read them again.
-        let updated = AccountPullRequests.attaching([:], to: fresh.map(merge)).map(settled)
+        let updated = AccountPullRequests.keepingConflicts(AccountPullRequests.attaching([:], to: fresh.map(merge)), from: accounts)
+            .map(settled)
         // Most answers repeat what is shown: only a change redraws the list and is written to disk.
         let changed = updated != accounts
         if changed { accounts = updated }
@@ -408,7 +409,8 @@ final class PullRequestStore: ObservableObject {
                 guard let rows = closedRows[account.id] else { return account }
                 return account.replacingClosed(mine: rows.mine, reviews: rows.reviews)
             }
-            let next = AccountPullRequests.attaching(watchedRows, to: updated).map(self.settled)
+            let next = AccountPullRequests.keepingConflicts(AccountPullRequests.attaching(watchedRows, to: updated), from: self.accounts)
+                .map(self.settled)
             self.background = nil
             if next != self.accounts {
                 self.accounts = next
@@ -472,7 +474,10 @@ final class PullRequestStore: ObservableObject {
                                        ci: detail.checks.isEmpty ? item.ci : detail.checkSummary,
                                        state: mergedHere[item.id] != nil && state == .open ? .merged : state,
                                        additions: detail.additions, deletions: detail.deletions,
-                                       review: item.review, conflict: detail.mergeState == "dirty", labels: detail.labels,
+                                       review: item.review,
+                                       // While GitHub works mergeability out again, the row keeps the conflict it knew.
+                                       conflict: detail.conflicted || (detail.mergeable == nil && item.conflict),
+                                       labels: detail.labels,
                                        labelColors: detail.labelColors, headBranch: detail.headBranch.isEmpty ? item.headBranch : detail.headBranch,
                                        baseBranch: detail.baseBranch.isEmpty ? item.baseBranch : detail.baseBranch,
                                        nodeID: detail.nodeID.isEmpty ? item.nodeID : detail.nodeID)
