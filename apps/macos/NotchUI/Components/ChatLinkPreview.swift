@@ -28,6 +28,7 @@ private struct ChatLinkCard: View {
     let url: URL
     @State private var preview: ChatLinkPreviews.Preview?
     @State private var hovering = false
+    @Environment(\.chatMediaLive) private var live
 
     private var host: String {
         var host = url.host ?? url.absoluteString
@@ -42,7 +43,11 @@ private struct ChatLinkCard: View {
             .animation(NookTheme.hover, value: hovering)
             .help(url.absoluteString)
             .accessibilityLabel((preview?.title).map { "\($0), \(host)" } ?? host)
-            .task(id: url) { preview = await ChatLinkPreviews.shared.preview(url) }
+            // Fetched once its message comes near view, not for every link in the history at once.
+            .task(id: live ? url : nil) {
+                guard live, preview == nil else { return }
+                preview = await ChatLinkPreviews.shared.preview(url)
+            }
     }
 
     private var card: some View {
@@ -117,6 +122,7 @@ private struct ChatRemotePicture: View {
     @State private var failed = false
     @State private var enlarged = false
     @State private var hovering = false
+    @Environment(\.chatMediaLive) private var live
 
     private var label: String {
         enlarged ? tr("button.shrink") : tr("button.enlarge")
@@ -177,7 +183,8 @@ private struct ChatRemotePicture: View {
                     .overlay(ProgressView().controlSize(.small))
             }
         }
-        .task(id: url) {
+        .task(id: live ? url : nil) {
+            guard live, file == nil, !failed else { return }
             file = await ChatLinkPreviews.shared.file(url)
             failed = file == nil
         }

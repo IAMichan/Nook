@@ -174,7 +174,7 @@ final class ChatsEntryMemo {
 @MainActor
 final class ChatBubblesMemo {
     private enum Source: Equatable {
-        case thread(InboxThread?, thumbnails: Int)
+        case thread(InboxThread?)
     }
 
     private var source: Source?
@@ -194,10 +194,10 @@ final class ChatBubblesMemo {
         return memo
     }
 
-    /// The chat's bubbles, made again when the chat, the pictures of its files (`ChatFileThumbnails`) or the language
-    /// changed.
-    func bubbles(_ thread: InboxThread?, thumbnails: Int, make: (InboxThread?) -> [ChatBubble]) -> [ChatBubble] {
-        remembered(.thread(thread, thumbnails: thumbnails)) { make(thread) }
+    /// The chat's bubbles, made again when the chat or the language changed. The pictures of its files are not part of
+    /// them: each bubble loads its own once it comes into view.
+    func bubbles(_ thread: InboxThread?, make: (InboxThread?) -> [ChatBubble]) -> [ChatBubble] {
+        remembered(.thread(thread)) { make(thread) }
     }
 
     private func remembered(_ source: Source, make: () -> [ChatBubble]) -> [ChatBubble] {
@@ -1158,8 +1158,6 @@ private struct ChatsDetail: View {
     @ObservedObject var capture: ChatCaptureService
     /// What a linked WhatsApp account can do now (edit, pin, vote…) is part of what this chat offers.
     @ObservedObject private var whatsApp = WhatsAppAccounts.shared
-    /// The pictures of files (a video's first frame, a document's first page) as they come in.
-    @ObservedObject private var thumbnails = ChatFileThumbnails.shared
     /// "Mark as unread" in the header: the tab closes the chat and shows its badge again.
     var onMarkUnread: () -> Void = {}
     /// Escape: the tab closes the chat.
@@ -1271,7 +1269,7 @@ private struct ChatsDetail: View {
     }
 
     private var bubbles: [ChatBubble] {
-        let all = bubblesMemo.bubbles(capture.inbox.threads[entry.id], thumbnails: thumbnails.revision) { thread in
+        let all = bubblesMemo.bubbles(capture.inbox.threads[entry.id]) { thread in
             thread.map { ChatBubble.bubbles($0) { Self.time.string(from: $0) } } ?? []
         }
         return outbox.bubbles(hiddenMessages.visible(all, in: entry.id) { $0.id }, chat: entry.id)

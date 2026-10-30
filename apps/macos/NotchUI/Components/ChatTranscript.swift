@@ -67,8 +67,10 @@ struct ChatTranscript: View {
     /// How long after opening a chat what comes in does not glide in.
     private static let settling: TimeInterval = 2
 
-    /// How many messages a chat lays out when it opens, and how many more each time you reach the top.
+    /// How many messages a chat lays out when it opens.
     static let page = 60
+    /// How many more it lays out each time you reach the top: a small step, so reaching the top never stalls the chat.
+    static let olderPage = 30
 
     /// The messages laid out: the newest `page` (from the first new one, when that is further back), or from `drawnFrom`.
     /// A card, which does not scroll back, draws them all.
@@ -93,7 +95,7 @@ struct ChatTranscript: View {
         let shown = drawn
         guard shown.count < bubbles.count, let top = shown.first?.id,
               let index = bubbles.firstIndex(where: { $0.id == top }) else { return false }
-        drawnFrom = bubbles[max(index - Self.page, 0)].id
+        drawnFrom = bubbles[max(index - Self.olderPage, 0)].id
         drawingOlder = true
         DispatchQueue.main.async {
             var still = Transaction()
@@ -422,6 +424,10 @@ private struct ChatBubbleView: View, Equatable {
     @State private var picking = false
     /// Your message's info (who read it, who has it) is open over its ticks.
     @State private var showingInfo = false
+    /// The bubble is in view or close to it: only then does its media load, play or move (`chatMediaLive`).
+    @State private var near = false
+    /// A document's first page, made once the bubble comes near view.
+    @State private var filePreview: NSImage?
 
     /// Lines a long message shows until "Read more".
     private static let foldedLines = 12
@@ -525,7 +531,7 @@ private struct ChatBubbleView: View, Equatable {
         case .audio(let url, let seconds):
             ChatAudioView(url: url, seconds: seconds, name: attachment, fromMe: bubble.fromMe)
         default:
-            AttachmentButton(name: attachment, preview: bubble.image, file: bubble.file, action: onOpen)
+            AttachmentButton(name: attachment, preview: bubble.image ?? filePreview, file: bubble.file, action: onOpen)
         }
     }
 
@@ -562,6 +568,12 @@ private struct ChatBubbleView: View, Equatable {
             }
         }
         .onHover { hovering = $0 }
+        .environment(\.chatMediaLive, near)
+        .chatNearView($near)
+        .task(id: near ? bubble.file : nil) {
+            guard near, case .file = bubble.media, let file = bubble.file, bubble.image == nil, filePreview == nil else { return }
+            filePreview = await ChatFileThumbnails.shared.image(file, kind: .file)
+        }
     }
 
     /// Answer this message and react to it: shown while the pointer is on the bubble, where the chat can be answered.
@@ -1204,6 +1216,7 @@ struct VideoTile: View {
     @State private var hovering = false
     /// A frame of the video itself, when its app sent no picture of it: never a black box.
     @State private var still: ChatVideoStills.Still?
+    @Environment(\.chatMediaLive) private var live
 
     private var picture: NSImage? { poster ?? still?.image }
 
@@ -1274,7 +1287,11 @@ struct VideoTile: View {
         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
         .onHover { hovering = $0 }
         .onDisappear { player?.pause() }
-        .task(id: url) { still = await ChatVideoStills.still(url) }
+        // Its frame is read once its message comes near view, not for every video in the history at once.
+        .task(id: live ? url : nil) {
+            guard live, still == nil else { return }
+            still = await ChatVideoStills.still(url)
+        }
     }
 
     private func play() {
@@ -1540,6 +1557,7 @@ struct ChatPhotoLoader: View {
     let onOpen: () -> Void
     @State private var image: NSImage?
     @State private var failed = false
+    @Environment(\.chatMediaLive) private var live
 
     init(url: URL, name: String, onZoom: @escaping () -> Void, onOpen: @escaping () -> Void) {
         self.url = url
@@ -1563,7 +1581,9 @@ struct ChatPhotoLoader: View {
                 ChatPhotoPlaceholder(name: name, size: ChatMediaImages.pixelSize(url))
             }
         }
-        .task(id: url) {
+        // Decoded once its message comes near view: scrolling back does not decode the whole history's photos.
+        .task(id: live ? url : nil) {
+            guard live, image == nil else { return }
             for attempt in 0..<Self.tries {
                 let url = url
                 if let loaded = await Task.detached(priority: .utility, operation: { ChatMediaImages.image(url) }).value {
