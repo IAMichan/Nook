@@ -55,8 +55,8 @@ enum SessionTool: String {
     var help: String { tr("agents.tool." + rawValue) }
 }
 
-/// The panels' quiet icons in a session's header: buttons that open (or close) the bottom panel and the side panel.
-/// The terminal and the browser open from the panels themselves (their tabs, + and the list of tools). The bottom panel
+/// The panels' quiet icons in a session's header, one per side as in an editor: the session list on the left, the
+/// bottom panel and the side panel on the right (`SidePanelToggle`), each with the mark of its side. The terminal and the browser open from the panels themselves (their tabs, + and the list of tools). The bottom panel
 /// opens on what it showed last, the terminal by default; the side panel on what it showed last, or on the list of
 /// tools when no tab is open. When the agent started a process or opened a page that you have not looked at yet, the
 /// side panel's icon carries a small dot. The same goes for a plan or another output the agent made.
@@ -69,13 +69,23 @@ struct SessionToolSwitch: View {
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @AppStorage("nook.agents.sideTool") private var lastTool = SessionTool.browser.rawValue
     @AppStorage("nook.agents.bottomTool") private var lastBottomTool = SessionTool.terminal.rawValue
+    /// The session list on the left of the Agents tab is put away (`AgentsTab`).
+    @AppStorage(AgentsListVisibility.hiddenKey) private var listHidden = false
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
+            listToggle
             bottomToggle
             panelToggle
         }
         .toolbarGroup()
+    }
+
+    /// Shows or puts away the session list, for more room for the conversation.
+    private var listToggle: some View {
+        SidePanelToggle(edge: .leading, open: !listHidden, help: tr(listHidden ? "agents.list.show" : "agents.list.hide")) {
+            withAnimation(NookTheme.reveal) { listHidden.toggle() }
+        }
     }
 
     /// The agent started a process, opened a page or made a plan you have not seen: a tool with news that neither
@@ -90,8 +100,7 @@ struct SessionToolSwitch: View {
     /// Opens the bottom panel on the tool it showed last (the terminal at first), or closes it.
     private var bottomToggle: some View {
         let open = viewModel.bottomTool != .conversation
-        let help = open ? tr("agents.tool.closeBottom") : tr("agents.tool.bottom")
-        return Button {
+        return SidePanelToggle(edge: .bottom, open: open, help: open ? tr("agents.tool.closeBottom") : tr("agents.tool.bottom")) {
             if open {
                 viewModel.bottomTool = .conversation
             } else {
@@ -105,13 +114,7 @@ struct SessionToolSwitch: View {
                     viewModel.bottomTool = SessionTool.terminal.available(in: directory) ? .terminal : .picker
                 }
             }
-        } label: {
-            SessionToolIcon(symbol: "rectangle.bottomthird.inset.filled", active: open, fresh: false)
         }
-        .buttonStyle(.plain)
-        .help(help)
-        .accessibilityLabel(help)
-        .accessibilityAddTraits(open ? .isSelected : [])
     }
 
     /// Opens the side panel on the tool it showed last, or closes it.
@@ -119,7 +122,7 @@ struct SessionToolSwitch: View {
         let open = viewModel.sessionTool != .conversation
         let base = open ? tr("agents.tool.close") : tr("agents.tool.panel")
         let help = fresh ? base + " · " + tr("bridge.tool.unseen") : base
-        return Button {
+        return SidePanelToggle(edge: .trailing, open: open, fresh: fresh, help: help) {
             if open {
                 viewModel.sessionTool = .conversation
             } else {
@@ -127,36 +130,7 @@ struct SessionToolSwitch: View {
                 let last = SessionTool(rawValue: lastTool) ?? .browser
                 viewModel.sessionTool = tabs.contains(last) ? last : tabs.first ?? .picker
             }
-        } label: {
-            SessionToolIcon(symbol: "sidebar.right", active: open, fresh: fresh)
         }
-        .buttonStyle(.plain)
-        .animation(NookTheme.reveal, value: fresh)
-        .help(help)
-        .accessibilityLabel(help)
-        .accessibilityAddTraits(open ? .isSelected : [])
-    }
-}
-
-/// One of the header's tool icons: highlighted while its tool is open, with a dot when there is something new.
-private struct SessionToolIcon: View {
-    let symbol: String
-    let active: Bool
-    let fresh: Bool
-
-    var body: some View {
-        Image(systemName: symbol)
-            .font(NookTheme.TextStyle.label)
-            .foregroundStyle(active ? NookTheme.paper : NookTheme.textSecondary)
-            .frame(width: 26, height: ToolbarGroup.itemHeight)
-            .background(RoundedRectangle(cornerRadius: ToolbarGroup.itemRadius, style: .continuous).fill(active ? NookTheme.smoke : Color.clear))
-            .overlay(alignment: .topTrailing) {
-                if fresh {
-                    Circle().fill(NookTheme.iris).frame(width: 5, height: 5).padding(NookTheme.Spacing.xs)
-                        .transition(.scale.combined(with: .opacity))
-                }
-            }
-            .contentShape(Rectangle())
     }
 }
 
@@ -220,19 +194,17 @@ private struct SessionPanelSlot {
     let tool: ReferenceWritableKeyPath<NotchViewModel, SessionTool>
     let tabs: ReferenceWritableKeyPath<NotchViewModel, [SessionTool]>
     let closeHelp: String
-    /// The close button's mark: the panel it puts away.
-    let closeSymbol: String
 
-    @MainActor static let side = SessionPanelSlot(tool: \.sessionTool, tabs: \.sessionTabs, closeHelp: "agents.tool.close",
-                                                  closeSymbol: "sidebar.right")
-    @MainActor static let bottom = SessionPanelSlot(tool: \.bottomTool, tabs: \.bottomTabs, closeHelp: "agents.tool.closeBottom",
-                                                    closeSymbol: "rectangle.bottomthird.inset.filled")
+    @MainActor static let side = SessionPanelSlot(tool: \.sessionTool, tabs: \.sessionTabs, closeHelp: "agents.tool.close")
+    @MainActor static let bottom = SessionPanelSlot(tool: \.bottomTool, tabs: \.bottomTabs, closeHelp: "agents.tool.closeBottom")
 }
 
 /// A session in the Agents tab together with the tools it works with. The conversation stays in view; a terminal, the
 /// browser or the changes open in a side panel on its right or a bottom panel under it, each in a tab you open with +
 /// and close with its cross. A tool is open in one of the two at a time. With no tab open a panel lists the tools.
-/// Drag the line beside (or above) a panel to make it wider (or taller).
+/// Drag the line beside (or above) a panel to make it wider (or taller). The tool panel and a diff or file the
+/// conversation opened take turns on the right (`SessionSideLink`). With room to spare the session panel stays docked
+/// as a column at the far right, so the panel toggles on top of it keep their place while panels open and close.
 struct SessionWorkbench<Conversation: View>: View {
     @ObservedObject var viewModel: NotchViewModel
     let directory: String
@@ -254,6 +226,13 @@ struct SessionWorkbench<Conversation: View>: View {
     /// What the conversation found the agent produced (`SessionOutputsReport`), and the output the outputs tab shows.
     @State private var outputs = SessionOutputsReport()
     @State private var outputSelection: String?
+    /// The conversation shows a diff or a file beside itself (`SessionDetailOpen`).
+    @State private var detailOpen = false
+    /// The room the conversation's own panels take (a command's terminal, a diff or file: `SessionBesideWidth`).
+    @State private var besideConversation: Double = 0
+    /// Whether the session panel was docked: it docks again only with some room to spare (`PanelLayout.dockHysteresis`),
+    /// so dragging a panel near the edge of the room does not make the column come and go.
+    @State private var wasDocked = true
 
     /// What a panel shows: nothing (closed), the list of tools, or one this session can use.
     private func shown(_ slot: SessionPanelSlot) -> SessionTool {
@@ -277,13 +256,15 @@ struct SessionWorkbench<Conversation: View>: View {
         // instead of both squeezing until neither reads.
         let covering = sideOpen
             && !PanelSplit.fits(minimum: PanelLayout.minimumPanel + NookTheme.Spacing.sm, available: totalWidth, rest: conversationRoom)
-        let sideWidth = sideOpen && !covering
-            ? PanelSplit.width(toolWidth, minimum: PanelLayout.minimumPanel, available: totalWidth, rest: conversationRoom)
-                + PanelSplit.handle + NookTheme.Spacing.sm
+        // The width the tool panel actually takes (not the one it was dragged to) and the room of the conversation's own
+        // panels, so a window that gets narrower gives up the docked column first; under that room it is the branch
+        // button's popover again.
+        let toolRoom = sideOpen && !covering
+            ? SidePanelRoom.of(PanelSplit.width(toolWidth, minimum: PanelLayout.minimumPanel, available: totalWidth,
+                                                rest: conversationRoom))
             : 0
-        // The width the side panel actually takes, not the one it was dragged to, so a window that got narrower
-        // gives up the docked column first.
-        let docked = dockSessionPanel && !directory.isEmpty && totalWidth - sideWidth >= PanelLayout.sessionPanelRoom
+        let needed = PanelLayout.sessionPanelRoom + (wasDocked ? 0 : PanelLayout.dockHysteresis)
+        let docked = dockSessionPanel && !directory.isEmpty && totalWidth - toolRoom - besideConversation >= needed
         HStack(alignment: .top, spacing: 0) {
             VStack(spacing: 0) {
                 // Docked, the switch sits above the session panel instead of in the conversation's header.
@@ -294,7 +275,13 @@ struct SessionWorkbench<Conversation: View>: View {
                     // The conversation hands up what the agent produced, and opens a new plan in the outputs tab.
                     .environment(\.sessionOutputs, SessionOutputsLink(shown: outputsShown, open: openOutput))
                     .environment(\.sessionPanelDocked, docked)
+                    // A diff or file the conversation opens beside itself takes the right side from the tool panel.
+                    .environment(\.sessionSide, SessionSideLink(toolOpen: sideOpen, makeRoom: {
+                        withAnimation(NookTheme.reveal) { viewModel.sessionTool = .conversation }
+                    }))
                     .onPreferenceChange(SessionOutputsReport.self) { outputs = $0 }
+                    .onPreferenceChange(SessionDetailOpen.self) { detailOpen = $0 }
+                    .onPreferenceChange(SessionBesideWidth.self) { besideConversation = $0 }
                     .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 if bottom != .conversation {
                     VStack(spacing: 0) {
@@ -311,9 +298,14 @@ struct SessionWorkbench<Conversation: View>: View {
             // Under the covering panel the conversation keeps its place (and what you typed) but takes no clicks.
             .allowsHitTesting(!covering)
             .accessibilityHidden(covering)
+            if sideOpen && !covering {
+                panel(.side, tool: side)
+                    .sidePanel(.trailing, width: $toolWidth, defaultWidth: PanelLayout.tool, available: totalWidth,
+                               rest: conversationRoom)
+            }
             if docked {
+                // At the far right, so the toggles on top stay put while the tool panel opens and closes beside it.
                 // The switch takes the height of the conversation's header, so the rows start where the conversation does.
-                HStack(spacing: 0) {
                 VStack(alignment: .trailing, spacing: 0) {
                     SessionToolSwitch(viewModel: viewModel, directory: directory, outputsFresh: outputs.fresh && !outputsShown)
                         .frame(height: 30)
@@ -324,16 +316,7 @@ struct SessionWorkbench<Conversation: View>: View {
                     }
                     .id(directory)
                 }
-                }
-                .frame(width: PanelLayout.sessionPanel)
-                .padding(.leading, NookTheme.Spacing.sm)
-            }
-            if sideOpen && !covering {
-                panel(.side, tool: side)
-                    .padding(.leading, NookTheme.Spacing.sm)
-                    .resizablePanel(width: $toolWidth, defaultWidth: PanelLayout.tool, minimum: PanelLayout.minimumPanel,
-                                    available: totalWidth, rest: conversationRoom, edge: .leading, divider: true)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                .fixedSidePanel(width: PanelLayout.sessionPanel)
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -346,6 +329,8 @@ struct SessionWorkbench<Conversation: View>: View {
         }
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         .animation(NookTheme.reveal, value: side == .conversation)
+        .animation(NookTheme.reveal, value: docked)
+        .onChange(of: docked) { _, now in wasDocked = now }
         .animation(NookTheme.reveal, value: bottom == .conversation)
         .onChange(of: side) { _, next in
             if SessionTool.panelTools.contains(next) { lastTool = next.rawValue }
@@ -374,7 +359,8 @@ struct SessionWorkbench<Conversation: View>: View {
     /// conversation. A terminal, page or diff you have open beside it stays; then only the tab's dot says so (false).
     private func openOutput(_ id: String) -> Bool {
         let side = viewModel.sessionTool
-        guard viewModel.bottomTool == .outputs || side == .outputs || side == .conversation || side == .picker else { return false }
+        let sideFree = (side == .conversation && !detailOpen) || side == .picker
+        guard viewModel.bottomTool == .outputs || side == .outputs || sideFree else { return false }
         outputSelection = id
         if viewModel.bottomTool != .outputs, side != .outputs {
             withAnimation(NookTheme.reveal) { viewModel.sessionTool = .outputs }
@@ -393,7 +379,7 @@ struct SessionWorkbench<Conversation: View>: View {
         SessionToolPanel(directory: directory, runID: runID, tool: tool, tabs: tabs(slot), pullRequest: viewModel.sidePullRequest,
                          pullRequestTabs: viewModel.sidePullRequestTabs, activePullRequest: viewModel.activeSidePullRequest,
                          outputs: outputs.outputs, outputSelection: $outputSelection, outputsFresh: outputs.fresh,
-                         closeHelp: tr(slot.closeHelp), closeSymbol: slot.closeSymbol,
+                         closeHelp: tr(slot.closeHelp),
                          show: { item in withAnimation(NookTheme.swap) { viewModel[keyPath: slot.tool] = item } },
                          selectPullRequest: { id in
                              withAnimation(NookTheme.swap) { viewModel.activeSidePullRequest = id; viewModel.sessionTool = .pullRequest }
@@ -516,7 +502,6 @@ private struct SessionToolPanel: View {
     @Binding var outputSelection: String?
     let outputsFresh: Bool
     let closeHelp: String
-    let closeSymbol: String
     let show: (SessionTool) -> Void
     let selectPullRequest: (UUID) -> Void
     /// Opens a Pull request tab beside the session, on this pull request or (nil) on the list to pick one.
@@ -535,8 +520,8 @@ private struct SessionToolPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            if tool == .terminal { subheader { terminalBar } }
-            if tool == .browser, !directory.isEmpty { DevServerStrip(directory: directory).padding(.bottom, NookTheme.Spacing.sm) }
+            if tool == .terminal { SidePanelToolbar { terminalBar } }
+            if tool == .browser, !directory.isEmpty { DevServerStrip(directory: directory) }
             Group {
                 switch tool {
                 case .picker:
@@ -551,17 +536,12 @@ private struct SessionToolPanel: View {
                     }
                 case .pullRequest:
                     if let pullRequest {
-                        // One column, so the back button keeps its own height and the pull request takes the rest.
-                        VStack(alignment: .leading, spacing: 0) {
-                            // Back to the list to pick another, as the + of the tab does.
-                            NookGhostButton(title: tr("agents.pr.back"), symbol: "chevron.left", compact: true, height: 26,
-                                            action: showPullRequestList)
-                                .help(tr("agents.pr.back"))
-                            PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item, onUpdate: { updated in
-                                updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
-                            })
-                                .id(pullRequest.account + " " + pullRequest.item.id)
-                        }
+                        // The page's own top bar starts with the arrow back to the list to pick another, so there is no
+                        // extra row above it.
+                        PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item, onUpdate: { updated in
+                            updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
+                        }, onBack: showPullRequestList)
+                            .id(pullRequest.account + " " + pullRequest.item.id)
                     } else {
                         SidePanelPullRequestPicker(directory: directory) { openPullRequest($0) }
                     }
@@ -592,7 +572,7 @@ private struct SessionToolPanel: View {
         SidePanelTabBar(items: tabs.flatMap(tabItems), selected: selectedTab, onSelect: selectTab, onClose: closeTab) {
             addMenu
         } trailing: {
-            ToolbarIconButton(closeSymbol, closeHelp, height: 24, width: 24, close)
+            SidePanelCloseButton(help: closeHelp, action: close)
         }
     }
 
@@ -643,28 +623,20 @@ private struct SessionToolPanel: View {
         }
     }
 
-    /// A tool's own bar under the tabs (the terminal's folder and actions), ruled off from what it shows.
-    private func subheader<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        VStack(spacing: 0) {
-            content()
-                .frame(height: 32)
-            NookDivider()
-        }
-    }
-
     /// Under the tabs, so they keep the panel's full width: the terminal's folder and its actions.
+    @ViewBuilder
     private var terminalBar: some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
-            Text(AgentPathFormat.tilde(directory))
-                .font(NookTheme.mono(11))
-                .foregroundStyle(NookTheme.textTertiary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(directory)
-            Spacer(minLength: 8)
-            SessionTerminalActions(directory: directory).id(directory)
-        }
-        .padding(.horizontal, NookTheme.Spacing.xs)
+        Image(systemName: "folder")
+            .font(NookTheme.font(10, .medium))
+            .foregroundStyle(NookTheme.textTertiary)
+        Text(AgentPathFormat.tilde(directory))
+            .font(NookTheme.mono(11))
+            .foregroundStyle(NookTheme.textTertiary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .help(directory)
+        Spacer(minLength: NookTheme.Spacing.md)
+        SessionTerminalActions(directory: directory).id(directory)
     }
 
     /// + : the tools to open, each in its own tab (or the tab it already has), in Nook's own dropdown panel.
@@ -753,8 +725,8 @@ struct AgentsToolPage<Content: View>: View {
     }
 }
 
-/// The local servers this session's folder runs, as small buttons
-/// above the browser: one tap opens it. Checked every few seconds while the browser is open.
+/// The local servers this session's folder runs, as small buttons in a bar above the browser (`SidePanelToolbar`):
+/// one tap opens it. Checked every few seconds while the browser is open; without any there is no bar.
 struct DevServerStrip: View {
     let directory: String
     @State private var servers: [DevServer] = []
@@ -764,27 +736,29 @@ struct DevServerStrip: View {
         // A VStack, not a Group: it exists while still empty, so the scan below starts.
         VStack(alignment: .leading, spacing: 0) {
             if !servers.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: NookTheme.Spacing.sm) {
-                        Image(systemName: "dot.radiowaves.left.and.right")
-                            .font(NookTheme.font(10, .semibold))
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .help(tr("agents.servers.help"))
-                        ForEach(servers) { server in
-                            // `address` is published, unlike the web view's own URL.
-                            let open = URL(string: browser.address)?.port == server.port
-                            Button {
-                                browser.go(server.url.absoluteString)
-                            } label: {
-                                Text("\(server.command) — :\(server.port)")
-                                    .font(NookTheme.TextStyle.label)
-                                    .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
-                                    .padding(.horizontal, 9)
-                                    .frame(height: 22)
-                                    .background(Capsule().fill(open ? NookTheme.smoke : NookTheme.field))
+                SidePanelToolbar {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: NookTheme.Spacing.sm) {
+                            Image(systemName: "dot.radiowaves.left.and.right")
+                                .font(NookTheme.font(10, .semibold))
+                                .foregroundStyle(NookTheme.textTertiary)
+                                .help(tr("agents.servers.help"))
+                            ForEach(servers) { server in
+                                // `address` is published, unlike the web view's own URL.
+                                let open = URL(string: browser.address)?.port == server.port
+                                Button {
+                                    browser.go(server.url.absoluteString)
+                                } label: {
+                                    Text("\(server.command) — :\(server.port)")
+                                        .font(NookTheme.TextStyle.label)
+                                        .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
+                                        .padding(.horizontal, 9)
+                                        .frame(height: 22)
+                                        .background(Capsule().fill(open ? NookTheme.smoke : NookTheme.field))
+                                }
+                                .buttonStyle(.plain)
+                                .help(server.url.absoluteString)
                             }
-                            .buttonStyle(.plain)
-                            .help(server.url.absoluteString)
                         }
                     }
                 }

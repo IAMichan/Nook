@@ -28,6 +28,8 @@ extension AppModel {
                              waiting: Int = 0) {
         logNotice(.waiting, title: approval.title, detail: approval.command, context: context,
                   target: noticeTarget(approval), key: approval.cardToken)
+        // It always shows, but counts once, card or macOS notification: the notices after it keep their distance too.
+        noticePacer.record(key: Self.urgentPace)
         guard settings.noticeRules.decide(.agents, urgent: true) == .show(.system) else {
             showApprovalCard(approval, context: context, open: open, waiting: waiting)
             return
@@ -108,6 +110,8 @@ extension AppModel {
             CompanionNotifier.shared.question(request)
             logNotice(.waiting, title: item.question, context: "\(request.agentName) · \(request.project)",
                       target: .agent(request.sessionKey), key: token)
+            // Like a permission request: it always shows, and counts once for the notices after it.
+            noticePacer.record(key: Self.urgentPace)
         }
         // As a macOS notification: the choices do not fit on a banner, so a click brings up the card. Like a permission
         // request, a question always reaches you.
@@ -182,30 +186,27 @@ extension AppModel {
     /// Agent finished, failed, or awaiting input: a notice the way Settings › Notifications says for agents (a card, one
     /// line, a macOS notification or only the list), unless that agent is switched off there or you look at it already.
     func agentNeedsAttention(_ session: AgentSession) {
-        logNotice(Self.noticeKind(session.status), title: tr("agentNotice.compact.\(Self.noticeKey(session.status))", session.name),
-                  detail: session.summary, context: session.project, target: .agent(session.id),
-                  source: .agents, app: Self.agentApp(session.name))
-        // You are looking at the session: you see it finish there. The notice is only kept in the history.
-        guard !isWatching(sessionKey: session.id) else { return }
-        CompanionNotifier.shared.attention(session)
-        // The last agent finished: a small celebration.
-        if session.status == .done {
-            let others = activeAgents.contains { $0.id != session.id }
-            if others { NookPresence.shared.nod() } else { NookPresence.shared.celebrate() }
-            buddyAgentFinished(last: !others)
+        let notice = AgentStatusNotice(agent: session.name, project: session.project, topic: session.firstPrompt,
+                                 summary: session.summary, state: Self.noticeState(session.status),
+                                 added: session.linesAdded, removed: session.linesRemoved,
+                                 session: session.id)
+        let watching = isWatching(sessionKey: session.id)
+        if !watching {
+            CompanionNotifier.shared.attention(session)
+            // The last agent finished: a small celebration.
+            if session.status == .done {
+                let others = activeAgents.contains { $0.id != session.id }
+                if others { NookPresence.shared.nod() } else { NookPresence.shared.celebrate() }
+                buddyAgentFinished(last: !others)
+            }
         }
-        let open: () -> Void = { [weak self] in
-            self?.viewModel.selectedAgentID = session.id
-            self?.viewModel.show(.panel(.agents))
-        }
-        deliverNotice(.agents, app: Self.agentApp(session.name), id: "agentstatus-" + UUID().uuidString,
-                      title: tr("agentNotice.compact.\(Self.noticeKey(session.status))", session.name),
-                      subtitle: session.project, body: session.summary,
-                      sound: session.status == .done ? .done : .attention,
-                      kind: session.status == .done ? .success : (session.status == .failed ? .error : .warning),
-                      card: { [weak self] in self?.showAgentNotice(session, compact: false) },
-                      strip: { [weak self] in self?.showAgentNotice(session, compact: true) },
-                      open: open)
+        let terminal = TerminalLauncher.name(for: session.hostBundleID)
+        deliverAgentNotice(notice, app: Self.agentApp(session.name), target: .agent(session.id), watching: watching,
+                           open: { [weak self] in
+                               self?.viewModel.selectedAgentID = session.id
+                               self?.viewModel.show(.panel(.agents))
+                           },
+                           openApp: (tr("app.agent.openApp", terminal), { [weak self] in self?.openTerminal(for: session) }))
     }
 
     /// The key an agent is switched on or off under in Settings › Notifications: "claude" for "Claude Code" in a
@@ -214,98 +215,8 @@ extension AppModel {
         AgentKind(agentName: name)?.rawValue ?? name
     }
 
-    /// The notch notice for an agent that is done, failed or waits: a card, or one slim line (`compact`).
-    private func showAgentNotice(_ session: AgentSession, compact: Bool) {
-        guard notchFreeForNotice else { return }
-
-        let mood: NookMood
-        let fallback: String
-        switch session.status {
-        case .done:
-            mood = .done; fallback = tr("app.agent.done.fallback")
-        case .failed:
-            mood = .worry; fallback = tr("app.agent.failed.fallback")
-        default:
-            mood = .waiting; fallback = tr("app.agent.waiting.fallback")
-        }
-        // Compact: one line under the notch, with View and OK. The summary waits in the Agents tab.
-        if compact {
-            let who = tr("agentNotice.compact.\(Self.noticeKey(session.status))", session.name)
-            let message = session.project.isEmpty ? who : who + " · " + session.project
-            viewModel.finish(message, button: tr("button.view"), tone: Self.doneTone(session.status), inline: true) { [weak self] in
-                self?.viewModel.selectedAgentID = session.id
-                self?.viewModel.show(.panel(.agents))
-            }
-            return
-        }
-
-        let token = "agentstatus-" + UUID().uuidString
-        let title = session.summary.isEmpty ? fallback : session.summary
-
-        viewModel.register("\(token)#view") { [weak self] in
-            self?.viewModel.selectedAgentID = session.id
-            self?.viewModel.show(.panel(.agents))
-        }
-        viewModel.register("\(token)#terminal") { [weak self] in self?.openTerminal(for: session) }
-        // OK: gone at once instead of waiting out the timeout; a queued card comes next.
-        viewModel.register("\(token)#ok") { [weak self] in self?.viewModel.dismissCard(id: token) }
-
-        let context = [session.name, session.project].filter { !$0.isEmpty }.joined(separator: " · ")
-        let changed = session.linesAdded + session.linesRemoved > 0
-        let lines = max(1, min(4, Int(ceil(Double(title.count) / 46.0))))
-        let ok = CardAction(label: tr("button.ok"), outcome: .callback("\(token)#ok", ""))
-        let card = NookCard(
-            id: token,
-            mood: mood,
-            context: context,
-            title: title,
-            detail: .none,
-            primary: CardAction(label: tr("button.view"), outcome: .callback("\(token)#view", ""), symbol: "eye"),
-            secondary: CardAction(label: tr("app.agent.openApp", TerminalLauncher.name(for: session.hostBundleID)),
-                                  outcome: .callback("\(token)#terminal", ""), symbol: "terminal"),
-            contentHeight: 100 + CGFloat(lines) * 24,
-            acknowledge: ok,
-            countdown: Self.agentNoticeSeconds,
-            escape: ok,
-            status: CardStatus(text: tr("card.status.\(Self.noticeKey(session.status))"), tone: Self.doneTone(session.status)),
-            changes: changed ? LineChanges(added: session.linesAdded, removed: session.linesRemoved) : nil
-        )
-        viewModel.show(.card(card))
-        dismissAgentCardLater(token)
-    }
-
-    /// How long an agent notice stays while the pointer is off the notch; the ring on its OK counts down the same time.
-    static let agentNoticeSeconds: TimeInterval = 5.2
-
-    /// Closes an agent notice once it has been shown `agentNoticeSeconds` with the pointer off the notch, like its
-    /// countdown ring. Hovering holds the clock, for at most about 100 seconds in all.
-    func dismissAgentCardLater(_ token: String) {
-        let seconds = Self.agentNoticeSeconds
-        Task { [weak self] in
-            let step: TimeInterval = 0.1
-            var left = seconds
-            for _ in 0..<1000 {
-                try? await Task.sleep(nanoseconds: UInt64(step * 1_000_000_000))
-                guard let self, case .card(let shown) = self.viewModel.state, shown.id == token else { return }
-                if !self.viewModel.pointerInside { left -= step }
-                if left <= 0 { break }
-            }
-            guard let self, case .card(let shown) = self.viewModel.state, shown.id == token else { return }
-            self.viewModel.dismissCard(id: token)
-        }
-    }
-
-    /// The text key part for a notice: done, failed, or waiting on you.
-    static func noticeKey(_ status: AgentStatus) -> String {
-        switch status {
-        case .done: return "done"
-        case .failed: return "failed"
-        default: return "waiting"
-        }
-    }
-
-    /// The mark on the compact strip: a check, an hourglass, or an exclamation mark.
-    static func doneTone(_ status: AgentStatus) -> DoneTone {
+    /// An agent's status as the state of its notice.
+    static func noticeState(_ status: AgentStatus) -> AgentStatusNotice.State {
         switch status {
         case .done: return .done
         case .failed: return .failed

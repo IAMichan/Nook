@@ -65,7 +65,7 @@ extension WorkspaceManager {
     /// skipped, not an error.
     func setEffort(_ id: UUID, _ effort: String?) {
         guard let run = run(id) else { return }
-        let offered = EffortLevels.levels(for: run.provider, model: run.model)
+        let offered = effortLevels(for: run.provider, profileID: run.profileID, model: run.model)
         let resolution = EffortResolution.resolve(stored: effort, offered: offered)
         update(id) { $0.effort = resolution.outcome == .use ? resolution.effort : nil }
     }

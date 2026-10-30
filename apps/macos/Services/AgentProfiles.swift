@@ -30,13 +30,13 @@ struct AgentProfile: Codable, Identifiable, Hashable {
     /// Environment variable directing the agent to this directory; empty for primary account.
     var environment: [String: String] {
         guard let home, let variable = kind.homeVariable else { return [:] }
-        return [variable: home]
+        return [variable: kind.homeValue(home)]
     }
 
     /// "CLAUDE_CONFIG_DIR=~/.claude-work " prefix for terminal commands; empty for primary account.
     var commandPrefix: String {
         var prefix = ""
-        if let home, let variable = kind.homeVariable { prefix = "\(variable)=\(AgentProfile.shellPath(home)) " }
+        if let home, let variable = kind.homeVariable { prefix = "\(variable)=\(AgentProfile.shellPath(kind.homeValue(home))) " }
         // The raw key is never written into the command: shell retrieves it at invocation time from Keychain.
         if kind == .claude, usesAPIKey {
             prefix = "ANTHROPIC_API_KEY=\"$(security find-generic-password -s \(Keychain.service) -a \(keychainAccount) -w)\" " + prefix
@@ -88,23 +88,76 @@ enum AgentAuthMethod: String, Codable, CaseIterable, Identifiable {
 }
 
 extension AgentKind {
-    /// Can this agent run multiple profiles concurrently? Gemini CLI lacks per-directory profiles.
+    /// Can this agent run multiple profiles concurrently? Only when it has a variable for its folder.
     var supportsProfiles: Bool { homeVariable != nil }
 
+    /// The variable that points the agent at an account's folder. Gemini CLI's (0.25 and newer) stands in for your home
+    /// folder: it keeps its data in `$GEMINI_CLI_HOME/.gemini` (see `homeValue`).
     var homeVariable: String? {
         switch self {
         case .claude: return "CLAUDE_CONFIG_DIR"
         case .codex: return "CODEX_HOME"
-        case .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return nil
+        case .gemini: return "GEMINI_CLI_HOME"
+        case .antigravity, .opencode, .cursor, .grok, .acp: return nil
         }
     }
 
-    /// Suggested location for a profile directory: ~/.claude-work.
+    /// What `homeVariable` gets for an account kept in `home`: the folder itself, or for Gemini CLI the one around its
+    /// `.gemini` folder (an account's `home` is always where the agent's data is, as `defaultHome` is).
+    func homeValue(_ home: String) -> String {
+        switch self {
+        case .gemini:
+            let url = URL(fileURLWithPath: home, isDirectory: true)
+            return url.lastPathComponent == ".gemini" ? url.deletingLastPathComponent().path : home
+        case .claude, .codex, .antigravity, .opencode, .cursor, .grok, .acp:
+            return home
+        }
+    }
+
+    /// Nook keeps an API key for an account of this agent itself (Claude Code in the Keychain; Codex with
+    /// `codex login --with-api-key`); the others sign in their own way.
+    var takesAPIKeyAccounts: Bool {
+        switch self {
+        case .claude, .codex: return true
+        case .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return false
+        }
+    }
+
+    /// Why an agent without account folders has one account in Nook (Settings › Agents), when there is a reason to say.
+    var singleAccountNote: String? {
+        switch self {
+        case .antigravity: return "accounts.antigravitySingle"
+        case .claude, .codex, .gemini, .opencode, .cursor, .grok, .acp: return nil
+        }
+    }
+
+    /// How the agent names itself in Nook's hook events (`--agent`).
+    var hookAgentID: String {
+        switch self {
+        case .claude: return "claude-code"
+        case .codex, .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return rawValue
+        }
+    }
+
+    /// The reverse of `homeValue`: the account folder a running agent's `homeVariable` points at.
+    func home(fromVariable value: String) -> String {
+        switch self {
+        case .gemini: return URL(fileURLWithPath: value, isDirectory: true).appendingPathComponent(".gemini", isDirectory: true).path
+        case .claude, .codex, .antigravity, .opencode, .cursor, .grok, .acp: return value
+        }
+    }
+
+    /// Suggested location for a profile directory: ~/.claude-work, or for Gemini CLI ~/.gemini-work/.gemini.
     func suggestedHome(slug: String) -> URL {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        switch self {
         // Each ACP agent gets a folder of its own under Nook's; the agent may keep its state there.
-        if self == .acp { return defaultHome.appendingPathComponent(slug, isDirectory: true) }
-        let base = self == .claude ? ".claude" : (self == .codex ? ".codex" : ".gemini")
-        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("\(base)-\(slug)", isDirectory: true)
+        case .acp: return defaultHome.appendingPathComponent(slug, isDirectory: true)
+        case .claude: return home.appendingPathComponent(".claude-\(slug)", isDirectory: true)
+        case .codex: return home.appendingPathComponent(".codex-\(slug)", isDirectory: true)
+        case .gemini, .antigravity, .opencode, .cursor, .grok:
+            return home.appendingPathComponent(".gemini-\(slug)", isDirectory: true).appendingPathComponent(".gemini", isDirectory: true)
+        }
     }
 }
 
@@ -278,7 +331,8 @@ final class AgentProfileStore: ObservableObject {
 
     /// "~/.claude-work" → "Work"; a folder without a suffix is named after itself.
     static func label(forFolder url: URL) -> String {
-        let folder = url.lastPathComponent
+        // ~/.gemini-work/.gemini is named after the folder around it.
+        let folder = url.lastPathComponent == ".gemini" ? url.deletingLastPathComponent().lastPathComponent : url.lastPathComponent
         var name = String(folder.drop { $0 != "-" && $0 != "_" }.dropFirst())
         if name.isEmpty { name = folder.trimmingCharacters(in: CharacterSet(charactersIn: ".")) }
         if name.isEmpty { name = tr("agents.work") }
@@ -299,6 +353,13 @@ final class AgentProfileStore: ObservableObject {
                 kind = .claude; marker = ".claude.json"
             } else if name.hasPrefix(".codex-") || name.hasPrefix(".codex_") {
                 kind = .codex; marker = "auth.json"
+            } else if name.hasPrefix(".gemini-") || name.hasPrefix(".gemini_") {
+                // GEMINI_CLI_HOME stands in for the home folder: the account's data is in its .gemini.
+                let data = url.appendingPathComponent(".gemini", isDirectory: true)
+                guard ["oauth_creds.json", "google_accounts.json"].contains(where: { fm.fileExists(atPath: data.appendingPathComponent($0).path) }),
+                      profile(kind: .gemini, home: data.path) == nil else { continue }
+                found.append((.gemini, data))
+                continue
             } else {
                 continue
             }

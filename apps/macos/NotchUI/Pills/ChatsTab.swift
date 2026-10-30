@@ -388,7 +388,7 @@ struct ChatsTab: View {
     /// The groups folded shut (a click on their header); a search shows every group open.
     @State private var collapsed: Set<ChatsGroup> = []
     @AppStorage("nook.chats.listWidth") private var listWidth = PanelLayout.chatsList
-    /// Settings › Chats: opening a chat reads it in Nook. On by default; the app itself hears it only from your click.
+    /// Settings › Connections: opening a chat reads it in Nook. On by default; the app itself hears it only from your click.
     @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
     @State private var totalWidth: Double = 0
     @State private var entriesMemo = ChatsEntryMemo()
@@ -429,11 +429,9 @@ struct ChatsTab: View {
                     // The same split as the Agents tab: a list you can widen, a line, and the open chat beside it.
                     list
                         .padding(.leading, NookTheme.Spacing.md)
-                        .padding(.trailing, NookTheme.Spacing.xs)
-                        .resizablePanel(width: $listWidth, defaultWidth: PanelLayout.chatsList, minimum: PanelLayout.minimumList,
-                                        available: max(totalWidth - sidebarWidth, 0),
-                                        rest: PanelLayout.minimumConversation + PanelSplit.handle,
-                                        edge: .trailing, divider: true)
+                        .sidePanel(.leading, width: $listWidth, defaultWidth: PanelLayout.chatsList, minimum: PanelLayout.minimumList,
+                                   available: max(totalWidth - sidebarWidth, 0),
+                                   rest: PanelLayout.minimumConversation + PanelSplit.handle)
                     Group {
                         if let current {
                             ChatsDetail(entry: current, photo: photo(current), capture: capture,
@@ -681,7 +679,7 @@ struct ChatsTab: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             ChatsSidebar(compact: compactSidebar, view: $view, app: $filter, account: $account, counts: viewCounts, apps: apps,
                          newByApp: newByApp, accounts: accounts, newByAccount: newByAccount,
-                         addSource: { app.openSettings(section: .chats) })
+                         addSource: { app.openConnections(.add(.chats)) })
             footer
                 .frame(width: compactSidebar ? PanelLayout.chatsRail : PanelLayout.chatsSidebar)
         }
@@ -808,7 +806,7 @@ struct ChatsTab: View {
                     // Slack, Telegram, Teams and the chat helper's apps keep their history elsewhere: connected once, Nook reads it from
                     // there.
                     ListEmptyNote(tr("chats.\(bridge.app).connectHint"))
-                    SmallGhostButton(title: tr("chats.\(bridge.app).connect")) { app.openSettings(section: .chats) }
+                    SmallGhostButton(title: tr("chats.\(bridge.app).connect")) { app.openConnections(.chat(bridge.app)) }
                 } else {
                     ListEmptyNote(tr("chats.source.empty", name))
                 }
@@ -839,7 +837,7 @@ struct ChatsTab: View {
                 }
                 if !capture.enabled {
                     // Only WhatsApp so far: the other chat apps are one switch away.
-                    SmallGhostButton(title: tr("chats.addMore")) { app.openSettings(section: .chats) }
+                    SmallGhostButton(title: tr("chats.addMore")) { app.openConnections(.add(.chats)) }
                 }
                 if photos.canAsk {
                     // Photos come from Contacts on this Mac; macOS asks only after this click.
@@ -869,7 +867,7 @@ struct ChatsTab: View {
                 // Every chat app is on by default: one click starts collecting, Settings is for choosing.
                 HStack(spacing: NookTheme.Spacing.sm) {
                     NookPrimaryButton(title: tr("chats.empty.turnOn"), symbol: "tray.and.arrow.down") { turnOn() }
-                    NookGhostButton(title: tr("chats.empty.setup"), symbol: "gearshape") { app.openSettings(section: .chats) }
+                    NookGhostButton(title: tr("chats.empty.setup"), symbol: "gearshape") { app.openConnections(.add(.chats)) }
                 }
                 .fixedSize()
                 .padding(.top, NookTheme.Spacing.xs)
@@ -1138,6 +1136,7 @@ private struct ChatsRow: View {
             .padding(.vertical, NookTheme.Spacing.md)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
                 .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+            .selectionMark(selected)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1284,7 +1283,7 @@ private struct ChatsDetail: View {
         guard route == nil, !limitsHidden.split(separator: ",").contains(Substring(entry.app)) else { return nil }
         let id = entry.app
         return AnyView(ChatLimitsLine(appName: appName, linkable: ChatsTab.linkableApps.contains(id),
-                                      link: { app.openSettings(section: .chats) },
+                                      link: { app.openConnections(.chat(id)) },
                                       openApp: { app.openChatApp(id) },
                                       dismiss: { withAnimation(NookTheme.reveal) { limitsHidden += (limitsHidden.isEmpty ? "" : ",") + id } }))
     }

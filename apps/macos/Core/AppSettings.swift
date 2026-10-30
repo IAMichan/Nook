@@ -445,7 +445,7 @@ final class AppSettings: ObservableObject {
     @Published var checkAnswers: Bool {
         didSet { UserDefaults.standard.set(checkAnswers, forKey: "checkAnswers") }
     }
-    /// Memory: what Nook learned about the user goes along with every question (Settings › Memory).
+    /// Memory: what Nook learned about the user goes along with every question (Settings › Assistant).
     @Published var useMemory: Bool {
         didSet { UserDefaults.standard.set(useMemory, forKey: "useMemory") }
     }
@@ -537,6 +537,9 @@ final class AppSettings: ObservableObject {
         switch provider {
         case .claude: return hasAPIKey
         case .claudeCode: return ClaudeCodeBrain.executable != nil
+        // Your subscription through the agent: ready once it is installed and signed in.
+        case .codexCLI, .geminiCLI, .grokCLI, .kimiCLI, .vibeCLI:
+            return SubscriptionBrain.executable(provider) != nil && SubscriptionBrain.isSignedIn(provider)
         case .ollama, .lmstudio: return !activeProviderModel.isEmpty || provider == .lmstudio
         default: return hasProviderKey && !activeProviderModel.isEmpty
         }

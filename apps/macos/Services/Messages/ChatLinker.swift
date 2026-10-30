@@ -1,6 +1,6 @@
 import Foundation
 
-/// Links chat apps (Instagram, WhatsApp, Telegram, Teams…) from Settings › Chats › Linked chats, one login at a time,
+/// Links chat apps (Instagram, WhatsApp, Telegram, Teams…) from Settings › Connections › Linked chats, one login at a time,
 /// through the local chat service on this Mac that `ChatServiceBridge` reads: it lists what can be linked, walks a login
 /// through its steps (fields to fill in, a QR code to scan, signing in on the app's website) and unlinks an account.
 /// Once a login is complete the app's chats come in through `ChatServiceBridge` like every linked chat.

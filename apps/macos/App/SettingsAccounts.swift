@@ -1,39 +1,38 @@
 import SwiftUI
 
-/// Agent accounts in Settings: sign-in method, re-login, API key, default, remove, and adding a new account.
-/// Designed to be crystal clear, intuitive, and child-simple.
+/// Agent accounts in Settings › Agents: one list of every account, each opening its sheet (sign-in method, re-login,
+/// API key, default, remove), and one button to add another.
 struct AccountsSettingsSection: View {
     @EnvironmentObject private var app: AppModel
     @State private var adding: AgentKind?
     @State private var editingProfile: AgentProfile?
 
+    /// Every account of every agent in one list, its agent's logo on each row, and one Add button for another account.
+    /// ACP agents you added follow in a section of their own (pick from the registry, or enter a command).
     var body: some View {
-        // ACP agents you added have a section of their own (pick from the registry, or enter a command).
-        AcpAgentsSection()
-        ForEach(AgentKind.allCases.filter { $0 != .acp }) { kind in
-            Section {
-                let profiles = app.profiles.profiles(for: kind)
-                ForEach(profiles) { profile in
+        let kinds = AgentKind.allCases.filter { $0 != .acp }
+        Section {
+            ForEach(kinds) { kind in
+                ForEach(app.profiles.profiles(for: kind)) { profile in
                     AgentAccountCardRow(profile: profile) {
                         editingProfile = profile
                     }
                 }
-
-                if kind == .gemini || kind == .antigravity {
-                    SettingNote(tr(kind == .gemini ? "accounts.geminiSingle" : "accounts.antigravitySingle"))
-                } else if kind.supportsProfiles {
-                    Button {
-                        adding = kind
-                    } label: {
-                        Label(tr("accounts.add"), systemImage: "plus")
-                    }
-                }
-            } header: {
-                HStack(spacing: 8) {
-                    AgentLogo(kind, size: 16)
-                    Text(kind.name)
-                }
             }
+            Menu {
+                // Every agent with account folders (Claude Code, Codex, Gemini CLI): see AgentKind.homeVariable.
+                ForEach(kinds.filter(\.supportsProfiles)) { kind in
+                    Button(kind.name) { adding = kind }
+                }
+            } label: {
+                Label(tr("accounts.add"), systemImage: "plus")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        } header: {
+            // The agents that hold one account each (Antigravity) say so behind the ⓘ instead of under each.
+            SettingsSectionTitle(tr("settings.agents.accounts"),
+                                 info: kinds.compactMap(\.singleAccountNote).map { tr($0) }.joined(separator: "\n\n"))
         }
         .sheet(item: $adding) { kind in
             AddAccountSheet(kind: kind)
@@ -43,6 +42,7 @@ struct AccountsSettingsSection: View {
                 editingProfile = nil
             }
         }
+        AcpAgentsSection()
     }
 }
 
@@ -182,30 +182,22 @@ private struct ManageAccountSheet: View {
                 if profile.kind != .gemini && profile.kind != .antigravity {
                     Divider()
 
-                    // Method: subscription or API key
+                    // Signing in with the agent's own login is the way; a key is only for whoever needs one, folded away.
                     VStack(alignment: .leading, spacing: 10) {
                         Text(tr("accounts.method")).font(NookTheme.TextStyle.strong)
-                        Picker("", selection: Binding(
-                            get: { profile.auth ?? .cli },
-                            set: { method in
-                                if method == .cli { app.useCLILogin(profile) } else { app.profiles.setAuth(profile.id, .apiKey) }
-                            }
-                        )) {
-                            Text(tr("accounts.method.cli")).tag(AgentAuthMethod.cli)
-                            Text(tr("accounts.method.apiKey")).tag(AgentAuthMethod.apiKey)
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-
                         if profile.usesAPIKey {
                             apiKeyView
+                            Button(tr("accounts.signInInstead")) { app.useCLILogin(profile) }
                         } else {
                             cliAuthView
+                            DisclosureGroup(tr("settings.display.advanced")) {
+                                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                                    SettingNote(tr(profile.kind == .claude ? "accounts.method.help.claude" : "accounts.method.help.codex"))
+                                    Button(tr("accounts.useKeyInstead")) { app.profiles.setAuth(profile.id, .apiKey) }
+                                }
+                                .padding(.top, NookTheme.Spacing.xs)
+                            }
                         }
-
-                        Text(tr(profile.kind == .claude ? "accounts.method.help.claude" : "accounts.method.help.codex"))
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textSecondary)
                     }
                 }
 
@@ -388,18 +380,23 @@ private struct AddAccountSheet: View {
                         .textFieldStyle(.roundedBorder)
                 }
 
-                SetupStep(number: 2, title: tr("accounts.method"), done: true) {
+                // Step 2 is signing in with the agent's own login, in the browser, right after adding. A key instead is
+                // folded away for whoever needs one.
+                SetupStep(number: 2, title: tr("accounts.signInStep"), done: method == .apiKey && canAdd) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Picker("", selection: $method) {
-                            Text(tr("accounts.method.cli")).tag(AgentAuthMethod.cli)
-                            Text(tr("accounts.method.apiKey")).tag(AgentAuthMethod.apiKey)
+                        if method == .cli {
+                            SettingNote(tr("accounts.signInStepDetail", kind.shortName))
                         }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-
-                        if method == .apiKey {
-                            SecureField(tr("accounts.keyPlaceholder"), text: $key)
-                                .textFieldStyle(.roundedBorder)
+                        // A key instead, for the agents Nook keeps one for (AgentKind.takesAPIKeyAccounts).
+                        if kind.takesAPIKeyAccounts {
+                            DisclosureGroup(isExpanded: Binding(get: { method == .apiKey },
+                                                                set: { method = $0 ? .apiKey : .cli })) {
+                                SecureField(tr("accounts.keyPlaceholder"), text: $key)
+                                    .textFieldStyle(.roundedBorder)
+                                    .padding(.top, NookTheme.Spacing.xs)
+                            } label: {
+                                Text(tr("accounts.useKeyInstead"))
+                            }
                         }
                     }
                 }

@@ -4,14 +4,15 @@ import AVFoundation
 import Speech
 import EventKit
 
-/// Settings sections, in the order of the sidebar. Each subject lives in exactly one place.
+/// Settings pages, in the order of the sidebar. Each subject lives in exactly one place, and everything you link or sign
+/// in to (chat apps, online services, your own servers, the iPhone) lives on one page: `connections`.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case start, general, appearance, shortcuts, notifications, brain, assistant, memory, autocomplete, dictation, connections, chats,
-         devices, agents, usage, workspace, privacy
+    case start, general, appearance, shortcuts, notifications, brain, assistant, autocomplete, connections, agents, workspace,
+         privacy
 
-    /// The sidebar groups: what belongs together sits together.
+    /// The sidebar groups: four, so the sidebar reads at a glance.
     enum Group: String, CaseIterable, Identifiable {
-        case nook, intelligence, input, connect, agents, security
+        case nook, intelligence, connect, security
 
         var id: String { rawValue }
 
@@ -20,11 +21,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         var sections: [SettingsSection] {
             switch self {
             case .nook: return [.start, .general, .appearance, .shortcuts, .notifications]
-            case .intelligence: return [.brain, .assistant, .memory]
-            case .input: return [.autocomplete, .dictation]
-            // What Nook reads from and your devices, apart from the coding agents and what they cost.
-            case .connect: return [.connections, .chats, .devices]
-            case .agents: return [.agents, .usage, .workspace]
+            // The AI Nook thinks with, what it does with it (and what it remembers), and how you type and talk to it.
+            case .intelligence: return [.brain, .assistant, .autocomplete]
+            // Everything Nook is linked to, then the coding agents and where their sessions run.
+            case .connect: return [.connections, .agents, .workspace]
             case .security: return [.privacy]
             }
         }
@@ -42,7 +42,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var info: String? {
         switch self {
         case .connections: return tr("connect.intro")
-        case .memory: return tr("memory.settings.privacyFooter")
+        case .assistant: return tr("memory.settings.privacyFooter")
         default: return nil
         }
     }
@@ -55,11 +55,6 @@ struct SettingsView: View {
 
     @State var keyDraft = ""
     @State var refreshTick = 0
-    @State var connectionSearch = ""
-    /// The category chip under the connections search field; nil is All.
-    @State var connectionCategory: ServiceCategory?
-    /// The Add MCP sheet, opened from a preset card or the custom card.
-    @State var mcpAdd: MCPAddRequest?
     @ObservedObject var local = EmbeddedModel.shared
     @ObservedObject var permissions = PermissionMonitor.shared
     @ObservedObject var energy = EnergyMonitor.shared
@@ -75,12 +70,15 @@ struct SettingsView: View {
     @State var recommendations: [ModelAdvisor.Recommendation] = []
     /// What is typed in the search field above the sidebar.
     @State var searchQuery = ""
+    /// The part of Typing & dictation on screen: completing (0) or dictation and voice (1).
+    @AppStorage("settings.typingPart") var typingPart = 0
     /// The mood the large preview under Appearance shows.
     @State var lookPreviewMood: NookMood = .rest
     @ObservedObject var flowStore = FlowStore.shared
+    @ObservedObject var openRouter = OpenRouterSignIn.shared
+    /// Picks up a key copied on a service's own page when you come back to Nook.
+    @StateObject var keyCatcher = ClipboardKeyCatcher()
     @ObservedObject var doubleTap = DoubleTap.shared
-    @ObservedObject var mcpStore = MCPServerStore.shared
-    @ObservedObject var mcpSignIn = MCPSignIn.shared
 
     var body: some View {
         NavigationSplitView {
@@ -144,7 +142,7 @@ struct SettingsView: View {
         }
         .onChange(of: app.settingsSection) { _, _ in
             refreshTick += 1
-            if app.settingsSection == .agents || app.settingsSection == .usage {
+            if app.settingsSection == .agents {
                 app.adoptAccounts()
                 app.history.refresh()
             }
@@ -161,18 +159,17 @@ struct SettingsView: View {
 
     /// Sidebar badge count indicating pending actions.
     func badge(for section: SettingsSection) -> Int {
-        let broken = app.connectors.sources.filter { if case .error = $0.status.state { return $0.isActive }; return false }
         switch section {
-        case .start: return checklist.filter { !$0.done }.count
-        case .connections: return broken.count
+        case .start: return attention.count
+        case .connections: return ConnectionProblems.current(app).count
         case .autocomplete: return AutocompleteController.shared.needsAttention ? 1 : 0
         default: return 0
         }
     }
 
-    /// Nook looks satisfied when all checklist items are configured, otherwise calm.
+    /// Nook looks satisfied when nothing needs you, otherwise calm.
     var headerMood: NookMood {
-        checklist.allSatisfy(\.done) ? .done : .rest
+        attention.isEmpty ? .done : .rest
     }
 
     @ViewBuilder
@@ -184,16 +181,30 @@ struct SettingsView: View {
         case .shortcuts: shortcutsSection
         case .notifications: notificationsSection
         case .brain: brainSection
-        case .assistant: assistantSection
-        case .memory: MemorySettingsSection()
-        case .autocomplete: AutocompleteSettingsSection()
-        case .dictation: dictationSection
-        case .connections: connectionsSection
-        case .chats: ChatsSettingsSection()
+        // What Nook does, what it remembers of it, and Nook as a friend, on one page.
+        case .assistant:
+            assistantSection
+            MemorySettingsSection()
+            buddySection
+        // Everything you type and say, in two parts: completing as you type, and dictating and talking to Nook.
+        case .autocomplete:
+            Section {
+                Picker("", selection: $typingPart) {
+                    Text(tr("typing.part.complete")).tag(0)
+                    Text(tr("typing.part.dictate")).tag(1)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+            .listRowBackground(Color.clear)
+            if typingPart == 0 {
+                AutocompleteSettingsSection()
+            } else {
+                dictationSection
+            }
+        case .connections: ConnectionsPage()
         case .agents: agentsSection
-        case .usage: usageSection
         case .workspace: workspaceSection
-        case .devices: devicesSection
         case .privacy: privacySection
         }
     }

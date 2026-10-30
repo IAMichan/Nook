@@ -24,13 +24,21 @@ extension AppModel {
     /// as the result of something you did there ("Pull request merged"), and its button does what `open` does (the card
     /// when nil). `kind` colors that toast; `window` replaces `open` there, when opening means something else in the
     /// window than from a macOS notification.
+    ///
+    /// Notices keep their distance (`NoticePacer`): one thing (`pace`, the `id` when nil) pops up once in a while, and
+    /// a burst from many sources ends in the history instead of on the notch. `urgent`: it waits on you, and always shows.
+    /// A card of the same `id` that is on the notch already is redrawn, not counted as a new pop-up.
     @discardableResult
-    func deliverNotice(_ source: NoticeSource, app: String = "", id: String, title: String, subtitle: String = "",
+    func deliverNotice(_ source: NoticeSource, app: String = "", id: String, pace: String? = nil, urgent: Bool = false,
+                       title: String, subtitle: String = "",
                        body: String = "", sound: NookSound? = nil, watching: Bool = false, kind: NookToastKind = .info,
                        card: @escaping () -> Void, strip: @escaping () -> Void,
                        open: (() -> Void)? = nil, window: (() -> Void)? = nil) -> NoticeDecision {
         let decision = settings.noticeRules.decide(source, app: app, quiet: quiet.silent, watching: watching)
         guard let style = decision.style else { return decision }
+        var onNotch = false
+        if case .card(let shown) = viewModel.state { onNotch = shown.id == id }
+        guard onNotch || noticePacer.allow(key: pace ?? id, urgent: urgent) else { return .historyOnly }
         if let sound { NookSound.play(sound) }
         if style != .system, WorkspaceWindowController.shared.isOpen {
             let detail = [subtitle, body].filter { !$0.isEmpty }.joined(separator: " · ")
@@ -83,15 +91,6 @@ extension AppModel {
             showChats(ChatsFocus(chat: id))
         case .nowhere:
             break
-        }
-    }
-
-    /// The history's state for an agent's status: done, failed, or waiting on you.
-    static func noticeKind(_ status: AgentStatus) -> NoticeEntry.Kind {
-        switch status {
-        case .done: return .done
-        case .failed: return .failed
-        default: return .waiting
         }
     }
 }

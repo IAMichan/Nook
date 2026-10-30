@@ -129,6 +129,40 @@ final class UIConsistencyTests: XCTestCase {
         XCTAssertEqual(found, [], "use NookDivider (NotchUI/Components/PanelBlocks.swift)")
     }
 
+    /// Text stays readable on every surface: each text color in `NookTheme` keeps WCAG AA contrast (4.5:1) on the
+    /// canvas, `graphite` and `smoke`, and a selected row stays clearly brighter than a hovered one. Read from the
+    /// theme's source, like the rest of this file.
+    func testTextColorsKeepReadableContrast() throws {
+        let theme = try XCTUnwrap(Self.sources.first { $0.path == "NotchUI/Theme/NookTheme.swift" }?.text)
+        let regex = try NSRegularExpression(pattern: #"static let (\w+) = Color\(hex: 0x([0-9A-Fa-f]{6})\)"#)
+        var colors: [String: UInt32] = [:]
+        for match in regex.matches(in: theme, range: NSRange(theme.startIndex..., in: theme)) {
+            guard let name = Range(match.range(at: 1), in: theme), let hex = Range(match.range(at: 2), in: theme),
+                  let value = UInt32(theme[hex], radix: 16) else { continue }
+            colors[String(theme[name])] = value
+        }
+        func luminance(_ hex: UInt32) -> Double {
+            func channel(_ value: UInt32) -> Double {
+                let c = Double(value & 0xFF) / 255
+                return c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * channel(hex >> 16) + 0.7152 * channel(hex >> 8) + 0.0722 * channel(hex)
+        }
+        func contrast(_ a: UInt32, _ b: UInt32) -> Double {
+            let (x, y) = (luminance(a), luminance(b))
+            return (max(x, y) + 0.05) / (min(x, y) + 0.05)
+        }
+        for text in ["paper", "textStrong", "textSecondary", "textMuted", "textTertiary"] {
+            for surface in ["canvas", "graphite", "smoke", "rowSelected"] {
+                let t = try XCTUnwrap(colors[text], text)
+                let s = try XCTUnwrap(colors[surface], surface)
+                XCTAssertGreaterThanOrEqual(contrast(t, s), 4.5, "\(text) on \(surface) is below WCAG AA")
+            }
+        }
+        let hover = try XCTUnwrap(colors["rowHover"]), selected = try XCTUnwrap(colors["rowSelected"])
+        XCTAssertGreaterThan(luminance(selected), luminance(hover) * 1.5, "a selected row must stand clearly above a hovered one")
+    }
+
     /// A pull request's state, checks and reviews look the same everywhere: their icon and color come from
     /// `PullRequestIcon`, and the drawn marks only through `PullRequestStateIcon` or `NookSymbol`.
     func testPullRequestIconsAreTheSharedComponent() {

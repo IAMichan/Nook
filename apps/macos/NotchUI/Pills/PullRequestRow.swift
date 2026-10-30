@@ -1,10 +1,10 @@
 import SwiftUI
 import AppKit
 
-/// One pull request in a list, on the Pull requests page and in the side panel's picker alike: GitHub's state mark (with a small warning on it for a conflict), then
-/// two lines. On top the number, the title, the checks and the review decision, and the lines added and removed at the
-/// end; under it the author's picture and login, the repository, up to three labels in their own colors, and when it
-/// last changed at the end.
+/// One pull request in a list, on the Pull requests page and in the side panel's picker alike: GitHub's state mark (with
+/// a small warning on it for a conflict), then two lines. On top the title (so titles line up in one column), the checks
+/// and the review decision, and the lines added and removed at the end; under it the repository and number, the author's
+/// picture and login, up to three labels in their own colors, its place in a stack, and when it last changed at the end.
 struct PullRequestRow: View {
     let item: PullRequestItem
     let role: PullRequestRepoGroup.Role
@@ -27,6 +27,7 @@ struct PullRequestRow: View {
         }
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
             .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+        .selectionMark(selected)
         .onHover { hovering = $0 }
         // Resting on a row reads it ahead, so the click opens it at once.
         .task(id: hovering) {
@@ -57,52 +58,36 @@ struct PullRequestRow: View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
             stateMark.padding(.top, 2)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                // The title leads, so the titles of a list line up in one column; what it is about follows it.
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Text("#\(item.number)")
-                        .font(NookTheme.mono(11.5, .medium))
-                        .monospacedDigit()
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .fixedSize()
                     Text(item.title)
                         .font(NookTheme.TextStyle.body)
                         .foregroundStyle(item.state == .open ? NookTheme.paper : NookTheme.textSecondary)
                         .lineLimit(1)
+                        .help(item.title)
                     HStack(spacing: NookTheme.Spacing.xs) {
                         ciMark
                         reviewMark
                     }
                     .fixedSize()
                     Spacer(minLength: NookTheme.Spacing.sm)
-                    if let stack {
-                        HStack(spacing: NookTheme.Spacing.xxs) {
-                            PullRequestStateIcon(glyph: .stack, tinted: false)
-                            Text("\(stack.index)/\(stack.count)").font(NookTheme.TextStyle.caption).monospacedDigit()
-                        }
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .fixedSize()
-                        .help(tr("agents.pulls.stack.position", stack.index, stack.count))
-                    }
                     if let additions = item.additions, let deletions = item.deletions {
-                        HStack(spacing: NookTheme.Spacing.xs) {
-                            Text("+" + additions.formatted()).foregroundStyle(NookTheme.mint)
-                            Text("−" + deletions.formatted()).foregroundStyle(NookTheme.coral)
-                        }
-                        .font(NookTheme.mono(11, .medium))
-                        .monospacedDigit()
-                        .fixedSize()
-                        .help(tr("agents.pulls.linesChanged", additions, deletions))
+                        PullRequestLineCounts(additions: additions, deletions: deletions)
                     }
                 }
+                // Where and who: "acme/app #12", the author, what it waits on, its labels, and when it last changed.
                 HStack(spacing: NookTheme.Spacing.sm) {
+                    Text(showRepo ? "\(item.repo) #\(item.number)" : "#\(item.number)")
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        // Shortened in the middle, so the number at the end always shows.
+                        .truncationMode(.middle)
                     if !item.author.isEmpty {
                         HStack(spacing: NookTheme.Spacing.xs) {
                             GitHubAvatar(login: item.author, size: 14)
                             Text(item.author).lineLimit(1)
                         }
                         .help("@" + item.author)
-                    }
-                    if showRepo {
-                        Text(item.repo).lineLimit(1).truncationMode(.middle).layoutPriority(-1)
                     }
                     if item.draft, item.state == .open {
                         PullRequestTag(text: tr("agents.pulls.draft").localizedCapitalized, color: NookTheme.textSecondary)
@@ -111,6 +96,14 @@ struct PullRequestRow: View {
                     if role == .review, item.state == .open, !showRepo { PullRequestTag(text: tr("agents.pulls.scope.reviews"), color: NookTheme.amber) }
                     labels.layoutPriority(-2)
                     Spacer(minLength: NookTheme.Spacing.sm)
+                    if let stack {
+                        HStack(spacing: NookTheme.Spacing.xxs) {
+                            PullRequestStateIcon(glyph: .stack, tinted: false)
+                            Text("\(stack.index)/\(stack.count)").monospacedDigit()
+                        }
+                        .fixedSize()
+                        .help(tr("agents.pulls.stack.position", stack.index, stack.count))
+                    }
                     if let updated = item.updated {
                         Text(AgentFormat.short(Date().timeIntervalSince(updated)))
                             .monospacedDigit()
@@ -205,5 +198,25 @@ struct PullRequestTag: View {
             .padding(.vertical, 1)
             .background(Capsule().fill(color.opacity(0.14)))
             .fixedSize()
+    }
+}
+
+/// "+120 −8": the lines a pull request adds and removes, the same on a row, the page's header and a file. Large numbers
+/// are grouped ("1,204"), and the minus is a real minus sign so both columns line up.
+struct PullRequestLineCounts: View {
+    let additions: Int
+    let deletions: Int
+    var font: Font = NookTheme.mono(11, .medium)
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            Text("+" + additions.formatted()).foregroundStyle(NookTheme.mint)
+            Text("−" + deletions.formatted()).foregroundStyle(NookTheme.coral)
+        }
+        .font(font)
+        .monospacedDigit()
+        .lineLimit(1)
+        .fixedSize()
+        .help(tr("agents.pulls.linesChanged", additions, deletions))
     }
 }
