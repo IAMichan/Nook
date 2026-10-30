@@ -67,6 +67,7 @@ enum MachineName {
 struct SessionPanel: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
+    @Environment(\.sessionPullRequest) private var linkedPullRequest
     @ObservedObject var model: FolderGitModel
     /// A session Nook runs: commit, push and pull request go through its workspace (and its agent writes the texts).
     let runID: UUID?
@@ -125,14 +126,46 @@ struct SessionPanel: View {
             scripts = await Task.detached(priority: .utility) { ProjectScripts.load(folder: folder) }.value
             await model.refresh()
         }
-        // Looked at again whenever git does (after a turn, a commit, a refresh).
-        .task(id: runID.flatMap { workspace.git[$0]?.updated }) {
-            guard let runID, progress == nil else { return }
-            quick = await workspace.quickGitState(runID)
+        // Looked at again whenever git does (after a turn, a commit, a refresh), and when the conversation links a new
+        // pull request: an agent that pushed and then opened one changed nothing in git.
+        .task(id: PanelLook(git: runID.flatMap { workspace.git[$0]?.updated }, link: linkedPullRequest)) {
+            guard runID != nil, progress == nil else { return }
+            await readState()
         }
-        // A session Nook only sees: looked at again whenever its folder's git status changes.
-        .task(id: runID == nil ? model.status : nil) {
+        // A session Nook only sees: looked at again whenever its folder's git status changes, or its conversation links one.
+        .task(id: PanelLook(git: runID == nil ? model.status : nil, link: linkedPullRequest)) {
             guard runID == nil, progress == nil else { return }
+            await readState()
+        }
+        // A pushed branch without a pull request: asked again every minute, for one opened where Nook does not see it
+        // (on the forge's site, or by a tool that printed no link).
+        .task(id: awaitsPullRequest) {
+            guard awaitsPullRequest else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                if !Task.isCancelled, progress == nil { await readState() }
+            }
+        }
+    }
+
+    /// What makes the panel look at the branch again: what git reported, and the conversation's pull request link.
+    private struct PanelLook<Git: Equatable>: Equatable {
+        let git: Git?
+        let link: URL?
+    }
+
+    private var awaitsPullRequest: Bool {
+        guard let quick else { return false }
+        return quick.hasUpstream && quick.aheadOfBase > 0 && !quick.isDefaultBranch && !quick.hasOpenPullRequest && !quick.pullRequestLanded
+    }
+
+    /// The button's state, for the session Nook runs or the folder of one it only sees. A pull request link the
+    /// conversation shows for the first time is asked about at once, not after the minute a lookup is kept.
+    private func readState() async {
+        if let linkedPullRequest { workspace.pullRequestLinked(linkedPullRequest) }
+        if let runID {
+            quick = await workspace.quickGitState(runID)
+        } else {
             await readFolderState()
         }
     }

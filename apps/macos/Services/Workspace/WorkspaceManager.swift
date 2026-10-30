@@ -184,6 +184,8 @@ final class WorkspaceManager: ObservableObject {
     var pendingSendNow: [UUID: String] = [:]
     /// When GitHub was last asked about a branch's pull request ("owner/repo branch"), so it is asked once a minute at most.
     var pullRequestChecked: [String: Date] = [:]
+    /// The pull request links Nook has seen in a conversation: the first sight of one is asked about at once.
+    var linkedPullRequests: Set<URL> = []
     /// Branches ("owner/repo branch") whose pull request was merged or closed, from the same lookups.
     var pullRequestLanded: Set<String> = []
     /// Sessions whose Antigravity sign-in page already opened.

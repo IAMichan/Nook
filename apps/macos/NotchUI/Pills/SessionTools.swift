@@ -171,12 +171,14 @@ struct ClosedSessionTab {
 struct SessionOutputsReport: PreferenceKey, Equatable {
     var outputs: [SessionOutput] = []
     var turns: [TurnDiff] = []
+    /// The last pull request the conversation links, for the session panel to look up at once (`sessionPullRequest`).
+    var pullRequest: URL?
     var fresh = false
 
     static let defaultValue = SessionOutputsReport()
     static func reduce(value: inout SessionOutputsReport, nextValue: () -> SessionOutputsReport) {
         let next = nextValue()
-        if !next.outputs.isEmpty || !next.turns.isEmpty || next.fresh { value = next }
+        if !next.outputs.isEmpty || !next.turns.isEmpty || next.pullRequest != nil || next.fresh { value = next }
     }
 }
 
@@ -189,6 +191,9 @@ struct SessionOutputsLink {
 
 extension EnvironmentValues {
     @Entry var sessionOutputs = SessionOutputsLink()
+    /// The last pull request the session's conversation links: a new one makes the session panel ask the forge at once,
+    /// instead of waiting for git to change (an agent that pushed and then ran `gh pr create` changes nothing in git).
+    @Entry var sessionPullRequest: URL?
 }
 
 /// Where a tool panel sits next to the conversation: what it shows and which tabs it has open in the view model.
@@ -353,6 +358,8 @@ struct SessionWorkbench<Conversation: View>: View {
             }
         }
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+        // The branch button in the conversation's header and the docked session panel both read it.
+        .environment(\.sessionPullRequest, outputs.pullRequest)
         .animation(NookTheme.reveal, value: side == .conversation)
         .animation(NookTheme.reveal, value: docked)
         .onChange(of: docked) { _, now in wasDocked = now }

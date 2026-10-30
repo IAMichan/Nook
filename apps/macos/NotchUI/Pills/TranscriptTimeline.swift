@@ -166,7 +166,7 @@ struct TranscriptConversation: View {
         // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
         .environment(\.fileLinkBase, directory)
         // What the agent produced goes to the outputs tab and diff panel of the side panel around the conversation (`SessionWorkbench`).
-        .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(outputs: outputs, turns: turns))
+        .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(outputs: outputs, turns: turns, pullRequest: derived.pullRequest))
         .task(id: path + (working ? "#working" : "")) {
             // Another session in the same place: its conversation as read last time shows at once (never the previous
             // session's), and the read below brings it up to date.
@@ -374,6 +374,8 @@ private final class TranscriptDerived {
     private(set) var outputs: [SessionOutput] = []
     private(set) var turns: [TurnDiff] = []
     private(set) var marks: [PromptMark] = []
+    /// The last pull request the conversation links (`gh pr create` printed it, or the agent wrote it).
+    private(set) var pullRequest: URL?
     /// The tests and builds each fold holds, by the fold's row id: reading every command again on each redraw of the
     /// timeline cost more than the rest of the row.
     private(set) var foldChecks: [String: [VerificationCheck]] = [:]
@@ -385,6 +387,7 @@ private final class TranscriptDerived {
         outputs = SessionOutputs.collect(messages, directory: directory ?? "").filter { directory != nil || !$0.isFile }
         turns = TurnDiff.collect(messages)
         marks = TranscriptPresentation.promptMarks(rows)
+        pullRequest = RunPullRequestLinks.last(in: messages)
         foldChecks = [:]
         for row in rows {
             switch row {
