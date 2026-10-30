@@ -21,15 +21,21 @@ enum GitHubCILogs {
     /// The steps of a job and, once GitHub has it (a running job has none yet), the end of its log.
     static func log(pullRequest url: URL, jobID: Int) async throws -> CILog {
         guard GitHubPullRequests.isAvailable, let target = GitHubPullRequests.parse(url) else { throw CloudHelp.notSetUp("GitHub") }
+        return try await log(repo: target.repo, jobID: jobID)
+    }
+
+    /// The same for a job of a repository's own runs (the Actions page), without a pull request around it.
+    static func log(repo: String, jobID: Int) async throws -> CILog {
+        guard GitHubPullRequests.isAvailable else { throw CloudHelp.notSetUp("GitHub") }
         var lastError: Error = CloudHelp.notSetUp("GitHub")
         for token in GitHubPullRequests.tokens {
-            let get = getter(repo: target.repo, token: token)
+            let get = getter(repo: repo, token: token)
             do {
                 guard let job = try await get("/actions/jobs/\(jobID)") as? [String: Any] else {
                     throw NookError("GitHub returned an unexpected response.")
                 }
                 var log = CILogParser.log(job: job)
-                if let raw = await rawLog(repo: target.repo, jobID: jobID, token: token) {
+                if let raw = await rawLog(repo: repo, jobID: jobID, token: token) {
                     let cleaned = CILogParser.clean(raw)
                     log.text = cleaned.text
                     log.omittedLines = cleaned.omitted
