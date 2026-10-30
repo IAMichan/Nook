@@ -64,6 +64,10 @@ struct StackedDiffList<Content: View>: View {
     let diff: (StackedDiffFile) async throws -> String
     @ViewBuilder var content: (StackedDiffFile, String) -> Content
     @State private var reveal: String?
+    @State private var width: Double = 0
+
+    /// The 200 pt tree leaves the diffs too little room in a narrow side panel: there it waits until there is room.
+    private var treeFits: Bool { width == 0 || width >= 440 }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -93,7 +97,7 @@ struct StackedDiffList<Content: View>: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            if showsTree {
+            if showsTree && treeFits {
                 NookDivider(vertical: true)
                 // Only when the files change: the tree is built again on each of its own draws.
                 StackedDiffTree(files: files) { reveal = $0 }
@@ -103,6 +107,7 @@ struct StackedDiffList<Content: View>: View {
             }
         }
         .background(WS.code)
+        .onLayoutWidthChange { width = $0 }
     }
 
     /// The diff is simply there (or gone); only the header's chevron turns. A whole diff fading in was laid out on every

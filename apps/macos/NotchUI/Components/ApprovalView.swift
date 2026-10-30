@@ -14,33 +14,17 @@ struct ApprovalView: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             // Calm by default: no icon, no colored fill. The edge says it waits on you (amber), or that it looks risky
             // (coral), as a question from the agent does. The buttons sit beside the title, so the request takes no
-            // more room than the composer it replaces.
-            HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
-                        Text(approval.title)
-                            .font(NookTheme.TextStyle.strong)
-                            .foregroundStyle(NookTheme.paper)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if more > 0 {
-                            Text(tr("ws.approval.more", more)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
-                        }
-                    }
-                    if !approval.note.isEmpty {
-                        Text(approval.note)
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(approval.danger ? NookTheme.coralSoft : NookTheme.textTertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+            // more room than the composer it replaces; in a narrow conversation they go under it, instead of the
+            // title being squeezed to a word per line.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
+                    titleBlock.frame(minWidth: 0, idealWidth: 180, maxWidth: .infinity, alignment: .leading)
+                    actions.fixedSize()
                 }
-                Spacer(minLength: 0)
-                NookNoticeActions(
-                    primary: NookNoticeAction(tr("button.allow")) { onDecide(.allow) },
-                    secondary: NookNoticeAction(tr("button.deny")) { onDecide(.deny) },
-                    extra: (approval.canAlways ? [NookNoticeAction(tr("button.always")) { onDecide(.always) }] : [])
-                        + (approval.canTerminal ? [NookNoticeAction(tr("approval.inTerminal")) { onDecide(.terminal) }] : [])
-                )
-                .fixedSize()
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    titleBlock
+                    actions
+                }
             }
             content
         }
@@ -50,6 +34,35 @@ struct ApprovalView: View {
         // The composer's shape, so the request reads as the input it stands in for.
         .cardBackground(NookTheme.surface, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.amber.opacity(0.25),
                         radius: NookTheme.Radius.pill, style: .continuous)
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
+                Text(approval.title)
+                    .font(NookTheme.TextStyle.strong)
+                    .foregroundStyle(NookTheme.paper)
+                    .fixedSize(horizontal: false, vertical: true)
+                if more > 0 {
+                    Text(tr("ws.approval.more", more)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+                }
+            }
+            if !approval.note.isEmpty {
+                Text(approval.note)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(approval.danger ? NookTheme.coralSoft : NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var actions: some View {
+        NookNoticeActions(
+            primary: NookNoticeAction(tr("button.allow")) { onDecide(.allow) },
+            secondary: NookNoticeAction(tr("button.deny")) { onDecide(.deny) },
+            extra: (approval.canAlways ? [NookNoticeAction(tr("button.always")) { onDecide(.always) }] : [])
+                + (approval.canTerminal ? [NookNoticeAction(tr("approval.inTerminal")) { onDecide(.terminal) }] : [])
+        )
     }
 
     @ViewBuilder

@@ -202,11 +202,14 @@ struct NewSessionComposer: View {
     private var remoteRow: some View {
         HStack(spacing: NookTheme.Spacing.md) {
             Image(systemName: "server.rack").foregroundStyle(NookTheme.textTertiary)
-            Text(tr("ws.remote.folder", remoteMachine?.name ?? "")).foregroundStyle(NookTheme.textSecondary).fixedSize()
+            // A long machine name gives way, so the field keeps room to type a path.
+            Text(tr("ws.remote.folder", remoteMachine?.name ?? "")).foregroundStyle(NookTheme.textSecondary)
+                .lineLimit(1).truncationMode(.middle)
             TextField("~/code/app", text: $remoteFolder)
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.code)
                 .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+                .frame(minWidth: 140)
                 .frame(height: 30)
                 .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
             NookIconButton(systemName: "xmark", label: tr("button.cancel"), size: 26) { remoteMachine = nil }
@@ -393,7 +396,7 @@ struct NewSessionComposer: View {
                     TextField("", text: $config.baseBranch, prompt: Text(tr("ws.remote.baseCurrent")))
                         .textFieldStyle(.plain)
                         .font(NookTheme.TextStyle.detail)
-                        .frame(width: 150)
+                        .frame(minWidth: 90, maxWidth: 150)
                         .help(tr("ws.remote.baseHelp"))
                 }
             } else {
@@ -403,12 +406,15 @@ struct NewSessionComposer: View {
 
                 if config.isolation == .worktree, let branches = project?.branches, !branches.isEmpty {
                     ComposerDropdown(width: 280) {
+                        // A long branch name is cut short, so the row stays inside a narrow tab.
                         ComposerPill(symbol: "arrow.triangle.branch", dot: nil, text: tr("compose.from", config.baseBranch))
+                            .frame(maxWidth: 220)
                     } content: {
                         BranchPicker(branches: sortedBranches(branches), selected: config.baseBranch) { config.baseBranch = $0 }
                     }
                 } else if let branch = project?.currentBranch {
                     ComposerPill(symbol: "arrow.triangle.branch", dot: nil, text: branch, showsChevron: false)
+                        .frame(maxWidth: 220)
                 }
             }
         }

@@ -52,11 +52,11 @@ struct AutocompleteSettingsSection: View {
             // Everything else only matters while completing is on: its parts as tabs.
             if store.prefs.enabled {
                 Section {
-                    Picker("", selection: $store.settingsTab) {
-                        ForEach(AutocompleteSettingsTab.allCases) { Text($0.title).tag($0) }
+                    // Segments while they fit, a menu in a narrow window.
+                    ViewThatFits(in: .horizontal) {
+                        settingsTabPicker.pickerStyle(.segmented)
+                        settingsTabPicker.pickerStyle(.menu)
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
                 }
                 .listRowBackground(Color.clear)
 
@@ -157,6 +157,20 @@ struct AutocompleteSettingsSection: View {
 
     // MARK: Model
 
+    @ViewBuilder
+    private var modelFileButtons: some View {
+        Button(tr("autocomplete.choose")) { chooseFile() }
+        Button(tr("autocomplete.rescan")) { autocomplete.refresh() }
+        Button(tr("button.openFolder")) { NSWorkspace.shared.open(AutocompleteStore.modelsFolder) }
+    }
+
+    private var settingsTabPicker: some View {
+        Picker("", selection: $store.settingsTab) {
+            ForEach(AutocompleteSettingsTab.allCases) { Text($0.title).tag($0) }
+        }
+        .labelsHidden()
+    }
+
     private var modelSection: some View {
         Section {
             Picker(tr("autocomplete.model"), selection: $store.prefs.modelPath) {
@@ -174,10 +188,10 @@ struct AutocompleteSettingsSection: View {
             }
             .onChange(of: store.prefs.modelPath) { _, _ in autocomplete.refresh() }
             LabeledContent(tr("autocomplete.modelFile")) {
-                HStack {
-                    Button(tr("autocomplete.choose")) { chooseFile() }
-                    Button(tr("autocomplete.rescan")) { autocomplete.refresh() }
-                    Button(tr("button.openFolder")) { NSWorkspace.shared.open(AutocompleteStore.modelsFolder) }
+                // Side by side while they fit; under each other in a narrow window or a longer language.
+                ViewThatFits(in: .horizontal) {
+                    HStack { modelFileButtons }
+                    VStack(alignment: .trailing) { modelFileButtons }
                 }
             }
             if !store.prefs.modelPath.hasPrefix(CompletionSource.brainPrefix) {

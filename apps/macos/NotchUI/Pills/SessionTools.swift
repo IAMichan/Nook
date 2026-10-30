@@ -315,6 +315,8 @@ struct SessionWorkbench<Conversation: View>: View {
                             SessionBrowserCorner(runID: runID, directory: directory, hidden: side == .browser || bottom == .browser) {
                                 withAnimation(NookTheme.reveal) { viewModel.sessionTool = .browser }
                             }
+                            // In a narrow conversation the page covers part of it, not all of it.
+                            .frame(maxWidth: max(240, proxy.size.width * 0.7), alignment: .trailing)
                             .padding(.trailing, NookTheme.Spacing.lg)
                             .padding(.bottom, above + NookTheme.Spacing.md)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)

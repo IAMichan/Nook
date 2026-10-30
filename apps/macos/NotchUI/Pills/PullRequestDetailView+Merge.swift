@@ -51,17 +51,23 @@ extension PullRequestDetailView {
     /// "Merge #1, #2 and #3 from the bottom up?" with its second click, or the progress while it runs.
     var stackMergeBar: some View {
         let numbers = stackToMerge.map { "#\($0.number)" }.joined(separator: ", ")
-        return HStack(spacing: NookTheme.Spacing.md) {
+        return Group {
             if mergingStack {
-                ProgressView().controlSize(.small)
-                Text(tr("agents.pulls.stack.merging", numbers)).foregroundStyle(NookTheme.textSecondary)
+                HStack(spacing: NookTheme.Spacing.md) {
+                    ProgressView().controlSize(.small)
+                    Text(tr("agents.pulls.stack.merging", numbers)).foregroundStyle(NookTheme.textSecondary)
+                }
             } else {
-                PullRequestStateIcon(glyph: .merged)
-                Text(tr("agents.pulls.stack.confirm", numbers)).foregroundStyle(NookTheme.paper)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: NookTheme.Spacing.sm)
-                SmallGhostButton(title: tr("button.cancel")) { confirmStackMerge = false }
-                SmallPrimaryButton(title: tr("agents.pulls.stack.mergeConfirm")) { mergeStack() }
+                AdaptiveActionRow {
+                    HStack(spacing: NookTheme.Spacing.md) {
+                        PullRequestStateIcon(glyph: .merged)
+                        Text(tr("agents.pulls.stack.confirm", numbers)).foregroundStyle(NookTheme.paper)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } actions: {
+                    SmallGhostButton(title: tr("button.cancel")) { confirmStackMerge = false }
+                    SmallPrimaryButton(title: tr("agents.pulls.stack.mergeConfirm")) { mergeStack() }
+                }
             }
         }
         .font(NookTheme.TextStyle.body)

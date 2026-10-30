@@ -10,20 +10,22 @@ struct UsageLimitBanner: View {
     var body: some View {
         if run.limitedAt != nil, !run.status.isActive {
             let auto = run.autoResume == true
-            HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
-                Image(systemName: auto ? "clock.arrow.circlepath" : "hourglass")
-                    .font(NookTheme.font(12, .semibold))
-                    .foregroundStyle(NookTheme.amber)
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    Text(tr("ws.limit.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.textSecondary)
-                    TimelineView(.periodic(from: .now, by: 30)) { context in
-                        Text(line(now: context.date, auto: auto))
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .fixedSize(horizontal: false, vertical: true)
+            AdaptiveActionRow {
+                HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
+                    Image(systemName: auto ? "clock.arrow.circlepath" : "hourglass")
+                        .font(NookTheme.font(12, .semibold))
+                        .foregroundStyle(NookTheme.amber)
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                        Text(tr("ws.limit.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.textSecondary)
+                        TimelineView(.periodic(from: .now, by: 30)) { context in
+                            Text(line(now: context.date, auto: auto))
+                                .font(NookTheme.TextStyle.detail)
+                                .foregroundStyle(NookTheme.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
-                Spacer(minLength: 6)
+            } actions: {
                 if let suggestion = suggestion() {
                     SmallGhostButton(title: tr("ws.limit.switchTo", AccountLabel.name(suggestion.profile, app: app) + " · " + suggestion.profile.kind.name)) {
                         _ = workspace.switchProvider(run.id, to: suggestion.provider, profileID: suggestion.profile.id)

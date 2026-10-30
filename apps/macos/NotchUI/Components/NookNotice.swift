@@ -32,8 +32,8 @@ struct NookNotice<Trailing: View>: View {
 
     var body: some View {
         // The message sits in the middle of the row's height, which the OK button sets; when it wraps, the mark stays
-        // on its first line.
-        HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
+        // on its first line. In a narrow tab the buttons go under the message instead of leaving it no room.
+        AdaptiveActionRow(spacing: NookTheme.Spacing.md, alignment: .center, readable: 160) {
             HStack(alignment: wraps ? .top : .center, spacing: NookTheme.Spacing.md) {
                 if symbol != nil || agent != nil {
                     NoticeMark(symbol: symbol, tone: tone, agent: agent)
@@ -56,13 +56,12 @@ struct NookNotice<Trailing: View>: View {
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        } actions: {
             HStack(spacing: NookTheme.Spacing.xs) {
                 trailing()
                 NookNoticeEnd(actions: actions, countdown: countdown, paused: paused, restart: restart,
                               onOK: countdown == nil ? nil : onOK)
             }
-            .fixedSize()
         }
         .accessibilityElement(children: .contain)
     }

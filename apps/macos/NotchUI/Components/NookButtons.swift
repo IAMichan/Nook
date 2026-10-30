@@ -42,7 +42,8 @@ struct SmallPrimaryButton: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 if let systemName { NookSymbol(systemName, size: 12).font(NookTheme.font(11, .semibold)) }
-                Text(title).font(NookTheme.TextStyle.strong)
+                // One line in its 30 pt capsule: the text beside the button gives way, not the button's title.
+                Text(title).font(NookTheme.TextStyle.strong).lineLimit(1).fixedSize()
             }
             .foregroundStyle(NookTheme.ink)
             .padding(.horizontal, 14)
@@ -329,6 +330,8 @@ struct SmallGhostButton: View {
         Button(action: action) {
             Text(title)
                 .font(NookTheme.TextStyle.strong)
+                .lineLimit(1)
+                .fixedSize()
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
                 .padding(.horizontal, 10)
                 .frame(height: 30)

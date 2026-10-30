@@ -318,6 +318,10 @@ extension PullRequestDetailView {
                             .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textTertiary)
                             .monospacedDigit()
+                            .lineLimit(1)
+                            // Another repository's long name gives way first; the number at its end stays.
+                            .truncationMode(.head)
+                            .frame(maxWidth: 160, alignment: .leading)
                             .fixedSize()
                         Text(issue.title)
                             .font(NookTheme.TextStyle.detail)

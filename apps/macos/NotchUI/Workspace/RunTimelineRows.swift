@@ -234,9 +234,11 @@ struct ApprovalRow: View {
                 Text(tr("ws.approval.asks", McpToolName(event.tool ?? "")?.toolLabel ?? event.tool ?? "tool"))
                     .font(NookTheme.TextStyle.body)
                     .foregroundStyle(WS.text)
+                    .lineLimit(1)
+                    .layoutPriority(1)
                 Text(event.text).font(NookTheme.mono(11.5)).foregroundStyle(WS.secondary).lineLimit(1)
                 Spacer(minLength: 0)
-                Text(stateLabel).font(NookTheme.TextStyle.label).foregroundStyle(color)
+                Text(stateLabel).font(NookTheme.TextStyle.label).foregroundStyle(color).lineLimit(1).fixedSize()
             }
             if expanded, let detail = event.detail {
                 CodeBlock(title: tr("ws.tool.input"), text: detail)

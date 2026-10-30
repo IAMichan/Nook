@@ -74,6 +74,8 @@ private struct SyncedLyrics: View, Equatable {
                     }
                     Color.clear.frame(height: 120)
                 }
+                // Room for the current line's 1.24 scale: on a narrow stage it stays inside instead of cut at the edges.
+                .containerRelativeFrame(.horizontal) { width, _ in width / 1.24 }
                 .frame(maxWidth: .infinity)
             }
             .mask(fade)

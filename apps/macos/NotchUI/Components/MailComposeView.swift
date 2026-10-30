@@ -65,11 +65,13 @@ struct MailComposeView: View {
                     .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
+                    .truncationMode(.middle)
             }
             .menuStyle(.borderlessButton)
-            .fixedSize()
+            // A long "account — address" is cut in the middle instead of running past a narrow chat.
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .disabled(locked)
-            Spacer()
         }
         .padding(.vertical, NookTheme.Spacing.md)
         .overlay(alignment: .bottom) { NookDivider() }
@@ -147,10 +149,12 @@ struct MailComposeView: View {
                     SmallGhostButton(title: tr("button.openInMail"), action: onOpenInMail)
                         .disabled(locked)
                 }
-                Spacer()
+                Spacer(minLength: NookTheme.Spacing.sm)
+                // One line beside the buttons, cut short in a narrow chat.
                 Text(tr("chats.mail.sendHint"))
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
             }
         }
         .padding(.vertical, NookTheme.Spacing.md)

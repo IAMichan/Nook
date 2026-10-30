@@ -24,11 +24,16 @@ struct SimulatorSnapshotView: View {
                     .frame(maxWidth: 280)
                 } else if let device = devices.first {
                     Text("\(device.name) · \(device.runtime)").font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
-                Spacer()
+                Spacer(minLength: NookTheme.Spacing.sm)
                 if png != nil {
-                    Button(tr("sim.copy")) { copy() }.controlSize(.small)
-                    Button(tr("sim.save")) { save() }.controlSize(.small)
+                    // Only their marks, so the device keeps its name in a narrow tab.
+                    Button { copy() } label: { Image(systemName: "doc.on.doc") }
+                        .controlSize(.small).help(tr("sim.copy")).accessibilityLabel(tr("sim.copy"))
+                    Button { save() } label: { Image(systemName: "square.and.arrow.down") }
+                        .controlSize(.small).help(tr("sim.save")).accessibilityLabel(tr("sim.save"))
                 }
                 if let simulatorApp {
                     Button(tr("sim.openApp")) {

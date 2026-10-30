@@ -662,13 +662,18 @@ struct ExtraAccountsView: View {
                     .onSubmit { AccountRegistry.shared.rename(service, to: primaryLabel); onChange() }
                 if let identity = AccountRegistry.shared.accounts(for: service).first?.identity {
                     Text(identity).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(1).truncationMode(.middle)
                 }
             }
             ForEach(accounts) { account in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(account.label)
-                        if let identity = account.identity { Text(identity).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary) }
+                        Text(account.label).lineLimit(1)
+                        // A login or address has no spaces to wrap at: cut in the middle instead of a letter per line.
+                        if let identity = account.identity {
+                            Text(identity).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                                .lineLimit(1).truncationMode(.middle)
+                        }
                     }
                     .frame(width: 120, alignment: .leading)
                     SecureField("", text: binding(account), prompt: Text(CloudHelp.secret(account.key(field)) == nil ? placeholder : tr("connector.savedInKeychain")))

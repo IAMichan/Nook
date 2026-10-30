@@ -118,6 +118,15 @@ struct ChatModeList: View {
         }
     }
 
+    private func modePicker(_ thread: InboxThread) -> some View {
+        Picker("", selection: Binding(get: { store.rules.mode(for: thread.id) }, set: { store.setMode($0, for: thread.id) })) {
+            Text(tr("whatsapp.mode.automatic")).tag(ChatMode.automatic)
+            Text(tr("whatsapp.mode.loud")).tag(ChatMode.loud)
+            Text(tr("whatsapp.mode.muted")).tag(ChatMode.muted)
+        }
+        .labelsHidden()
+    }
+
     private func row(_ thread: InboxThread) -> some View {
         let kind = thread.noticeKind
         let detail = [tr("whatsapp.kind.\(kind.rawValue)"), thread.account].compactMap { $0 }.joined(separator: " · ")
@@ -126,17 +135,15 @@ struct ChatModeList: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(thread.name).lineLimit(1)
                 Text(detail).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(1).truncationMode(.middle)
             }
             Spacer(minLength: NookTheme.Spacing.sm)
-            Picker("", selection: Binding(get: { store.rules.mode(for: thread.id) }, set: { store.setMode($0, for: thread.id) })) {
-                Text(tr("whatsapp.mode.automatic")).tag(ChatMode.automatic)
-                Text(tr("whatsapp.mode.loud")).tag(ChatMode.loud)
-                Text(tr("whatsapp.mode.muted")).tag(ChatMode.muted)
+            // Segments while the name keeps its room beside them, a menu in a narrow window.
+            ViewThatFits(in: .horizontal) {
+                modePicker(thread).pickerStyle(.segmented).fixedSize()
+                modePicker(thread).pickerStyle(.menu).fixedSize()
             }
-            .labelsHidden()
-            .pickerStyle(.segmented)
             .controlSize(.small)
-            .fixedSize()
             .help(tr("whatsapp.mode.help", store.rules.kindIsQuiet(kind, app: app) ? tr("whatsapp.mode.muted") : tr("whatsapp.mode.loud")))
         }
         .padding(.vertical, 1)

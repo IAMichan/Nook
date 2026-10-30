@@ -717,7 +717,9 @@ private struct SessionBrowserCard: View {
             NookDivider()
             WebViewHost(webView: store.webView)
         }
-        .frame(width: Self.size.width, height: Self.size.height)
+        // Its usual size, narrower when the conversation it floats over is narrow (see `SessionTools`).
+        .frame(maxWidth: Self.size.width)
+        .frame(height: Self.size.height)
         .background(NookTheme.field)
         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).stroke(NookTheme.fieldStroke, lineWidth: 1))

@@ -808,20 +808,22 @@ struct AgentRunPanel: View {
     }
 
     private func recovery(_ run: WorkspaceRun, events: [RunEvent], blocks: [TimelineBlock], proxy: ScrollViewProxy) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: run.status == .failed ? "exclamationmark.triangle" : "pause.circle")
-                .foregroundStyle(run.status.color)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(run.status == .failed ? tr("ws.recovery.failed") : tr("ws.recovery.stopped"))
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(NookTheme.paper)
-                Text(run.statusDetail.flatMap { $0 == "interrupted" ? nil : $0 } ?? (run.providerSessionID != nil ? tr("ws.recovery.canResume") : tr("ws.recovery.noResume")))
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .lineLimit(3)
-                    .textSelection(.enabled)
+        AdaptiveActionRow(spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: run.status == .failed ? "exclamationmark.triangle" : "pause.circle")
+                    .foregroundStyle(run.status.color)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(run.status == .failed ? tr("ws.recovery.failed") : tr("ws.recovery.stopped"))
+                        .font(NookTheme.TextStyle.strong)
+                        .foregroundStyle(NookTheme.paper)
+                    Text(run.statusDetail.flatMap { $0 == "interrupted" ? nil : $0 } ?? (run.providerSessionID != nil ? tr("ws.recovery.canResume") : tr("ws.recovery.noResume")))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(3)
+                        .textSelection(.enabled)
+                }
             }
-            Spacer(minLength: 6)
+        } actions: {
             if let failure = FailureJump.firstFailure(in: events) {
                 NookGhostButton(title: tr("timeline.goToFailure")) {
                     scroll.userScrolled()
@@ -907,7 +909,7 @@ struct AgentRunPanel: View {
     }
 
     private func revertConfirmation(_ target: RunEvent) -> some View {
-        HStack(spacing: NookTheme.Spacing.md) {
+        AdaptiveActionRow(spacing: NookTheme.Spacing.md) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(tr("ws.revert.confirm"))
                     .font(NookTheme.TextStyle.strong)
@@ -918,7 +920,7 @@ struct AgentRunPanel: View {
                     .foregroundStyle(revertError == nil ? NookTheme.textSecondary : NookTheme.coralSoft)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 6)
+        } actions: {
             NookGhostButton(title: tr("button.cancel")) { revertTarget = nil }
             NookPrimaryButton(title: reverting ? tr("ws.revert.working") : tr("ws.revert.action")) {
                 guard !reverting else { return }
@@ -979,7 +981,7 @@ struct AgentRunPanel: View {
 
     /// Inline instead of a dialog: the notch is a panel, not a window that sheets can attach to.
     private func deleteConfirmation(_ run: WorkspaceRun) -> some View {
-        HStack(spacing: NookTheme.Spacing.md) {
+        AdaptiveActionRow(spacing: NookTheme.Spacing.md) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(tr("agents.run.deleteConfirm", run.title))
                     .font(NookTheme.TextStyle.strong)
@@ -990,7 +992,7 @@ struct AgentRunPanel: View {
                     .foregroundStyle(NookTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 6)
+        } actions: {
             NookGhostButton(title: tr("button.cancel")) { confirmDelete = false }
             // The session's own worktree, which no other session uses, can go with it.
             if let worktree = workspace.orphanedWorktree(runID) {

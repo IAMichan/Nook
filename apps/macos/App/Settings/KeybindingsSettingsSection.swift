@@ -18,11 +18,10 @@ struct KeybindingsSettingsSection: View {
             Section {
                 DisclosureGroup(tr("keys.file.title")) {
                     LabeledContent(tr("keys.file")) {
-                        HStack(spacing: NookTheme.Spacing.sm) {
-                            Button(tr("keys.file.open")) { openFile() }
-                            Button(tr("keys.file.reveal")) { NSWorkspace.shared.activateFileViewerSelecting([Keybindings.userFileURL]) }
-                                .disabled(center.file.state == .missing)
-                            Button(tr("keys.file.reload")) { center.reload() }
+                        // Side by side while they fit; under each other in a narrow window or a longer language.
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: NookTheme.Spacing.sm) { fileButtons }
+                            VStack(alignment: .trailing, spacing: NookTheme.Spacing.sm) { fileButtons }
                         }
                     }
                     SettingNote(tr("keys.file.detail", Self.displayPath))
@@ -83,6 +82,14 @@ struct KeybindingsSettingsSection: View {
     }
 
     /// Opens the file in the user's editor, writing an empty list first when there is none yet.
+    @ViewBuilder
+    private var fileButtons: some View {
+        Button(tr("keys.file.open")) { openFile() }
+        Button(tr("keys.file.reveal")) { NSWorkspace.shared.activateFileViewerSelecting([Keybindings.userFileURL]) }
+            .disabled(center.file.state == .missing)
+        Button(tr("keys.file.reload")) { center.reload() }
+    }
+
     private func openFile() {
         let url = Keybindings.userFileURL
         if !FileManager.default.fileExists(atPath: url.path) {

@@ -182,6 +182,9 @@ struct ActionsPanel: View {
                     .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(store.repo == nil ? NookTheme.textSecondary : NookTheme.paper)
                     .lineLimit(1)
+                    .truncationMode(.middle)
+                    // A long "owner/repository" leaves the filters beside it their room.
+                    .frame(maxWidth: 200, alignment: .leading)
                 Image(systemName: "chevron.down")
                     .font(NookTheme.font(9, .semibold))
                     .foregroundStyle(NookTheme.textTertiary)

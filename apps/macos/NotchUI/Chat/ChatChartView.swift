@@ -138,35 +138,51 @@ struct ChatChartView: View {
     private var pie: some View {
         let parts = slices
         let total = max(parts.reduce(0) { $0 + $1.value }, .leastNonzeroMagnitude)
-        return HStack(alignment: .center, spacing: 20) {
-            Chart(parts) { part in
-                SectorMark(angle: .value(valueLabel, part.value), innerRadius: .ratio(0.58), angularInset: 1.5)
-                    .foregroundStyle(by: .value("Deel", part.label))
-                    .cornerRadius(3)
+        // The legend beside the ring while there is room for it, under it in a narrow chat.
+        return ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 20) {
+                pieRing(parts)
+                pieLegend(parts, total: total).frame(minWidth: 200)
             }
-            .chartForegroundStyleScale(domain: parts.map(\.label), range: Array(Self.palette.prefix(parts.count)))
-            .chartLegend(.hidden)
-            .frame(width: 150, height: 150)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                pieRing(parts)
+                pieLegend(parts, total: total)
+            }
+        }
+    }
 
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
-                    HStack(spacing: 8) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(Self.palette[index % Self.palette.count])
-                            .frame(width: 10, height: 10)
-                        Text(part.label)
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.paper)
-                            .lineLimit(1)
-                        Spacer(minLength: 8)
-                        Text(Self.format(part.value) + (chart.unit.isEmpty ? "" : " \(chart.unit)"))
-                            .font(NookTheme.TextStyle.label)
-                            .foregroundStyle(NookTheme.textSecondary)
-                        Text("\(Int((part.value / total * 100).rounded()))%")
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .frame(width: 34, alignment: .trailing)
-                    }
+    private func pieRing(_ parts: [Row]) -> some View {
+        Chart(parts) { part in
+            SectorMark(angle: .value(valueLabel, part.value), innerRadius: .ratio(0.58), angularInset: 1.5)
+                .foregroundStyle(by: .value("Deel", part.label))
+                .cornerRadius(3)
+        }
+        .chartForegroundStyleScale(domain: parts.map(\.label), range: Array(Self.palette.prefix(parts.count)))
+        .chartLegend(.hidden)
+        .frame(width: 150, height: 150)
+    }
+
+    private func pieLegend(_ parts: [Row], total: Double) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
+                HStack(spacing: 8) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Self.palette[index % Self.palette.count])
+                        .frame(width: 10, height: 10)
+                    Text(part.label)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text(Self.format(part.value) + (chart.unit.isEmpty ? "" : " \(chart.unit)"))
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                    Text("\(Int((part.value / total * 100).rounded()))%")
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .frame(width: 34, alignment: .trailing)
                 }
             }
         }

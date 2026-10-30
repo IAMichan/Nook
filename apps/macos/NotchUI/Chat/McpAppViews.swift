@@ -73,6 +73,8 @@ struct McpAppBlock: View {
             Image(systemName: "square.on.square.dashed").font(NookTheme.font(10, .semibold))
             Text(session.reference.server.map { "\($0) · \(session.reference.tool)" } ?? tr("ws.mcpApp.title"))
                 .font(NookTheme.TextStyle.label)
+                .lineLimit(1)
+                .layoutPriority(1)
             Text(resource.uri).font(NookTheme.mono(10.5)).lineLimit(1).truncationMode(.middle)
                 .foregroundStyle(NookTheme.textTertiary)
             Spacer(minLength: 4)

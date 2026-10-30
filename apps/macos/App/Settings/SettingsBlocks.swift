@@ -699,16 +699,22 @@ struct WorkspaceSettingsSection: View {
 
     /// The workspace bridge: whether agents may use Nook's terminal, browser and pull requests, and linking it to agents
     /// you start yourself in a terminal (sessions Nook starts get it automatically).
+    private var bridgeButtons: some View {
+        ForEach(RunProvider.allCases.filter { WorkspaceBridgeScript.linkCommand(for: $0) != nil }) { provider in
+            Button(provider.displayName) { link(provider) }
+                .controlSize(.small)
+                .help(WorkspaceBridgeScript.linkCommand(for: provider) ?? "")
+        }
+    }
+
     private var bridge: some View {
         Section {
             Toggle(tr("settings.bridge.enabled"), isOn: $ws.agentTools)
             LabeledContent(tr("settings.bridge.outside")) {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    ForEach(RunProvider.allCases.filter { WorkspaceBridgeScript.linkCommand(for: $0) != nil }) { provider in
-                        Button(provider.displayName) { link(provider) }
-                            .controlSize(.small)
-                            .help(WorkspaceBridgeScript.linkCommand(for: provider) ?? "")
-                    }
+                // Side by side while they fit; under each other in a narrow window or a longer language.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: NookTheme.Spacing.sm) { bridgeButtons }
+                    VStack(alignment: .trailing, spacing: NookTheme.Spacing.sm) { bridgeButtons }
                 }
             }
             .disabled(!ws.agentTools)

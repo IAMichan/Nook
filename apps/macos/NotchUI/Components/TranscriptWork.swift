@@ -233,7 +233,8 @@ struct TranscriptFoldLine: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Text(text)
+                // The sentence first; the checks beside it make do with what is left.
+                Text(text).lineLimit(1).layoutPriority(1)
                 Image(systemName: "chevron.right")
                     .font(NookTheme.font(9, .bold))
                     .rotationEffect(.degrees(open ? 90 : 0))

@@ -55,7 +55,9 @@ private struct ChatLinkCard: View {
             picture
             caption
         }
-        .frame(width: Self.width)
+        // Its usual width, narrower in a narrow chat so it stays inside its bubble.
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minWidth: 0, idealWidth: Self.width, maxWidth: Self.width)
         .background(NookTheme.ink.opacity(hovering ? 0.45 : 0.32))
         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
@@ -68,11 +70,14 @@ private struct ChatLinkCard: View {
     private var picture: some View {
         if let image = preview?.image {
             ZStack {
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.high)
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: Self.width, height: Self.width * 9 / 16)
+                Color.clear
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .overlay {
+                        Image(nsImage: image)
+                            .resizable()
+                            .interpolation(.high)
+                            .aspectRatio(contentMode: .fill)
+                    }
                     .clipped()
                 if ChatFormat.isVideoPage(url) { playMark }
             }

@@ -67,7 +67,9 @@ struct ChatPollView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .frame(width: Self.width, alignment: .leading)
+        // Its usual width, narrower in a narrow chat so it stays inside its bubble.
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minWidth: 0, idealWidth: Self.width, maxWidth: Self.width, alignment: .leading)
         .onChange(of: poll) { _, _ in pending = nil }
     }
 

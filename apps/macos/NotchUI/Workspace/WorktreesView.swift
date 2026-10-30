@@ -12,15 +12,21 @@ struct WorktreesView: View {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(tr("ws.worktrees.title")).font(NookTheme.TextStyle.heading)
                     Text(tr("ws.worktrees.subtitle")).font(NookTheme.TextStyle.detail).foregroundStyle(WS.secondary)
+                        .lineLimit(2)
                 }
-                Spacer()
+                Spacer(minLength: NookTheme.Spacing.md)
                 if workspace.worktreesLoading { ProgressView().controlSize(.small) }
                 let total = workspace.worktreeRows.compactMap(\.bytes).reduce(0, +)
                 if total > 0 {
                     Text(tr("ws.worktrees.total", DiskUsage.format(total)))
                         .font(NookTheme.TextStyle.detail).foregroundStyle(WS.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
                 }
-                Button { workspace.refreshWorktrees() } label: { Label(tr("ws.git.refresh"), systemImage: "arrow.clockwise") }
+                // Only the arrow, so the title keeps the room in a narrow tab.
+                Button { workspace.refreshWorktrees() } label: { Image(systemName: "arrow.clockwise") }
+                    .help(tr("ws.git.refresh"))
+                    .accessibilityLabel(tr("ws.git.refresh"))
                     .keyboardShortcut("r", modifiers: .command)
             }
             .padding(18)
@@ -38,18 +44,18 @@ struct WorktreesView: View {
                                 .lineLimit(1).truncationMode(.middle)
                         }
                     }
-                    .width(min: 180, ideal: 260)
+                    .width(min: 140, ideal: 260)
                     TableColumn(tr("ws.worktrees.col.branch")) { row in
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                             Text(row.worktree.branch ?? tr("ws.new.detached")).font(NookTheme.mono(11.5))
                             if let base = row.baseBranch { Text("← \(base)").font(NookTheme.mono(10.5)).foregroundStyle(WS.tertiary) }
                         }
                     }
-                    .width(min: 140, ideal: 200)
+                    .width(min: 100, ideal: 200)
                     TableColumn(tr("ws.worktrees.col.session")) { row in
                         sessionCell(row)
                     }
-                    .width(min: 140, ideal: 220)
+                    .width(min: 100, ideal: 220)
                     TableColumn(tr("ws.worktrees.col.changes")) { row in
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                             Text(row.changedFiles.map { $0 == 0 ? tr("ws.inspector.clean") : tr("ws.inspector.filesChanged", $0) } ?? tr("ws.unavailable"))
@@ -60,16 +66,16 @@ struct WorktreesView: View {
                         }
                         .font(NookTheme.TextStyle.detail)
                     }
-                    .width(min: 110, ideal: 140)
+                    .width(min: 80, ideal: 140)
                     TableColumn(tr("ws.worktrees.col.size")) { row in
                         Text(row.bytes.map(DiskUsage.format) ?? "–")
                             .font(NookTheme.TextStyle.detail).foregroundStyle(WS.secondary)
                     }
-                    .width(min: 70, ideal: 90)
+                    .width(min: 50, ideal: 90)
                     TableColumn("") { row in
                         actions(row)
                     }
-                    .width(min: 120, ideal: 140)
+                    .width(min: 84, ideal: 140)
                 }
                 .tableStyle(.inset(alternatesRowBackgrounds: false))
             }
