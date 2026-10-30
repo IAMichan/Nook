@@ -362,17 +362,24 @@ struct NookChatView: View {
                 .padding(.bottom, NookTheme.Spacing.xs)
                 .animation(NookTheme.reveal, value: chat.messages.count)
             }
-            .defaultScrollAnchor(.bottom)
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
+            .defaultScrollAnchor(.bottom, for: .alignment)
+            // Only while following does growth keep the end in place: reading higher up, the answer streaming in below
+            // leaves the text you read where it is instead of pushing it up with every few words.
+            .defaultScrollAnchor(scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
             // Scrolling away from the end stops the following until you come back, or jump back with the pill.
-            // Moving up while the sizes stay the same can only be you (following only ever moves down), so this also
-            // catches a mouse wheel, and a scroll that starts at the end before it leaves it.
+            // Moving up while the sizes stay the same can only be you (following only ever moves down), and so is
+            // getting further from the end while following (growth keeps that distance), so this also catches a mouse
+            // wheel while the answer streams, and a scroll that starts at the end before it leaves it.
             .onScrollGeometryChange(for: ThreadScrollGeometry.self) { geometry in
                 ThreadScrollGeometry(offset: geometry.contentOffset.y,
                                      container: geometry.containerSize.height,
                                      content: geometry.contentSize.height)
             } action: { old, new in
                 atEnd = new.atEnd
-                if new.offset < old.offset - 0.5, new.content == old.content, new.container == old.container, !new.atEnd {
+                let movedUp = new.offset < old.offset - 0.5 && new.content == old.content
+                let leftEnd = scroll.shouldFollowEnd && new.fromEnd > old.fromEnd + 0.5
+                if movedUp || leftEnd, new.container == old.container, !new.atEnd {
                     scroll.userScrolled()
                 } else if new.atEnd {
                     scroll.reachedEnd()
@@ -532,7 +539,9 @@ private struct ThreadScrollGeometry: Equatable {
     var container: Double
     var content: Double
 
-    var atEnd: Bool { offset + container >= content - 48 }
+    /// How far the end lies below what is in view.
+    var fromEnd: Double { content - (offset + container) }
+    var atEnd: Bool { fromEnd <= 48 }
 }
 
 /// The pictures waiting in the chat's box when the notch closed; the text itself goes to `ComposerDraftStore`.

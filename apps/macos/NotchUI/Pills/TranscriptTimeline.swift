@@ -119,7 +119,11 @@ struct TranscriptConversation: View {
                 }
                 .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Open at the newest message; the transcript loads after the view appears, so also follow it once it arrives.
-                .defaultScrollAnchor(.bottom)
+                .defaultScrollAnchor(.bottom, for: .initialOffset)
+                .defaultScrollAnchor(.bottom, for: .alignment)
+                // Only while following does growth keep the end in place: reading higher up, a working agent's new
+                // output below leaves the text you read where it is instead of pushing it up.
+                .defaultScrollAnchor(scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
                 .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.1) { ids in onScreen.ids = Set(ids) }
                 .scrollIndicators(.never)
                 .onScrollGeometryChange(for: Bool.self) { geometry in
@@ -127,6 +131,14 @@ struct TranscriptConversation: View {
                 } action: { _, nowAtEnd in
                     atEnd = nowAtEnd
                     if nowAtEnd { scroll.reachedEnd() }
+                }
+                // While following, growth keeps the distance to the end, so getting further from it can only be you:
+                // this catches a mouse wheel too, which reports no scroll phase.
+                .onScrollGeometryChange(for: [Double].self) { geometry in
+                    [geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height,
+                     geometry.containerSize.height]
+                } action: { old, new in
+                    if scroll.shouldFollowEnd, new[0] > old[0] + 0.5, new[0] > 48, new[1] == old[1] { scroll.userScrolled() }
                 }
                 .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
                     overflows = now
