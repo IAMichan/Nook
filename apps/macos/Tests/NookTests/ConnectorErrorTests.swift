@@ -67,3 +67,31 @@ final class ConnectorErrorTests: XCTestCase {
         XCTAssertFalse(ConnectorErrorKind.auth.canRetry)
     }
 }
+
+/// GitHub answers a renamed repository's old name with a redirect; the credentials must follow it on the same host only.
+final class RedirectCredentialsTests: XCTestCase {
+    private func request(_ url: String, auth: String? = nil) -> URLRequest {
+        var request = URLRequest(url: URL(string: url)!)
+        if let auth { request.setValue(auth, forHTTPHeaderField: "Authorization") }
+        return request
+    }
+
+    func testRenamedRepositoryKeepsItsToken() {
+        let original = request("https://api.github.com/repos/owner/old/pulls?head=owner:topic", auth: "Bearer t")
+        let kept = RedirectCredentials.follow(original, to: request("https://api.github.com/repositories/42/pulls?head=owner:topic"))
+        XCTAssertEqual(kept.value(forHTTPHeaderField: "Authorization"), "Bearer t")
+    }
+
+    func testAnotherHostGetsNoToken() {
+        let original = request("https://api.github.com/repos/owner/repo/zipball", auth: "Bearer t")
+        let next = RedirectCredentials.follow(original, to: request("https://codeload.github.com/owner/repo/zip"))
+        XCTAssertNil(next.value(forHTTPHeaderField: "Authorization"))
+        let downgraded = RedirectCredentials.follow(original, to: request("http://api.github.com/repositories/42"))
+        XCTAssertNil(downgraded.value(forHTTPHeaderField: "Authorization"))
+    }
+
+    func testRequestWithoutTokenStaysAsIs() {
+        let next = RedirectCredentials.follow(request("https://api.github.com/a"), to: request("https://api.github.com/b"))
+        XCTAssertNil(next.value(forHTTPHeaderField: "Authorization"))
+    }
+}

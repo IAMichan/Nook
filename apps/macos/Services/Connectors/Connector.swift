@@ -110,7 +110,7 @@ enum ConnectorHTTP {
         configuration.timeoutIntervalForResource = 20
         configuration.httpMaximumConnectionsPerHost = 4
         configuration.waitsForConnectivity = false
-        return URLSession(configuration: configuration)
+        return URLSession(configuration: configuration, delegate: RedirectCredentials.shared, delegateQueue: nil)
     }()
 
     /// For requests GitHub can take a while to answer (a search over many pull requests with their checks).
@@ -119,7 +119,7 @@ enum ConnectorHTTP {
         configuration.timeoutIntervalForRequest = 30
         configuration.timeoutIntervalForResource = 45
         configuration.waitsForConnectivity = false
-        return URLSession(configuration: configuration)
+        return URLSession(configuration: configuration, delegate: RedirectCredentials.shared, delegateQueue: nil)
     }()
 
     /// For uploads and long fetches that are meant to take a while (a file sent to a chat, a chat helper's scroll back
@@ -129,7 +129,7 @@ enum ConnectorHTTP {
         configuration.timeoutIntervalForRequest = 60
         configuration.timeoutIntervalForResource = 300
         configuration.waitsForConnectivity = false
-        return URLSession(configuration: configuration)
+        return URLSession(configuration: configuration, delegate: RedirectCredentials.shared, delegateQueue: nil)
     }()
 
     /// The session that lets a request run for `timeout`: `session` for a quick one, `transferSession` for a longer one.
