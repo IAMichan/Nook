@@ -81,6 +81,29 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertNil(stale[chat])
     }
 
+    /// OpenWA says a chat was read on the phone only through its count: a chat it lists as read, as of Nook's newest
+    /// message there or later, is read; one the list is behind on, or one with nothing new in Nook, is left alone.
+    func testAChatReadOnThePhoneIsReadWhenTheGatewayCountsNothing() {
+        let read = "31600000001@s.whatsapp.net"
+        let behind = "31600000002@s.whatsapp.net"
+        let quiet = "31600000003@s.whatsapp.net"
+        let carried = "31600000004@s.whatsapp.net"
+        var inbox = WAInbox()
+        inbox.add(message("1", chat: read, at: 5), filters: WAFilters())
+        inbox.add(message("2", chat: behind, at: 9), filters: WAFilters())
+        inbox.add(message("3", chat: quiet, at: 5), filters: WAFilters(), history: true)
+        let at = { (seconds: TimeInterval) in Date(timeIntervalSince1970: 1_800_000_000 + seconds) }
+        let list = [
+            WAChatInfo(jid: read, name: "Anna", last: at(5), unread: 0),
+            WAChatInfo(jid: behind, name: "Bob", last: at(8), unread: 0),
+            WAChatInfo(jid: quiet, name: "Cas", last: at(5), unread: 0),
+            WAChatInfo(jid: carried, name: "Dirk", last: at(7), unread: 0),
+            WAChatInfo(jid: "31600000005@s.whatsapp.net", name: "Eva", last: at(7), unread: 2),
+        ]
+        let carry = [carried: WAUnreadCarry(count: 1, last: at(6))]
+        XCTAssertEqual(Set(inbox.readInGateway(list) { carry[$0] }), [read, carried])
+    }
+
     /// "@open chat Jan" in the Mac app: a person's chat opens by their number; a group or a hidden id has no such link.
     func testAppLinkOpensAPersonsChatByNumber() {
         XCTAssertEqual(WAJID.appLink("31600000001@s.whatsapp.net")?.absoluteString, "whatsapp://send?phone=31600000001")
