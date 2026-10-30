@@ -171,6 +171,23 @@ enum ChatMediaImages {
         return image
     }
 
+    private static let pixelSizes = NSCache<NSString, NSValue>()
+
+    /// The photo's own size in pixels, upright (EXIF orientation applied), read from its header only.
+    static func pixelSize(_ url: URL) -> CGSize? {
+        let key = url.path as NSString
+        if let known = pixelSizes.object(forKey: key) { return known.sizeValue }
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
+              let height = properties[kCGImagePropertyPixelHeight] as? CGFloat, width > 0, height > 0 else { return nil }
+        // Orientations 5 to 8 turn the picture a quarter, so its sides swap.
+        let orientation = properties[kCGImagePropertyOrientation] as? Int ?? 1
+        let size = orientation >= 5 ? CGSize(width: height, height: width) : CGSize(width: width, height: height)
+        pixelSizes.setObject(NSValue(size: size), forKey: key)
+        return size
+    }
+
     /// How many frames each file holds, read once: a sticker or GIF asks on every redraw of its chat.
     private static let frames = NSCache<NSString, NSNumber>()
 
