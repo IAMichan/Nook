@@ -10,11 +10,14 @@ extension AppModel {
         // A linked phone brings WhatsApp in live, your own messages included: its notifications would only repeat it.
         capture.skips = { notice in notice.app == "whatsapp" && WhatsAppAccounts.shared.isConnected }
         capture.onFresh = { [weak self] ids in ids.forEach { self?.presentChat($0) } }
-        // Read in its own app (on the phone, in the app on this Mac): a card still waiting in line goes; the one on screen
-        // stays (you may be typing) and follows its chat.
+        // Read in its own app (on the phone, in the app on this Mac): a card still waiting in line goes, and so does its
+        // macOS notification; the card on screen stays (you may be typing) and follows its chat.
         capture.onReadElsewhere = { [weak self] ids in
             guard let self else { return }
-            for id in ids { self.viewModel.removePending(id: Self.chatCardPrefix + id) }
+            for id in ids {
+                self.viewModel.removePending(id: Self.chatCardPrefix + id)
+                SystemNotifier.shared.withdraw(Self.chatCardPrefix + id)
+            }
         }
         // A chat's card follows its chat while it is up or waits in line: the newest message, your own answer and its
         // ticks show in it, not only what was there when it came up.

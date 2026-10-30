@@ -1064,6 +1064,21 @@ struct WAInbox: Equatable, Sendable {
         for key in conversations.keys { conversations[key]?.unread = 0 }
     }
 
+    /// The chats a gateway that counts unread messages itself (OpenWA) lists as read while Nook still counts something
+    /// new in them: read on the phone or in WhatsApp elsewhere, which such a gateway says only through its count. A chat
+    /// whose newest message from someone else is newer than the list's entry is left alone: the list is behind on it.
+    /// `carried` gives what a chat still counts from before Nook restarted.
+    func readInGateway(_ chats: [WAChatInfo], carried: (String) -> WAUnreadCarry?) -> [String] {
+        chats.compactMap { chat in
+            guard chat.unread == 0 else { return nil }
+            let conversation = conversations[chat.jid]
+            let carry = carried(chat.jid)
+            guard (conversation?.unread ?? 0) + (carry?.count ?? 0) > 0 else { return nil }
+            let newest = max(conversation?.messages.last { !$0.fromMe }?.date ?? .distantPast, carry?.last ?? .distantPast)
+            return chat.last >= newest ? chat.jid : nil
+        }
+    }
+
     mutating func rename(_ chat: String, to name: String) {
         guard !name.isEmpty else { return }
         let key = WAJID.normalized(chat)

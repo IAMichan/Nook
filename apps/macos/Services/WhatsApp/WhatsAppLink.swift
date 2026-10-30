@@ -617,12 +617,7 @@ final class WhatsAppLink: ObservableObject {
                 }
             }
         case .readElsewhere(let chat)?:
-            let key = WAJID.normalized(chat)
-            readInWhatsApp[key] = Date()
-            clearMarkedUnread(key)
-            guard inbox.conversations[key] != nil else { return }
-            inbox.markRead(key)
-            onReadElsewhere?(chatKey(key))
+            readElsewhere(WAJID.normalized(chat))
         case .reaction(let chat, let message, let emoji, let sender, let fromMe)?:
             // A new emoji redraws the chat's card when it is on screen, as new ticks do; it never brings one up.
             if let changed = inbox.applyReaction(emoji, message: message, chat: chat, sender: sender, fromMe: fromMe) {
@@ -631,6 +626,16 @@ final class WhatsAppLink: ObservableObject {
         default:
             break
         }
+    }
+
+    /// Read on the phone or in WhatsApp elsewhere: read in Nook and in WhatsApp, so the badge goes and "Mark as read"
+    /// has nothing left to tell.
+    private func readElsewhere(_ key: String) {
+        readInWhatsApp[key] = Date()
+        clearMarkedUnread(key)
+        guard inbox.conversations[key] != nil else { return }
+        inbox.markRead(key)
+        onReadElsewhere?(chatKey(key))
     }
 
     private var webhookAlive: Bool {
@@ -666,6 +671,13 @@ final class WhatsAppLink: ObservableObject {
         guard gen == generation else { return }
         knownChats = chats.map {
             WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread, pinned: $0.pinned)
+        }
+        // OpenWA sends no word when you read a chat on the phone: its count going to nothing says it.
+        if gatewayCountsUnread {
+            let read = inbox.readInGateway(knownChats) { key in
+                self.carriedUnread[key].flatMap { $0.holds(readSince: self.readSince(key)) ? $0 : nil }
+            }
+            for key in read { readElsewhere(key) }
         }
         // Who the numbers are: your Contacts first (what you call someone), then the phone's address book.
         // A failed request answers with an empty list: the last list stays, rather than every name going back to a number.
@@ -1172,7 +1184,8 @@ final class WhatsAppLink: ObservableObject {
         if counted > 0 { return counted }
         if markedUnread[key] != nil { return 1 }
         guard let known = known(key), known.unread > 0 else { return 0 }
-        if let read = readInNook[key], known.last <= read { return 0 }
+        // Read in Nook, or on the phone, since the list's newest message.
+        if let read = [readInNook[key], readInWhatsApp[key]].compactMap({ $0 }).max(), known.last <= read { return 0 }
         return known.unread
     }
 
