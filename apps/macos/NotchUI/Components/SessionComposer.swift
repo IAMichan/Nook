@@ -310,6 +310,7 @@ struct SessionComposer<Controls: View>: View {
             .foregroundStyle(NookTheme.paper)
             .lineLimit(lines)
             .focused(focused)
+            .onChange(of: focused.wrappedValue) { _, now in if now { Self.placeCaretAtEnd() } }
             .onSubmit(submit)
             .onChange(of: text) { old, new in textChanged(old, new) }
     }
@@ -466,6 +467,18 @@ struct SessionComposer<Controls: View>: View {
     private func insertPath(_ url: URL) {
         let path = url.path.contains(" ") ? "\"\(url.path)\"" : url.path
         text += (text.isEmpty || text.hasSuffix(" ") ? "" : " ") + path + " "
+    }
+
+    /// AppKit selects a text field's whole text when it gets the keyboard, so coming back to a draft would leave it
+    /// selected and the next key would replace it. A full selection becomes a caret at the end; a click keeps its spot.
+    private static func placeCaretAtEnd() {
+        DispatchQueue.main.async {
+            guard let editor = (NSApp.keyWindow ?? NSApp.mainWindow)?.firstResponder as? NSTextView else { return }
+            let length = (editor.string as NSString).length
+            let selected = editor.selectedRange()
+            guard length > 0, selected.location == 0, selected.length == length else { return }
+            editor.setSelectedRange(NSRange(location: length, length: 0))
+        }
     }
 
     /// Cmd-V with a picture on the clipboard adds it here; with text it pastes as always.
