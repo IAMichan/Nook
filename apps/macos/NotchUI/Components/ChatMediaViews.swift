@@ -248,7 +248,7 @@ final class ChatAvatarImages: ObservableObject {
 
     /// The picture when it is decoded; nil while it is (the list shows the initials meanwhile and redraws once it is in).
     func image(_ path: String) -> NSImage? {
-        if let image = ChatMediaImages.cached(URL(fileURLWithPath: path), side: Self.side) { return image }
+        if let image = ChatMediaImages.cached(URL(fileURLWithPath: path, isDirectory: false), side: Self.side) { return image }
         load(path)
         return nil
     }
@@ -260,7 +260,7 @@ final class ChatAvatarImages: ObservableObject {
         let side = Self.side
         Task {
             let found = await Task.detached(priority: .userInitiated) {
-                ChatMediaImages.image(URL(fileURLWithPath: path), side: side) != nil
+                ChatMediaImages.image(URL(fileURLWithPath: path, isDirectory: false), side: side) != nil
             }.value
             loading.remove(path)
             if found {

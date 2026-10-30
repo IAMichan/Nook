@@ -83,8 +83,8 @@ final class ChatCaptureService: ObservableObject {
     func isShown(_ thread: InboxThread) -> Bool {
         guard !ChatNoticeRulesStore.shared.rules.isHidden(thread.id) else { return false }
         if thread.app == whatsAppGatewayBridge.app {
-            if let key = thread.chatID { return whatsAppGatewayBridge.isLinked(key) }
-            if whatsAppGatewayBridge.isReady { return false }
+            if let key = thread.chatID { return whatsAppGatewayBridge.isListed(key) }
+            if whatsAppGatewayBridge.holdsChats { return false }
         }
         return sources.isOn(thread.app)
     }
@@ -630,19 +630,36 @@ final class ChatCaptureService: ObservableObject {
     }
 
     /// Read in Nook: kept in `chat-inbox.json`, so a restart does not bring the badge back. The app itself is not told.
+    /// The chat's twins (`ChatInbox.twins`) are read with it: the badge counts them too, while the tab shows one.
     func markRead(_ id: String) {
         ensureLoaded()
-        guard inbox.threads[id]?.unread ?? 0 > 0 else { return }
-        inbox.markRead(id)
+        let ids = ([id] + inbox.twins(of: id)).filter { inbox.threads[$0]?.unread ?? 0 > 0 }
+        guard !ids.isEmpty else { return }
+        var next = inbox
+        for id in ids { next.markRead(id) }
+        inbox = next
         save()
     }
 
-    /// Read in the app too: after Nook told the app, or opened the chat there.
-    func markReadInApp(_ id: String) {
+    /// Read in the app too: after Nook told the app, or opened the chat there. `through`: what the app was told
+    /// (`ChatInbox.markReadInApp`), when telling it took a while.
+    func markReadInApp(_ id: String, through: Date? = nil) {
         ensureLoaded()
         guard inbox.threads[id] != nil else { return }
-        inbox.markReadInApp(id)
+        var next = inbox
+        for id in [id] + next.twins(of: id) { next.markReadInApp(id, through: through) }
+        inbox = next
         save()
+    }
+
+    /// Until when the chat counts as read in Nook now: what "Mark as read in <app>" tells the app, taken before it goes.
+    func readMark(_ id: String) -> Date? {
+        inbox.threads[id]?.readInNook
+    }
+
+    /// When the chat was marked unread by hand, while it still is.
+    func markedUnread(_ id: String) -> Date? {
+        inbox.threads[id]?.markedUnread
     }
 
     /// Shows your emoji on a message (or takes it back) as you just sent it to its app.

@@ -149,19 +149,28 @@ extension ChatsEntry {
 final class ChatsEntryMemo {
     private var entries: [ChatsEntry]?
     private var watching: [AnyCancellable] = []
+    /// What of WhatsApp's linked accounts and the chat helper decides which chats show (`ChatCaptureService.isShown`),
+    /// as it was when `entries` was made. Asked at each read instead of following their changes: they publish for every
+    /// picture, name and read mark that comes in, and each made the whole list again while you scrolled it.
+    private var visibility: [String] = []
+
+    private static func visibility() -> [String] {
+        WhatsAppAccounts.shared.links.map { "\($0.account):\($0.holdsChats)" } + ["\(ChatHelper.linked("whatsapp"))"]
+    }
 
     func entries(capture: ChatCaptureService) -> [ChatsEntry] {
+        let visibility = Self.visibility()
+        if visibility != self.visibility { entries = nil }
         if let entries { return entries }
+        self.visibility = visibility
         if watching.isEmpty {
             // Which chats show also follows the linked WhatsApp accounts and the chats you hid.
             let changes: [AnyPublisher<Void, Never>] = [
-                WhatsAppAccounts.shared.objectWillChange.eraseToAnyPublisher(),
                 // The chats and which apps are on, not the rest of the service (its status, each bridge's last problem):
                 // those change with every bridge read and would make the whole list again while you scroll it.
                 capture.$inbox.map { _ in () }.eraseToAnyPublisher(),
                 capture.$sources.map { _ in () }.eraseToAnyPublisher(),
-                ChatHelper.shared.objectWillChange.eraseToAnyPublisher(),
-                ChatLinker.shared.objectWillChange.eraseToAnyPublisher(), I18n.shared.objectWillChange.eraseToAnyPublisher(),
+                I18n.shared.objectWillChange.eraseToAnyPublisher(),
                 ChatHiddenMessages.shared.objectWillChange.eraseToAnyPublisher(),
                 ChatNoticeRulesStore.shared.objectWillChange.eraseToAnyPublisher(),
             ]
@@ -228,6 +237,7 @@ final class ChatsShownMemo {
         var filter: String?
         var account: String?
         var selection: String?
+        var kept: Set<String>
         /// The groups go by day ("Today", "Yesterday"), so a new day sorts again.
         var day: Date
     }
@@ -238,9 +248,9 @@ final class ChatsShownMemo {
     private(set) var sections: [ChatsSection] = []
 
     func shown(all: [ChatsEntry], needle: String, view: ChatsView, filter: String?, account: String?, selection: String?,
-               make: () -> [ChatsEntry]) -> [ChatsEntry] {
+               kept: Set<String> = [], make: () -> [ChatsEntry]) -> [ChatsEntry] {
         let wanted = Key(all: all, needle: needle, view: view, filter: filter, account: account, selection: selection,
-                         day: Calendar.current.startOfDay(for: Date()))
+                         kept: kept, day: Calendar.current.startOfDay(for: Date()))
         if key == wanted { return value }
         value = make()
         key = wanted
@@ -302,6 +312,16 @@ struct ChatsTab: View {
     @State private var revealSelection = false
     /// The chat closed with the back button while the tab shows one column: the list comes back scrolled to it.
     @State private var returnTo: String?
+    /// The chats you opened or marked since the view, app or account last changed: they keep their place in a view they
+    /// no longer match ("New" after reading one), so the rows under the pointer do not move up with every click.
+    @State private var keptInView: Set<String> = []
+    /// Brings the open chat into view in the list again, when it was asked for while open already.
+    @State private var revealAgain = 0
+    /// When the open chat was opened: a "Mark as unread" after that (in the other surface, on the iPhone) is not read
+    /// again just because it is open here.
+    @State private var openedAt = Date()
+    /// The list is scrolling: a row the pointer rests on meanwhile fetches nothing (`ChatsRow`).
+    @MainActor static var listScrolling = false
     /// The open chat: the one you opened last, also after the tab was closed or Nook restarted; nil shows none.
     @State private var selection: String? = ChatsTab.lastOpened
     /// One app's chats only (its source id), or all.
@@ -388,6 +408,7 @@ struct ChatsTab: View {
                                 ChatsDetail(entry: current, photo: photo(current), capture: capture,
                                             onMarkUnread: { markUnread(current) }, onClose: closeChat,
                                             onBack: stacked ? closeChat : nil)
+                                    .equatable()
                                     .id(current.id)
                             } else {
                                 // No chat open (none picked yet, closed with Escape, or not in what the list shows).
@@ -431,9 +452,16 @@ struct ChatsTab: View {
         .keyCommands(["session.previous": { step(-1) }, "session.next": { step(1) }], enabled: !all.isEmpty)
         .onChange(of: viewModel.chatsFocus) { _, _ in takeFocus() }
         // Another app (or none) has accounts of its own: the account chosen before no longer applies.
-        .onChange(of: filter) { _, _ in account = nil }
-        .onChange(of: selection) { _, id in
+        .onChange(of: filter) { _, _ in
+            account = nil
+            keptInView = []
+        }
+        .onChange(of: view) { _, _ in keptInView = [] }
+        .onChange(of: account) { _, _ in keptInView = [] }
+        .onChange(of: selection) { old, id in
             ChatsTab.lastOpened = id
+            openedAt = Date()
+            if let old { keptInView.insert(old) }
         }
         // With "Read in Nook when opened" on, a chat you open is read in Nook, and so is what comes in while it is open:
         // its badge goes and stays gone after a restart. The app itself (and whoever wrote) hears nothing until you
@@ -447,6 +475,8 @@ struct ChatsTab: View {
     /// while that is in front. A window that opened behind the app you are in leaves it unread.
     private func readOpenChat() {
         guard readOnOpen, app.viewModel.isShowing(.inbox, inWindow: inWindow), let entry = current, entry.read.isUnread else { return }
+        // Marked unread by hand while it was open here (from the notch, the main window, the iPhone): it stays so.
+        if let marked = capture.markedUnread(entry.id), marked > openedAt { return }
         app.markChatReadInNook(entry)
     }
 
@@ -482,7 +512,11 @@ struct ChatsTab: View {
     /// "Mark as unread", by hand, in Nook only: the badge comes back, and an open chat closes so that opening it again
     /// reads it.
     private func markUnread(_ entry: ChatsEntry) {
-        if selection == entry.id { withAnimation(NookTheme.reveal) { selection = nil } }
+        keptInView.insert(entry.id)
+        if selection == entry.id {
+            if stacked { returnTo = entry.id }
+            withAnimation(NookTheme.reveal) { selection = nil }
+        }
         app.markChatUnread(entry)
     }
 
@@ -494,9 +528,13 @@ struct ChatsTab: View {
         account = nil
         view = .all
         query = focus.query
+        let chat = focus.chat.map(ChatIDMigration.current)
         revealSelection = true
-        selection = focus.chat.map(ChatIDMigration.current)
+        // Already open: the selection does not change, so the list is asked to bring it into view itself.
+        if chat != nil, chat == selection { revealAgain += 1 }
+        selection = chat
         collapsed = []
+        keptInView = []
     }
 
     // MARK: The chats
@@ -554,13 +592,13 @@ struct ChatsTab: View {
     private var shown: [ChatsEntry] {
         let needle = query.trimmingCharacters(in: .whitespaces)
         return shownMemo.shown(all: all, needle: needle, view: view, filter: filter, account: shownAccount,
-                               selection: selection) { makeShown(needle) }
+                               selection: selection, kept: keptInView) { makeShown(needle) }
     }
 
     private func makeShown(_ needle: String) -> [ChatsEntry] {
         let now = Date()
         let found = needle.isEmpty ? inApp : inApp.compactMap { $0.found(needle, capture: capture) }
-        return found.filter { view.shows($0.read) || $0.id == selection }
+        return found.filter { view.shows($0.read) || $0.id == selection || keptInView.contains($0.id) }
             .map { (entry: $0, group: ChatsGroup.of($0, now: now)) }
             .sorted { a, b in
                 if a.group != b.group { return a.group < b.group }
@@ -737,6 +775,12 @@ struct ChatsTab: View {
                 // Once the list shows it (a folded group opens, a search ends) and the rows around it are laid out.
                 DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .center) } }
             }
+            .onChange(of: revealAgain) { _, _ in
+                guard revealSelection, let id = selection else { return }
+                revealSelection = false
+                DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .center) } }
+            }
+            .onScrollPhaseChange { _, phase in ChatsTab.listScrolling = phase != .idle }
             // Back from a chat while one column shows at a time: the list is where you left it, at that chat.
             .onAppear {
                 guard let id = returnTo ?? (revealSelection ? selection : nil) else { return }
@@ -757,11 +801,15 @@ struct ChatsTab: View {
         switch entry.read {
         case .unread:
             return ChatsRowAction(to: .readInNook, title: tr("chats.row.markRead"), label: tr("chats.markReadInNook")) {
+                keptInView.insert(entry.id)
                 app.markChatReadInNook(entry)
             }
         case .readInNook:
             return ChatsRowAction(to: .read, title: tr("chats.row.markReadInApp", appName),
-                                  label: tr("chats.markReadInApp", appName)) { app.markChatReadInApp(entry) }
+                                  label: tr("chats.markReadInApp", appName)) {
+                keptInView.insert(entry.id)
+                app.markChatReadInApp(entry)
+            }
         case .read:
             return ChatsRowAction(to: .unread(1), title: tr("chats.row.markUnread"), label: tr("chats.markUnread")) {
                 markUnread(entry)
@@ -1057,11 +1105,12 @@ private struct ChatsRow: View, Equatable {
             // list on the way elsewhere fetches nothing.
             prefetch?.cancel()
             prefetch = nil
-            if inside {
+            // Rows sliding under a pointer that stands still while the list scrolls fetch nothing.
+            if inside, !ChatsTab.listScrolling {
                 let entry = self.entry
                 prefetch = Task {
-                    try? await Task.sleep(for: .milliseconds(120))
-                    guard !Task.isCancelled else { return }
+                    try? await Task.sleep(for: .milliseconds(200))
+                    guard !Task.isCancelled, !ChatsTab.listScrolling else { return }
                     await AppModel.shared.prefetchChat(entry)
                 }
             }
@@ -1197,7 +1246,7 @@ struct ChatsAvatar: View {
 }
 
 /// The chat on the right: who and which app on top, the messages as bubbles, and how to answer below.
-private struct ChatsDetail: View {
+private struct ChatsDetail: View, Equatable {
     let entry: ChatsEntry
     let photo: NSImage?
     @ObservedObject var capture: ChatCaptureService
@@ -1252,6 +1301,13 @@ private struct ChatsDetail: View {
         self.onBack = onBack
         _unreadAtOpen = State(initialValue: entry.unread)
         _bubblesMemo = State(initialValue: ChatBubblesMemo.kept(for: entry.id))
+    }
+
+    /// The open chat is drawn again for its own changes (what it observes) and when it shows another state of its chat;
+    /// a redraw of the tab around it (the list scrolling, a picture in a row, a typing line in another chat) leaves it
+    /// alone. The closures do the same for the same chat.
+    static func == (lhs: ChatsDetail, rhs: ChatsDetail) -> Bool {
+        lhs.entry == rhs.entry && lhs.photo === rhs.photo && (lhs.onBack == nil) == (rhs.onBack == nil)
     }
 
     /// Places "New messages" above the first of what was new, once the chat shows it.
@@ -1348,6 +1404,7 @@ private struct ChatsDetail: View {
                                onDelete: { deleting = $0 },
                                onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil,
                                typing: typing.line(entry.id), newFrom: newFrom)
+                    .equatable()
                     .padding(.horizontal, NookTheme.Spacing.xs)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 footer

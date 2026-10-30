@@ -188,7 +188,24 @@ final class WhatsAppLink: ObservableObject {
             keepUnread()
         }
     }
-    @Published private(set) var link: Link = .off
+    @Published private(set) var link: Link = .off {
+        didSet {
+            switch link {
+            case .connected: linkedUntil = nil; wasLinked = true
+            case .off, .needsQR, .unauthorized: linkedUntil = nil; wasLinked = false
+            case .connecting, .unreachable, .failed:
+                if oldValue == .connected { linkedUntil = Date().addingTimeInterval(Self.linkGrace) }
+            }
+        }
+    }
+    /// The phone was linked, and the gateway only stopped answering for now (a restart, the Mac waking, one failed
+    /// check): its chats stay in the Chats tab meanwhile, until `linkedUntil`, instead of vanishing and coming back.
+    private var wasLinked = false
+    private var linkedUntil: Date?
+    /// How long a gateway that stopped answering still holds its chats in the Chats tab.
+    private static let linkGrace: TimeInterval = 600
+    /// Its chats show: linked now, or linked until a moment ago and the gateway only stopped answering.
+    var holdsChats: Bool { isConnected || (wasLinked && (linkedUntil ?? .distantPast) > Date()) }
     @Published private(set) var webhook: Webhook = .off
     @Published private(set) var qrPNG: Data?
     /// Who the numbers are: your Contacts and the phone's, refreshed with the chat list (see `WANameBook`).
@@ -631,7 +648,7 @@ final class WhatsAppLink: ObservableObject {
     /// Read on the phone or in WhatsApp elsewhere: read in Nook and in WhatsApp, so the badge goes and "Mark as read"
     /// has nothing left to tell.
     private func readElsewhere(_ key: String) {
-        readInWhatsApp[key] = Date()
+        readInWhatsApp[key] = readMark(key)
         clearMarkedUnread(key)
         guard inbox.conversations[key] != nil else { return }
         inbox.markRead(key)
@@ -677,7 +694,12 @@ final class WhatsAppLink: ObservableObject {
             let read = inbox.readInGateway(knownChats) { key in
                 self.carriedUnread[key].flatMap { $0.holds(readSince: self.readSince(key)) ? $0 : nil }
             }
-            for key in read { readElsewhere(key) }
+            for key in read {
+                // A chat you marked unread after the list's newest message stays so: the phone's count of nothing is
+                // from before your mark.
+                if let mark = markedUnread[key], let listed = known(key), listed.last <= mark { continue }
+                readElsewhere(key)
+            }
         }
         // Who the numbers are: your Contacts first (what you call someone), then the phone's address book.
         // A failed request answers with an empty list: the last list stays, rather than every name going back to a number.
@@ -1240,8 +1262,10 @@ final class WhatsAppLink: ObservableObject {
         let key = WAJID.normalized(chat)
         carriedUnread[key] = nil
         readInNook[key] = nil
-        // A chat Nook has no messages of yet has no count to raise: the mark stands in for one.
-        if inbox.conversations[key] == nil { markedUnread[key] = Date() } else { inbox.markUnread(key) }
+        // The mark is kept on disk, so it holds after a restart too (the count in the inbox lives in memory only); a chat
+        // Nook has no messages of yet has no count to raise, and the mark stands in for one.
+        markedUnread[key] = Date()
+        if inbox.conversations[key] != nil { inbox.markUnread(key) }
     }
 
     func markRead(_ chat: String) {

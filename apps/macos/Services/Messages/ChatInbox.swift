@@ -535,6 +535,9 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     var readInNook: Date? = nil
     /// When you told the app itself that you read this chat (from Nook), or the app said so: then it is read everywhere.
     var readInApp: Date? = nil
+    /// When you marked the chat unread by hand ("Mark as unread"): it stays unread until you read it, whatever a count
+    /// of its app that lags behind (or counts only its newest messages) says at its next read. Kept across launches.
+    var markedUnread: Date? = nil
     /// How many messages it keeps once you scrolled back to older ones; nil keeps `ChatInbox.keep`.
     var capacity: Int? = nil
     /// A bridge reads this chat from its app (`ChatInbox.merge`), which keeps its whole history: Nook keeps the newest
@@ -953,14 +956,17 @@ struct ChatInbox: Codable, Equatable, Sendable {
             var freed = thread.unread - source.unread
             for (groupKey, messages) in moved {
                 guard var target = threads[groupKey] else { continue }
+                var inserted = 0
                 for message in messages where !target.messages.contains(where: {
                     $0.id == message.id || (!$0.isMine && $0.text == message.text
                                             && abs($0.date.timeIntervalSince(message.date)) < Self.sameMessageWindow)
                 }) {
                     let index = target.messages.lastIndex { $0.date <= message.date }.map { $0 + 1 } ?? 0
                     target.messages.insert(message, at: index)
+                    if message.date > target.readInNook ?? .distantPast { inserted += 1 }
                 }
-                target.unread += freed
+                // Only what came in here and was not read here yet: a message the group already had stays as it was.
+                target.unread += min(freed, inserted)
                 freed = 0
                 if target.messages.count > target.keeps { target.messages.removeFirst(target.messages.count - target.keeps) }
                 threads[groupKey] = target
@@ -1071,6 +1077,10 @@ struct ChatInbox: Codable, Equatable, Sendable {
                 // Nook holds no messages of goes by when its app says it last had one.
                 let fresh = thread.messages.filter { !$0.isMine && $0.date > read }.count
                 thread.unread = thread.messages.isEmpty ? ((thread.activity ?? .distantPast) > read ? unread : 0) : min(unread, fresh)
+            } else if thread.markedUnread != nil {
+                // Marked unread by hand: only more from the app counts (new messages); its count going down is the app
+                // catching up on an older read, not you reading it.
+                thread.unread = max(thread.unread, unread, 1)
             } else if unread != thread.appUnread {
                 thread.unread = unread
             }
@@ -1131,25 +1141,51 @@ struct ChatInbox: Codable, Equatable, Sendable {
         // Never before what it read: a message dated by another clock (the phone's, a server's a little ahead of this
         // Mac) would otherwise count as new again at the app's next read.
         thread.readInNook = [date, thread.newestIncoming, thread.activity].compactMap { $0 }.max() ?? date
+        thread.markedUnread = nil
         threads[id] = thread
     }
 
-    /// Read in the app too: Nook told it (or opened it there), so the chat is read everywhere.
-    mutating func markReadInApp(_ id: String, at date: Date = Date()) {
-        markRead(id, at: date)
+    /// Read in the app too: Nook told it (or opened it there), so the chat is read everywhere. `through`: what the app
+    /// was told, when telling it took a while (it goes over the network): a message that came in meanwhile was neither
+    /// seen nor passed on, and stays new. Nil reads everything there is now.
+    mutating func markReadInApp(_ id: String, at date: Date = Date(), through: Date? = nil) {
+        guard let through else {
+            markRead(id, at: date)
+            guard var thread = threads[id] else { return }
+            thread.readInApp = thread.readInNook
+            if thread.appUnread != nil { thread.appUnread = 0 }
+            // The app took it: it no longer waits there, until its bridge says otherwise about a newer message.
+            if thread.waitsInApp == true { thread.waitsInApp = false }
+            threads[id] = thread
+            return
+        }
         guard var thread = threads[id] else { return }
-        thread.readInApp = thread.readInNook
-        if thread.appUnread != nil { thread.appUnread = 0 }
-        // The app took it: it no longer waits there, until its bridge says otherwise about a newer message.
-        if thread.waitsInApp == true { thread.waitsInApp = false }
+        let fresh = thread.messages.filter { !$0.isMine && $0.date > through }.count
+        thread.unread = fresh
+        thread.readInNook = max(thread.readInNook ?? through, through)
+        thread.readInApp = through
+        if thread.appUnread != nil { thread.appUnread = fresh }
+        if fresh == 0, thread.waitsInApp == true { thread.waitsInApp = false }
+        if fresh == 0 { thread.markedUnread = nil }
         threads[id] = thread
+    }
+
+    /// The other threads that hold the same chat as `id` (an app that names one chat twice, as a chat without a topic
+    /// named after whoever wrote last): the Chats tab shows one of them (`ChatsEntry.all`), so reading it reads them all,
+    /// or the badge would keep counting the one it hides.
+    func twins(of id: String) -> [String] {
+        guard let thread = threads[id], thread.chatID == nil, let newest = thread.messages.last?.id else { return [] }
+        return threads.values.filter {
+            $0.id != id && $0.app == thread.app && $0.chatID == nil && $0.messages.last?.id == newest
+        }.map(\.id)
     }
 
     /// "Mark as unread": the chat shows a badge again, until it is read. In Nook only.
-    mutating func markUnread(_ id: String) {
+    mutating func markUnread(_ id: String, at date: Date = Date()) {
         guard let unread = threads[id]?.unread, unread == 0 else { return }
         threads[id]?.unread = 1
         threads[id]?.readInNook = nil
+        threads[id]?.markedUnread = date
     }
 
     /// Every chat with something new read in Nook.

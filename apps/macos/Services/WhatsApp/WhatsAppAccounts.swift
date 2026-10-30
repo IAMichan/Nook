@@ -112,6 +112,8 @@ final class WhatsAppAccounts: ObservableObject {
 
     /// Whether any account is linked.
     var isConnected: Bool { links.contains(where: \.isConnected) }
+    /// An account whose chats show (`WhatsAppLink.holdsChats`): linked, also through a moment its gateway did not answer.
+    var holdsChats: Bool { links.contains(where: \.holdsChats) }
 
     /// The account a chat is in, and its JID there; a key of an account that is gone goes to the first account.
     func route(_ key: String) -> (link: WhatsAppLink, jid: String) {

@@ -55,10 +55,12 @@ extension AppModel {
             return
         }
         markChatReadInNook(entry)
+        // What the app is told: what you saw now. A message that comes in while it goes stays new.
+        let through = ChatCaptureService.shared.readMark(entry.id)
         Task {
             do {
                 try await self.markReadInChatApp(route, name: entry.name)
-                ChatCaptureService.shared.markReadInApp(entry.id)
+                ChatCaptureService.shared.markReadInApp(entry.id, through: through)
             } catch {
                 ToastCenter.shared.error(error.localizedDescription)
             }

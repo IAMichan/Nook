@@ -129,7 +129,13 @@ gateways push their changes themselves), and the action is logged under one name
 `chatAbilities`, and its call in each action's `switch`; nothing else.
 
 "Mark as read in <app>" reads the chat in Nook at once, and counts it as read in the app (and logs it so) only once the
-app took it. When the app refuses, a toast says why.
+app took it. When the app refuses, a toast says why; so does an app that has no message of the chat to mark (a Telegram
+chat only its notifications brought, a Teams chat without a message Nook knows), instead of claiming it was read. What
+the app is told is what you saw when you clicked: a message that came in while the call went stays new. A chat you
+marked unread by hand (`InboxThread.markedUnread`) stays unread until you read it, whatever a lagging or windowed count
+of its app says at its next read. A chat that an app names twice is read with its twin (`ChatInbox.twins`), so the badge
+does not keep counting the one the tab hides. WhatsApp's linked phone keeps its chats in the tab through a short moment
+its gateway does not answer (`WhatsAppLink.holdsChats`, ten minutes at most).
 
 An open chat is the same for every app too (`App/AppModel+ChatOpen.swift`): opening it reads it from its app, the
 pointer resting on it fetches what the click needs, scrolling back asks its app for older messages, a file opens from this

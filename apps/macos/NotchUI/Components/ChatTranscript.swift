@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 /// another quotes it at its top, and the emoji people put on it sit under it. Where the chat can be answered, the pointer
 /// on a bubble shows a button to answer that message and one to react with an emoji. Used by the chat card in the notch
 /// and by the Chats tab.
-struct ChatTranscript: View {
+struct ChatTranscript: View, Equatable {
     let bubbles: [ChatBubble]
     /// Who the chat is with, for the copied chat's lines in a private chat.
     let contact: String
@@ -51,6 +51,8 @@ struct ChatTranscript: View {
     /// long the chat is; scrolling back to the top draws the ones before them.
     @State private var drawnFrom: String?
     @State private var drawsAll = false
+    /// The oldest message before the app sent older ones: once they are in, the next page above it is drawn.
+    @State private var olderAnchor: String?
     /// Older messages were just drawn above and the chat is being put back where you were: reaching the top again in
     /// the same moment does not draw another page at once.
     @State private var drawingOlder = false
@@ -71,6 +73,15 @@ struct ChatTranscript: View {
     static let page = 60
     /// How many more it lays out each time you reach the top: a small step, so reaching the top never stalls the chat.
     static let olderPage = 30
+
+    /// Drawn again only when what it shows changed: the chat around it redraws for every key you type in its field.
+    /// The actions only count by whether they are there: they do the same for the same messages.
+    static func == (a: ChatTranscript, b: ChatTranscript) -> Bool {
+        a.bubbles == b.bubbles && a.contact == b.contact && a.fills == b.fills && a.typing == b.typing
+            && a.newFrom == b.newFrom && (a.onReply == nil) == (b.onReply == nil) && (a.onReact == nil) == (b.onReact == nil)
+            && (a.onEdit == nil) == (b.onEdit == nil) && (a.onDelete == nil) == (b.onDelete == nil)
+            && (a.onVote == nil) == (b.onVote == nil) && (a.onLoadOlder == nil) == (b.onLoadOlder == nil)
+    }
 
     /// The messages laid out: the newest `page` (from the first new one, when that is further back), or from `drawnFrom`.
     /// A card, which does not scroll back, draws them all.
@@ -133,17 +144,23 @@ struct ChatTranscript: View {
                 }
             }
             .scrollIndicators(.never)
-            .defaultScrollAnchor(.bottom)
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
+            // At the newest message a chat that grows keeps its bottom where it is; reading back, a picture that
+            // loads below (or a link's card) leaves what you read where it is.
+            .defaultScrollAnchor(atBottom ? .bottom : nil, for: .sizeChanges)
             .overlay(alignment: .bottomTrailing) {
-                if !atBottom, let last = bubbles.last?.id {
-                    ChatJumpButton(missed: missed) {
-                        withAnimation(NookTheme.scroll) { proxy.scrollTo(last, anchor: .bottom) }
+                // The button's own animation: on the scroll view it animated whatever else changed in that moment.
+                ZStack {
+                    if !atBottom, let last = bubbles.last?.id {
+                        ChatJumpButton(missed: missed) {
+                            withAnimation(NookTheme.scroll) { proxy.scrollTo(last, anchor: .bottom) }
+                        }
+                        .padding(NookTheme.Spacing.md)
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
                     }
-                    .padding(NookTheme.Spacing.md)
-                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
+                .animation(NookTheme.reveal, value: atBottom)
             }
-            .animation(NookTheme.reveal, value: atBottom)
             // Scrolling up to the top loads the older messages by itself; the button stays for a click. Moving up while
             // the sizes stay the same can only be you (loading and new messages change the size), so a mouse wheel,
             // which reports no scroll phase, counts as well as the trackpad.
@@ -191,6 +208,12 @@ struct ChatTranscript: View {
                 let arrived = previous.map { old in bubbles.suffix(4).contains { $0.id == old } } ?? false
                 // Just opened: the newest messages its app sends now are part of opening it, not news to glide to.
                 let settling = !scrolledByUser && Date().timeIntervalSince(openedAt) < Self.settling
+                // Reading back, several messages at once (a bridge's read, an answer of yours replaced by the app's own,
+                // a message hidden) are no reason to pull you down either: only a chat still opening jumps to its newest.
+                if !arrived, scrolledByUser, !atBottom {
+                    if bubbles.last?.fromMe == false { missed += 1 }
+                    return
+                }
                 if arrived, !settling {
                     // Reading back: the chat stays where you are, and the button counts what came in. Your own
                     // message always brings you down to it.
@@ -217,13 +240,26 @@ struct ChatTranscript: View {
                 jump.disablesAnimations = true
                 DispatchQueue.main.async { withTransaction(jump) { proxy.scrollTo(Self.bottomID, anchor: .bottom) } }
             }
+            // Older messages from the app are in: the page above what was the oldest is drawn, and it stays in its place.
+            .onChange(of: bubbles.first?.id) { _, _ in
+                guard let anchor = olderAnchor, let index = bubbles.firstIndex(where: { $0.id == anchor }) else { return }
+                olderAnchor = nil
+                drawnFrom = bubbles[max(index - Self.olderPage, 0)].id
+                var still = Transaction()
+                still.disablesAnimations = true
+                DispatchQueue.main.async { withTransaction(still) { proxy.scrollTo(anchor, anchor: .top) } }
+            }
             // Someone starts typing: their bubble comes into view under the last message.
             .onChange(of: typing != nil) { _, shown in
-                guard shown else { return }
+                // Only while you are at the newest message: reading back, someone typing does not pull you down.
+                guard shown, atBottom, !interacting else { return }
                 withAnimation(NookTheme.scroll) { proxy.scrollTo(ChatTypingBubble.id, anchor: .bottom) }
             }
-            // Another chat starts at its newest message again: reaching its top counts only once you scroll there.
+            // Another chat starts at its newest message again: reaching its top counts only once you scroll there. The
+            // Chats tab makes a new transcript for each chat, so a change of the name there is the same chat renamed
+            // (a contact's name came in), which keeps where you are.
             .onChange(of: contact) {
+                guard !fills else { return }
                 openedAt = Date()
                 interacting = false
                 scrolledByUser = false
@@ -245,10 +281,18 @@ struct ChatTranscript: View {
         guard let onLoadOlder, !(automatic && reachedStart) else { return }
         loadingOlder = true
         let anchor = bubbles.first?.id
+        // Drawn a page at a time from here, as the rest of the chat is: drawing every message at once made a long chat
+        // slow to scroll after its first fetch. Set before asking, so the messages are drawn as soon as they are in.
+        if fills { olderAnchor = anchor }
         Task { @MainActor in
             let loaded = await onLoadOlder()
-            if loaded { drawsAll = true }
-            if loaded, let anchor { proxy.scrollTo(anchor, anchor: .top) }
+            if loaded {
+                // A host that draws every message (a card) draws these too.
+                if !fills || anchor == nil { drawsAll = true }
+                if let anchor { proxy.scrollTo(anchor, anchor: .top) }
+            } else {
+                olderAnchor = nil
+            }
             reachedStart = !loaded
             loadingOlder = false
         }
@@ -335,14 +379,17 @@ struct ChatTranscript: View {
                     }
                 }
             }
-            if let typing {
-                ChatTypingBubble(text: typing)
-                    .padding(.top, rows.isEmpty ? 0 : NookTheme.Spacing.md)
-                    .id(ChatTypingBubble.id)
-                    .transition(.opacity)
+            // The typing line animates on its own: on the whole chat it animated every bubble that came in with it.
+            VStack(spacing: 0) {
+                if let typing {
+                    ChatTypingBubble(text: typing)
+                        .padding(.top, rows.isEmpty ? 0 : NookTheme.Spacing.md)
+                        .id(ChatTypingBubble.id)
+                        .transition(.opacity)
+                }
             }
+            .animation(NookTheme.reveal, value: typing)
         }
-        .animation(NookTheme.reveal, value: typing)
         .frame(maxWidth: .infinity)
     }
 

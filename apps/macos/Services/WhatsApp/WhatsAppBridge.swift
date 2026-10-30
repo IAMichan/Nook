@@ -26,6 +26,15 @@ final class WhatsAppGatewayBridge: ChatKeyedHistoryBridge, ChatNewsBridge {
         WhatsAppAccounts.shared.route(key).link.isConnected && isReady
     }
 
+    /// Whether the linked phone's chats show: as `isReady`, but also through a moment the gateway does not answer, so
+    /// one failed check does not empty the Chats tab and close the chat you read.
+    var holdsChats: Bool { WhatsAppAccounts.shared.holdsChats && !ChatHelper.linked(app) }
+
+    /// Whether the chat with this key shows (`holdsChats`, for its own account).
+    func isListed(_ key: String) -> Bool {
+        WhatsAppAccounts.shared.route(key).link.holdsChats && holdsChats
+    }
+
     /// What each chat was made from last time, by its key: a chat made from the same is not made again.
     private struct Source: Equatable {
         var conversation: WAConversation?
