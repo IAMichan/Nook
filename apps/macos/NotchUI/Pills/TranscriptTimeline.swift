@@ -159,9 +159,9 @@ struct TranscriptConversation: View {
                         TranscriptPromptRail(marks: derived.marks, viewport: viewport) { mark in
                             scroll.userScrolled()
                             withAnimation(NookTheme.scroll) { proxy.scrollTo(mark.row, anchor: .top) }
-                        } onScrub: { fraction in
-                            scroll.userScrolled()
-                            position.scrollTo(y: viewport.frame.offset(at: fraction))
+                        } onScrub: { offset in
+                            if !scroll.isFreeAfterUserScroll { scroll.userScrolled() }
+                            position.scrollTo(y: offset)
                         }
                         .padding(.vertical, NookTheme.Spacing.md)
                         .transition(.opacity)
@@ -475,12 +475,15 @@ struct TranscriptPromptRail: View {
     let marks: [PromptMark]
     let viewport: TimelineViewport
     let onSelect: (PromptMark) -> Void
-    /// A place on the rail was pressed or dragged to, from 0 (the top) to 1 (the end).
+    /// A place on the rail was pressed or dragged to: the offset to scroll the conversation to.
     let onScrub: (Double) -> Void
     @State private var hovered: String?
     /// The pointer is over the rail: only then it shows, with a background so the marks stand out over the text.
     @State private var overRail = false
     @GestureState private var dragging = false
+    /// Where the conversation stood when the drag began: the drag maps onto its height then
+    /// (`ScrollFrame.offset(at:over:)`), so the conversation follows the pointer smoothly.
+    @State private var dragStart: ScrollFrame?
 
     private static let width: CGFloat = 28
     /// The height each mark can be clicked over.
@@ -507,11 +510,17 @@ struct TranscriptPromptRail: View {
                     .updating($dragging) { _, state, _ in state = true }
                     .onChanged { drag in
                         guard travel > 0 else { return }
-                        onScrub(Double((drag.location.y - Self.target / 2) / travel))
+                        let start = dragStart ?? viewport.frame
+                        if dragStart == nil { dragStart = start }
+                        onScrub(viewport.frame.offset(at: Double((drag.location.y - Self.target / 2) / travel), over: start))
                     }
             )
         }
         .frame(width: Self.width)
+        // Also when the drag is cancelled, which calls no `onEnded`.
+        .onChange(of: dragging) { _, now in
+            if !now { dragStart = nil }
+        }
         .background(
             RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
                 .fill(DropdownStyle.panel)
@@ -524,7 +533,7 @@ struct TranscriptPromptRail: View {
 
     /// The part of the conversation in view, behind the marks.
     private func thumb(travel: CGFloat) -> some View {
-        let part = viewport.frame.thumb
+        let part = (dragStart.map { viewport.frame.measured(over: $0) } ?? viewport.frame).thumb
         let height = max(Self.target, CGFloat(part.length) * travel)
         let top = min(Self.target / 2 + CGFloat(part.start) * travel, Self.target / 2 + travel - height)
         return RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)

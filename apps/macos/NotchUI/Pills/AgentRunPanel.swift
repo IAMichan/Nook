@@ -664,9 +664,9 @@ struct AgentRunPanel: View {
                         scroll.userScrolled()
                         guard let id = UUID(uuidString: mark.row) else { return }
                         withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
-                    } onScrub: { fraction in
-                        scroll.userScrolled()
-                        position.scrollTo(y: viewport.frame.offset(at: fraction))
+                    } onScrub: { offset in
+                        if !scroll.isFreeAfterUserScroll { scroll.userScrolled() }
+                        position.scrollTo(y: offset)
                     }
                     .padding(.vertical, NookTheme.Spacing.md)
                     .transition(.opacity)
