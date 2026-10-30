@@ -611,12 +611,14 @@ enum ChatReadState: Equatable, Sendable {
     /// The state from what Nook knows of a chat. `appUnread` is the app's own count when it gives one; without it, a chat
     /// read in Nook after its newest message waits for the app until you tell the app (`readInApp`).
     /// `waitsInApp`, when the bridge says it, decides on its own whether the app still holds the chat unread.
+    /// A read passed on to the app from Nook, after the newest message, holds before what the bridge says: its word can
+    /// lag behind (it reads the app again only at its next turn), and "Mark as read in <app>" must not seem to fail.
     static func of(unread: Int, appUnread: Int?, newestIncoming: Date?, readInNook: Date?, readInApp: Date?,
                    waitsInApp: Bool? = nil) -> ChatReadState {
         if unread > 0 { return .unread(unread) }
+        if let readInApp, readInApp >= newestIncoming ?? .distantPast { return .read }
         if let waitsInApp { return waitsInApp ? .readInNook : .read }
         guard let newest = newestIncoming else { return .read }
-        if let readInApp, readInApp >= newest { return .read }
         if let appUnread { return appUnread > 0 ? .readInNook : .read }
         if let readInNook, readInNook >= newest { return .readInNook }
         return .read
@@ -1126,7 +1128,9 @@ struct ChatInbox: Codable, Equatable, Sendable {
     mutating func markRead(_ id: String, at date: Date = Date()) {
         guard var thread = threads[id] else { return }
         thread.unread = 0
-        thread.readInNook = max(date, thread.newestIncoming ?? date)
+        // Never before what it read: a message dated by another clock (the phone's, a server's a little ahead of this
+        // Mac) would otherwise count as new again at the app's next read.
+        thread.readInNook = [date, thread.newestIncoming, thread.activity].compactMap { $0 }.max() ?? date
         threads[id] = thread
     }
 
@@ -1136,6 +1140,8 @@ struct ChatInbox: Codable, Equatable, Sendable {
         guard var thread = threads[id] else { return }
         thread.readInApp = thread.readInNook
         if thread.appUnread != nil { thread.appUnread = 0 }
+        // The app took it: it no longer waits there, until its bridge says otherwise about a newer message.
+        if thread.waitsInApp == true { thread.waitsInApp = false }
         threads[id] = thread
     }
 

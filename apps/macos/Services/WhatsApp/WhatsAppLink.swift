@@ -1103,8 +1103,14 @@ final class WhatsAppLink: ObservableObject {
     func markReadInNook(_ chat: String) {
         let key = WAJID.normalized(chat)
         inbox.markRead(key)
-        readInNook[key] = Date()
+        readInNook[key] = readMark(key)
         clearMarkedUnread(key)
+    }
+
+    /// When a read of the chat holds from: now, or its newest message when that is dated later (the phone's or the
+    /// server's clock a little ahead of this Mac), so that message never counts as new again after the read.
+    private func readMark(_ key: String) -> Date {
+        [Date(), inbox.conversations[key]?.messages.last?.date, known(key)?.last].compactMap { $0 }.max() ?? Date()
     }
 
     /// Takes back a "Mark as unread" once the chat is read.
@@ -1163,7 +1169,7 @@ final class WhatsAppLink: ObservableObject {
     /// not linked) throws with a sentence you can act on, as every other chat app's "Mark as read" does.
     func markReadInWhatsApp(_ chat: String) async throws {
         let key = WAJID.normalized(chat)
-        readInNook[key] = Date()
+        readInNook[key] = readMark(key)
         inbox.markRead(key)
         clearMarkedUnread(key)
         guard let provider, isConnected else { throw NookError(statusLine) }
@@ -1173,7 +1179,7 @@ final class WhatsAppLink: ObservableObject {
         } catch let error as WAError {
             throw Self.actionSentence(error)
         }
-        readInWhatsApp[key] = Date()
+        readInWhatsApp[key] = readMark(key)
     }
 
     /// The unread count a chat shows in Nook: what came in while Nook ran, else what WhatsApp itself counts (when the
@@ -1241,7 +1247,7 @@ final class WhatsAppLink: ObservableObject {
     func markRead(_ chat: String) {
         let key = WAJID.normalized(chat)
         let hadUnread = (inbox.conversations[key]?.unread ?? 0) + carried(key) > 0
-        readInNook[key] = Date()
+        readInNook[key] = readMark(key)
         clearMarkedUnread(key)
         guard let provider, let conversation = inbox.conversations[key] else { return }
         inbox.markRead(key)

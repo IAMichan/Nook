@@ -154,11 +154,18 @@ final class ChatsEntryMemo {
         if let entries { return entries }
         if watching.isEmpty {
             // Which chats show also follows the linked WhatsApp accounts and the chats you hid.
-            let changes: [ObservableObjectPublisher] = [
-                WhatsAppAccounts.shared.objectWillChange, capture.objectWillChange, ChatHelper.shared.objectWillChange,
-                ChatLinker.shared.objectWillChange, I18n.shared.objectWillChange, ChatHiddenMessages.shared.objectWillChange,
-                ChatNoticeRulesStore.shared.objectWillChange,
+            let changes: [AnyPublisher<Void, Never>] = [
+                WhatsAppAccounts.shared.objectWillChange.eraseToAnyPublisher(),
+                // The chats and which apps are on, not the rest of the service (its status, each bridge's last problem):
+                // those change with every bridge read and would make the whole list again while you scroll it.
+                capture.$inbox.map { _ in () }.eraseToAnyPublisher(),
+                capture.$sources.map { _ in () }.eraseToAnyPublisher(),
+                ChatHelper.shared.objectWillChange.eraseToAnyPublisher(),
+                ChatLinker.shared.objectWillChange.eraseToAnyPublisher(), I18n.shared.objectWillChange.eraseToAnyPublisher(),
+                ChatHiddenMessages.shared.objectWillChange.eraseToAnyPublisher(),
+                ChatNoticeRulesStore.shared.objectWillChange.eraseToAnyPublisher(),
             ]
+            // perf: only forgets the list (no state is written back), and every change must reach it.
             watching = changes.map { $0.sink { [weak self] _ in MainActor.assumeIsolated { self?.entries = nil } } }
         }
         let made = ChatsEntry.all(capture: capture)
@@ -286,6 +293,15 @@ struct ChatsTab: View {
     @ObservedObject private var capture = ChatCaptureService.shared
     @ObservedObject private var whatsApp = WhatsAppAccounts.shared
     @ObservedObject private var photos = ContactPhotos.shared
+    /// Who types where: each row gets its own line, so a row redraws only when its chat's line changed.
+    @ObservedObject private var typing = ChatTypingCenter.shared
+    /// The chats' own pictures, decoded off the main thread as their rows come into view.
+    @ObservedObject private var avatars = ChatAvatarImages.shared
+    /// The list scrolls to the open chat only when it was opened from elsewhere (the keyboard, a card, "@chat"): a click
+    /// on a row that is in view already leaves the list where it is.
+    @State private var revealSelection = false
+    /// The chat closed with the back button while the tab shows one column: the list comes back scrolled to it.
+    @State private var returnTo: String?
     /// The open chat: the one you opened last, also after the tab was closed or Nook restarted; nil shows none.
     @State private var selection: String? = ChatsTab.lastOpened
     /// One app's chats only (its source id), or all.
@@ -451,6 +467,7 @@ struct ChatsTab: View {
         let index = selection.flatMap { id in rows.firstIndex { $0.id == id } }
         let next = index.map { $0 + offset } ?? (offset > 0 ? 0 : rows.count - 1)
         guard rows.indices.contains(next) else { return false }
+        revealSelection = true
         selection = rows[next].id
         return true
     }
@@ -458,6 +475,7 @@ struct ChatsTab: View {
     /// Escape (see `ChatsDetail`): the open chat closes; the list stays.
     private func closeChat() {
         guard selection != nil else { return }
+        if stacked { returnTo = selection }
         withAnimation(NookTheme.reveal) { selection = nil }
     }
 
@@ -476,6 +494,7 @@ struct ChatsTab: View {
         account = nil
         view = .all
         query = focus.query
+        revealSelection = true
         selection = focus.chat.map(ChatIDMigration.current)
         collapsed = []
     }
@@ -488,7 +507,9 @@ struct ChatsTab: View {
     private func photo(_ entry: ChatsEntry) -> NSImage? {
         // Straight to the image cache: a file check first cost a disk lookup per row on every redraw of the list. A
         // missing file gives no image either way.
-        if let avatar = entry.avatar, let image = ChatMediaImages.image(URL(fileURLWithPath: avatar), side: 96) {
+        // Decoded off the main thread the first time (`ChatAvatarImages`): scrolling to rows not seen yet decodes nothing
+        // here.
+        if let avatar = entry.avatar, let image = avatars.image(avatar) {
             return image
         }
         return photos.photo(handle: entry.handle, name: entry.name)
@@ -681,6 +702,7 @@ struct ChatsTab: View {
                 LazyVStack(spacing: NookTheme.Spacing.xxs) {
                     let selected = current?.id
                     let groups = sections
+                    let typists = typing.state
                     ForEach(groups) { section in
                         let open = searching || !collapsed.contains(section.group)
                         ChatsGroupHeader(title: section.group.title, count: section.entries.count, open: open,
@@ -693,7 +715,12 @@ struct ChatsTab: View {
                             ForEach(section.entries) { entry in
                                 if entry.id != section.entries.first?.id { NookRowSeparator() }
                                 ChatsRow(entry: entry, photo: photo(entry), selected: entry.id == selected,
-                                         rowAction: rowAction(entry)) { selection = entry.id }
+                                         typing: typists.chats.isEmpty ? nil : typing.line(entry.id),
+                                         rowAction: rowAction(entry)) {
+                                    revealSelection = false
+                                    selection = entry.id
+                                }
+                                    .equatable()
                                     .contextMenu { readMenu(entry) }
                                     .id(entry.id)
                             }
@@ -701,10 +728,21 @@ struct ChatsTab: View {
                     }
                 }
             }
-            // A chat opened from elsewhere (the keyboard, a card, search) is brought into view in the list.
+            // A chat opened from elsewhere (the keyboard, a card, search) is brought into view in the list. A click on a
+            // row does not move the list: scrolling a lazy list to a row it already shows could jump it to the top.
             .onChange(of: selection) { _, id in
+                guard revealSelection else { return }
+                revealSelection = false
                 guard let id else { return }
-                withAnimation(NookTheme.scroll) { proxy.scrollTo(id) }
+                // Once the list shows it (a folded group opens, a search ends) and the rows around it are laid out.
+                DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .center) } }
+            }
+            // Back from a chat while one column shows at a time: the list is where you left it, at that chat.
+            .onAppear {
+                guard let id = returnTo ?? (revealSelection ? selection : nil) else { return }
+                returnTo = nil
+                revealSelection = false
+                DispatchQueue.main.async { proxy.scrollTo(id, anchor: .center) }
             }
             }
             if shown.isEmpty { emptyList }
@@ -960,10 +998,12 @@ struct ChatsRowAction {
 
 /// A chat in the list: its picture with its app's icon, its name, when, the newest message, and where it stands at the
 /// end of that line: the count of what is new, one tick for read in Nook, two for read in the app too.
-private struct ChatsRow: View {
+private struct ChatsRow: View, Equatable {
     let entry: ChatsEntry
     let photo: NSImage?
     let selected: Bool
+    /// Who types in this chat ("Jan is typing…"), in place of its newest message; nil while no one does.
+    var typing: String? = nil
     /// What a click on the button that shows under the pointer does.
     var rowAction: ChatsRowAction? = nil
     let action: () -> Void
@@ -971,8 +1011,13 @@ private struct ChatsRow: View {
     /// What the pointer resting here fetches. The row asks `AppModel.shared` without observing it, so it does not redraw
     /// with every change of the app model.
     @State private var prefetch: Task<Void, Never>?
-    /// Someone typing here shows in place of the newest message, as in WhatsApp's own list.
-    @ObservedObject private var typing = ChatTypingCenter.shared
+    /// A row is drawn again only when what it shows changed: the list redraws for much else (a bridge that read, the
+    /// row under the pointer), and drawing every row again each time made scrolling stutter. The actions follow the
+    /// entry, so an equal entry has the same ones.
+    static func == (lhs: ChatsRow, rhs: ChatsRow) -> Bool {
+        lhs.entry == rhs.entry && lhs.photo === rhs.photo && lhs.selected == rhs.selected && lhs.typing == rhs.typing
+            && lhs.rowAction?.title == rhs.rowAction?.title
+    }
 
     private static let time: DateFormatter = {
         let formatter = DateFormatter()
@@ -1070,8 +1115,8 @@ private struct ChatsRow: View {
                             .opacity(hovering && rowAction != nil ? 0 : 1)
                     }
                     HStack(spacing: NookTheme.Spacing.sm) {
-                        if let ticks = entry.ticks, typing.line(entry.id) == nil { TicksView(ticks: ticks) }
-                        if let typingLine = typing.line(entry.id) {
+                        if let ticks = entry.ticks, typing == nil { TicksView(ticks: ticks) }
+                        if let typingLine = typing {
                             Text(typingLine)
                                 .font(NookTheme.TextStyle.detail)
                                 .foregroundStyle(NookTheme.mint)

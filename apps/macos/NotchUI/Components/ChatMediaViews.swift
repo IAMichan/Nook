@@ -230,6 +230,61 @@ enum ChatMediaImages {
     }
 }
 
+/// The chats' own pictures in a list (the Chats tab), by their file: decoded once at the list's size off the main
+/// thread, so scrolling a long list to rows it did not show yet never decodes a picture on the main thread. Says so once
+/// per moment in which pictures came in, not once per picture.
+@MainActor
+final class ChatAvatarImages: ObservableObject {
+    static let shared = ChatAvatarImages()
+    /// The pixel size a list's picture is decoded at (a 40-point avatar on a Retina screen, with room).
+    static let side: CGFloat = 96
+    /// How long a file that could not be read is left alone before it is tried again (it may still be coming in).
+    private static let retry: TimeInterval = 30
+
+    @Published private(set) var generation = 0
+    private var loading: Set<String> = []
+    private var failed: [String: Date] = [:]
+    private var announcing = false
+
+    /// The picture when it is decoded; nil while it is (the list shows the initials meanwhile and redraws once it is in).
+    func image(_ path: String) -> NSImage? {
+        if let image = ChatMediaImages.cached(URL(fileURLWithPath: path), side: Self.side) { return image }
+        load(path)
+        return nil
+    }
+
+    private func load(_ path: String) {
+        guard !loading.contains(path) else { return }
+        if let at = failed[path], Date().timeIntervalSince(at) < Self.retry { return }
+        loading.insert(path)
+        let side = Self.side
+        Task {
+            let found = await Task.detached(priority: .userInitiated) {
+                ChatMediaImages.image(URL(fileURLWithPath: path), side: side) != nil
+            }.value
+            loading.remove(path)
+            if found {
+                failed[path] = nil
+                announce()
+            } else {
+                failed[path] = Date()
+            }
+        }
+    }
+
+    /// One redraw for every picture that came in this moment.
+    private func announce() {
+        guard !announcing else { return }
+        announcing = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            MainActor.assumeIsolated {
+                self?.announcing = false
+                self?.generation += 1
+            }
+        }
+    }
+}
+
 // MARK: In view
 
 extension EnvironmentValues {

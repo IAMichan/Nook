@@ -154,8 +154,12 @@ struct ChatTranscript: View {
             } action: { old, new in
                 // The chat grew while you were at its newest message (pictures appearing, a chat's history or a new
                 // message arriving), or its room shrank (the field grows with a longer message): it stays at the newest
-                // at once, so the messages move up with the field instead of slipping under it.
-                if new.content != old.content || new.container != old.container, old.nearBottom, !interacting, !loadingOlder, !drawingOlder {
+                // at once, so the messages move up with the field instead of slipping under it. `atBottom` counts as
+                // well as where the last frame was: in the first layouts of a chat that just opened (its history and
+                // its read mark coming in together) that frame may not have reached the bottom yet, and the chat then
+                // stayed up in its history.
+                if new.content != old.content || new.container != old.container, old.nearBottom || atBottom, !interacting,
+                   !loadingOlder, !drawingOlder {
                     var still = Transaction()
                     still.disablesAnimations = true
                     withTransaction(still) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
@@ -205,6 +209,13 @@ struct ChatTranscript: View {
                     withTransaction(jump) { proxy.scrollTo(last, anchor: .bottom) }
                     DispatchQueue.main.async { withTransaction(jump) { proxy.scrollTo(last, anchor: .bottom) } }
                 }
+            }
+            // A chat opens at its newest message, also when its first layout took more than one pass.
+            .onAppear {
+                guard fills else { return }
+                var jump = Transaction()
+                jump.disablesAnimations = true
+                DispatchQueue.main.async { withTransaction(jump) { proxy.scrollTo(Self.bottomID, anchor: .bottom) } }
             }
             // Someone starts typing: their bubble comes into view under the last message.
             .onChange(of: typing != nil) { _, shown in

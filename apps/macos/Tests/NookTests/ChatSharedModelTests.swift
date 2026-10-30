@@ -271,6 +271,52 @@ final class ChatSharedModelTests: XCTestCase {
         XCTAssertEqual(inbox.threads[key]?.unread, 1, "only what came after the read is new")
     }
 
+    func testReadPassedOnToTheAppHoldsBeforeTheBridgesWord() {
+        let newest = Date(timeIntervalSince1970: 100)
+        XCTAssertEqual(ChatReadState.of(unread: 0, appUnread: 3, newestIncoming: newest, readInNook: newest, readInApp: newest,
+                                        waitsInApp: true), .read, "the bridge has not read the app again yet")
+        XCTAssertEqual(ChatReadState.of(unread: 0, appUnread: nil, newestIncoming: newest.addingTimeInterval(1),
+                                        readInNook: newest, readInApp: newest, waitsInApp: true), .readInNook,
+                       "a newer message waits in the app again")
+    }
+
+    func testMarkReadInAppSticksForEveryApp() {
+        for app in ["whatsapp", "telegram", "slack", "instagram"] {
+            var inbox = ChatInbox()
+            var first = chat("Anna", id: "a", app: app, [message("1", at: 1_000)])
+            first.unread = 1
+            first.waitsInApp = true
+            inbox.merge(first)
+            let key = ChatInbox.key(app: app, id: "a")
+            inbox.markReadInApp(key, at: Date(timeIntervalSince1970: 2_000))
+            XCTAssertEqual(inbox.threads[key]?.readState, .read, app)
+            // The bridge's next read still says the old word: read stays read.
+            var stale = chat("Anna", id: "a", app: app, [message("1", at: 1_000)])
+            stale.unread = 1
+            stale.waitsInApp = true
+            inbox.merge(stale)
+            XCTAssertEqual(inbox.threads[key]?.readState, .read, app)
+        }
+    }
+
+    func testReadHoldsAgainstAMessageDatedAhead() {
+        var inbox = ChatInbox()
+        // The phone says the chat last moved a minute ahead of this Mac's clock, by a message Nook holds not yet.
+        let ahead = Date(timeIntervalSince1970: 2_060)
+        var first = chat("Anna", id: "a", [message("1")])
+        first.unread = 1
+        first.activity = ahead
+        inbox.merge(first)
+        let key = ChatInbox.key(app: "whatsapp", id: "a")
+        inbox.markRead(key, at: Date(timeIntervalSince1970: 2_000))
+        inbox.forgetMessages(of: [key])
+        var again = chat("Anna", id: "a", [])
+        again.unread = 1
+        again.activity = ahead
+        inbox.merge(again)
+        XCTAssertEqual(inbox.threads[key]?.unread, 0, "what was read is not new again")
+    }
+
     func testAChatWithoutMessagesGoesByWhenItLastHadOne() {
         var inbox = ChatInbox()
         var listed = chat("Bob", id: "b", [])
