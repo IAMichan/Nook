@@ -356,7 +356,13 @@ enum MailChatData {
 
     /// Mail's reference to one message: by its id in its mailbox, which stays the same as new mail comes in.
     static func reference(_ row: Row) -> String {
-        "message id \(row.id) of mailbox \(MailStats.quote(row.mailbox)) of account \(MailStats.quote(row.account))"
+        byID(row.id, in: "mailbox \(MailStats.quote(row.mailbox)) of account \(MailStats.quote(row.account))")
+    }
+
+    /// A message by its id. Never "message id 42": Mail has a `message id` property (the header), so that does not
+    /// compile ("Expected end of line, etc. but found number", -2741).
+    static func byID(_ id: Int, in box: String) -> String {
+        "first message of \(box) whose id is \(id)"
     }
 
     /// How far below its place a message is looked for: mail that came in since it was read moves it down.
@@ -367,7 +373,7 @@ enum MailChatData {
     /// minutes in a large one (a Gmail inbox).
     static func locate(_ row: Row) -> String {
         let box = "mailbox \(MailStats.quote(row.mailbox)) of account \(MailStats.quote(row.account))"
-        guard let index = row.index, index > 0 else { return "    set m to message id \(row.id) of \(box)" }
+        guard let index = row.index, index > 0 else { return "    set m to " + byID(row.id, in: box) }
         return """
             set box to \(box)
             set m to missing value
@@ -389,7 +395,7 @@ enum MailChatData {
                     end repeat
                 end try
             end if
-            if m is missing value then set m to message id \(row.id) of box
+            if m is missing value then set m to \(byID(row.id, in: "box"))
         """
     }
 
