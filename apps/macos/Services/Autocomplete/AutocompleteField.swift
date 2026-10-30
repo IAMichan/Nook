@@ -339,11 +339,7 @@ enum AutocompleteField {
         let previousIsNewline = location > 0 && [0x0A, 0x0D, 0x2028, 0x2029].contains(text.character(at: location - 1))
         if location > 0, !previousIsNewline, let previous = bounds(in: element, location: location - 1, length: 1),
            previous.width > 0, previous.width < 200 {
-            // The cursor wrapped to the next line: the empty range is lower down than the character before it.
-            if let empty, empty.height > 1, abs(empty.minY - previous.minY) > previous.height / 2, empty.width < 4 {
-                return CGRect(x: empty.minX, y: empty.minY, width: 0, height: empty.height)
-            }
-            return CGRect(x: previous.maxX, y: previous.minY, width: 0, height: previous.height)
+            return CompletionPlacement.caret(afterCharacter: previous, empty: empty)
         }
         // Notes and other rich text views often have no box for the last character, but do for the line it ends: the cursor
         // at the end of that line is at the line's right edge.
