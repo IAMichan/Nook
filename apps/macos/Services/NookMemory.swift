@@ -30,8 +30,10 @@ final class NookMemory: ObservableObject {
         var next = book
         let result = change(&next)
         let after = Dictionary(next.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        // One transaction for the lot: a prune or a reflection can touch many rows at once.
-        store.saveMemories(after.values.filter { before[$0.id] != $0 }, deleting: before.keys.filter { after[$0] == nil })
+        // One transaction for the lot: a prune or a reflection can touch many rows at once. Not written, the book stays
+        // as it was, so what Nook shows is what it will remember after a restart.
+        guard store.saveMemories(after.values.filter { before[$0.id] != $0 }, deleting: before.keys.filter { after[$0] == nil })
+        else { return result }
         // Most changes (an outcome observed after every tool call, a recall) leave the book as it was; publishing then
         // would redraw every view of the app for nothing.
         if next != book { book = next }

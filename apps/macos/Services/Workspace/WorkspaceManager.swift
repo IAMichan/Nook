@@ -2184,6 +2184,8 @@ final class WorkspaceManager: ObservableObject {
             runs[index].statusDetail = "interrupted"
             runs[index].turnStartedAt = nil
         }
+        // Saves still queued go first: one that ran after these would write an older timeline over the newer one.
+        store.flush()
         if runsLoaded { try? store.saveRuns(runs) }
         for (id, list) in events { try? store.saveEvents(id, list) }
     }

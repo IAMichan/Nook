@@ -2031,6 +2031,14 @@ private struct ChatsDetail: View, Equatable {
     /// text is back in the field, the files that did not go wait again, and the quote stays. Text alone is in the chat
     /// the moment you send it (`ChatOutbox`), with a clock until its app took it.
     private func send(via route: ChatRoute) {
+        // A pasted picture still being written goes with this message: sending now would leave it for the next one.
+        guard composer.pendingPictures == 0 else {
+            Task { @MainActor in
+                await composer.picturesSaved()
+                send(via: route)
+            }
+            return
+        }
         let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         let files = composer.files
         guard !text.isEmpty || !files.isEmpty else { return }

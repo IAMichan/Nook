@@ -80,8 +80,6 @@ final class NookStore {
         }
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         exec("PRAGMA journal_mode = WAL;")
-        // With WAL this is still safe against a crash, and a write no longer waits for the disk on the main thread.
-        exec("PRAGMA synchronous = NORMAL;")
         migrate()
         // A long log is a long delete: not while Nook starts. Every use of the connection holds `lock`, so this waits
         // for one on the main thread or makes it wait, and the store lives as long as the work it started.
@@ -320,36 +318,47 @@ final class NookStore {
         sqlite3_finalize(stmt)
     }
 
-    /// Saves and deletes many memories in one transaction: one write to disk instead of one per row.
-    func saveMemories(_ items: [MemoryItem], deleting ids: [String] = []) {
-        guard !items.isEmpty || !ids.isEmpty else { return }
+    /// Saves and deletes many memories in one transaction: one write to disk instead of one per row. All or nothing:
+    /// on any failure the transaction is rolled back (never left open on the connection) and false is returned.
+    @discardableResult
+    func saveMemories(_ items: [MemoryItem], deleting ids: [String] = []) -> Bool {
+        guard !items.isEmpty || !ids.isEmpty else { return true }
         lock.lock()
         defer { lock.unlock() }
         let encoder = JSONEncoder()
-        sqlite3_exec(db, "BEGIN;", nil, nil, nil)
-        var save: OpaquePointer?
-        if !items.isEmpty,
-           sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO memories (id, body, updated) VALUES (?, ?, ?)", -1, &save, nil) == SQLITE_OK {
-            for item in items {
-                guard let data = try? encoder.encode(item), let body = String(data: data, encoding: .utf8) else { continue }
+        guard sqlite3_exec(db, "BEGIN;", nil, nil, nil) == SQLITE_OK else { return false }
+        var ok = true
+        if !items.isEmpty {
+            var save: OpaquePointer?
+            ok = sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO memories (id, body, updated) VALUES (?, ?, ?)", -1, &save, nil) == SQLITE_OK
+            for item in items where ok {
+                guard let data = try? encoder.encode(item), let body = String(data: data, encoding: .utf8) else {
+                    ok = false
+                    break
+                }
                 sqlite3_bind_text(save, 1, item.id, -1, transient)
                 sqlite3_bind_text(save, 2, body, -1, transient)
                 sqlite3_bind_double(save, 3, item.updated.timeIntervalSince1970)
-                sqlite3_step(save)
+                ok = sqlite3_step(save) == SQLITE_DONE
                 sqlite3_reset(save)
             }
+            sqlite3_finalize(save)
         }
-        sqlite3_finalize(save)
-        var delete: OpaquePointer?
-        if !ids.isEmpty, sqlite3_prepare_v2(db, "DELETE FROM memories WHERE id = ?", -1, &delete, nil) == SQLITE_OK {
-            for id in ids {
+        if ok, !ids.isEmpty {
+            var delete: OpaquePointer?
+            ok = sqlite3_prepare_v2(db, "DELETE FROM memories WHERE id = ?", -1, &delete, nil) == SQLITE_OK
+            for id in ids where ok {
                 sqlite3_bind_text(delete, 1, id, -1, transient)
-                sqlite3_step(delete)
+                ok = sqlite3_step(delete) == SQLITE_DONE
                 sqlite3_reset(delete)
             }
+            sqlite3_finalize(delete)
         }
-        sqlite3_finalize(delete)
-        sqlite3_exec(db, "COMMIT;", nil, nil, nil)
+        if ok, sqlite3_exec(db, "COMMIT;", nil, nil, nil) == SQLITE_OK { return true }
+        let reason = String(cString: sqlite3_errmsg(db))
+        sqlite3_exec(db, "ROLLBACK;", nil, nil, nil)
+        Log.storage.error("Memories not saved: \(reason, privacy: .public)")
+        return false
     }
 
     func deleteMemory(id: String) {

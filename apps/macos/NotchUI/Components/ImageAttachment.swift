@@ -123,18 +123,19 @@ struct ImageAttachment: Identifiable, Equatable {
     /// time so pictures arrive in the order they came.
     private static let encoder = DispatchQueue(label: "nook.image-attachment", qos: .userInitiated)
 
-    /// Builds attachments on `encoder` and hands them to `done` on the main thread; none are handed on when none came.
+    /// Builds attachments on `encoder` and hands them to `done` on the main thread, also when none could be made (so a
+    /// caller that waits for them knows the wait is over).
     private static func encodeOffMain(_ make: @escaping () -> [ImageAttachment], done: @escaping ([ImageAttachment]) -> Void) {
         encoder.async {
             let made = make()
-            guard !made.isEmpty else { return }
             DispatchQueue.main.async { done(made) }
         }
     }
 
     /// The pictures on the clipboard: copied image files, or image data (a screenshot, "Copy Image" in a browser). Text on
     /// the clipboard, or other files, are left alone so pasting those keeps working as before. Whether the paste is a
-    /// picture is decided now (the key is claimed or passed on right away); the pictures reach `done` once encoded.
+    /// picture is decided now (the key is claimed or passed on right away); the pictures reach `done` once encoded, and
+    /// `done` is called exactly once for a claimed paste, with none when the picture could not be read.
     @discardableResult
     static func fromPasteboard(_ pasteboard: NSPasteboard = .general, done: @escaping ([ImageAttachment]) -> Void) -> Bool {
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
@@ -192,7 +193,9 @@ struct ImageAttachment: Identifiable, Equatable {
         let name = tr("image.dropped")
         _ = provider.loadObject(ofClass: NSImage.self) { object, _ in
             guard let image = object as? NSImage else { return }
-            encodeOffMain({ ImageAttachment(image: image, name: name).map { [$0] } ?? [] }, done: images)
+            encodeOffMain({ ImageAttachment(image: image, name: name).map { [$0] } ?? [] }) { made in
+                if !made.isEmpty { images(made) }
+            }
         }
     }
 

@@ -67,13 +67,22 @@ final class ChatComposerModel: ObservableObject {
     private var savingPictures: Task<Void, Never>?
     /// Moves on when the chat changes, so a picture still being written does not land in the next chat.
     private var pictureGeneration = 0
+    /// How many pictures are still being written: a send waits for them (`picturesSaved`), or it would go without them.
+    private(set) var pendingPictures = 0
+
+    /// Returns once every picture added so far is written and in `files`.
+    func picturesSaved() async {
+        await savingPictures?.value
+    }
 
     /// A picture without a file of its own (a screenshot on the pasteboard, a picture dragged from a browser).
     func add(_ image: NSImage) {
         let previous = savingPictures
         let generation = pictureGeneration
+        pendingPictures += 1
         savingPictures = Task { [weak self] in
             await previous?.value
+            defer { self?.pendingPictures -= 1 }
             let saved: Result<URL, Error>
             do {
                 saved = .success(try await ChatSendPrep.saveOffMain(image))

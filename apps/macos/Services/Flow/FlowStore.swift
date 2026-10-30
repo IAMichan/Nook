@@ -108,26 +108,13 @@ final class FlowStore: ObservableObject {
 
     // MARK: Files
 
-    /// One queue for every file write: off the main thread, and the saves of one file land in the order they were made.
-    private static let writer = DispatchQueue(label: "nook.flow.save", qos: .utility)
-
     private func save<T: Encodable>(_ value: T, _ name: String) {
-        let url = Self.folder.appendingPathComponent(name)
-        let data: Data
         do {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            data = try encoder.encode(value)
+            try SafeStorage.write(try encoder.encode(value), to: Self.folder.appendingPathComponent(name))
         } catch {
             Log.storage.error("Flow: \(name, privacy: .public) not saved: \(error.localizedDescription, privacy: .public)")
-            return
-        }
-        Self.writer.async {
-            do {
-                try SafeStorage.write(data, to: url)
-            } catch {
-                Log.storage.error("Flow: \(name, privacy: .public) not saved: \(error.localizedDescription, privacy: .public)")
-            }
         }
     }
 

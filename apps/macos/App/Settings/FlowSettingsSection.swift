@@ -5,9 +5,13 @@ import SwiftUI
 struct FlowSettingsSection: View {
     @ObservedObject private var store = FlowStore.shared
     @ObservedObject private var flow = FlowDictation.shared
-    @State private var dictionary = FlowStore.shared.dictionaryText
+    /// Opens on an edit still waiting to be saved, so a quick switch away and back does not show (and then save over it)
+    /// the text from before it.
+    @State private var dictionary = FlowSettingsSection.pendingDictionary ?? FlowStore.shared.dictionaryText
     /// The pending save of the dictionary: parsing and publishing it on every keystroke would redraw Settings each time.
     @State private var dictionarySave: Task<Void, Never>?
+    /// What was typed and not yet saved. Its save runs on when the editor goes, and clears it.
+    @MainActor private static var pendingDictionary: String?
 
     var body: some View {
         // Three short groups instead of one long one: turning it on, how it writes, and what it remembers.
@@ -48,11 +52,13 @@ struct FlowSettingsSection: View {
                             .font(NookTheme.TextStyle.code)
                             .frame(minHeight: 90)
                             .onChange(of: dictionary) { _, value in
+                                Self.pendingDictionary = value
                                 dictionarySave?.cancel()
                                 dictionarySave = Task { @MainActor in
                                     try? await Task.sleep(nanoseconds: 500_000_000)
                                     guard !Task.isCancelled else { return }
                                     FlowStore.shared.dictionaryText = value
+                                    if Self.pendingDictionary == value { Self.pendingDictionary = nil }
                                 }
                             }
                         SettingNote(tr("flow.settings.dictionaryHint"))

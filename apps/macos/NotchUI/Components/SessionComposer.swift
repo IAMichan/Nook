@@ -47,6 +47,9 @@ struct SessionComposer<Controls: View>: View {
     @FocusState private var ownFocus: Bool
     @State private var dropTargeted = false
     @State private var pasteMonitor = PasteMonitor()
+    /// Pasted pictures still being encoded: sending waits for them, or the message would go without the picture and the
+    /// picture land in the next one.
+    @State private var encodingPictures = 0
 
     /// The same composer that, while busy, queues what you type (Return or the queue button) for after the turn.
     func queueing(_ action: (() -> Void)?, alternate: (() -> Void)? = nil, label: String = tr("compose.queue"),
@@ -153,7 +156,7 @@ struct SessionComposer<Controls: View>: View {
 
     private var hasImages: Bool { !(imagesBinding?.wrappedValue.isEmpty ?? true) }
     private var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hasImages }
-    private var enabled: Bool { canSend && !sending && !isEmpty }
+    private var enabled: Bool { canSend && !sending && !isEmpty && encodingPictures == 0 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -278,7 +281,7 @@ struct SessionComposer<Controls: View>: View {
     private func sendKey(alternate: Bool) -> Bool {
         if chooseSelected() { return true }
         if alternate {
-            if busy, !isEmpty, let flipAction { fire(flipAction) }
+            if busy, !isEmpty, encodingPictures == 0, let flipAction { fire(flipAction) }
         } else if !busy, enabled {
             fire(onSend)
         }
@@ -332,7 +335,7 @@ struct SessionComposer<Controls: View>: View {
     }
 
     private func submit() {
-        if busy, let queueAction, !isEmpty { fire(queueAction) } else if enabled { fire(onSend) }
+        if busy, let queueAction, !isEmpty, encodingPictures == 0 { fire(queueAction) } else if enabled { fire(onSend) }
     }
 
     private var box: some View {
@@ -480,7 +483,12 @@ struct SessionComposer<Controls: View>: View {
         guard let imagesBinding else { return }
         pasteMonitor.start {
             guard focused.wrappedValue else { return false }
-            return ImageAttachment.fromPasteboard { imagesBinding.wrappedValue += $0 }
+            let claimed = ImageAttachment.fromPasteboard { pictures in
+                encodingPictures = max(encodingPictures - 1, 0)
+                imagesBinding.wrappedValue += pictures
+            }
+            if claimed { encodingPictures += 1 }
+            return claimed
         }
     }
 
