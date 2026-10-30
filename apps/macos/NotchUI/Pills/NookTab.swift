@@ -41,6 +41,8 @@ struct NookChatView: View {
     @AppStorage("nook.embeddedApp.chatWidth") private var chatWidth = EmbeddedSplit.defaultChatWidth
     @State private var totalWidth: Double = 0
     @State private var dragStartWidth: Double?
+    /// The chat's width while its line is dragged (`PanelDrag`).
+    @State private var liveChatWidth: Double?
     /// Too narrow for the list and the chat side by side (`PanelLayout.stacks`): the list shows instead of the chat,
     /// after the back button in the chat's header, until you pick a Nook.
     @State private var listOnly = false
@@ -84,17 +86,20 @@ struct NookChatView: View {
                     // In the main window the conversation keeps a readable width, centered in the room beside the list.
                     .frame(maxWidth: compact ? nil : PanelLayout.readableChat)
                     .frame(maxWidth: compact ? nil : .infinity)
-                    .frame(width: sideOpen ? EmbeddedSplit.chatWidth(chatWidth, total: totalWidth) : nil)
+                    .frame(width: sideOpen ? EmbeddedSplit.chatWidth(liveChatWidth ?? chatWidth, total: totalWidth) : nil)
                 }
                 if sideOpen {
                     EmbeddedSplitHandle(
                         onDrag: { offset in
                             let start = dragStartWidth ?? EmbeddedSplit.chatWidth(chatWidth, total: totalWidth)
                             dragStartWidth = start
-                            chatWidth = EmbeddedSplit.chatWidth(start + offset, total: totalWidth)
+                            PanelDrag.step($liveChatWidth, to: EmbeddedSplit.chatWidth(start + offset, total: totalWidth))
                         },
-                        onEnd: { dragStartWidth = nil },
-                        onReset: { chatWidth = EmbeddedSplit.defaultChatWidth }
+                        onEnd: {
+                            dragStartWidth = nil
+                            PanelDrag.commit($liveChatWidth, to: $chatWidth)
+                        },
+                        onReset: { withAnimation(NookTheme.reveal) { chatWidth = EmbeddedSplit.defaultChatWidth } }
                     )
                     if embedded.current != nil {
                         EmbeddedAppPane()

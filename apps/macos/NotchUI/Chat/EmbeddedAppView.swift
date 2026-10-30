@@ -548,7 +548,7 @@ struct EmbeddedSplitHandle: View {
             // Global coordinates: the line itself moves while you drag it.
             DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { value in
-                    dragging = true
+                    if !dragging { dragging = true }
                     onDrag(Double(value.translation.width))
                 }
                 .onEnded { _ in
