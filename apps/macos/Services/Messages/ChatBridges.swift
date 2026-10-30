@@ -419,7 +419,7 @@ final class MessagesBridge: ChatHistoryBridge {
     /// first; what is found is kept, so the chat's next read and send know it.
     private func resolve(_ name: String) async throws -> [String] {
         var found: [(chat: String, guid: String)] = []
-        let rows = ChatCaptureService.shared.inbox.threads[ChatInbox.key(app: app, chat: name)]?.messages
+        let rows = ChatCaptureService.shared.loadedInbox.threads[ChatInbox.key(app: app, chat: name)]?.messages
             .compactMap { $0.id.hasPrefix("imessage-") ? Int64($0.id.dropFirst("imessage-".count)) : nil } ?? []
         if !rows.isEmpty {
             for row in try await query("""
@@ -1692,7 +1692,7 @@ final class SlackBridge: ChatHistoryBridge {
     /// (one only its notification showed): the text then goes as a message of its own.
     private func threadTS(answering id: String, in conversation: SlackData.Conversation, name: String) -> String? {
         guard let ts = SlackData.ts(of: id, conversation: conversation.id) else { return nil }
-        let answered = ChatCaptureService.shared.inbox.threads[ChatInbox.key(app: app, chat: name)]?.messages.first { $0.id == id }
+        let answered = ChatCaptureService.shared.loadedInbox.threads[ChatInbox.key(app: app, chat: name)]?.messages.first { $0.id == id }
         return answered?.quote?.id.flatMap { SlackData.ts(of: $0, conversation: conversation.id) } ?? ts
     }
 

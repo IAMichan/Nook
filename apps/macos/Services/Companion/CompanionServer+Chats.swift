@@ -131,7 +131,7 @@ extension CompanionServer {
             }
         case .captured(let id):
             // The same bubbles as the Chats tab: answers quote what they answer, emoji and ticks show as in every app.
-            let bubbles = ChatCaptureService.shared.inbox.threads[id].map { ChatBubble.bubbles($0, last: 60) { _ in "" } } ?? []
+            let bubbles = ChatCaptureService.shared.loadedInbox.threads[id].map { ChatBubble.bubbles($0, last: 60) { _ in "" } } ?? []
             lines = bubbles.map { bubble in
                 InboxLine(id: bubble.id, text: CompanionPolicy.clip(bubble.poll?.line ?? ChatFormat.plain(bubble.text)),
                           date: (bubble.date ?? Date()).timeIntervalSince1970, sender: CompanionPolicy.clip(bubble.sender, limit: 120),

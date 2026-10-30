@@ -74,7 +74,7 @@ final class ChatInboxConnector: ContextSource {
                 },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self] input in
-                    let inbox = ChatCaptureService.shared.inbox
+                    let inbox = ChatCaptureService.shared.loadedInbox
                     let app = AppData.string(input["app"]).trimmingCharacters(in: .whitespaces).lowercased()
                     let appID = app.isEmpty ? nil : (MessagingApps.app(named: app)?.id ?? app)
                     let query = AppData.string(input["query"]).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -103,7 +103,7 @@ final class ChatInboxConnector: ContextSource {
     /// Every chat Nook has, as the Chats tab lists them: the collected ones, and WhatsApp's through the linked phone
     /// unless the chat helper links WhatsApp (then its chats are among the collected ones).
     private func everyChat() -> [InboxThread] {
-        var threads = capture.inbox.sorted.filter { capture.sources.isOn($0.app) }
+        var threads = capture.loadedInbox.sorted.filter { capture.sources.isOn($0.app) }
         let link = WhatsAppLink.shared
         guard link.isConnected, !ChatHelper.linked("whatsapp") else { return threads }
         threads.removeAll { $0.app == "whatsapp" }

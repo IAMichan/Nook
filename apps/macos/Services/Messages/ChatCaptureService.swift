@@ -153,6 +153,14 @@ final class ChatCaptureService: ObservableObject {
     /// `start` came before the inbox was read.
     private var startWhenLoaded = false
 
+    /// The inbox for something that reads it once and acts on it (a tool of the brain, a search, sending a reply): read
+    /// right now when the background read is not done yet, so it never finds the empty inbox of the first moment after
+    /// launch. Views read `inbox`, which redraws them once it is in.
+    var loadedInbox: ChatInbox {
+        ensureLoaded()
+        return inbox
+    }
+
     /// Reads the inbox right now when the background read is not done yet: a change in the first moment after launch
     /// waits for it, as all of them did before.
     private func ensureLoaded() {
