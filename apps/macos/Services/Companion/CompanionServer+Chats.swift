@@ -10,6 +10,8 @@ extension CompanionServer {
 
     func inbox(_ request: CompanionRequest, app: AppModel) -> CompanionResponse {
         let capture = ChatCaptureService.shared
+        // Asked right after launch, the inbox may still be read in the background: the phone gets the chats, not none.
+        _ = capture.loadedInbox
         let whatsApp = WhatsAppAccounts.shared
         let chats = ChatsEntry.all(whatsApp: whatsApp, capture: capture).prefix(Self.inboxLimit).map {
             Self.digest($0, canSend: app.chatRoute(for: $0) != nil)
@@ -78,6 +80,7 @@ extension CompanionServer {
     /// A chat the Chats tab lists: one you hid in WhatsApp, or of an app you switched off, cannot be reached.
     private func inboxEntry(_ id: String?) -> ChatsEntry? {
         guard let id, !id.isEmpty else { return nil }
+        _ = ChatCaptureService.shared.loadedInbox
         return ChatsEntry.all(whatsApp: WhatsAppAccounts.shared, capture: ChatCaptureService.shared).first { $0.id == id }
     }
 
