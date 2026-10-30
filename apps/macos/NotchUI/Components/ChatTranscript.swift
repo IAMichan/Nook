@@ -257,6 +257,9 @@ struct ChatTranscript: View {
                                 if let edit = editAction(bubble) {
                                     Button(tr("chat.edit")) { edit() }
                                 }
+                                if let picture = picture(bubble) {
+                                    Button(tr("chat.copyImage")) { Pasteboard.copyImage(picture, fallback: bubble.image) }
+                                }
                                 if !bubble.copyText.isEmpty {
                                     Button(tr("whatsapp.copy.message")) { Pasteboard.copy(bubble.copyText) }
                                 }
@@ -306,6 +309,15 @@ struct ChatTranscript: View {
     private func editAction(_ bubble: ChatBubble) -> (() -> Void)? {
         guard let onEdit, bubble.fromMe, !bubble.local, !bubble.text.isEmpty, bubble.poll == nil, bubble.call == nil else { return nil }
         return { onEdit(bubble) }
+    }
+
+    /// The picture file a bubble shows (a photo, a sticker or a still GIF), for "Copy image"; nil for anything else.
+    private func picture(_ bubble: ChatBubble) -> URL? {
+        switch bubble.media {
+        case .photo(let url), .sticker(let url): return url
+        case .gif(let url): return ChatMediaImages.isPicture(url) ? url : nil
+        case .file, .video, .audio: return nil
+        }
     }
 
     private func reactAction(_ bubble: ChatBubble) -> ((String) -> Void)? {
@@ -1279,6 +1291,10 @@ struct ChatPhotoZoom: View {
             .buttonStyle(.plain)
             .help(tr("button.close"))
             .accessibilityLabel("\(tr("button.close")): \(name)")
+            .contextMenu {
+                Button(tr("chat.copyImage")) { Pasteboard.copyImage(url, fallback: sharp ?? preview) }
+                Button(tr("card.attachment.open"), action: onOpen)
+            }
 
             HStack(spacing: 6) {
                 zoomButton("arrow.up.forward.app", label: tr("card.attachment.open"), action: onOpen)
