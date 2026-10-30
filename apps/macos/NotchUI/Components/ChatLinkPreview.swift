@@ -109,18 +109,65 @@ private struct ChatLinkCard: View {
 }
 
 /// A picture a message links to, fetched once into Nook's caches and then shown as a photo (or a GIF that plays); a
-/// click opens it. A slim line with its site stands in while it loads and when it cannot be fetched.
+/// click enlarges it and a second click shrinks it back to its normal size. A slim line with its site stands in while
+/// it loads and when it cannot be fetched.
 private struct ChatRemotePicture: View {
     let url: URL
     @State private var file: URL?
     @State private var failed = false
+    @State private var enlarged = false
+    @State private var hovering = false
+
+    private var label: String {
+        enlarged ? tr("button.shrink") : tr("button.enlarge")
+    }
+
+    private func normalSize(for image: NSImage) -> CGSize {
+        guard image.size.width > 0, image.size.height > 0 else {
+            return CGSize(width: PhotoButton.maxWidth, height: PhotoButton.maxHeight)
+        }
+        let scale = min(PhotoButton.maxWidth / image.size.width, PhotoButton.maxHeight / image.size.height)
+        return CGSize(width: image.size.width * scale, height: image.size.height * scale)
+    }
 
     var body: some View {
         Group {
             if let file, ChatMediaImages.isAnimated(file) {
                 ChatGIFView(url: file, name: url.lastPathComponent)
             } else if let file, let image = ChatMediaImages.image(file) {
-                PhotoButton(image: image, name: url.lastPathComponent) { NSWorkspace.shared.open(url) }
+                let size = enlarged
+                    ? ImageAttachment.enlargedSize(for: image, maxWidth: 520, maxHeight: 420, minEdge: 380)
+                    : normalSize(for: image)
+                Button {
+                    withAnimation(NookTheme.reveal) { enlarged.toggle() }
+                } label: {
+                    ZStack(alignment: .topTrailing) {
+                        Image(nsImage: image)
+                            .resizable()
+                            .interpolation(.high)
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: size.width, maxHeight: size.height)
+                            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+                        if hovering || enlarged {
+                            ChatPictureSizeBadge(enlarged: enlarged)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering = $0 }
+                .contextMenu {
+                    Button {
+                        withAnimation(NookTheme.reveal) { enlarged.toggle() }
+                    } label: {
+                        Label(label, systemImage: enlarged ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                    }
+                    Button { NSWorkspace.shared.open(url) } label: {
+                        Label(tr("card.attachment.open"), systemImage: "arrow.up.forward.app")
+                    }
+                }
+                .help(label)
+                .accessibilityLabel("\(label): \(url.lastPathComponent)")
             } else if failed {
                 ChatLinkCard(url: url)
             } else {
