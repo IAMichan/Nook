@@ -229,9 +229,15 @@ private struct WindowProbe: NSViewRepresentable {
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            found.window = window
-            // The window is known now: tell the views at once instead of at the next move.
-            PointerWhere.shared.moved()
+            // AppKit moves the view in while SwiftUI updates its views: publishing the window then is not allowed, so it
+            // goes right after. The window is known then: tell the views at once instead of at the next move.
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.found.window = self.window
+                    PointerWhere.shared.moved()
+                }
+            }
         }
     }
 }

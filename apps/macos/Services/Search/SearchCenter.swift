@@ -60,7 +60,7 @@ final class SearchCenter: ObservableObject {
             let full = app.searchDocuments(transcripts: Self.transcripts.mapValues { $0.passages })
             guard !Task.isCancelled else { return }
             let complete = await Task.detached(priority: .utility) { SearchIndex(full) }.value
-            guard let self, !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return }
             self.index = complete
             self.loadedAt = Date()
             self.indexing = false

@@ -87,14 +87,14 @@ final class ProcessGroupLedger: @unchecked Sendable {
     }
 
     /// At launch: from now on agents' groups are written down, and the ones an earlier Nook left behind are stopped.
-    static func install(url: URL = defaultURL, signal: @escaping @Sendable (Int32, Int32) -> Void = ProcessGroupLedger.signalGroup) {
+    static func install(url: URL = defaultURL, signal: @escaping @Sendable (Int32, Int32) -> Void = { ProcessGroupLedger.signalGroup($0, $1) }) {
         let ledger = ProcessGroupLedger(url: url)
         // Read before any agent of this launch is written down, so only groups of an earlier Nook are looked at.
         let leftovers = ledger.takeLeftovers(me: ProcessIdentity.of(getpid()))
         current = ledger
         guard !leftovers.isEmpty else { return }
         DispatchQueue.global(qos: .utility).async {
-            LeftoverProcessGroups.stop(leftovers, identity: ProcessIdentity.of, signal: signal,
+            LeftoverProcessGroups.stop(leftovers, identity: { ProcessIdentity.of($0) }, signal: signal,
                                        scheduler: DispatchProcessScheduler())
         }
     }

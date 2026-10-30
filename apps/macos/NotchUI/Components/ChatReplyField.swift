@@ -330,14 +330,15 @@ struct ChatReplyField: View {
     }
 
     /// Return: takes the menu's line, lets Nook write for "@nook …", else sends what is typed, as a chat app does.
-    /// With ⌥ or ⇧ it adds a line instead.
+    /// With ⌥ or ⇧ it adds a line instead. SwiftUI handles key presses while it updates its views, and sending changes the
+    /// chat, so the send itself runs right after.
     private func returnKey(_ press: KeyPress) -> KeyPress.Result {
         if press.modifiers.contains(.option) || press.modifiers.contains(.shift) {
             newline()
         } else if menu.isOpen {
             chooseSelected()
         } else {
-            submit()
+            DispatchQueue.main.async { submit() }
         }
         return .handled
     }
