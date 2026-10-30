@@ -156,7 +156,9 @@ final class WorkspaceSettings: ObservableObject {
         editorBundleID = defaults.string(forKey: "ws.editor") ?? ""
         terminalBundleID = defaults.string(forKey: "ws.terminal") ?? Self.builtInTerminal
         autoArchiveDays = defaults.object(forKey: "ws.autoArchiveDays") as? Int ?? 0
-        worktreeCleanupOnMerge = defaults.object(forKey: "ws.worktreeCleanupOnMerge") as? Bool ?? false
+        // On by default: a merged session's worktree (with its build, often several GB) is otherwise never removed. Git
+        // still refuses a worktree with uncommitted changes, and the branch stays.
+        worktreeCleanupOnMerge = defaults.object(forKey: "ws.worktreeCleanupOnMerge") as? Bool ?? true
         worktreeCleanupDays = defaults.object(forKey: "ws.worktreeCleanupDays") as? Int ?? 0
         showCost = defaults.object(forKey: "ws.showCost") as? Bool ?? true
         agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true

@@ -73,13 +73,17 @@ After touching anything under `apps/macos`, run the performance check too, and w
 
 How the CI workflows are organized, and how they avoid spending runner minutes on work that cannot tell us anything new, is described in [`docs/CI.md`](docs/CI.md).
 
-To build and test the full macOS app with Xcode:
+To build and test the full macOS app with Xcode, use the wrapper (it runs `xcodegen` when the project is missing):
 
 ```sh
-cd apps/macos
-xcodegen
-xcodebuild -project Nook.xcodeproj -scheme Nook -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:NookTests test
+./scripts/xcode.sh build
+./scripts/xcode.sh test
 ```
+
+It keeps the build in `.build/xcode` inside the checkout, so it is removed together with the worktree. Do not call
+`xcodebuild` with a `-derivedDataPath` under `/tmp`, `/private/tmp`, or your scratchpad, and do not leave it on Xcode's
+default DerivedData from a worktree: each of those leaves a 1–5 GB build behind that nothing removes. Agent sessions on
+this Mac once left more than 400 GB that way.
 
 ## 5. Showing Files to the User
 

@@ -23,6 +23,7 @@ Please read and follow all rules in [AGENTS.md](AGENTS.md).
    - Build it in the family's shared type or view. Give each member only the translation from its app's data. Leave a member out only when its app does not say it, and record that in [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) and in your summary.
 5. **Verification:**
    - Run `./scripts/core-tests.sh` (which includes `I18nCoverageTests` and `UIConsistencyTests`) before creating a commit or pull request.
+   - Build or test the full app with `./scripts/xcode.sh` (never `xcodebuild` into `/tmp` or the scratchpad: those builds are never removed).
    - Run `./scripts/ui-lint.sh` whenever `apps/macos/NotchUI` or `apps/macos/App` changed.
    - If you add or remove files in `apps/macos` or `apps/ios`, update `project.yml` if needed and regenerate the project with `xcodegen`.
 6. **Show what you make in the side panel:**
