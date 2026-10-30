@@ -39,6 +39,9 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Fixed
 
+- A coding agent that `cd`s into a subfolder no longer shows up as two chats in Agents (one under the subfolder,
+  one for its process): the session stays in the folder it started in, and the process scan matches it by process
+  and parent folder (macOS and Tauri).
 - The pull request list loads much faster and no longer looks like it is always loading: the quick refresh reads only
   the open pull requests, the closed ones and watched organizations follow in the background every few minutes, and
   only a refresh you ask for shows a spinner.

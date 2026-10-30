@@ -3,7 +3,7 @@
 //! "working" for hours. Nook treats "running" as a claim to verify: the transcript says whether the last turn ended,
 //! the process list says whether the agent is still there at all.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Mutex;
 use std::time::SystemTime;
@@ -76,6 +76,50 @@ pub fn is_running(agent: &str, cwd: &str, pid: Option<u32>, processes: &[Detecte
                 || cwd.starts_with(&format!("{}/", p.cwd))
                 || cwd.starts_with(&format!("{}\\", p.cwd)))
     })
+}
+
+/// Whether `cwd` lies inside `folder` (either path separator).
+pub fn is_inside(cwd: &str, folder: &str) -> bool {
+    !folder.is_empty() && (cwd.starts_with(&format!("{folder}/")) || cwd.starts_with(&format!("{folder}\\")))
+}
+
+/// The processes hooked sessions account for, so the scan does not list them a second time. Each session claims one
+/// process of its agent: its own (`pid`) when known, otherwise one in its folder, and failing that one in a folder above
+/// it (the agent `cd`'d into a subfolder, so its hooks report that one). Two sessions in one folder claim two.
+pub fn claimed(processes: &[DetectedAgent], sessions: &[(String, String, Option<u32>)]) -> HashSet<u32> {
+    let mut claimed = HashSet::new();
+    let mut rest: Vec<(&str, &str)> = Vec::new();
+    for (agent, cwd, pid) in sessions {
+        match pid {
+            Some(pid) if !claimed.contains(pid) && processes.iter().any(|p| p.pid == *pid && &p.name == agent) => {
+                claimed.insert(*pid);
+            }
+            _ => rest.push((agent, cwd)),
+        }
+    }
+    let mut ordered: Vec<&DetectedAgent> = processes.iter().collect();
+    ordered.sort_by_key(|p| p.pid);
+    for exact in [true, false] {
+        rest.retain(|(agent, cwd)| {
+            // The nearest folder above the session's wins; the lowest pid among equals.
+            let found = ordered
+                .iter()
+                .filter(|p| !claimed.contains(&p.pid) && p.name == *agent)
+                .filter(|p| if exact { p.cwd == *cwd } else { is_inside(cwd, &p.cwd) })
+                .fold(None::<&&DetectedAgent>, |best, p| match best {
+                    Some(b) if b.cwd.len() >= p.cwd.len() => Some(b),
+                    _ => Some(p),
+                });
+            match found {
+                Some(p) => {
+                    claimed.insert(p.pid);
+                    false
+                }
+                None => true,
+            }
+        });
+    }
+    claimed
 }
 
 /// The agent process among `lineage` (the hook and the processes it was started from, nearest first): the first one

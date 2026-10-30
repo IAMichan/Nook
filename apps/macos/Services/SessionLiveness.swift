@@ -48,6 +48,38 @@ enum SessionLiveness {
         }
     }
 
+    /// The processes hooked sessions account for, so the scan does not list them a second time. Each session claims one
+    /// process of its agent: its own (`pid`) when known, otherwise one in its folder, and failing that one in a folder
+    /// above it (the agent `cd`'d into a subfolder, so its hooks report that one). Two sessions in one folder claim two.
+    static func claimed(_ processes: [(pid: Int32, name: String, cwd: String)],
+                        by sessions: [(agent: String, cwd: String, pid: Int32?)]) -> Set<Int32> {
+        var claimed = Set<Int32>()
+        var rest: [(agent: String, cwd: String)] = []
+        for session in sessions {
+            if let pid = session.pid, !claimed.contains(pid),
+               processes.contains(where: { $0.pid == pid && $0.name == session.agent }) {
+                claimed.insert(pid)
+            } else {
+                rest.append((session.agent, session.cwd))
+            }
+        }
+        let ordered = processes.sorted { $0.pid < $1.pid }
+        for exact in [true, false] {
+            rest = rest.filter { session in
+                let candidates = ordered.filter { process in
+                    guard !claimed.contains(process.pid), process.name == session.agent else { return false }
+                    return exact ? process.cwd == session.cwd
+                        : !process.cwd.isEmpty && session.cwd.hasPrefix(process.cwd + "/")
+                }
+                // The nearest folder above the session's wins.
+                guard let match = candidates.max(by: { $0.cwd.count < $1.cwd.count }) else { return true }
+                claimed.insert(match.pid)
+                return false
+            }
+        }
+        return claimed
+    }
+
     /// The agent process among `lineage` (the hook's sender and the processes it was started from, nearest first):
     /// the first one the process scan knows as this agent.
     static func agentProcess(agent: String, lineage: [Int32], in processes: [(pid: Int32, name: String, cwd: String)]) -> Int32? {
