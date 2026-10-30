@@ -72,6 +72,19 @@ final class AgentProgressTests: XCTestCase {
         XCTAssertEqual(AgentActivity.current([user, mcp]), .using("Search issues"))
     }
 
+    func testComputerUseToolsSayWhatTheyDoOnYourScreen() {
+        let user = event(.user, "Take a look at my screen")
+        let control = event(.tool, "request_full_control", tool: "mcp__computer-use__request_full_control", state: .running, at: 1)
+        XCTAssertEqual(AgentActivity.current([user, control]), .screen(.requestFullControl))
+        XCTAssertTrue(AgentActivity.screen(.requestFullControl).asksYou, "the Claude app asks you before it takes over")
+        XCTAssertFalse(AgentActivity.screen(.click).asksYou)
+        XCTAssertEqual(ScreenAction(tool: "mcp__computer_use__left_click"), .click)
+        XCTAssertEqual(ScreenAction(tool: "mcp__Computer-Use__screenshot"), .screenshot)
+        XCTAssertNil(ScreenAction(tool: "mcp__computer-use__cursor_position"), "a tool without words keeps its MCP label")
+        XCTAssertNil(ScreenAction(tool: "mcp__github__screenshot"), "only the computer-use server")
+        XCTAssertNil(ScreenAction(tool: "screenshot"))
+    }
+
     func testBetweenToolsSaysWhatCameLast() {
         let user = event(.user, "Fix it")
         XCTAssertEqual(AgentActivity.current([user, bash("ls", .done, at: 1)]), .reviewing)
