@@ -291,16 +291,26 @@ struct AgentSessionDetail: View {
         let canSend = app.canReply(to: session)
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard composerModel.hasContent(text), canSend else { return }
+            guard composerModel.hasContent(text), canSend, !working else { return }
+            let savedDraft = draft
+            let savedImages = images
             let outgoing = composerModel.outgoing(text).send
             let picked = choice
             let settings = turnSettings
+            draft = ""
+            images = []
+            choice = nil
+            turnSettings = AgentTurnSettings()
             perform {
-                try await app.reply(to: session, message: outgoing, choice: picked, settings: settings)
-                draft = ""
-                images = []
-                choice = nil
-                turnSettings = AgentTurnSettings()
+                do {
+                    try await app.reply(to: session, message: outgoing, choice: picked, settings: settings)
+                } catch {
+                    draft = savedDraft
+                    images = savedImages
+                    choice = picked
+                    turnSettings = settings
+                    throw error
+                }
             }
         }
         if app.demoMode {
@@ -575,16 +585,26 @@ struct AgentSessionDetail: View {
         let canContinue = app.canReply(to: session)
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard composerModel.hasContent(text), canContinue else { return }
+            guard composerModel.hasContent(text), canContinue, !working else { return }
+            let savedDraft = draft
+            let savedImages = images
             let outgoing = composerModel.outgoing(text).send
             let picked = choice
             let settings = turnSettings
+            draft = ""
+            images = []
+            choice = nil
+            turnSettings = AgentTurnSettings()
             perform {
-                try await app.reply(to: session, message: outgoing, choice: picked, settings: settings)
-                draft = ""
-                images = []
-                choice = nil
-                turnSettings = AgentTurnSettings()
+                do {
+                    try await app.reply(to: session, message: outgoing, choice: picked, settings: settings)
+                } catch {
+                    draft = savedDraft
+                    images = savedImages
+                    choice = picked
+                    turnSettings = settings
+                    throw error
+                }
             }
         }
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {

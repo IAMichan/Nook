@@ -185,6 +185,7 @@ extension WorkspaceManager {
                 $0.model = model.trimmingCharacters(in: .whitespacesAndNewlines)
                 if run.model != model { $0.resolvedModel = nil }
             }
+            refreshWarmSession(id)
         case .createWithHandoff:
             if !switchProvider(id, to: provider, profileID: profileID, model: model) { return .reject("unavailable") }
         }

@@ -183,7 +183,7 @@ extension WorkspaceManager {
         let nativeReady = run.provider == .claude
             ? processes[id]?.isRunning == true && questions[id] == nil
             : codexServers[id]?.turnID != nil
-        return SteerRoute.choose(run.provider.capabilities, nativeReady: nativeReady, active: run.status.isActive,
+        return SteerRoute.choose(run.provider.capabilities, nativeReady: nativeReady, active: run.status.isActive && turns[id] != nil,
                                  ending: turns[id]?.stopping == true || turns[id]?.finished == true,
                                  waitingOnYou: run.status == .waitingApproval || !(questions[id] ?? []).isEmpty)
     }

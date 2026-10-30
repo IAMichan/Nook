@@ -357,7 +357,7 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
         status = next
         statusDetail = detail
         updatedAt = now
-        if next == .running, turnStartedAt == nil { turnStartedAt = now }
+        if (next == .preparing || next == .running), turnStartedAt == nil { turnStartedAt = now }
         if !next.isActive { turnStartedAt = nil }
         return true
     }

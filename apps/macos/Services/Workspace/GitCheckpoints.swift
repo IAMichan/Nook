@@ -20,10 +20,19 @@ extension GitService {
     /// Captures `directory` (a repository or worktree root) under `ref`. Returns the commit.
     @discardableResult
     func checkpoint(_ directory: String, ref: String) throws -> String {
-        try withTemporaryIndex(directory) { env in
+        try withTemporaryIndex(directory, seedFromCurrentIndex: true) { env in
             let head = try? git(["rev-parse", "--verify", "-q", "HEAD"], in: directory, env: env).trimmed
-            if let head, !head.isEmpty { try git(["read-tree", head], in: directory, env: env) }
-            try git(["add", "-A", "--", "."], in: directory, env: env)
+            let seeded = env["GIT_INDEX_FILE"].map { FileManager.default.fileExists(atPath: $0) } ?? false
+            if !seeded, let head, !head.isEmpty { try git(["read-tree", head], in: directory, env: env) }
+            do {
+                try git(["add", "-A", "--", "."], in: directory, env: env)
+            } catch {
+                // An unmerged or unreadable index in the checkout: fall back to a fresh index from HEAD.
+                guard seeded else { throw error }
+                if let index = env["GIT_INDEX_FILE"] { try? FileManager.default.removeItem(atPath: index) }
+                if let head, !head.isEmpty { try git(["read-tree", head], in: directory, env: env) }
+                try git(["add", "-A", "--", "."], in: directory, env: env)
+            }
             let tree = try git(["write-tree"], in: directory, env: env).trimmed
             var arguments = ["commit-tree", tree, "-m", "Nook checkpoint"]
             if let head, !head.isEmpty { arguments += ["-p", head] }
@@ -43,7 +52,7 @@ extension GitService {
         let target = Set(try git(["ls-tree", "-r", "-z", "--name-only", ref], in: directory, env: [:])
             .split(separator: "\0").map(String.init))
         // What is there now (tracked and untracked, not ignored): what the snapshot does not have goes away.
-        let current = try withTemporaryIndex(directory) { env -> Set<String> in
+        let current = try withTemporaryIndex(directory, seedFromCurrentIndex: true) { env -> Set<String> in
             try git(["add", "-A", "--", "."], in: directory, env: env)
             return Set(try git(["ls-files", "-z"], in: directory, env: env).split(separator: "\0").map(String.init))
         }
@@ -83,7 +92,7 @@ extension GitService {
 
     // MARK: Helpers
 
-    func withTemporaryIndex<T>(_ directory: String, _ body: ([String: String]) throws -> T) throws -> T {
+    func withTemporaryIndex<T>(_ directory: String, seedFromCurrentIndex: Bool = false, _ body: ([String: String]) throws -> T) throws -> T {
         if let remote {
             // The index lives where git runs: on the other machine.
             let index = "/tmp/nook-index-\(UUID().uuidString)"
@@ -94,6 +103,12 @@ extension GitService {
             return try body(["GIT_INDEX_FILE": index])
         }
         let index = FileManager.default.temporaryDirectory.appendingPathComponent("nook-index-\(UUID().uuidString)").path
+        if seedFromCurrentIndex,
+           let current = (try? run(["rev-parse", "--path-format=absolute", "--git-path", "index"], in: directory))?.trimmed,
+           !current.isEmpty, FileManager.default.fileExists(atPath: current) {
+            // Seeding with the checkout's index keeps Git's stat cache intact, so `git add -A` does not re-hash every file.
+            try? FileManager.default.copyItem(atPath: current, toPath: index)
+        }
         defer { try? FileManager.default.removeItem(atPath: index) }
         return try body(["GIT_INDEX_FILE": index])
     }
