@@ -417,7 +417,7 @@ struct EmbeddedAppPane: View {
                                            available: paneWidth, rest: PanelLayout.minimumPanel + PanelSplit.handle)
                         }
                     }
-                    .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { paneWidth = $0 }
+                    .onLayoutWidthChange { paneWidth = $0 }
                 }
             }
             .background(NookTheme.field)

@@ -21,6 +21,9 @@ final class NotchSurface: ObservableObject {
     /// (`NotchController.mirrorSize`).
     @Published var canvas: CGSize = NotchController.panelSize
     @Published var pointerInside = false
+    /// An edge of the open notch is being dragged: the floating notch leaves out its shadow meanwhile, which would
+    /// otherwise be blurred again for every step of the drag.
+    @Published var resizing = false
     @Published var doneButtonTitle = tr("button.close")
     /// What the confirmation strip says it is about: done (a check), waiting on you, or failed.
     @Published var doneTone: DoneTone = .done
@@ -970,9 +973,13 @@ final class NotchViewModel: ObservableObject {
     private var panelExtra = NotchResize.load()
     /// The same for a card with a conversation (WhatsApp), on top of the height its messages ask for.
     private var cardExtra = NotchResize.load(key: NotchResize.cardDefaultsKey)
-    private var resizeStart: CGSize?
+    /// The extra size and the pointer (screen coordinates) when the drag started.
+    private var resizeStart: (extra: CGSize, mouse: NSPoint)?
     /// While you drag an edge the pointer counts as over the notch, also when it runs ahead of the edge for a moment.
-    private(set) var resizing = false
+    private(set) var resizing: Bool {
+        get { surface.resizing }
+        set { if surface.resizing != newValue { surface.resizing = newValue } }
+    }
 
     /// The open panel and a card with a conversation show handles to drag them larger.
     var isResizable: Bool {
@@ -992,7 +999,10 @@ final class NotchViewModel: ObservableObject {
                       height: screen.height > 0 ? min(height, screen.height - 40) : height)
     }
 
-    func resize(_ edge: NotchResize.Edge, translation: CGSize) {
+    /// Measured from the pointer on the screen, not in the window: a floating notch held inside its screen moves its
+    /// window while it grows, and a translation in window coordinates then ran away from the pointer and back.
+    /// `translation`: the gesture's own (window points, y down), only used to find where the drag started on the screen.
+    func resize(_ edge: NotchResize.Edge, translation gesture: CGSize) {
         let base: CGSize
         let card: Bool
         switch state {
@@ -1006,9 +1016,15 @@ final class NotchViewModel: ObservableObject {
         }
         resizing = true
         autoCloseTask?.cancel()
-        let start = resizeStart ?? (card ? cardExtra : panelExtra)
+        let mouse = NSEvent.mouseLocation
+        // The first change comes after the pointer already moved a little: the drag started where it was then. The
+        // window has not moved yet, so the gesture's translation still holds on the screen.
+        let start = resizeStart ?? (extra: card ? cardExtra : panelExtra,
+                                    mouse: NSPoint(x: mouse.x - gesture.width, y: mouse.y + gesture.height))
         resizeStart = start
-        let extra = NotchResize.clamped(NotchResize.dragged(edge, from: start, translation: translation),
+        // Screen points with y down, as `NotchResize` takes them.
+        let translation = CGSize(width: mouse.x - start.mouse.x, height: start.mouse.y - mouse.y)
+        let extra = NotchResize.clamped(NotchResize.dragged(edge, from: start.extra, translation: translation),
                                         base: base, maximum: panelMaximum)
         if card { cardExtra = extra } else { panelExtra = extra }
         // Follows the pointer: no animation. Held against a limit, the size stays put and the notch need not redraw.
