@@ -1028,7 +1028,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
     private var chatIDs: [String: String] = [:]
     /// Every chat at the last read by its id, for what can be done in it (pinned, muted, editing…).
     @Published private(set) var chats: [String: ChatServiceData.Chat] = [:]
-    /// The live line is open: changes come in the moment they happen (Settings › Chats shows it).
+    /// The live line is open: changes come in the moment they happen (Settings › Connections shows it).
     @Published private(set) var isLive = false
     private let live = ChatLiveStream()
 

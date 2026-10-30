@@ -67,6 +67,25 @@ extension WorkspaceManager {
         return true
     }
 
+    /// The agent does not know this conversation (it is gone from the agent, or the agent cannot load it): it starts a new
+    /// one with the timeline so far as a summary, as a switch to another agent does. With `prompt` (a message on its way)
+    /// the summary goes ahead of it and that is returned; without, it waits for the next message (`pendingHandoff`).
+    @discardableResult
+    func carryOverConversation(_ id: UUID, prompt: String?) -> String? {
+        guard let run = run(id) else { return prompt }
+        loadTimeline(id)
+        var events = timeline(id)
+        // The message on its way is already in the timeline: it goes once, after the summary.
+        if prompt != nil, let last = events.lastIndex(where: { $0.kind == .user }) { events = Array(events[..<last]) }
+        guard let handoff = ContextHandoff.render(events: events, source: run.provider.displayName) else { return prompt }
+        appendHandoffNote(id, handoff)
+        guard let prompt else {
+            update(id) { $0.pendingHandoff = handoff.text }
+            return nil
+        }
+        return ContextHandoff.compose(handoff: handoff.text, message: prompt)
+    }
+
     private func appendHandoffNote(_ id: UUID, _ handoff: ContextHandoff.Rendered) {
         append(id, RunEvent(kind: .system, text: tr("ws.event.handoff", handoff.included, handoff.omitted),
                             tool: "handoff", detail: handoff.text))

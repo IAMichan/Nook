@@ -17,6 +17,8 @@ final class ThinkAlong: ObservableObject {
         let date: Date
         let text: String
         var declined: Bool
+        /// Only kept under the bell (the notch had just told you something else): not counted as one of the day's offers.
+        var held = false
     }
 
     /// The apps Think Along was switched off in at some point (bundle ID → name), so Settings › Notifications can list
@@ -31,29 +33,37 @@ final class ThinkAlong: ObservableObject {
     /// Recent offers and whether they were declined; kept across launches so a restart does not repeat them.
     private var offered: [Offer]
     private var declines = 0
+    /// Whether the last offer got an answer; one that went by unanswered counts as a no for the next gap.
+    private var answered = true
 
     /// Duration of focus on the same window required before Nook observes.
     private let settle: TimeInterval = 25
     private let minLookGap: TimeInterval = 120
     private let sameWindowGap: TimeInterval = 240
-    private let baseOfferGap: TimeInterval = 180
+    private let baseOfferGap: TimeInterval = 900
     private let repeatGap: TimeInterval = 24 * 3600
     private let declinedGap: TimeInterval = 7 * 24 * 3600
-    private let dailyLimit = 6
+    private let dailyLimit = 4
 
     init() {
         mutedApps = (UserDefaults.standard.dictionary(forKey: "thinkAlongMuted") as? [String: String]) ?? [:]
         let stored = UserDefaults.standard.array(forKey: "thinkAlongOffered") as? [[String: Any]] ?? []
         offered = stored.compactMap { entry -> Offer? in
             guard let date = entry["date"] as? Date, let text = entry["text"] as? String else { return nil }
-            return Offer(date: date, text: text, declined: entry["declined"] as? Bool ?? false)
+            return Offer(date: date, text: text, declined: entry["declined"] as? Bool ?? false,
+                         held: entry["held"] as? Bool ?? false)
         }
     }
 
-    /// How long Nook waits after an offer: longer after each decline, up to at most half an hour.
+    /// How long Nook waits after an offer: longer after each decline or offer left unanswered, up to at most two hours.
     private var offerGap: TimeInterval {
-        min(1800, baseOfferGap * pow(2, Double(min(declines, 4))))
+        // The offer still out there without an answer counts already, so the next one waits the doubled time.
+        let noes = declines + (answered ? 0 : 1)
+        return min(7200, baseOfferGap * pow(2, Double(min(noes, 4))))
     }
+
+    /// How long the notch must have been free of other notices before an offer may show (`NoticePacer`).
+    static let calmBeforeOffer: TimeInterval = 300
 
     /// Should Nook observe now? `bundleID` and `window` describe the frontmost window, `print` its content fingerprint.
     /// Between two looks when the brain runs on this Mac: each look is a full model run on the GPU, and the model would
@@ -78,7 +88,7 @@ final class ThinkAlong: ObservableObject {
         guard now.timeIntervalSince(focusSince) >= settle,
               now.timeIntervalSince(lastLook) >= max(minLookGap, minGap ?? 0),
               now.timeIntervalSince(lastOffer) >= offerGap,
-              offered.filter({ now.timeIntervalSince($0.date) < repeatGap }).count < dailyLimit else { return false }
+              offered.filter({ !$0.held && now.timeIntervalSince($0.date) < repeatGap }).count < dailyLimit else { return false }
         if let previous = looked[key] {
             guard previous.print != print, now.timeIntervalSince(previous.date) >= sameWindowGap else { return false }
         }
@@ -109,16 +119,29 @@ final class ThinkAlong: ObservableObject {
     }
 
     func didOffer(_ text: String) {
+        if !answered { declines += 1 }
+        answered = false
         lastOffer = Date()
         offered.append(Offer(date: Date(), text: NudgeFilter.normalize(text), declined: false))
         saveOffered()
     }
 
-    func accepted() { declines = 0 }
+    /// An offer that only went under the bell (the notch had just told you something else): kept so it is not offered
+    /// again, without counting as an offer or moving the gap.
+    func held(_ text: String) {
+        offered.append(Offer(date: Date(), text: NudgeFilter.normalize(text), declined: false, held: true))
+        saveOffered()
+    }
+
+    func accepted() {
+        declines = 0
+        answered = true
+    }
 
     /// A declined offer counts against its topic for a week, not just against the next few minutes.
     func declined(_ text: String? = nil) {
         declines += 1
+        answered = true
         guard let text else { return }
         let key = NudgeFilter.normalize(text)
         if let index = offered.lastIndex(where: { NudgeFilter.similar($0.text, key) }) {
@@ -130,7 +153,7 @@ final class ThinkAlong: ObservableObject {
     private func saveOffered() {
         let cutoff = Date().addingTimeInterval(-declinedGap)
         offered = Array(offered.filter { $0.date > cutoff }.suffix(40))
-        let stored: [[String: Any]] = offered.map { ["date": $0.date, "text": $0.text, "declined": $0.declined] }
+        let stored: [[String: Any]] = offered.map { ["date": $0.date, "text": $0.text, "declined": $0.declined, "held": $0.held] }
         UserDefaults.standard.set(stored, forKey: "thinkAlongOffered")
     }
 

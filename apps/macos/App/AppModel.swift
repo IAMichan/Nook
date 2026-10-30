@@ -79,6 +79,8 @@ final class AppModel: ObservableObject {
     let workspace = WorkspaceManager()
     /// One notification per session and state: a turn that reports its end twice tells you once.
     var attentionLedger = AttentionLedger()
+    /// Keeps the notices Nook gives by himself apart, so a busy hour does not become a stream of pop-ups.
+    var noticePacer = NoticePacer()
     /// Every permission request from an agent, whether it arrives through hooks or from a session Nook runs.
     private(set) lazy var approvals = ApprovalCenter(hub: hub, workspace: workspace, bridge: .shared)
     /// The subscription limits of every agent account.

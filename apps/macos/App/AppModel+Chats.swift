@@ -73,7 +73,8 @@ extension AppModel {
         // Nothing new from them (your own answer, new ticks): nothing to tell.
         guard !line.isEmpty else { return }
         let open: () -> Void = { [weak self] in self?.presentChat(id, asked: true) }
-        deliverNotice(.chats, app: thread.app, id: token, title: thread.name, subtitle: context, body: line,
+        deliverNotice(.chats, app: thread.app, id: token, pace: "chat:" + id, title: thread.name, subtitle: context,
+                      body: line,
                       card: { [weak self] in self?.showChatCard(id, opened: false) },
                       strip: { [weak self] in
                           self?.viewModel.notify(thread.name + ": " + line, button: tr("notices.openChat"), action: open)

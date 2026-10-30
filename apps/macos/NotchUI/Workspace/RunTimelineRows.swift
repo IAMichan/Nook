@@ -4,6 +4,12 @@ import SwiftUI
 
 struct EventRow: View {
     let event: RunEvent
+    /// The answer that ends its turn: only it has the footer (copy and time), as in an agent's own transcript.
+    var final = true
+    /// What came with the answer (the turn's changed files), inside the reply above its footer.
+    var extras: AnyView? = nil
+    /// Answers a question at the end of the reply when one of its options is tapped; nil when it cannot be answered.
+    var onChoose: ((String) -> Void)? = nil
     let expanded: Bool
     let toggle: () -> Void
     let openFile: (String) -> Void
@@ -17,59 +23,29 @@ struct EventRow: View {
     var body: some View {
         switch event.kind {
         case .user:
-            ConversationMessage(fromUser: true, text: event.text)
-                .padding(.top, NookTheme.Spacing.sm)
+            // Each turn starts as its own block, as in the Nook chat and an agent's transcript.
+            TranscriptUserMessage(text: event.text, date: event.date)
+                .padding(.top, TranscriptStyle.turnGap - NookTheme.Spacing.sm)
+                .padding(.bottom, NookTheme.Spacing.xxs)
 
         case .assistant:
             let background = BackgroundWork.notice(event.text)
             if background.isEmpty {
-                ConversationMessage(fromUser: false, text: event.text)
-                    .padding(.horizontal, NookTheme.Spacing.xxs)
+                TranscriptReply(text: event.text, date: event.date, footer: final, onChoose: onChoose) {
+                    if let extras { extras }
+                }
+                // Room under a turn's final answer before the next one, as in an agent's own transcript.
+                .padding(.bottom, final ? NookTheme.Spacing.lg : NookTheme.Spacing.xxs)
             } else {
                 // "task-148 has been launched in the background…": a quiet line, as a command is.
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: "clock.arrow.circlepath").font(NookTheme.font(10))
-                    Text(tr("ws.event.background", background.joined(separator: ", ")))
-                        .font(NookTheme.TextStyle.detail)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 0)
-                }
-                .foregroundStyle(WS.tertiary)
-                .help(event.text)
+                TranscriptWorkLine(symbol: "clock.arrow.circlepath", label: tr("ws.event.background", background.joined(separator: ", ")))
+                    .help(event.text)
             }
 
         case .thinking:
-            // The agent's reasoning in the chat itself: muted, live while it is written, the first
-            // lines at once and the rest a click away.
-            Button(action: toggle) {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-                    HStack(spacing: NookTheme.Spacing.sm) {
-                        Image(systemName: "brain").font(NookTheme.TextStyle.caption).foregroundStyle(WS.tertiary)
-                        Text(event.state == .running ? tr("ws.event.thinkingLive") : tr("ws.event.thinking"))
-                            .font(NookTheme.TextStyle.label)
-                            .foregroundStyle(WS.tertiary)
-                        if event.text.count > 280 || event.text.split(separator: "\n").count > 4 {
-                            Image(systemName: "chevron.right")
-                                .font(NookTheme.font(8.5, .bold))
-                                .foregroundStyle(WS.tertiary)
-                                .rotationEffect(.degrees(expanded ? 90 : 0))
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    Text(event.text)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(WS.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .lineLimit(expanded || event.state == .running ? nil : 2)
-                        .opacity(0.85)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.leading, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-                .overlay(alignment: .leading) { Rectangle().fill(NookTheme.line2).frame(width: 2) }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+            // The agent's reasoning, as in an agent's own transcript: its headline, live while it is written, the whole of
+            // it a click away.
+            TranscriptThought(text: event.text, open: expanded, live: event.state == .running, toggle: toggle)
 
         case .tool:
             if let showFile, let file = ToolRow.file(event, in: directory) {
@@ -79,16 +55,10 @@ struct EventRow: View {
             }
 
         case .fileChange:
-            Button { openFile(event.detail ?? event.text) } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: "doc.badge.ellipsis")
-                        .foregroundStyle(WS.tertiary)
-                    Text(event.text).font(NookTheme.mono(11.5)).foregroundStyle(WS.text)
-                    Text(tr("ws.change." + (event.tool ?? "modified"))).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
-                    Image(systemName: "arrow.up.right.square").font(NookTheme.font(10)).foregroundStyle(WS.tertiary)
-                }
+            TranscriptWorkLine(symbol: "doc.badge.ellipsis", label: tr("ws.change." + (event.tool ?? "modified")),
+                               detail: event.text, mono: true, link: "arrow.up.right.square") {
+                openFile(event.detail ?? event.text)
             }
-            .buttonStyle(.plain)
             .help(tr("ws.change.openDiff"))
 
         case .approval:
@@ -99,48 +69,34 @@ struct EventRow: View {
 
         case .system where event.tool == "handoff":
             // What the new agent was given: a summary you can read, not a hidden prompt.
-            DisclosureGroup(isExpanded: Binding(get: { expanded }, set: { _ in toggle() })) {
-                Text(event.detail ?? "")
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(WS.secondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, NookTheme.Spacing.xs)
-            } label: {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: "arrow.triangle.swap").font(NookTheme.font(10))
-                    Text(event.text).font(NookTheme.TextStyle.detail).lineLimit(2)
-                    Spacer(minLength: 0)
-                    Text(WSFormat.time(event.date)).font(NookTheme.TextStyle.caption)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                TranscriptWorkLine(symbol: "arrow.triangle.swap", label: event.text, open: expanded, action: toggle)
+                if expanded {
+                    Text(event.detail ?? "")
+                        .font(NookTheme.TextStyle.body)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .lineSpacing(3)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.leading, TranscriptStyle.workIndent)
+                        .padding(.bottom, NookTheme.Spacing.xs)
                 }
-                .foregroundStyle(WS.tertiary)
             }
 
         case .system:
-            HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: event.tool == "launch" ? "terminal" : "info.circle").font(NookTheme.font(10))
-                Text(event.text)
-                    .font(event.tool == "launch" ? NookTheme.mono(11) : NookTheme.TextStyle.detail)
-                    .lineLimit(event.tool == "launch" ? 1 : 3)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-                Spacer(minLength: 0)
-                Text(WSFormat.time(event.date)).font(NookTheme.TextStyle.caption)
-            }
-            .foregroundStyle(WS.tertiary)
+            TranscriptWorkLine(symbol: event.tool == "launch" ? "terminal" : "info.circle", label: event.text,
+                               mono: event.tool == "launch")
+                .help(event.text)
 
         case .result:
-            // The end of a turn, quietly: the fold above already says how long it worked. Only a failure gets a mark.
-            HStack(spacing: NookTheme.Spacing.sm) {
-                if event.state == .failed {
-                    Image(systemName: "xmark.circle").foregroundStyle(NookTheme.coral)
-                }
-                Text(event.text.isEmpty ? tr("ws.event.turnDone") : tr("ws.event.turnDoneWith", event.text))
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(WS.tertiary)
-                    .fixedSize()
+            // The end of a turn says nothing of its own: the fold above already says how long it worked, as in an agent's
+            // own transcript. Only a turn that failed gets a line.
+            if event.state == .failed {
+                TranscriptWorkLine(symbol: "xmark.circle",
+                                   label: event.text.isEmpty ? tr("ws.event.turnDone") : tr("ws.event.turnDoneWith", event.text),
+                                   failed: true)
             }
-            .padding(.vertical, NookTheme.Spacing.xs)
         }
     }
 }
@@ -178,8 +134,9 @@ struct TimelineProblemCard: View {
     }
 }
 
-/// A tool call: single-line summary, expandable to inspect input and output. A call that read or wrote a file instead
-/// opens that file in the side panel (`file`), the way a step in an agent's transcript does.
+/// A tool call, drawn as a step of an agent's own transcript (`TranscriptWorkLine`, `TranscriptStepDetail`): one line,
+/// expandable to inspect input and output. A call that read or wrote a file instead opens that file in the side panel
+/// (`file`).
 struct ToolRow: View {
     let event: RunEvent
     let expanded: Bool
@@ -187,8 +144,6 @@ struct ToolRow: View {
     var file: String? = nil
     /// The side panel shows `file` now.
     var reveals = false
-    /// The chevron shows under the pointer only, so the work log keeps its rows bare at rest.
-    @State private var hovering = false
 
     /// The file a read or an edit was about, as an absolute path; nil for other tools, a folder, or a remote session.
     static func file(_ event: RunEvent, in directory: String?) -> String? {
@@ -201,85 +156,27 @@ struct ToolRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            Button(action: toggle) {
-                HStack(spacing: NookTheme.Spacing.md) {
-                    stateIcon
-                        .frame(width: 14)
-                    Image(systemName: Self.symbol(event.tool ?? ""))
-                        .font(NookTheme.font(10.5))
-                        .foregroundStyle(WS.tertiary)
-                    Text(event.text)
-                        .font(NookTheme.mono(11.5))
-                        .foregroundStyle(hovering || expanded ? WS.text.opacity(0.9) : WS.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    if event.state != .failed, let lines = EditLines.of(event) { EditLinesLabel(lines: lines) }
-                    // A test run, build or linter says how it went.
-                    if let check = Verification.check(event) { VerificationChips(checks: [check]) }
-                    Spacer(minLength: 0)
-                    Image(systemName: file != nil ? "sidebar.right" : expanded ? "chevron.down" : "chevron.right")
-                        .font(NookTheme.font(9, .semibold))
-                        .foregroundStyle(reveals ? WS.text : WS.tertiary)
-                        .opacity(hovering || expanded || reveals ? 1 : 0)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .onHover { hovering = $0 }
-            .animation(NookTheme.hover, value: hovering)
-            .help(file.map { tr("ws.file.show") + " · " + AgentPathFormat.tilde($0) } ?? "")
-            .accessibilityLabel(event.text)
-            .accessibilityHint(file != nil ? tr("ws.file.show") : tr("ws.tool.expandHint"))
-            .accessibilityAddTraits(reveals ? .isSelected : [])
-
+        // The same line as a step in an agent's own transcript: what the agent did as a verb, then what it did that to.
+        let step = AgentToolStep(event: event)
+        let text = TranscriptStepText.parts(step)
+        let tasks = step.tasks.flatMap { $0.isEmpty ? nil : $0 }
+        let input = step.command ?? event.detail.flatMap { $0.isEmpty || $0 == "{}" ? nil : $0 }
+        let opens = file == nil && (tasks != nil || input != nil || step.output != nil)
+        let failed = step.state == .failed
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            TranscriptWorkLine(symbol: TranscriptSymbols.symbol(step.name), label: text.verb, detail: text.detail, mono: text.mono,
+                               failed: failed, checks: Verification.check(event).map { [$0] } ?? [], lines: step.lines,
+                               open: opens ? expanded : nil, reveals: file == nil ? nil : reveals, quietChevron: true,
+                               action: toggle)
+                .help(file.map { tr("ws.file.show") + " · " + AgentPathFormat.tilde($0) } ?? event.text)
+                .accessibilityLabel(event.text)
             // An MCP app is there to be used: shown whether or not the call is open.
             if let app = McpUI.resource(in: event.output) {
-                McpAppBlock(resource: app, event: event).padding(.leading, 22)
+                McpAppBlock(resource: app, event: event).padding(.leading, TranscriptStyle.workIndent)
             }
-            if expanded {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                    // A task list (TodoWrite, update_plan) reads as the list, not as its JSON.
-                    if let steps = SessionOutputs.taskList(tool: event.tool ?? "", input: AgentActivity.input(event.detail) ?? [:]),
-                       !steps.isEmpty {
-                        TaskListRows(steps: steps)
-                            .padding(NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-                            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
-                    } else if let detail = event.detail, !detail.isEmpty, detail != "{}" {
-                        CodeBlock(title: tr("ws.tool.input"), text: detail)
-                    }
-                    if let output = event.output.map(McpUI.stripped), !output.isEmpty {
-                        CodeBlock(title: tr("ws.tool.output"), text: output, failed: event.state == .failed)
-                    } else if event.state == .running {
-                        Text(tr("ws.tool.running")).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
-                    }
-                }
-                .padding(.leading, 22)
-            }
-        }
-        .padding(.vertical, NookTheme.Spacing.xxs)
-    }
-
-    @ViewBuilder
-    private var stateIcon: some View {
-        switch event.state {
-        case .running: ProgressView().controlSize(.mini)
-        case .failed: Image(systemName: "xmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.coral)
-        // A step that went fine needs no mark at all: only a failure stands out in a long run of steps.
-        default: Color.clear.frame(width: 9, height: 9)
-        }
-    }
-
-    static func symbol(_ tool: String) -> String {
-        switch tool {
-        case "Bash", "shell", "BashOutput", "KillShell": return "terminal"
-        case "Read", "NotebookRead": return "doc.text"
-        case "Edit", "MultiEdit", "Write", "NotebookEdit": return "pencil"
-        case "Grep", "Glob": return "magnifyingglass"
-        case "WebFetch", "WebSearch", "web_search": return "globe"
-        case "Task", "Agent": return "person.2"
-        case "TodoWrite": return "checklist"
-        default: return tool.hasPrefix("mcp") ? "puzzlepiece.extension" : "wrench.and.screwdriver"
+            // Why it failed, right under it, then what it opens to.
+            TranscriptStepDetail(error: step.error, open: expanded && file == nil, command: tasks == nil ? input : nil,
+                                 output: tasks == nil ? step.output : nil, failed: failed, tasks: tasks)
         }
     }
 }

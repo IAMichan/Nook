@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings › Memory: what Nook remembers about you, how it learns, and bringing over the old MCP memory server.
+/// Settings › Assistant: what Nook remembers about you, how it learns, and bringing over the old MCP memory server.
 /// Memory is built in: nothing to install, nothing leaves the Mac except, with an external brain, the few memories
 /// that matter for a question (and never the ones kept on this Mac).
 struct MemorySettingsSection: View {
@@ -27,15 +27,8 @@ struct MemorySettingsSection: View {
 
     var body: some View {
         Group {
+            // What memory is sits behind the ⓘ, so the page starts with its two switches.
             Section {
-                IntroCard(
-                    title: tr("memory.hero.title"),
-                    text: tr("memory.hero.detail")
-                )
-            }
-            .listRowInsets(EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14))
-
-            Section(tr("memory.settings.how")) {
                 SettingToggle(tr("memory.settings.use"), detail: tr("memory.settings.useDetail"), isOn: $settings.useMemory)
                 SettingToggle(tr("memory.settings.learn"), detail: tr("memory.settings.learnDetail"), isOn: $settings.learnFromChats)
                     .disabled(!settings.useMemory)
@@ -44,11 +37,10 @@ struct MemorySettingsSection: View {
                         .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+            } header: {
+                SettingsSectionTitle(tr("memory.hero.title"), info: tr("memory.hero.detail"))
             }
-
-            if !importable.isEmpty || oldServer != nil || imported != nil {
-                importSection
-            }
+            .onAppear { importable = app.memory.importable().map { ImportFile(url: $0.url, count: $0.count) } }
 
             Section {
                 HStack {
@@ -86,16 +78,21 @@ struct MemorySettingsSection: View {
                 Button(tr("memory.settings.clear"), role: .destructive) { confirmClear = true }
                     .disabled(app.memory.items.isEmpty && app.memory.learnedWords == 0)
             }
-        }
-        .onAppear { importable = app.memory.importable().map { ImportFile(url: $0.url, count: $0.count) } }
-        .confirmationDialog(tr("memory.settings.clearConfirm"), isPresented: $confirmClear) {
-            Button(tr("memory.settings.clear"), role: .destructive) {
-                app.memory.clear()
-                app.store.audit(tool: "geheugen_gewist", args: "", result: "")
+            // On this one section: on the Group the dialog would be attached to every section in it.
+            .confirmationDialog(tr("memory.settings.clearConfirm"), isPresented: $confirmClear) {
+                Button(tr("memory.settings.clear"), role: .destructive) {
+                    app.memory.clear()
+                    app.store.audit(tool: "geheugen_gewist", args: "", result: "")
+                }
+                Button(tr("button.cancel"), role: .cancel) {}
+            } message: {
+                Text(tr("memory.settings.clearDetail"))
             }
-            Button(tr("button.cancel"), role: .cancel) {}
-        } message: {
-            Text(tr("memory.settings.clearDetail"))
+
+            // Bringing over the old MCP memory server is needed once, if ever: last.
+            if !importable.isEmpty || oldServer != nil || imported != nil {
+                importSection
+            }
         }
     }
 

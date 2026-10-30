@@ -203,4 +203,30 @@ final class TimelinePresentationTests: XCTestCase {
         guard case .event(let answer) = folded[2] else { return XCTFail("\(folded)") }
         XCTAssertEqual(answer.text, "Klaar.", "a notice is never the answer of a turn")
     }
+
+    /// A tool call of a session Nook runs reads as a step of an agent's own transcript: the same tool, what it was about,
+    /// its command and file, and why it failed.
+    func testToolEventsBecomeTranscriptSteps() {
+        let command = AgentToolStep(event: event(.tool, "Bash · npm test", tool: "Bash", detail: #"{"command":"npm test"}"#,
+                                                 state: .done))
+        XCTAssertEqual(command.name, "Bash")
+        XCTAssertEqual(command.summary, "npm test")
+        XCTAssertEqual(command.command, "npm test")
+        XCTAssertEqual(command.state, .done)
+
+        let edit = AgentToolStep(event: event(.tool, "↳ Edit · Login.swift", tool: "Edit",
+                                              detail: #"{"file_path":"/repo/Login.swift"}"#, state: .running))
+        XCTAssertEqual(edit.summary, "Login.swift", "a nested call loses its arrow")
+        XCTAssertEqual(edit.file, "/repo/Login.swift")
+        XCTAssertEqual(edit.state, .running)
+
+        var failing = event(.tool, "Bash · make", tool: "Bash", detail: #"{"command":"make"}"#, state: .failed)
+        failing.output = "make: *** No rule to make target\nmore"
+        let failed = AgentToolStep(event: failing)
+        XCTAssertEqual(failed.state, .failed)
+        XCTAssertEqual(failed.error, "make: *** No rule to make target")
+
+        XCTAssertEqual(AgentToolStep(event: event(.tool, "TodoWrite", tool: "TodoWrite")).summary, "",
+                       "a title that is only the tool's name says nothing more")
+    }
 }

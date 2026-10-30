@@ -6,7 +6,7 @@ import Foundation
 // and this file decides which of them are chat messages and which chat they belong to. Foundation only, so it can be
 // tested anywhere.
 
-/// A chat app whose notifications Nook collects: one Nook knows, or one you added yourself in Settings › Chats.
+/// A chat app whose notifications Nook collects: one Nook knows, or one you added yourself in Settings › Connections.
 struct MessagingApp: Codable, Equatable, Sendable, Identifiable {
     /// The source id, as `SourceBrand` and `EmbeddedAppCatalog` use it ("telegram").
     let id: String
@@ -49,7 +49,7 @@ enum MessagingApps {
         MessagingApp(id: "x", name: "X", domains: ["x.com", "twitter.com"], site: "x.com")
     ]
 
-    /// Which apps feed the inbox, as chosen in Settings › Chats: kept in the user defaults, read once.
+    /// Which apps feed the inbox, as chosen in Settings › Connections: kept in the user defaults, read once.
     static var sources: ChatSources {
         get {
             lock.lock()
@@ -150,7 +150,7 @@ enum MessagingApps {
 }
 
 /// Which chat apps feed the inbox: every app Nook knows unless you switched it off, and the apps you added yourself (a
-/// website such as linkedin.com/messaging, or a Mac app). Settings › Chats changes it.
+/// website such as linkedin.com/messaging, or a Mac app). Settings › Connections changes it.
 struct ChatSources: Codable, Equatable, Sendable {
     /// The ids of the apps you switched off.
     var off: Set<String> = []

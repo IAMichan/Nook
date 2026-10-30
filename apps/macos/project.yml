@@ -181,6 +181,7 @@ targets:
       - path: Core/I18n+Redesign.swift
       - path: Core/I18n+Selection.swift
       - path: Core/I18n+SettingsLayout.swift
+      - path: Core/I18n+SettingsHub.swift
       - path: Core/I18n+Workspace.swift
       - path: Core/I18n+Energy.swift
       - path: Core/I18n+WhatsAppAccounts.swift
@@ -284,6 +285,8 @@ targets:
       - path: Services/SessionFocus.swift
       - path: Services/NoticeLog.swift
       - path: Services/NoticeRules.swift
+      - path: Services/NoticePacer.swift
+      - path: Services/AgentStatusNotice.swift
       - path: Core/NookError.swift
       - path: Core/NookPaths.swift
       - path: Core/SafeStorage.swift
@@ -396,6 +399,7 @@ targets:
       - path: Services/Workspace/CodexAppServer.swift
       - path: Services/Workspace/AcpAgent.swift
       - path: Services/Workspace/AgentModelCatalog.swift
+      - path: Services/Workspace/AgentModelMenu.swift
       - path: Services/Workspace/ModelManifest.swift
       - path: Services/Workspace/TextGeneration.swift
       - path: Services/Workspace/GitCheckpoints.swift

@@ -1,7 +1,7 @@
 import SwiftUI
 import Charts
 
-/// Settings › Usage: the plan limits of every connected account, then what the sessions Nook started used, per day and
+/// Settings › Coding agents: the plan limits of every connected account, then what the sessions Nook started used, per day and
 /// per model. Plain Settings rows in the Nook palette; limits look exactly like in the notch (see UsageTone, UsageBar).
 struct UsageView: View {
     @EnvironmentObject private var app: AppModel

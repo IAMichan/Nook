@@ -62,10 +62,15 @@ final class AgentHub: ObservableObject {
 
     /// Account directory from hook environment; empty if standard directory.
     private static func accountHome(_ env: [String: Any], agentID: String) -> String {
-        let kind: AgentKind = agentID == "codex" ? .codex : .claude
-        guard agentID == "codex" || agentID.hasPrefix("claude"),
-              let variable = kind.homeVariable, let raw = env[variable] as? String, !raw.isEmpty else { return "" }
-        let home = AgentProfile.normalize(raw)
+        let kind: AgentKind
+        switch agentID {
+        case "codex": kind = .codex
+        case "gemini": kind = .gemini
+        case let id where id.hasPrefix("claude"): kind = .claude
+        default: return ""
+        }
+        guard let variable = kind.homeVariable, let raw = env[variable] as? String, !raw.isEmpty else { return "" }
+        let home = AgentProfile.normalize(kind.home(fromVariable: raw))
         return home == AgentProfile.normalize(kind.defaultHome.path) ? "" : home
     }
 
@@ -219,7 +224,7 @@ final class AgentHub: ObservableObject {
                 let home = agent.home.isEmpty ? nil : URL(fileURLWithPath: agent.home, isDirectory: true)
                 let kind = AgentKind(agentName: agent.name)
                 let accountHome = kind.flatMap { kind in
-                    kind.homeVariable.map { Self.accountHome([$0: agent.home], agentID: kind == .codex ? "codex" : "claude-code") }
+                    kind.homeVariable.map { Self.accountHome([$0: kind.homeValue(agent.home)], agentID: kind.hookAgentID) }
                 } ?? ""
                 let cacheKey = "\(agent.name)|\(accountHome)"
                 let linked: Bool

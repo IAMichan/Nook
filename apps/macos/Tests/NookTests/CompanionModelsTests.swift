@@ -409,4 +409,52 @@ final class CompanionModelsTests: XCTestCase {
         XCTAssertEqual(LiveActivityPayload.topic(bundleID: "nl.imdigital.nook.companion"), "nl.imdigital.nook.companion.push-type.liveactivity")
         XCTAssertEqual(LiveActivityPayload.pushType, "liveactivity")
     }
+
+    /// Steering from the phone is offered to phones that may operate, and a plain message carries no `steer` key, so a
+    /// Mac that predates it reads it as before.
+    func testSteerIsOfferedWithOperateAndOptional() throws {
+        XCTAssertTrue(CompanionFeature.all.contains(CompanionFeature.steer))
+        XCTAssertEqual(CompanionScopes.featureScopes[CompanionFeature.steer], .operate)
+        let plain = String(decoding: try JSONEncoder().encode(CompanionRequest(op: .send, session: "S", text: "Go")), as: UTF8.self)
+        XCTAssertFalse(plain.contains("steer"))
+        let steered = try JSONEncoder().encode(CompanionRequest(op: .send, session: "S", text: "Go", steer: true))
+        XCTAssertEqual(try JSONDecoder().decode(CompanionRequest.self, from: steered).steer, true)
+    }
+
+    private func entry(_ id: String, _ text: String = "x") -> TimelineEntry {
+        TimelineEntry(id: id, kind: .assistant, text: text, detail: nil, date: 0, failed: false)
+    }
+
+    /// The open session's conversation travels as what changed after the last entry both sides share; a phone that
+    /// lacks that entry asks for all of it.
+    func testTimelineDeltaSendsOnlyWhatChanged() {
+        let old = [entry("a"), entry("b"), entry("c", "writing")]
+        let new = [entry("a"), entry("b"), entry("c", "written"), entry("d")]
+        let change = TimelineDelta.delta(from: old, to: new)
+        XCTAssertEqual(change.after, "b")
+        XCTAssertEqual(change.entries.map(\.id), ["c", "d"])
+        XCTAssertEqual(TimelineDelta.apply(change.entries, after: change.after, to: old), new)
+
+        // The Mac's window moved on (its oldest entry dropped): still a delta from the first shared entry.
+        let moved = TimelineDelta.delta(from: old, to: [entry("b"), entry("c", "writing"), entry("e")])
+        XCTAssertEqual(moved.after, "c")
+        XCTAssertEqual(TimelineDelta.apply(moved.entries, after: moved.after, to: old)?.map(\.id), ["a", "b", "c", "e"])
+
+        // Nothing shared: the whole conversation, and a phone without the base asks again.
+        XCTAssertNil(TimelineDelta.delta(from: old, to: [entry("z")]).after)
+        XCTAssertNil(TimelineDelta.apply([entry("d")], after: "q", to: old))
+        XCTAssertEqual(TimelineDelta.apply([entry("z")], after: nil, to: old)?.map(\.id), ["z"])
+    }
+
+    /// Only a JPEG within the size limit counts as a picture from the phone.
+    func testCompanionImagesAreSmallJPEGs() {
+        let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0, 0x00])
+        XCTAssertEqual(CompanionImage(jpeg: jpeg.base64EncodedString()).data, jpeg)
+        XCTAssertNil(CompanionImage(jpeg: Data([0x89, 0x50, 0x4E, 0x47]).base64EncodedString()).data)
+        XCTAssertNil(CompanionImage(jpeg: Data([0xFF, 0xD8, 0xFF] + [UInt8](repeating: 0, count: CompanionImage.maxBytes)).base64EncodedString()).data)
+        XCTAssertNil(CompanionImage(jpeg: "not base64").data)
+        XCTAssertTrue(CompanionFeature.all.contains(CompanionFeature.liveTimeline))
+        XCTAssertEqual(CompanionScopes.table[.watch], .scope(.read))
+        XCTAssertEqual(CompanionScopes.table[.diff], .scope(.read))
+    }
 }

@@ -24,7 +24,7 @@ extension CompanionServer {
         return CompanionResponse(id: request.id, ok: true, message: status, inbox: Array(chats))
     }
 
-    /// One chat's messages. Opening it on the phone reads it the way opening it on the Mac does (Settings › Chats, in
+    /// One chat's messages. Opening it on the phone reads it the way opening it on the Mac does (Settings › Connections, in
     /// Nook only: WhatsApp keeps it unread and the sender sees no blue ticks).
     func inboxChat(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
         guard let entry = inboxEntry(request.item) else { return .failure(request.id, .unknownItem) }

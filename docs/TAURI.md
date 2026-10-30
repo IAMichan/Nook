@@ -26,7 +26,7 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 | Sources card under an answer (status per source, unread sources on top with a reason and Try again, errors in plain language) | ✓ | `components/SourcesView.svelte`, `lib/sources.ts` |
 | Chat tables: text columns with digits in a name don't become a chart (`ChartRescue.tableNumber`) | ✓ | `core/src/brain/chart.rs` |
 | `ActionGate`, `CommandRisk`, `Undo`, `NetworkGuard`, `LocalQuality` | ✓ | `core/src/brain/` |
-| Memory (`Memory`, `NookMemory`, Settings › Memory) | ✓ (importing MCP memory ◐) | `core/src/brain/memory.rs`, `tools/memory.rs` |
+| Memory (`Memory`, `NookMemory`, Settings › Assistant) | ✓ (importing MCP memory ◐) | `core/src/brain/memory.rs`, `tools/memory.rs` |
 | Web, weather, charts, mail drafts | ✓ (mail via `mailto:`) | `tools/{web,charts,mail}.rs` |
 | `ClaudeCodeBrain` | ◐ (not tested with a real `claude`) | `core/src/brain/claude_code.rs` |
 | `NookStore`, `NookChat` (Nooks, `nooks.json`, archive, search) | ✓ | `core/src/store.rs`, `core/src/nooks.rs` |

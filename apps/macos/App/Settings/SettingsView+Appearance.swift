@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Settings › Appearance: how Nook looks. A large live Nook on top that shows each mood, the three styles as cards,
-/// then the color (the biggest change after the style), the face, the finish and the wardrobe, each option once.
+/// then the color (the biggest change after the style), the face and finish folded away, and the wardrobe.
 extension SettingsView {
     // MARK: Appearance
 
@@ -56,31 +56,28 @@ extension SettingsView {
                 Text(tr("settings.display.color"))
             }
 
+            // The style above sets the face and the finish; changing them one by one is folded away.
             Section {
-                Picker(tr("settings.display.eyes"), selection: $settings.nookLook.eyes) {
-                    ForEach(NookEyeStyle.allCases) { style in
-                        Text(Self.title(for: style)).tag(style)
+                DisclosureGroup(tr("settings.appearance.fineTune")) {
+                    Picker(tr("settings.display.eyes"), selection: $settings.nookLook.eyes) {
+                        ForEach(NookEyeStyle.allCases) { style in
+                            Text(Self.title(for: style)).tag(style)
+                        }
                     }
-                }
-                .pickerStyle(.segmented)
-                Picker(tr("settings.display.mouth"), selection: $settings.nookLook.mouth) {
-                    ForEach(NookMouthStyle.allCases) { style in
-                        Text(Self.title(for: style)).tag(style)
+                    .pickerStyle(.segmented)
+                    Picker(tr("settings.display.mouth"), selection: $settings.nookLook.mouth) {
+                        ForEach(NookMouthStyle.allCases) { style in
+                            Text(Self.title(for: style)).tag(style)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    if settings.nookLook.mouth == .expressive {
+                        SettingNote(tr("settings.display.mouthHint"))
+                    }
+                    Toggle(tr("settings.display.gloss"), isOn: $settings.nookLook.gloss)
+                    Toggle(tr("settings.display.glow"), isOn: $settings.nookLook.glow)
+                    Toggle(tr("settings.display.cheeks"), isOn: $settings.nookLook.cheeks)
                 }
-                .pickerStyle(.segmented)
-            } header: {
-                Text(tr("settings.appearance.face"))
-            } footer: {
-                if settings.nookLook.mouth == .expressive {
-                    Text(tr("settings.display.mouthHint"))
-                }
-            }
-
-            Section(tr("settings.appearance.finish")) {
-                Toggle(tr("settings.display.gloss"), isOn: $settings.nookLook.gloss)
-                Toggle(tr("settings.display.glow"), isOn: $settings.nookLook.glow)
-                Toggle(tr("settings.display.cheeks"), isOn: $settings.nookLook.cheeks)
             }
 
             WardrobeSettingsSection()

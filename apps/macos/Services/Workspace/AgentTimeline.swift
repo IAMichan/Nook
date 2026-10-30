@@ -50,7 +50,7 @@ enum AgentSignal: Equatable, Sendable {
     /// News about a call: a new title, output (added to what came, or in its place), a new state. Also finds a call of
     /// an earlier turn (work left running in the background); a call nobody knows is left alone.
     case toolUpdated(id: String, title: String? = nil, output: String? = nil, appending: Bool = false,
-                     state: RunEvent.State? = nil, paths: [String] = [])
+                     state: RunEvent.State? = nil, paths: [String] = [], input: JSONBox? = nil)
     /// A call settles: updated when it is known (this turn or before), else added as it ended.
     case toolFinished(AgentToolCall)
     /// The agent stops writing and thinking for now: before an approval, a plan, the end of a turn.
@@ -175,18 +175,23 @@ struct AgentTimeline: Equatable, Sendable {
             pause(sink)
             if calls[call.id] != nil { return update(call, sink) }
             return add(call, sink)
-        case .toolUpdated(let callID, let title, let output, let appending, let state, let paths):
+        case .toolUpdated(let callID, let title, let output, let appending, let state, let paths, let input):
+            // Input that arrives later (what an ACP edit changed) replaces the row's: it is what the call did.
+            let detail = input.map { ToolSummary.json($0.object) }
             if calls[callID] == nil, let earlier = sink.eventID(callID: callID) {
                 // A call of an earlier turn: its row changes, this turn does not take it over.
                 sink.mutate(earlier) { event in
                     Self.change(&event, title: title, output: output, appending: appending, state: state)
+                    if let detail { event.detail = detail }
                 }
                 return state == .done && !paths.isEmpty ? [.toolSucceeded(name: "", input: nil, paths: paths)] : []
             }
             guard var known = calls[callID] else { return [] }
             sink.mutate(known.eventID) { event in
                 Self.change(&event, title: title, output: output, appending: appending, state: state)
+                if let detail { event.detail = detail }
             }
+            if let input { known.input = input }
             known.paths += paths.filter { !known.paths.contains($0) }
             return settle(&known, callID, state)
         case .toolFinished(let call):

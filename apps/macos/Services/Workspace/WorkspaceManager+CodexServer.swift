@@ -76,6 +76,18 @@ extension WorkspaceManager {
                         guard let self else { return }
                         switch result {
                         case .failure(let error):
+                            // The thread to resume is gone (cleared, or from another machine): say so and start a new one.
+                            if method == "thread/resume", AgentErrorText.sessionGone(error.localizedDescription),
+                               self.codexServers[id] === client {
+                                self.codexServers[id] = nil
+                                client.stop()
+                                self.append(id, RunEvent(kind: .system, text: tr("ws.acp.noLoad", run.provider.displayName)))
+                                self.update(id) { $0.providerSessionID = nil }
+                                // The new thread starts from what happened so far.
+                                let waiting = prompt ?? self.warmPrompts.removeValue(forKey: id)
+                                return self.connectCodexServer(id, executable: executable,
+                                                               prompt: self.carryOverConversation(id, prompt: waiting))
+                            }
                             self.codexServerFailed(id, client, error, prompt: prompt ?? self.warmPrompts[id], executable: executable)
                         case .success(let response):
                             let threadID = (response.dictionary["thread"] as? [String: Any])?["id"] as? String ?? run.providerSessionID

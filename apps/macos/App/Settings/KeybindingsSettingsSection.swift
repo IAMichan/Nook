@@ -13,21 +13,23 @@ struct KeybindingsSettingsSection: View {
             } header: {
                 SettingsSectionTitle(tr("keys.title"), info: tr("keys.detail"))
             }
+            .onAppear { center.reload() }
+            // Editing the file by hand is rarely needed: folded away, unless it has something to say.
             Section {
-                LabeledContent(tr("keys.file")) {
-                    HStack(spacing: NookTheme.Spacing.sm) {
-                        Button(tr("keys.file.open")) { openFile() }
-                        Button(tr("keys.file.reveal")) { NSWorkspace.shared.activateFileViewerSelecting([Keybindings.userFileURL]) }
-                            .disabled(center.file.state == .missing)
-                        Button(tr("keys.file.reload")) { center.reload() }
+                DisclosureGroup(tr("keys.file.title")) {
+                    LabeledContent(tr("keys.file")) {
+                        HStack(spacing: NookTheme.Spacing.sm) {
+                            Button(tr("keys.file.open")) { openFile() }
+                            Button(tr("keys.file.reveal")) { NSWorkspace.shared.activateFileViewerSelecting([Keybindings.userFileURL]) }
+                                .disabled(center.file.state == .missing)
+                            Button(tr("keys.file.reload")) { center.reload() }
+                        }
                     }
+                    SettingNote(tr("keys.file.detail", Self.displayPath))
                 }
                 ForEach(notes.indices, id: \.self) { index in SettingNote(notes[index].text, tone: notes[index].tone) }
-            } header: {
-                SettingsSectionTitle(tr("keys.file.title"), info: tr("keys.file.detail", Self.displayPath))
             }
         }
-        .onAppear { center.reload() }
     }
 
     private func row(_ command: String) -> some View {

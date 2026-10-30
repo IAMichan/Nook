@@ -33,7 +33,7 @@ struct MCPPreset: Identifiable {
         }
     }
 
-    // No memory server here: memory is built into Nook (Settings › Memory), without Node or npx.
+    // No memory server here: memory is built into Nook (Settings › Assistant), without Node or npx.
     // Computed, so the texts of the key fields follow the app language.
     static var all: [MCPPreset] {
         [
@@ -96,43 +96,6 @@ struct MCPPreset: Identifiable {
     }
 }
 
-/// What the Add MCP sheet opens with: a preset, or nothing for a pasted command.
-struct MCPAddRequest: Identifiable {
-    let preset: MCPPreset?
-    var id: String { preset?.id ?? "custom" }
-}
-
-/// A preset in the catalogue of Settings › Connections: the same card as every other service, with the MCP badge.
-struct MCPPresetCard: View {
-    let preset: MCPPreset
-    var add: (MCPAddRequest) -> Void
-
-    var body: some View {
-        GalleryCard(title: preset.name, detail: preset.detail) {
-            ServiceTile(domain: preset.iconDomain, fallback: preset.fallbackIcon, tint: preset.tint, size: 34, source: preset.appSource)
-        } accessory: {
-            ConnectMethodBadge(method: .mcp)
-        } action: {
-            add(MCPAddRequest(preset: preset))
-        }
-    }
-}
-
-/// The last card of the catalogue: your own MCP server from a pasted command, config, or web address.
-struct MCPCustomCard: View {
-    var add: (MCPAddRequest) -> Void
-
-    var body: some View {
-        GalleryCard(title: tr("mcp.custom.button"), detail: tr("mcp.custom.detail")) {
-            ServiceTile(domain: nil, fallback: "puzzlepiece.extension.fill", tint: MCPPreset.genericTint, size: 34)
-        } accessory: {
-            ConnectMethodBadge(method: .mcp)
-        } action: {
-            add(MCPAddRequest(preset: nil))
-        }
-    }
-}
-
 /// A server you added yourself, in the shared row shape: icon, name with its state, one line, the switch and a menu.
 /// Clicking the row opens its details.
 struct MCPServerCardRow: View {
@@ -183,6 +146,14 @@ struct MCPServerCardRow: View {
                     if let connector { app.connectors.refresh(connector) }
                 } label: {
                     Label(tr("button.refresh"), systemImage: "arrow.clockwise")
+                }
+                // A server you signed in to on its own page signs in again from here when that expired.
+                if config.signsIn {
+                    Button {
+                        MCPSignIn.shared.signIn(config, app: app)
+                    } label: {
+                        Label(tr("connect.reauthorize"), systemImage: "person.badge.key")
+                    }
                 }
                 Divider()
                 Button(role: .destructive) {
@@ -328,6 +299,7 @@ struct AddMCPServerWizardSheet: View {
     let done: () -> Void
 
     @ObservedObject private var store = MCPServerStore.shared
+    @StateObject private var keyCatcher = ClipboardKeyCatcher()
     @State private var name = ""
     @State private var commandOrURL = ""
     @State private var isRemote = false
@@ -371,36 +343,14 @@ struct AddMCPServerWizardSheet: View {
                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(Color(hex: 0x5ED6EE).opacity(0.1)))
                 }
 
-                // Step 1: Name
-                SetupStep(number: 1, title: tr("mcp.wizard.stepName"), done: !name.trimmingCharacters(in: .whitespaces).isEmpty) {
-                    TextField(tr("mcp.name"), text: $name, prompt: Text(tr("mcp.wizard.namePrompt")))
-                        .textFieldStyle(.roundedBorder)
-                }
-
-                // Step 2: Command or URL
-                SetupStep(number: 2, title: isRemote ? tr("mcp.address") : tr("mcp.command"), done: !commandOrURL.trimmingCharacters(in: .whitespaces).isEmpty) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        TextField(
-                            isRemote ? "https://..." : "npx -y ...",
-                            text: $commandOrURL,
-                            prompt: Text(isRemote ? "https://mcp.example.com/mcp" : "npx -y @modelcontextprotocol/server-github")
-                        )
-                        .textFieldStyle(.roundedBorder)
-
-                        if preset == nil {
-                            Picker("", selection: $isRemote) {
-                                Text(tr("mcp.kind.local")).tag(false)
-                                Text(tr("mcp.kind.remote")).tag(true)
-                            }
-                            .pickerStyle(.segmented)
-                            .labelsHidden()
-                        }
-                    }
+                // A preset fills in its name and command: only its keys are left to you, the rest is folded away.
+                if preset == nil {
+                    nameAndCommand
                 }
 
                 // Step 3: API keys / environment variables if needed
                 if let preset, !preset.requiredEnv.isEmpty {
-                    SetupStep(number: 3, title: tr("mcp.wizard.stepKeys"), done: allRequiredEnvFilled) {
+                    SetupStep(number: 1, title: tr("mcp.wizard.stepKeys"), done: allRequiredEnvFilled) {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(preset.requiredEnv, id: \.self) { key in
                                 VStack(alignment: .leading, spacing: 2) {
@@ -417,10 +367,12 @@ struct AddMCPServerWizardSheet: View {
                             if let url = preset.helpURL {
                                 Button {
                                     NSWorkspace.shared.open(url)
+                                    keyCatcher.watch()
                                 } label: {
                                     Label(tr("mcp.wizard.getKeySite"), systemImage: "arrow.up.forward.app")
                                 }
-                                .controlSize(.small)
+                                .buttonStyle(.borderedProminent)
+                                SettingNote(tr("brain.key.autoPaste"))
                             }
                         }
                     }
@@ -443,6 +395,16 @@ struct AddMCPServerWizardSheet: View {
                     }
                 }
 
+                if preset != nil {
+                    if preset?.requiredEnv.isEmpty == true {
+                        SettingNote(tr("mcp.wizard.ready"), tone: .success)
+                    }
+                    DisclosureGroup(tr("settings.display.advanced")) {
+                        VStack(alignment: .leading, spacing: 18) { nameAndCommand }
+                            .padding(.top, NookTheme.Spacing.sm)
+                    }
+                }
+
                 if !problem.isEmpty {
                     Label(problem, systemImage: "exclamationmark.triangle.fill")
                         .font(NookTheme.TextStyle.body)
@@ -459,11 +421,48 @@ struct AddMCPServerWizardSheet: View {
                 .controlSize(.large)
                 .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || commandOrURL.trimmingCharacters(in: .whitespaces).isEmpty || !allRequiredEnvFilled)
         }
+        // The key copied on the service's page, picked up on the way back into the first field still empty.
+        .onDisappear { keyCatcher.stop() }
+        // perf: `caught` is set once per copied key and reset right after, so every value is a new key.
+        .onReceive(keyCatcher.$caught.compactMap { $0 }) { key in
+            keyCatcher.caught = nil
+            guard let field = preset?.requiredEnv.first(where: { (envDrafts[$0] ?? "").isEmpty }) else { return }
+            envDrafts[field] = key
+        }
         .onAppear {
             if let preset {
                 name = preset.name
                 commandOrURL = preset.defaultCommand
                 isRemote = preset.isRemote
+            }
+        }
+    }
+
+    /// The server's name and its command or address: the steps of a server of your own, the folded details of a preset.
+    @ViewBuilder
+    private var nameAndCommand: some View {
+        SetupStep(number: 1, title: tr("mcp.wizard.stepName"), done: !name.trimmingCharacters(in: .whitespaces).isEmpty) {
+            TextField(tr("mcp.name"), text: $name, prompt: Text(tr("mcp.wizard.namePrompt")))
+                .textFieldStyle(.roundedBorder)
+        }
+
+        SetupStep(number: 2, title: isRemote ? tr("mcp.address") : tr("mcp.command"), done: !commandOrURL.trimmingCharacters(in: .whitespaces).isEmpty) {
+            VStack(alignment: .leading, spacing: 6) {
+                TextField(
+                    isRemote ? "https://..." : "npx -y ...",
+                    text: $commandOrURL,
+                    prompt: Text(isRemote ? "https://mcp.example.com/mcp" : "npx -y @modelcontextprotocol/server-github")
+                )
+                .textFieldStyle(.roundedBorder)
+
+                if preset == nil {
+                    Picker("", selection: $isRemote) {
+                        Text(tr("mcp.kind.local")).tag(false)
+                        Text(tr("mcp.kind.remote")).tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
             }
         }
     }
@@ -586,6 +585,18 @@ struct AddMCPServerWizardSheet: View {
             secrets[k] = (preset?.envPrefixes[k] ?? "") + v.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
+        // A server on the web that offers its own sign-in (n8n, a self-hosted GitLab, …) needs no token: Nook signs in
+        // on its page instead. Headers typed in by hand still go first.
+        if case .http(let address) = transport, secrets.isEmpty, let url = URL(string: address) {
+            let store = store
+            Task { @MainActor in
+                let signsIn = ((try? await MCPOAuth.discover(server: url)) ?? nil) != nil
+                let config = store.add(name: cleanName, transport: transport, secrets: [:], usesOAuth: signsIn)
+                if signsIn { MCPSignIn.shared.signIn(config, app: AppModel.shared, removeOnFailure: true) }
+            }
+            done()
+            return
+        }
         store.add(name: cleanName, transport: transport, secrets: secrets)
         done()
     }
