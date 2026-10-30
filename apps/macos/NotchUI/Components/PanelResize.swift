@@ -174,6 +174,12 @@ enum PanelLayout {
     /// not known yet.
     static func stacks(_ total: Double) -> Bool { total > 0 && total < sideBySide }
 
+    /// The step a measured width or height moves in (`onLayoutWidthChange`, `onLayoutHeightChange`).
+    static let layoutStep: Double = 8
+
+    /// `length` rounded down to a whole `layoutStep`: never more room than there is.
+    static func stepped(_ length: CGFloat) -> Double { (Double(length) / layoutStep).rounded(.down) * layoutStep }
+
     /// The width a panel may share with the conversation, `total` minus the other panel open beside it (with its line);
     /// 0 while the total is not known yet.
     static func room(_ total: Double, besides other: Double?) -> Double {
@@ -188,6 +194,18 @@ enum PanelLayout {
 }
 
 extension View {
+    /// Reports the width this view is given, in steps of `PanelLayout.layoutStep`, for a tab or pane that lays its
+    /// panels out by the room it has. Measured to the point, every point of a window resize changed the state of each tab
+    /// and pane on screen, which laid the whole window out again a few times per frame: that was the lag while resizing.
+    func onLayoutWidthChange(_ action: @escaping (Double) -> Void) -> some View {
+        onGeometryChange(for: Double.self) { PanelLayout.stepped($0.size.width) } action: { action($0) }
+    }
+
+    /// The height this view is given, in the same steps as `onLayoutWidthChange`.
+    func onLayoutHeightChange(_ action: @escaping (Double) -> Void) -> some View {
+        onGeometryChange(for: Double.self) { PanelLayout.stepped($0.size.height) } action: { action($0) }
+    }
+
     /// Keeps a conversation (or its composer) to one centered column of `PanelLayout.chatColumn` at most.
     func chatColumn() -> some View {
         frame(maxWidth: PanelLayout.chatColumn, alignment: .leading)

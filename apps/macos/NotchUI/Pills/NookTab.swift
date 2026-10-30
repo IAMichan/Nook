@@ -136,7 +136,7 @@ struct NookChatView: View {
         // Exactly the width it is given, however wide a row inside wants to be: measuring a row that runs past the window
         // would hand the panels more room than there is and push everything off both sides.
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
-        .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+        .onLayoutWidthChange { totalWidth = $0 }
         // Picking a Nook (or starting one) in the list shows it in place of the list.
         .onChange(of: chat.activeID) { _, _ in listOnly = false }
         .overlay {

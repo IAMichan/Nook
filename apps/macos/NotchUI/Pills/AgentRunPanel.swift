@@ -106,7 +106,7 @@ struct AgentRunPanel: View {
                 .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+            .onLayoutWidthChange { totalWidth = $0 }
             .preference(key: SessionBesideWidth.self, value: consoleOpen ? SidePanelRoom.of(consoleWidth) : 0)
             // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
             .environment(\.fileLinkBase, run.isRemote ? nil : run.workingDirectory)

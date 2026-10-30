@@ -453,7 +453,7 @@ struct ChatsTab: View {
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+        .onLayoutWidthChange { totalWidth = $0 }
         .onAppear {
             takeFocus()
             photos.refresh()

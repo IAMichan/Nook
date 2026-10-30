@@ -92,7 +92,7 @@ struct PanelView: View {
                     }
                 }
                 .animation(NookTheme.reveal, value: splitTab)
-                .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { contentWidth = $0 }
+                .onLayoutWidthChange { contentWidth = $0 }
                 .padding(.top, headerInset > 0 ? PanelOrb.belowHeader : NookTheme.Spacing.xl)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Agents, the chat and Chats keep the footer under their list. A tab without one (Music) shows it at the
