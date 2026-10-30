@@ -69,3 +69,26 @@ extension WorkspaceManager {
         }
     }
 }
+
+extension WorkspaceManager {
+    /// At most this often: each sweep lists the temporary folders, scratchpads and DerivedData.
+    private static let buildLeftoversInterval: TimeInterval = 6 * 60 * 60
+
+    /// Builds agents left where removing a worktree does not reach (see `BuildLeftovers`). Every removal lands in the
+    /// audit log.
+    func sweepBuildLeftovers(now: Date = Date()) {
+        guard settings.buildLeftoverCleanup else { return }
+        if let last = buildLeftoversAt, now.timeIntervalSince(last) < Self.buildLeftoversInterval { return }
+        buildLeftoversAt = now
+        Task.detached(priority: .background) { [weak self] in
+            let removed = BuildLeftovers.sweep()
+            guard !removed.isEmpty else { return }
+            await MainActor.run {
+                for item in removed {
+                    self?.onAudit?("build_cleanup", "\(AgentPathFormat.tilde(item.leftover.url.path)) · \(item.leftover.kind.rawValue)",
+                                   "removed \(DiskUsage.format(item.bytes))")
+                }
+            }
+        }
+    }
+}

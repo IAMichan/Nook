@@ -3,7 +3,7 @@
 #
 # It builds a throwaway Swift package from the sources the NookTests target lists in apps/macos/project.yml (minus the few that need
 # Apple-only frameworks), copies the tests next to them, and runs `swift test`. Everything it needs is generated under a
-# temporary folder; nothing in the repository changes.
+# temporary folder that is removed afterwards (set NOOK_CORE_TESTS_DIR to keep it); nothing in the repository changes.
 #
 #   scripts/core-tests.sh                      all portable tests
 #   scripts/core-tests.sh --filter ComposerCoreTests
@@ -12,7 +12,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../apps/macos" && pwd)"
-WORK="${NOOK_CORE_TESTS_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/nook-core-tests.XXXXXX")}"
+if [ -n "${NOOK_CORE_TESTS_DIR:-}" ]; then
+  WORK="$NOOK_CORE_TESTS_DIR"
+else
+  # A run builds ~370 MB here; remove it afterwards, or every run leaves that behind.
+  WORK="$(mktemp -d "${TMPDIR:-/tmp}/nook-core-tests.XXXXXX")"
+  trap 'rm -rf "$WORK"' EXIT
+fi
 mkdir -p "$WORK/Sources/Core" "$WORK/Tests/CoreTests"
 
 # Sources that need Apple-only frameworks (CryptoKit, Combine views, URLSession on Linux …): they are tested on a Mac.
@@ -135,4 +141,4 @@ cd "$WORK"
 echo "core tests in $WORK"
 # Tests that read the app's sources (UIConsistencyTests) find them here: the copies in $WORK have another #filePath.
 export NOOK_MACOS_ROOT="$ROOT"
-exec swift test "$@"
+swift test "$@"

@@ -15,6 +15,11 @@ struct WorktreesView: View {
                 }
                 Spacer()
                 if workspace.worktreesLoading { ProgressView().controlSize(.small) }
+                let total = workspace.worktreeRows.compactMap(\.bytes).reduce(0, +)
+                if total > 0 {
+                    Text(tr("ws.worktrees.total", DiskUsage.format(total)))
+                        .font(NookTheme.TextStyle.detail).foregroundStyle(WS.secondary)
+                }
                 Button { workspace.refreshWorktrees() } label: { Label(tr("ws.git.refresh"), systemImage: "arrow.clockwise") }
                     .keyboardShortcut("r", modifiers: .command)
             }
@@ -56,6 +61,11 @@ struct WorktreesView: View {
                         .font(NookTheme.TextStyle.detail)
                     }
                     .width(min: 110, ideal: 140)
+                    TableColumn(tr("ws.worktrees.col.size")) { row in
+                        Text(row.bytes.map(DiskUsage.format) ?? "–")
+                            .font(NookTheme.TextStyle.detail).foregroundStyle(WS.secondary)
+                    }
+                    .width(min: 70, ideal: 90)
                     TableColumn("") { row in
                         actions(row)
                     }

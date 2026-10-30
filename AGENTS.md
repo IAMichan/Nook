@@ -73,13 +73,17 @@ After touching anything under `apps/macos`, run the performance check too, and w
 
 How the CI workflows are organized, and how they avoid spending runner minutes on work that cannot tell us anything new, is described in [`docs/CI.md`](docs/CI.md).
 
-To build and test the full macOS app with Xcode:
+To build and test the full macOS app with Xcode, use the wrapper (it runs `xcodegen` first):
 
 ```sh
-cd apps/macos
-xcodegen
-xcodebuild -project Nook.xcodeproj -scheme Nook -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:NookTests test
+./scripts/xcode.sh build
+./scripts/xcode.sh test
 ```
+
+It keeps the build in `.build/xcode` inside the checkout, so it is removed together with the worktree. Do not call
+`xcodebuild` with a `-derivedDataPath` under `/tmp`, `/private/tmp`, or your scratchpad, and do not leave it on Xcode's
+default DerivedData from a worktree: each of those leaves a 1–5 GB build behind that nothing removes. Agent sessions on
+this Mac once left more than 400 GB that way.
 
 ## 5. Showing Files to the User
 
@@ -88,3 +92,4 @@ When you make something the user should look at (an image, a rendered HTML page,
 - **Write it inside the repository, in `.scratch/`** (for example `.scratch/nook-insta/post.png`). That folder is git-ignored. Do not write it to `/tmp`, `/private/tmp`, or another folder outside the working directory: the app's side panel only opens files inside the working directory, so a path there leads nowhere.
 - **Hand it over, don't just name it.** If your tools can send a file to the user (for Claude Code: `SendUserFile`, with `display: "render"` for images, HTML, and PDFs), send it as soon as it is ready. Otherwise give the repository-relative path (`.scratch/…`) so the user can click it.
 - Never commit anything from `.scratch/`; move a file into the tracked tree only when the user asks for it to become part of the project.
+- `.scratch/` is for things the user looks at, not for builds: never point `-derivedDataPath` there. Build with `./scripts/xcode.sh` (section 4).

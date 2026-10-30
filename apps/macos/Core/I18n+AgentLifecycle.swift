@@ -7,6 +7,8 @@ let agentLifecycleTranslations: [AppLanguage: [String: String]] = [
     .nl: [
         "settings.ws.worktreeCleanupMerged": "Worktree verwijderen als de pull request van de sessie gemerged is",
         "settings.ws.worktreeCleanupSettled": "Worktree verwijderen na een afgeronde sessie",
+        "settings.ws.buildLeftovers": "Oude bouwresten van agents verwijderen",
+        "settings.ws.buildLeftovers.help": "Xcode-builds en testpakketten die agents in tijdelijke mappen achterlieten en twee dagen niet gebruikt zijn, en DerivedData van worktrees die niet meer bestaan. Elke verwijdering komt in het actielogboek.",
         "settings.ws.worktreeCleanup.footer": "Een worktree die in gebruik is, die een andere sessie deelt of met wijzigingen die nog niet gecommit zijn blijft altijd staan. De branch blijft bestaan; elke verwijdering komt in het actielogboek.",
         "ws.worktree.cleanedMerged": "De pull request is gemerged: Nook heeft de worktree verwijderd. De branch blijft bestaan.",
         "ws.worktree.cleanedSettled": "De sessie is al een tijd afgerond: Nook heeft de worktree verwijderd. De branch blijft bestaan.",
@@ -19,6 +21,8 @@ let agentLifecycleTranslations: [AppLanguage: [String: String]] = [
     .en: [
         "settings.ws.worktreeCleanupMerged": "Remove the worktree once the session's pull request is merged",
         "settings.ws.worktreeCleanupSettled": "Remove the worktree after a settled session",
+        "settings.ws.buildLeftovers": "Remove old build leftovers from agents",
+        "settings.ws.buildLeftovers.help": "Xcode builds and test packages agents left in temporary folders and did not touch for two days, and DerivedData of worktrees that no longer exist. Every removal goes into the action log.",
         "settings.ws.worktreeCleanup.footer": "A worktree in use, shared with another session, or with changes that were never committed always stays. The branch is kept; every removal goes into the action log.",
         "ws.worktree.cleanedMerged": "The pull request was merged: Nook removed the worktree. The branch is kept.",
         "ws.worktree.cleanedSettled": "The session has been settled for a while: Nook removed the worktree. The branch is kept.",
@@ -31,6 +35,8 @@ let agentLifecycleTranslations: [AppLanguage: [String: String]] = [
     .de: [
         "settings.ws.worktreeCleanupMerged": "Worktree entfernen, sobald der Pull Request der Sitzung gemergt ist",
         "settings.ws.worktreeCleanupSettled": "Worktree nach einer erledigten Sitzung entfernen",
+        "settings.ws.buildLeftovers": "Alte Build-Reste von Agenten entfernen",
+        "settings.ws.buildLeftovers.help": "Xcode-Builds und Testpakete, die Agenten in temporären Ordnern hinterlassen und zwei Tage nicht benutzt haben, sowie DerivedData von Worktrees, die es nicht mehr gibt. Jede Entfernung landet im Aktionsprotokoll.",
         "settings.ws.worktreeCleanup.footer": "Ein Worktree, der in Gebrauch ist, mit einer anderen Sitzung geteilt wird oder nicht committete Änderungen hat, bleibt immer. Der Branch bleibt erhalten; jede Entfernung landet im Aktionsprotokoll.",
         "ws.worktree.cleanedMerged": "Der Pull Request wurde gemergt: Nook hat den Worktree entfernt. Der Branch bleibt erhalten.",
         "ws.worktree.cleanedSettled": "Die Sitzung ist seit einer Weile erledigt: Nook hat den Worktree entfernt. Der Branch bleibt erhalten.",
@@ -43,6 +49,8 @@ let agentLifecycleTranslations: [AppLanguage: [String: String]] = [
     .fr: [
         "settings.ws.worktreeCleanupMerged": "Supprimer le worktree une fois la pull request de la session fusionnée",
         "settings.ws.worktreeCleanupSettled": "Supprimer le worktree après une session terminée",
+        "settings.ws.buildLeftovers": "Supprimer les anciens restes de build des agents",
+        "settings.ws.buildLeftovers.help": "Les builds Xcode et paquets de test que des agents ont laissés dans des dossiers temporaires et n'ont pas utilisés depuis deux jours, ainsi que les DerivedData de worktrees qui n'existent plus. Chaque suppression est inscrite dans le journal des actions.",
         "settings.ws.worktreeCleanup.footer": "Un worktree en cours d'utilisation, partagé avec une autre session ou contenant des modifications jamais validées reste toujours. La branche est conservée ; chaque suppression est inscrite dans le journal des actions.",
         "ws.worktree.cleanedMerged": "La pull request a été fusionnée : Nook a supprimé le worktree. La branche est conservée.",
         "ws.worktree.cleanedSettled": "La session est terminée depuis un moment : Nook a supprimé le worktree. La branche est conservée.",
@@ -55,6 +63,8 @@ let agentLifecycleTranslations: [AppLanguage: [String: String]] = [
     .es: [
         "settings.ws.worktreeCleanupMerged": "Eliminar el worktree cuando se fusione la pull request de la sesión",
         "settings.ws.worktreeCleanupSettled": "Eliminar el worktree tras una sesión terminada",
+        "settings.ws.buildLeftovers": "Eliminar restos de compilación antiguos de los agentes",
+        "settings.ws.buildLeftovers.help": "Compilaciones de Xcode y paquetes de prueba que los agentes dejaron en carpetas temporales y no usaron en dos días, y DerivedData de worktrees que ya no existen. Cada eliminación queda en el registro de acciones.",
         "settings.ws.worktreeCleanup.footer": "Un worktree en uso, compartido con otra sesión o con cambios que nunca se confirmaron se mantiene siempre. La rama se conserva; cada eliminación queda en el registro de acciones.",
         "ws.worktree.cleanedMerged": "La pull request se fusionó: Nook eliminó el worktree. La rama se conserva.",
         "ws.worktree.cleanedSettled": "La sesión lleva un tiempo terminada: Nook eliminó el worktree. La rama se conserva.",
