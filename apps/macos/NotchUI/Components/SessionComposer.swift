@@ -309,13 +309,28 @@ struct SessionComposer<Controls: View>: View {
     }
 
     // The text field and its keys are built in separate steps: as one chain the compiler cannot type-check it in time.
+    // The placeholder is drawn here, not as the field's prompt: a vertical field takes its prompt's width on one line as
+    // its narrowest, so a long one ("Describe what the agent should do. Return starts the session.") pushed the box past
+    // a narrow column and under the tab beside it in split view. Drawn behind the field it wraps within the box instead
+    // (as `ChatReplyField` does).
     private func field(focused: FocusState<Bool>.Binding) -> some View {
-        let placeholder: Text = Text(prompt).foregroundStyle(NookTheme.textTertiary)
-        return TextField("", text: $text, prompt: placeholder, axis: .vertical)
+        TextField("", text: $text, axis: .vertical)
             .textFieldStyle(.plain)
             .font(NookTheme.TextStyle.body)
             .foregroundStyle(NookTheme.paper)
             .lineLimit(lines)
+            .background(alignment: .topLeading) {
+                if text.isEmpty {
+                    Text(prompt)
+                        .font(NookTheme.TextStyle.body)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(lines.lowerBound)
+                        .truncationMode(.tail)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+            .accessibilityLabel(prompt)
             .focused(focused)
             .onChange(of: focused.wrappedValue) { _, now in if now { Self.placeCaretAtEnd() } }
             .onSubmit(submit)
