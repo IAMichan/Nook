@@ -541,9 +541,14 @@ struct PanelOrb: View {
 }
 
 extension TaskRingItem {
+    /// How long a Nook's news (an answer you have not read, a plan or draft waiting for you) stays on the ring after its
+    /// last activity: as long as a session you never opened (`SessionVisits.isUnseen`).
+    static let newsLifetime: TimeInterval = 24 * 3600
+
     /// What Nook's ring shows: the sessions in the Agents list that run, wait for you, or failed or finished since you last
-    /// looked (the same answer the list gives), and every Nook that works, waits for you or has news. A session you
-    /// marked as finished, or already read, is not on it. `selected` is the session open in the Agents tab: what it
+    /// looked (the same answer the list gives), and every Nook that works, waits for you or has news from the last day.
+    /// A session you marked as finished, already read, or done and quiet for `FinishedSessions.autoFinishAfter` is not on
+    /// it, whether Nook runs it or its app reports it through hooks. `selected` is the session open in the Agents tab: what it
     /// finished while you look at it is not news.
     @MainActor
     static func all(app: AppModel, selected: String? = nil) -> [TaskRingItem] {
@@ -592,7 +597,10 @@ extension TaskRingItem {
             } else if session.status == .failed {
                 if !unseen(session.id, session.updated) { continue }
                 kind = .failed; status = .failed
-            } else if session.status == .done, unseen(session.id, session.updated), app.demoMode || !app.isMarkedFinished(session) {
+            } else if session.status == .done, unseen(session.id, session.updated) {
+                // Quiet for a while, or marked as finished: out of the notch, like a session Nook runs itself.
+                if !app.demoMode, finished.isFinished(key: FinishedSessions.key(session: session), idle: true,
+                                                      lastActive: session.updated, now: Date()) { continue }
                 kind = .done; status = .done
             } else {
                 continue
@@ -603,6 +611,10 @@ extension TaskRingItem {
         for conversation in app.chat.list(query: "", showArchived: false) {
             let kind: TaskRingItem.Kind
             let detail: String
+            // A Nook that answered or proposed something long ago is no news anymore; it stays in the Nooks list.
+            if conversation.status != .working, !app.demoMode, Date().timeIntervalSince(conversation.updated) >= newsLifetime {
+                continue
+            }
             switch conversation.status {
             case .working: kind = .running; detail = tr("nooks.working")
             case .waiting: kind = .waiting; detail = tr("nooks.waiting")
