@@ -5,8 +5,8 @@ import SwiftUI
 // artifact beside its app, and the docked session panel. They all work the same way:
 //
 // - Each sits flat on the canvas with a line on the side of what it sits beside: a drag line (drag to resize,
-//   double-click for its usual width, `.sidePanel(_:width:…)`), or a plain line for a panel of fixed width
-//   (`.fixedSidePanel(width:)`). Each slides in from its own edge.
+//   double-click for its usual width, `.sidePanel(_:width:…)`), or, for a panel of fixed width, only the same room
+//   without a line (`.fixedSidePanel(width:)`). Each slides in from its own edge.
 // - Each starts with a header of the same height (`SidePanelHeader`, or `SidePanelTabBar` for the tool panel) that
 //   ends in the same close button: a cross (`SidePanelCloseButton`).
 // - What a tab shows starts with one bar of the same height under that header (`SidePanelToolbar`): the browser's
@@ -62,10 +62,10 @@ extension View {
     }
 
     /// Makes this a panel of fixed `width` on the right of what it sits beside (the docked session panel): the same
-    /// line and gap as a resizable one, without the drag.
+    /// room and gap as a resizable one, without the drag and without a line, so it reads as part of the conversation.
     func fixedSidePanel(width: CGFloat) -> some View {
         HStack(spacing: 0) {
-            NookDivider(vertical: true).frame(width: CGFloat(PanelSplit.handle))
+            Color.clear.frame(width: CGFloat(PanelSplit.handle))
             self.frame(width: width).padding(.leading, SidePanelMetrics.gap)
         }
         .transition(.move(edge: .trailing).combined(with: .opacity))
