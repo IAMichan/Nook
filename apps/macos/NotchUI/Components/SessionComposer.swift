@@ -173,6 +173,8 @@ struct SessionComposer<Controls: View>: View {
         // The composer keeps to the conversation's reading column on its own, so a wide window never stretches it
         // from edge to edge, wherever it is placed.
         .chatColumn()
+        // A page the session's agent opened floats just above it (SessionBrowserCorner).
+        .anchorPreference(key: SessionComposerBounds.self, value: .bounds) { $0 }
     }
 
     private func assign(_ value: String) {

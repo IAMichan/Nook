@@ -305,6 +305,19 @@ struct SessionWorkbench<Conversation: View>: View {
                     .onPreferenceChange(SessionOutputsReport.self) { outputs = $0 }
                     .onPreferenceChange(SessionBesideWidth.self) { besideConversation = $0 }
                     .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    // A page this session's agent opened: small in the chat's bottom right corner, above the composer,
+                    // and in no other chat.
+                    .overlayPreferenceValue(SessionComposerBounds.self) { composer in
+                        GeometryReader { proxy in
+                            let above = composer.map { max(0, proxy.size.height - proxy[$0].minY) } ?? 0
+                            SessionBrowserCorner(runID: runID, directory: directory, hidden: side == .browser || bottom == .browser) {
+                                withAnimation(NookTheme.reveal) { viewModel.sessionTool = .browser }
+                            }
+                            .padding(.trailing, NookTheme.Spacing.lg)
+                            .padding(.bottom, above + NookTheme.Spacing.md)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        }
+                    }
                 if bottom != .conversation {
                     VStack(spacing: 0) {
                         BottomSplitHandle(onDrag: dragBottom, onEnd: { dragStart = nil },

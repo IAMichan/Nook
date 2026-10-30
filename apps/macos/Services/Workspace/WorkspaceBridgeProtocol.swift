@@ -137,7 +137,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .terminalStop:
             return "Stops the process in a terminal you started with terminal_run (Ctrl-C). With close: true the terminal is also closed."
         case .browserOpen:
-            return "Opens a page in Nook's built-in browser, visible to the user next to your session: https addresses, or http on this Mac (localhost, 127.0.0.1) such as the dev server you started. Waits until the page has loaded and reports its title."
+            return "Opens a page in Nook's built-in browser, visible to the user in a small window in the corner of your session's chat: https addresses, or http on this Mac (localhost, 127.0.0.1) such as the dev server you started. Waits until the page has loaded and reports its title."
         case .browserRead:
             return "Reads the page open in Nook's browser: title, address, visible text, and console errors and warnings logged since it loaded."
         case .browserScreenshot:
