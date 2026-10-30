@@ -31,7 +31,6 @@ final class AgentParityTests: XCTestCase {
         "Brain/AIProvider.swift": 3,
         "Brain/BrainService.swift": 2,
         "Core/AppSettings.swift": 6,
-        "NotchUI/Pills/AgentsTab.swift": 1,
         "NotchUI/Pills/AgentsUsagePanel.swift": 2,
         "NotchUI/Pills/NewSessionComposer.swift": 2,
         "NotchUI/Workspace/UsageView.swift": 1,
