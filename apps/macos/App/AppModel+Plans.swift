@@ -253,7 +253,7 @@ extension AppModel {
     func canRunWithoutAsking(_ plan: BrainPlan, request: String?) -> Bool {
         guard !plan.actions.isEmpty, let request else { return false }
         // Remembering or forgetting what the user's own words ask for: it stays on this Mac and is undone in
-        // Settings › Memory, so it needs no click (and no "small things" setting).
+        // Settings › Assistant, so it needs no click (and no "small things" setting).
         if plan.actions.allSatisfy({ Self.memoryTools.contains($0.tool) && Self.request(request, asksFor: $0) }) { return true }
         return plan.actions.allSatisfy { allowedByAccess($0.tool, $0.input) && Self.request(request, asksFor: $0) }
     }

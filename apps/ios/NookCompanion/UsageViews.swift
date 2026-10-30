@@ -1,7 +1,7 @@
 import SwiftUI
 import Charts
 
-/// Usage on the iPhone, as Settings › Usage on the Mac: the plan limits of every account with an even-pace mark, then
+/// Usage on the iPhone, as Settings › Coding agents on the Mac: the plan limits of every account with an even-pace mark, then
 /// what the sessions Nook started used over a range, per day and per model.
 struct UsageScreen: View {
     @EnvironmentObject private var client: CompanionClient

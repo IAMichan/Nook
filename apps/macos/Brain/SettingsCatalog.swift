@@ -43,9 +43,9 @@ enum SettingsCatalog {
               about: "Read the text of all windows on all screens, on the Mac, so answers are ready at once."),
         Entry(id: "screens_with_every_question", kind: .toggle, section: "assistant",
               about: "Use the screens with every question, not only when the user points at something."),
-        Entry(id: "speak_answers", kind: .toggle, section: "dictation", about: "Read answers aloud after a spoken question."),
-        Entry(id: "wake_word", kind: .toggle, section: "dictation", about: "Listen for \"Hey Nook\"."),
-        Entry(id: "dictation", kind: .toggle, section: "dictation", about: "Dictate anywhere by holding a key."),
+        Entry(id: "speak_answers", kind: .toggle, section: "autocomplete", about: "Read answers aloud after a spoken question."),
+        Entry(id: "wake_word", kind: .toggle, section: "autocomplete", about: "Listen for \"Hey Nook\"."),
+        Entry(id: "dictation", kind: .toggle, section: "autocomplete", about: "Dictate anywhere by holding a key."),
         Entry(id: "agent_sounds", kind: .toggle, section: "notifications", about: "A sound when an agent waits or is done."),
         Entry(id: "notices_agents", kind: .choice(["card", "strip", "system", "off"]), section: "notifications",
               about: "How a coding agent that is done, failed or waits shows: a card, one line, a macOS notification, or only in the list. Permission requests always reach the user."),
@@ -55,8 +55,8 @@ enum SettingsCatalog {
               about: "How Nook's own notices show (an answer that finished in the background, call notes that are ready)."),
         Entry(id: "notices_suggestions", kind: .choice(["card", "strip", "system", "off"]), section: "notifications",
               about: "How a Think Along suggestion shows: its card, one line that opens it, a macOS notification, or only in the list."),
-        Entry(id: "use_memory", kind: .toggle, section: "memory", about: "Use what Nook remembers with every question."),
-        Entry(id: "learn_from_chats", kind: .toggle, section: "memory", about: "Let Nook learn from conversations by itself."),
+        Entry(id: "use_memory", kind: .toggle, section: "assistant", about: "Use what Nook remembers with every question."),
+        Entry(id: "learn_from_chats", kind: .toggle, section: "assistant", about: "Let Nook learn from conversations by itself."),
         Entry(id: "online_lyrics", kind: .toggle, section: "privacy", about: "Look up song lyrics online.")
     ]
 

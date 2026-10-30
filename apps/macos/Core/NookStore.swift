@@ -329,7 +329,7 @@ final class NookStore {
         sqlite3_finalize(stmt)
     }
 
-    /// Forgets everything Nook learned (Settings › Memory).
+    /// Forgets everything Nook learned (Settings › Assistant).
     func clearMemories() {
         exec("DELETE FROM memories; DELETE FROM memory_state;")
     }

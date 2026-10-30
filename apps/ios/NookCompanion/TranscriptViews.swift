@@ -8,8 +8,11 @@ import SwiftUI
 enum TranscriptRow: Identifiable {
     case user(TimelineEntry)
     case answer(TimelineEntry, isFinal: Bool)
-    /// Steps in a row (with an error or a note among them), as one line that opens to the steps.
+    /// Steps in a row, as one line that opens to the steps.
     case work(id: String, [TimelineEntry])
+    /// A compaction (a quiet word across the column) or an error (the problem card), in sight also when its turn folds,
+    /// as the Mac's `TranscriptNotice`.
+    case notice(TimelineEntry)
     /// A finished turn's work, folded under "Worked for …".
     case fold(id: String, seconds: Double?, rows: [TranscriptRow])
     /// Right under your message while the agent works.
@@ -22,6 +25,7 @@ enum TranscriptRow: Identifiable {
         case .user(let entry): return "user:" + entry.id
         case .answer(let entry, _): return "answer:" + entry.id
         case .work(let id, _): return "work:" + id
+        case .notice(let entry): return "notice:" + entry.id
         case .fold(let id, _, _): return "fold:" + id
         case .working: return "working"
         case .live: return "live"
@@ -46,11 +50,13 @@ enum TranscriptRow: Identifiable {
         guard let first = turn.first else { return [] }
         let answer = turn.lastIndex { $0.kind == .assistant }
         guard first.kind == .user, let answer else { return group(turn, finalID: answer.map { turn[$0].id }) }
-        let work = turn.indices.filter { $0 != 0 && $0 != answer }.map { turn[$0] }
-        guard let firstWork = work.first else { return [.user(first), .answer(turn[answer], isFinal: true)] }
+        // Notices and errors stay in sight; the rest of the work folds.
+        let work = turn.indices.filter { $0 != 0 && $0 != answer && !turn[$0].isNotice }.map { turn[$0] }
+        let notices = turn.filter(\.isNotice).map { TranscriptRow.notice($0) }
+        guard let firstWork = work.first else { return [.user(first)] + notices + [.answer(turn[answer], isFinal: true)] }
         let end = turn.map(\.date).max() ?? first.date
-        return [.user(first), .fold(id: firstWork.id, seconds: end > first.date ? end - first.date : nil, rows: group(work, finalID: nil)),
-                .answer(turn[answer], isFinal: true)]
+        return [.user(first), .fold(id: firstWork.id, seconds: end > first.date ? end - first.date : nil, rows: group(work, finalID: nil))]
+            + notices + [.answer(turn[answer], isFinal: true)]
     }
 
     private static func open(_ turn: [TimelineEntry]) -> [TranscriptRow] {
@@ -71,7 +77,7 @@ enum TranscriptRow: Identifiable {
         return rows
     }
 
-    /// Steps in a row become one row; answers stand on their own.
+    /// Steps in a row become one row; answers, notices and errors stand on their own.
     private static func group(_ entries: [TimelineEntry], finalID: String?) -> [TranscriptRow] {
         var rows: [TranscriptRow] = []
         var steps: [TimelineEntry] = []
@@ -81,8 +87,11 @@ enum TranscriptRow: Identifiable {
         }
         for entry in entries {
             switch entry.kind {
-            case .tool, .change, .notice, .error:
+            case .tool, .change:
                 steps.append(entry)
+            case .notice, .error:
+                flush()
+                rows.append(.notice(entry))
             case .assistant:
                 flush()
                 rows.append(.answer(entry, isFinal: entry.id == finalID))
@@ -96,6 +105,11 @@ enum TranscriptRow: Identifiable {
     }
 }
 
+extension TimelineEntry {
+    /// A compaction or an error: shown on its own, never folded into the work.
+    var isNotice: Bool { kind == .notice || kind == .error }
+}
+
 /// The whole conversation: the rows, the folds and groups you opened, and the end in sight while the agent works.
 struct TranscriptConversation: View {
     let entries: [TimelineEntry]
@@ -106,7 +120,7 @@ struct TranscriptConversation: View {
 
     var body: some View {
         let rows = TranscriptRow.rows(entries, working: working)
-        LazyVStack(alignment: .leading, spacing: Theme.Spacing.md) {
+        LazyVStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             ForEach(rows) { row in
                 self.row(row)
             }
@@ -117,26 +131,31 @@ struct TranscriptConversation: View {
     private func row(_ row: TranscriptRow) -> some View {
         switch row {
         case .user(let entry):
-            TranscriptUserBubble(entry: entry)
-                .padding(.top, Theme.Spacing.lg)
+            // Each turn starts as a block of its own, as on the Mac.
+            TranscriptUserMessage(text: entry.text)
+                .padding(.top, Theme.Spacing.xxl - Theme.Spacing.sm)
+                .padding(.bottom, Theme.Spacing.xxs)
         case .answer(let entry, let isFinal):
-            TranscriptAnswer(entry: entry, isFinal: isFinal)
+            TranscriptReply(text: entry.text, date: Date(timeIntervalSince1970: entry.date), failed: entry.failed, footer: isFinal)
                 .padding(.bottom, isFinal ? Theme.Spacing.lg : Theme.Spacing.xxs)
         case .work(let id, let steps):
             work(id: id, steps: steps)
+        case .notice(let entry):
+            TranscriptNotice(entry: entry)
         case .fold(let id, let seconds, let inner):
             let key = "fold:" + id
-            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 TranscriptFoldLine(text: seconds.map { String(localized: "Worked for \(TranscriptDuration.text($0))") }
                                     ?? String(localized: "Worked"),
                                    open: open.contains(key)) { toggle(key) }
                 if open.contains(key) {
-                    VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                         ForEach(inner) { self.flat($0) }
                     }
                     .padding(.bottom, Theme.Spacing.xs)
                 }
             }
+            .padding(.bottom, Theme.Spacing.xxs)
         case .working(let since):
             TranscriptWorkingLine(since: since)
         case .live(let step):
@@ -145,7 +164,7 @@ struct TranscriptConversation: View {
                 TranscriptWorkLine(symbol: TranscriptSymbols.symbol(step.detail ?? ""), label: text.verb, detail: text.detail,
                                    mono: text.mono, live: true)
             } else {
-                TranscriptWorkLine(symbol: "sparkles", label: String(localized: "Thinking…"), live: true)
+                TranscriptWorkLine(symbol: "brain", label: String(localized: "Thinking…"), live: true)
             }
         }
     }
@@ -154,49 +173,40 @@ struct TranscriptConversation: View {
     @ViewBuilder
     private func flat(_ row: TranscriptRow) -> some View {
         switch row {
-        case .user(let entry): TranscriptUserBubble(entry: entry)
-        case .answer(let entry, let isFinal): TranscriptAnswer(entry: entry, isFinal: isFinal)
+        case .user(let entry): TranscriptUserMessage(text: entry.text)
+        case .answer(let entry, let isFinal): TranscriptReply(text: entry.text, date: Date(timeIntervalSince1970: entry.date), failed: entry.failed, footer: isFinal)
         case .work(let id, let steps): work(id: id, steps: steps)
+        case .notice(let entry): TranscriptNotice(entry: entry)
         default: EmptyView()
         }
     }
 
-    /// One step as its own line; several as one line ("4 steps") that opens to them, under a thin rule.
+    /// One step as its own line; several as one sentence ("Ran 3 commands and read 2 files") that opens to them, as on
+    /// the Mac (`TranscriptWorkGroup`).
     @ViewBuilder
     private func work(id: String, steps: [TimelineEntry]) -> some View {
         if steps.count == 1, let step = steps.first {
             stepLine(step)
         } else {
             let key = "work:" + id
-            let failed = steps.contains(where: \.failed) || steps.contains { $0.kind == .error }
-            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                TranscriptWorkLine(symbol: "square.stack.3d.up", label: String(localized: "\(steps.count) steps"),
-                                   detail: steps.last.map { TranscriptStepText.parts($0).detail }, failed: failed,
+            let tally = ToolTally(steps)
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                TranscriptWorkLine(symbol: TranscriptSymbols.symbol(tally), label: tally.sentence, failed: tally.failed,
                                    open: open.contains(key)) { toggle(key) }
                 if open.contains(key) {
-                    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                         ForEach(steps) { stepLine($0) }
                     }
-                    .padding(.leading, Theme.Spacing.lg)
-                    .overlay(alignment: .leading) { Rectangle().fill(Theme.hairline).frame(width: 1).padding(.leading, 9) }
                 }
             }
         }
     }
 
-    /// "Ran  npm test": what the agent did, then what it did that to; a failed step in coral, a note or an error in full.
-    @ViewBuilder
+    /// "Ran npm test": what the agent did, then what it did that to, as on the Mac.
     private func stepLine(_ step: TimelineEntry) -> some View {
-        switch step.kind {
-        case .error:
-            TranscriptWorkLine(symbol: "exclamationmark.circle", label: step.text, failed: true, wraps: true)
-        case .notice:
-            TranscriptWorkLine(symbol: "info.circle", label: step.text, wraps: true)
-        default:
-            let text = TranscriptStepText.parts(step)
-            TranscriptWorkLine(symbol: TranscriptSymbols.symbol(step.detail ?? ""), label: text.verb, detail: text.detail,
-                               mono: text.mono, failed: step.failed)
-        }
+        let text = TranscriptStepText.parts(step)
+        return TranscriptWorkLine(symbol: step.kind == .change ? "square.and.pencil" : TranscriptSymbols.symbol(step.detail ?? ""),
+                                  label: text.verb, detail: text.detail, mono: text.mono, failed: step.failed)
     }
 
     private func toggle(_ key: String) {
@@ -208,21 +218,21 @@ struct TranscriptConversation: View {
 
 // MARK: Messages
 
-/// What you wrote, the Mac's `TranscriptUserBubble`: a soft bubble on the right, at most four fifths wide. A long
-/// message folds to its first lines; a tap opens the whole of it, a long press copies it.
-struct TranscriptUserBubble: View {
-    let entry: TimelineEntry
+/// What you wrote, the Mac's `TranscriptUserMessage`, in every conversation (an agent's and the Nook chat): a soft
+/// bubble on the right. A long message folds to its first lines; a tap opens the whole of it, a long press copies it.
+struct TranscriptUserMessage: View {
+    let text: String
     @State private var expanded = false
 
     private var long: Bool {
-        entry.text.count > 600 || entry.text.split(separator: "\n", omittingEmptySubsequences: false).count > 8
+        text.count > 600 || text.split(separator: "\n", omittingEmptySubsequences: false).count > 8
     }
 
     var body: some View {
         HStack(spacing: 0) {
             Spacer(minLength: 56)
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                Text(verbatim: entry.text)
+                Text(verbatim: text)
                     .font(Theme.TextStyle.body)
                     .foregroundStyle(Theme.text)
                     .lineSpacing(2)
@@ -250,33 +260,44 @@ struct TranscriptUserBubble: View {
             }
             .padding(Theme.Spacing.lg)
             .background(Theme.bubble, in: RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous))
-            .contextMenu { CopyButton(text: entry.text) }
+            .contextMenu { CopyButton(text: text) }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
 }
 
-/// The agent's answer, the Mac's `TranscriptAnswer`: formatted text on the left without a bubble; the final answer of a
-/// turn shows its time under it. A long press copies it.
-struct TranscriptAnswer: View {
-    let entry: TimelineEntry
-    let isFinal: Bool
+/// The answer, the Mac's `TranscriptReply`, in every conversation (an agent's and the Nook chat): formatted text on the
+/// left without a bubble, then what came with it (`extras`), and its time under a final answer. A long press copies it.
+struct TranscriptReply<Extras: View>: View {
+    let text: String
+    var date: Date? = nil
+    var failed = false
+    /// The time under the answer; only the final answer of a turn has it.
+    var footer = true
+    @ViewBuilder var extras: () -> Extras
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Markdown.text(entry.text)
+            Markdown.text(text)
                 .font(Theme.TextStyle.body)
-                .foregroundStyle(entry.failed ? Theme.coral : Theme.textStrong)
+                .foregroundStyle(failed ? Theme.coral : Theme.textStrong)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
-            if isFinal {
-                TranscriptTime(date: Date(timeIntervalSince1970: entry.date))
+            extras()
+            if footer, let date {
+                TranscriptTime(date: date)
             }
         }
         .padding(.horizontal, Theme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .contextMenu { CopyButton(text: entry.text) }
+        .contextMenu { CopyButton(text: text) }
+    }
+}
+
+extension TranscriptReply where Extras == EmptyView {
+    init(text: String, date: Date? = nil, failed: Bool = false, footer: Bool = true) {
+        self.init(text: text, date: date, failed: failed, footer: footer) { EmptyView() }
     }
 }
 
@@ -304,8 +325,8 @@ struct TranscriptTime: View {
 
 // MARK: Work
 
-/// One line of the agent's work, the Mac's `TranscriptWorkLine`: an icon, what it did in muted text, and a chevron when
-/// it opens. The line that runs now breathes.
+/// One line of the agent's work, the Mac's `TranscriptWorkLine`: an icon in a column of its own, what it did and what it
+/// did that to in one quiet sentence, and a chevron when it opens. The line that runs now breathes.
 struct TranscriptWorkLine: View {
     let symbol: String
     let label: String
@@ -313,41 +334,44 @@ struct TranscriptWorkLine: View {
     var mono = false
     var failed = false
     var live = false
-    /// A note or an error: the whole text over several lines instead of one.
-    var wraps = false
     /// Nil: the line does not open.
     var open: Bool? = nil
     var action: (() -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dim = false
 
+    /// The label, then its detail on the same line in the same quiet color, so a long command or path truncates as one
+    /// sentence.
     private var labelText: Text {
-        let head = Text(verbatim: label).foregroundStyle(failed && wraps ? Theme.coral.opacity(0.85) : Theme.textSecondary)
+        let head = Text(verbatim: label).foregroundStyle(Theme.textTertiary)
         guard let detail, !detail.isEmpty else { return head }
-        return head + Text(verbatim: "  ") + Text(verbatim: detail)
-            .font(mono ? Theme.TextStyle.code : Theme.TextStyle.detail)
+        return head + Text(verbatim: " ") + Text(verbatim: detail)
+            .font(mono ? Theme.TextStyle.code : Theme.TextStyle.body)
             .foregroundStyle(Theme.textTertiary)
     }
 
     var body: some View {
-        let content = HStack(alignment: wraps ? .firstTextBaseline : .center, spacing: Theme.Spacing.sm) {
+        let content = HStack(spacing: Theme.Spacing.sm) {
             Image(systemName: failed ? "exclamationmark.circle" : symbol)
-                .font(Theme.TextStyle.label)
-                .foregroundStyle(failed ? Theme.coral.opacity(0.85) : Theme.textTertiary)
-                .frame(width: 20)
+                .font(Theme.TextStyle.body)
+                .foregroundStyle(failed ? Theme.coral.opacity(0.6) : Theme.textTertiary)
+                .frame(width: 24)
             labelText
-                .lineLimit(wraps ? 6 : 1)
+                .lineLimit(1)
                 .truncationMode(.tail)
                 .opacity(live && dim ? 0.45 : 1)
             if let open {
                 Image(systemName: "chevron.right")
                     .font(Theme.font(10, .bold))
-                    .foregroundStyle(Theme.textTertiary)
+                    .foregroundStyle(Theme.textTertiary.opacity(0.7))
                     .rotationEffect(.degrees(open ? 90 : 0))
+            }
+            if failed {
+                Image(systemName: "xmark").font(Theme.font(10, .bold)).foregroundStyle(Theme.coral.opacity(0.6))
             }
             Spacer(minLength: 0)
         }
-        .font(Theme.TextStyle.detail)
+        .font(Theme.TextStyle.body)
         .frame(minHeight: 26)
         .contentShape(Rectangle())
         .onAppear {
@@ -361,6 +385,42 @@ struct TranscriptWorkLine: View {
                 .accessibilityAddTraits(open == true ? .isSelected : [])
         } else {
             content
+        }
+    }
+}
+
+/// Something that happened to the conversation, the Mac's `TranscriptNotice`: a compaction is a quiet word across the
+/// column with room around it; an error is the timeline's problem card; any other note from a session Nook runs is a
+/// quiet line, as on the Mac.
+struct TranscriptNotice: View {
+    let entry: TimelineEntry
+
+    var body: some View {
+        if entry.kind == .notice, entry.detail != TimelineEntry.compacted {
+            TranscriptWorkLine(symbol: "info.circle", label: entry.text)
+        } else if entry.kind == .error {
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(Theme.coral)
+                Text(verbatim: entry.text)
+                    .font(Theme.TextStyle.body)
+                    .foregroundStyle(Theme.coral)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(Theme.Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .padding(.vertical, Theme.Spacing.xs)
+        } else {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                Text(verbatim: entry.text).lineLimit(1)
+            }
+            .font(Theme.TextStyle.caption)
+            .foregroundStyle(Theme.textTertiary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Theme.Spacing.md)
+            .accessibilityElement(children: .combine)
         }
     }
 }
@@ -380,7 +440,7 @@ struct TranscriptFoldLine: View {
                     .rotationEffect(.degrees(open ? 90 : 0))
                 Spacer(minLength: 0)
             }
-            .font(Theme.TextStyle.detail)
+            .font(Theme.TextStyle.body)
             .foregroundStyle(Theme.textTertiary)
             .padding(.top, Theme.Spacing.xxs)
             .padding(.bottom, Theme.Spacing.md)
@@ -407,7 +467,7 @@ struct TranscriptWorkingLine: View {
                 Text("Working")
             }
         }
-        .font(Theme.TextStyle.detail)
+        .font(Theme.TextStyle.body)
         .foregroundStyle(Theme.textTertiary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, Theme.Spacing.xxs)
@@ -449,8 +509,45 @@ enum TranscriptStepText {
         case .edit: return (["write", "write_file"].contains(name) ? String(localized: "Wrote") : String(localized: "Edited"), summary, true)
         case .read: return (["ls", "list_directory"].contains(name) ? String(localized: "Listed") : String(localized: "Read"), summary, true)
         case .search: return (String(localized: "Searched"), summary, true)
-        case .other: return (tool.isEmpty ? summary : tool, tool.isEmpty ? "" : summary, false)
+        case .other:
+            // An MCP tool by its label ("GitHub › Create issue"), as on the Mac, not its raw name.
+            return (tool.isEmpty ? summary : McpToolLabel.label(tool) ?? tool, tool.isEmpty ? "" : summary, false)
         }
+    }
+}
+
+/// The label of an MCP tool (`mcp__server__tool`) as the Mac's `McpToolName.label` writes it: "GitHub › Create issue".
+enum McpToolLabel {
+    static func label(_ raw: String) -> String? {
+        guard raw.hasPrefix("mcp__") else { return nil }
+        let parts = raw.dropFirst(5).components(separatedBy: "__")
+        guard parts.count >= 2, let tool = parts.last, !tool.isEmpty else { return nil }
+        var server = parts.dropLast().joined(separator: "__")
+        if server.hasPrefix("claude_ai_"), server.count > 10 { server.removeFirst(10) }
+        guard !server.isEmpty else { return nil }
+        return readable(server) + " › " + readable(tool)
+    }
+
+    /// "move_file", "move-file" and "moveFile" read as "Move file".
+    private static func readable(_ name: String) -> String {
+        var words: [String] = []
+        var current = ""
+        for character in name {
+            if "_-./:".contains(character) {
+                if !current.isEmpty { words.append(current) }
+                current = ""
+            } else if character.isUppercase, let last = current.last, last.isLowercase || last.isNumber {
+                words.append(current)
+                current = String(character)
+            } else {
+                current.append(character)
+            }
+        }
+        if !current.isEmpty { words.append(current) }
+        let lowered = words.enumerated().map { index, word in
+            word.count > 1 && word == word.uppercased() ? word : (index == 0 ? word.prefix(1).uppercased() + word.dropFirst().lowercased() : word.lowercased())
+        }
+        return lowered.joined(separator: " ")
     }
 }
 
@@ -480,11 +577,67 @@ enum TranscriptSymbols {
         default:
             switch ToolKind.of(tool) {
             case .command: return "terminal"
-            case .edit: return "pencil"
-            case .read: return "doc.text"
+            case .edit: return "square.and.pencil"
+            case .read: return "eye"
             case .search: return "magnifyingglass"
-            case .other: return "wrench.and.screwdriver"
+            case .other: return tool.hasPrefix("mcp") ? "puzzlepiece.extension" : "wrench"
             }
+        }
+    }
+
+    /// One kind of work keeps its own icon; mixed work gets a hammer.
+    static func symbol(_ tally: ToolTally) -> String {
+        guard tally.parts.count == 1, let kind = tally.parts.first?.kind else { return "hammer" }
+        switch kind {
+        case .command: return "terminal"
+        case .edit: return "square.and.pencil"
+        case .read: return "eye"
+        case .search: return "magnifyingglass"
+        case .other: return "wrench"
+        }
+    }
+}
+
+/// What a run of steps did, counted per kind (the Mac's `ToolTally`), and said as the Mac's group line says it: "Ran 3
+/// commands and read 2 files", the two most important kinds of work, then how many other actions. Edits count files.
+struct ToolTally {
+    private(set) var parts: [(kind: ToolKind, count: Int)] = []
+    private(set) var failed = false
+
+    init(_ steps: [TimelineEntry]) {
+        var counts: [ToolKind: Int] = [:]
+        var files: Set<String> = []
+        for step in steps {
+            if step.failed { failed = true }
+            let kind: ToolKind = step.kind == .change ? .edit : ToolKind.of(step.detail ?? "")
+            if kind == .edit { files.insert(step.text) } else { counts[kind, default: 0] += 1 }
+        }
+        if !files.isEmpty { counts[.edit] = files.count }
+        let order: [ToolKind] = [.command, .edit, .read, .search, .other]
+        parts = order.compactMap { kind in counts[kind].map { (kind, $0) } }
+    }
+
+    var sentence: String {
+        guard !parts.isEmpty else { return Self.phrase(.other, 0) }
+        let named = parts.prefix(2).map { Self.phrase($0.kind, $0.count) }
+        let rest = parts.dropFirst(2).reduce(0) { $0 + $1.count }
+        let text: String
+        if rest > 0 {
+            text = String(localized: "\(named[0]), \(named[1]) and \(rest) more actions")
+        } else {
+            text = named.count == 2 ? String(localized: "\(named[0]) and \(named[1])") : named[0]
+        }
+        // "changed 2 files" opens a sentence of its own with a capital, as on the Mac.
+        return text.prefix(1).uppercased() + text.dropFirst()
+    }
+
+    private static func phrase(_ kind: ToolKind, _ count: Int) -> String {
+        switch kind {
+        case .command: return String(localized: "Ran \(count) commands")
+        case .edit: return String(localized: "changed \(count) files")
+        case .read: return String(localized: "read \(count) files")
+        case .search: return String(localized: "searched \(count) times")
+        case .other: return String(localized: "\(count) other actions")
         }
     }
 }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Nook's home and usage for the iPhone companion: the same Today rows, agenda, player and plan limits as the notch and
-/// Settings › Usage, read from the same places so the phone and the Mac never disagree.
+/// Settings › Coding agents, read from the same places so the phone and the Mac never disagree.
 extension CompanionServer {
     // MARK: Home
 
@@ -79,7 +79,7 @@ extension CompanionServer {
         return CompanionResponse(id: request.id, ok: true, usage: digest)
     }
 
-    /// Every connected account with the limits it reported, as in Settings › Usage.
+    /// Every connected account with the limits it reported, as in Settings › Coding agents.
     private func accounts(_ app: AppModel) -> [UsageDigest.Account] {
         app.connectedProfiles.map { profile in
             UsageDigest.Account(id: profile.id, agent: profile.kind.shortName, account: AccountLabel.name(profile, app: app),

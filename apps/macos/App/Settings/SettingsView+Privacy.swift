@@ -2,7 +2,8 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-/// Settings › Privacy & security: privacy level, permissions, apps Nook never reads, log.
+/// Settings › Privacy & security: the privacy level (and what never leaves the Mac), permissions, apps Nook never reads,
+/// sources only a brain on this Mac may read, and the log.
 extension SettingsView {
     // MARK: Privacy and Access
 
@@ -20,8 +21,8 @@ extension SettingsView {
             }
             .onAppear { permissions.watch() }
             .onDisappear { permissions.unwatch() }
-            privateSourcesSection
             neverReadAppsSection
+            privateSourcesSection
             Section {
                 SettingToggle(tr("settings.privacy.onlineLyrics"), detail: tr("settings.privacy.onlineLyricsDetail"),
                               isOn: $settings.onlineLyrics)
@@ -31,13 +32,6 @@ extension SettingsView {
                         ToastCenter.shared.success(tr("settings.privacy.screenTextForgotten"))
                     }
                 }
-            }
-            // What Nook promises, on its own: four facts to read, after the switches.
-            Section(tr("settings.privacy.whatLeavesMac")) {
-                promise("eye.slash", tr("settings.privacy.noScreenshots"), tr("settings.privacy.noScreenshotsDetail"))
-                promise("key", tr("settings.privacy.passwordsHidden"), tr("settings.privacy.passwordsHiddenDetail"))
-                promise("hand.raised", tr("settings.privacy.nothingWithoutClick"), tr("settings.privacy.nothingWithoutClickDetail"))
-                promise("lock", tr("settings.privacy.keysInKeychain"), tr("settings.privacy.keysInKeychainDetail"))
             }
             // The log of what Nook did last: the longest part, so it comes last.
             AuditLogSection()
@@ -59,6 +53,13 @@ extension SettingsView {
             SettingNote(tr(settings.privacyLevel.detailKey))
             if settings.isLocalBrain {
                 SettingNote(tr("settings.privacy.level.localBrain"), tone: .success)
+            }
+            // What Nook promises whatever the level: four facts, folded under the choice they belong to.
+            DisclosureGroup(tr("settings.privacy.whatLeavesMac")) {
+                promise("eye.slash", tr("settings.privacy.noScreenshots"), tr("settings.privacy.noScreenshotsDetail"))
+                promise("key", tr("settings.privacy.passwordsHidden"), tr("settings.privacy.passwordsHiddenDetail"))
+                promise("hand.raised", tr("settings.privacy.nothingWithoutClick"), tr("settings.privacy.nothingWithoutClickDetail"))
+                promise("lock", tr("settings.privacy.keysInKeychain"), tr("settings.privacy.keysInKeychainDetail"))
             }
         } header: {
             Text(tr("settings.privacy.levelTitle"))

@@ -7,7 +7,7 @@ enum UsageMetric: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-/// Settings › Usage, the overview: what every agent on this Mac used, read from their own
+/// Settings › Coding agents, the overview: what every agent on this Mac used, read from their own
 /// transcripts (also the sessions you run in a terminal), as cost at API prices or as tokens, over the last 24 hours or
 /// 7, 30 or 90 days. The same blocks (`UsageOverviewBlocks`) make the Usage page in the Agents tab.
 struct UsageInsightsView: View {
@@ -74,7 +74,7 @@ struct UsageWindowPicker: View {
     }
 }
 
-/// The Usage page itself, from the large total to the breakdown, wherever it shows (Settings › Usage, Agents › Usage):
+/// The Usage page itself, from the large total to the breakdown, wherever it shows (Settings › Coding agents, Agents › Usage):
 /// each agent's share, the chart, the totals, the split by type, and the table per model or per day. `open` opens a
 /// model's sheet.
 struct UsageOverviewBlocks: View {
@@ -686,7 +686,7 @@ struct UsageLimitPoolView: View {
     }
 }
 
-/// Per agent with two or more accounts that report limits: their pool (`LimitPool`), for Settings › Usage and the Usage
+/// Per agent with two or more accounts that report limits: their pool (`LimitPool`), for Settings › Coding agents and the Usage
 /// page in the Agents tab.
 enum UsagePools {
     struct Entry: Identifiable {
@@ -709,7 +709,7 @@ enum UsagePools {
     }
 }
 
-/// Cost and Tokens on the Usage page in the Agents tab: the same blocks as Settings › Usage, in the panel's own column.
+/// Cost and Tokens on the Usage page in the Agents tab: the same blocks as Settings › Coding agents, in the panel's own column.
 struct UsageInsightsPanel: View {
     @ObservedObject var history: AgentHistory
     let metric: UsageMetric

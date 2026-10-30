@@ -1,6 +1,6 @@
 import Foundation
 
-/// Linking a chat app (Instagram, WhatsApp, Telegram, Teams…) from Settings › Chats › Linked chats, through the local
+/// Linking a chat app (Instagram, WhatsApp, Telegram, Teams…) from Settings › Connections › Linked chats, through the local
 /// chat helper on this Mac that `ChatServiceBridge` reads: which apps it can link and with which accounts (/v1/bridges), and
 /// the steps of one login (/v1/bridges/{id}/login-sessions). Foundation only, so it can be tested anywhere; `ChatLinker`
 /// makes the calls and Settings shows the steps.

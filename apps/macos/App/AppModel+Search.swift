@@ -290,7 +290,7 @@ extension AppModel {
             chat.select(conversation)
             return .chat
         case .memory:
-            openSettings(section: .memory)
+            openSettings(section: .assistant)
             return nil
         case .notice:
             guard let uuid = UUID(uuidString: value),

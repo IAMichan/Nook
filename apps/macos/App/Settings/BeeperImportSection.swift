@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Chats, for someone coming from Beeper: bringing over what Beeper Desktop has in one click (`BeeperImporter`),
+/// Settings › Connections, for someone coming from Beeper: bringing over what Beeper Desktop has in one click (`BeeperImporter`),
 /// then every app that was linked there with its Link button, until you say the move is done.
 struct BeeperImportSection: View {
     let setCollecting: (Bool) -> Void

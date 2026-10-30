@@ -38,6 +38,23 @@ final class PullRequestStackTests: XCTestCase {
         XCTAssertEqual(PullRequestStack.stack(of: bottom, in: all)?.map(\.number), [1, 3], "the lowest number above")
     }
 
+    func testPositionsForAWholeListMatchEachRow() {
+        let bottom = item(1, head: "a")
+        let left = item(5, head: "l", base: "a")
+        let right = item(3, head: "r", base: "a")
+        let alone = item(4, head: "d")
+        let elsewhere = item(6, head: "l", base: "a", repo: "acme/site")
+        let merged = item(7, head: "m", base: "r", state: .merged)
+        let all = [bottom, left, right, alone, elsewhere, merged, bottom]
+        let positions = PullRequestStack.positions(in: all)
+        for pr in all {
+            let one = PullRequestStack.position(of: pr, in: all)
+            XCTAssertEqual(positions[pr.id]?.index, one?.index, "#\(pr.number)")
+            XCTAssertEqual(positions[pr.id]?.count, one?.count, "#\(pr.number)")
+        }
+        XCTAssertEqual(positions.count, 3)
+    }
+
     func testALoopOfBasesEnds() {
         let first = item(1, head: "a", base: "b")
         let second = item(2, head: "b", base: "a")

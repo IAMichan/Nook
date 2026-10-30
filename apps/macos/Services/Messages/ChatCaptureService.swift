@@ -21,7 +21,7 @@ final class ChatCaptureService: ObservableObject {
 
     @Published private(set) var inbox: ChatInbox
     @Published private(set) var status: Status = .off
-    /// Which apps feed the inbox (Settings › Chats): the known ones you did not switch off, and the ones you added.
+    /// Which apps feed the inbox (Settings › Connections): the known ones you did not switch off, and the ones you added.
     @Published private(set) var sources = MessagingApps.sources
     @Published var enabled: Bool {
         didSet {
@@ -55,7 +55,7 @@ final class ChatCaptureService: ObservableObject {
         [messagesBridge, whatsAppDesktopBridge, slackBridge, telegramBridge, teamsBridge, snapchatBridge, serviceBridge]
     }
 
-    /// You logged in to an app from its row in Settings › Chats: it is switched on, collecting with it, and read now.
+    /// You logged in to an app from its row in Settings › Connections: it is switched on, collecting with it, and read now.
     func loggedIn(_ app: String) {
         setSource(app, on: true)
         if !enabled { enabled = true }
@@ -191,7 +191,7 @@ final class ChatCaptureService: ObservableObject {
         }
         bridgeDue = [:]
         bridgeNudges = [:]
-        // A Telegram session from an earlier login starts by itself; a new login starts from Settings › Chats.
+        // A Telegram session from an earlier login starts by itself; a new login starts from Settings › Connections.
         if sources.isOn(telegramBridge.app) { telegramBridge.resume() }
         timer = Timer.scheduledCoalesced(withTimeInterval: Self.interval) { [weak self] _ in
             Task { @MainActor in
@@ -446,7 +446,7 @@ final class ChatCaptureService: ObservableObject {
         changeSources { $0.set(id, on: on) }
     }
 
-    /// Adds a website or a known app's name, as typed in Settings › Chats.
+    /// Adds a website or a known app's name, as typed in Settings › Connections.
     @discardableResult
     func addSource(_ typed: String, name: String = "") -> ChatSources.Added {
         var result = ChatSources.Added.invalid
@@ -454,7 +454,7 @@ final class ChatCaptureService: ObservableObject {
         return result
     }
 
-    /// Adds a Mac app chosen in Settings › Chats.
+    /// Adds a Mac app chosen in Settings › Connections.
     @discardableResult
     func addSource(bundleID: String, name: String) -> ChatSources.Added {
         var result = ChatSources.Added.invalid

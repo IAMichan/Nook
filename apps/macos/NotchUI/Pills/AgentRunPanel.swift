@@ -588,33 +588,44 @@ struct AgentRunPanel: View {
         let memo = derived.update(workspace.timeline(runID), run: run)
         let events = memo.events
         let blocks = memo.blocks
-        let cards = Dictionary(turnDiffs(run).compactMap { turn in turn.answerID.map { ($0, turn) } }, uniquingKeysWith: { first, _ in first })
+        let cards = memo.cards
         let found = finding ? memo.search(findQuery) : .idle
         let current = findIndex.flatMap { found.matches.indices.contains($0) ? found.matches[$0].eventID : nil }
+        // While the agent works, as in an agent's own transcript: "Working for …" right under your message, and the step
+        // that runs now only in the live line at the end, not also in the list above it.
+        let active = run.status.isActive
+        let workingUnder = active ? events.last(where: { $0.kind == .user })?.id : nil
+        let liveStep = active ? events.last.flatMap { $0.kind == .tool && $0.state == .running ? $0.id : nil } : nil
         let context = TimelineRowContext(structure: memo.revision, status: run.status,
                                          directory: run.isRemote ? nil : run.workingDirectory, highlighted: current,
                                          openEvents: expanded, shownFile: filePreview, counted: countedLines)
         return ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     if events.isEmpty {
                         ListEmptyNote(tr("agents.run.empty"))
                     }
                     // Finished turns fold to "Worked for …", tool calls in a row to one sentence.
                     ForEach(blocks) { block in
-                        VStack(alignment: .leading, spacing: 14) {
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                             if block.id == newSince { TimelineNewDivider() }
                             TimelineBlockView(block: block, expanded: openBlocks, context: context, toggle: toggleBlock) { event in
-                                AnyView(
-                                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                                        eventRow(event)
-                                        // What the turn changed (its card): a file or Open diff opens the diff beside it.
-                                        if let turn = cards[event.id.uuidString] {
-                                            TurnChangesCard(turn: turn, directory: run.workingDirectory) { file in
+                                if event.id == liveStep { return AnyView(EmptyView()) }
+                                return AnyView(
+                                    VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                                        // What the turn changed (its card): under the final answer, inside it, as in an
+                                        // agent's own transcript; a file or Open diff opens the diff beside it.
+                                        let card = cards[event.id].map { turn in
+                                            AnyView(TurnChangesCard(turn: turn, directory: run.workingDirectory) { file in
                                                 openDiff(TurnDiffSelection(turn: turn.id, file: file))
                                             }
-                                            .task(id: turn.id + "|\(turn.files.count)") { await countLines(turn, run: run) }
+                                            .task(id: turn.id + "|\(turn.files.count)") { await countLines(turn, run: run) })
                                         }
+                                        let inReply = event.kind == .assistant && memo.finalAnswers.contains(event.id)
+                                        eventRow(event, final: memo.finalAnswers.contains(event.id),
+                                                 extras: inReply ? card : nil, answerable: memo.answerable == event.id)
+                                        if !inReply, let card { card }
+                                        if event.id == workingUnder { TranscriptWorkingLine(since: run.turnStartedAt) }
                                     }
                                     .padding(.vertical, current == event.id ? 4 : 0)
                                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.iris.opacity(current == event.id ? 0.16 : 0)))
@@ -625,20 +636,18 @@ struct AgentRunPanel: View {
                         }
                         .id(block.id)
                     }
-                    if run.status.isActive {
-                        // The agent's task list, live, right above what it does now.
-                        if TaskChecklist.showsInline(run.tasks, active: true), let tasks = run.tasks {
-                            TaskChecklistCard(steps: tasks)
-                        }
+                    if active {
+                        // The agent's task list, live, right above what it does now: the same live line as in an agent's
+                        // own transcript.
                         let turn = TimelinePresentation.lastTurn(events)
-                        LiveActivityRow(live: TimelinePresentation.live(turn), activity: AgentActivity.current(turn),
-                                        step: run.tasks.flatMap(TaskChecklist.activeStep),
-                                        since: run.turnStartedAt,
-                                        waiting: run.status == .waitingApproval, asking: workspace.questions[runID] != nil,
-                                        accent: NookTheme.textSecondary,
-                                        openConsole: CommandConsole.running(turn).map { command -> () -> Void in
-                                            { withAnimation(NookTheme.reveal) { consoleEventID = consoleEventID == command.id ? nil : command.id } }
-                                        })
+                        TranscriptLiveLine(activity: AgentActivity.current(turn),
+                                           tasks: TaskChecklist.showsInline(run.tasks, active: true) ? run.tasks : nil,
+                                           waiting: run.status == .waitingApproval || workspace.questions[runID] != nil,
+                                           asking: workspace.questions[runID] != nil,
+                                           openConsole: CommandConsole.running(turn).map { command -> () -> Void in
+                                               { withAnimation(NookTheme.reveal) { consoleEventID = consoleEventID == command.id ? nil : command.id } }
+                                           },
+                                           help: TimelinePresentation.live(turn).tool)
                     }
                     if run.status == .failed || run.status == .stopped {
                         recovery(run, events: events, blocks: blocks, proxy: proxy)
@@ -858,7 +867,7 @@ struct AgentRunPanel: View {
     }
 
     @ViewBuilder
-    private func eventRow(_ event: RunEvent) -> some View {
+    private func eventRow(_ event: RunEvent, final: Bool = true, extras: AnyView? = nil, answerable: Bool = false) -> some View {
         if event.kind == .assistant, event.tool == "plan" {
             let idle = !(workspace.run(runID)?.status.isActive ?? false)
             // Only the latest plan, and only until you sent something after it.
@@ -889,7 +898,7 @@ struct AgentRunPanel: View {
                         .disabled(!workspace.canTransfer(runID))
                 }
         } else if event.kind == .assistant {
-            eventView(event)
+            eventView(event, final: final, extras: extras, answerable: answerable)
                 .contextMenu {
                     // "Fork from this response".
                     Button(tr("agents.fork.fromResponse")) { forkThrough(event) }
@@ -949,9 +958,13 @@ struct AgentRunPanel: View {
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.surface))
     }
 
-    private func eventView(_ event: RunEvent) -> some View {
+    private func eventView(_ event: RunEvent, final: Bool = true, extras: AnyView? = nil, answerable: Bool = false) -> some View {
         EventRow(
             event: event,
+            final: final,
+            extras: extras,
+            // A question at the end of the newest answer, answered with a click, as in an agent's own transcript.
+            onChoose: answerable ? { workspace.send(runID, text: $0) } : nil,
             expanded: expanded.contains(event.id),
             toggle: { toggle(event.id) },
             openFile: { path in app.viewModel.open(.changes(runID, file: path)) },
@@ -1318,6 +1331,14 @@ private final class RunTimelineDerived {
     private(set) var events: [RunEvent] = []
     private(set) var blocks: [TimelineBlock] = []
     private(set) var turns: [TurnDiff] = []
+    /// The answer that ends each finished turn: only it carries the footer (copy and time), as in an agent's own
+    /// transcript (`TranscriptPresentation`).
+    private(set) var finalAnswers: Set<UUID> = []
+    /// Each turn's changed-files card, under the turn's final answer (inside the reply, above its footer); a turn without
+    /// an answer keeps it under the line that ends it.
+    private(set) var cards: [UUID: TurnDiff] = [:]
+    /// The newest final answer while the agent waits: a question at its end can be answered with a click.
+    private(set) var answerable: UUID?
     private(set) var outputs: [SessionOutput] = []
     private(set) var runningCommand: UUID?
     /// The last pull request the agent reported with `<pr-created>`, for the tray above the composer.
@@ -1360,6 +1381,24 @@ private final class RunTimelineDerived {
         }
         revision &+= 1
         turns = TurnDiff.collect(events: all)
+        finalAnswers = []
+        cards = [:]
+        let byTurn = Dictionary(turns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        // Split as `TurnDiff.collect` does, so a turn and its card share the id of its first event.
+        let split = TimelinePresentation.split(all)
+        for (index, turn) in split.enumerated() {
+            // A turn still at work gets its final answer (and its card) when it is done.
+            let finished = index < split.count - 1 || !active
+            let answer = finished ? turn.last(where: { $0.kind == .assistant && $0.tool != "plan" && BackgroundWork.notice($0.text).isEmpty }) : nil
+            if let answer { finalAnswers.insert(answer.id) }
+            guard let first = turn.first, let diff = byTurn[first.id.uuidString] else { continue }
+            if let answer {
+                cards[answer.id] = diff
+            } else if let end = diff.answerID.flatMap(UUID.init(uuidString:)) {
+                cards[end] = diff
+            }
+        }
+        answerable = active ? nil : events.last(where: { $0.kind == .assistant }).flatMap { finalAnswers.contains($0.id) ? $0.id : nil }
         outputs = SessionOutputs.collect(all, tasks: run.tasks, directory: run.workingDirectory)
         runningCommand = CommandConsole.running(TimelinePresentation.lastTurn(all))?.id
         userTurns = events.filter { $0.kind == .user }

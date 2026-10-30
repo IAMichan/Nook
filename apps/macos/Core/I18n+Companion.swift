@@ -1,6 +1,6 @@
 import Foundation
 
-// Texts of the iPhone companion in Settings › Devices: versions of a paired phone, what it may do, testing the relay
+// Texts of the iPhone companion in Settings › Connections › iPhone: versions of a paired phone, what it may do, testing the relay
 // and copying diagnostics (docs/COMPANION.md).
 
 let companionTranslations: [AppLanguage: [String: String]] = [

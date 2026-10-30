@@ -15,6 +15,7 @@ copying it again.
 | `NookTheme.mint`, `amber`, `coral`, `violet`, `iris` | State: done, waiting on you, error, merged, Nook itself |
 | `NookTheme.Syntax.keyword`, `string`, `comment`, `number`, `type`, `property`, `tag`, `attribute` | Syntax colors of code in a diff (`DiffText`, via `DiffSyntaxStyle`) and in the file viewer (`FileViewer`), muted under the diff's own tints; each has a dark and a light value. Only for code, never for state |
 | `NookTheme.rowRest`, `rowHover`, `rowSelected`, `rowFill(selected:hovering:rest:)` | List rows and cards at rest, under the pointer, and selected |
+| `.selectionMark(_:)` | The accent bar at the leading edge of the selected row of a list (Agents, Chats, pull requests), on top of `rowSelected`, so where you are never depends on the fill alone |
 | `NookTheme.TextStyle.caption`, `detail`, `label`, `body`, `strong`, `title`, `heading`, `display`, `code` | The type scale: the same kind of text is the same size everywhere. `detail` is the line under a title (a setting's explanation, a hint, an error); `heading` heads a sheet or a setup step. Never SwiftUI's own `.caption`, `.callout`, or `.headline` |
 | `NookTheme.font(_:_:)`, `mono(_:_:)`, `rounded(_:_:)` | A size the scale does not cover (an icon, a numeral); never `Font.system(size:)` inline |
 | `NookTheme.Radius.chip`, `control`, `card`, `panel`, `sheet`, `pill` | Corner radii: 6, 8, 10, 12, 14, 20. Name the element, not the number |
@@ -36,8 +37,10 @@ informs without shouting; motion settles without overshoot. When you add a view:
   action is filled.
 - Words before chrome: a title, one line under it, and nothing in uppercase or tracked.
 
-The dark theme reads calm because it uses so little: a pure grey ramp (canvas `#0A0A0A`, raised surfaces about 3 % lighter, no blue cast), separation by tonal steps
-and faint white fills instead of grey panels or lines, and color only where it carries meaning. In practice:
+The dark theme reads calm because it uses so little: a pure grey ramp (canvas `#0A0A0A`, raised surfaces about 4–8 % lighter, no blue cast), separation by tonal steps
+and faint white fills instead of grey panels or lines, and color only where it carries meaning. Calm never costs
+clarity: every text color, `textTertiary` included, reads at WCAG AA (4.5:1 or more) on every surface up to `smoke`,
+and a selected row stands a full step above a hovered one with a `selectionMark` at its edge. In practice:
 
 - **Color means state, nothing else.** A status mark and its word, an error, a diff's `+`/`−` in the diff itself, and
   links (`NookTheme.blue`, no underline). Headers, composer controls, menus, bubbles, tool rows and counters stay grey.
@@ -57,6 +60,13 @@ and faint white fills instead of grey panels or lines, and color only where it c
   the round send button 8 pt from the corner (a one-line box is a 48 pt capsule). Your own message is a soft
   `NookTheme.bubble` with `Radius.bubble` and no edge; the agent's answer has no bubble, its running text in
   `textStrong` (a step under the headings in `paper`) with relaxed line spacing.
+- **One message component.** Every conversation (the Nook chat, a session Nook runs, an agent's own transcript, and
+  the iPhone's chat and transcripts) draws its messages with `TranscriptUserMessage` and `TranscriptReply`: the same
+  14 pt text, the same `TranscriptStyle.turnGap` above each of your messages, and the same footer (time and copy, plus
+  an answer's own actions such as try again) on hover. The work between the messages is one set of views too
+  (`TranscriptWork.swift`), whether Nook runs the session or it comes from the agent's own transcript. In an agent's conversation, one Nook runs or one from its own
+  transcript, only the final answer of a turn has the footer, the turn's changed files sit inside that answer above
+  it, and the newest answer's options can be clicked. Never draw a message bubble or an answer of your own.
 
 ## Keeping it one design
 
@@ -145,6 +155,8 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | --- | --- | --- |
 | `NookPrimaryButton`, `SmallPrimaryButton`, `NookGhostButton`, `SmallGhostButton` | `NookButtons.swift` | Text buttons on cards, in chat, and in the panel's own forms (optional SF Symbol before the title). They dim by themselves when `.disabled`; do not add an `.opacity` for it. Inside the panel use these, not `.borderedProminent` |
 | `NookNotice`, `NookNoticeEnd`, `NoticeClock` | `NookNotice.swift` | The one shape of every short notice: the strips under the notch (result, suggestion, moment), `PanelNoticeBar` and the toast. Mark, message and line, its actions, and with `countdown` the OK with its ring. `NookNoticeEnd` is that end (actions + OK with ring) on its own, shared by `NookNotice`, the compact agent notice in the notch's row and a card with an OK; `NoticeClock` runs the same time out and holds while the pointer is on the notice |
+| `TranscriptUserMessage`, `TranscriptReply`, `TranscriptMessageFooter`, `TranscriptTime`, `TranscriptStyle` | `TranscriptMessage.swift` | The messages of every conversation: yours as a bubble on the right (pictures above it, a long one folded, a steer mark), the answer as Markdown on the left with what came with it in `extras` (a chart, a mail, a turn's changed files) and its own `actions` in the hover footer. Used by `ChatMessageView` (Nook chat), `EventRow` (a session Nook runs) and `TranscriptConversation` (an agent's transcript); the iPhone has the same two views in `TranscriptViews.swift` |
+| `TranscriptWorkLine`, `TranscriptThought`, `TranscriptStepDetail`, `TranscriptWorkGroup`, `TranscriptFold`, `TranscriptFoldLine`, `TranscriptWorkingLine`, `TranscriptLiveLine`, `TranscriptStepText`, `TranscriptSymbols` | `TranscriptWork.swift` | The agent's work between the messages, the same in a session Nook runs (`EventRow`, `ToolRow`, `TimelineBlockView`) and in an agent's own transcript (`TranscriptConversation`): a step as a verb and what it was done to, a thought's headline, steps in a row behind one sentence, a finished turn folded under "Worked for …", "Working for …" under your message and the live line at the end. A `RunEvent` becomes a step with `AgentToolStep(event:)` |
 | `NookAcknowledgeButton`, `CountdownRing` | `NookButtons.swift` | The white "OK" that closes a notice at once, with a ring counting down until it closes by itself (card `acknowledge` + `countdown`, compact strip) |
 | `NookActionBar` | `NookButtons.swift` | A notice's own actions (`NookNoticeAction`) in one dark bar with thin dividers, next to its OK; drawn by `NookNoticeEnd`, never placed by hand |
 | `NookNoticeActions`, `NookNoticeAction` | `NookNoticeActions.swift` | The button row at the bottom of every notification (cards, approvals, questions, panel notices): main action and its "not now" in one pill (`NookSplitButton`), muted extras, rarer actions in a "…" menu (`NookMoreMenu`), optional mic. Use it for any new notification instead of loose buttons |
@@ -154,7 +166,8 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `QRCodeView`, `QRCode` | `QRCode.swift` | The one QR code for a phone to scan (linking a chat app, WhatsApp, pairing the companion): crisp pixels on a light card, with a label for VoiceOver. Never draw a QR image by hand |
 | `PanelListHeader`, `PanelNewButton` | `PanelBlocks.swift` | The title row on top of every tab's list (Nook, Agents, Chats, Pull requests): name, `NookCountBadge`, the list's actions; `PanelNewButton` is the "new" in it, lit while the new one is open |
 | `NookCountBadge` | `PanelBlocks.swift` | How many wait for you: a small amber count, on a tab or a list title |
-| `PullRequestRow`, `PullRequestTag` | `NotchUI/Pills/PullRequestRow.swift` | One pull request in a list: state mark, number, title, checks and review, lines changed, author, repository, labels, age, with its quick actions. The Pull requests page and the side panel's picker both draw their rows with it; never build a second pull request row |
+| `PullRequestRow`, `PullRequestTag`, `PullRequestLineCounts` | `NotchUI/Pills/PullRequestRow.swift` | One pull request in a list: state mark, then the title (so titles line up), checks and review, lines changed; under it the repository and number, author, labels, stack position, age, with its quick actions. The Pull requests page and the side panel's picker both draw their rows with it; never build a second pull request row. `PullRequestLineCounts` is the "+120 −8" of a row, the pull request page's header and a changed file: grouped numbers and a real minus sign, never drawn by hand |
+| `PullRequestDetailView` and its tabs | `NotchUI/Pills/PullRequestDetailView*.swift`, `PullRequestDetailParts.swift` | The pull request page. The main file holds its state, the top (crumbs, title, branches), the tab bar and the page that scrolls; each tab is an extension in its own file (`+Summary`, `+Guide`, `+Timeline`, `+Code`), merging and the stack are in `+Merge`. The small pieces they share (`PullRequestSummarySection`, `PullRequestHoverRow`, `PullRequestTimelineRail`, the loading ghosts …) are in `PullRequestDetailParts.swift`. A new part of the page goes in the file of the tab it belongs to. Responsive: beside the list it takes the room it has, filling a wide window it is one centered column of `PullRequestDetailView.pageWidth` (960 pt, `.pullRequestPageColumn()`, inside the scroll view so the wheel works beside it); where a line does not fit a narrow panel (the tab bar with what the tab holds, a file's header, a comment's emoji) it moves its second half to a line of its own with `ViewThatFits` instead of cutting it off |
 | `PullRequestFilterStore` | `PullRequestFilter.swift` | The one search and Filters of every pull request list, kept across launches; the page and the side panel's picker bind to it, so a filter set in one applies in the other |
 | `PullRequestSearchBar` | `PullRequestFilterMenu.swift` | The search and Filters of a pull request list: search field (takes `label:bug`), an optional middle (Sort), and `PullRequestFilterMenu`. Open by default; the Filters show closed and merged. The Pull requests page and the side panel's picker both use it; never build a second pull request filter |
 | `NookFilterChip` | `PanelBlocks.swift` | One chip in a row of filters ("All", "Sessions 4"): a quiet capsule, filled with the accent when chosen, with an optional count. Search everything uses it for its kinds |
@@ -215,7 +228,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `ChatLinkPreview` | `ChatLinkPreview.swift` | What a web address in a chat message leads to, under its text in every chat: a picture or GIF as itself, a video that plays in the bubble, a sound file with its player, any other page as a card with its picture, site and title (a play mark for a video page). Previews come from `ChatLinkPreviews` (LinkPresentation, fetched once per address) and video frames from `ChatVideoStills`. Never draw a link's preview by hand |
 | `ChatBubbleShape` | `ChatTranscript.swift` | A chat app's message bubble: a rounded box (`Radius.chatBubble`) with a small tail at its top corner on the first message of a run, filled `chatMine` (yours) or `chatTheirs`. Every bubble keeps `ChatBubbleShape.tail` points of room on its side so a run lines up; the typing bubble uses it too. Never draw a chat bubble's outline by hand |
 | `ChatCallRow` | `ChatMediaViews.swift` | A call in a chat, the same for every app: a round mark with its kind (arrow in or out, a camera for video, a hung-up phone in coral for one you missed), what it was and who rang and how long. `ChatFormat.call` reads any app's call line into a `ChatCall`; never draw a call by hand |
-| `ChatLimitsLine` | `ChatsSidebar.swift` | In the tray above the answer field of a chat Nook can only read, for every app: what is missing and one button, "Link <app>" (Settings › Chats) for an app Nook can link, else "Open <app>"; a cross hides it for that app |
+| `ChatLimitsLine` | `ChatsSidebar.swift` | In the tray above the answer field of a chat Nook can only read, for every app: what is missing and one button, "Link <app>" (Settings › Connections) for an app Nook can link, else "Open <app>"; a cross hides it for that app |
 | `ChatReplyField` | `ChatReplyField.swift` | The answer field under a chat (the Chats tab, and every full card with a field in the notch): Return sends (as Cmd+Return), Shift- or Option-Return adds a line, "@" opens the menu with "@nook" and ready-made requests, "@nook …" lets Nook write the message into the field first (it comes in a few words at a time), shown as Nook's draft in an iris panel above it: what you asked, Stop while it writes, go back to the request, step between Nook's versions, steer it (Shorter, Friendlier, More formal, Other words, or a change typed in its own field), and a Send button. The field is a soft round box whose buttons sit at its foot; the send button lights up (iris for "@nook …") once there is something to send. With `outgoing` a message on its way leaves the field for a mint panel above it (a gliding paper plane, "Sending to …" shimmering, the message), which shows a check and "Sent" for a moment once the chat has it. With `quote` it answers one message, shown above the field until sent or let go (the cross, Escape); with `onEscape`, Escape in the field with nothing to let go of closes what holds it. With `.extras(…)` it takes more than text: buttons before the text, what waits above the field, a button in place of send while nothing is typed, a bar that stands in for the field, and Cmd-V for pictures and files. Never build a chat's answer field by hand |
 | `ChatComposerModel`, `ChatAttachMenu`, `ChatEmojiButton`, `ChatMicButton`, `ChatRecordingBar`, `ChatComposerPanels` | `ChatComposer.swift` | What a chat sends besides text, plugged into `ChatReplyField.extras` (the Chats tab): "+" with photos and videos, files, GIFs, stickers, audio, a poll, a location and a contact (only what the chat's app can send, `ChatOutgoing.Kind`), the emoji browser, a voice message recorded in place of the field, the files waiting to go (each with what it goes as), and the poll, place, contact and sticker panels above the field. Never build a chat's attachments by hand |
 
@@ -249,20 +262,25 @@ are not kept there.
 | `SettingsLinkRow` | `SettingsBlocks.swift` | A row that leads to another page or flow: tile, title, line under it, chevron; a status symbol only when something is not done |
 | `InUseLabel` | `SettingsBlocks.swift` | The mint "In use" check on the chosen model, file or key |
 | `HoverActionsRow` | `SettingsBlocks.swift` | A row whose buttons show under the pointer; at rest a small symbol says its state (memory rows) |
-| `SettingsTile`, `HealthPill`, `SetupStep`, `GalleryCard`, `IntroCard` | `SettingsStyle.swift` | Tiles, health pills, setup steps |
-| `ServiceRowLayout`, `ServiceStatusLabel` | `ServiceRows.swift` | The one row shape of every connected service (icon, name with state, one line, actions) |
+| `SettingsTile`, `HealthPill`, `SetupStep`, `IntroCard` | `SettingsStyle.swift` | Tiles, health pills, setup steps |
+| `ServiceRowLayout`, `ServiceStatusLabel` | `ServiceRows.swift` | The one row shape of everything linked (chat apps, services, GitLab, your own servers, the iPhone): icon, name with state, one line, then Fix when it needs you, a switch where it has one, and Manage |
 | `ChatAccountRow` | `ServiceRows.swift` | One account of a chat app in its sheet (WhatsApp, Telegram, Teams, Slack, Messages, Snapchat, the chat service's apps): a `ServiceRowLayout` with the app's icon |
-| `GalleryCard`, `GalleryGrid`, `ConnectMethodBadge` | `SettingsStyle.swift`, `ServiceRows.swift` | The one card shape of everything you can add; the badge says how (sign in, a key, MCP) |
-| `ServiceCategoryChips` | `ServiceRows.swift` | The category filter under the connections search field |
-| `OneClickServiceCard`, `GitHubSignInCard`, `MCPServiceRow` | `ServiceRows.swift` | Services that sign in on their own page |
-| `GitLabCard`, `GitLabHostRow`, `GitLabSetupSheet` | `GitLabSettings.swift` | GitLab in the same card, row, and setup-sheet shapes |
-| `MCPPresetCard`, `MCPCustomCard`, `MCPServerCardRow`, `AddMCPServerWizardSheet` | `MCPSettingsSection.swift` | MCP servers in the same shapes |
+| `ConnectionCatalog`, `ConnectionOption` | `ConnectionCatalog.swift` | Everything Nook can link, built from each kind's own catalogue; a new service is added there, never as a section of its own |
+| `AddConnectionSheet`, `ConnectionOptionGrid`, `ConnectionOptionTile`, `ConnectionCategoryChips` | `ConnectionCatalog.swift` | The one way to add anything: pick it (search or a group), then its steps in the same sheet. A tile shows how it links (`ConnectMethodBadge`) or that it is linked |
+| `ServiceSignInSheet` | `ConnectionCatalog.swift` | A service you sign in to on its own page, in two steps, with its key as the other way |
+| `SettingsFormSheet`, `IPhoneSheet` | `ConnectionCatalog.swift` | A sheet whose content is plain settings rows |
+| `ConnectMethodBadge`, `MCPServiceRow` | `ServiceRows.swift` | How an option links; a service you signed in to |
+| `GitLabHostRow`, `GitLabSetupSheet` | `GitLabSettings.swift` | GitLab in the same row and setup-sheet shapes |
+| `MCPServerCardRow`, `AddMCPServerWizardSheet` | `MCPSettingsSection.swift` | MCP servers in the same shapes |
 | `SetupSheet`, `SetupStep` | `SettingsStyle.swift` | Every setup flow: icon and title on top, numbered steps, one clear button below |
 | `SheetPart` | `SettingsStyle.swift` | A part of a sheet for something already set up: its name and its rows. A linked chat app's sheet is always Accounts, In Nook, then Advanced folded away |
 
-Settings › Connections is one page in one layout: search and category chips, what needs you, your connections (rows),
-the apps on this Mac (switches), and one catalogue of everything you can add (cards). A new service gets a row and a
-card in these shapes, and a `SetupSheet` when it needs steps; it never gets a section of its own.
+Settings › Accounts & connections (`ConnectionsPage`) is the one page for everything you link or sign in to: a search
+field and one Add button, then what you have by kind (chat apps, services, your own servers, the iPhone), each in the
+`ServiceRowLayout` shape with what needs you first, then the apps on this Mac (switches) and the chat options. Adding
+always goes through `AddConnectionSheet`, and managing opens the same sheet the steps were in. A new service gets an
+option in `ConnectionCatalog`, a row in this shape, and a `SetupSheet` when it needs steps; it never gets a section or
+page of its own. Whatever stops working shows in `ConnectionProblems`, which the Overview and the sidebar badge read.
 
 ## File layout
 
