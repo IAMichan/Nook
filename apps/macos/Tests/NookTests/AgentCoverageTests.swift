@@ -43,7 +43,8 @@ final class AgentCoverageTests: XCTestCase {
         let messages = AgentTranscript.jsonl(data)
         XCTAssertEqual(messages.map(\.kind), [.user, .thinking, .tools, .assistant])
         XCTAssertEqual(messages[1].text, "", "thinking the agent kept to itself still shows that it thought")
-        XCTAssertEqual(messages[2].steps.map(\.name), ["Bash", "Read", "create_issue"])
+        XCTAssertEqual(messages[2].steps.map(\.name), ["Bash", "Read", "mcp__github__create_issue"],
+                       "an MCP tool keeps its server, so its step reads as \"GitHub › Create issue\"")
         XCTAssertEqual(messages[2].steps.map(\.summary), ["Survey hosting files and sizes", "hosting-overview-page.tsx", "Bug"])
         XCTAssertEqual(messages[2].steps.map(\.state), [.done, .failed, .running])
         XCTAssertEqual(messages[3].text, "Klaar.")

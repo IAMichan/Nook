@@ -105,7 +105,7 @@ enum CompanionAgents {
                 for step in message.steps {
                     entries.append(TimelineEntry(id: message.id + ":" + step.id, kind: .tool,
                                                  text: CompanionPolicy.clip(step.summary, limit: 240),
-                                                 detail: CompanionPolicy.clip(step.name, limit: 120), date: date,
+                                                 detail: CompanionPolicy.clip(McpToolName(step.name)?.label ?? step.name, limit: 120), date: date,
                                                  failed: step.state == .failed))
                 }
             case .notice:

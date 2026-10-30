@@ -17,6 +17,7 @@ enum AgentActivityText {
         case .browsing(let query): return subject("ws.activity.browsing", query)
         case .delegating(let task): return subject("ws.activity.delegating", task)
         case .planning: return tr("ws.activity.planning")
+        case .screen(let action): return tr("ws.screen." + action.rawValue)
         case .using(let tool): return subject("ws.activity.using", tool)
         case .thinking(let headline):
             if !headline.isEmpty { return headline }
@@ -38,11 +39,23 @@ enum AgentActivityText {
         case .browsing: return "globe"
         case .delegating: return "person.2"
         case .planning: return "checklist"
+        case .screen(let action): return symbol(action)
         case .using: return "wrench"
         case .thinking: return "brain"
         case .writing: return "text.cursor"
         case .reviewing: return "doc.text.magnifyingglass"
         case .recovering: return "arrow.triangle.2.circlepath"
+        }
+    }
+
+    static func symbol(_ action: ScreenAction) -> String {
+        switch action {
+        case .requestAccess, .requestFullControl: return "hand.raised"
+        case .screenshot: return "camera.viewfinder"
+        case .click: return "cursorarrow.click"
+        case .type: return "keyboard"
+        case .scroll: return "scroll"
+        case .openApp: return "macwindow"
         }
     }
 

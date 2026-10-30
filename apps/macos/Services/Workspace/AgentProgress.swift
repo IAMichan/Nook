@@ -117,6 +117,33 @@ enum Verification {
 }
 
 /// What the agent is doing now, as the live line under the timeline says it.
+/// What an agent does on your screen through the computer-use tools of the Claude app
+/// (`mcp__computer-use__request_full_control`), so a step reads the way the app words it rather than by the tool's name.
+enum ScreenAction: String, Equatable, Sendable, CaseIterable {
+    case requestAccess, requestFullControl, screenshot, click, type, scroll, openApp
+
+    /// Nil for a tool of another server, or a computer-use tool Nook has no words for (it keeps its MCP label).
+    init?(tool: String) {
+        guard let mcp = McpToolName(tool) else { return nil }
+        let server = mcp.server.lowercased().filter { $0.isLetter }
+        guard server.hasSuffix("computeruse") else { return nil }
+        switch mcp.tool.lowercased() {
+        case "request_access": self = .requestAccess
+        case "request_full_control": self = .requestFullControl
+        case "screenshot", "zoom": self = .screenshot
+        case "left_click", "right_click", "middle_click", "double_click", "triple_click", "left_click_drag", "mouse_move":
+            self = .click
+        case "type", "key", "hold_key": self = .type
+        case "scroll": self = .scroll
+        case "open_application": self = .openApp
+        default: return nil
+        }
+    }
+
+    /// The app asks you, in its own prompt, and the agent waits for your answer.
+    var asksYou: Bool { self == .requestAccess || self == .requestFullControl }
+}
+
 enum AgentActivity: Equatable, Sendable {
     /// Only your message so far.
     case starting
@@ -133,6 +160,8 @@ enum AgentActivity: Equatable, Sendable {
     case delegating(String)
     /// It updates its own task list.
     case planning
+    /// Something on your screen through Claude's computer-use tools: a click, a screenshot, asking for control.
+    case screen(ScreenAction)
     /// Any other tool, by name.
     case using(String)
     /// The headline of what it thinks about.
@@ -172,10 +201,17 @@ enum AgentActivity: Equatable, Sendable {
             let subject = ["pattern", "query"].lazy.compactMap { input[$0] as? String }.first ?? fallback
             return .searching(ToolSummary.oneLine(subject, 80))
         case .other:
+            if let action = ScreenAction(tool: tool) { return .screen(action) }
             // An MCP tool by its own name, readable: "Search issues" of "mcp__github__search_issues".
             let bare = McpToolName(tool)?.toolLabel ?? tool
             return .using(bare.isEmpty ? fallback : bare)
         }
+    }
+
+    /// It waits for you to answer a prompt its own app shows (the Claude app asking to take over your screen).
+    var asksYou: Bool {
+        if case .screen(let action) = self { return action.asksYou }
+        return false
     }
 
     /// A tool call in a session's timeline: name in `tool`, input as JSON in `detail`, "Bash · npm test" as text.

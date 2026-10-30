@@ -298,6 +298,10 @@ struct TranscriptLiveLine: View {
             if waiting {
                 TranscriptWorkLine(symbol: asking ? "questionmark.bubble" : "hand.raised",
                                    label: tr(asking ? "ws.timeline.asking" : "ws.timeline.waiting"), tint: NookTheme.amber)
+            } else if activity.asksYou {
+                // Its app asks you in a prompt of its own ("Take over the screen?"): the line waits on you, in amber.
+                TranscriptWorkLine(symbol: AgentActivityText.symbol(activity), label: AgentActivityText.headline(activity),
+                                   tint: NookTheme.amber)
             } else {
                 TranscriptWorkLine(symbol: AgentActivityText.symbol(activity),
                                    label: AgentActivityText.headline(activity, step: tasks.flatMap(TaskChecklist.activeStep)),
@@ -342,6 +346,7 @@ enum TranscriptStepText {
             if step.name.hasPrefix(BridgeTool.toolPrefix), let bridge = BridgeTool.named(step.name) {
                 return (bridge.label, summary, false)
             }
+            if let action = ScreenAction(tool: step.name) { return (tr("ws.screen." + action.rawValue + ".done"), summary, false) }
             if let mcp = McpToolName(step.name) { return (mcp.label, summary, false) }
             return (step.name, summary, false)
         }
@@ -362,7 +367,9 @@ enum TranscriptSymbols {
             case .edit: return "square.and.pencil"
             case .read: return "eye"
             case .search: return "magnifyingglass"
-            case .other: return tool.hasPrefix("mcp") ? "puzzlepiece.extension" : "wrench"
+            case .other:
+                if let action = ScreenAction(tool: tool) { return AgentActivityText.symbol(action) }
+                return tool.hasPrefix("mcp") ? "puzzlepiece.extension" : "wrench"
             }
         }
     }
