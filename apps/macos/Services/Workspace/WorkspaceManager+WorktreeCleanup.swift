@@ -80,8 +80,21 @@ extension WorkspaceManager {
         guard settings.buildLeftoverCleanup else { return }
         if let last = buildLeftoversAt, now.timeIntervalSince(last) < Self.buildLeftoversInterval { return }
         buildLeftoversAt = now
+        // Worktrees: Nook's own (`<root>/<repo>/<name>`), the sessions' wherever they are, and Claude Code's in the
+        // repositories Nook works in (`<repo>/.claude/worktrees/<name>`).
+        let local = runs.filter { !$0.isRemote }
+        let sessionWorktrees = local.compactMap(\.worktreePath)
+        let containers = [(settings.worktreeRoot, 2)] + Set(local.compactMap(\.repoRoot)).map { ($0 + "/.claude/worktrees", 1) }
         Task.detached(priority: .background) { [weak self] in
-            let removed = BuildLeftovers.sweep()
+            var worktrees = Set(sessionWorktrees.map { URL(fileURLWithPath: $0) })
+            for (container, depth) in containers {
+                var level = [URL(fileURLWithPath: (container as NSString).expandingTildeInPath)]
+                for _ in 0..<depth {
+                    level = level.flatMap { (try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? [] }
+                }
+                worktrees.formUnion(level)
+            }
+            let removed = BuildLeftovers.sweep(.standard(worktrees: Array(worktrees)))
             guard !removed.isEmpty else { return }
             await MainActor.run {
                 for item in removed {
