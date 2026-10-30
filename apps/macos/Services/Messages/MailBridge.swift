@@ -36,7 +36,8 @@ final class MailBridge: ChatBridge, ObservableObject {
         var unread: [MailChatData.Row]
     }
     private var targets: [String: Target] = [:]
-    /// Where each message read last lives in Mail, by Mail's id: to read it whole when you open it.
+    /// Where each message read last lives in Mail, by Mail's id: to read it whole, fast, when you open it. A mail not
+    /// in it is looked for by its id (`MailChatData.findScript`).
     private var places: [Int: MailChatData.Row] = [:]
     /// Whole messages already read, by Mail's id: a message does not change.
     private var opened: [Int: MailChatData.Message] = [:]
@@ -131,25 +132,39 @@ final class MailBridge: ChatBridge, ObservableObject {
 
     /// Whether the mail view can read this message (its id in Nook) whole from Mail.
     func canOpen(_ nookID: String) -> Bool {
-        MailChatData.mailID(nookID).map { places[$0] != nil || opened[$0] != nil } ?? false
+        MailChatData.mailID(nookID) != nil
     }
 
     /// How long one mail may take to come from Mail: its text may still have to come from the server.
     private static let openTimeout: TimeInterval = 30
+    /// How long looking for a mail in every mailbox may take: a search through a large mailbox is slow.
+    private static let findTimeout: TimeInterval = 60
+    /// Mail's "can't get message": the mail is no longer where it was read.
+    private static let notThere = -1728
 
     /// The whole message (headers, attachments, all of its text), read from Mail the first time it opens in the mail
-    /// view and kept after that, found at its place in its mailbox (`MailChatData.locate`). Throws a sentence that says
-    /// why when it cannot: Mail is closed, Nook has not read where the mail is yet, or Mail did not answer in time.
+    /// view and kept after that, found at its place in its mailbox (`MailChatData.locate`), or by its id in every mailbox
+    /// when Nook has no place for it (`MailChatData.findScript`). Throws a sentence that says why when it cannot: Mail is
+    /// closed, Mail no longer has the mail, or Mail did not answer in time.
     func message(_ nookID: String) async throws -> MailChatData.Message {
         guard let id = MailChatData.mailID(nookID) else { throw NookError(tr("chats.mail.notFound")) }
         if let kept = opened[id] { return kept }
         guard ScriptText.isRunning(MailSender.mailBundleID) else { throw NookError(tr("chats.mail.openMail")) }
-        guard let row = places[id] else { throw NookError(tr("chats.mail.notReadYet")) }
-        let result = await ScriptText.run(MailChatData.messageScript(row), timeout: Self.openTimeout)
-        guard let raw = result.text else {
-            throw problem(result.errorNumber, result.errorMessage, timeout: Self.openTimeout)
+        var result: (text: String?, errorNumber: Int?, errorMessage: String?)?
+        var timeout = Self.openTimeout
+        if let row = places[id] {
+            result = await ScriptText.run(MailChatData.messageScript(row), timeout: timeout)
         }
-        guard let message = MailChatData.message(raw) else { throw NookError(tr("chats.mail.notFound")) }
+        // No place for it (a mail from an earlier read or launch), or no longer at its place (it moved): looked for by
+        // its id in every mailbox, instead of a mail view that can only say to wait for the next read.
+        if result == nil || result?.errorNumber == Self.notThere {
+            timeout = Self.findTimeout
+            result = await ScriptText.run(MailChatData.findScript(id), timeout: timeout)
+        }
+        guard let raw = result?.text else {
+            throw problem(result?.errorNumber, result?.errorMessage, timeout: timeout)
+        }
+        guard let message = MailChatData.message(raw) else { throw NookError(tr("chats.mail.gone")) }
         if opened.count >= Self.openedKept { opened = [:] }
         opened[id] = message
         // Its text is kept for the conversation too, so the line under a folded mail shows it.
