@@ -94,10 +94,32 @@ struct NewSessionComposer: View {
 
     // MARK: Heading
 
+    /// One line while it fits; in a narrow column the folder moves to a line of its own under the question, instead of
+    /// the question being squeezed to a word per line beside a long folder name.
     private var heading: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 0) {
+                headingLead
+                projectPicker
+            }
+            VStack(spacing: NookTheme.Spacing.xxs) {
+                headingLead
+                projectPicker
+            }
+        }
+        .font(NookTheme.TextStyle.display)
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, NookTheme.Spacing.lg)
+    }
+
+    private var headingLead: some View {
+        Text(tr("compose.heading"))
+            .foregroundStyle(NookTheme.paper)
+    }
+
+    /// The folder (or machine) the session works in, then the question mark, kept together on one line.
+    private var projectPicker: some View {
         HStack(spacing: 0) {
-            Text(tr("compose.heading"))
-                .foregroundStyle(NookTheme.paper)
             ComposerDropdown(width: 320) {
                 Text(projectLabel)
                     .foregroundStyle(NookTheme.paper)
@@ -138,7 +160,6 @@ struct NewSessionComposer: View {
                 ProgressView().controlSize(.small).padding(.leading, NookTheme.Spacing.md)
             }
         }
-        .font(NookTheme.TextStyle.display)
     }
 
     private func projectRow(_ path: String) -> some View {

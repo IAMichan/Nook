@@ -80,9 +80,12 @@ struct SearchPanel: View {
             NookDivider()
             footer
         }
-        .frame(width: 640)
+        // As wide as a narrow tab (split view, a small window) allows, never wider than the usual 640.
+        .frame(maxWidth: .infinity)
+        .frame(maxWidth: 640)
         .cardBackground(NookTheme.graphite, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet, style: .continuous)
         .shadow(color: .black.opacity(0.5), radius: 24, y: 8)
+        .padding(.horizontal, NookTheme.Spacing.lg)
         .focusOnAppear($focused)
         .onAppear {
             center.prepareOpen(app)

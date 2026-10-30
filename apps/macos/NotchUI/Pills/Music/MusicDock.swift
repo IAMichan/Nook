@@ -79,7 +79,8 @@ private struct MusicBar: View {
                 MusicTransport(info: info, service: service)
                 MusicScrubBar(info: info, style: .inline) { service.seek(to: $0) }
             }
-            .frame(width: 330)
+            // Narrower in a narrow tab (split view), so the track and the buttons beside it stay on screen.
+            .frame(minWidth: 180, idealWidth: 330, maxWidth: 330)
 
             HStack(spacing: NookTheme.Spacing.xs) {
                 if let volume = info.volume {
