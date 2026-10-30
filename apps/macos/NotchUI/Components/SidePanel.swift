@@ -236,6 +236,12 @@ struct SessionBesideWidth: PreferenceKey {
     static func reduce(value: inout Double, nextValue: () -> Double) { value = max(value, nextValue()) }
 }
 
+/// From the conversation up to its workbench: where its composer sits, so a page the agent opened floats just above it.
+struct SessionComposerBounds: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = nextValue() ?? value }
+}
+
 /// The room a side panel of `width` takes with its drag line and gap.
 enum SidePanelRoom {
     static func of(_ width: Double) -> Double { width + PanelSplit.handle + Double(SidePanelMetrics.gap) }

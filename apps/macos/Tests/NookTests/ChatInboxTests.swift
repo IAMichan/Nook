@@ -1329,6 +1329,12 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(line.flatMap(ChatFormat.call), ChatCall(video: true, seconds: 75))
         let missed = TelegramData.text(["@type": "messageCall", "discard_reason": ["@type": "callDiscardReasonMissed"]])
         XCTAssertEqual(missed.flatMap(ChatFormat.call), ChatCall(missed: true))
+    }
+
+    /// Every line Nook writes for a call reads back as one. Needs the real translations: `core-tests.sh` shims `tr()` to
+    /// return the key, which is no call line in any language.
+    func testCallTitlesReadBackAsCalls() throws {
+        guard tr("chat.call.voice") != "chat.call.voice" else { throw XCTSkip("needs the translated call titles") }
         for call in [ChatCall(), ChatCall(video: true), ChatCall(missed: true), ChatCall(video: true, missed: true)] {
             XCTAssertEqual(ChatFormat.call(call.title(mine: false))?.video, call.video)
         }

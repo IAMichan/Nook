@@ -46,7 +46,16 @@ struct TranscriptConversation: View {
     @State private var freshRead = false
     @State private var derived = TranscriptDerived()
 
-    private var shown: [AgentChatMessage] { messages.isEmpty ? fallback : messages }
+    /// The conversation as read from the transcript; before this view's first read, as it was read last time, so a
+    /// conversation you switch back to shows from the first frame instead of after the read is under way.
+    private var transcriptMessages: [AgentChatMessage] {
+        messages.isEmpty && readPath != path ? TranscriptCache.messages(path) ?? [] : messages
+    }
+
+    private var shown: [AgentChatMessage] {
+        let read = transcriptMessages
+        return read.isEmpty ? fallback : read
+    }
 
     /// The session's key in TimelineVisitStore: its transcript; nil for a conversation read from elsewhere.
     private var visitKey: String? { path.isEmpty ? nil : "transcript:" + path }
@@ -56,7 +65,8 @@ struct TranscriptConversation: View {
     }
 
     var body: some View {
-        let _ = derived.update(shown, working: working, directory: directory)
+        // Only a conversation read from the transcript is kept for the next visit, not the fallback shown before it.
+        let _ = derived.update(shown, working: working, directory: directory, path: transcriptMessages.isEmpty ? "" : path)
         let rows = derived.rows
         // Only the very last answer can still be answered by tapping one of its options.
         let answerable = working ? nil : shown.last(where: { $0.kind == .assistant })?.id
@@ -380,8 +390,24 @@ private final class TranscriptDerived {
     /// timeline cost more than the rest of the row.
     private(set) var foldChecks: [String: [VerificationCheck]] = [:]
 
-    func update(_ messages: [AgentChatMessage], working: Bool, directory: String?) {
+    /// The last one per transcript: switching back to a conversation takes its rows as they were instead of laying the
+    /// whole thread out again before the first frame.
+    private static var byPath: [String: TranscriptDerived] = [:]
+    private static var order: [String] = []
+    private static let limit = 12
+
+    func update(_ messages: [AgentChatMessage], working: Bool, directory: String?, path: String) {
+        if key == nil, !path.isEmpty, let known = Self.byPath[path], let knownKey = known.key {
+            key = knownKey
+            rows = known.rows
+            outputs = known.outputs
+            turns = known.turns
+            marks = known.marks
+            pullRequest = known.pullRequest
+            foldChecks = known.foldChecks
+        }
         if let key, key.working == working, key.directory == directory, key.messages == messages { return }
+        defer { remember(path) }
         key = (messages, working, directory)
         rows = TranscriptPresentation.rows(messages, working: working)
         outputs = SessionOutputs.collect(messages, directory: directory ?? "").filter { directory != nil || !$0.isFile }
@@ -396,6 +422,14 @@ private final class TranscriptDerived {
             default: break
             }
         }
+    }
+
+    private func remember(_ path: String) {
+        guard !path.isEmpty, !rows.isEmpty else { return }
+        Self.byPath[path] = self
+        Self.order.removeAll { $0 == path }
+        Self.order.append(path)
+        while Self.order.count > Self.limit { Self.byPath[Self.order.removeFirst()] = nil }
     }
 }
 

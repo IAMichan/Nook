@@ -54,6 +54,35 @@ struct OpenInTarget: Identifiable, Hashable {
     }
 }
 
+/// What the session panels showed last, per folder (and per session Nook runs), so a session you switch back to shows
+/// its panel straight away instead of filling it in row by row while git and the forge are asked again.
+@MainActor
+final class SessionPanelMemory {
+    static let shared = SessionPanelMemory()
+
+    /// The apps to open a folder in; the same for every folder, read once.
+    var targets: [OpenInTarget] = []
+    var machine = ""
+    private var scripts: [String: [ProjectScript]] = [:]
+    private var quick: [String: GitQuickState] = [:]
+
+    func panel(_ directory: String, runID: UUID?) -> (scripts: [ProjectScript], quick: GitQuickState?) {
+        (scripts[directory] ?? [], quick[Self.key(directory, runID)])
+    }
+
+    func remember(scripts found: [ProjectScript], for directory: String) {
+        scripts[directory] = found
+    }
+
+    func remember(quick state: GitQuickState?, for directory: String, runID: UUID?) {
+        quick[Self.key(directory, runID)] = state
+    }
+
+    private static func key(_ directory: String, _ runID: UUID?) -> String {
+        runID.map { "run:" + $0.uuidString } ?? directory
+    }
+}
+
 /// This Mac's name, as Finder shows it (Settings › General › Sharing). Read from the system configuration, which answers
 /// at once; `Host.current()` resolves every host name and address first and can block for seconds.
 enum MachineName {
@@ -89,6 +118,22 @@ struct SessionPanel: View {
     @State private var confirmDefault: GitQuickAction?
     @State private var error: String?
 
+    init(model: FolderGitModel, runID: UUID?, agentWorking: Bool, showChanges: @escaping () -> Void,
+         close: @escaping () -> Void, docked: Bool = false) {
+        self.model = model
+        self.runID = runID
+        self.agentWorking = agentWorking
+        self.showChanges = showChanges
+        self.close = close
+        self.docked = docked
+        // What this panel showed last time, so switching sessions shows it at once and keeps its height while it is read again.
+        let known = SessionPanelMemory.shared.panel(model.directory, runID: runID)
+        _targets = State(initialValue: SessionPanelMemory.shared.targets)
+        _machine = State(initialValue: SessionPanelMemory.shared.machine)
+        _scripts = State(initialValue: known.scripts)
+        _quick = State(initialValue: known.quick)
+    }
+
     private var directory: String { model.directory }
     private var run: WorkspaceRun? { runID.flatMap { workspace.run($0) } }
 
@@ -120,12 +165,22 @@ struct SessionPanel: View {
         .frame(maxWidth: docked ? .infinity : nil, alignment: .leading)
         .background(docked ? Color.clear : DropdownStyle.panel)
         .task(id: directory) {
-            targets = OpenInTarget.available()
             let folder = directory
-            machine = await Task.detached(priority: .utility) { MachineName.local }.value
-            scripts = await Task.detached(priority: .utility) { ProjectScripts.load(folder: folder) }.value
-            await model.refresh()
+            // Git first: it decides most of the panel. The rest reads alongside it.
+            async let git: Void = model.refresh()
+            async let found = Task.detached(priority: .utility) { ProjectScripts.load(folder: folder) }.value
+            if SessionPanelMemory.shared.targets.isEmpty { SessionPanelMemory.shared.targets = OpenInTarget.available() }
+            if SessionPanelMemory.shared.machine.isEmpty {
+                SessionPanelMemory.shared.machine = await Task.detached(priority: .utility) { MachineName.local }.value
+            }
+            if targets != SessionPanelMemory.shared.targets { targets = SessionPanelMemory.shared.targets }
+            if machine != SessionPanelMemory.shared.machine { machine = SessionPanelMemory.shared.machine }
+            let loaded = await found
+            if scripts != loaded { scripts = loaded }
+            SessionPanelMemory.shared.remember(scripts: loaded, for: folder)
+            await git
         }
+        .onChange(of: quick) { _, now in SessionPanelMemory.shared.remember(quick: now, for: directory, runID: runID) }
         // Looked at again whenever git does (after a turn, a commit, a refresh), and when the conversation links a new
         // pull request: an agent that pushed and then opened one changed nothing in git.
         .task(id: PanelLook(git: runID.flatMap { workspace.git[$0]?.updated }, link: linkedPullRequest)) {
@@ -263,6 +318,7 @@ struct SessionPanel: View {
                     return ProjectScripts.load(folder: folder)
                 }.value
                 scripts = found
+                SessionPanelMemory.shared.remember(scripts: found, for: folder)
                 error = nil
                 resetScriptForm()
             } catch let failure {

@@ -453,8 +453,8 @@ final class WorkspaceBridge: ObservableObject {
         }
         if case .refuse(let reason) = verdict(.browserOpen, caller) { return .error(Self.refusal(reason)) }
         let browser = BrowserStore.shared
-        // Seen as it opens: a small window to follow along when no browser page is in view.
-        BrowserPopup.shared.show()
+        // Seen as it opens, in the caller's own chat only: small in its bottom right corner (SessionBrowserCorner).
+        SessionBrowserOwner.shared.opened(by: caller)
         let failure = await browser.load(url, by: caller.agent)
         markUnseen(caller.directory, SessionTool.browser.rawValue)
         audit(.browserOpen, caller, url.absoluteString, failure ?? "geladen")
@@ -462,7 +462,7 @@ final class WorkspaceBridge: ObservableObject {
         let title = browser.webView.title ?? ""
         return BridgeRPC.ToolResult(text: "Opened \(browser.webView.url?.absoluteString ?? url.absoluteString) in Nook's browser"
                                     + (title.isEmpty ? "" : " · \(title)")
-                                    + ". The user can see it next to your session. Check it with browser_read or browser_screenshot.")
+                                    + ". The user sees it in the corner of your session's chat. Check it with browser_read or browser_screenshot.")
     }
 
     private func browserRead(_ caller: BridgeCaller) async throws -> BridgeRPC.ToolResult {

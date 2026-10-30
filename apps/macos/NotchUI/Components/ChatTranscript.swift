@@ -1264,8 +1264,10 @@ private struct InlinePlayer: NSViewRepresentable {
 }
 
 /// A chat bubble's photo enlarged over the whole card or chat, inside Nook: the bubble's picture at once, then the photo
-/// itself sharp from the file on this Mac. A click anywhere (or Escape) shrinks it back; the open button shows it in
-/// Quick Look. Used by the chat card in the notch and by the Chats tab.
+/// itself sharp from the file on this Mac. It opens fitted to the room, but never stretched past its own pixels (nor
+/// smaller than in its bubble), so a small photo stays sharp; a pinch or ⌘-scroll zooms in on it, a drag moves it. A
+/// click shrinks a zoomed photo back, and otherwise (or Escape) closes it; the open button shows it in Quick Look. Used
+/// by the chat card in the notch and by the Chats tab.
 struct ChatPhotoZoom: View {
     let url: URL
     let preview: NSImage
@@ -1276,25 +1278,23 @@ struct ChatPhotoZoom: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            Button(action: onClose) {
-                ZStack {
-                    Color.black.opacity(0.94)
-                    Image(nsImage: sharp ?? preview)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
-                        .padding(8)
-                }
+            Color.black.opacity(0.94)
                 .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(tr("button.close"))
-            .accessibilityLabel("\(tr("button.close")): \(name)")
-            .contextMenu {
-                Button(tr("chat.copyImage")) { Pasteboard.copyImage(url, fallback: sharp ?? preview) }
-                Button(tr("card.attachment.open"), action: onOpen)
-            }
+                .onTapGesture(perform: onClose)
+            ZoomablePhoto(image: sharp ?? preview,
+                          pixels: ChatMediaImages.pixelSize(url) ?? preview.size,
+                          least: PhotoButton.fittedSize(for: preview.size),
+                          onClick: onClose)
+                .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
+                .padding(NookTheme.Spacing.sm)
+                .help(tr("chat.photo.zoomHint"))
+                .accessibilityElement()
+                .accessibilityLabel(name)
+                .accessibilityAddTraits(.isImage)
+                .contextMenu {
+                    Button(tr("chat.copyImage")) { Pasteboard.copyImage(url, fallback: sharp ?? preview) }
+                    Button(tr("card.attachment.open"), action: onOpen)
+                }
 
             HStack(spacing: 6) {
                 zoomButton("arrow.up.forward.app", label: tr("card.attachment.open"), action: onOpen)
@@ -1323,6 +1323,154 @@ struct ChatPhotoZoom: View {
         .buttonStyle(.plain)
         .help(label)
         .accessibilityLabel(label)
+    }
+}
+
+/// A photo that zooms like Preview: a pinch or ⌘-scroll zooms in around the pointer, scrolling or a drag moves the
+/// zoomed photo, a click shrinks it back to its first size and, at that size, calls `onClick`. It is drawn again at
+/// every zoom from the photo itself, so it stays as sharp as the photo is.
+private struct ZoomablePhoto: NSViewRepresentable {
+    let image: NSImage
+    /// The photo's own size in pixels: one point per pixel is as large as it opens.
+    let pixels: CGSize
+    /// It never opens smaller than this (its size in the bubble).
+    let least: CGSize
+    let onClick: () -> Void
+
+    static let maxZoom: CGFloat = 8
+
+    func makeNSView(context: Context) -> ZoomScrollView {
+        let view = ZoomScrollView()
+        view.update(image: image, pixels: pixels, least: least, onClick: onClick)
+        return view
+    }
+
+    func updateNSView(_ view: ZoomScrollView, context: Context) {
+        view.update(image: image, pixels: pixels, least: least, onClick: onClick)
+    }
+
+    /// The opening size: fitted in `room`, at most one point per pixel, but never below `least` (nor past `room`).
+    static func fittedSize(pixels: CGSize, least: CGSize, in room: CGSize) -> CGSize {
+        guard pixels.width > 0, pixels.height > 0, room.width > 0, room.height > 0 else { return room }
+        let fit = min(room.width / pixels.width, room.height / pixels.height)
+        let floor = least.width > 0 ? min(least.width / pixels.width, least.height / pixels.height) : 0
+        let scale = min(fit, max(1, floor))
+        return CGSize(width: max(1, (pixels.width * scale).rounded()), height: max(1, (pixels.height * scale).rounded()))
+    }
+
+    final class ZoomScrollView: NSScrollView {
+        private let photo = PhotoCanvas()
+        private var pixels: CGSize = .zero
+        private var least: CGSize = .zero
+        private var onClick: () -> Void = {}
+        private var dragStart: NSPoint?
+        private var dragged = false
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            let clip = CenteringClipView()
+            clip.drawsBackground = false
+            contentView = clip
+            drawsBackground = false
+            hasVerticalScroller = false
+            hasHorizontalScroller = false
+            borderType = .noBorder
+            allowsMagnification = true
+            minMagnification = 1
+            maxMagnification = ZoomablePhoto.maxZoom
+            documentView = photo
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        func update(image: NSImage, pixels: CGSize, least: CGSize, onClick: @escaping () -> Void) {
+            self.onClick = onClick
+            if photo.image !== image {
+                photo.image = image
+                photo.needsDisplay = true
+            }
+            guard self.pixels != pixels || self.least != least else { return }
+            self.pixels = pixels
+            self.least = least
+            fitPhoto()
+        }
+
+        override func setFrameSize(_ newSize: NSSize) {
+            super.setFrameSize(newSize)
+            fitPhoto()
+        }
+
+        /// The photo at its opening size for the room there is now; a zoom stays as it is.
+        private func fitPhoto() {
+            let size = ZoomablePhoto.fittedSize(pixels: pixels, least: least, in: bounds.size)
+            guard photo.frame.size != size else { return }
+            photo.setFrameSize(size)
+            contentView.scroll(to: contentView.constrainBoundsRect(contentView.bounds).origin)
+            reflectScrolledClipView(contentView)
+        }
+
+        // Every click and drag on the photo or beside it lands here.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            frame.contains(point) ? self : nil
+        }
+
+        override func scrollWheel(with event: NSEvent) {
+            guard event.modifierFlags.contains(.command) else { return super.scrollWheel(with: event) }
+            let step: CGFloat = event.hasPreciseScrollingDeltas ? 0.01 : 0.1
+            let zoom = min(maxMagnification, max(minMagnification, magnification * exp(event.scrollingDeltaY * step)))
+            setMagnification(zoom, centeredAt: contentView.convert(event.locationInWindow, from: nil))
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            dragStart = event.locationInWindow
+            dragged = false
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            guard let start = dragStart else { return }
+            let point = event.locationInWindow
+            if !dragged, hypot(point.x - start.x, point.y - start.y) < 3 { return }
+            dragged = true
+            // The photo follows the pointer: the visible part moves the other way, in the photo's own points.
+            var origin = contentView.bounds.origin
+            origin.x -= (point.x - start.x) / magnification
+            origin.y -= (point.y - start.y) / magnification
+            dragStart = point
+            contentView.scroll(to: contentView.constrainBoundsRect(NSRect(origin: origin, size: contentView.bounds.size)).origin)
+            reflectScrolledClipView(contentView)
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            defer { dragStart = nil }
+            guard !dragged else { return }
+            if magnification > 1.01 {
+                animator().magnification = 1
+            } else {
+                onClick()
+            }
+        }
+    }
+
+    /// Draws the photo over its whole frame, from the photo itself at the resolution the zoom asks for.
+    final class PhotoCanvas: NSView {
+        var image: NSImage?
+
+        override func draw(_ dirtyRect: NSRect) {
+            NSGraphicsContext.current?.imageInterpolation = .high
+            image?.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1)
+        }
+    }
+
+    /// Keeps a photo smaller than the room in the middle, where a scroll view would put it in its corner.
+    final class CenteringClipView: NSClipView {
+        override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+            var rect = super.constrainBoundsRect(proposedBounds)
+            guard let document = documentView else { return rect }
+            if rect.width > document.frame.width { rect.origin.x = (document.frame.width - rect.width) / 2 }
+            if rect.height > document.frame.height { rect.origin.y = (document.frame.height - rect.height) / 2 }
+            return rect
+        }
     }
 }
 
@@ -1383,11 +1531,13 @@ struct PhotoButton: View {
     let action: () -> Void
     @State private var hovering = false
 
-    /// The photo whole, fitted in 240 × 180: exactly its own size, so the bubble is no wider than the photo.
-    private var size: CGSize {
-        guard image.size.width > 0, image.size.height > 0 else { return CGSize(width: Self.maxWidth, height: Self.maxHeight) }
-        let scale = min(Self.maxWidth / image.size.width, Self.maxHeight / image.size.height)
-        return CGSize(width: image.size.width * scale, height: image.size.height * scale)
+    /// The photo whole, fitted in `maxWidth × maxHeight`: exactly its own size, so the bubble is no wider than the photo.
+    private var size: CGSize { Self.fittedSize(for: image.size) }
+
+    static func fittedSize(for size: CGSize) -> CGSize {
+        guard size.width > 0, size.height > 0 else { return CGSize(width: maxWidth, height: maxHeight) }
+        let scale = min(maxWidth / size.width, maxHeight / size.height)
+        return CGSize(width: size.width * scale, height: size.height * scale)
     }
 
     var body: some View {
