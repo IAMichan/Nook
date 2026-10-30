@@ -33,6 +33,12 @@ final class WorkspaceModelsTests: XCTestCase {
         XCTAssertNil(run.turnStartedAt)
         XCTAssertEqual(run.statusDetail, "boom")
         XCTAssertTrue(run.canContinue)
+
+        let preparedAt = Date(timeIntervalSince1970: 1_000)
+        XCTAssertTrue(run.move(to: .preparing, now: preparedAt))
+        XCTAssertEqual(run.turnStartedAt, preparedAt, "sending a message starts the turn timer immediately in .preparing")
+        XCTAssertTrue(run.move(to: .running, now: preparedAt.addingTimeInterval(2)))
+        XCTAssertEqual(run.turnStartedAt, preparedAt, "transitioning from .preparing to .running keeps the original turn start")
     }
 
     // MARK: Input Validation

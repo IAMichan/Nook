@@ -368,9 +368,9 @@ struct GitService: Sendable {
     }
 
     /// Creates a new worktree with a new branch from `base`. Current directory and branch remain unchanged.
-    func addWorktree(repo: String, path: String, branch: String, base: String) throws {
+    func addWorktree(repo: String, path: String, branch: String, base: String, refreshBase: Bool = true) throws {
         guard hasCommits(repo) else { throw GitError("This repository has no commits yet; a worktree requires an initial commit.") }
-        refreshRemoteBase(base, in: repo)
+        if refreshBase { refreshRemoteBase(base, in: repo) }
         guard refExists(base, in: repo) else { throw GitError("Base branch '\(base)' does not exist.") }
         guard isValidBranchName(branch, in: repo) else { throw GitError("'\(branch)' is not a valid branch name.") }
         guard !localBranchExists(branch, in: repo) else { throw GitError("Branch '\(branch)' already exists. Choose a different name.") }

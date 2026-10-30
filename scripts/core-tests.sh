@@ -23,9 +23,6 @@ EXCLUDE_SOURCES=(
   "Brain/AIProvider.swift"
   "Brain/ModelDownload.swift"
   "Brain/BrainSelection.swift"
-  "Brain/ChatChart.swift"
-  "Brain/ChartRescue.swift"
-  "Brain/MarkdownBlock.swift"
   "Services/AntigravityClient.swift"
   "Services/Workspace/Antigravity.swift"
   "Services/Workspace/TextGeneration.swift"
@@ -36,10 +33,17 @@ EXCLUDE_SOURCES=(
   "Services/WhatsApp/WhatsAppNames.swift"
   "Brain/Weather.swift"
   "Services/LocalAgentScanner.swift"
-  "Services/Updates/Ed25519Verifier.swift"
-  "../../packages/protocol/Sources/CompanionSeal.swift"
-  "../../packages/protocol/Sources/RelayPushSeal.swift"
 )
+if [ "$(uname)" != "Darwin" ]; then
+  EXCLUDE_SOURCES+=(
+    "Brain/ChatChart.swift"
+    "Brain/ChartRescue.swift"
+    "Brain/MarkdownBlock.swift"
+    "Services/Updates/Ed25519Verifier.swift"
+    "../../packages/protocol/Sources/CompanionSeal.swift"
+    "../../packages/protocol/Sources/RelayPushSeal.swift"
+  )
+fi
 # Tests that belong to those sources.
 EXCLUDE_TESTS=(
   "MCPOAuthTests" "MCPClientTests" "NetworkGuardTests" "ModelDownloadTests" "BrainSelectionTests" "AntigravityTests"
@@ -96,7 +100,7 @@ SWIFT
 cat > "$WORK/Package.swift" <<'SWIFT'
 // swift-tools-version:5.9
 import PackageDescription
-let package = Package(name: "NookCore", targets: [
+let package = Package(name: "NookCore", platforms: [.macOS(.v14)], targets: [
     .target(name: "Core", dependencies: [.target(name: "SQLite3", condition: .when(platforms: [.linux]))], path: "Sources/Core"),
     // macOS has an SQLite3 module in its SDK; on Linux the system library (libsqlite3-dev) gets one here.
     .systemLibrary(name: "SQLite3", path: "Sources/SQLite3"),

@@ -690,6 +690,9 @@ final class AcpClient: @unchecked Sendable {
     private var _sessionID: String?
     private var _capabilities = AcpSessionCapabilities()
     private var _replaying = false
+    /// Used on the main actor (`WorkspaceManager+Acp`) to serialize `applyAcpSettings` calls across prewarm and send.
+    var applyingSettings = false
+    var afterSettings: [() -> Void] = []
 
     init(spec: LaunchSpec) {
         process = AgentProcess(spec: spec)
