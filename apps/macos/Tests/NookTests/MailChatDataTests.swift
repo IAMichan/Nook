@@ -123,6 +123,20 @@ final class MailChatDataTests: XCTestCase {
         XCTAssertTrue(MailChatData.readScript(account: "Work").contains("\"Sent Items\""))
     }
 
+    /// Every script runs inside a `with timeout` block (`SystemControl.wrapTimeout`), where AppleScript refuses a handler
+    /// ("Expected “end” but found “on”").
+    func testScriptsDefineNoHandlers() {
+        let row = MailChatData.Row(account: "Work", mailbox: "INBOX", id: 1, subject: "", person: "a@b.c", date: Date(),
+                                   read: false, fromMe: false)
+        let scripts = [MailChatData.accountsScript, MailChatData.readScript(account: "Work"), MailChatData.bodiesScript([row]),
+                       MailChatData.markReadScript([row])]
+        for script in scripts {
+            let lines = script.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+            XCTAssertFalse(lines.contains { $0.hasPrefix("on ") || $0.hasPrefix("to ") }, script)
+            XCTAssertFalse(script.contains("my "), script)
+        }
+    }
+
     func testMailNotificationsBecomeMailChats() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let apps = MessagingApps.builtIn
