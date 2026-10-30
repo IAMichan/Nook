@@ -195,11 +195,11 @@ struct PullRequestsPanel: View {
                 // The very first read, with no list kept from before: a patient spinner, not "No pull requests".
                 PatientSpinner()
             } else if !store.available && accounts.isEmpty {
-                empty(title: tr("agents.pulls.notConnected"), detail: tr("agents.pulls.notConnectedDetail"), action: (tr("agents.pulls.connect"), {
+                empty(symbol: "person.crop.circle.badge.plus", title: tr("agents.pulls.notConnected"), detail: tr("agents.pulls.notConnectedDetail"), action: (tr("agents.pulls.connect"), {
                     app.openSettings(section: .connections)
                 }))
             } else if accounts.allSatisfy({ $0.isEmpty && $0.error == nil }) {
-                empty(title: tr("agents.pulls.none"), detail: tr("agents.pulls.noneDetail"), action: nil)
+                empty(symbol: "checkmark.circle", title: tr("agents.pulls.none"), detail: tr("agents.pulls.noneDetail"), action: nil)
             } else {
                 // Filtered once per redraw: the empty check, the count and the rows below all read this.
                 let shown = self.shown
@@ -207,12 +207,12 @@ struct PullRequestsPanel: View {
                 if !unreadable.isEmpty { unreadableNote }
                 if shown.allSatisfy({ $0.isEmpty && $0.error == nil }) {
                     if filter.isActive {
-                        empty(title: tr("agents.pulls.noMatch"), detail: tr("agents.pulls.noMatchDetail"), action: (tr("agents.pulls.clearFilter"), {
+                        empty(symbol: "line.3.horizontal.decrease.circle", title: tr("agents.pulls.noMatch"), detail: tr("agents.pulls.noMatchDetail"), action: (tr("agents.pulls.clearFilter"), {
                             filter = PullRequestFilter()
                         }))
                     } else {
                         // Only closed or merged pull requests: nothing open, but the State filter shows them.
-                        empty(title: tr("agents.pulls.none"), detail: tr("agents.pulls.noneDetail"), action: nil)
+                        empty(symbol: "checkmark.circle", title: tr("agents.pulls.none"), detail: tr("agents.pulls.noneDetail"), action: nil)
                     }
                 } else {
                     ScrollView(showsIndicators: false) {
@@ -294,18 +294,9 @@ struct PullRequestsPanel: View {
         .foregroundStyle(NookTheme.coralSoft)
     }
 
-    private func empty(title: String, detail: String, action: (String, () -> Void)?) -> some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            Text(title).font(NookTheme.TextStyle.title).foregroundStyle(NookTheme.paper)
-            Text(detail)
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            if let action {
-                NookPrimaryButton(title: action.0, action: action.1).padding(.top, NookTheme.Spacing.xs)
-            }
-        }
-        .padding(.top, NookTheme.Spacing.md)
+    /// The whole panel when there is nothing to list: the shared empty state, centred in the space below the toolbar.
+    private func empty(symbol: String, title: String, detail: String, action: (String, () -> Void)?) -> some View {
+        WSEmptyState(symbol: symbol, title: title, message: detail, action: action.map { (title: $0.0, run: $0.1) })
     }
 
     /// An account's part of the list: its name (with more than one account), an error if reading it failed, then its
