@@ -254,6 +254,14 @@ final class WorkspaceManager: ObservableObject {
     /// Stop in progress per session (see WorkspaceManager+Stop), the approvals you gave "for this session" (Codex only
     /// remembers the exact command, so Nook keeps its own), and the background work an agent still has running.
     var stopCoordinators: [UUID: StopCoordinator] = [:]
+    /// Worktree or remote preparation still running before the first turn starts; cancelled if you press Stop.
+    var prepareTasks: [UUID: Task<Void, Never>] = [:]
+    /// Last inspected project metadata per normalized folder, so opening "New Session" or starting is instant.
+    private var projectCache: [String: ProjectInfo] = [:]
+    /// When a repository's remote-tracking base (`repo\nbase`) was last fetched, so starting does not fetch again right away.
+    private var remoteBaseRefreshed: [String: Date] = [:]
+    /// Next checkpoint index per session, claimed before async git work so concurrent checkpoints never share an index.
+    var checkpointIndices: [UUID: Int] = [:]
     /// When the worktree cleanup rules last looked (see WorkspaceManager+WorktreeCleanup).
     var worktreeCleanupAt: Date?
     /// Writes an entry to the audit log (tool, arguments, result); configured by AppModel.
@@ -451,10 +459,28 @@ final class WorkspaceManager: ObservableObject {
 
     // MARK: Inspecting Project
 
+    /// Last inspected metadata for `path`, if already known in this launch.
+    func cachedProject(_ path: String) -> ProjectInfo? {
+        projectCache[WorkspacePathPolicy.normalize(path)]
+    }
+
+    /// Whether `base` in `root` needs a fresh `git fetch` (at most once every two minutes per repository and base branch).
+    func shouldRefreshRemoteBase(root: String, base: String, now: Date = Date()) -> Bool {
+        let key = WorkspacePathPolicy.normalize(root) + "\n" + base
+        if let last = remoteBaseRefreshed[key], now.timeIntervalSince(last) < 120 { return false }
+        remoteBaseRefreshed[key] = now
+        return true
+    }
+
+    private func warmRemoteBase(_ base: String, in root: String) {
+        guard base.contains("/"), let git = gitService, shouldRefreshRemoteBase(root: root, base: base) else { return }
+        Task.detached(priority: .utility) { git.refreshRemoteBase(base, in: root) }
+    }
+
     /// Information required by "New Session" for a directory. Evaluated off the main thread.
     func inspectProject(_ path: String) async -> ProjectInfo {
         let git = gitService
-        return await Task.detached(priority: .userInitiated) {
+        let info = await Task.detached(priority: .userInitiated) {
             let normalized = WorkspacePathPolicy.normalize(path)
             var info = ProjectInfo(path: normalized, name: URL(fileURLWithPath: normalized).lastPathComponent,
                                    verdict: WorkspacePathPolicy.verdict(for: normalized), repoRoot: nil, currentBranch: nil,
@@ -474,6 +500,12 @@ final class WorkspaceManager: ObservableObject {
             }
             return info
         }.value
+        projectCache[info.path] = info
+        if let root = info.repoRoot {
+            projectCache[WorkspacePathPolicy.normalize(root)] = info
+            if let base = info.defaultBase { warmRemoteBase(base, in: root) }
+        }
+        return info
     }
 
     /// Clones a repository, then selects it as the active project.
@@ -508,9 +540,9 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
-    /// Validates configuration, prepares folder or worktree, and launches the agent. If worktree creation fails,
-    /// no session is added so you can retry. If the agent subsequently fails, the session is marked "failed"
-    /// and can be retried with "Retry" without duplicating the session.
+    /// Validates configuration, opens the session immediately in the workspace, and prepares its folder or worktree
+    /// while launching the agent. If worktree or agent startup fails, the session is marked "failed" and can be retried
+    /// with "Retry" without duplicating the session.
     @discardableResult
     func start(_ config: NewRunConfig, allowSharedFolder: Bool = false) async throws -> UUID {
         if let problem = config.problem { throw StartError.config(problem) }
@@ -523,32 +555,27 @@ final class WorkspaceManager: ObservableObject {
 
         let id = UUID()
         var workingDirectory = projectPath
-        var repoRoot: String?
-        var branch: String?
+        let cached = projectCache[projectPath]
+        var repoRoot = cached?.repoRoot
+        var branch = cached?.currentBranch
         var worktreePath: String?
         let git = gitService
 
-        if let git { repoRoot = await Task.detached { git.repositoryRoot(for: projectPath) }.value }
-
         if config.isolation == .worktree {
             guard let git else { throw StartError.noGit }
+            if repoRoot == nil {
+                repoRoot = await Task.detached(priority: .userInitiated) { git.repositoryRoot(for: projectPath) }.value
+            }
             guard let root = repoRoot else { throw StartError.notRepository }
-            let base = config.baseBranch
             // The project's own branch prefix (Settings › Workspace, per project) wins over the global one.
             let prefix = settings.sessionDefaults(for: root).branchPrefix
             let name = ProjectSettings.branchName(config.branchName, globalPrefix: WorktreeNaming.branchPrefix, projectPrefix: prefix)
             let rootFolder = config.worktreeRoot.isEmpty ? settings.worktreeRoot : config.worktreeRoot
             let repoName = URL(fileURLWithPath: root).lastPathComponent
+            let reserved = Set(runs.compactMap(\.worktreePath))
             let path = WorktreeNaming.worktreePath(root: (rootFolder as NSString).expandingTildeInPath, repoName: repoName,
                                                    slug: WorktreeNaming.directorySlug(branch: name, prefix: prefix),
-                                                   exists: { FileManager.default.fileExists(atPath: $0) })
-            do {
-                try await Task.detached(priority: .userInitiated) {
-                    try git.addWorktree(repo: root, path: path, branch: name, base: base)
-                }.value
-            } catch {
-                throw StartError.git(error.localizedDescription)
-            }
+                                                   exists: { reserved.contains($0) || FileManager.default.fileExists(atPath: $0) })
             workingDirectory = path
             worktreePath = path
             branch = name
@@ -556,17 +583,15 @@ final class WorkspaceManager: ObservableObject {
             if !allowSharedFolder, let other = activeRuns(sharing: projectPath).first {
                 throw StartError.shared(other.title)
             }
-            if let git, repoRoot != nil {
-                branch = await Task.detached { git.currentBranch(projectPath) }.value
-            }
         }
 
         let now = Date()
         let title = config.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let visibleTask = ContextRefs.visible(config.task)
         var run = WorkspaceRun(
             id: id,
             title: title.isEmpty ? WorktreeNaming.title(from: config.task) : title,
-            task: ContextRefs.visible(config.task),
+            task: visibleTask,
             provider: config.provider,
             profileID: config.profileID,
             model: config.model,
@@ -587,7 +612,7 @@ final class WorkspaceManager: ObservableObject {
             updatedAt: now,
             archived: false,
             usage: RunUsage(),
-            turnStartedAt: nil,
+            turnStartedAt: now,
             reviewedAt: nil,
             lastChangeAt: nil,
             changedFiles: nil,
@@ -599,36 +624,117 @@ final class WorkspaceManager: ObservableObject {
         events[id] = []
         settings.rememberProject(repoRoot ?? projectPath)
         selectedRunID = id
-        if let worktreePath {
-            append(id, RunEvent(kind: .system, text: tr("ws.event.worktreeCreated", branch ?? "", AgentPathFormat.tilde(worktreePath))))
-            // The first snapshot, before the agent does anything: "back to here" on the first message.
-            if let git {
-                let ref = GitService.checkpointRef(session: id, index: 0)
-                // A new worktree is exactly its branch's HEAD: point the snapshot there instead of reading every file.
-                if (try? await Task.detached(priority: .userInitiated) { try git.checkpointHead(worktreePath, ref: ref) }.value) != nil {
-                    update(id) { $0.checkpoints = [RunCheckpoint(ref: ref, date: Date(), conversation: .empty)] }
-                }
-            }
-            // The project's setup (nook.json `runOnWorktreeCreate`), visible in a terminal next to the session.
-            let setup = await Task.detached(priority: .userInitiated) { ProjectScripts.load(folder: worktreePath) }.value
-            for script in setup where script.runOnWorktreeCreate {
-                runScript?(worktreePath, script.command, script.name)
-                append(id, RunEvent(kind: .system, text: tr("ws.event.setupScript", script.name)))
-            }
-        } else if repoRoot != nil, let git {
-            // In your own folder too, a snapshot before the agent starts: what each turn changed can then be shown on
-            // its own. Taking it changes nothing: not the files, the index or a branch.
-            let ref = GitService.checkpointRef(session: id, index: 0)
-            let directory = workingDirectory
-            if (try? await Task.detached(priority: .userInitiated) { try git.checkpoint(directory, ref: ref) }.value) != nil {
-                update(id) { $0.checkpoints = [RunCheckpoint(ref: ref, date: Date(), conversation: .empty)] }
-            }
-        }
-        let visibleTask = ContextRefs.visible(config.task)
         if visibleTask != config.task { displayPrompt[id] = visibleTask }
-        launchTurn(id, prompt: config.task, executable: executable)
+        if let worktreePath, let root = repoRoot {
+            append(id, RunEvent(kind: .system, text: tr("ws.event.worktreeCreated", branch ?? "", AgentPathFormat.tilde(worktreePath))))
+            append(id, RunEvent(kind: .user, text: shownPrompt(id, config.task)))
+            prepareWorktreeAndLaunch(id, root: root, path: worktreePath, branch: branch ?? "", base: config.baseBranch,
+                                     prompt: config.task, executable: executable)
+        } else {
+            launchTurn(id, prompt: config.task, executable: executable)
+            prepareFolderSession(id, directory: workingDirectory, knownRoot: repoRoot, knownBranch: branch)
+        }
         if title.isEmpty { generateTitle(id) }
         return id
+    }
+
+    /// Creates the session's worktree off the main thread (serialized per repository via `FolderLease`), launches the
+    /// agent as soon as the checkout exists, and records the initial snapshot and setup scripts in the background.
+    func prepareWorktreeAndLaunch(_ id: UUID, root: String, path: String, branch: String, base: String,
+                                  prompt: String, executable: String) {
+        guard let git = gitService else { return }
+        let refreshBase = shouldRefreshRemoteBase(root: root, base: base)
+        let repoKey = FolderLease.key(root)
+        let ref = GitService.checkpointRef(session: id, index: claimCheckpointIndex(id))
+        prepareTasks[id]?.cancel()
+        prepareTasks[id] = Task { [weak self] in
+            do {
+                try await FolderLease.shared.run(repoKey, priority: .userInitiated) {
+                    try git.addWorktree(repo: root, path: path, branch: branch, base: base, refreshBase: refreshBase)
+                }
+            } catch {
+                guard let self, !Task.isCancelled, self.run(id) != nil else { return }
+                self.prepareTasks[id] = nil
+                self.update(id) {
+                    $0.worktreePath = nil
+                    $0.workingDirectory = root
+                    $0.move(to: .failed, detail: error.localizedDescription)
+                }
+                self.append(id, RunEvent(kind: .error, text: error.localizedDescription))
+                return
+            }
+            guard let self, !Task.isCancelled, self.run(id)?.status == .preparing else { return }
+            self.prepareTasks[id] = nil
+            self.update(id) {
+                $0.workingDirectory = path
+                $0.worktreePath = path
+                $0.branch = branch
+            }
+            self.launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
+            // The first snapshot, before the agent does anything: a new worktree is its branch's HEAD.
+            let worktreeKey = FolderLease.key(path)
+            let made = (try? await FolderLease.shared.run(worktreeKey, priority: .userInitiated) {
+                try git.checkpointHead(path, ref: ref)
+            }) != nil
+            if made {
+                self.recordInitialCheckpoint(id, RunCheckpoint(ref: ref, date: Date(), conversation: .empty))
+            }
+            // The project's setup (nook.json `runOnWorktreeCreate`), visible in a terminal next to the session.
+            let setup = await Task.detached(priority: .userInitiated) { ProjectScripts.load(folder: path) }.value
+            guard !Task.isCancelled, self.run(id) != nil else { return }
+            for script in setup where script.runOnWorktreeCreate {
+                self.runScript?(path, script.command, script.name)
+                self.append(id, RunEvent(kind: .system, text: tr("ws.event.setupScript", script.name)))
+            }
+        }
+    }
+
+    /// Resolves git metadata and captures the initial folder snapshot in the background without delaying the first turn.
+    func prepareFolderSession(_ id: UUID, directory: String, knownRoot: String?, knownBranch: String?,
+                              includeComparisonBase: Bool = false) {
+        guard let git = gitService else { return }
+        let ref = GitService.checkpointRef(session: id, index: claimCheckpointIndex(id))
+        let key = FolderLease.key(directory)
+        Task { [weak self] in
+            let resolved = await Task.detached(priority: .userInitiated) { () -> (root: String?, branch: String?, base: String?) in
+                guard let root = knownRoot ?? git.repositoryRoot(for: directory) else { return (nil, nil, nil) }
+                let branch = knownBranch ?? git.currentBranch(directory)
+                var base: String?
+                if includeComparisonBase, let current = branch {
+                    let remotes = git.remotes(directory)
+                    let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
+                    if let main = git.defaultBranch(directory, remote: remote), main != current {
+                        base = git.comparisonBase(directory, base: main, remote: remote)
+                    }
+                }
+                return (root, branch, base)
+            }.value
+            guard let self, self.run(id) != nil, let root = resolved.root else { return }
+            self.update(id) {
+                if $0.repoRoot == nil { $0.repoRoot = root }
+                if $0.branch == nil, let branch = resolved.branch { $0.branch = branch }
+                if $0.baseBranch == nil, let base = resolved.base { $0.baseBranch = base }
+            }
+            let made = (try? await FolderLease.shared.run(key, priority: .userInitiated) {
+                try git.checkpoint(directory, ref: ref)
+            }) != nil
+            if made {
+                self.recordInitialCheckpoint(id, RunCheckpoint(ref: ref, date: Date(), conversation: .empty))
+            }
+        }
+    }
+
+    func claimCheckpointIndex(_ id: UUID) -> Int {
+        let next = max(checkpointIndices[id] ?? 0, run(id)?.checkpoints?.count ?? 0)
+        checkpointIndices[id] = next + 1
+        return next
+    }
+
+    func recordInitialCheckpoint(_ id: UUID, _ checkpoint: RunCheckpoint) {
+        update(id) {
+            let existing = ($0.checkpoints ?? []).filter { $0.ref != checkpoint.ref }
+            $0.checkpoints = [checkpoint] + existing
+        }
     }
 
     /// Takes over an existing agent conversation (running in a terminal, or an earlier session) as a Nook session.
@@ -649,24 +755,9 @@ final class WorkspaceManager: ObservableObject {
         guard verdict == .ok else { throw StartError.workspace(verdict) }
         guard executable(provider) != nil else { throw StartError.noExecutable(provider) }
 
-        var repoRoot: String?
-        var branch: String?
-        var baseBranch: String?
-        if let git = gitService {
-            repoRoot = await Task.detached { git.repositoryRoot(for: projectPath) }.value
-            if repoRoot != nil {
-                branch = await Task.detached { git.currentBranch(projectPath) }.value
-                // A feature branch (a Claude app worktree, say) compares against the default branch, as a session Nook
-                // started in a worktree does: how far ahead and behind it is, and where its pull request goes.
-                let current = branch
-                baseBranch = await Task.detached { () -> String? in
-                    let remotes = git.remotes(projectPath)
-                    let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
-                    guard let current, let main = git.defaultBranch(projectPath, remote: remote), main != current else { return nil }
-                    return git.comparisonBase(projectPath, base: main, remote: remote)
-                }.value
-            }
-        }
+        let cached = projectCache[projectPath]
+        let repoRoot = cached?.repoRoot
+        let branch = cached?.currentBranch
         let id = UUID()
         let now = Date()
         let clean = InjectedPrompt.title(title)
@@ -688,7 +779,7 @@ final class WorkspaceManager: ObservableObject {
             workingDirectory: projectPath,
             repoRoot: repoRoot,
             branch: branch,
-            baseBranch: baseBranch,
+            baseBranch: nil,
             worktreePath: nil,
             instructions: "",
             status: .completed,
@@ -716,8 +807,8 @@ final class WorkspaceManager: ObservableObject {
         }
         append(id, RunEvent(kind: .system, text: tr(fork ? "ws.event.adoptedFork" : "ws.event.adopted", provider.displayName)))
         scheduleSave()
-        // The starting point for what the next turns change.
-        captureCheckpoint(id)
+        // Resolve repository metadata and take the starting snapshot in the background without blocking an immediate reply.
+        prepareFolderSession(id, directory: projectPath, knownRoot: repoRoot, knownBranch: branch, includeComparisonBase: true)
         if clean.isEmpty, !opening.isEmpty { generateTitle(id) }
         if !continuesConversation { carryOverConversation(id, prompt: nil) }
         return id
@@ -739,6 +830,23 @@ final class WorkspaceManager: ObservableObject {
         }
         if run.status.isActive, let updated = self.run(id) { applyLive(id, from: run, to: updated) }
         if let updated = self.run(id), updated.permission != run.permission || updated.mode != run.mode { allowCovered(id) }
+        if !run.status.isActive { refreshWarmSession(id) }
+    }
+
+    /// Keeps an idle session's warm connection in step when you change its model, mode, rights or effort before sending.
+    func refreshWarmSession(_ id: UUID) {
+        guard let run = run(id), !run.status.isActive, processes[id] == nil else { return }
+        switch run.provider {
+        case .claude:
+            guard let idle = claudeIdle[id], idle.key != claudeKey(run) else { return }
+            closeClaudeProcess(id)
+            prewarm(id)
+        case .codex:
+            break
+        case .gemini, .opencode, .cursor, .grok, .antigravity, .acp:
+            guard let client = acpClients[id], client.isRunning, client.sessionID != nil else { return }
+            applyAcpSettings(id, client) {}
+        }
     }
 
     /// Allows the waiting requests the session's current rights cover, as if you had pressed Allow on each.
@@ -794,21 +902,14 @@ final class WorkspaceManager: ObservableObject {
     @discardableResult
     private func send(_ id: UUID, text: String, shown: Bool) -> Bool {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, let run = run(id) else { return false }
         // You carry on yourself: whatever waited behind a failure or a stop goes on after this turn.
         if var held = queued[id], held.isHeld { held.resume(); queued[id] = held }
-        guard !clean.isEmpty, let run = run(id), run.canContinue, processes[id] == nil else { return false }
-        // The previous turn's snapshot is still being made (a moment): your message shows at once, and
-        // goes out right after it, so this turn's edits stay out of that snapshot.
-        if checkpointing.contains(id) {
-            if awaitingCheckpoint[id] != nil {
-                enqueue(id, text: clean)
-            } else {
-                loadTimeline(id)
-                if !shown { append(id, RunEvent(kind: .user, text: ContextRefs.visible(clean))) }
-                awaitingCheckpoint[id] = clean
-            }
+        if checkpointing.contains(id), awaitingCheckpoint[id] != nil {
+            enqueue(id, text: clean)
             return true
         }
+        guard run.canContinue || (shown && run.status == .preparing), processes[id] == nil else { return false }
         guard let executable = launchExecutable(run) else {
             update(id) { $0.statusDetail = StartError.noExecutable(run.provider).errorDescription }
             return false
@@ -817,6 +918,15 @@ final class WorkspaceManager: ObservableObject {
         guard run.isRemote || WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else {
             append(id, RunEvent(kind: .error, text: tr("ws.error.folderGone", run.workingDirectory)))
             return false
+        }
+        // The previous turn's snapshot is still being made (a moment): your message shows at once, the session enters
+        // its working state immediately, and the turn goes out right after the snapshot so its edits stay out of it.
+        if checkpointing.contains(id) {
+            loadTimeline(id)
+            if !shown { append(id, RunEvent(kind: .user, text: ContextRefs.visible(clean))) }
+            awaitingCheckpoint[id] = clean
+            update(id) { $0.move(to: .preparing) }
+            return true
         }
         loadTimeline(id)
         // After a fork or a switch of agent the first turn starts with the summary; it stays until a turn ends well.
@@ -859,7 +969,7 @@ final class WorkspaceManager: ObservableObject {
     func captureCheckpoint(_ id: UUID) {
         guard let run = run(id), run.repoRoot != nil, let git = sessionGit(for: run), canSnapshot(run) else { return }
         let directory = run.workingDirectory
-        let ref = GitService.checkpointRef(session: id, index: run.checkpoints?.count ?? 0)
+        let ref = GitService.checkpointRef(session: id, index: claimCheckpointIndex(id))
         // Dated when the turn ended, before any later message: "before this message" then picks the right snapshot.
         let date = Date()
         // Where the agent's conversation stood: going back here rolls it back too.
@@ -879,6 +989,7 @@ final class WorkspaceManager: ObservableObject {
         if let waiting = awaitingCheckpoint.removeValue(forKey: id) {
             // Shown already: if it cannot go out now, it waits in the queue instead of getting lost.
             if !send(id, text: waiting, shown: true) {
+                if run(id)?.status == .preparing { update(id) { $0.move(to: .stopped) } }
                 queued[id, default: MessageQueue()].requeueFirst(waiting)
                 sendQueued(id)
             }
@@ -923,7 +1034,7 @@ final class WorkspaceManager: ObservableObject {
     /// A queued message can go out right away: into the running turn, or as a new turn when the agent is idle.
     func canSendQueuedNow(_ id: UUID) -> Bool {
         guard let run = run(id) else { return false }
-        if run.status.isActive { return true }
+        if run.status.isActive { return turns[id] != nil }
         return run.canContinue && processes[id] == nil && !checkpointing.contains(id)
     }
 
@@ -1010,18 +1121,56 @@ final class WorkspaceManager: ObservableObject {
         guard let run = run(id), run.canContinue else { return }
         loadTimeline(id)
         let lastPrompt = timeline(id).last { $0.kind == .user }?.text ?? run.task
+        if run.isolation == .worktree, !worktreeExists(run), !run.isRemote,
+           let root = run.repoRoot, let branch = run.branch, let executable = launchExecutable(run) {
+            let prefix = settings.sessionDefaults(for: root).branchPrefix
+            let reserved = Set(runs.filter { $0.id != id }.compactMap(\.worktreePath))
+            let path = WorktreeNaming.worktreePath(
+                root: (settings.worktreeRoot as NSString).expandingTildeInPath,
+                repoName: URL(fileURLWithPath: root).lastPathComponent,
+                slug: WorktreeNaming.directorySlug(branch: branch, prefix: prefix),
+                exists: { reserved.contains($0) || FileManager.default.fileExists(atPath: $0) })
+            update(id) {
+                $0.workingDirectory = path
+                $0.worktreePath = path
+                $0.move(to: .preparing)
+            }
+            prepareWorktreeAndLaunch(id, root: root, path: path, branch: branch, base: run.baseBranch ?? "",
+                                     prompt: lastPrompt, executable: executable)
+            return
+        }
         send(id, text: lastPrompt)
     }
 
     /// Stops the active turn. Claude Code receives a polite interrupt request first, followed by SIGINT.
     func stop(_ id: UUID) {
         stopDelegatedChildren(of: id)
+        if let task = prepareTasks.removeValue(forKey: id) {
+            task.cancel()
+            awaitingCheckpoint[id] = nil
+            if let run = run(id), run.isolation == .worktree, !worktreeExists(run), let root = run.repoRoot {
+                update(id) {
+                    $0.worktreePath = nil
+                    $0.workingDirectory = root
+                }
+            }
+            update(id) { $0.move(to: .stopped) }
+            append(id, RunEvent(kind: .system, text: tr("ws.event.stopped")))
+            holdQueue(id)
+            sendPendingNow(id)
+            return
+        }
         beginStop(id)
         if stopCodexServerTurn(id) { return }
         if stopAcpTurn(id) { return }
         guard let process = processes[id] else {
             // No running process: update state only.
+            let wasWaitingCheckpoint = awaitingCheckpoint.removeValue(forKey: id) != nil
             update(id) { $0.move(to: .stopped) }
+            if wasWaitingCheckpoint {
+                append(id, RunEvent(kind: .system, text: tr("ws.event.stopped")))
+                holdQueue(id)
+            }
             sendPendingNow(id)
             return
         }
@@ -1135,7 +1284,8 @@ final class WorkspaceManager: ObservableObject {
     /// ACP agent has its session loaded. Like a session parked after a turn, it closes when left alone.
     func prewarm(_ id: UUID) {
         guard let run = run(id), run.canContinue, !run.status.isActive, !run.archived, processes[id] == nil,
-              run.providerSessionID != nil, !forkNext.contains(id), let executable = launchExecutable(run),
+              (run.providerSessionID != nil || run.pendingHandoff != nil), !forkNext.contains(id),
+              let executable = launchExecutable(run),
               run.provider != .claude || run.pendingRollback == nil,
               run.isRemote || WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else { return }
         switch run.provider {
@@ -1662,6 +1812,8 @@ final class WorkspaceManager: ObservableObject {
         mcpAppContexts[id] = nil
         let appFolder = Self.mcpAppFolder(id)
         Task.detached(priority: .utility) { try? FileManager.default.removeItem(at: appFolder) }
+        prepareTasks.removeValue(forKey: id)?.cancel()
+        checkpointIndices[id] = nil
         stopCoordinators[id] = nil
         sessionApprovals[id] = nil
         backgroundRoster[id] = nil

@@ -664,23 +664,36 @@ struct NewSessionComposer: View {
         // The next new session opens on the project you chose last, also when this one never started.
         settings.lastProject = path
         applyProjectDefaults(path)
-        inspecting = true
         error = nil
+        if let cached = workspace.cachedProject(path) {
+            applyInspectedProject(cached, for: path)
+            inspecting = false
+        } else {
+            inspecting = true
+        }
         Task {
             let info = await workspace.inspectProject(path)
-            project = info
+            guard config.projectPath == path, remoteMachine == nil else { return }
+            applyInspectedProject(info, for: path)
             inspecting = false
-            let canWorktree = info.repoRoot != nil && info.hasCommits && workspace.gitAvailable == true
-            if !canWorktree {
-                config.isolation = .folder
-            } else if config.isolation == .folder && settings.sessionDefaults(for: path).isolation == .worktree {
-                config.isolation = .worktree
-            }
-            if let base = info.defaultBase, info.branches.contains(base) {
-                config.baseBranch = base
-            } else {
-                config.baseBranch = info.currentBranch ?? info.branches.first ?? ""
-            }
+        }
+    }
+
+    private func applyInspectedProject(_ info: ProjectInfo, for path: String) {
+        project = info
+        let canWorktree = info.repoRoot != nil && info.hasCommits && workspace.gitAvailable == true
+        if !canWorktree {
+            config.isolation = .folder
+        } else if config.isolation == .folder && settings.sessionDefaults(for: path).isolation == .worktree {
+            config.isolation = .worktree
+        }
+        if !config.baseBranch.isEmpty, info.branches.contains(config.baseBranch) {
+            return
+        }
+        if let base = info.defaultBase, info.branches.contains(base) {
+            config.baseBranch = base
+        } else {
+            config.baseBranch = info.currentBranch ?? info.branches.first ?? ""
         }
     }
 

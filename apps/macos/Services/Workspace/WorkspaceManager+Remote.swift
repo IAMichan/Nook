@@ -35,75 +35,99 @@ extension WorkspaceManager {
         let id = UUID()
         let git = GitService(executable: "git", remote: remote)
         let directory = remote.directory.trimmingCharacters(in: .whitespaces)
-        var workingDirectory = directory
-        var branch: String?
-        var base: String?
-        var worktreePath: String?
-        let repoRoot = await Task.detached(priority: .userInitiated) { git.repositoryRoot(for: directory) }.value
-
-        if config.isolation == .worktree {
-            guard let root = repoRoot else { throw StartError.notRepository }
-            let name = config.branchName
-            let requested = config.baseBranch
-            let path = try await Task.detached(priority: .userInitiated) { () throws -> (path: String, base: String) in
-                guard let home = RemoteShell.home(remote) else { throw GitError(tr("ws.remote.noHome")) }
-                let base = requested.isEmpty ? (git.currentBranch(root) ?? "HEAD") : requested
-                let path = WorktreeNaming.worktreePath(root: RemoteShell.worktreeRoot(home: home), repoName: URL(fileURLWithPath: root).lastPathComponent,
-                                                       slug: WorktreeNaming.directorySlug(branch: name),
-                                                       exists: { RemoteShell.exists($0, on: remote) })
-                try git.addWorktree(repo: root, path: path, branch: name, base: base)
-                return (path, base)
-            }.value
-            workingDirectory = path.path
-            worktreePath = path.path
-            branch = name
-            base = path.base
-        } else if repoRoot != nil {
-            branch = await Task.detached(priority: .userInitiated) { git.currentBranch(directory) }.value
-        }
-
         let now = Date()
         let title = config.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let visibleTask = ContextRefs.visible(config.task)
+        let branch: String? = config.isolation == .worktree ? config.branchName : nil
+        let requestedBase = config.baseBranch.trimmingCharacters(in: .whitespaces)
         var run = WorkspaceRun(
-            id: id, title: title.isEmpty ? WorktreeNaming.title(from: config.task) : title, task: ContextRefs.visible(config.task),
+            id: id, title: title.isEmpty ? WorktreeNaming.title(from: config.task) : title, task: visibleTask,
             provider: config.provider, profileID: config.profileID, model: config.model, mode: config.mode,
-            permission: config.permission, isolation: config.isolation, projectPath: repoRoot ?? directory, workingDirectory: workingDirectory,
-            repoRoot: repoRoot, branch: branch, baseBranch: base, worktreePath: worktreePath, instructions: config.instructions,
+            permission: config.permission, isolation: config.isolation, projectPath: directory, workingDirectory: directory,
+            repoRoot: nil, branch: branch, baseBranch: config.isolation == .worktree ? (requestedBase.isEmpty ? nil : requestedBase) : nil,
+            worktreePath: nil, instructions: config.instructions,
             status: .preparing, statusDetail: nil, providerSessionID: nil, createdAt: now, updatedAt: now, archived: false,
-            usage: RunUsage(), turnStartedAt: nil, reviewedAt: nil, lastChangeAt: nil, changedFiles: nil,
+            usage: RunUsage(), turnStartedAt: now, reviewedAt: nil, lastChangeAt: nil, changedFiles: nil,
             delegation: config.delegation)
-        // The agent starts where the session works: the folder, or the new worktree.
         var target = remote
-        target.directory = workingDirectory
+        target.directory = directory
         run.remote = target
         run.effort = config.effort
         runs.insert(run, at: 0)
         events[id] = []
         selectedRunID = id
-        append(id, RunEvent(kind: .system, text: tr("ws.remote.started", remote.name, remote.host, workingDirectory)))
-        if let worktreePath {
-            append(id, RunEvent(kind: .system, text: tr("ws.event.worktreeCreated", branch ?? "", worktreePath)))
-        }
-        // The first snapshot, before the agent starts: a new worktree is exactly HEAD, a folder is read as it is.
-        if repoRoot != nil {
-            let ref = GitService.checkpointRef(session: id, index: 0)
-            let folder = workingDirectory
-            let fresh = worktreePath != nil
-            let made = await Task.detached(priority: .userInitiated) { () -> Bool in
-                do {
-                    if fresh { try git.checkpointHead(folder, ref: ref) } else { try git.checkpoint(folder, ref: ref) }
-                    return true
-                } catch {
-                    return false
-                }
-            }.value
-            if made { update(id) { $0.checkpoints = [RunCheckpoint(ref: ref, date: Date(), conversation: .empty)] } }
-            refreshGit(id)
-        }
-        let visibleTask = ContextRefs.visible(config.task)
         if visibleTask != config.task { displayPrompt[id] = visibleTask }
-        launchTurn(id, prompt: config.task, executable: config.provider.kind.command)
+        append(id, RunEvent(kind: .system, text: tr("ws.remote.started", remote.name, remote.host, directory)))
+        append(id, RunEvent(kind: .user, text: shownPrompt(id, config.task)))
         if title.isEmpty { generateTitle(id) }
+
+        if config.isolation == .folder {
+            launchTurn(id, prompt: config.task, executable: config.provider.kind.command, showPrompt: false)
+        }
+        let ref = GitService.checkpointRef(session: id, index: claimCheckpointIndex(id))
+        prepareTasks[id] = Task { [weak self] in
+            let repoRoot = await Task.detached(priority: .userInitiated) { git.repositoryRoot(for: directory) }.value
+            guard let self, !Task.isCancelled, self.run(id) != nil else { return }
+            if config.isolation == .worktree {
+                guard let root = repoRoot else {
+                    self.prepareTasks[id] = nil
+                    let detail = StartError.notRepository.errorDescription ?? ""
+                    self.update(id) { $0.move(to: .failed, detail: detail) }
+                    self.append(id, RunEvent(kind: .error, text: detail))
+                    return
+                }
+                let name = config.branchName
+                do {
+                    let created = try await Task.detached(priority: .userInitiated) { () throws -> (path: String, base: String) in
+                        guard let home = RemoteShell.home(remote) else { throw GitError(tr("ws.remote.noHome")) }
+                        let base = requestedBase.isEmpty ? (git.currentBranch(root) ?? "HEAD") : requestedBase
+                        let path = WorktreeNaming.worktreePath(
+                            root: RemoteShell.worktreeRoot(home: home),
+                            repoName: URL(fileURLWithPath: root).lastPathComponent,
+                            slug: WorktreeNaming.directorySlug(branch: name),
+                            exists: { RemoteShell.exists($0, on: remote) })
+                        try git.addWorktree(repo: root, path: path, branch: name, base: base)
+                        return (path, base)
+                    }.value
+                    guard !Task.isCancelled, self.run(id)?.status == .preparing else { return }
+                    self.prepareTasks[id] = nil
+                    var updatedTarget = remote
+                    updatedTarget.directory = created.path
+                    self.update(id) {
+                        $0.projectPath = root
+                        $0.repoRoot = root
+                        $0.workingDirectory = created.path
+                        $0.worktreePath = created.path
+                        $0.branch = name
+                        $0.baseBranch = created.base
+                        $0.remote = updatedTarget
+                    }
+                    self.append(id, RunEvent(kind: .system, text: tr("ws.event.worktreeCreated", name, created.path)))
+                    self.launchTurn(id, prompt: config.task, executable: config.provider.kind.command, showPrompt: false)
+                    let folder = created.path
+                    let made = (try? await Task.detached(priority: .userInitiated) { try git.checkpointHead(folder, ref: ref) }.value) != nil
+                    if made { self.recordInitialCheckpoint(id, RunCheckpoint(ref: ref, date: Date(), conversation: .empty)) }
+                    self.refreshGit(id)
+                } catch {
+                    guard !Task.isCancelled, self.run(id) != nil else { return }
+                    self.prepareTasks[id] = nil
+                    self.update(id) { $0.move(to: .failed, detail: error.localizedDescription) }
+                    self.append(id, RunEvent(kind: .error, text: error.localizedDescription))
+                }
+            } else {
+                self.prepareTasks[id] = nil
+                guard let root = repoRoot else { return }
+                let remoteBranch = await Task.detached(priority: .userInitiated) { git.currentBranch(directory) }.value
+                self.update(id) {
+                    $0.projectPath = root
+                    $0.repoRoot = root
+                    $0.branch = remoteBranch
+                }
+                let made = (try? await Task.detached(priority: .userInitiated) { try git.checkpoint(directory, ref: ref) }.value) != nil
+                if made { self.recordInitialCheckpoint(id, RunCheckpoint(ref: ref, date: Date(), conversation: .empty)) }
+                self.refreshGit(id)
+            }
+        }
         return id
     }
 }

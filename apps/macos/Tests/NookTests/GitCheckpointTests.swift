@@ -91,4 +91,19 @@ final class GitCheckpointTests: XCTestCase {
         try "x".write(to: empty.appendingPathComponent("f.txt"), atomically: true, encoding: .utf8)
         XCTAssertFalse(try git.checkpoint(empty.path, ref: "refs/nook/checkpoints/t/0").isEmpty)
     }
+
+    func testCheckpointPreservesStagedAndUnstagedIndexState() throws {
+        try write("staged.txt", "staged")
+        try git.run(["add", "staged.txt"], in: repo.path)
+        try write("a.txt", "unstaged")
+        let statusBefore = try git.run(["status", "--porcelain"], in: repo.path)
+
+        let ref = GitService.checkpointRef(session: UUID(), index: 0)
+        try git.checkpoint(repo.path, ref: ref)
+
+        let statusAfter = try git.run(["status", "--porcelain"], in: repo.path)
+        XCTAssertEqual(statusAfter, statusBefore, "seeding from the checkout index never alters staged or unstaged entries")
+        XCTAssertEqual(try git.run(["show", "\(ref):staged.txt"], in: repo.path), "staged")
+        XCTAssertEqual(try git.run(["show", "\(ref):a.txt"], in: repo.path), "unstaged")
+    }
 }

@@ -178,6 +178,7 @@ extension WorkspaceManager {
                         self.sendAcpPrompt(id, client, prompt: next)
                     } else {
                         self.scheduleAcpIdleClose(id)
+                        self.applyAcpSettings(id, client) {}
                     }
                 }
             }
@@ -228,18 +229,36 @@ extension WorkspaceManager {
 
     /// Sets the run's model, effort and mode on the session, each answered before the next, then calls `done`. The next
     /// step is worked out again after each answer: the options a reply brings (another model's levels) count.
-    private func applyAcpSettings(_ id: UUID, _ client: AcpClient, round: Int = 0, then done: @escaping () -> Void) {
+    func applyAcpSettings(_ id: UUID, _ client: AcpClient, then done: @escaping () -> Void) {
+        client.afterSettings.append(done)
+        guard !client.applyingSettings else { return }
+        client.applyingSettings = true
+        stepAcpSettings(id, client, round: 0)
+    }
+
+    private func finishAcpSettings(_ client: AcpClient) {
+        client.applyingSettings = false
+        let callbacks = client.afterSettings
+        client.afterSettings.removeAll()
+        for callback in callbacks { callback() }
+    }
+
+    private func stepAcpSettings(_ id: UUID, _ client: AcpClient, round: Int) {
         // Each setting is asked for at most a few times, whatever the agent answers.
-        guard round < 6, let run = run(id), let session = client.sessionID else { return done() }
+        guard round < 6, let run = run(id), let session = client.sessionID else { return finishAcpSettings(client) }
         let info = client.sessionInfo
         // "Default" returns to the level the session started with.
         let steps = AcpSessionSettings.steps(session: session, info: info, model: run.model, appliedModel: client.appliedModel,
                                              effort: run.effort ?? client.startingEffort, appliedEffort: client.appliedEffort,
                                              mode: wantedAcpMode(run, client), appliedMode: client.appliedMode)
-        guard let step = steps.first else { return done() }
+        guard let step = steps.first else { return finishAcpSettings(client) }
         client.request(step.method, step.params) { [weak self] result in
             Task { @MainActor in
-                guard let self, self.acpClients[id] === client, client.isRunning else { return }
+                guard let self, self.acpClients[id] === client, client.isRunning else {
+                    client.applyingSettings = false
+                    client.afterSettings.removeAll()
+                    return
+                }
                 switch (result, step.target) {
                 case (.success(let response), .model(let model)):
                     client.appliedModel = model
@@ -262,7 +281,7 @@ extension WorkspaceManager {
                 case (.failure, .mode(let mode)):
                     client.appliedMode = mode
                 }
-                self.applyAcpSettings(id, client, round: round + 1, then: done)
+                self.stepAcpSettings(id, client, round: round + 1)
             }
         }
     }
