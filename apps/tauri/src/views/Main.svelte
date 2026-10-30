@@ -110,7 +110,7 @@
 
 <div class="main" class:mobile>
   <nav class="rail" aria-label="Main navigation">
-    <div class="brand"><Orb size={28} mood={nook.waiting ? "waiting" : nook.working ? "working" : "idle"} /><div><strong>Nook</strong><span>Your personal assistant</span></div></div>
+    <div class="brand"><Orb size={28} movable mood={nook.waiting ? "waiting" : nook.working ? "working" : "idle"} /><div><strong>Nook</strong><span>Your personal assistant</span></div></div>
     <span class="nav-label">WORKSPACE</span>
     <button class="quick-open" onclick={() => (paletteOpen = true)} title="Quick switcher (Ctrl+K)"><Icon name="search" /><span>{mobile ? "Search" : "Quick switcher"}</span><kbd>Ctrl K</kbd></button>
     <button class:on={route === "chat"} aria-current={route === "chat" ? "page" : undefined} onclick={() => { if (route === "chat" && mobile) showList = !showList; route = "chat"; }} title="Chat"><Icon name="chat" /><span>Chat</span></button>

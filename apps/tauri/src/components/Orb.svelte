@@ -28,7 +28,8 @@
     level = 0,
     ring = [],
     onpiece,
-  }: { size?: number; mood?: Mood; level?: number; ring?: RingPiece[]; onpiece?: (id: string) => void } = $props();
+    movable = false,
+  }: { size?: number; mood?: Mood; level?: number; ring?: RingPiece[]; onpiece?: (id: string) => void; movable?: boolean } = $props();
 
   let el: HTMLDivElement;
   let look = $state({ x: 0, y: 0 });
@@ -98,6 +99,10 @@
   }
 
   function poke() {
+    if (tugged) {
+      tugged = false;
+      return;
+    }
     const now = Date.now();
     pokes = [...pokes.filter((t) => now - t < 1000), now];
     activity();
@@ -163,8 +168,94 @@
   function middle(i: number, n: number) {
     return ((i + 0.5) / n) * 2 * Math.PI - Math.PI / 2;
   }
+  // Hold the left button on a movable Nook and pull: he follows on an elastic tether, stretches along the way he moves,
+  // and springs home with a wobble when you let go. A spring runs per frame only while he is held or still settling.
+  let held = $state(false);
+  let pull = $state({ x: 0, y: 0, s: 0, a: 0, lx: 0, ly: 0 });
+  let tugged = false;
+  let grab: { x: number; y: number } | null = null;
+  let pos = { x: 0, y: 0 };
+  let vel = { x: 0, y: 0 };
+  let aim = { x: 0, y: 0 };
+  let frame = 0;
+  let lastFrame = 0;
+  let calm = false;
+  const tether = $derived(size * 1.6);
+
+  function step(now: number) {
+    const dt = Math.min(1 / 30, (now - lastFrame) / 1000 || 1 / 60);
+    lastFrame = now;
+    // Stiff while held so he keeps up with the pointer, loose on release so he overshoots home and wobbles.
+    const k = held ? 900 : 220;
+    const c = 2 * Math.sqrt(k) * (held || calm ? 0.85 : 0.3);
+    vel.x += (-k * (pos.x - aim.x) - c * vel.x) * dt;
+    vel.y += (-k * (pos.y - aim.y) - c * vel.y) * dt;
+    pos.x += vel.x * dt;
+    pos.y += vel.y * dt;
+    const speed = Math.hypot(vel.x, vel.y);
+    if (!held && speed < 2 && Math.hypot(pos.x, pos.y) < 0.2) {
+      pos = { x: 0, y: 0 };
+      vel = { x: 0, y: 0 };
+      pull = { x: 0, y: 0, s: 0, a: 0, lx: 0, ly: 0 };
+      frame = 0;
+      return;
+    }
+    // Stretch along the motion, plus a little along the tether while he is pulled away from home.
+    const sx = vel.x / 2400 + (held ? (pos.x / tether) * 0.14 : 0);
+    const sy = vel.y / 2400 + (held ? (pos.y / tether) * 0.14 : 0);
+    const s = calm ? 0 : Math.min(0.24, Math.hypot(sx, sy));
+    const look = speed > 40 ? size * 0.09 : 0;
+    pull = { x: pos.x, y: pos.y, s, a: Math.atan2(sy, sx), lx: (vel.x / (speed || 1)) * look, ly: (vel.y / (speed || 1)) * look };
+    frame = requestAnimationFrame(step);
+  }
+
+  function wake() {
+    if (frame) return;
+    lastFrame = performance.now();
+    frame = requestAnimationFrame(step);
+  }
+
+  function hold(e: PointerEvent) {
+    if (!movable || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    calm = matchMedia("(prefers-reduced-motion: reduce)").matches || document.body.classList.contains("easy");
+    grab = { x: e.clientX - pos.x, y: e.clientY - pos.y };
+    tugged = false;
+  }
+
+  function drag(e: PointerEvent) {
+    if (!grab) return;
+    const dx = e.clientX - grab.x;
+    const dy = e.clientY - grab.y;
+    const d = Math.hypot(dx, dy);
+    if (!held) {
+      if (d < 4) return;
+      held = true;
+      tugged = true;
+      activity();
+    }
+    // Free close to home, ever stiffer the further you pull, never past the end of the tether.
+    const reach = tether * Math.tanh(d / tether);
+    aim = { x: (dx / (d || 1)) * reach, y: (dy / (d || 1)) * reach };
+    wake();
+  }
+
+  function release() {
+    if (!grab) return;
+    grab = null;
+    if (!held) return;
+    held = false;
+    aim = { x: 0, y: 0 };
+    wake();
+  }
+
+  $effect(() => () => cancelAnimationFrame(frame));
+
   // Wijst de muis een stuk van de ring aan, dan kijkt Nook ernaar.
   const gaze = $derived.by(() => {
+    if (pull.lx || pull.ly) return { x: pull.lx, y: pull.ly };
     const i = ring.findIndex((p) => p.id === hovered);
     if (i < 0) return look;
     const a = middle(i, ring.length);
@@ -197,21 +288,34 @@
       </button>
     {/if}
   {/if}
-  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="orb {mood} {moment}"
-    class:drowsy
-    bind:this={el}
-    onmouseenter={enter}
-    onmouseleave={leave}
-    onclick={poke}
-    style="--lx:{-gaze.x * 1.6}px;--ly:{-gaze.y * 1.6}px;--level:{level}"
+    class="hold"
+    class:movable
+    class:held
+    onpointerdown={hold}
+    onpointermove={drag}
+    onpointerup={release}
+    onpointercancel={release}
+    onmousedown={(e) => movable && e.button === 0 && e.stopPropagation()}
+    style="transform: translate({pull.x}px, {pull.y}px) rotate({pull.a}rad) scale({1 + pull.s}, {1 - pull.s * 0.55}) rotate({-pull.a}rad)"
   >
-    <span class="eye" class:blink={blinking || moment === "poke" || moment === "giggle"} style="transform: translate({gaze.x}px, {gaze.y}px)"></span>
-    <span class="eye" class:blink={blinking || moment === "poke" || moment === "giggle"} style="transform: translate({gaze.x}px, {gaze.y}px)"></span>
-    {#if blush || moment === "giggle"}
-      <span class="cheek left"></span><span class="cheek right"></span>
-    {/if}
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+    <div
+      class="orb {mood} {moment}"
+      class:drowsy
+      bind:this={el}
+      onmouseenter={enter}
+      onmouseleave={leave}
+      onclick={poke}
+      style="--lx:{-gaze.x * 1.6}px;--ly:{-gaze.y * 1.6}px;--level:{level}"
+    >
+      <span class="eye" class:blink={blinking || moment === "poke" || moment === "giggle"} style="transform: translate({gaze.x}px, {gaze.y}px)"></span>
+      <span class="eye" class:blink={blinking || moment === "poke" || moment === "giggle"} style="transform: translate({gaze.x}px, {gaze.y}px)"></span>
+      {#if blush || held || moment === "giggle"}
+        <span class="cheek left"></span><span class="cheek right"></span>
+      {/if}
+    </div>
   </div>
 </div>
 
@@ -244,6 +348,13 @@
     background: #050507;
     transition: transform 0.08s linear, height 0.08s;
   }
+  .hold { display: flex; position: relative; z-index: 1; will-change: transform; }
+  .hold.movable { cursor: grab; user-select: none; touch-action: none; }
+  .hold.movable .orb { cursor: inherit; }
+  .hold.held { cursor: grabbing; z-index: 10; }
+  /* Held: wide awake, and a soft lift that the glow follows. */
+  .held .orb { box-shadow: 0 calc(var(--s) * 0.18) calc(var(--s) * 0.6) color-mix(in srgb, var(--iris) 40%, transparent); }
+  .held .eye { height: calc(var(--s) * 0.26); }
   .eye.blink { height: calc(var(--s) * 0.03); }
   .drowsy .eye { height: calc(var(--s) * 0.08); }
   .cheek { position: absolute; top: 58%; width: calc(var(--s) * 0.16); height: calc(var(--s) * 0.08); border-radius: 50%; background: rgba(255, 120, 150, 0.55); filter: blur(1px); }
