@@ -74,6 +74,10 @@ enum PanelLayout {
     static let chatsSidebar: CGFloat = 184
     static let chatsRail: CGFloat = 48
     static let chatsSidebarRoom: Double = 1000
+    /// Dragging the sidebar's line narrower than `chatsSidebarFold` folds it to the rail; it gets no wider than
+    /// `chatsSidebarMax`.
+    static let chatsSidebarFold: Double = 140
+    static let chatsSidebarMax: Double = 320
     /// The second tab of split view, beside the one you are on.
     static let split: Double = 440
     /// The list of Nooks beside the chat, in the notch and in the main window.
@@ -87,6 +91,14 @@ enum PanelLayout {
     static let minimumPanel: Double = 240
     /// What a conversation keeps next to the panels.
     static let minimumConversation: Double = 360
+    /// The room a list and a conversation need side by side: the narrowest list, its line and gap, and the narrowest
+    /// conversation. Narrower than this (split view, a small window) a tab shows one of them at a time (`stacks`).
+    static let sideBySide: Double = minimumList + PanelSplit.handle + Double(SidePanelMetrics.gap) + minimumConversation
+
+    /// Whether a tab of `total` width shows its list and its conversation one at a time, each over the whole width, with
+    /// a back button (`PanelBackButton`) from the conversation to the list, as a phone does. False while the width is
+    /// not known yet.
+    static func stacks(_ total: Double) -> Bool { total > 0 && total < sideBySide }
 
     /// The width a panel may share with the conversation, `total` minus the other panel open beside it (with its line);
     /// 0 while the total is not known yet.

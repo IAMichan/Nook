@@ -330,6 +330,10 @@ struct ChatsTab: View {
     /// The groups folded shut (a click on their header); a search shows every group open.
     @State private var collapsed: Set<ChatsGroup> = []
     @AppStorage("nook.chats.listWidth") private var listWidth = PanelLayout.chatsList
+    /// How wide the sidebar is after you dragged its line, like every other line between panels; 0 follows the panel
+    /// (a rail when it is narrow). A double-click on the line goes back to that. Remembered.
+    @AppStorage("nook.chats.sidebarWidth") private var sidebarChoice: Double = 0
+    @State private var sidebarDragStart: Double?
     /// Settings › Connections: opening a chat reads it in Nook. On by default; the app itself hears it only from your click.
     @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
     @State private var totalWidth: Double = 0
@@ -354,8 +358,20 @@ struct ChatsTab: View {
     }
 
     /// The sidebar folds to a rail of icons when the panel is narrow, so the list and the chat keep their room.
-    private var compactSidebar: Bool { totalWidth > 0 && totalWidth < PanelLayout.chatsSidebarRoom }
-    private var sidebarWidth: Double { Double(compactSidebar ? PanelLayout.chatsRail : PanelLayout.chatsSidebar) }
+    /// Dragged narrower than `chatsSidebarFold`, it is the rail too.
+    private var compactSidebar: Bool {
+        if sidebarChoice > 0 { return sidebarChoice < PanelLayout.chatsSidebarFold }
+        return totalWidth > 0 && totalWidth < PanelLayout.chatsSidebarRoom
+    }
+    private var sidebarWidth: Double {
+        if compactSidebar { return Double(PanelLayout.chatsRail) }
+        guard sidebarChoice > 0 else { return Double(PanelLayout.chatsSidebar) }
+        // However wide you made it, the list keeps its narrowest width beside it.
+        let room = totalWidth > 0 ? totalWidth - PanelLayout.minimumList - PanelSplit.handle : PanelLayout.chatsSidebarMax
+        return max(PanelLayout.chatsSidebarFold, min(sidebarChoice, PanelLayout.chatsSidebarMax, room))
+    }
+    /// Too narrow for the list and a chat side by side: one of them at a time (`PanelLayout.stacks`).
+    private var stacked: Bool { PanelLayout.stacks(totalWidth - sidebarWidth) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
@@ -367,40 +383,48 @@ struct ChatsTab: View {
                 if showsFooter { footer.frame(width: min(listWidth, max(totalWidth, PanelLayout.minimumList))) }
             } else {
                 HStack(alignment: .top, spacing: 0) {
-                    sidebar
-                    NookDivider(vertical: true)
-                    // The same split as the Agents tab: a list you can widen, a line, and the open chat beside it.
-                    list
-                        .padding(.leading, NookTheme.Spacing.md)
-                        .sidePanel(.leading, width: $listWidth, defaultWidth: PanelLayout.chatsList, minimum: PanelLayout.minimumList,
-                                   available: max(totalWidth - sidebarWidth, 0),
-                                   rest: PanelLayout.minimumConversation + PanelSplit.handle)
-                    Group {
-                        if let current {
-                            ChatsDetail(entry: current, photo: photo(current), capture: capture,
-                                        onMarkUnread: { markUnread(current) }, onClose: closeChat)
-                                .id(current.id)
-                        } else {
-                            // No chat open (none picked yet, closed with Escape, or not in what the list shows).
-                            VStack(spacing: NookTheme.Spacing.sm) {
-                                Image(systemName: "bubble.left.and.bubble.right")
-                                    .font(NookTheme.font(26, .light))
-                                    .foregroundStyle(NookTheme.textMuted)
-                                    .accessibilityHidden(true)
-                                Text(tr("chats.placeholder"))
-                                    .font(NookTheme.TextStyle.body)
-                                    .foregroundStyle(NookTheme.textSecondary)
-                                Text(tr("chats.placeholderDetail"))
-                                    .font(NookTheme.TextStyle.detail)
-                                    .foregroundStyle(NookTheme.textTertiary)
-                                    .multilineTextAlignment(.center)
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        }
+                    // Too narrow for both (split view, a small window): the open chat over the whole width with a back
+                    // button, else the sidebar and the list.
+                    if !stacked || current == nil {
+                        sidebar
+                        sidebarHandle
+                        // The same split as the Agents tab: a list you can widen, a line, and the open chat beside it.
+                        list
+                            .padding(.leading, NookTheme.Spacing.md)
+                            .listPanel(stacked: stacked, width: $listWidth, defaultWidth: PanelLayout.chatsList,
+                                       available: max(totalWidth - sidebarWidth, 0),
+                                       rest: PanelLayout.minimumConversation + PanelSplit.handle)
                     }
-                    .padding(.leading, NookTheme.Spacing.lg)
-                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    if !stacked || current != nil {
+                        Group {
+                            if let current {
+                                ChatsDetail(entry: current, photo: photo(current), capture: capture,
+                                            onMarkUnread: { markUnread(current) }, onClose: closeChat,
+                                            onBack: stacked ? closeChat : nil)
+                                    .id(current.id)
+                            } else {
+                                // No chat open (none picked yet, closed with Escape, or not in what the list shows).
+                                VStack(spacing: NookTheme.Spacing.sm) {
+                                    Image(systemName: "bubble.left.and.bubble.right")
+                                        .font(NookTheme.font(26, .light))
+                                        .foregroundStyle(NookTheme.textMuted)
+                                        .accessibilityHidden(true)
+                                    Text(tr("chats.placeholder"))
+                                        .font(NookTheme.TextStyle.body)
+                                        .foregroundStyle(NookTheme.textSecondary)
+                                    Text(tr("chats.placeholderDetail"))
+                                        .font(NookTheme.TextStyle.detail)
+                                        .foregroundStyle(NookTheme.textTertiary)
+                                        .multilineTextAlignment(.center)
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
+                        }
+                        .padding(.leading, stacked ? 0 : NookTheme.Spacing.lg)
+                        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    }
                 }
+                .animation(NookTheme.reveal, value: stacked && current != nil)
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -625,13 +649,32 @@ struct ChatsTab: View {
     /// as wide as the sidebar, or one icon under the other in the rail.
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            ChatsSidebar(compact: compactSidebar, view: $view, app: $filter, account: $account, counts: viewCounts, apps: apps,
+            ChatsSidebar(compact: compactSidebar, width: sidebarWidth, view: $view, app: $filter, account: $account, counts: viewCounts, apps: apps,
                          newByApp: newByApp, accounts: accounts, newByAccount: newByAccount,
                          addSource: { app.openConnections(.add(.chats)) })
             footer
-                .frame(width: compactSidebar ? PanelLayout.chatsRail : PanelLayout.chatsSidebar)
+                .frame(width: sidebarWidth)
         }
         .padding(.trailing, compactSidebar ? NookTheme.Spacing.xs : NookTheme.Spacing.sm)
+    }
+
+    /// The line between the sidebar and the list, a drag line like every other one between panels: drag it to make the
+    /// sidebar wider or narrower (narrow enough and it folds to the rail, wide enough and it opens again), double-click
+    /// it to let the panel's width decide again.
+    private var sidebarHandle: some View {
+        EmbeddedSplitHandle(
+            divider: true,
+            help: "panel.resize",
+            onDrag: { offset in
+                let start = sidebarDragStart ?? sidebarWidth
+                sidebarDragStart = start
+                let dragged = start + offset
+                sidebarChoice = dragged < PanelLayout.chatsSidebarFold
+                    ? Double(PanelLayout.chatsRail) : min(dragged, PanelLayout.chatsSidebarMax)
+            },
+            onEnd: { sidebarDragStart = nil },
+            onReset: { withAnimation(NookTheme.reveal) { sidebarChoice = 0 } }
+        )
     }
 
     /// The list's title: the view, and the app when one is chosen ("New · Telegram"), and its account when one is
@@ -1147,6 +1190,8 @@ private struct ChatsDetail: View {
     var onMarkUnread: () -> Void = {}
     /// Escape: the tab closes the chat.
     var onClose: () -> Void = {}
+    /// Back to the list, while the tab shows one column at a time; nil while the list sits beside the chat.
+    var onBack: (() -> Void)? = nil
     @EnvironmentObject private var app: AppModel
     @State private var reply = ""
     @State private var notice: String?
@@ -1181,12 +1226,13 @@ private struct ChatsDetail: View {
     @State private var newFrom: String?
 
     init(entry: ChatsEntry, photo: NSImage?, capture: ChatCaptureService,
-         onMarkUnread: @escaping () -> Void = {}, onClose: @escaping () -> Void = {}) {
+         onMarkUnread: @escaping () -> Void = {}, onClose: @escaping () -> Void = {}, onBack: (() -> Void)? = nil) {
         self.entry = entry
         self.photo = photo
         self.capture = capture
         self.onMarkUnread = onMarkUnread
         self.onClose = onClose
+        self.onBack = onBack
         _unreadAtOpen = State(initialValue: entry.unread)
         _bubblesMemo = State(initialValue: ChatBubblesMemo.kept(for: entry.id))
     }
@@ -1493,6 +1539,7 @@ private struct ChatsDetail: View {
     /// the chat stands; opening the app and the rest of the actions on the right. The same for every app.
     private var header: some View {
         HStack(spacing: NookTheme.Spacing.md) {
+            if let onBack { PanelBackButton(action: onBack) }
             ChatsAvatar(name: entry.name, app: entry.app, photo: photo, size: 36)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(entry.name)

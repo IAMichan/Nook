@@ -70,6 +70,8 @@ struct ChatTicks: View {
 /// way to add one, and at the foot what the marks mean. Folded to a rail of icons when the panel is narrow.
 struct ChatsSidebar: View {
     let compact: Bool
+    /// How wide it is: the rail, or as wide as its line was dragged.
+    let width: Double
     @Binding var view: ChatsView
     /// The app the list shows only (its source id), or nil for every app.
     @Binding var app: String?
@@ -136,7 +138,7 @@ struct ChatsSidebar: View {
                 legend
             }
         }
-        .frame(width: compact ? PanelLayout.chatsRail : PanelLayout.chatsSidebar)
+        .frame(width: width)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 

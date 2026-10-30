@@ -53,8 +53,10 @@ struct AgentsTab: View {
         // the conversation and the panel side by side for as long as it can.
         let besideRoom = workbench(selection) && viewModel.sessionTool != .conversation
             ? PanelLayout.minimumPanel + PanelSplit.handle + NookTheme.Spacing.sm + 10 : 0
-        // Only a session whose header has the toggle to bring the list back can do without it (`canHideList`).
-        let listShown = !listHidden || !canHideList(selection)
+        // Only a session whose header has the toggle to bring the list back can do without it (`canHideList`). Too
+        // narrow for both (split view, a small window): the list or what is open, one at a time over the whole width.
+        let stacked = PanelLayout.stacks(totalWidth)
+        let listShown = stacked ? !listHidden : !listHidden || !canHideList(selection)
         let entries = listEntries(live: live, past: past, transcripts: transcripts)
         HStack(alignment: .top, spacing: 0) {
             if listShown {
@@ -62,7 +64,7 @@ struct AgentsTab: View {
                     listHeader(selection)
                     sessionList(entries, selection: selection)
                     if !app.demoMode {
-                        PanelFooter(selected: selectedID(selection), open: { viewModel.selectedAgentID = $0 },
+                        PanelFooter(selected: selectedID(selection), open: { open($0) },
                                     openSettings: { app.openSettings() }, history: app.history,
                                     onBack: { viewModel.selectedAgentID = beforePullRequests },
                                     openCloud: showsCloudLink ? {
@@ -70,55 +72,63 @@ struct AgentsTab: View {
                                     } : nil)
                     }
                 }
-                .sidePanel(.leading, width: $listWidth, defaultWidth: PanelLayout.agentsList, minimum: PanelLayout.minimumList,
-                           available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle + besideRoom)
+                .listPanel(stacked: stacked, width: $listWidth, defaultWidth: PanelLayout.agentsList, available: totalWidth,
+                           rest: PanelLayout.minimumConversation + PanelSplit.handle + besideRoom)
             }
 
-            Group {
-                switch selection {
-                case .live(let session):
-                    SessionWorkbench(viewModel: viewModel, directory: session.cwd, dockSessionPanel: true,
-                                     agentWorking: session.status == .running || session.status == .waiting) { tools in
-                        AgentSessionDetail(selection: .live(session), headerAccessory: tools)
+            if !stacked || !listShown {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    // A session's header has the toggle back to the list; a page without one gets a back button above it.
+                    if stacked && !canHideList(selection) {
+                        PanelBackButton { listHidden = false }
                     }
-                    .id(session.id)
-                case .past(let session):
-                    SessionWorkbench(viewModel: viewModel, directory: session.cwd, dockSessionPanel: true) { tools in
-                        // An earlier conversation Nook can run opens as a Nook session: the same panel, composer and
-                        // pull request status as one started here. The read-only view is for the rest.
-                        ImportedSession(session: session) {
-                            AgentSessionDetail(selection: .past(session), headerAccessory: tools)
-                        }
-                    }
-                    .id("past:" + session.id)
-                case .run(let id):
-                    let run = app.workspace.run(id)
-                    SessionWorkbench(viewModel: viewModel, directory: run?.workingDirectory ?? "", runID: id,
-                                 dockSessionPanel: run?.remote == nil, agentWorking: run?.status.isActive ?? false) { tools in
-                        AgentRunPanel(workspace: app.workspace, runID: id, headerAccessory: tools)
-                    }
-                    // Each session gets its own panel state: nothing (a pending "restore files" above all) carries over.
-                    .id("run:" + id.uuidString)
-                case .pullRequests: PullRequestsPanel()
-                case .usage: AgentsUsagePanel()
-                case .terminals: AgentsToolPage(title: tr("agents.footer.terminals")) { TerminalsView() }
-                case .browser: AgentsToolPage(title: tr("agents.footer.browser")) { BrowserView() }
-                case .worktrees: AgentsToolPage(title: tr("agents.footer.worktrees")) { WorktreesView() }
-                case .simulator: AgentsToolPage(title: tr("agents.footer.simulator")) { SimulatorView() }
-                case .new:
-                    if app.demoMode {
-                        nothingRunning
-                    } else {
-                        SessionWorkbench(viewModel: viewModel, directory: newDirectory) { tools in
-                            NewSessionComposer(headerAccessory: tools, onDirectory: { newDirectory = $0 }) { id in
-                                viewModel.selectedAgentID = "run:" + id.uuidString
+                    Group {
+                        switch selection {
+                        case .live(let session):
+                            SessionWorkbench(viewModel: viewModel, directory: session.cwd, dockSessionPanel: true,
+                                             agentWorking: session.status == .running || session.status == .waiting) { tools in
+                                AgentSessionDetail(selection: .live(session), headerAccessory: tools)
+                            }
+                            .id(session.id)
+                        case .past(let session):
+                            SessionWorkbench(viewModel: viewModel, directory: session.cwd, dockSessionPanel: true) { tools in
+                                // An earlier conversation Nook can run opens as a Nook session: the same panel, composer and
+                                // pull request status as one started here. The read-only view is for the rest.
+                                ImportedSession(session: session) {
+                                    AgentSessionDetail(selection: .past(session), headerAccessory: tools)
+                                }
+                            }
+                            .id("past:" + session.id)
+                        case .run(let id):
+                            let run = app.workspace.run(id)
+                            SessionWorkbench(viewModel: viewModel, directory: run?.workingDirectory ?? "", runID: id,
+                                         dockSessionPanel: run?.remote == nil, agentWorking: run?.status.isActive ?? false) { tools in
+                                AgentRunPanel(workspace: app.workspace, runID: id, headerAccessory: tools)
+                            }
+                            // Each session gets its own panel state: nothing (a pending "restore files" above all) carries over.
+                            .id("run:" + id.uuidString)
+                        case .pullRequests: PullRequestsPanel()
+                        case .usage: AgentsUsagePanel()
+                        case .terminals: AgentsToolPage(title: tr("agents.footer.terminals")) { TerminalsView() }
+                        case .browser: AgentsToolPage(title: tr("agents.footer.browser")) { BrowserView() }
+                        case .worktrees: AgentsToolPage(title: tr("agents.footer.worktrees")) { WorktreesView() }
+                        case .simulator: AgentsToolPage(title: tr("agents.footer.simulator")) { SimulatorView() }
+                        case .new:
+                            if app.demoMode {
+                                nothingRunning
+                            } else {
+                                SessionWorkbench(viewModel: viewModel, directory: newDirectory) { tools in
+                                    NewSessionComposer(headerAccessory: tools, onDirectory: { newDirectory = $0 }) { id in
+                                        viewModel.selectedAgentID = "run:" + id.uuidString
+                                    }
+                                }
                             }
                         }
                     }
                 }
+                .padding(.leading, listShown ? 10 : 0)
+                .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .padding(.leading, listShown ? 10 : 0)
-            .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .animation(NookTheme.reveal, value: listShown)
         // Looking at a session counts as having seen what it finished, also with the list put away.
@@ -176,7 +186,7 @@ struct AgentsTab: View {
         let isNew: Bool = { if case .new = selection { return true }; return false }()
         return PanelListHeader(tr("tab.agents")) {
             if !app.demoMode {
-                PanelNewButton(label: tr("agents.newSession"), active: isNew) { viewModel.selectedAgentID = "new" }
+                PanelNewButton(label: tr("agents.newSession"), active: isNew) { open("new") }
             }
             if canHideList(selection) {
                 SidePanelCloseButton(help: tr("agents.list.hide")) {
@@ -188,6 +198,12 @@ struct AgentsTab: View {
     }
 
     // MARK: Selection
+
+    /// Opens a session or a page; while the tab shows one column at a time, that takes the list's place.
+    private func open(_ id: String) {
+        viewModel.selectedAgentID = id
+        if PanelLayout.stacks(totalWidth) { withAnimation(NookTheme.reveal) { listHidden = true } }
+    }
 
     /// What is shown on the right. Without a choice (or when it is gone): whatever waits for you or works, otherwise the
     /// place to start a new session.
@@ -271,7 +287,7 @@ struct AgentsTab: View {
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 AgentInboxList(items: entries.running, past: entries.earlier,
-                               current: current, now: context.date) { viewModel.selectedAgentID = $0 }
+                               current: current, now: context.date) { open($0) }
             }
         }
     }
