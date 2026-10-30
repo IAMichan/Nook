@@ -335,7 +335,7 @@ struct SessionWorkbench<Conversation: View>: View {
                 }
             }
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .onGeometryChange(for: Double.self) { Double($0.size.height) } action: {
+            .onLayoutHeightChange {
                 totalHeight = $0
                 SessionWorkbenchSize.height = $0
             }
@@ -388,7 +388,7 @@ struct SessionWorkbench<Conversation: View>: View {
                     .transition(.opacity)
             }
         }
-        .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { width in
+        .onLayoutWidthChange { width in
             SessionWorkbenchSize.width = width
             // The first measurement of a session that just opened lays it out as it is: the panels are there at once,
             // they do not slide in.

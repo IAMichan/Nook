@@ -14,6 +14,10 @@ to search all of Nook at once:
 | Settings | Every setting by its on-screen name, and by its English name | The right Settings page |
 | Actions | New conversation, new session, pull requests, usage, terminals, browser, worktrees, record a call, open the window, Settings | Runs it |
 
+Everything works from the keyboard while you type: **Return** opens the chosen row (the top hit unless you moved), and
+pressed before the results are in it opens the best one as soon as they arrive. **↑/↓** (or **⌃N/⌃P**) move, **⌘1–⌘9**
+open the first nine rows at once, **Tab / ⇧Tab** step through the kinds, **Escape** clears and then closes.
+
 Everything stays on the Mac: search reads Nook's own local data and never sends anything to a brain. A last row offers
 **Ask Nook** with what you typed, through the normal chat pipeline.
 

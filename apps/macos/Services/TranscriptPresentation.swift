@@ -355,6 +355,26 @@ enum TranscriptPresentation {
         return marks
     }
 
+    /// The same marks for the Nook chat, from its messages in order: each one's id, whether you wrote it, its text, and
+    /// how many cards (charts, mail drafts) show with it, which take room of their own. `row` is the message itself.
+    static func promptMarks(chat messages: [(id: String, fromYou: Bool, text: String, cards: Int)]) -> [PromptMark] {
+        let weights = messages.map { message -> Double in
+            message.fromYou ? 3 + min(8, lines(message.text, width: 60))
+                : 1 + lines(message.text, width: 90) + 10 * Double(message.cards)
+        }
+        let total = weights.reduce(0, +)
+        guard total > 0 else { return [] }
+        var marks: [PromptMark] = []
+        var above = 0.0
+        for (message, weight) in zip(messages, weights) {
+            if message.fromYou {
+                marks.append(PromptMark(id: message.id, row: message.id, position: above / total, text: message.text))
+            }
+            above += weight
+        }
+        return marks
+    }
+
     private static func lines(_ text: String, width: Int) -> Double {
         Double(text.split(separator: "\n", omittingEmptySubsequences: false)
             .reduce(0) { $0 + max(1, ($1.count + width - 1) / width) })

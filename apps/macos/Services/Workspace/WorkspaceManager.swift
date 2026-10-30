@@ -766,7 +766,8 @@ final class WorkspaceManager: ObservableObject {
     func adopt(provider: RunProvider, sessionID: String, profileID: String, directory: String, title: String,
                history: [(kind: RunEvent.Kind, text: String)] = [], fork: Bool = false,
                continuesConversation: Bool = true) async throws -> UUID {
-        if !fork, let existing = runs.first(where: { $0.provider == provider && $0.isConversation(sessionID) }) {
+        let taken = runs.first { $0.provider == provider && (fork ? $0.copiedFrom == sessionID : $0.isConversation(sessionID)) }
+        if let existing = taken {
             if existing.archived { setArchived(existing.id, false) }
             selectedRunID = existing.id
             return existing.id
@@ -818,6 +819,7 @@ final class WorkspaceManager: ObservableObject {
         )
         var adopted = run
         if !continuesConversation { adopted.carriedOverFrom = sessionID }
+        if fork { adopted.copiedFrom = sessionID }
         runs.insert(adopted, at: 0)
         events[id] = []
         if fork { forkNext.insert(id) }

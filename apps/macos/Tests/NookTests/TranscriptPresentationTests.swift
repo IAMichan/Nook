@@ -343,4 +343,20 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertTrue(marks[1].position > 0.5 && marks[1].position < 1)
         XCTAssertTrue(TranscriptPresentation.promptMarks(events: [RunEvent(kind: .assistant, text: "Hallo")]).isEmpty)
     }
+
+    func testTheNookChatMarksYourQuestionsOnTheSameRail() {
+        let long = String(repeating: "Een lange regel tekst. ", count: 30)
+        let marks = TranscriptPresentation.promptMarks(chat: [("q1", true, "Hoi", 0), ("a1", false, long, 0),
+                                                              ("q2", true, "En nu?", 0), ("a2", false, "Klaar.", 0)])
+        XCTAssertEqual(marks.map(\.id), ["q1", "q2"])
+        XCTAssertEqual(marks.map(\.row), marks.map(\.id), "a click scrolls to the message itself")
+        XCTAssertEqual(marks.first?.position, 0)
+        XCTAssertTrue(marks[1].position > 0.5 && marks[1].position < 1)
+        let withChart = TranscriptPresentation.promptMarks(chat: [("q1", true, "Hoi", 0), ("a1", false, "Kijk.", 1),
+                                                                  ("q2", true, "En nu?", 0)])
+        let without = TranscriptPresentation.promptMarks(chat: [("q1", true, "Hoi", 0), ("a1", false, "Kijk.", 0),
+                                                                ("q2", true, "En nu?", 0)])
+        XCTAssertGreaterThan(withChart[1].position, without[1].position, "a chart takes room of its own")
+        XCTAssertTrue(TranscriptPresentation.promptMarks(chat: [("a1", false, "Hallo", 0)]).isEmpty)
+    }
 }

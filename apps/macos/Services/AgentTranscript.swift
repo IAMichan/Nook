@@ -586,10 +586,10 @@ enum AgentTranscript {
     /// A long run of steps keeps its newest ones.
     private static let maxSteps = 200
 
-    /// "mcp__github__create_issue" reads as "create_issue"; built-in tools keep their name.
+    /// A tool keeps its full name, MCP tools too ("mcp__github__create_issue"): the timeline reads its server and tool
+    /// from it ("GitHub › Create issue"), and the computer-use tools by what they do on your screen.
     static func toolName(_ raw: String) -> String {
-        guard raw.hasPrefix("mcp__") else { return raw.isEmpty ? "Tool" : raw }
-        return raw.components(separatedBy: "__").last.flatMap { $0.isEmpty ? nil : $0 } ?? raw
+        raw.isEmpty ? "Tool" : raw
     }
 
     /// What a Claude Code step was about, the way the Claude app shows it next to the tool's name.

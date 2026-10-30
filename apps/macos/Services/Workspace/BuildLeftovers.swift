@@ -1,17 +1,18 @@
 import Foundation
 
-/// Builds that coding agents leave behind outside a worktree, where removing the worktree does not take them along:
-/// Xcode build folders (`-derivedDataPath`) and `scripts/core-tests.sh` packages in temporary folders and agent
-/// scratchpads, and Xcode DerivedData of worktrees that no longer exist. Each is several hundred MB to 5 GB, and macOS
-/// never removes them from `/private/tmp`, a scratchpad, or DerivedData. Settings › Workspace can turn this off.
+/// Builds that coding agents leave behind: Xcode build folders (`-derivedDataPath`) and `scripts/core-tests.sh`
+/// packages in temporary folders, agent scratchpads, and a worktree's `.scratch/`, and Xcode DerivedData of worktrees
+/// that no longer exist. Each is several hundred MB to 5 GB, and nothing else removes them: macOS leaves `/private/tmp`,
+/// scratchpads and DerivedData alone, and a worktree's `.scratch/` lives as long as the worktree, which can be weeks.
+/// Settings › Workspace can turn this off.
 enum BuildLeftovers {
     /// Untouched this long, a build in a temporary folder belongs to nobody any more.
     static let maxAge: TimeInterval = 2 * 86_400
 
     enum Kind: String, Equatable {
-        /// A `nook-core-tests.*` package.
+        /// A package `scripts/core-tests.sh` built.
         case testPackage
-        /// An Xcode build folder in a temporary folder or scratchpad.
+        /// An Xcode build folder in a temporary folder, scratchpad, or `.scratch/`.
         case xcodeBuild
         /// Xcode's own DerivedData for a worktree that is gone.
         case orphanedDerivedData
@@ -29,14 +30,17 @@ enum BuildLeftovers {
         var scratchpadParents: [URL]
         /// Xcode's DerivedData folder.
         var derivedData: URL
+        /// Worktrees whose `.scratch/` is looked at (only things that went untouched, as everywhere else).
+        var worktrees: [URL] = []
 
-        static var standard: Roots {
+        static func standard(worktrees: [URL]) -> Roots {
             let manager = FileManager.default
             let home = manager.homeDirectoryForCurrentUser
             return Roots(
                 temporary: [manager.temporaryDirectory, URL(fileURLWithPath: "/private/tmp")],
                 scratchpadParents: [URL(fileURLWithPath: "/private/tmp/claude-\(getuid())")],
-                derivedData: home.appendingPathComponent("Library/Developer/Xcode/DerivedData"))
+                derivedData: home.appendingPathComponent("Library/Developer/Xcode/DerivedData"),
+                worktrees: worktrees)
         }
     }
 
@@ -48,9 +52,10 @@ enum BuildLeftovers {
                 for session in children(project) { scratchpads.append(session.appendingPathComponent("scratchpad")) }
             }
         }
-        for folder in roots.temporary + scratchpads {
+        let worktreeScratch = roots.worktrees.map { $0.appendingPathComponent(".scratch") }
+        for folder in roots.temporary + scratchpads + worktreeScratch {
             for entry in children(folder) where isStale(entry, now: now) {
-                if entry.lastPathComponent.hasPrefix("nook-core-tests.") {
+                if isTestPackage(entry) {
                     found.append(Leftover(url: entry, kind: .testPackage))
                 } else if workspacePath(entry) != nil {
                     found.append(Leftover(url: entry, kind: .xcodeBuild))
@@ -67,7 +72,7 @@ enum BuildLeftovers {
     }
 
     /// Removes what `find` reports. Returns each removed leftover with the bytes it took.
-    static func sweep(_ roots: Roots = .standard, now: Date = Date()) -> [(leftover: Leftover, bytes: Int64)] {
+    static func sweep(_ roots: Roots, now: Date = Date()) -> [(leftover: Leftover, bytes: Int64)] {
         find(in: roots, now: now).compactMap { leftover in
             let bytes = DiskUsage.allocatedSize(of: leftover.url.path) ?? 0
             guard (try? FileManager.default.removeItem(at: leftover.url)) != nil else { return nil }
@@ -80,6 +85,15 @@ enum BuildLeftovers {
         guard let data = try? Data(contentsOf: folder.appendingPathComponent("info.plist")),
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else { return nil }
         return plist["WorkspacePath"] as? String
+    }
+
+    /// A package `scripts/core-tests.sh` generated: by its name, or by its layout when an agent named it itself
+    /// (`NOOK_CORE_TESTS_DIR=.scratch/coretests`).
+    static func isTestPackage(_ folder: URL) -> Bool {
+        if folder.lastPathComponent.hasPrefix("nook-core-tests.") { return true }
+        let manager = FileManager.default
+        return manager.fileExists(atPath: folder.appendingPathComponent("Package.swift").path)
+            && manager.fileExists(atPath: folder.appendingPathComponent("Tests/CoreTests").path)
     }
 
     /// Neither the folder nor anything directly in it changed within `maxAge` (a build touches `Build`, `Logs`, …).

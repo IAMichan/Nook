@@ -128,4 +128,29 @@ final class ScrollModelTests: XCTestCase {
         XCTAssertEqual(frame.offset(at: 7), 840)
         XCTAssertEqual(frame.offset(at: -1), -10)
     }
+
+    func testADragOnTheRailKeepsTheHeightItStartedWith() {
+        let start = ScrollFrame(offset: 0, content: 1000, container: 250)
+        // Rows laid out during the drag made the conversation taller: the same place on the rail stays the same offset.
+        let grown = ScrollFrame(offset: 400, content: 1600, container: 250)
+        XCTAssertEqual(grown.offset(at: 0.5, over: start), 500)
+        XCTAssertEqual(grown.offset(at: 0.5), 800, "without the start, the conversation jumped ahead")
+        XCTAssertEqual(grown.offset(at: 1, over: start), 1350, "the end of the rail is still the end")
+        XCTAssertEqual(grown.measured(over: start).thumb.length, 0.25, "the thumb keeps its size under the pointer")
+        // Taller rows measured shorter: never past what the content can scroll now.
+        let shrunk = ScrollFrame(offset: 0, content: 600, container: 250)
+        XCTAssertEqual(shrunk.offset(at: 0.6, over: start), 350)
+    }
+
+    func testOnlyTheFirstFrameOfAScrollChangesTheState() {
+        var m = ScrollModel()
+        XCTAssertFalse(m.isFreeAfterUserScroll)
+        m.userScrolled()
+        XCTAssertTrue(m.isFreeAfterUserScroll)
+        let before = m
+        m.userScrolled()
+        XCTAssertEqual(m, before)
+        m.jumpedToEnd()
+        XCTAssertFalse(m.isFreeAfterUserScroll)
+    }
 }

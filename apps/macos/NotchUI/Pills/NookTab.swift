@@ -41,6 +41,11 @@ struct NookChatView: View {
     @State private var atEnd = true
     /// Read only by the handlers: as state, each start and stop of a scroll drew the whole chat again.
     @State private var scrollPhase = Unobserved(ScrollPhase.idle)
+    /// Where the conversation is scrolled, for the rail beside it that takes the place of a scroll bar.
+    @State private var viewport = TimelineViewport()
+    @State private var position = ScrollPosition()
+    @State private var overflows = false
+    @State private var marks = NookChatMarks()
     @State private var renaming = false
     @State private var titleDraft = ""
     @FocusState private var titleFocused: Bool
@@ -146,7 +151,7 @@ struct NookChatView: View {
         // Exactly the width it is given, however wide a row inside wants to be: measuring a row that runs past the window
         // would hand the panels more room than there is and push everything off both sides.
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
-        .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+        .onLayoutWidthChange { totalWidth = $0 }
         // Picking a Nook (or starting one) in the list shows it in place of the list.
         .onChange(of: chat.activeID) { _, _ in listOnly = false }
         .overlay {
@@ -352,7 +357,7 @@ struct NookChatView: View {
 
     private var thread: some View {
         ScrollViewReader { proxy in
-            ScrollView(showsIndicators: false) {
+            ScrollView {
                 // Wide gaps between turns, so each question and its answer read as one block.
                 LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxl) {
                     let newest = chat.messages.last?.id
@@ -371,6 +376,11 @@ struct NookChatView: View {
                 .padding(.bottom, NookTheme.Spacing.xs)
                 .animation(NookTheme.reveal, value: chat.messages.count)
             }
+            .scrollPosition($position)
+            // No system scroll bar, as in an agent's transcript: the rows are laid out only as they come into view, so
+            // its knob jumped while dragged. The rail beside the conversation is the scroll bar instead. `.never`,
+            // because `.hidden` still shows one when the system shows scroll bars always (a mouse connected).
+            .scrollIndicators(.never)
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(.bottom, for: .alignment)
             // Only while following does growth keep the end in place: reading higher up, the answer streaming in below
@@ -385,12 +395,14 @@ struct NookChatView: View {
                                      container: geometry.containerSize.height,
                                      content: geometry.contentSize.height)
             } action: { old, new in
-                atEnd = new.atEnd
+                // Called for every frame of a scroll: the state is written only when it changes, so scrolling does not
+                // draw the whole chat again for each frame.
+                if atEnd != new.atEnd { atEnd = new.atEnd }
                 let movedUp = new.offset < old.offset - 0.5 && new.content == old.content
                 let leftEnd = scroll.shouldFollowEnd && new.fromEnd > old.fromEnd + 0.5
                 if movedUp || leftEnd, new.container == old.container, !new.atEnd {
-                    scroll.userScrolled()
-                } else if new.atEnd {
+                    if !scroll.isFreeAfterUserScroll { scroll.userScrolled() }
+                } else if new.atEnd, scroll.mode == .free {
                     scroll.reachedEnd()
                 }
             }
@@ -408,6 +420,16 @@ struct NookChatView: View {
             } action: { _, _ in
                 if scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
             }
+            .onScrollGeometryChange(for: ScrollFrame.self) { geometry in
+                ScrollFrame(offset: geometry.contentOffset.y, content: geometry.contentSize.height,
+                            container: geometry.containerSize.height,
+                            insetTop: geometry.contentInsets.top, insetBottom: geometry.contentInsets.bottom)
+            } action: { _, frame in
+                viewport.frame = frame
+            }
+            .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
+                overflows = now
+            }
             // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
             .composerInset {
                 inputBar
@@ -423,6 +445,22 @@ struct NookChatView: View {
                     Color.black
                 }
             )
+            // A mark per question of yours along the edge, as in an agent's transcript: it jumps and scrolls.
+            .overlay(alignment: .trailing) {
+                let shown = marks.update(chat.messages)
+                if overflows, !shown.isEmpty {
+                    TranscriptPromptRail(marks: shown, viewport: viewport) { mark in
+                        scroll.userScrolled()
+                        guard let id = UUID(uuidString: mark.row) else { return }
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
+                    } onScrub: { offset in
+                        if !scroll.isFreeAfterUserScroll { scroll.userScrolled() }
+                        position.scrollTo(y: offset)
+                    }
+                    .padding(.vertical, NookTheme.Spacing.md)
+                    .transition(.opacity)
+                }
+            }
             // Opening the chat or another conversation: start at its end and follow again.
             .onAppear { settleAtEnd(proxy) }
             .onChange(of: chat.activeID) { _, _ in settleAtEnd(proxy) }
@@ -544,6 +582,29 @@ struct NookChatView: View {
         images = []
         app.handleUserText(text, images: attached)
         inputFocused = true
+    }
+}
+
+/// The marks of your questions on the rail beside the conversation, worked out again only when a message changed: the
+/// chat draws again for every key you type in its box.
+@MainActor
+private final class NookChatMarks {
+    private var key: Int?
+    private var marks: [PromptMark] = []
+
+    func update(_ messages: [ChatMessage]) -> [PromptMark] {
+        var hasher = Hasher()
+        for message in messages {
+            hasher.combine(message.id)
+            hasher.combine(message.revision)
+        }
+        let key = hasher.finalize()
+        guard key != self.key else { return marks }
+        self.key = key
+        marks = TranscriptPresentation.promptMarks(chat: messages.map {
+            (id: $0.id.uuidString, fromYou: $0.role == .user, text: $0.text, cards: $0.charts.count + $0.mails.count)
+        })
+        return marks
     }
 }
 

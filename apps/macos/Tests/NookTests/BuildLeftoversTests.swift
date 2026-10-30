@@ -59,6 +59,26 @@ final class BuildLeftoversTests: XCTestCase {
         XCTAssertEqual(BuildLeftovers.find(in: roots, now: now).map(\.url.lastPathComponent), ["dd"])
     }
 
+    func testFindsBuildsInAWorktreeScratchFolderButNotTheUsersFiles() throws {
+        let worktree = base.appendingPathComponent("worktrees/feature")
+        roots.worktrees = [worktree]
+        let scratch = worktree.appendingPathComponent(".scratch")
+        try make(scratch.appendingPathComponent("dd"), workspace: "/x/Nook.xcodeproj", age: old)
+        let tests = try make(scratch.appendingPathComponent("coretests2"), age: old)
+        try manager.createDirectory(at: tests.appendingPathComponent("Tests/CoreTests"), withIntermediateDirectories: true)
+        try Data("// swift-tools-version:5.9".utf8).write(to: tests.appendingPathComponent("Package.swift"))
+        for path in ["Package.swift", "Tests", ""] {
+            try manager.setAttributes([.modificationDate: now.addingTimeInterval(-old)], ofItemAtPath: tests.appendingPathComponent(path).path)
+        }
+        try make(scratch.appendingPathComponent("nook-insta"), age: old)
+        try make(scratch.appendingPathComponent("dd-fresh"), workspace: "/x/Nook.xcodeproj", age: 60)
+
+        let found = BuildLeftovers.find(in: roots, now: now)
+
+        XCTAssertEqual(Set(found.map(\.url.lastPathComponent)), ["dd", "coretests2"])
+        XCTAssertEqual(found.first { $0.url.lastPathComponent == "coretests2" }?.kind, .testPackage)
+    }
+
     func testFindsDerivedDataOfRemovedWorktreesOnly() throws {
         let gone = base.appendingPathComponent("worktrees/feature/apps/macos/Nook.xcodeproj").path
         let kept = base.appendingPathComponent("worktrees/live/apps/macos/Nook.xcodeproj").path

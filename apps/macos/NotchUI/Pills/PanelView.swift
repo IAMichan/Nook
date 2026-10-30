@@ -96,8 +96,9 @@ struct PanelView: View {
                     }
                 }
                 .animation(NookTheme.reveal, value: splitTab)
-                // Whole points, rounded down: the two tabs never ask for more room than there is.
-                .onGeometryChange(for: Double.self) { Double($0.size.width).rounded(.down) } action: { width in
+                // In layout steps (`onLayoutWidthChange`), and as state only while a split tab shows: it is read only
+                // by the split pane, and otherwise every step of a window resize ran this whole body again.
+                .onLayoutWidthChange { width in
                     measuredWidth.value = width
                     if splitTab != nil, contentWidth != width { contentWidth = width }
                 }

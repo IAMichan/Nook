@@ -26,6 +26,10 @@ struct ScrollModel: Equatable, Sendable {
     private(set) var cancelQueuedScrolls = false
 
     var shouldFollowEnd: Bool { mode == .following }
+    /// `userScrolled()` would change nothing now. A view that reports every frame of a scroll (or every step of a drag
+    /// on the rail) checks this first, so it writes its state once instead of drawing the whole conversation again for
+    /// each frame, which made scrolling stutter.
+    var isFreeAfterUserScroll: Bool { mode == .free && anchorMessageID == nil && cancelQueuedScrolls }
 
     mutating func userScrolled() {
         mode = .free
@@ -97,6 +101,24 @@ struct ScrollFrame: Equatable, Sendable {
     /// The offset that puts the place `fraction` along the content at the top, as far as the content can scroll.
     func offset(at fraction: Double) -> Double {
         min(maxOffset, max(minOffset, minOffset + min(1, max(0, fraction)) * content))
+    }
+
+    /// `offset(at:)` for a drag on the rail, over the content's height as it was when the drag began (`start`). The
+    /// conversation lays out only what is on screen, so its height changes as the drag passes rows it had not measured
+    /// yet; mapping the rail onto that moving height made the conversation jump back and forth under the pointer. The
+    /// end of the rail is still the end, also when the content grew during the drag.
+    func offset(at fraction: Double, over start: ScrollFrame) -> Double {
+        let target = start.offset(at: fraction)
+        if target >= start.maxOffset { return maxOffset }
+        return min(maxOffset, max(minOffset, target))
+    }
+
+    /// This frame measured over `start`'s content height: the thumb a drag that began at `start` shows, so it stays
+    /// under the pointer.
+    func measured(over start: ScrollFrame) -> ScrollFrame {
+        var frame = self
+        frame.content = start.content
+        return frame
     }
 }
 

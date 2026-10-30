@@ -242,6 +242,26 @@ final class WorkspaceModelsTests: XCTestCase {
         XCTAssertFalse(SessionFolder.isRepository(outside.path))
         XCTAssertEqual(SessionFolder.follow(current: worktree.path, reported: outside.path), worktree.path)
     }
+
+    /// A chat Nook took over as a copy (still open in the Claude app) gets a new id, but the original is the same chat to
+    /// you: it counts as this session, so the lists do not show it a second time.
+    func testATakenOverCopyStandsForItsOriginal() throws {
+        var run = TestData.run(status: .completed)
+        run.providerSessionID = "copy"
+        run.copiedFrom = "original"
+        run.conversation = ConversationLog(session: "copy", provider: .claude)
+        run.conversation?.earlierSessions = ["older"]
+        XCTAssertEqual(Set(run.earlierConversations), ["older", "original"])
+        XCTAssertTrue(run.isConversation("original"))
+        XCTAssertFalse(run.isConversation("other"))
+
+        let decoded = try JSONDecoder().decode(WorkspaceRun.self, from: JSONEncoder().encode(run))
+        XCTAssertEqual(decoded.copiedFrom, "original")
+        let runs = [(agent: run.provider.displayName, conversations: Set([run.providerSessionID!] + run.earlierConversations))]
+        XCTAssertTrue(AgentSessionRegistry.isContinuedInNook(agent: "Claude (app)", conversation: "original", busy: false, runs: runs))
+        XCTAssertFalse(AgentSessionRegistry.isContinuedInNook(agent: "Claude (app)", conversation: "original", busy: true, runs: runs),
+                       "working in its own app again, the original is listed there")
+    }
 }
 
 enum TestData {

@@ -153,7 +153,7 @@ struct AgentsTab: View {
         // Exactly the width it is given, however wide a row inside wants to be: measuring a row that runs past the window
         // would hand the panels more room than there is and push everything off both sides.
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
-        .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+        .onLayoutWidthChange { totalWidth = $0 }
         // Where back on the pull requests page returns to.
         .onChange(of: viewModel.selectedAgentID) { previous, id in
             if id == AgentsPage.pullRequests, previous != AgentsPage.pullRequests { beforePullRequests = previous }
