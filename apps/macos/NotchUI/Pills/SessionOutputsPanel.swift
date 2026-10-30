@@ -18,45 +18,86 @@ struct SessionOutputsPanel: View {
             if outputs.isEmpty {
                 WSEmptyState(symbol: SessionTool.outputs.symbol, title: tr("ws.outputs.empty.title"),
                              message: tr("ws.outputs.empty.body"))
-            } else {
-                if outputs.count > 1 { list }
-                if let current {
-                    ToolSurface { OutputViewer(output: current).id(current.id) }
+            } else if let current {
+                ToolSurface {
+                    VStack(spacing: 0) {
+                        if outputs.count > 1 {
+                            OutputTabStrip(outputs: outputs, current: current.id) { selection = $0 }
+                            NookDivider()
+                        }
+                        OutputViewer(output: current).id(current.id)
+                    }
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
+}
 
-    /// One row per output, newest first; the list scrolls when it is long.
-    private var list: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                ForEach(outputs) { output in
-                    let chosen = output.id == current?.id
-                    Button { selection = output.id } label: {
-                        HStack(spacing: NookTheme.Spacing.md) {
-                            Image(systemName: OutputText.symbol(output.kind))
-                                .font(NookTheme.font(11, .medium))
-                                .foregroundStyle(chosen ? NookTheme.paper : NookTheme.textTertiary)
-                                .frame(width: 16)
-                            Text(OutputText.title(output)).lineLimit(1).truncationMode(.middle)
-                                .foregroundStyle(chosen ? NookTheme.paper : NookTheme.textSecondary)
-                            Spacer(minLength: 6)
-                            Text(OutputText.kind(output.kind)).foregroundStyle(NookTheme.textTertiary)
-                        }
-                        .font(NookTheme.TextStyle.detail)
-                        .padding(.horizontal, NookTheme.Spacing.md)
-                        .frame(height: 26)
-                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(chosen ? NookTheme.smoke : Color.clear))
-                        .contentShape(Rectangle())
+/// The outputs side by side as tabs, newest first, on top of the surface that shows the chosen one. They belong to
+/// that surface, not to the side panel's tab bar above it: they sit inside it, on its own fill, and the chosen one is
+/// underlined instead of filled, so the two rows of tabs never read as one. The strip scrolls sideways when they do
+/// not fit.
+private struct OutputTabStrip: View {
+    let outputs: [SessionOutput]
+    let current: String
+    let select: (String) -> Void
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    ForEach(outputs) { output in
+                        OutputTab(output: output, chosen: output.id == current) { select(output.id) }
+                            .id(output.id)
                     }
-                    .buttonStyle(.plain)
-                    .help(output.path ?? OutputText.title(output))
                 }
+                .padding(.horizontal, NookTheme.Spacing.sm)
+            }
+            .onChange(of: current) { _, id in
+                withAnimation(NookTheme.scroll) { proxy.scrollTo(id) }
             }
         }
-        .frame(maxHeight: min(CGFloat(outputs.count) * 28, 148))
+        .frame(height: 32)
+    }
+}
+
+/// One output in `OutputTabStrip`: its mark and title, the chosen one bright with a line under it.
+private struct OutputTab: View {
+    let output: SessionOutput
+    let chosen: Bool
+    let select: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: select) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Image(systemName: OutputText.symbol(output.kind))
+                    .font(NookTheme.font(10.5, .medium))
+                    .foregroundStyle(chosen ? NookTheme.paper : NookTheme.textTertiary)
+                Text(OutputText.title(output))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 160, alignment: .leading)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .foregroundStyle(chosen || hovering ? NookTheme.paper : NookTheme.textSecondary)
+            }
+            .font(chosen ? NookTheme.TextStyle.label : NookTheme.TextStyle.detail)
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .frame(maxHeight: .infinity)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(chosen ? NookTheme.iris : Color.clear)
+                    .frame(height: 2)
+                    .padding(.horizontal, NookTheme.Spacing.sm)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+        .help(OutputText.kind(output.kind) + " · " + (output.path ?? OutputText.title(output)))
+        .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 }
 
