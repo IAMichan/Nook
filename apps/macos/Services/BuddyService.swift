@@ -1,5 +1,4 @@
 import Foundation
-import Combine
 import CoreGraphics
 
 /// The state behind Nook's own moments (`AppModel+Buddy`): what you have been doing, what he already shared, and how
@@ -20,9 +19,6 @@ final class BuddyService {
     }
     /// When recent agent runs finished: "two agents finished while you were away".
     private var finishes: [Date] = []
-    /// Until when Nook dresses for a party (a milestone, the last agent of a long run finishing).
-    var celebratingUntil: Date?
-    var bag = Set<AnyCancellable>()
 
     init() {
         ledger = BuddyLedger(stored: UserDefaults.standard.data(forKey: Self.ledgerKey))

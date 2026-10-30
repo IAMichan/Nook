@@ -1,60 +1,27 @@
 import SwiftUI
-import Combine
 import AppKit
 
-/// Nook as a friend: what he wears, and the small moments he shares by himself (good morning, welcome back, a break,
-/// a milestone). What to say and when is decided by `BuddyPlanner` and `NookOutfit`; this side gathers the signals,
-/// dresses every orb and shows the moment below the notch.
+/// Nook as a friend: the small moments he shares by himself (good morning, welcome back, a break, a milestone). What
+/// to say and when is decided by `BuddyPlanner`; this side gathers the signals and shows the moment below the notch.
 extension AppModel {
     func startBuddy() {
-        refreshOutfit()
-        // Dress again when the wardrobe, the birthday or the music changes; the half-minute tick covers the clock.
-        settings.$nookWardrobe.removeDuplicates().map { _ in () }
-            .merge(with: settings.$birthday.removeDuplicates().map { _ in () }, NookPresence.shared.$listeningToMusic.removeDuplicates().map { _ in () })
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.refreshOutfit() }
-            .store(in: &buddy.bag)
         Timer.scheduledCoalesced(withTimeInterval: 30) { [weak self] _ in
             Task { @MainActor in self?.buddyTick() }
         }
     }
 
-    /// An agent run finished: counts towards the milestones and the "while you were away" count. The last one of a
-    /// busy stretch dresses Nook for a party for a little while.
-    func buddyAgentFinished(last: Bool) {
+    /// An agent run finished: counts towards the milestones and the "while you were away" count.
+    func buddyAgentFinished() {
         buddy.noteFinishedAgent()
-        if last {
-            buddy.celebratingUntil = Date().addingTimeInterval(8)
-            refreshOutfit()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 8.5) { [weak self] in self?.refreshOutfit() }
-        }
-    }
-
-    /// What Nook wears right now on every orb: your choices, plus what he picks himself for the season and the time.
-    func refreshOutfit(at now: Date = Date()) {
-        let outfit = NookOutfit.resolve(settings.nookWardrobe, context: outfitContext(at: now, celebrating: false))
-        if NookAppearance.shared.outfit != outfit { NookAppearance.shared.outfit = outfit }
-    }
-
-    private func outfitContext(at now: Date, celebrating: Bool) -> NookOutfit.Context {
-        let region = Locale.current.region?.identifier
-        var context = NookOutfit.Context(date: now)
-        context.region = region
-        context.southernHemisphere = region.map { NookOutfit.southernRegions.contains($0) } ?? false
-        context.birthday = NookMonthDay(stored: settings.birthday)
-        context.celebrating = celebrating || (buddy.celebratingUntil.map { $0 > now } ?? false)
-        context.headphones = NookPresence.shared.listeningToMusic
-        return context
     }
 
     // MARK: Moments
 
-    /// Every half minute: notes whether you are at your Mac, dresses Nook for the hour, and shares a moment when one
+    /// Every half minute: notes whether you are at your Mac and shares a moment when one
     /// is due and nothing else is going on.
     func buddyTick() {
         let now = Date()
         buddy.activity.note(idle: BuddyService.systemIdleSeconds(), at: now)
-        refreshOutfit(at: now)
         guard settings.buddyMoments, !demoMode, settings.onboardingDone else { return }
 
         var signals = BuddyPlanner.Signals(now: now)
@@ -88,7 +55,7 @@ extension AppModel {
         return meeting || calling || quiet.situation.meeting || quiet.situation.sharing || NoteTaker.shared.isRecording
     }
 
-    /// The moment as Nook shows it: his mood, his words in your language and tone, and what he wears.
+    /// The moment as Nook shows it: his mood, his words in your language and tone,.
     func nookMoment(for moment: BuddyMoment) -> NookMoment {
         let key = BuddyPlanner.lineKey(moment, tone: settings.buddyTone)
         let line: String
@@ -102,7 +69,6 @@ extension AppModel {
         default:
             line = tr(key)
         }
-        let now = Date()
         var result = NookMoment(id: moment.id, line: line, mood: .rest)
         switch moment.kind {
         case .morning:
@@ -128,11 +94,9 @@ extension AppModel {
             result.mood = .proud
         case .birthday:
             result.mood = .celebrate
-            result.outfit = NookOutfit.resolve(settings.nookWardrobe, context: outfitContext(at: now, celebrating: true))
             result.seconds = 16
         case .milestone:
             result.mood = .celebrate
-            result.outfit = NookOutfit.resolve(settings.nookWardrobe, context: outfitContext(at: now, celebrating: true))
             result.action = .openAgents
             result.actionTitle = tr("buddy.action.agents")
         }
@@ -144,8 +108,7 @@ extension AppModel {
         switch moment.action {
         case .breathe:
             buddy.activity.restartStretch(at: Date())
-            viewModel.replaceMoment(NookMoment(id: "breathe-\(UUID().uuidString)", line: tr("buddy.breathe.in"), mood: .breathe,
-                                               outfit: moment.outfit, seconds: NookMoment.breathLength))
+            viewModel.replaceMoment(NookMoment(id: "breathe-\(UUID().uuidString)", line: tr("buddy.breathe.in"), mood: .breathe, seconds: NookMoment.breathLength))
         case .showToday:
             presentToday()
         case .openAgents:

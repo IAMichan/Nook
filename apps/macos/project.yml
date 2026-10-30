@@ -274,7 +274,7 @@ targets:
       - path: App/ConversationList.swift
       - path: Core/ListSelection.swift
       - path: Core/NookLook.swift
-      - path: Core/NookOutfit.swift
+      - path: Core/NookMonthDay.swift
       - path: Services/BuddyMoments.swift
       - path: Services/QuietMode.swift
       - path: Core/EnergyPolicy.swift

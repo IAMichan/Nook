@@ -392,7 +392,7 @@ struct NotchRootView: View {
     private func momentStrip(_ moment: NookMoment, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
             stripOrb(nh: nh) {
-                NookOrb(mood: moment.mood, size: 24, animated: true, glow: viewModel.geometry.isFloating, outfit: moment.outfit)
+                NookOrb(mood: moment.mood, size: 24, animated: true, glow: viewModel.geometry.isFloating)
             }
             .floatingDrag(viewModel)
 
