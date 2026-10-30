@@ -44,6 +44,8 @@ struct AgentRunPanel: View {
     @State private var visit: TimelineVisit?
     /// The block the "New since your last visit" line sits above; decided as the session opens.
     @State private var newSince: UUID?
+    /// The session opened before its timeline was read from disk (`requestTimeline`): it lands once that is here.
+    @State private var landsOnLoad = false
     @State private var finding = false
     @State private var findQuery = ""
     @State private var findIndex: Int?
@@ -133,7 +135,7 @@ struct AgentRunPanel: View {
                 noticeOutputs(outputs, working: run.status.isActive, turnStart: run.turnStartedAt)
             }
             .onAppear {
-                workspace.loadTimeline(runID)
+                workspace.requestTimeline(runID)
                 visit = TimelineVisitStore.shared.visit(for: Self.visitKey(runID))
                 if let visit { openBlocks = visit.open }
                 if run.repoRoot != nil { workspace.refreshGit(runID) }
@@ -148,7 +150,7 @@ struct AgentRunPanel: View {
             .onDisappear { rememberVisit(runID) }
             .onChange(of: runID) { previous, _ in
                 rememberVisit(previous)
-                workspace.loadTimeline(runID)
+                workspace.requestTimeline(runID)
                 if workspace.run(runID)?.repoRoot != nil { workspace.refreshGit(runID) }
                 workspace.prewarm(runID)
                 // The draft of the session you left stays saved, and the one of this session comes back.
@@ -685,6 +687,9 @@ struct AgentRunPanel: View {
                 DispatchQueue.main.async { land(proxy) }
             }
             .onChange(of: runID) { _, _ in DispatchQueue.main.async { land(proxy) } }
+            .onChange(of: workspace.isTimelineLoaded(runID)) { _, loaded in
+                if loaded, landsOnLoad { DispatchQueue.main.async { land(proxy) } }
+            }
             // Opened from a search hit: find what it matched.
             .onReceive(app.viewModel.$sessionFind) { wanted in
                 guard let wanted, !wanted.isEmpty else { return }
@@ -724,6 +729,8 @@ struct AgentRunPanel: View {
     /// What came in since your last visit (under its line), the block you were reading when you left, or the end;
     /// following stops at a block, so what comes in does not pull you away from it.
     private func land(_ proxy: ScrollViewProxy) {
+        landsOnLoad = !workspace.isTimelineLoaded(runID)
+        guard !landsOnLoad else { return }
         let rows = visitRows(runID)
         newSince = visit.flatMap { TimelineLanding.firstNew(rows, since: $0.lastViewedAt) }.flatMap(UUID.init(uuidString:))
         switch TimelineLanding.decide(rows, visit: visit) {
@@ -739,7 +746,8 @@ struct AgentRunPanel: View {
 
     /// Where you leave a session: the block at the top, what you opened, and whether you were at the end.
     private func rememberVisit(_ id: UUID) {
-        guard workspace.run(id) != nil else { return }
+        // Left before its timeline was read: the earlier visit still says where you were.
+        guard workspace.run(id) != nil, workspace.isTimelineLoaded(id) else { return }
         TimelineVisitStore.shared.remember(sessionID: Self.visitKey(id), visit: TimelineVisit(
             anchorID: TimelineLanding.top(visitRows(id), visible: onScreen.ids), open: openBlocks, atEnd: atEnd,
             lastViewedAt: Date()))
@@ -1046,7 +1054,7 @@ struct AgentRunPanel: View {
         return VStack(alignment: .leading, spacing: 5) {
             UsageLimitBanner(run: run)
             // The subagents the agent started this turn, and its task list.
-            let subagents = active ? Subagents.latest(TimelinePresentation.lastTurn(workspace.timeline(runID))) : []
+            let subagents = active ? derived.subagents : []
             if !subagents.isEmpty { SubagentBar(agents: subagents) }
             // While the agent works its list shows in the timeline; one it left unfinished waits here.
             if let tasks = run.tasks, !tasks.isEmpty, !TaskChecklist.showsInline(tasks, active: run.status.isActive) {
@@ -1310,6 +1318,8 @@ private final class RunTimelineDerived {
     private(set) var answerable: UUID?
     private(set) var outputs: [SessionOutput] = []
     private(set) var runningCommand: UUID?
+    /// The subagents started in the last turn, for the bar above the composer (which redraws on every keystroke).
+    private(set) var subagents: [SubagentInfo] = []
     /// The last pull request the agent reported with `<pr-created>`, for the tray above the composer.
     private(set) var createdPullRequest: URL?
 
@@ -1369,7 +1379,9 @@ private final class RunTimelineDerived {
         }
         answerable = active ? nil : events.last(where: { $0.kind == .assistant }).flatMap { finalAnswers.contains($0.id) ? $0.id : nil }
         outputs = SessionOutputs.collect(all, tasks: run.tasks, directory: run.workingDirectory)
-        runningCommand = CommandConsole.running(TimelinePresentation.lastTurn(all))?.id
+        let lastTurn = TimelinePresentation.lastTurn(all)
+        runningCommand = CommandConsole.running(lastTurn)?.id
+        subagents = active ? Subagents.latest(lastTurn) : []
         marks = TranscriptPresentation.promptMarks(events: events)
         pullRequestBeforeLast = RunPullRequestLinks.last(in: Array(all.dropLast()))
         createdPullRequest = all.last.flatMap(RunPullRequestLinks.pullRequest(in:)) ?? pullRequestBeforeLast

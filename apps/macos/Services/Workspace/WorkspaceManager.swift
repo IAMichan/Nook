@@ -249,6 +249,8 @@ final class WorkspaceManager: ObservableObject {
     private var quietEvents = false
     /// Timelines being read off the main thread by `prefetchTimeline`.
     private var prefetching: Set<UUID> = []
+    /// Of those, the ones a view waits for (`requestTimeline`): their arrival redraws it.
+    private var awaitedTimelines: Set<UUID> = []
     private var gitRefreshes: [UUID: Task<Void, Never>] = [:]
     /// Sessions whose next turn starts as a copy of the conversation (`--fork-session`), so the original keeps going untouched.
     var forkNext: Set<UUID> = []
@@ -377,18 +379,14 @@ final class WorkspaceManager: ObservableObject {
             timelineUse[id] = Date()
             return loaded
         }
-        guard evictedTimelines.contains(id) else { return [] }
-        // Released while unused: back from disk as if it had never left.
-        evictedTimelines.remove(id)
-        evictedAnswers[id] = nil
-        quietEvents = true
-        events[id] = store.loadEvents(id)
-        quietEvents = false
-        timelineUse[id] = Date()
-        // Read back from a view, so not now: another one may go once this update is done, or the limit no longer holds.
-        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.evictTimelines() } }
-        return events[id] ?? []
+        // Released while unused: back from disk, off the main thread, so a view drawing it does not stall on the read;
+        // it redraws once the timeline is here.
+        if evictedTimelines.contains(id) { requestTimeline(id) }
+        return []
     }
+
+    /// Whether the session's timeline is in memory; false while it is still being read from disk.
+    func isTimelineLoaded(_ id: UUID) -> Bool { events[id] != nil }
 
     /// The session's timeline for Search everything: from memory when it is loaded, else read from disk off the main
     /// thread without keeping it, so a search does not hold every timeline in memory.
@@ -407,7 +405,7 @@ final class WorkspaceManager: ObservableObject {
 
     /// Reads a timeline that is not in memory off the main thread, so opening its session right after (a row under the
     /// pointer, the session the list is about to show) draws it at once instead of replaying its whole log
-    /// on the main thread first. Opening before this is done still reads it the plain way.
+    /// on the main thread first. Opening before this is done waits for the same read (`requestTimeline`).
     func prefetchTimeline(_ id: UUID) {
         guard events[id] == nil, !prefetching.contains(id), runs.contains(where: { $0.id == id }) else { return }
         prefetching.insert(id)
@@ -416,16 +414,28 @@ final class WorkspaceManager: ObservableObject {
             let loaded = await Task.detached(priority: .userInitiated) { store.loadEvents(id) }.value
             guard let self else { return }
             self.prefetching.remove(id)
+            let awaited = self.awaitedTimelines.remove(id) != nil
             // Opened (or written to) meanwhile: what is in memory is newer than what was read.
             guard self.events[id] == nil else { return }
             self.evictedTimelines.remove(id)
             self.evictedAnswers[id] = nil
             self.timelineUse[id] = Date()
-            self.quietEvents = true
+            // News only for a view that is waiting for it; a prefetch nobody shows yet redraws nothing.
+            self.quietEvents = !awaited
             self.events[id] = loaded
             self.quietEvents = false
             self.evictTimelines()
         }
+    }
+
+    /// For a view that shows the timeline: reads it off the main thread when it is not in memory and redraws the view
+    /// once it is here, so opening an older session never waits for its log on the main thread. Actions that need the
+    /// events right away (send, handoff, rollback) use `loadTimeline`.
+    func requestTimeline(_ id: UUID) {
+        timelineUse[id] = Date()
+        guard events[id] == nil else { return }
+        prefetchTimeline(id)
+        if prefetching.contains(id) { awaitedTimelines.insert(id) }
     }
 
     /// Loads timeline from disk if not yet in memory.
