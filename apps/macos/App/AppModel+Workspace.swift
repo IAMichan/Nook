@@ -509,6 +509,16 @@ extension AppModel {
         viewModel.show(.panel(.agents))
     }
 
+    /// A terminal next to the chat, in `folder`, running `command`: what the chat runs (`run_command`) stays in sight
+    /// beside the answer, in the same terminal side panel a session has, instead of moving you to Agents.
+    func openTerminalBesideChat(in folder: String, command: String, title: String) {
+        TerminalStore.shared.open(in: folder, command: command, title: title)
+        // One thing beside the chat at a time: the terminal takes the browser's place, and covers an open app until it closes.
+        viewModel.browserBesideChat = false
+        viewModel.terminalBesideChat = folder
+        showChat(focus: false)
+    }
+
     /// The Agents tab on one of the tools that belong to no single session.
     func showWorkbench(_ tool: WorkbenchTool) {
         switch tool {

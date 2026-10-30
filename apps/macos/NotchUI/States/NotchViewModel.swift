@@ -139,6 +139,12 @@ final class NotchViewModel: ObservableObject {
         didSet { if browserBesideChat != oldValue { resizeForChatSide() } }
     }
 
+    /// The folder of the terminal open next to the chat (a command the chat ran, `run_command`): the same terminal side
+    /// panel a session has, so its output stays in sight beside the answer instead of moving you to Agents.
+    @Published var terminalBesideChat: String? {
+        didSet { if terminalBesideChat != oldValue { resizeForChatSide() } }
+    }
+
     /// What the Chats tab shows next ("@chat Anna"): it takes this once and clears it.
     @Published var chatsFocus: ChatsFocus?
 
@@ -218,8 +224,8 @@ final class NotchViewModel: ObservableObject {
     /// Words the session opened next finds in its timeline (a search hit in it): it takes this once and clears it.
     @Published var sessionFind: String?
 
-    /// Something is open next to the chat (an app or the browser): the chat gets the room for it.
-    var chatSideOpen: Bool { embeddedAppOpen || browserBesideChat }
+    /// Something is open next to the chat (an app, the browser or a terminal): the chat gets the room for it.
+    var chatSideOpen: Bool { embeddedAppOpen || browserBesideChat || terminalBesideChat != nil }
 
     private func resizeForChatSide() {
         guard case .panel(let tab) = state, tab == .chat || tab == .nook, sheet == nil else { return }

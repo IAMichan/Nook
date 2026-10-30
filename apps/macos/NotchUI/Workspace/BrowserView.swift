@@ -506,7 +506,10 @@ struct BrowserView: View {
                 app.chat.startNew()
                 app.attachText(name: page.title, text: "URL: \(page.url)\n\n\(page.text)")
                 // The page stays in sight next to the chat, unless an app is open there already.
-                if EmbeddedAppStore.shared.current == nil { app.viewModel.browserBesideChat = true }
+                if EmbeddedAppStore.shared.current == nil {
+                    app.viewModel.terminalBesideChat = nil
+                    app.viewModel.browserBesideChat = true
+                }
                 app.showChat()
             } catch {
                 app.viewModel.present(app.errorCard(error.localizedDescription))
