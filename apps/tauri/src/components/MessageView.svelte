@@ -61,15 +61,17 @@
 <div class="msg" class:user={message.fromUser} class:error={message.isError}>
   {#if message.fromUser}
     {#each message.images as src (src)}
-      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-      <img
-        class="pic"
-        class:enlarged={!!enlargedImages[src]}
-        {src}
-        alt=""
-        title={enlargedImages[src] ? tr("Verkleinen", "Shrink") : tr("Vergroten", "Enlarge")}
+      {@const label = enlargedImages[src] ? tr("Verkleinen", "Shrink") : tr("Vergroten", "Enlarge")}
+      <button
+        type="button"
+        class="pic-btn"
+        aria-pressed={!!enlargedImages[src]}
+        aria-label={label}
+        title={label}
         onclick={() => toggleImage(src)}
-      />
+      >
+        <img class="pic" class:enlarged={!!enlargedImages[src]} {src} alt="" />
+      </button>
     {/each}
     {#if message.attachment}<div class="file">📄 {message.attachment}</div>{/if}
     <div class="bubble">{message.text}</div>
@@ -121,10 +123,11 @@
   .msg { padding: 14px 0; max-width: 100%; line-height: 1.7; overflow-wrap: anywhere; }
   .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
   .bubble { background: var(--smoke); border-radius: 14px 14px 4px 14px; padding: 12px 16px; max-width: 85%; white-space: pre-wrap; user-select: text; }
-  .pic { max-width: 180px; max-height: 140px; border-radius: 10px; margin-bottom: 4px; cursor: zoom-in; transition: max-width 0.2s ease, max-height 0.2s ease; }
-  .pic.enlarged { max-width: min(100%, 520px); max-height: 420px; cursor: zoom-out; }
+  .pic-btn { background: none; border: none; padding: 0; margin: 0 0 4px; display: inline-flex; max-width: 100%; border-radius: 10px; }
+  .pic { display: block; max-width: 180px; max-height: 140px; border-radius: 10px; cursor: zoom-in; transition: max-width 0.2s ease, max-height 0.2s ease; }
+  .pic.enlarged { width: auto; height: auto; min-width: min(100%, 240px); max-width: min(100%, 520px); max-height: 420px; object-fit: contain; cursor: zoom-out; }
   .markdown :global(img) { max-width: 240px; max-height: 180px; border-radius: 10px; cursor: zoom-in; transition: max-width 0.2s ease, max-height 0.2s ease; }
-  .markdown :global(img.enlarged) { max-width: min(100%, 520px); max-height: 420px; cursor: zoom-out; }
+  .markdown :global(img.enlarged) { width: auto; height: auto; min-width: min(100%, 240px); max-width: min(100%, 520px); max-height: 420px; object-fit: contain; cursor: zoom-out; }
   .file { font-size: 12px; color: var(--text2); margin-bottom: 4px; }
   .error .markdown { color: var(--coral); }
   .status { color: var(--text2); display: flex; gap: 8px; align-items: center; }

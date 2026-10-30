@@ -19,12 +19,20 @@ enum LocalAgentScanner {
         let name: String
         let commands: Set<String>      // executable name
         let packages: [String]         // path substring if running via node or python
+        var homeVariable: String? = nil
+        var homeSubfolder: String? = nil
+
+        func accountHome(in line: String) -> String {
+            guard let variable = homeVariable, let value = AgentProcessEnvironment.value(of: variable, in: line) else { return "" }
+            guard let subfolder = homeSubfolder else { return value }
+            return URL(fileURLWithPath: value, isDirectory: true).appendingPathComponent(subfolder, isDirectory: true).path
+        }
     }
 
     private static let kinds: [Kind] = [
-        Kind(name: "Claude Code", commands: ["claude"], packages: ["@anthropic-ai/claude-code"]),
-        Kind(name: "Codex", commands: ["codex"], packages: ["@openai/codex"]),
-        Kind(name: "Gemini CLI", commands: ["gemini"], packages: ["@google/gemini-cli"]),
+        Kind(name: "Claude Code", commands: ["claude"], packages: ["@anthropic-ai/claude-code"], homeVariable: "CLAUDE_CONFIG_DIR"),
+        Kind(name: "Codex", commands: ["codex"], packages: ["@openai/codex"], homeVariable: "CODEX_HOME"),
+        Kind(name: "Gemini CLI", commands: ["gemini"], packages: ["@google/gemini-cli"], homeVariable: "GEMINI_CLI_HOME", homeSubfolder: ".gemini"),
         Kind(name: "Aider", commands: ["aider"], packages: []),
         Kind(name: "OpenCode", commands: ["opencode"], packages: ["opencode-ai"]),
         Kind(name: "Copilot CLI", commands: ["copilot"], packages: ["@github/copilot"]),
@@ -103,10 +111,7 @@ enum LocalAgentScanner {
         let line = (process.arguments + process.environment).joined(separator: " ")
         guard !AgentProcessEnvironment.isNookOwned(line) else { return nil }
         // The agent's own account variable (see AgentKind.homeVariable), as the folder its data is in.
-        let kind = AgentKind(agentName: name)
-        let home = kind.flatMap { kind in
-            kind.homeVariable.flatMap { AgentProcessEnvironment.value(of: $0, in: line) }.map { kind.home(fromVariable: $0) }
-        } ?? ""
+        let home = kinds.first { $0.name == name }?.accountHome(in: line) ?? ""
         return (name, home)
     }
 

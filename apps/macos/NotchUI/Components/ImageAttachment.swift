@@ -216,13 +216,10 @@ struct MessagePictures: View {
     @State private var enlargedURLs: Set<URL> = []
 
     var body: some View {
-        Group {
-            if enlargedURLs.isEmpty {
-                HStack(spacing: NookTheme.Spacing.sm) { items }
-            } else {
-                VStack(alignment: .trailing, spacing: NookTheme.Spacing.sm) { items }
-            }
-        }
+        let layout = enlargedURLs.isEmpty
+            ? AnyLayout(HStackLayout(spacing: NookTheme.Spacing.sm))
+            : AnyLayout(VStackLayout(alignment: .trailing, spacing: NookTheme.Spacing.sm))
+        layout { items }
     }
 
     private var items: some View {
@@ -253,37 +250,39 @@ private struct MessagePicture: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            if let image {
-                if enlarged {
-                    let size = ImageAttachment.enlargedSize(for: image)
-                    Image(nsImage: image)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: size.width, maxHeight: size.height)
+        Button {
+            if image != nil { toggle() }
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                if let image {
+                    if enlarged {
+                        let size = ImageAttachment.enlargedSize(for: image)
+                        Image(nsImage: image)
+                            .resizable()
+                            .interpolation(.high)
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: size.width, maxHeight: size.height)
+                    } else {
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 120, height: 120)
+                    }
                 } else {
-                    Image(nsImage: image)
-                        .resizable()
-                        .scaledToFill()
+                    Image(systemName: missing ? "photo.badge.exclamationmark" : "photo")
+                        .foregroundStyle(NookTheme.textTertiary)
                         .frame(width: 120, height: 120)
                 }
-            } else {
-                Image(systemName: missing ? "photo.badge.exclamationmark" : "photo")
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .frame(width: 120, height: 120)
+                if image != nil && (hovering || enlarged) {
+                    ChatPictureSizeBadge(enlarged: enlarged)
+                }
             }
-            if image != nil && (hovering || enlarged) {
-                ChatPictureSizeBadge(enlarged: enlarged)
-            }
+            .background(NookTheme.smoke)
+            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+            .contentShape(Rectangle())
         }
-        .background(NookTheme.smoke)
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .onTapGesture {
-            if image != nil { toggle() }
-        }
         .contextMenu {
             if !missing {
                 Button { toggle() } label: {
@@ -295,9 +294,7 @@ private struct MessagePicture: View {
             }
         }
         .help(image == nil ? url.lastPathComponent : label)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label): \(url.lastPathComponent)")
-        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(image == nil ? url.lastPathComponent : "\(label): \(url.lastPathComponent)")
         .task(id: url) {
             let url = url
             let data = await Task.detached(priority: .utility) { try? Data(contentsOf: url) }.value
@@ -373,13 +370,10 @@ struct ImageMessageRow: View {
     @State private var enlargedIDs: Set<UUID> = []
 
     var body: some View {
-        Group {
-            if enlargedIDs.isEmpty {
-                HStack(spacing: NookTheme.Spacing.sm) { items }
-            } else {
-                VStack(alignment: .trailing, spacing: NookTheme.Spacing.sm) { items }
-            }
-        }
+        let layout = enlargedIDs.isEmpty
+            ? AnyLayout(HStackLayout(spacing: NookTheme.Spacing.sm))
+            : AnyLayout(VStackLayout(alignment: .trailing, spacing: NookTheme.Spacing.sm))
+        layout { items }
     }
 
     private var items: some View {
@@ -409,33 +403,33 @@ private struct SentAttachmentPicture: View {
 
     var body: some View {
         if let displayImage = (enlarged ? attachment.fullImage : nil) ?? attachment.thumbnail {
-            ZStack(alignment: .topTrailing) {
-                if enlarged {
-                    let size = ImageAttachment.enlargedSize(for: displayImage)
-                    Image(nsImage: displayImage)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: size.width, maxHeight: size.height)
-                } else {
-                    Image(nsImage: displayImage)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 96, height: 96)
+            Button(action: toggle) {
+                ZStack(alignment: .topTrailing) {
+                    if enlarged {
+                        let size = ImageAttachment.enlargedSize(for: displayImage)
+                        Image(nsImage: displayImage)
+                            .resizable()
+                            .interpolation(.high)
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: size.width, maxHeight: size.height)
+                    } else {
+                        Image(nsImage: displayImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 96, height: 96)
+                    }
+                    if hovering || enlarged {
+                        ChatPictureSizeBadge(enlarged: enlarged)
+                    }
                 }
-                if hovering || enlarged {
-                    ChatPictureSizeBadge(enlarged: enlarged)
-                }
+                .background(NookTheme.smoke)
+                .clipShape(RoundedRectangle(cornerRadius: enlarged ? NookTheme.Radius.panel : NookTheme.Radius.card, style: .continuous))
+                .contentShape(Rectangle())
             }
-            .background(NookTheme.smoke)
-            .clipShape(RoundedRectangle(cornerRadius: enlarged ? NookTheme.Radius.panel : NookTheme.Radius.card, style: .continuous))
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
             .onHover { hovering = $0 }
-            .onTapGesture { toggle() }
             .help(label)
-            .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(label): \(attachment.name)")
-            .accessibilityAddTraits(.isButton)
         }
     }
 }
