@@ -35,6 +35,11 @@ final class MailBridge: ChatBridge, ObservableObject {
         var unread: [MailChatData.Row]
     }
     private var targets: [String: Target] = [:]
+    /// Where each message read last lives in Mail, by Mail's id: to read it whole when you open it.
+    private var places: [Int: MailChatData.Row] = [:]
+    /// Whole messages already read, by Mail's id: a message does not change.
+    private var opened: [Int: MailChatData.Message] = [:]
+    private static let openedKept = 200
 
     var isReady: Bool { isLinked && ScriptText.isRunning(MailSender.mailBundleID) }
 
@@ -97,6 +102,7 @@ final class MailBridge: ChatBridge, ObservableObject {
     }
 
     private func remember(_ chats: [BridgedChat], rows: [MailChatData.Row], accounts: [MailChatData.Account]) {
+        places = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var byChat: [String: [MailChatData.Row]] = [:]
         for row in rows {
             byChat[MailChatData.chatID(account: row.account, address: MailChatData.address(row.person)), default: []].append(row)
@@ -118,6 +124,35 @@ final class MailBridge: ChatBridge, ObservableObject {
     private func problem(_ number: Int?, _ message: String?, timeout: TimeInterval) -> NookError {
         if number == -1743 { return NookError(tr("chats.mail.noPermission")) }
         return NookError(MailStats.failure(errorNumber: number, message: message, timeout: timeout))
+    }
+
+    // MARK: Reading one message
+
+    /// Whether the mail view can read this message (its id in Nook) whole from Mail.
+    func canOpen(_ nookID: String) -> Bool {
+        MailChatData.mailID(nookID).map { places[$0] != nil || opened[$0] != nil } ?? false
+    }
+
+    /// The whole message (headers, attachments, all of its text), read from Mail the first time it opens in the mail
+    /// view and kept after that. Nil when Mail does not have it (any longer) or is closed.
+    func message(_ nookID: String) async -> MailChatData.Message? {
+        guard let id = MailChatData.mailID(nookID) else { return nil }
+        if let kept = opened[id] { return kept }
+        guard let row = places[id], isReady else { return nil }
+        let result = await ScriptText.run(MailChatData.messageScript(row), timeout: 15)
+        guard let raw = result.text, let message = MailChatData.message(raw) else { return nil }
+        if opened.count >= Self.openedKept { opened = [:] }
+        opened[id] = message
+        return message
+    }
+
+    /// Every address of yours across the accounts, lower case: an answer to everyone leaves them out.
+    var ownAddresses: Set<String> { Set(accounts.flatMap(\.addresses)) }
+
+    /// The address a new mail in this chat goes from: the address of the account the chat is in; empty for Mail's
+    /// default account.
+    func sender(for chatID: String?) -> String {
+        chatID.flatMap { targets[$0]?.from } ?? ""
     }
 
     // MARK: Answering
@@ -148,6 +183,8 @@ final class MailBridge: ChatBridge, ObservableObject {
     private func reset() {
         bodies = [:]
         targets = [:]
+        places = [:]
+        opened = [:]
         accounts = []
         isWorking = false
     }

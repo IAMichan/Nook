@@ -114,7 +114,10 @@ first read asks for Automation), and only while Mail is open, as the Mail connec
 background on its own. Linking it, or "Read Mail now" while Mail is closed, starts Mail out of sight once, so the first
 chats show at once. A read in which not one account answered says why instead of showing an empty list. An answer goes out through Mail
 (`MailSender`) as a reply to the chat's newest mail from the chat's account; "Mark as read" sets Mail's read status,
-which tells the server. Mail apps Nook cannot read itself (Outlook for Mac, Gmail and Outlook on the web, Spark, Proton
+which tells the server. A mail chat shows as mail, not as bubbles (`MailThreadView`): a card per mail with its headers, attachments and whole
+text (read from Mail when it opens, `MailBridge.message`), the quoted mail folded away. Reply goes to the field under it;
+Reply all and Forward, and New mail in a mail app's list, write in the pane beside the list (`MailComposeView`), from
+any address of any account, sent through Mail after your click and logged as `send_mail`. Mail apps Nook cannot read itself (Outlook for Mac, Gmail and Outlook on the web, Spark, Proton
 Mail) are members by their notifications: `ChatCapture.mailNotice` reads the subject from them the same way. Mail has no
 emoji, edits, polls, typing or read receipts another app can reach, and Nook reads no attachments from it yet.
 
@@ -283,9 +286,9 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
   bridgev2 connector for it exists. It shows the chat list and the messages of chats you load in Nook, and answers with
   text. Files, emoji, edits, deletions, pinning, muting, archiving, read receipts and typing are not offered for it
   (`ChatAbilities(send: true)`), and its messages carry the time Nook first saw them, since the website shows none.
-- **Mail** is read from the Mail app (`MailBridge`), every account in it, while Mail is open. Attachments, scrolling back
+- **Mail** is read from the Mail app (`MailBridge`), every account in it, while Mail is open. Opening attachments in Nook (their names show; they open in Mail), scrolling back
   past the newest 60 inbox and 40 sent messages per account, and Outlook for Mac's or a web mailbox's own accounts (they
-  come in by their notifications only, and can not be answered from Nook) are not there yet.
+  come in by their notifications only; Nook answers them in a new mail through the Mail app) are not there yet.
 - **CI logs of GitLab merge requests.** A GitHub check's steps and log open in Nook (`CICheckLogView` on the Mac,
   `CheckLog.svelte` in `apps/tauri`). A watched GitLab merge request still opens its pipelines page in the browser:
   Nook does not read GitLab job traces yet.
