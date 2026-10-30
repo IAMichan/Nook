@@ -28,15 +28,15 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
 }
 
 /// While a game or another app runs full screen, clicks pass through the closed bar to that app, so a click near the
-/// top of the screen never lands on Nook by accident. A shortcut or the tray still opens the bar; once it has focus it
-/// takes clicks again.
+/// top of the screen never lands on Nook by accident. The open panel (from a shortcut, the tray or a message that opens
+/// it) and a focused bar always take clicks.
 #[cfg(windows)]
 fn watch_fullscreen(app: &AppHandle) {
     let app = app.clone();
     let _ = std::thread::Builder::new().name("nook-fullscreen".into()).spawn(move || loop {
         std::thread::sleep(std::time::Duration::from_millis(750));
         let Some(bar) = app.get_webview_window(BAR) else { continue };
-        let pass = fullscreen_app_in_front() && !bar.is_focused().unwrap_or(false);
+        let pass = !PANEL_OPEN.load(Ordering::Relaxed) && fullscreen_app_in_front() && !bar.is_focused().unwrap_or(false);
         if pass != CLICKS_PASS.load(Ordering::Relaxed) {
             set_clicks_pass(&bar, pass);
         }
@@ -48,6 +48,9 @@ fn watch_fullscreen(_app: &AppHandle) {}
 
 /// Whether the bar lets clicks through right now.
 static CLICKS_PASS: AtomicBool = AtomicBool::new(false);
+
+/// Whether the bar shows its open panel, even without focus.
+static PANEL_OPEN: AtomicBool = AtomicBool::new(false);
 
 fn set_clicks_pass(bar: &tauri::WebviewWindow, pass: bool) {
     if bar.set_ignore_cursor_events(pass).is_ok() {
@@ -92,7 +95,12 @@ pub fn place_bar(app: &AppHandle, expanded: bool) {
 
 /// Like [`place_bar`]; `notice` widens the closed bar for a compact agent notice.
 pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool) {
+    PANEL_OPEN.store(expanded, Ordering::Relaxed);
     let Some(window) = app.get_webview_window(BAR) else { return };
+    if expanded {
+        // Over a full-screen game the closed bar lets clicks through; the open panel must take them right away.
+        set_clicks_pass(&window, false);
+    }
     let settings = app.state::<AppState>().settings();
     let (w, h) = if !expanded && notice {
         NOTICE
@@ -166,8 +174,6 @@ pub fn open_bar(app: &AppHandle, focus: &str) {
     }
     if let Some(bar) = app.get_webview_window(BAR) {
         place_bar(app, true);
-        // Over a full-screen game the closed bar lets clicks through; the open panel must take them right away.
-        set_clicks_pass(&bar, false);
         let _ = bar.show();
         let _ = bar.set_focus();
         let _ = bar.emit("bar-open", focus);
