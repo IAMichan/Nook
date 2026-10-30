@@ -13,9 +13,13 @@ struct ConnectorField {
     let placeholder: String
     let secret: Bool
 
-    /// Pasting often introduces extraneous spaces, newlines, or quotes.
+    /// Pasting often introduces extraneous spaces, newlines, or quotes. A line break or an invisible character (a
+    /// zero-width space) inside a token makes URLSession drop the whole Authorization header without a word, so the
+    /// request goes out signed out: those never belong in a one-line field.
     static func clean(_ raw: String) -> String {
-        raw.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'`")))
+        let invisible = CharacterSet.controlCharacters.union(.newlines)
+        let visible = String(String.UnicodeScalarView(raw.unicodeScalars.filter { !invisible.contains($0) }))
+        return visible.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'`")))
     }
 }
 
@@ -2442,6 +2446,7 @@ enum GitHubPullRequests {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         guard (200..<300).contains(status), let link = object["html_url"] as? String, let result = URL(string: link) else {
+            if let limited = GitHubRateLimit.message(response as? HTTPURLResponse, object["message"] as? String) { throw NookError(limited) }
             var message = (object["message"] as? String) ?? "GitHub returned an error (\(status))."
             if let errors = object["errors"] as? [[String: Any]] {
                 let details = errors.compactMap { $0["message"] as? String }
