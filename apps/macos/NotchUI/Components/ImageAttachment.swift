@@ -119,15 +119,40 @@ struct ImageAttachment: Identifiable, Equatable {
 
     // MARK: Getting pictures in
 
-    /// The pictures on the clipboard: copied image files, or image data (a screenshot, "Copy Image" in a browser). Text on
-    /// the clipboard, or other files, are left alone so pasting those keeps working as before.
-    static func fromPasteboard(_ pasteboard: NSPasteboard = .general) -> [ImageAttachment] {
-        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
-            return urls.compactMap { ImageAttachment(url: $0) }
+    /// Scaling and encoding a picture takes a moment for a big screenshot: it runs here, off the main thread, one at a
+    /// time so pictures arrive in the order they came.
+    private static let encoder = DispatchQueue(label: "nook.image-attachment", qos: .userInitiated)
+
+    /// Builds attachments on `encoder` and hands them to `done` on the main thread; none are handed on when none came.
+    private static func encodeOffMain(_ make: @escaping () -> [ImageAttachment], done: @escaping ([ImageAttachment]) -> Void) {
+        encoder.async {
+            let made = make()
+            guard !made.isEmpty else { return }
+            DispatchQueue.main.async { done(made) }
         }
-        guard pasteboard.string(forType: .string) == nil, let image = NSImage(pasteboard: pasteboard),
-              let attachment = ImageAttachment(image: image, name: tr("image.pasted")) else { return [] }
-        return [attachment]
+    }
+
+    /// The pictures on the clipboard: copied image files, or image data (a screenshot, "Copy Image" in a browser). Text on
+    /// the clipboard, or other files, are left alone so pasting those keeps working as before. Whether the paste is a
+    /// picture is decided now (the key is claimed or passed on right away); the pictures reach `done` once encoded.
+    @discardableResult
+    static func fromPasteboard(_ pasteboard: NSPasteboard = .general, done: @escaping ([ImageAttachment]) -> Void) -> Bool {
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
+            let pictures = urls.filter(isImageFile)
+            guard !pictures.isEmpty else { return false }
+            encodeOffMain({ pictures.compactMap { ImageAttachment(url: $0) } }, done: done)
+            return true
+        }
+        guard pasteboard.string(forType: .string) == nil, let image = NSImage(pasteboard: pasteboard) else { return false }
+        let name = tr("image.pasted")
+        encodeOffMain({ ImageAttachment(image: image, name: name).map { [$0] } ?? [] }, done: done)
+        return true
+    }
+
+    /// The same test `init?(url:)` starts with, without reading the file.
+    private static func isImageFile(_ url: URL) -> Bool {
+        guard url.isFileURL, let type = UTType(filenameExtension: url.pathExtension) else { return false }
+        return type.conforms(to: .image)
     }
 
     /// Handles what was dropped: pictures go to `images`, any other file to `file`. Returns whether anything can be read.
@@ -138,14 +163,19 @@ struct ImageAttachment: Identifiable, Equatable {
             if provider.canLoadObject(ofClass: URL.self) {
                 handled = true
                 _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    DispatchQueue.main.async {
-                        guard let url else { return }
-                        if !url.isFileURL {
-                            loadImage(from: provider, into: images)
-                        } else if let image = ImageAttachment(url: url) {
-                            images([image])
-                        } else {
-                            file(url)
+                    guard let url else { return }
+                    guard url.isFileURL else {
+                        DispatchQueue.main.async { loadImage(from: provider, into: images) }
+                        return
+                    }
+                    guard isImageFile(url) else {
+                        DispatchQueue.main.async { file(url) }
+                        return
+                    }
+                    encoder.async {
+                        let image = ImageAttachment(url: url)
+                        DispatchQueue.main.async {
+                            if let image { images([image]) } else { file(url) }
                         }
                     }
                 }
@@ -159,11 +189,10 @@ struct ImageAttachment: Identifiable, Equatable {
 
     private static func loadImage(from provider: NSItemProvider, into images: @escaping ([ImageAttachment]) -> Void) {
         guard provider.canLoadObject(ofClass: NSImage.self) else { return }
+        let name = tr("image.dropped")
         _ = provider.loadObject(ofClass: NSImage.self) { object, _ in
-            DispatchQueue.main.async {
-                guard let image = object as? NSImage, let attachment = ImageAttachment(image: image, name: tr("image.dropped")) else { return }
-                images([attachment])
-            }
+            guard let image = object as? NSImage else { return }
+            encodeOffMain({ ImageAttachment(image: image, name: name).map { [$0] } ?? [] }, done: images)
         }
     }
 

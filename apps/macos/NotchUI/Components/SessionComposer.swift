@@ -359,12 +359,7 @@ struct SessionComposer<Controls: View>: View {
             // When the box gets narrow (the chat beside an open app), the choices give up their words step by step,
             // so the row shrinks with the box instead of running out of it while keeping as much text as fits.
             if !choicesBelow {
-                ViewThatFits(in: .horizontal) {
-                    controlRow.environment(\.composerDensity, .full)
-                    controlRow.environment(\.composerDensity, .short)
-                    controlRow.environment(\.composerDensity, .marks)
-                    controlRow.environment(\.composerDensity, .icons)
-                }
+                controlRow
             }
         }
         // The send button sits 8 pt from the bottom and trailing edges, so with `Radius.composer` its circle runs
@@ -408,11 +403,11 @@ struct SessionComposer<Controls: View>: View {
     }
 
     /// The choices for the turn, then the extra button and send (or stop) on the right. The row starts a pill's own
-    /// padding further out, so the first choice's words line up with the text above it.
+    /// padding further out, so the first choice's words line up with the text above it. Send stays outside the fitting:
+    /// the choices get the width it leaves, which picks the same density as fitting the whole row did.
     private var controlRow: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            controls()
-            Spacer(minLength: NookTheme.Spacing.md)
+            ComposerDensityFit(content: controls(), minGap: NookTheme.Spacing.md)
             sendCluster
         }
         .padding(.leading, -NookTheme.Spacing.md)
@@ -420,12 +415,7 @@ struct SessionComposer<Controls: View>: View {
 
     /// The choices alone, in the tray under the box; they give up their words step by step like the row in the box.
     private var choicesRow: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: NookTheme.Spacing.xs) { controls(); Spacer(minLength: 0) }.environment(\.composerDensity, .full)
-            HStack(spacing: NookTheme.Spacing.xs) { controls(); Spacer(minLength: 0) }.environment(\.composerDensity, .short)
-            HStack(spacing: NookTheme.Spacing.xs) { controls(); Spacer(minLength: 0) }.environment(\.composerDensity, .marks)
-            HStack(spacing: NookTheme.Spacing.xs) { controls(); Spacer(minLength: 0) }.environment(\.composerDensity, .icons)
-        }
+        ComposerDensityFit(content: controls(), minGap: 0)
     }
 
     /// The extra button, then send, or stop and queue while the agent works.
@@ -490,10 +480,7 @@ struct SessionComposer<Controls: View>: View {
         guard let imagesBinding else { return }
         pasteMonitor.start {
             guard focused.wrappedValue else { return false }
-            let pictures = ImageAttachment.fromPasteboard()
-            guard !pictures.isEmpty else { return false }
-            imagesBinding.wrappedValue += pictures
-            return true
+            return ImageAttachment.fromPasteboard { imagesBinding.wrappedValue += $0 }
         }
     }
 
@@ -619,6 +606,30 @@ private struct RoomyText: View {
             Color.clear.frame(width: 0, height: 0)
         }
         .frame(minWidth: 0, idealWidth: 0, alignment: .leading)
+    }
+}
+
+/// The composer's choices at the widest density that fits. The choices are built once and measured four times: building
+/// them (menus and all) and the send button once per density cost four times that on every key.
+private struct ComposerDensityFit<Content: View>: View {
+    let content: Content
+    /// The least room after the last choice (before send).
+    let minGap: CGFloat
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            row.environment(\.composerDensity, .full)
+            row.environment(\.composerDensity, .short)
+            row.environment(\.composerDensity, .marks)
+            row.environment(\.composerDensity, .icons)
+        }
+    }
+
+    private var row: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            content
+            Spacer(minLength: minGap)
+        }
     }
 }
 

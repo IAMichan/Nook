@@ -36,14 +36,16 @@ extension AppModel {
 
     /// An image: brains that can see get the picture itself, every brain gets the text Nook reads in it on the Mac.
     func askAboutImage(_ url: URL, name: String) {
-        guard let loaded = ChatImage.load(url) else {
-            viewModel.show(.card(errorCard(tr("chat.image.unreadable", name))))
-            return
-        }
-        showChat()
         Task { @MainActor [weak self] in
-            let recognized = (try? await ScreenReader.recognize(loaded.cgImage)) ?? ""
+            // Decoding, scaling and encoding a big picture takes a moment: off the main thread.
+            let loaded = await Task.detached(priority: .userInitiated) { ChatImage.load(url) }.value
             guard let self else { return }
+            guard let loaded else {
+                self.viewModel.show(.card(self.errorCard(tr("chat.image.unreadable", name))))
+                return
+            }
+            self.showChat()
+            let recognized = (try? await ScreenReader.recognize(loaded.cgImage)) ?? ""
             self.attachment = (name, ChatImage.describe(name: name, recognized: recognized), Date())
             self.attachmentImages = [loaded.image]
             var message = ChatMessage(role: .nook, text: tr("chat.image.attached", name))

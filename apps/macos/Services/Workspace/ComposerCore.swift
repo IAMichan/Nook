@@ -336,19 +336,31 @@ enum FileSearch {
 
     /// Paths relative to `root`, at most `limit`. Scoring: name starts with the query, then name contains it, then the path.
     static func search(root: String, query: String, limit: Int = 8, scanLimit: Int = 6_000, fileManager: FileManager = .default) -> [String] {
+        rank(list(root: root, scanLimit: scanLimit, fileManager: fileManager), query: query, limit: limit)
+    }
+
+    /// Every file under `root` the `@` list can offer, relative to it, at most `scanLimit`: the walk, done once per
+    /// folder by `FileIndex` instead of on every key.
+    static func list(root: String, scanLimit: Int = 6_000, fileManager: FileManager = .default) -> [String] {
         let base = URL(fileURLWithPath: root, isDirectory: true).standardizedFileURL
         guard let walker = fileManager.enumerator(at: base, includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
                                                   options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { return [] }
-        let q = query.lowercased()
-        var scored: [(path: String, score: Int)] = []
-        var scanned = 0
+        var paths: [String] = []
         for case let url as URL in walker {
             if skipped.contains(url.lastPathComponent) { walker.skipDescendants(); continue }
             guard (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else { continue }
-            scanned += 1
-            if scanned > scanLimit { break }
-            let relative = String(url.standardizedFileURL.path.dropFirst(base.path.count + 1))
-            let name = url.lastPathComponent.lowercased()
+            if paths.count >= scanLimit { break }
+            paths.append(String(url.standardizedFileURL.path.dropFirst(base.path.count + 1)))
+        }
+        return paths
+    }
+
+    /// The best `limit` of `paths` for `query`.
+    static func rank(_ paths: [String], query: String, limit: Int = 8) -> [String] {
+        let q = query.lowercased()
+        var scored: [(path: String, score: Int)] = []
+        for relative in paths {
+            let name = (relative.split(separator: "/").last.map { String($0) } ?? relative).lowercased()
             let score: Int
             if q.isEmpty { score = 3 - min(2, relative.filter { $0 == "/" }.count) }
             else if name.hasPrefix(q) { score = 100 - min(50, relative.count) }
@@ -358,5 +370,29 @@ enum FileSearch {
             scored.append((relative, score))
         }
         return scored.sorted { $0.score != $1.score ? $0.score > $1.score : $0.path < $1.path }.prefix(limit).map(\.path)
+    }
+}
+
+/// The files of a folder for the `@` list, walked once and kept for half a minute, so each key only filters a list in
+/// memory. One walk per folder at a time: a key typed while it runs waits for the same walk instead of starting another.
+actor FileIndex {
+    static let shared = FileIndex()
+    static let lifetime: TimeInterval = 30
+
+    private var known: [String: (paths: [String], made: Date)] = [:]
+    private var walking: [String: Task<[String], Never>] = [:]
+
+    func paths(root: String) async -> [String] {
+        let now = Date()
+        if let entry = known[root], now.timeIntervalSince(entry.made) < Self.lifetime { return entry.paths }
+        if let running = walking[root] { return await running.value }
+        // Detached: a composer that stops waiting (the next key) must not stop the walk the others wait for.
+        let walk = Task.detached(priority: .userInitiated) { FileSearch.list(root: root) }
+        walking[root] = walk
+        let paths = await walk.value
+        walking[root] = nil
+        known = known.filter { now.timeIntervalSince($0.value.made) < Self.lifetime }
+        known[root] = (paths, Date())
+        return paths
     }
 }

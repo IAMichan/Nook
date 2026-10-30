@@ -349,12 +349,24 @@ extension AppModel {
     }
 
     /// The chats "@chat …" offers, newest first, the same for every app: each with where it is and how many are new.
+    /// Asked on every key after `@`, so the sorted list is kept while the inbox, the rules and the apps stay the same
+    /// (and a few seconds at most, for what the key does not see: a linked account, a name).
     func chatChoices() -> [(name: String, detail: String)] {
         let capture = ChatCaptureService.shared
-        return capture.loadedInbox.sorted.filter(capture.isShown).map { thread in
+        let inbox = capture.loadedInbox
+        let key = ChatChoicesCache.Key(inbox: capture.inboxRevision, rules: ChatNoticeRulesStore.shared.rules,
+                                       sources: capture.sources)
+        if key == ChatChoicesCache.key, Date().timeIntervalSince(ChatChoicesCache.made) < ChatChoicesCache.lifetime {
+            return ChatChoicesCache.choices
+        }
+        let choices = inbox.sorted.filter(capture.isShown).map { thread -> (name: String, detail: String) in
             let context = Self.chatContext(thread)
             return (thread.name, thread.unread > 0 ? context + " · " + tr("whatsapp.card.unread", thread.unread) : context)
         }
+        ChatChoicesCache.key = key
+        ChatChoicesCache.made = Date()
+        ChatChoicesCache.choices = choices
+        return choices
     }
 
     // MARK: Nook writes a message
@@ -380,4 +392,19 @@ extension AppModel {
         let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: card.title)
         return try await draftChatMessage(app: app, chat: card.title, transcript: transcript, instruction: instruction)
     }
+}
+
+/// The last `chatChoices`, with what it was made from.
+@MainActor
+private enum ChatChoicesCache {
+    struct Key: Equatable {
+        let inbox: Int
+        let rules: ChatNoticeRules
+        let sources: ChatSources
+    }
+
+    static let lifetime: TimeInterval = 5
+    static var key: Key?
+    static var made = Date.distantPast
+    static var choices: [(name: String, detail: String)] = []
 }

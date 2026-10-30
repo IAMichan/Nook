@@ -117,14 +117,18 @@ final class ComposerModel: ObservableObject {
     /// Looks at the end of the text and fills the list.
     func update(for text: String, _ config: ComposerConfig) {
         search?.cancel()
+        // Each list comes from its source once per key: the chats are every inbox thread, sorted.
+        let chatQuery = EmbeddedAppCatalog.chatQuery(in: text)
+        let chats: [(name: String, detail: String)]? = chatQuery == nil ? nil : config.chats()
         // "@chat Ja…": the chats whose name fits, so you choose the right one; choosing fills in its whole name.
-        if let query = EmbeddedAppCatalog.chatQuery(in: text), case let chats = config.chats(), !chats.isEmpty {
-            let names = EmbeddedAppCatalog.chatMatches(query, in: chats.map(\.name))
+        if let query = chatQuery, let all = chats, !all.isEmpty {
+            let names = EmbeddedAppCatalog.chatMatches(query, in: all.map(\.name))
             guard !names.isEmpty else { return close() }
+            let details = Dictionary(all.map { ($0.name, $0.detail) }, uniquingKeysWith: { first, _ in first })
             trigger = ComposerTrigger(kind: .mention, query: query, token: text)
             return publish(names.map { name in
                 let insertion = "@chat " + name
-                return ComposerSuggestion(id: "chat:" + name, title: name, detail: chats.first { $0.name == name }?.detail,
+                return ComposerSuggestion(id: "chat:" + name, title: name, detail: details[name],
                                           symbol: "bubble.left.and.bubble.right.fill",
                                           payload: .command(ComposerCommand(name: "chat:" + name, insertion: insertion, action: .insert)))
             })
@@ -132,7 +136,7 @@ final class ComposerModel: ObservableObject {
         // "@open whats": the app list stays open past the space after "@open" and filters by the name typed after it.
         if !config.apps.isEmpty, let query = EmbeddedAppCatalog.openQuery(in: text) {
             trigger = ComposerTrigger(kind: .mention, query: query, token: text)
-            return publish(appRows(query, config))
+            return publish(appRows(query, config, chats: chats))
         }
         guard let found = ComposerTrigger.detect(in: text) else { return close() }
         trigger = found
@@ -149,15 +153,21 @@ final class ComposerModel: ObservableObject {
             }
             let query = found.query
             let people = personRows(query, config)
-            guard config.fileRoot != nil || !config.sessions().isEmpty || !people.isEmpty else { return close() }
-            let sessions = config.sessions().filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) }.prefix(3).map { session in
+            let known = config.sessions()
+            guard config.fileRoot != nil || !known.isEmpty || !people.isEmpty else { return close() }
+            let sessions = known.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) }.prefix(3).map { session in
                 ComposerSuggestion(id: "session:" + session.id, title: session.title, detail: tr("compose.ref.session"),
                                    symbol: "bubble.left.and.text.bubble.right",
                                    payload: .ref(ContextRef(kind: .session, id: session.id, label: session.title)))
             }
             guard let root = config.fileRoot else { return publish(people + sessions) }
             search = Task { [weak self] in
-                let files = await Task.detached(priority: .userInitiated) { FileSearch.search(root: root, query: query) }.value
+                // A short pause first, so a word typed after `@` reads the folder once and not once per letter.
+                try? await Task.sleep(nanoseconds: 80_000_000)
+                guard !Task.isCancelled else { return }
+                let all = await FileIndex.shared.paths(root: root)
+                guard !Task.isCancelled else { return }
+                let files = await Task.detached(priority: .userInitiated) { FileSearch.rank(all, query: query) }.value
                 guard !Task.isCancelled, let self else { return }
                 let rows = files.map { path in
                     ComposerSuggestion(id: "file:" + path, title: URL(fileURLWithPath: path).lastPathComponent, detail: path,
@@ -195,7 +205,8 @@ final class ComposerModel: ObservableObject {
     /// The `@` list: "@close" while an app is open, "@chat" when there are chats, then "@open WhatsApp" for each app.
     /// Once a name is typed, a Mac app shows each way as its own line ("@open WhatsApp mac", "… web", "… venster"),
     /// each saying what it is. Return puts a line in the box, Return again runs it.
-    private func appRows(_ query: String, _ config: ComposerConfig) -> [ComposerSuggestion] {
+    private func appRows(_ query: String, _ config: ComposerConfig,
+                         chats: [(name: String, detail: String)]? = nil) -> [ComposerSuggestion] {
         let rows = EmbeddedAppCatalog.openSuggestions(for: query).filter { match in config.apps.contains { $0.id == match.app.id } }
         let typed = query.lowercased()
         var commands: [ComposerSuggestion] = []
@@ -205,7 +216,7 @@ final class ComposerModel: ObservableObject {
                                                payload: .command(ComposerCommand(name: "close", insertion: "@close", action: .insert))))
         }
         // "@chat": choosing it lists the chats straight away.
-        if typed.isEmpty || "chat".hasPrefix(typed), !config.chats().isEmpty {
+        if typed.isEmpty || "chat".hasPrefix(typed), !(chats ?? config.chats()).isEmpty {
             commands.append(ComposerSuggestion(id: "chat", title: "@chat", detail: tr("whatsapp.open.mentionDetail"),
                                                symbol: "bubble.left.and.bubble.right.fill",
                                                payload: .command(ComposerCommand(name: "chat", insertion: "@chat", action: .insert))))
