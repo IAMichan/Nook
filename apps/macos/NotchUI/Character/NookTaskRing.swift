@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// One piece of the ring around Nook: an agent session or a Nook that works for you.
@@ -64,6 +65,8 @@ struct NookTaskRing: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.nookAttended) private var attended
+    /// Published only when the plan changes: sets how fast the ring moves.
+    @ObservedObject private var energy = EnergyMonitor.shared
 
     private var metrics: TaskRingMetrics { TaskRingMetrics(compact: style == .compact, orbSize: orbSize, maxSide: maxSide, count: items.count) }
 
@@ -71,12 +74,13 @@ struct NookTaskRing: View {
 
     var body: some View {
         let metrics = metrics
-        // In a graph of its own (`SeparateGraph`), so its frames do not update the window it is in; hover and clicks stay
-        // on the band below. Environment values do not reach into that graph, so they go in as values.
-        SeparateGraph {
-            TaskRingDrawing(items: items, metrics: metrics, hovered: hovered, motion: motion,
-                            reduceMotion: reduceMotion, attended: attended)
-        }
+        // Layers of its own (`TaskRingLayers`), so its frames neither update the window it is in nor wait for the main
+        // thread; hover and clicks stay on the band below. Its loops cost the render server only, so they run at the
+        // interactive rate: the light stays fluid where you look.
+        let plan = energy.plan
+        TaskRingLayers(config: .init(items: items, metrics: metrics, hovered: hovered, reduceMotion: reduceMotion,
+                                     frameRate: plan.frameRate(plan.interactiveFrameRate, attended: attended)),
+                       motion: motion)
         // Twice its size, so the ring trailing behind Nook and stretching is not cut off.
         .frame(width: metrics.side * 2, height: metrics.side * 2)
         .allowsHitTesting(false)
@@ -147,190 +151,438 @@ private struct TaskRingMetrics: Equatable {
     }
 }
 
-/// What the ring draws, in its own graph: one `Canvas` per frame, rendered off the main thread, instead of a view tree
-/// of trimmed circles and a shadow per piece that SwiftUI compared and blurred on the main thread every frame.
+/// What the ring draws: Core Animation layers in a view of their own, which neither SwiftUI nor the main thread redraws.
 ///
-/// It runs at the ambient rate while only the light moves through running pieces (slow, it stays fluid), at the
-/// interactive rate while the ring trails Nook, draws itself in or a piece grows under the pointer, so motion stays
-/// smooth, and not at all once everything holds still.
-private struct TaskRingDrawing: View {
-    let items: [TaskRingItem]
-    let metrics: TaskRingMetrics
-    let hovered: String?
-    @ObservedObject var motion: NookMotion
-    let reduceMotion: Bool
-    let attended: ViewAttention
+/// The light through a running piece and the amber pulse are animations the render server runs on its own, so they stay
+/// fluid however busy the main thread is with many agents at once (a frame worked out there in time for every display
+/// frame is what made the ring stutter). A change (a piece more or less, the pointer on a piece, drawing itself in) is
+/// one animation from where the ring is now to where it should be, so pieces slide to their new place instead of
+/// jumping. Only following Nook runs on the main thread, on a display link while the ring catches up with him.
+private struct TaskRingLayers: NSViewRepresentable {
+    let config: TaskRingLayerView.Config
+    let motion: NookMotion
 
-    @StateObject private var spring = RingSpring()
-    /// Published only when the plan changes: sets how often the ring redraws.
-    @ObservedObject private var energy = EnergyMonitor.shared
-    @State private var appeared = Date()
-    /// The last change of the piece under the pointer: the one it went to, the one it left, and when.
-    @State private var hoverChange = (id: String?.none, previous: String?.none, at: Date.distantPast)
-    /// Until when a transition (drawing in, a piece growing or shrinking) runs; flipped once it ends, to let the
-    /// timeline pause.
-    @State private var transitionUntil = Date.distantPast
-    @State private var transitionEnd: Task<Void, Never>?
+    func makeNSView(context: Context) -> TaskRingLayerView { TaskRingLayerView() }
+
+    func updateNSView(_ view: TaskRingLayerView, context: Context) {
+        view.follow(motion)
+        view.update(config)
+    }
+}
+
+@MainActor
+private final class TaskRingLayerView: NSView {
+    struct Config: Equatable {
+        var items: [TaskRingItem]
+        var metrics: TaskRingMetrics
+        var hovered: String?
+        var reduceMotion: Bool
+        /// Frames per second of the light and the pulse, and of following Nook; 0 holds the ring still.
+        var frameRate: Double
+    }
+
+    /// The parts of a piece's loop (light or pulse) that, when they change, start it again.
+    private struct Loop: Equatable {
+        var state: TaskRingItem.Kind
+        var sweep: CGFloat
+        var frameRate: Double
+    }
+
+    private final class Piece {
+        let line = CAShapeLayer()
+        /// The light that sweeps through a running piece.
+        let light = CAShapeLayer()
+        var loop: Loop?
+    }
 
     private static let drawIn = 1.3
     private static let hoverGrow = 0.15
+    /// How long a piece takes to slide to its new place when one comes or goes.
+    private static let reflow = 0.35
     private static let track = Color(hex: 0x141419)
 
-    var body: some View {
-        let moving = !reduceMotion && items.contains { $0.state == .running || $0.state == .waiting }
-        // Keeps drawing while the ring still catches up with Nook; once it rests, the spring asks for one more redraw so
-        // the timeline can pause again.
-        let following = !reduceMotion && !spring.settled(at: motion.offset)
-        let transition = transitionUntil > Date()
-        let plan = energy.plan
-        let rate = plan.frameRate(following || transition ? plan.interactiveFrameRate : plan.ambientFrameRate, attended: attended)
-        // perf: this view is the root of the ring's SeparateGraph (see NookTaskRing.body).
-        TimelineView(.nookFrames(fps: rate, paused: !moving && !following && !transition)) { context in
-            // Worked out here, on the main thread: the spring and the state belong to it. The canvas only gets values, so
-            // it can draw on a thread of its own.
-            let frame = frame(at: context.date)
-            Canvas(rendersAsynchronously: true) { canvas, size in
-                Self.draw(frame, in: &canvas, size: size)
-            }
-        }
-        .onAppear {
-            appeared = Date()
-            if !metrics.compact { startTransition(Self.drawIn) }
-        }
-        .onChange(of: hovered) { previous, id in
-            hoverChange = (id, previous, Date())
-            startTransition(Self.hoverGrow)
-        }
-        .onDisappear { transitionEnd?.cancel() }
+    /// Centered in the view and turned upside down, so the drawing below is y-down like SwiftUI's.
+    private let ring = CALayer()
+    /// Follows Nook: moved with the spring and stretched towards him.
+    private let body = CALayer()
+    private let trackLayer = CAShapeLayer()
+    private var pieces: [String: Piece] = [:]
+    private var config: Config?
+
+    private weak var motion: NookMotion?
+    private var following: AnyCancellable?
+    private var target = CGSize.zero
+    private var spring = RingSpring()
+    private var link: CADisplayLink?
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        ring.transform = CATransform3DMakeScale(1, -1, 1)
+        ring.addSublayer(body)
+        body.addSublayer(trackLayer)
+        trackLayer.fillColor = nil
+        layer?.addSublayer(ring)
+        disableActions(on: ring)
+        disableActions(on: body)
+        style(trackLayer)
     }
 
-    /// Runs the timeline for `duration` at the interactive rate, then lets it pause again.
-    private func startTransition(_ duration: TimeInterval) {
-        guard !reduceMotion else { return }
-        let until = Date().addingTimeInterval(duration)
-        guard until > transitionUntil else { return }
-        transitionUntil = until
-        transitionEnd?.cancel()
-        transitionEnd = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000) + 20_000_000)
-            guard !Task.isCancelled else { return }
-            transitionUntil = .distantPast
+    required init?(coder: NSCoder) { nil }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func layout() {
+        super.layout()
+        ring.position = CGPoint(x: bounds.midX, y: bounds.midY)
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        let scale = window?.backingScaleFactor ?? 2
+        trackLayer.contentsScale = scale
+        for piece in pieces.values {
+            piece.line.contentsScale = scale
+            piece.light.contentsScale = scale
         }
     }
 
-    /// One frame of the ring, as plain values.
-    private struct Frame {
-        var offset = CGSize.zero
-        var stretch: (amount: CGFloat, direction: Double) = (0, 0)
-        var radius: CGFloat = 0
-        var trackWidth: CGFloat = 0
-        var trackOpacity: Double = 1
-        var glowRadius: CGFloat = 2
-        var lines: [(path: Path, color: Color, width: CGFloat)] = []
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { stopFollowing() } else { viewDidChangeBackingProperties() }
     }
 
-    private func frame(at date: Date) -> Frame {
-        let t = date.timeIntervalSinceReferenceDate
-        let since = date.timeIntervalSince(appeared)
-        let radius = metrics.radius
-        let width = metrics.lineWidth
+    // MARK: Pieces
+
+    func update(_ new: Config) {
+        guard new != config else { return }
+        let old = config
+        config = new
+        let metrics = new.metrics
+        let moving = !new.reduceMotion && new.frameRate > 0
         // The closed notch comes and goes all day: there the ring is simply there, without drawing itself in.
-        let drawn = metrics.compact || reduceMotion
-        var frame = Frame()
-        frame.stretch = elastic(at: t)
-        frame.offset = spring.position
-        frame.radius = radius
-        frame.trackWidth = width + 0.9
-        frame.trackOpacity = drawn ? 1 : Double(Self.easeOut(Self.progress(since, delay: 0.25, duration: 0.5)))
-        frame.glowRadius = metrics.compact ? 1 : 2
-        for (i, item) in items.enumerated() {
+        let drawingIn = old == nil && moving && !metrics.compact
+        let now = CACurrentMediaTime()
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        // Every piece is the whole circle, drawn from its `strokeStart` to its `strokeEnd`: made again only for a new size.
+        let circle = old?.metrics.radius == metrics.radius ? nil : Self.circle(radius: metrics.radius)
+        if let circle { trackLayer.path = circle }
+        trackLayer.lineWidth = metrics.lineWidth + 0.9
+        trackLayer.strokeColor = NSColor(Self.track).cgColor
+        if drawingIn {
+            add(Self.fade(from: 0, to: 1, duration: 0.5, delay: 0.25, at: now), to: trackLayer, key: "drawIn", rate: new.frameRate)
+        }
+
+        let ids = Set(new.items.map(\.id))
+        for (id, piece) in pieces where !ids.contains(id) {
+            pieces[id] = nil
+            remove(piece, animated: moving)
+        }
+
+        for (i, item) in new.items.enumerated() {
             let span = metrics.span(i)
-            let grown = drawn ? 1 : Self.springOut(Self.progress(since, delay: 0.3 + Double(i) * 0.08, duration: 0.7))
-            guard grown > 0 else { continue }
-            let end = span.start + (span.end - span.start) * grown
-            let lineWidth = width * (1 + 0.5 * hot(item.id, at: date))
-            let pulse = item.state == .waiting && !reduceMotion ? 0.5 + 0.5 * abs(cos(t * 2)) : 1
-            frame.lines.append((Self.arc(span.start, end, radius: radius),
-                                item.color.opacity(item.state == .running ? 0.28 : pulse), lineWidth))
-            if item.state == .running, drawn || since > 0.9 {
-                let light = comet(span, t: t)
-                frame.lines.append((Self.arc(light.start, light.end, radius: radius), item.color, lineWidth))
+            let piece: Piece
+            let isNew: Bool
+            if let existing = pieces[item.id] {
+                piece = existing
+                isNew = false
+            } else {
+                piece = Piece()
+                style(piece.line)
+                style(piece.light)
+                body.addSublayer(piece.line)
+                body.addSublayer(piece.light)
+                pieces[item.id] = piece
+                isNew = true
+            }
+            // Kept in the order of the items, so a later piece's glow lies over an earlier one as before.
+            body.insertSublayer(piece.line, at: UInt32(1 + 2 * i))
+            body.insertSublayer(piece.light, at: UInt32(2 + 2 * i))
+
+            let color = NSColor(item.color)
+            let running = item.state == .running
+            let width = metrics.lineWidth * (new.hovered == item.id ? 1.5 : 1)
+            let length = min((metrics.compact ? 7 : 10) / (2 * .pi * metrics.radius), (span.end - span.start) * 0.35)
+            for layer in [piece.line, piece.light] {
+                if isNew || circle != nil { layer.path = circle ?? Self.circle(radius: metrics.radius) }
+                layer.shadowColor = color.cgColor
+                layer.shadowRadius = metrics.compact ? 1 : 2
+            }
+            piece.line.strokeColor = color.withAlphaComponent(color.alphaComponent * (running ? 0.28 : 1)).cgColor
+            piece.light.strokeColor = color.cgColor
+            piece.light.isHidden = !running
+
+            // Where the light rests without motion: halfway, as the sweep would show it.
+            let lightStart = span.start + (moving ? 0 : (span.end - span.start - length) / 2)
+            if isNew {
+                piece.line.strokeStart = span.start
+                piece.line.strokeEnd = span.end
+                piece.line.lineWidth = width
+                piece.light.strokeStart = lightStart
+                piece.light.strokeEnd = lightStart + length
+                piece.light.lineWidth = width
+                if drawingIn {
+                    add(Self.grow(from: span.start, to: span.end, delay: 0.3 + Double(i) * 0.08, at: now),
+                        to: piece.line, key: "strokeEnd", rate: new.frameRate)
+                    add(Self.fade(from: 0, to: 1, duration: 0.2, delay: 0.9, at: now), to: piece.light, key: "drawIn", rate: new.frameRate)
+                } else if old != nil, moving {
+                    // A piece that comes later grows in from its start, like the others once did.
+                    add(Self.ease("strokeEnd", from: span.start, to: span.end, duration: Self.reflow), to: piece.line, key: "strokeEnd", rate: new.frameRate)
+                    add(Self.fade(from: 0, to: 1, duration: Self.reflow, delay: 0, at: now), to: piece.light, key: "drawIn", rate: new.frameRate)
+                }
+            } else {
+                let rate = moving ? new.frameRate : 0
+                slide(piece.line, "strokeStart", to: span.start, duration: Self.reflow, rate: rate)
+                slide(piece.line, "strokeEnd", to: span.end, duration: Self.reflow, rate: rate)
+                slide(piece.light, "strokeStart", to: lightStart, duration: Self.reflow, rate: rate)
+                slide(piece.light, "strokeEnd", to: lightStart + length, duration: Self.reflow, rate: rate)
+                slide(piece.line, "lineWidth", to: width, duration: Self.hoverGrow, rate: rate)
+                slide(piece.light, "lineWidth", to: width, duration: Self.hoverGrow, rate: rate)
+            }
+
+            let loop = Loop(state: item.state, sweep: span.end - span.start - length, frameRate: moving ? new.frameRate : 0)
+            if loop != piece.loop {
+                piece.loop = loop
+                startLoop(piece, loop, seed: Self.seed(item.id), now: now)
             }
         }
-        return frame
     }
 
-    private static func draw(_ frame: Frame, in canvas: inout GraphicsContext, size: CGSize) {
-        // Centered, moved with the spring and stretched along the line towards Nook, a little narrower across it, like a
-        // band that is pulled; then turned so a piece's 0 is at the top.
-        canvas.translateBy(x: size.width / 2 + frame.offset.width, y: size.height / 2 + frame.offset.height)
-        canvas.rotate(by: .radians(frame.stretch.direction))
-        canvas.scaleBy(x: 1 + frame.stretch.amount, y: 1 - frame.stretch.amount * 0.6)
-        canvas.rotate(by: .radians(-frame.stretch.direction - .pi / 2))
-        if frame.trackOpacity > 0 {
-            canvas.stroke(arc(0, 1, radius: frame.radius), with: .color(track.opacity(frame.trackOpacity)), lineWidth: frame.trackWidth)
-        }
-        // The glow: the pieces once more, blurred together in one layer, instead of a shadow per piece.
-        canvas.drawLayer { glow in
-            glow.addFilter(.blur(radius: frame.glowRadius))
-            glow.opacity = 0.55
-            for line in frame.lines {
-                glow.stroke(line.path, with: .color(line.color), style: StrokeStyle(lineWidth: line.width, lineCap: .round))
+    /// The light sweeping through a running piece and back, or the pulse of one that waits for you: run by the render
+    /// server, in step with the clock, so starting it again (a piece that moved, another frame rate) does not jump.
+    private func startLoop(_ piece: Piece, _ loop: Loop, seed: Double, now: CFTimeInterval) {
+        piece.light.removeAnimation(forKey: "sweep")
+        piece.line.removeAnimation(forKey: "pulse")
+        guard loop.frameRate > 0 else { return }
+        switch loop.state {
+        case .running:
+            // There and back in 1/0.45 s; added on top of where the light rests, so it slides along with its piece.
+            let half = 1 / 0.45 / 2
+            let group = CAAnimationGroup()
+            group.animations = ["strokeStart", "strokeEnd"].map { key in
+                let sweep = CABasicAnimation(keyPath: key)
+                sweep.fromValue = 0
+                sweep.toValue = loop.sweep
+                sweep.isAdditive = true
+                return sweep
             }
+            group.duration = half
+            group.autoreverses = true
+            group.repeatCount = .infinity
+            group.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            group.timeOffset = (now * 0.45 + seed).truncatingRemainder(dividingBy: 1) * half * 2
+            add(group, to: piece.light, key: "sweep", rate: loop.frameRate)
+        case .waiting:
+            let pulse = CABasicAnimation(keyPath: "opacity")
+            pulse.fromValue = 1
+            pulse.toValue = 0.5
+            pulse.duration = .pi / 4
+            pulse.autoreverses = true
+            pulse.repeatCount = .infinity
+            pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            pulse.timeOffset = now.truncatingRemainder(dividingBy: .pi / 2)
+            add(pulse, to: piece.line, key: "pulse", rate: loop.frameRate)
+        case .failed, .done:
+            break
         }
-        for line in frame.lines {
-            canvas.stroke(line.path, with: .color(line.color), style: StrokeStyle(lineWidth: line.width, lineCap: .round))
+    }
+
+    private func remove(_ piece: Piece, animated: Bool) {
+        guard animated else {
+            piece.line.removeFromSuperlayer()
+            piece.light.removeFromSuperlayer()
+            return
         }
+        CATransaction.begin()
+        CATransaction.setCompletionBlock {
+            piece.line.removeFromSuperlayer()
+            piece.light.removeFromSuperlayer()
+        }
+        for layer in [piece.line, piece.light] {
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = layer.presentation()?.opacity ?? layer.opacity
+            fade.toValue = 0
+            fade.duration = Self.reflow * 0.7
+            fade.fillMode = .forwards
+            fade.isRemovedOnCompletion = false
+            layer.removeAnimation(forKey: "pulse")
+            layer.add(fade, forKey: "remove")
+        }
+        CATransaction.commit()
     }
 
-    /// How far piece `id` has grown under the pointer, 0 to 1, easing over `hoverGrow`.
-    private func hot(_ id: String, at date: Date) -> CGFloat {
-        let p = reduceMotion ? 1 : Self.easeOut(Self.progress(date.timeIntervalSince(hoverChange.at), delay: 0, duration: Self.hoverGrow))
-        if hoverChange.id == id { return p }
-        // The piece the pointer just left shrinks back.
-        return hoverChange.previous == id ? 1 - p : 0
+    /// Sets `key` to `value`, sliding there from where it shows now when `rate` is above 0.
+    private func slide(_ layer: CAShapeLayer, _ key: String, to value: CGFloat, duration: Double, rate: Double) {
+        let current = ((layer.presentation() ?? layer).value(forKeyPath: key) as? CGFloat) ?? value
+        let model = (layer.value(forKeyPath: key) as? CGFloat) ?? value
+        guard model != value else { return }
+        layer.setValue(value, forKeyPath: key)
+        guard rate > 0 else { return layer.removeAnimation(forKey: key) }
+        add(Self.ease(key, from: current, to: value, duration: duration), to: layer, key: key, rate: rate)
     }
 
-    /// Moves the ring on towards Nook and says how far, and in which direction, it is pulled out of round.
-    private func elastic(at t: TimeInterval) -> (amount: CGFloat, direction: Double) {
-        guard !reduceMotion else { return (0, 0) }
-        let target = motion.offset
-        spring.advance(towards: target, at: t)
-        let dx = target.width - spring.position.width
-        let dy = target.height - spring.position.height
-        let pull = hypot(dx, dy)
-        guard pull > 0.05 else { return (0, 0) }
-        return (min(pull / metrics.radius * 0.9, 0.12), atan2(dy, dx))
+    private func add(_ animation: CAAnimation, to layer: CALayer, key: String, rate: Double) {
+        let fps = Float(rate)
+        animation.preferredFrameRateRange = CAFrameRateRange(minimum: min(fps, 15), maximum: fps, preferred: fps)
+        layer.add(animation, forKey: key)
     }
 
-    /// A short light that sweeps through a running piece and back, so you see something is happening.
-    private func comet(_ span: (start: CGFloat, end: CGFloat), t: Double) -> (start: CGFloat, end: CGFloat) {
-        let length = min((metrics.compact ? 7 : 10) / (2 * .pi * metrics.radius), (span.end - span.start) * 0.35)
-        let phase = reduceMotion ? 0.5 : (1 - cos((t * 0.45 + Double(span.start)) * 2 * .pi)) / 2
-        let start = span.start + (span.end - span.start - length) * CGFloat(phase)
-        return (start, start + length)
+    private func style(_ layer: CAShapeLayer) {
+        layer.fillColor = nil
+        layer.lineCap = .round
+        layer.shadowOffset = .zero
+        layer.shadowOpacity = 0.55
+        layer.contentsScale = window?.backingScaleFactor ?? 2
+        disableActions(on: layer)
     }
 
-    /// An arc from fraction `start` to `end` of the circle, clockwise, starting at the drawing's 0 (turned to the top).
-    private static func arc(_ start: CGFloat, _ end: CGFloat, radius: CGFloat) -> Path {
-        var path = Path()
-        path.addArc(center: .zero, radius: radius, startAngle: .radians(Double(start) * 2 * .pi),
-                    endAngle: .radians(Double(end) * 2 * .pi), clockwise: false)
+    private func disableActions(on layer: CALayer) {
+        layer.actions = ["position": NSNull(), "transform": NSNull(), "path": NSNull(), "strokeStart": NSNull(),
+                         "strokeEnd": NSNull(), "lineWidth": NSNull(), "strokeColor": NSNull(), "opacity": NSNull(),
+                         "hidden": NSNull(), "sublayers": NSNull(), "onOrderIn": NSNull(), "onOrderOut": NSNull()]
+    }
+
+    /// The whole circle, clockwise from the top (in the y-down drawing): a piece is the part from its `strokeStart` to its
+    /// `strokeEnd`.
+    private static func circle(radius: CGFloat) -> CGPath {
+        let path = CGMutablePath()
+        path.addArc(center: .zero, radius: radius, startAngle: -.pi / 2, endAngle: .pi * 3 / 2, clockwise: false)
         return path
     }
 
-    private static func progress(_ elapsed: TimeInterval, delay: Double, duration: Double) -> CGFloat {
-        CGFloat(min(max((elapsed - delay) / duration, 0), 1))
+    private static func ease(_ keyPath: String, from: CGFloat, to: CGFloat, duration: Double) -> CABasicAnimation {
+        let animation = CABasicAnimation(keyPath: keyPath)
+        animation.fromValue = from
+        animation.toValue = to
+        animation.duration = duration
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        return animation
     }
 
-    private static func easeOut(_ p: CGFloat) -> CGFloat { 1 - (1 - p) * (1 - p) }
+    private static func fade(from: Float, to: Float, duration: Double, delay: Double, at now: CFTimeInterval) -> CABasicAnimation {
+        let animation = CABasicAnimation(keyPath: "opacity")
+        animation.fromValue = from
+        animation.toValue = to
+        animation.duration = duration
+        animation.beginTime = now + delay
+        animation.fillMode = .backwards
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        return animation
+    }
 
-    /// A spring with a little bounce, like `.spring(duration: 0.7, bounce: 0.15)`: past the end and back.
-    private static func springOut(_ p: CGFloat) -> CGFloat {
-        guard p < 1 else { return 1 }
-        let overshoot: CGFloat = 1.2
-        let q = p - 1
-        return 1 + q * q * ((overshoot + 1) * q + overshoot)
+    /// A spring with a little bounce, past the end and back, after `delay`.
+    private static func grow(from: CGFloat, to: CGFloat, delay: Double, at now: CFTimeInterval) -> CASpringAnimation {
+        let animation = CASpringAnimation(perceptualDuration: 0.7, bounce: 0.15)
+        animation.keyPath = "strokeEnd"
+        animation.fromValue = from
+        animation.toValue = to
+        animation.duration = animation.settlingDuration
+        animation.beginTime = now + delay
+        animation.fillMode = .backwards
+        return animation
+    }
+
+    /// Where in its loop a piece's light starts, the same for a piece every time, so lights of neighbours differ.
+    private static func seed(_ id: String) -> Double {
+        let hash = id.utf8.reduce(UInt32(2_166_136_261)) { ($0 ^ UInt32($1)) &* 16_777_619 }
+        return Double(hash % 1000) / 1000
+    }
+
+    // MARK: Following Nook
+
+    /// Trails `motion` on a spring: a display link runs while the ring catches up with Nook, and stops once it rests.
+    func follow(_ motion: NookMotion) {
+        guard motion !== self.motion else { return }
+        self.motion = motion
+        target = motion.offset
+        following = motion.$offset.removeDuplicates().sink { [weak self] offset in
+            MainActor.assumeIsolated { self?.moved(to: offset) }
+        }
+    }
+
+    private func moved(to offset: CGSize) {
+        target = offset
+        guard let config, !config.reduceMotion, config.frameRate > 0, window != nil else {
+            spring = RingSpring(position: offset)
+            return applyFollow(stretch: (0, 0))
+        }
+        guard link == nil else { return }
+        let link = displayLink(target: self, selector: #selector(step))
+        let fps = Float(config.frameRate)
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: min(fps, 15), maximum: fps, preferred: fps)
+        link.add(to: .main, forMode: .common)
+        self.link = link
+        spring.lastTime = 0
+    }
+
+    @objc private func step(_ link: CADisplayLink) {
+        spring.advance(towards: target, at: CACurrentMediaTime())
+        let dx = target.width - spring.position.width
+        let dy = target.height - spring.position.height
+        let pull = hypot(dx, dy)
+        let radius = config?.metrics.radius ?? 1
+        applyFollow(stretch: pull > 0.05 ? (min(pull / radius * 0.9, 0.12), atan2(dy, dx)) : (0, 0))
+        if spring.settled(at: target) { stopFollowing() }
+    }
+
+    private func stopFollowing() {
+        link?.invalidate()
+        link = nil
+    }
+
+    /// Moves the ring with the spring and stretches it along the line towards Nook, a little narrower across it, like a
+    /// band that is pulled.
+    private func applyFollow(stretch: (amount: CGFloat, direction: Double)) {
+        var transform = CATransform3DMakeRotation(-stretch.direction, 0, 0, 1)
+        transform = CATransform3DConcat(transform, CATransform3DMakeScale(1 + stretch.amount, 1 - stretch.amount * 0.6, 1))
+        transform = CATransform3DConcat(transform, CATransform3DMakeRotation(stretch.direction, 0, 0, 1))
+        transform = CATransform3DConcat(transform, CATransform3DMakeTranslation(spring.position.width, spring.position.height, 0))
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        body.transform = transform
+        CATransaction.commit()
+    }
+}
+
+/// The ring's own place: a soft, slightly bouncy spring pulled towards Nook, so it trails behind him, overshoots a
+/// little and settles.
+private struct RingSpring {
+    private(set) var position = CGSize.zero
+    private var velocity = CGSize.zero
+    var lastTime: TimeInterval = 0
+
+    private static let stiffness: CGFloat = 180
+    private static let damping: CGFloat = 13
+
+    init(position: CGSize = .zero) {
+        self.position = position
+    }
+
+    func settled(at target: CGSize) -> Bool {
+        abs(target.width - position.width) < 0.05 && abs(target.height - position.height) < 0.05
+            && abs(velocity.width) < 0.5 && abs(velocity.height) < 0.5
+    }
+
+    mutating func advance(towards target: CGSize, at t: TimeInterval) {
+        // Capped, so a ring that waited does not leap when it wakes.
+        var left = lastTime > 0 ? CGFloat(min(max(t - lastTime, 0), 0.1)) : 0
+        lastTime = t
+        while left > 0 {
+            let dt = min(left, 1.0 / 120)
+            velocity.width += (Self.stiffness * (target.width - position.width) - Self.damping * velocity.width) * dt
+            velocity.height += (Self.stiffness * (target.height - position.height) - Self.damping * velocity.height) * dt
+            position.width += velocity.width * dt
+            position.height += velocity.height * dt
+            left -= dt
+        }
+        if settled(at: target) {
+            position = target
+            velocity = .zero
+        }
     }
 }
 
@@ -343,47 +595,6 @@ final class NookMotion: ObservableObject {
     func follow(_ new: CGSize) {
         guard abs(new.width - offset.width) > 0.05 || abs(new.height - offset.height) > 0.05 else { return }
         offset = new
-    }
-}
-
-/// The ring's own place: a soft, slightly bouncy spring pulled towards Nook, so it trails behind him, overshoots a
-/// little and settles. Advanced while the ring draws; publishes only once it comes to rest, to let the ring pause.
-@MainActor
-private final class RingSpring: ObservableObject {
-    private(set) var position = CGSize.zero
-    private var velocity = CGSize.zero
-    private var lastTime: TimeInterval = 0
-    private var resting = true
-
-    private static let stiffness: CGFloat = 180
-    private static let damping: CGFloat = 13
-
-    func settled(at target: CGSize) -> Bool {
-        abs(target.width - position.width) < 0.05 && abs(target.height - position.height) < 0.05
-            && abs(velocity.width) < 0.5 && abs(velocity.height) < 0.5
-    }
-
-    func advance(towards target: CGSize, at t: TimeInterval) {
-        // Capped, so a ring that waited does not leap when it wakes.
-        var left = lastTime > 0 ? CGFloat(min(max(t - lastTime, 0), 0.1)) : 0
-        lastTime = t
-        while left > 0 {
-            let dt = min(left, 1.0 / 120)
-            velocity.width += (Self.stiffness * (target.width - position.width) - Self.damping * velocity.width) * dt
-            velocity.height += (Self.stiffness * (target.height - position.height) - Self.damping * velocity.height) * dt
-            position.width += velocity.width * dt
-            position.height += velocity.height * dt
-            left -= dt
-        }
-        let rests = settled(at: target)
-        if rests {
-            position = target
-            velocity = .zero
-        }
-        guard rests != resting else { return }
-        resting = rests
-        // Coming to rest: one redraw after this frame lets the ring's timeline pause. Not from inside the draw itself.
-        if rests { Task { @MainActor [weak self] in self?.objectWillChange.send() } }
     }
 }
 
