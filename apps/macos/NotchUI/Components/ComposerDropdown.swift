@@ -318,8 +318,9 @@ struct DropdownList<Rows: View>: View {
     }
 }
 
-/// Model picker of the agents, a `ModelPicker` as Nook's own brain picker is: the connected agents in the rail, one logo
-/// per account when an agent has several, and on the right the shown account's models, with a search field.
+/// Model picker of the agents and of Nook's own brain in the chat: the connected agents in the rail, one logo per account
+/// when an agent has several, and on the right the shown account's models, with a search field. The chat adds places
+/// that are not an agent (this Mac's local models, an AI service with a key), which bring their own rows.
 struct AgentModelPicker: View {
     @EnvironmentObject private var app: AppModel
     /// Favorites and typed models live here: a star redraws the menu at once.
@@ -333,6 +334,15 @@ struct AgentModelPicker: View {
     /// A new session can send its prompt to more models than the chosen one (`ModelComparison`): these are the others.
     /// Nil hides the choice (a running session).
     var comparing: Binding<[ComparisonTarget]>? = nil
+    /// Places besides the agents, with their rows: this Mac's models first, AI services after the agents.
+    var extraPlaces: [ModelPickerPlace] = []
+    /// The place in use when it is one of `extraPlaces` rather than an agent.
+    var chosenExtra: ModelPickerPlace? = nil
+    var extraList: (ModelPickerPlace, String) -> ModelPickerList = { _, _ in ModelPickerList(models: []) }
+    /// The chat's own words for the "+" and the Settings link; nil says the agents'.
+    var addHelp: String? = nil
+    var settingsTitle: String? = nil
+    var settingsSection: SettingsSection = .agents
     let choose: (RunProvider, String?, String?) -> Void
     /// Picking a model adds it to the comparison instead of replacing the chosen one.
     @State private var multi = false
@@ -365,12 +375,12 @@ struct AgentModelPicker: View {
 
     var body: some View {
         let shown = places
-        ModelPicker(places: shown.map(pickerPlace), chosen: pickerPlace(chosenPlace),
-                    addHelp: tr("agents.picker.add"), settingsTitle: tr("agents.picker.settings"),
-                    openSettings: { app.openSettings(section: .agents) }) { _ in
+        ModelPicker(places: shown.map(pickerPlace) + extraPlaces, chosen: chosenExtra ?? pickerPlace(chosenPlace),
+                    addHelp: addHelp ?? tr("agents.picker.add"), settingsTitle: settingsTitle ?? tr("agents.picker.settings"),
+                    openSettings: { app.openSettings(section: settingsSection) }) { _ in
             if let comparing { compareToggle(comparing) }
         } list: { picked, query in
-            shown.first { $0.id == picked.id }.map { models(of: $0, query: query) } ?? ModelPickerList(models: [])
+            shown.first { $0.id == picked.id }.map { models(of: $0, query: query) } ?? extraList(picked, query)
         }
     }
 
@@ -378,7 +388,7 @@ struct AgentModelPicker: View {
         ModelPickerPlace(id: place.id, name: place.provider.displayName, account: account(of: place), detail: accountLine(of: place))
     }
 
-    private func isChosen(_ place: Place) -> Bool { place == chosenPlace }
+    private func isChosen(_ place: Place) -> Bool { chosenExtra == nil && place == chosenPlace }
 
     /// The account a place runs under: its own, the chosen one for the agent in use, else the one picking it would take.
     private func profile(of place: Place) -> AgentProfile? {
