@@ -13,7 +13,7 @@ extension CompanionServer {
         // Asked right after launch, the inbox may still be read in the background: the phone gets the chats, not none.
         _ = capture.loadedInbox
         let whatsApp = WhatsAppAccounts.shared
-        let chats = ChatsEntry.all(whatsApp: whatsApp, capture: capture).prefix(Self.inboxLimit).map {
+        let chats = ChatsEntry.all(capture: capture).prefix(Self.inboxLimit).map {
             Self.digest($0, canSend: app.chatRoute(for: $0) != nil)
         }
         // Why the list may be empty: nothing is collected, or macOS does not let Nook read the notifications.
@@ -30,9 +30,12 @@ extension CompanionServer {
     /// Nook only: WhatsApp keeps it unread and the sender sees no blue ticks).
     func inboxChat(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
         guard let entry = inboxEntry(request.item) else { return .failure(request.id, .unknownItem) }
-        if case .whatsApp(let key) = entry.origin {
-            let (link, jid) = WhatsAppAccounts.shared.route(key)
-            _ = await link.loadHistory(jid)
+        // Read from its app now, as the Mac does when a chat opens; WhatsApp's linked phone brings its history, which is
+        // in the shared inbox once the link's news is.
+        await app.openedChat(entry)
+        if case .whatsApp = app.chatRoute(for: entry) {
+            let capture = ChatCaptureService.shared
+            await capture.readAndWait(capture.whatsAppGatewayBridge)
         }
         // The chat may have changed while its history loaded.
         guard let current = inboxEntry(entry.id) else { return .failure(request.id, .unknownItem) }
@@ -52,7 +55,7 @@ extension CompanionServer {
         }
         do {
             let replyTo = app.chatAbilities(route).reply ? request.replyTo : nil
-            try await app.sendChatText(text, route: route, chat: entry.name, replyTo: replyTo)
+            try await app.sendChatText(text, route: route, chat: entry.name, replyTo: replyTo, thread: entry.id)
             audit("chat_send", entry.name)
         } catch {
             return .failure(request.id, .failed, message: error.localizedDescription)
@@ -81,7 +84,7 @@ extension CompanionServer {
     private func inboxEntry(_ id: String?) -> ChatsEntry? {
         guard let id, !id.isEmpty else { return nil }
         _ = ChatCaptureService.shared.loadedInbox
-        return ChatsEntry.all(whatsApp: WhatsAppAccounts.shared, capture: ChatCaptureService.shared).first { $0.id == id }
+        return ChatsEntry.all(capture: ChatCaptureService.shared).first { $0.id == ChatIDMigration.current(id) }
     }
 
     private static func digest(_ entry: ChatsEntry, canSend: Bool) -> InboxChatDigest {
@@ -117,34 +120,17 @@ extension CompanionServer {
 
     /// The newest messages of a chat that fit in one answer, oldest first.
     private func inboxLines(_ entry: ChatsEntry) -> [InboxLine] {
-        let lines: [InboxLine]
-        switch entry.origin {
-        case .whatsApp(let key):
-            let (link, jid) = WhatsAppAccounts.shared.route(key)
-            let bubbles = link.inbox.conversations[jid].map { AppModel.whatsAppBubbles($0, link: link) } ?? []
-            lines = bubbles.suffix(60).map { bubble in
-                InboxLine(id: bubble.id, text: CompanionPolicy.clip(ChatFormat.plain(bubble.text)),
-                          date: (bubble.date ?? Date()).timeIntervalSince1970, sender: CompanionPolicy.clip(bubble.sender, limit: 120),
-                          fromMe: bubble.fromMe, attachment: bubble.attachment.map { CompanionPolicy.clip($0, limit: 120) },
-                          ticks: bubble.ticks.map(Self.ticks),
-                          quoteSender: bubble.quote.map { CompanionPolicy.clip($0.sender, limit: 120) },
-                          quoteText: bubble.quote.map { CompanionPolicy.clip($0.text, limit: 200) },
-                          reactions: bubble.reactions.map { $0.count > 1 ? "\($0.emoji) \($0.count)" : $0.emoji },
-                          readers: Self.readers(bubble))
-            }
-        case .captured(let id):
-            // The same bubbles as the Chats tab: answers quote what they answer, emoji and ticks show as in every app.
-            let bubbles = ChatCaptureService.shared.loadedInbox.threads[id].map { ChatBubble.bubbles($0, last: 60) { _ in "" } } ?? []
-            lines = bubbles.map { bubble in
-                InboxLine(id: bubble.id, text: CompanionPolicy.clip(bubble.poll?.line ?? ChatFormat.plain(bubble.text)),
-                          date: (bubble.date ?? Date()).timeIntervalSince1970, sender: CompanionPolicy.clip(bubble.sender, limit: 120),
-                          fromMe: bubble.fromMe, attachment: bubble.attachment.map { CompanionPolicy.clip($0, limit: 120) },
-                          ticks: bubble.ticks.map(Self.ticks),
-                          quoteSender: bubble.quote.map { CompanionPolicy.clip($0.sender, limit: 120) },
-                          quoteText: bubble.quote.map { CompanionPolicy.clip($0.text, limit: 200) },
-                          reactions: bubble.reactions.map { $0.count > 1 ? "\($0.emoji) \($0.count)" : $0.emoji },
-                          readers: Self.readers(bubble))
-            }
+        // The same bubbles as the Chats tab, for every app: answers quote what they answer, emoji and ticks show as there.
+        let bubbles = ChatCaptureService.shared.loadedInbox.threads[entry.id].map { ChatBubble.bubbles($0, last: 60) { _ in "" } } ?? []
+        let lines = bubbles.map { bubble in
+            InboxLine(id: bubble.id, text: CompanionPolicy.clip(bubble.poll?.line ?? ChatFormat.plain(bubble.text)),
+                      date: (bubble.date ?? Date()).timeIntervalSince1970, sender: CompanionPolicy.clip(bubble.sender, limit: 120),
+                      fromMe: bubble.fromMe, attachment: bubble.attachment.map { CompanionPolicy.clip($0, limit: 120) },
+                      ticks: bubble.ticks.map(Self.ticks),
+                      quoteSender: bubble.quote.map { CompanionPolicy.clip($0.sender, limit: 120) },
+                      quoteText: bubble.quote.map { CompanionPolicy.clip($0.text, limit: 200) },
+                      reactions: bubble.reactions.map { $0.count > 1 ? "\($0.emoji) \($0.count)" : $0.emoji },
+                      readers: Self.readers(bubble))
         }
         return CompanionPolicy.newestFitting(lines)
     }

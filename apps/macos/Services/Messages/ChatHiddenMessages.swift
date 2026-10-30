@@ -13,7 +13,8 @@ final class ChatHiddenMessages: ObservableObject {
 
     init(file: URL = NookPaths.supportDirectory.appendingPathComponent("chat-hidden.json")) {
         self.file = file
-        hidden = SafeStorage.load([String: Set<String>].self, from: file).value ?? [:]
+        // Chats kept under the ids they had before WhatsApp joined the shared inbox find their hidden messages again.
+        hidden = ChatIDMigration.current(SafeStorage.load([String: Set<String>].self, from: file).value ?? [:]) { $0.union($1) }
     }
 
     /// The ids hidden in one chat.

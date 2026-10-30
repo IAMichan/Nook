@@ -341,6 +341,29 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(inbox.threads["x"]?.messages.map(\.text), ["Amen"], "kept from before: it goes")
     }
 
+    /// A poll through the chat helper is every app's poll: who chose what, you first, and whether you may vote.
+    func testAHelpersPollIsEveryAppsPoll() {
+        var chat = ChatServiceData.Chat(id: "!p", app: "whatsapp", title: "Team", isGroup: true, unread: 0, last: nil)
+        chat.me = "@me:nook.local"
+        chat.people = ["@whatsapp_eva:nook.local": "Eva", "@whatsapp_bob:nook.local": "Bob"]
+        let json: [String: Any] = ["items": [
+            ["id": "$poll", "timestamp": "2026-10-18T21:20:00Z", "type": "POLL", "text": "Lunch?", "senderName": "Eva",
+             "poll": ["question": "Lunch?", "multiple": false, "options": [
+                ["id": "a", "text": "Pizza", "voters": ["@whatsapp_eva:nook.local", "@me:nook.local", "@whatsapp_bob:nook.local"]],
+                ["id": "b", "text": "Sushi", "voters": [String]()],
+             ]]],
+        ]]
+        let message = ChatServiceData.messages(json, chat: chat).first
+        XCTAssertEqual(message?.text, "Lunch?")
+        XCTAssertEqual(message?.poll?.options.map(\.votes), [3, 0])
+        XCTAssertEqual(message?.poll?.chosen, ["Pizza"])
+        XCTAssertEqual(message?.poll?.options.first?.voters, [tr("chat.poll.you"), "Bob", "Eva"])
+        XCTAssertNil(ChatServiceData.poll(["type": "TEXT", "text": "hi"], chat: chat))
+        let listed = ChatServiceData.chats(["items": [["id": "!p", "network": "whatsapp", "accountID": "local-whatsapp", "title": "Team",
+                                                       "type": "group", "canVote": true]]])
+        XCTAssertEqual(listed.first?.canVote, true)
+    }
+
     func testLinksInAMessageShowWhatTheyLeadTo() {
         XCTAssertEqual(ChatFormat.firstLink("look at https://example.com/a, nice!"), URL(string: "https://example.com/a"),
                        "the sentence's comma is no part of the address")

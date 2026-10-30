@@ -3,6 +3,7 @@ import AppKit
 import AVKit
 import Combine
 import ImageIO
+import QuickLookThumbnailing
 
 // What a chat message's file looks like in a bubble, the same in every chat (the notch card and the Chats tab, for
 // WhatsApp, Messages, Telegram, Slack, Signal…): a sticker as itself without a bubble, a GIF that plays by itself in a
@@ -86,6 +87,8 @@ extension ChatBubble {
             media = .photo(url)
         case .video:
             media = .video(url)
+            // Its first frame, once made (`ChatFileThumbnails`), for every app, as WhatsApp's link drew it.
+            image = ChatFileThumbnails.shared.image(url, kind: .video)
         case .gif:
             media = .gif(url)
         case .sticker:
@@ -93,7 +96,58 @@ extension ChatBubble {
         case .audio, .voice:
             media = .audio(url, seconds: file.seconds)
         case .file:
-            break
+            // A document shows its first page, once made.
+            image = ChatFileThumbnails.shared.image(url, kind: .file)
+        }
+    }
+}
+
+/// Pictures of files on this Mac that show more than their name, for every app's bubbles: a video's first frame and a
+/// document's first page, made once each in the background (WhatsApp's link made them for its own chats alone before).
+/// `revision` moves on as each one is ready, so a chat that shows the file draws it then.
+final class ChatFileThumbnails: ObservableObject, @unchecked Sendable {
+    static let shared = ChatFileThumbnails()
+
+    /// Moves on (on the main thread) each time a picture is ready.
+    @Published private(set) var revision = 0
+
+    private let cache = NSCache<NSString, NSImage>()
+    private let lock = NSLock()
+    /// The files a picture was asked for, so each is made once (one that cannot be made is not asked again).
+    private var asked: Set<String> = []
+
+    /// The picture of a video or a document, when it is made; nil until then (it is made now), and for any other file.
+    func image(_ url: URL, kind: ChatMedia.Kind) -> NSImage? {
+        guard kind == .video || kind == .file else { return nil }
+        let key = url.path as NSString
+        if let image = cache.object(forKey: key) { return image }
+        lock.lock()
+        let first = asked.insert(url.path).inserted
+        lock.unlock()
+        guard first else { return nil }
+        Task.detached(priority: .utility) { [weak self] in
+            guard let image = await Self.make(url, kind: kind) else { return }
+            self?.cache.setObject(image, forKey: key)
+            await MainActor.run { self?.revision &+= 1 }
+        }
+        return nil
+    }
+
+    /// A video's first frame, a document's first page.
+    private static func make(_ url: URL, kind: ChatMedia.Kind) async -> NSImage? {
+        switch kind {
+        case .video:
+            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 960, height: 960)
+            guard let frame = try? await generator.image(at: .zero).image else { return nil }
+            return NSImage(cgImage: frame, size: NSSize(width: frame.width, height: frame.height))
+        case .file:
+            let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 96, height: 128), scale: 2,
+                                                       representationTypes: .thumbnail)
+            return try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request).nsImage
+        default:
+            return nil
         }
     }
 }

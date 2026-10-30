@@ -32,6 +32,7 @@ EXCLUDE_SOURCES=(
   "App/ChatRecovery.swift"
   "Brain/ChatImage.swift"
   "Services/WhatsApp/WhatsAppGateway.swift"
+  "Services/WhatsApp/WhatsAppExport.swift"
   "Services/WhatsApp/WhatsAppNames.swift"
   "Brain/Weather.swift"
   "Services/LocalAgentScanner.swift"
@@ -43,7 +44,7 @@ EXCLUDE_SOURCES=(
 EXCLUDE_TESTS=(
   "MCPOAuthTests" "MCPClientTests" "NetworkGuardTests" "ModelDownloadTests" "BrainSelectionTests" "AntigravityTests"
   "TextGenerationTests" "MarkdownBlockTests" "I18nCoverageTests" "ChatRecoveryTests" "AgentProcessTests" "FinishedSessionsTests"
-  "ExtrasTests" "WhatsAppTests" "WhatsAppActionsTests" "LocalAgentScannerTests"
+  "ExtrasTests" "WhatsAppTests" "WhatsAppActionsTests" "WhatsAppExportTests" "LocalAgentScannerTests"
 )
 
 python3 - "$ROOT" "$WORK" "${EXCLUDE_SOURCES[@]}" <<'PY'

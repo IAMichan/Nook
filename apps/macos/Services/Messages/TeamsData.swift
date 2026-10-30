@@ -92,6 +92,14 @@ enum TeamsData {
         }
     }
 
+    /// Whether a refused refresh means the sign-in itself is gone (revoked, expired, or a new consent needed), so only
+    /// signing in again helps. Anything else (Microsoft busy, a server error, no answer) is passing: the refresh token
+    /// is kept and asked with again at the next read, instead of signing you out for one bad answer.
+    static func signInGone(_ json: [String: Any]) -> Bool {
+        ["invalid_grant", "interaction_required", "consent_required", "login_required", "unauthorized_client", "invalid_client"]
+            .contains((json["error"] as? String) ?? "")
+    }
+
     /// Your own id, name and sign-in address, from /me.
     static func me(_ json: [String: Any]) -> (id: String, name: String, email: String)? {
         guard let id = json["id"] as? String else { return nil }

@@ -149,7 +149,7 @@ final class BrainService {
         // "done!" or ask for permission instead). Ask once more, with only that tool and the dates spelled out. A larger
         // model gets the same second chance when it claims the action is done or prepared without proposing it.
         let claimsReady = Self.claimsDone(plan.text) || ChatIntent.claimsPrepared(plan.text)
-        if profile.isSmall || (plan.actions.isEmpty && claimsReady), let action = intent.primaryAction, !runner.trace.contains(action),
+        if profile.isSmall || (plan.actions.isEmpty && claimsReady), let action = intent.action(among: allTools.map(\.name)), !runner.trace.contains(action),
            let spec = allTools.first(where: { $0.name == action }), !Self.asksBack(plan.text) {
             if let focused = try await fillIn(spec, request: userText, history: history, context: fitted[1],
                                                screen: untrusted.map { _ in fitted[2] }, profile: profile, onText: onText) {
@@ -167,7 +167,7 @@ final class BrainService {
         }
         // A WhatsApp message asked for while no phone is linked: Nook cannot send it at all yet, so say how to link one
         // instead of letting the model pretend it did.
-        if plan.actions.isEmpty, intent.primaryAction == "whatsapp_send", !allTools.contains(where: { $0.name == "whatsapp_send" }) {
+        if plan.actions.isEmpty, intent.primaryAction == "whatsapp_send", intent.action(among: allTools.map(\.name)) == nil {
             return BrainPlan(text: tr("brain.whatsAppNotLinked"), actions: plan.actions)
         }
         // Nothing runs before the user approves it, so a reply without a proposed action that says the message was sent
@@ -602,7 +602,7 @@ final class BrainService {
             lines.append("If a required detail is really missing (for example the time of a meeting), ask one short question instead.")
         }
         // The intent tells a small model where to look, which it cannot reliably work out from a long list itself.
-        if let action = intent.primaryAction, names.contains(action) {
+        if let action = intent.action(among: names) {
             lines.append("This request asks you to act: call \(action) now.")
         } else if let first = intent.tools.first(where: { names.contains($0) }) {
             lines.append("For this request, \(first) is the most likely tool if the context does not already answer it.")

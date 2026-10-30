@@ -450,7 +450,7 @@ enum SourceRouter {
         // A chat message to write ("schrijf een antwoord aan Arjan op WhatsApp", or a follow-up in a WhatsApp conversation):
         // words like "bericht", "antwoord" and "schrijf" only describe the message, so they do not send Nook off to the
         // mail unless the question names it.
-        if ChatIntent.detect(text, history: history).primaryAction == "whatsapp_send" {
+        if ["whatsapp_send", "chat_send"].contains(ChatIntent.detect(text, history: history).primaryAction) {
             wanted.subtract(["mail", "customsources"].filter { !mentioned.contains($0) })
         }
         return allowed.intersection(wanted)
@@ -467,6 +467,7 @@ enum SourceCapabilities {
         "list_notes": "notities bekijken", "search_notes": "notities zoeken", "read_note": "notitie lezen", "create_note": "notitie maken",
         "search_messages": "alle gesprekken doorzoeken", "read_messages": "gesprek lezen", "search_whatsapp": "alle chats doorzoeken",
         "read_whatsapp": "chat lezen", "whatsapp_live": "live chats via je telefoon", "whatsapp_send": "WhatsApp-bericht sturen",
+        "chat_inbox": "chats van al je chatapps lezen", "chat_send": "chatbericht sturen",
         "search_call_notes": "opgenomen gesprekken doorzoeken", "read_call_note": "gesprek lezen", "mac_status": "processor, geheugen, batterij en schijf", "messages_open_chats": "ongelezen en onbeantwoorde gesprekken", "whatsapp_open_chats": "ongelezen en onbeantwoorde chats", "search_bear": "notities doorzoeken", "read_bear": "notitie lezen", "search_things": "taken en projecten doorzoeken",
         "search_mail": "mail zoeken (inbox en verzonden)", "read_mail": "hele mail lezen", "mail_unread": "ongelezen mail tellen", "inbox_mail": "recente mail lezen", "compose_mail": "mailconcept (jij verstuurt)",
         "trash_mail": "mail naar prullenmand", "mark_mail": "mail markeren (gelezen, vlag)",

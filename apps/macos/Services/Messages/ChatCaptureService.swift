@@ -33,8 +33,21 @@ final class ChatCaptureService: ObservableObject {
 
     /// A notification Nook already has another way (WhatsApp, while the phone is linked, arrives live).
     var skips: (ChatNotice) -> Bool = { _ in false }
+    /// What Nook's badges count, the same for every app: the unread messages of the chats that show, except in chats
+    /// the notice rules keep out (muted, quiet by their kind and not naming you).
+    var visibleUnread: Int {
+        let rules = ChatNoticeRulesStore.shared.rules
+        return inbox.threads.values.reduce(0) { total, thread in
+            thread.unread > 0 && isShown(thread) && rules.isVisible(thread) ? total + thread.unread : total
+        }
+    }
+
     /// Chats someone just wrote in (their keys in `inbox`), newest last: Nook may tell you (Settings › Notifications).
+    /// Only chats that show and that the notice rules let reach you (`ChatNoticeRules`).
     var onFresh: ([String]) -> Void = { _ in }
+    /// Chats read in their own app (on the phone, in the app on this Mac) since Nook last read them: what Nook still had
+    /// waiting for them goes.
+    var onReadElsewhere: ([String]) -> Void = { _ in }
     /// Only a message this recent is news; older ones that come in (a first look, a long sleep) are for the Chats tab.
     static let newsWindow: TimeInterval = 600
 
@@ -49,10 +62,26 @@ final class ChatCaptureService: ObservableObject {
     /// WhatsApp from the WhatsApp app on this Mac while no phone is linked, and every app linked through Nook's own chat
     /// helper.
     let whatsAppDesktopBridge = WhatsAppDesktopBridge()
+    /// WhatsApp through the linked phone (its gateway), every linked account.
+    let whatsAppGatewayBridge = WhatsAppGatewayBridge()
     let serviceBridge = ChatServiceBridge()
     /// The chat helper goes last: an app another bridge reads is left to that one.
     private var bridges: [ChatBridge] {
-        [messagesBridge, whatsAppDesktopBridge, slackBridge, telegramBridge, teamsBridge, snapchatBridge, serviceBridge]
+        [messagesBridge, whatsAppGatewayBridge, whatsAppDesktopBridge, slackBridge, telegramBridge, teamsBridge, snapchatBridge,
+         serviceBridge]
+    }
+
+    /// Whether a chat shows in Nook (the Chats tab, cards, search, the companion, what Nook reads), the same rule for
+    /// every app: its app is on, and you did not hide it. WhatsApp comes from one place at a time: a linked phone's chat
+    /// shows while its account is linked, and WhatsApp from anywhere else stands aside meanwhile, or each chat would
+    /// show twice.
+    func isShown(_ thread: InboxThread) -> Bool {
+        guard !ChatNoticeRulesStore.shared.rules.isHidden(thread.id) else { return false }
+        if thread.app == whatsAppGatewayBridge.app {
+            if let key = thread.chatID { return whatsAppGatewayBridge.isLinked(key) }
+            if whatsAppGatewayBridge.isReady { return false }
+        }
+        return sources.isOn(thread.app)
     }
 
     /// You logged in to an app from its row in Settings › Connections: it is switched on, collecting with it, and read now.
@@ -62,20 +91,28 @@ final class ChatCaptureService: ObservableObject {
         bridgeChanged(app)
     }
 
-    /// The bridge of an app, if Nook has one.
+    /// The bridge of an app, if Nook has one: the one that reads it now when two can (WhatsApp on this Mac, and through
+    /// the linked phone).
     func bridge(for app: String) -> ChatBridge? {
-        bridges.first { $0.app == app }
+        bridges.first { $0.app == app && $0.isReady } ?? bridges.first { $0.app == app }
     }
 
     /// A bridge's sign-in changed (Telegram logged in, Teams signed in): read it now instead of at its next turn.
     func bridgeChanged(_ app: String) {
-        bridgeDue[app] = nil
+        for bridge in bridges where bridge.app == app {
+            bridgeDue[bridge.bridgeID] = nil
+            bridgeFailures[bridge.bridgeID] = nil
+        }
         bridged.remove(app)
         bridgeProblems[app] = nil
+        bridgeSignedOut.remove(app)
         Task { await pollBridges() }
     }
     /// Why a bridge could not read, per app; empty while all of them work.
     @Published private(set) var bridgeProblems: [String: String] = [:]
+    /// The apps whose last read failed because the sign-in is gone (`ConnectorErrorKind.auth`): only signing in again
+    /// helps, and Settings offers it for every app the same way (`ChatAccountHealth`).
+    @Published private(set) var bridgeSignedOut: Set<String> = []
     /// The apps whose bridge read at least once: their chats come in with history, not only from notifications.
     @Published private(set) var bridged: Set<String> = []
     /// Chats the helper has nothing older of (scrolled back to their start).
@@ -84,6 +121,8 @@ final class ChatCaptureService: ObservableObject {
     /// Quick reads still owed to a bridge after one of its app's notifications: the app's own server can list the
     /// message a few seconds after it notified, so one read right away may still miss it.
     private var bridgeNudges: [String: Int] = [:]
+    /// Reads in a row that failed, per app: each one waits longer before the next try (`ChatBackoff`).
+    private var bridgeFailures: [String: Int] = [:]
 
     /// How often the database is looked at. Only a database that changed is read, so looking is cheap; looking often
     /// matters because Slack and Teams take a notification back as soon as you read the message elsewhere.
@@ -113,7 +152,7 @@ final class ChatCaptureService: ObservableObject {
         enabled = ConnectorToggle.isOn(ChatInboxConnector.sourceID, default: false)
         serviceBridge.skips = { [weak self] app in
             guard let self else { return false }
-            return self.bridges.contains { $0.app == app && $0.isWorking && $0 !== self.serviceBridge }
+            return self.bridges.contains { $0.app == app && $0.isReady && $0.isWorking && $0 !== self.serviceBridge }
         }
         // A chat changed there this moment (its live line said so): read it at the next tick, not at its next turn.
         serviceBridge.onChange = { [weak self] in
@@ -332,8 +371,11 @@ final class ChatCaptureService: ObservableObject {
     // MARK: Bridges
 
     /// A working bridge brings this app's messages itself: its notifications would only repeat them.
+    /// A bridge counts only while it can read: one that worked and then lost its sign-in (or whose app the chat helper
+    /// took over) keeps its last `isWorking` until its next read, which never comes while it is not ready.
     private func isBridged(_ app: String) -> Bool {
-        bridges.contains { $0.app == app && $0.isWorking } || (serviceBridge.isWorking && serviceBridge.covered.contains(app))
+        bridges.contains { $0.app == app && $0.isReady && $0.isWorking }
+            || (serviceBridge.isReady && serviceBridge.isWorking && serviceBridge.covered.contains(app))
     }
 
     /// Time between the quick reads after a bridged app's notification.
@@ -345,70 +387,120 @@ final class ChatCaptureService: ObservableObject {
 
     /// A notification of a bridged app came in: its bridge reads now, and twice more shortly after.
     private func nudge(_ app: String) {
-        bridgeDue[app] = nil
-        bridgeNudges[app] = 3
+        // A bridge that keeps failing waits out its backoff: a nudge would otherwise ask a refusing service every second.
+        for bridge in bridges where bridge.app == app && bridgeFailures[bridge.bridgeID] == nil {
+            bridgeDue[bridge.bridgeID] = nil
+            bridgeNudges[bridge.bridgeID] = 3
+        }
+    }
+
+    /// A bridge whose app tells Nook what changed (WhatsApp's linked phone): it reads now, or once more right after the
+    /// read that is going on, so nothing it said waits for its next turn.
+    func readNow(_ bridge: ChatBridge) {
+        guard !reading.contains(bridge.bridgeID) else {
+            readAgain.insert(bridge.bridgeID)
+            return
+        }
+        reading.insert(bridge.bridgeID)
+        Task { await read(bridge) }
+    }
+
+    /// Bridges told to read again while they were reading.
+    private var readAgain: Set<String> = []
+
+    /// Reads a bridge now and returns once what it brought is in the inbox (after the read going on, if one is): a chat
+    /// card asked for shows the chat as its app has it this moment.
+    func readAndWait(_ bridge: ChatBridge) async {
+        while reading.contains(bridge.bridgeID) { try? await Task.sleep(for: .milliseconds(50)) }
+        reading.insert(bridge.bridgeID)
+        await read(bridge)
     }
 
     /// Reads every bridge that is due, of the apps that are on. Runs next to the notifications, also while those cannot
     /// be read: Slack needs no disk access. Each bridge reads on its own: a slow one (a web service that takes seconds to
     /// answer) never holds up the others, so a message in a quick one shows the moment it is there.
     func pollBridges() async {
-        guard enabled else { return }
         var started: [Task<Void, Never>] = []
         for bridge in bridges {
             // Each write to these fires `objectWillChange`, which redraws every chat view: write only what changed, so a
             // quiet tick every second costs no redraw.
-            guard sources.isOn(bridge.app), bridge.isReady else {
+            guard (enabled && sources.isOn(bridge.app)) || bridge.alwaysOn, bridge.isReady else {
                 // This runs every second for every bridge that is off: write only on a change, since each write to a
-                // published property redraws every view that watches the inbox.
-                if bridgeProblems[bridge.app] != nil { bridgeProblems[bridge.app] = nil }
-                if bridged.contains(bridge.app) { bridged.remove(bridge.app) }
+                // published property redraws every view that watches the inbox. What is said per app stays while
+                // another bridge reads that app (WhatsApp through the phone, while WhatsApp on this Mac stands aside).
+                if !bridges.contains(where: { $0 !== bridge && $0.app == bridge.app && $0.isReady }) {
+                    if bridgeProblems[bridge.app] != nil { bridgeProblems[bridge.app] = nil }
+                    if bridgeSignedOut.contains(bridge.app) { bridgeSignedOut.remove(bridge.app) }
+                    if bridged.contains(bridge.app) { bridged.remove(bridge.app) }
+                }
+                // Signed in again later, it starts fresh instead of waiting out an old backoff.
+                bridgeFailures[bridge.bridgeID] = nil
                 if bridge === serviceBridge, !bridged.isDisjoint(with: serviceBridge.covered) { bridged.subtract(serviceBridge.covered) }
                 continue
             }
             // One read per bridge at a time: the next waits until this one is done.
-            guard !reading.contains(bridge.app) else { continue }
-            if let due = bridgeDue[bridge.app], due > Date() { continue }
-            let nudges = bridgeNudges[bridge.app] ?? 0
-            bridgeNudges[bridge.app] = nudges > 1 ? nudges - 1 : nil
-            bridgeDue[bridge.app] = Date().addingTimeInterval(nudges > 1 ? min(bridge.interval, Self.nudgeGap) : bridge.interval)
-            reading.insert(bridge.app)
+            let id = bridge.bridgeID
+            guard !reading.contains(id) else { continue }
+            if let due = bridgeDue[id], due > Date() { continue }
+            let nudges = bridgeNudges[id] ?? 0
+            bridgeNudges[id] = nudges > 1 ? nudges - 1 : nil
+            bridgeDue[id] = Date().addingTimeInterval(nudges > 1 ? min(bridge.interval, Self.nudgeGap) : bridge.interval)
+            reading.insert(id)
             started.append(Task { await self.read(bridge) })
         }
         for task in started { await task.value }
     }
 
-    /// The bridges reading now, by app.
+    /// The bridges reading now, by `bridgeID`.
     private var reading: Set<String> = []
 
     /// One read of one bridge, merged into the inbox as soon as it is there.
     private func read(_ bridge: ChatBridge) async {
-        defer { reading.remove(bridge.app) }
+        defer {
+            reading.remove(bridge.bridgeID)
+            if readAgain.remove(bridge.bridgeID) != nil { readNow(bridge) }
+        }
         let started = generation
+        // Collecting switched on or off meanwhile makes a bridge's read stale; an app that reads on its own (WhatsApp's
+        // linked phone) does not depend on it, and its read is kept.
+        let current = { started == self.generation || bridge.alwaysOn }
         do {
             let chats = try await bridge.read()
-            guard started == generation else { return }
+            guard current() else { return }
             ensureLoaded()
             // Merged into a copy: a read that brings nothing new (most of them) then leaves the published inbox alone.
             let before = inbox
             var merged = inbox
-            var mergedAny = false
-            for chat in chats where merged.merge(chat) { mergedAny = true }
+            let mergedAny = merged.merge(chats)
+            let told = (bridge as? ChatNewsBridge)?.takeNews()
             if mergedAny {
                 inbox = merged
                 save()
-                announce(since: before)
+                if let told { announce(told) } else { announce(since: before) }
+                // Read in the app since the last read: its count went to nothing without Nook marking it read.
+                let read = merged.threads.values.filter { $0.unread == 0 && (before.threads[$0.id]?.unread ?? 0) > 0 }.map(\.id)
+                if !read.isEmpty { onReadElsewhere(read) }
             }
+            // News its app told without changing a chat (a chat that wrote again with what Nook already shows) is told too.
+            if !mergedAny, let told, !told.isEmpty { announce(told) }
             if bridgeProblems[bridge.app] != nil { bridgeProblems[bridge.app] = nil }
+            if bridgeSignedOut.contains(bridge.app) { bridgeSignedOut.remove(bridge.app) }
+            bridgeFailures[bridge.bridgeID] = nil
             // The chat helper reads several apps: each one it brought in is bridged.
             let apps: Set<String> = bridge === serviceBridge ? serviceBridge.covered.union([bridge.app]) : [bridge.app]
             if !apps.isSubset(of: bridged) { bridged.formUnion(apps) }
         } catch {
-            guard started == generation else { return }
+            guard current() else { return }
             let problem = error.localizedDescription
             if bridgeProblems[bridge.app] != problem { bridgeProblems[bridge.app] = problem }
-            // Try again in a minute, not every few seconds.
-            bridgeDue[bridge.app] = Date().addingTimeInterval(max(bridge.interval, 60))
+            let signedOut = ConnectorErrorKind.classify(error) == .auth
+            if signedOut != bridgeSignedOut.contains(bridge.app) {
+                if signedOut { bridgeSignedOut.insert(bridge.app) } else { bridgeSignedOut.remove(bridge.app) }
+            }
+            // Try again later, and later still each time it fails again: a minute, two, four… up to a quarter of an hour.
+            let failures = (bridgeFailures[bridge.bridgeID] ?? 0) + 1
+            bridgeFailures[bridge.bridgeID] = failures
+            bridgeDue[bridge.bridgeID] = Date().addingTimeInterval(ChatBackoff.delay(interval: bridge.interval, failures: failures))
         }
     }
 
@@ -419,8 +511,8 @@ final class ChatCaptureService: ObservableObject {
         guard enabled, let thread = inbox.threads[id], thread.bridged == true else { return }
         if serviceBridge.refresh(app: thread.app, name: thread.name) {
             bridgeDue[serviceBridge.app] = nil
-        } else if bridge(for: thread.app) != nil {
-            bridgeDue[thread.app] = nil
+        } else if let bridge = bridge(for: thread.app) {
+            bridgeDue[bridge.bridgeID] = nil
         } else {
             return
         }
@@ -429,9 +521,28 @@ final class ChatCaptureService: ObservableObject {
 
     /// Tells about the chats someone wrote in since `before`, in the apps that are on.
     private func announce(since before: ChatInbox) {
-        let fresh = ChatInbox.fresh(before: before, after: inbox, since: Date().addingTimeInterval(-Self.newsWindow))
-            .filter { inbox.threads[$0].map { sources.isOn($0.app) } ?? false }
+        announce(ChatInbox.fresh(before: before, after: inbox, since: Date().addingTimeInterval(-Self.newsWindow)))
+    }
+
+    /// Tells about these chats, oldest news first: the ones that show and that the notice rules let reach you.
+    private func announce(_ ids: [String]) {
+        let rules = ChatNoticeRulesStore.shared.rules
+        let fresh = ids
+            .filter { id in
+                guard let thread = inbox.threads[id], isShown(thread) else { return false }
+                // A group that stays quiet still tells you about a message that names you.
+                let newest = thread.messages.last { !$0.isMine }
+                return !rules.isQuiet(chat: id, app: thread.app, kind: thread.noticeKind, mentionsMe: newest?.mentionsMe == true)
+            }
         if !fresh.isEmpty { onFresh(fresh) }
+    }
+
+    /// Signs out of Snapchat for Web, after your own confirmation: what was read is forgotten and its row offers to sign
+    /// in again.
+    func signOutSnapchat() {
+        SnapchatWebSession.shared.signOut()
+        snapchatBridge.reset()
+        bridgeChanged(snapchatBridge.app)
     }
 
     /// The Slack token changed in Settings: read Slack again from the start.
@@ -527,6 +638,12 @@ final class ChatCaptureService: ObservableObject {
     /// (Messages and WhatsApp on this Mac, Slack, Telegram, Teams). Nil for a chat only notifications bring: what they
     /// brought is all there is, and the chat keeps every message of it.
     private func history(_ thread: InboxThread) -> ((Date, String?) async throws -> (chat: BridgedChat?, hasMore: Bool))? {
+        // A chat its app knows by an id asks the bridge that gave it.
+        if let chatID = thread.chatID {
+            guard let bridge = bridges.compactMap({ $0 as? ChatKeyedHistoryBridge }).first(where: { $0.app == thread.app && $0.isReady }),
+                  bridge.canLoadOlder(chatID: chatID) else { return nil }
+            return { _, _ in try await bridge.older(chatID: chatID) }
+        }
         if serviceBridge.chatID(app: thread.app, name: thread.name) != nil {
             return { [serviceBridge] before, _ in try await serviceBridge.older(app: thread.app, name: thread.name, before: before) }
         }
@@ -536,7 +653,7 @@ final class ChatCaptureService: ObservableObject {
 
     /// A chat whose app keeps older messages than Nook shows, until its start was reached.
     func canLoadOlder(_ id: String) -> Bool {
-        guard let thread = inbox.threads[id], !noOlder.contains(id) else { return false }
+        guard let thread = inbox.threads[id], !noOlder.contains(id), thread.hasOlder != false else { return false }
         return history(thread) != nil
     }
 
@@ -564,6 +681,27 @@ final class ChatCaptureService: ObservableObject {
         }
     }
 
+    /// An app whose messages Nook may not keep was turned off (WhatsApp through the linked phone): its chats let go of
+    /// them, in memory as they never were on disk. What Nook knows of each chat itself stays.
+    func forgetMessages(of ids: Set<String>) {
+        ensureLoaded()
+        var next = inbox
+        next.forgetMessages(of: ids)
+        guard next != inbox else { return }
+        inbox = next
+        save()
+    }
+
+    /// Chats of an account you removed: gone from Nook, without the mark a chat you removed leaves (no newer message
+    /// brings them back, since nothing reads that account any more).
+    func drop(_ ids: Set<String>) {
+        ensureLoaded()
+        let gone = ids.filter { inbox.threads[$0] != nil }
+        guard !gone.isEmpty else { return }
+        for id in gone { inbox.threads[id] = nil }
+        save()
+    }
+
     /// Chats brought over from another app (`BeeperImporter`), merged like a bridge's; how many changed.
     func importChats(_ chats: [BridgedChat]) -> Int {
         ensureLoaded()
@@ -582,6 +720,8 @@ final class ChatCaptureService: ObservableObject {
         inbox.lastRecord = last
         inbox.lookedBack = lookedBack
         save()
+        // A linked phone's chats are WhatsApp's own, not collected: they come back at once.
+        whatsAppGatewayBridge.handAllOver()
     }
 
     /// The database's last change: the file, or its write-ahead log where macOS writes first.
@@ -612,7 +752,8 @@ final class ChatCaptureService: ObservableObject {
         let inbox = inbox
         let file = Self.file
         let write = {
-            guard let data = try? JSONEncoder().encode(inbox) else { return }
+            // A chat whose app keeps its messages (WhatsApp through the linked phone) is written without them.
+            guard let data = try? JSONEncoder().encode(inbox.forDisk) else { return }
             try? SafeStorage.write(data, to: file)
         }
         if wait { Self.saving.sync(execute: write) } else { Self.saving.async(execute: write) }

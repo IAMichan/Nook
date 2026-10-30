@@ -109,7 +109,7 @@ extension AppModel {
     }
 
     /// Actions that send a message the user approves in the chat, for every chat app.
-    static let messageSendTools: Set<String> = ["whatsapp_send", "send_to_source"]
+    static let messageSendTools: Set<String> = ["whatsapp_send", "chat_send", "send_to_source"]
 
     /// Collects charts and mail drafts produced by tools for the conversation that spawned them.
     func attachToReply(_ change: (inout ChatMessage) -> Void) {

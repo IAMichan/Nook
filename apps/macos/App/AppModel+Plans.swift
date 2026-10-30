@@ -326,14 +326,9 @@ extension AppModel {
 
     /// A reply typed on a proposal card: the proposal moves into the chat first, so the question is answered with it in view.
     func handleCardReply(_ text: String, card: NookCard) {
-        // A WhatsApp card's field answers that chat directly.
-        if card.id.hasPrefix(Self.whatsAppCardPrefix) {
-            replyWhatsApp(text, chat: String(card.id.dropFirst(Self.whatsAppCardPrefix.count)))
-            return
-        }
-        // Another app's chat card: the answer is copied for that app.
-        if card.id.hasPrefix(Self.chatCardPrefix) {
-            copyCardReply(text, card: card)
+        // A chat card's field answers that chat, the same for every app (copied for an app Nook cannot write in).
+        if Self.chatCardThread(card) != nil {
+            replyFromCard(text, card: card)
             return
         }
         // A finished conversation's notice: the answer continues that conversation, still in the notch.
