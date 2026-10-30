@@ -46,7 +46,17 @@ enum MessagingApps {
         MessagingApp(id: "wire", name: "Wire", bundleIDs: ["com.wearezeta.zclient.mac"], site: "wire.com"),
         // Mostly in the browser, where their notifications name the site; LinkedIn's iPad app also runs on a Mac.
         MessagingApp(id: "linkedin", name: "LinkedIn", bundleIDs: ["com.linkedin.LinkedIn"], domains: ["linkedin.com"], site: "linkedin.com"),
-        MessagingApp(id: "x", name: "X", domains: ["x.com", "twitter.com"], site: "x.com")
+        MessagingApp(id: "x", name: "X", domains: ["x.com", "twitter.com"], site: "x.com"),
+        // Mail (`MailChatData.apps`): the Mail app, whose every account `MailBridge` reads itself, and the mail apps and
+        // websites whose notifications are all Nook gets of them.
+        MessagingApp(id: "mail", name: "Mail", bundleIDs: ["com.apple.mail"]),
+        MessagingApp(id: "outlook", name: "Outlook", bundleIDs: ["com.microsoft.Outlook"],
+                     domains: ["outlook.office.com", "outlook.live.com", "outlook.office365.com"], site: "outlook.com"),
+        MessagingApp(id: "gmail", name: "Gmail", domains: ["mail.google.com"], site: "mail.google.com"),
+        MessagingApp(id: "spark", name: "Spark", bundleIDs: ["com.readdle.SparkDesktop", "com.readdle.smartemail-Mac"],
+                     site: "sparkmailapp.com"),
+        MessagingApp(id: "protonmail", name: "Proton Mail", bundleIDs: ["ch.protonmail.desktop"], domains: ["mail.proton.me"],
+                     site: "proton.me")
     ]
 
     /// Which apps feed the inbox, as chosen in Settings › Connections: kept in the user defaults, read once.
@@ -649,6 +659,7 @@ enum ChatCapture {
             app = nil
         }
         guard let app else { return nil }
+        if MailChatData.apps.contains(app.id) { return mailNotice(notification, app: app, fromBrowser: fromBrowser) }
 
         var title = unmarked(notification.title)
         // A browser puts the site in the subtitle; it says which app, not who.
@@ -688,6 +699,25 @@ enum ChatCapture {
         }
         if subtitle.lowercased() == title.lowercased() { subtitle = "" }
         return ChatNotice(app: app.id, chat: title, sender: subtitle, text: text, date: notification.date)
+    }
+
+    /// A mail app's notification: the title is who wrote, the subtitle (or the text's first line, in a browser) the
+    /// subject. The chat is the person, and the message its subject over the start of the text, as `MailBridge` shows
+    /// mail (`MailChatData.text`).
+    private static func mailNotice(_ notification: CapturedNotification, app: MessagingApp, fromBrowser: Bool) -> ChatNotice? {
+        var title = unmarked(notification.title)
+        if fromBrowser, title.lowercased().hasSuffix(" - " + app.name.lowercased()) {
+            title = String(title.dropLast(app.name.count + 3))
+        }
+        var subject = fromBrowser && looksLikeSite(notification.subtitle) ? "" : unmarked(notification.subtitle)
+        var body = notification.body
+        if subject.isEmpty, fromBrowser, let lineBreak = body.firstIndex(of: "\n") {
+            subject = String(body[..<lineBreak])
+            body = String(body[body.index(after: lineBreak)...])
+        }
+        let text = MailChatData.text(subject: subject, body: body)
+        guard !title.isEmpty, title.lowercased() != app.name.lowercased(), !ChatFormat.isBlank(text) else { return nil }
+        return ChatNotice(app: app.id, chat: title, sender: "", text: text, date: notification.date)
     }
 
     /// The chat in a Slack notification's title: "#general" for "New message in #general", "Anna" for "New message from

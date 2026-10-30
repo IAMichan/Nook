@@ -30,7 +30,7 @@ struct ChatAppNoticeRows: View {
         SettingToggle(tr("chats.manage.notify"), detail: tr("chats.manage.notifyDetail", name), isOn: notify)
         if notify.wrappedValue {
             ForEach(ChatNoticeRules.kinds(of: app), id: \.self) { kind in
-                SettingToggle(tr(Self.kindTitle(kind)), detail: tr(Self.kindDetail(kind)),
+                SettingToggle(tr(Self.kindTitle(kind, app: app)), detail: tr(Self.kindDetail(kind, app: app)),
                               isOn: Binding(get: { store.rules.quietKinds(for: app).contains(kind) },
                                             set: { store.setQuiet($0, kind: kind, app: app) }))
             }
@@ -40,7 +40,9 @@ struct ChatAppNoticeRows: View {
                       isOn: Binding(get: { store.rules.readsOnReply(app) }, set: { store.setReadsOnReply($0, app: app) }))
     }
 
-    private static func kindTitle(_ kind: ChatKind) -> String {
+    /// Mail's channels are its newsletters and notifications, and are named so.
+    private static func kindTitle(_ kind: ChatKind, app: String) -> String {
+        if kind == .channel, app == MailChatData.app { return "chats.mail.muteNewsletters" }
         switch kind {
         case .group: return "whatsapp.settings.muteGroups"
         case .status: return "whatsapp.settings.muteStatus"
@@ -49,7 +51,8 @@ struct ChatAppNoticeRows: View {
         }
     }
 
-    private static func kindDetail(_ kind: ChatKind) -> String {
+    private static func kindDetail(_ kind: ChatKind, app: String) -> String {
+        if kind == .channel, app == MailChatData.app { return "chats.mail.muteNewslettersDetail" }
         switch kind {
         case .group: return "whatsapp.settings.muteGroupsDetail"
         case .status: return "whatsapp.settings.muteStatusDetail"

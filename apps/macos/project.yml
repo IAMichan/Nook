@@ -213,6 +213,7 @@ targets:
       - path: Core/I18n+ProviderTraffic.swift
       - path: Core/I18n+Companion.swift
       - path: Core/I18n+Snapchat.swift
+      - path: Core/I18n+Mail.swift
       - path: Core/I18n+MailSend.swift
       - path: Core/I18n+FileViewer.swift
       - path: Brain/SourceScope.swift
@@ -243,6 +244,7 @@ targets:
       - path: Services/Messages/TeamsEmoji.swift
       - path: Services/Messages/TeamsWebData.swift
       - path: Services/Messages/SnapchatWebData.swift
+      - path: Services/Messages/MailChatData.swift
       - path: Services/Messages/WebSignInAgent.swift
       - path: Services/Messages/ChatJSON.swift
       - path: Services/Messages/ChatServiceData.swift

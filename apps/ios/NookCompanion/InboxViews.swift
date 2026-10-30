@@ -196,6 +196,9 @@ struct InboxAvatar: View {
         case "discord": return ("gamecontroller.fill", Color(hex: 0x5865F2))
         case "teams": return ("person.3.fill", Color(hex: 0x6264A7))
         case "linkedin": return ("briefcase.fill", Color(hex: 0x0A66C2))
+        case "mail": return ("envelope.fill", Color(hex: 0x1A8CFF))
+        case "outlook": return ("envelope.badge.fill", Color(hex: 0x0078D4))
+        case "gmail": return ("envelope.fill", Color(hex: 0xEA4335))
         default: return ("bubble.left.and.bubble.right.fill", Theme.textSecondary)
         }
     }

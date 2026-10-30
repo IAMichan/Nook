@@ -48,8 +48,9 @@ struct ChatNoticeRules: Codable, Equatable, Sendable {
     mutating func setReadsOnReply(_ on: Bool, app: String) { readsOnReply[app] = on }
 
     /// What each app does before you chose: WhatsApp keeps groups, status updates and channels quiet, as it always did;
-    /// every other app tells you about every chat, as it always did.
-    static let defaultQuietKinds: [String: Set<ChatKind>] = ["whatsapp": [.group, .status, .channel]]
+    /// Mail keeps newsletters and notifications quiet (`MailChatData.isAutomated`); every other app tells you about every
+    /// chat, as it always did.
+    static let defaultQuietKinds: [String: Set<ChatKind>] = ["whatsapp": [.group, .status, .channel], "mail": [.channel]]
 
     /// The kinds of chat that stay quiet in this app.
     func quietKinds(for app: String) -> Set<ChatKind> {
@@ -76,9 +77,14 @@ struct ChatNoticeRules: Codable, Equatable, Sendable {
     }
 
     /// The kinds of chat Settings offers a rule for in an app: WhatsApp says which chats are status updates and
-    /// channels; every app's groups are told apart (by the app, else by who writes in them).
+    /// channels; every app's groups are told apart (by the app, else by who writes in them). Mail has no groups, and
+    /// tells newsletters and notifications apart as channels.
     static func kinds(of app: String) -> [ChatKind] {
-        app == "whatsapp" ? [.group, .status, .channel] : [.group]
+        switch app {
+        case "whatsapp": return [.group, .status, .channel]
+        case "mail": return [.channel]
+        default: return [.group]
+        }
     }
 
     /// Whether a chat's kind keeps it quiet in its app, before any per-chat choice. A chat whose kind its app does not

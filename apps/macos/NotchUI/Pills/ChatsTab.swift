@@ -346,7 +346,7 @@ struct ChatsTab: View {
 
     static let readOnOpenKey = "nook.chats.readOnOpen"
     /// The apps Nook can link so that it writes in their chats: through its chat helper, or a bridge of its own.
-    static let linkableApps = ChatHelper.apps.union(["teams", "snapchat"])
+    static let linkableApps = ChatHelper.apps.union(["teams", "snapchat", MailChatData.app])
 
     /// The chat you opened last, kept for the next time the tab opens.
     static var lastOpened: String? {
