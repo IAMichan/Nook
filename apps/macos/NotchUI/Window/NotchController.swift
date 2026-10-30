@@ -132,6 +132,18 @@ final class NotchController {
         refreshMirrors()
         installMonitors()
 
+        // A fullscreen game gets all the clicks: the notch takes none while it is in front (`GameGuard`).
+        GameGuard.shared.onChange = { [weak self] active in
+            guard let self else { return }
+            if active {
+                self.panel?.ignoresMouseEvents = true
+                self.viewModel.pointerChanged(inside: false)
+            } else {
+                self.pointerMoved(force: true)
+            }
+        }
+        GameGuard.shared.start()
+
         // Size changed? Re-evaluate whether pointer is still hovering over shape.
         viewModel.surface.$size
             .removeDuplicates()
@@ -241,7 +253,8 @@ final class NotchController {
             if card.focusesInput { focusField(of: card.id, in: panel) }
         }
         if wantsKeys {
-            guard !panel.isKeyWindow else { return }
+            // Never take the keyboard from a game.
+            guard !panel.isKeyWindow, !GameGuard.shared.active else { return }
             let front = NSWorkspace.shared.frontmostApplication
             if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier { previousApp = front }
             panel.ignoresMouseEvents = false
@@ -661,6 +674,12 @@ final class NotchController {
         PointerWhere.shared.moved()
         // Hidden for a share or meeting: hovering the notch area opens nothing.
         guard let panel, panel.isVisible else { return }
+        // A fullscreen game is in front: the pointer never reaches the notch.
+        if GameGuard.shared.active {
+            if !panel.ignoresMouseEvents { panel.ignoresMouseEvents = true }
+            viewModel.pointerChanged(inside: false)
+            return
+        }
         let mouse = NSEvent.mouseLocation
         // A drag whose gesture never ended (its view went away under the pointer) ends once the button is up.
         if dragStart != nil, NSEvent.pressedMouseButtons & 1 == 0 { dragEnded() }
