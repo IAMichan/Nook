@@ -94,6 +94,35 @@ final class AcpAgentTests: XCTestCase {
                        [.usage(used: 53000, size: 200000, costUSD: 0.42)])
     }
 
+    func testReadsSettleOnceTheAgentMovesOn() {
+        func call(_ id: String, _ kind: String, _ status: String? = "in_progress") -> AcpToolCall {
+            AcpToolCall(id: id, title: "Running view_file", kind: kind, status: status, input: nil, output: "", paths: [])
+        }
+        func done(_ id: String) -> AcpEvent { .toolCallUpdate(call(id, "", "completed")) }
+        // Antigravity 1.3.0 as recorded: a read per step, each closed only when the turn ends.
+        var reads = AcpOpenReads()
+        XCTAssertEqual(reads.settle(after: .toolCall(call("a", "read"))), [])
+        XCTAssertEqual(reads.settle(after: .usage(used: 1, size: 2, costUSD: nil)), [])
+        XCTAssertEqual(reads.settle(after: .toolCall(call("b", "read"))), ["a"], "a later batch means the read came back")
+        XCTAssertEqual(reads.settle(after: .messageChunk(" ")), [])
+        XCTAssertEqual(reads.settle(after: .messageChunk("The first line")), ["b"])
+        XCTAssertEqual(reads.settle(after: done("a")), [])
+
+        // Reads announced together may run side by side; a command is never settled.
+        reads = AcpOpenReads()
+        XCTAssertEqual(reads.settle(after: .toolCall(call("c", "read"))), [])
+        XCTAssertEqual(reads.settle(after: .toolCall(call("d", "read"))), [])
+        XCTAssertEqual(reads.settle(after: .toolCall(call("e", "execute"))), [])
+        XCTAssertEqual(reads.settle(after: done("c")), [])
+        XCTAssertEqual(reads.settle(after: .thoughtChunk("Next")), ["d"])
+
+        // A read the agent closed itself is not settled again.
+        reads = AcpOpenReads()
+        XCTAssertEqual(reads.settle(after: .toolCall(call("f", "read"))), [])
+        XCTAssertEqual(reads.settle(after: done("f")), [])
+        XCTAssertEqual(reads.settle(after: .messageChunk("Done")), [])
+    }
+
     func testRequests() {
         func events(_ line: String) -> [AcpEvent] { AcpMapper.events(AcpRPC.parse(line)!) }
         let permission = events(#"{"jsonrpc":"2.0","id":5,"method":"session/request_permission","params":{"sessionId":"s","toolCall":{"toolCallId":"t2","title":"npm test","kind":"execute"},"options":[{"optionId":"o1","name":"Allow","kind":"allow_once"}]}}"#)

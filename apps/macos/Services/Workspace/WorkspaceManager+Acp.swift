@@ -343,6 +343,9 @@ extension WorkspaceManager {
 
     private func applyAcp(_ id: UUID, _ client: AcpClient, _ events: [AcpEvent]) {
         for event in events {
+            for read in turns[id]?.acpOpenReads.settle(after: event) ?? [] {
+                feed(id, .toolUpdated(id: read, state: .done))
+            }
             switch event {
             case .messageChunk(let text):
                 if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { turns[id]?.acpReplied = true }
