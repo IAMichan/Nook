@@ -15,6 +15,8 @@ final class TextGenerationTests: XCTestCase {
         XCTAssertTrue(pr.contains("write title and body in English"))
         let templated = TextGeneration.pullRequestPrompt(base: "main", head: "feat", commits: "", stat: "", patch: "", template: "## Summary\n")
         XCTAssertTrue(templated.contains("Repository change request template:\n## Summary"))
+        XCTAssertTrue(templated.contains("write 'None'"), "a body without issues still keeps the issues section")
+        XCTAssertTrue(templated.contains("'Not run yet'"), "testing says what ran instead of ticking boxes it cannot know")
     }
 
     func testCommands() {

@@ -79,7 +79,10 @@ enum TextGeneration {
             "- body must be markdown and follow the repository change request template structure",
             "- fill in the template sections appropriately for this change",
             "- drop HTML comments from the template in the generated body",
-            "- keep the template's markdown structure"
+            "- keep the template's markdown structure and every one of its headings, even when a section has little to say",
+            "- under a heading about related or linked issues, list the issues the commits close; when none, write 'None'",
+            "- leave checklist boxes unticked unless the commits show that check was done, and under a testing heading add a line "
+                + "of its own that says what was run, or 'Not run yet' when nothing in the commits shows it"
         ]
         var lines = ["You write source control change request content in English.", "Return a JSON object with keys: title, body.", "Rules:",
                      "- write title and body in English",
