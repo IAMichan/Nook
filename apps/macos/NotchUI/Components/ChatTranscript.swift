@@ -585,6 +585,10 @@ private struct ChatBubbleView: View, Equatable {
             CappedWidth(maximum: Self.maxWidth) {
                 VStack(alignment: bubble.fromMe ? .trailing : .leading, spacing: NookTheme.Spacing.xxs) {
                     content
+                        // A right-click anywhere on the bubble (not the empty room beside it) opens the chevron's own
+                        // menu, also on its selectable text, whose system menu would win from a `.contextMenu`.
+                        // Watched while the bubble is in view, so a right-click without moving the mouse first works.
+                        .onRightClickMenu(enabled: near) { menuItems.entries }
                         .overlay(alignment: .topTrailing) {
                             MessageMenuButton(bubble: bubble, items: menuItems, onPicture: bare)
                                 .padding(NookTheme.Spacing.xs)
@@ -607,9 +611,6 @@ private struct ChatBubbleView: View, Equatable {
             }
         }
         .onHover { hovering = $0 }
-        // A right-click on the message opens the chevron's own menu, also on its selectable text (whose own system
-        // menu would win from a `.contextMenu`).
-        .onRightClickMenu(enabled: hovering) { menuItems.entries }
         .environment(\.chatMediaLive, near)
         .chatNearView($near)
         .task(id: near ? bubble.file : nil) {

@@ -71,8 +71,8 @@ private final class NookMenuAction: NSObject {
 extension View {
     /// A right-click on this view opens `menu` instead of anything under it: selectable text answers a right-click with
     /// the system's own menu (Copy, Look Up, Services) before SwiftUI's `.contextMenu` hears it, so a chat message
-    /// whose text can be selected never showed its own menu. Watches the mouse only while `enabled` (the pointer is on
-    /// the view), so a long chat does not hold a watcher per message.
+    /// whose text can be selected never showed its own menu. Watches the mouse only while `enabled` (the view is in
+    /// sight), so a long chat does not hold a watcher per message.
     func onRightClickMenu(enabled: Bool, _ menu: @escaping () -> [NookMenuEntry]) -> some View {
         background(RightClickReader(enabled: enabled, menu: menu))
     }
