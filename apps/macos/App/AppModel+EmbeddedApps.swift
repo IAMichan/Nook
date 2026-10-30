@@ -56,8 +56,9 @@ extension AppModel {
             NSWorkspace.shared.openApplication(at: target.url, configuration: configuration) { _, _ in }
         } else {
             EmbeddedAppStore.shared.open(target)
-            // One thing beside the chat at a time: the app takes the browser's place.
+            // One thing beside the chat at a time: the app takes the browser's and the terminal's place.
             viewModel.browserBesideChat = false
+            viewModel.terminalBesideChat = nil
             viewModel.embeddedAppOpen = true
         }
         return (target, way, wanted != nil)
@@ -79,6 +80,7 @@ extension AppModel {
         }
         if store.current?.id != owner.id { store.open(owner) }
         viewModel.browserBesideChat = false
+        viewModel.terminalBesideChat = nil
         viewModel.embeddedAppOpen = true
         store.openBeside(url)
         showChat()

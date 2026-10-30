@@ -50,8 +50,15 @@ struct NookChatView: View {
     @AppStorage("nook.chat.listWidth") private var listWidth = PanelLayout.chatList
     @AppStorage("nook.chat.windowListWidth") private var windowListWidth = PanelLayout.chatListWindow
 
-    /// An app or Nook's browser is open next to the chat.
-    private var sideOpen: Bool { embedded.current != nil || viewModel.browserBesideChat }
+    /// The terminal side panel's width, shared with a session's side panel in Agents: one panel, one width.
+    @AppStorage("nook.agents.toolWidth") private var terminalWidth = PanelLayout.tool
+
+    /// An app, Nook's browser or a terminal is open next to the chat.
+    private var sideOpen: Bool { terminalFolder != nil || appSideOpen }
+    /// An app or Nook's browser is open next to the chat, in the split the chat shares with it.
+    private var appSideOpen: Bool { terminalFolder == nil && (embedded.current != nil || viewModel.browserBesideChat) }
+    /// The folder of the terminal open next to the chat (a command the chat ran); it covers an open app until it closes.
+    private var terminalFolder: String? { viewModel.terminalBesideChat }
 
     var body: some View {
         // The same split as the Agents tab: the list on the left, a thin line, the conversation on the right. With an app
@@ -86,9 +93,16 @@ struct NookChatView: View {
                     // In the main window the conversation keeps a readable width, centered in the room beside the list.
                     .frame(maxWidth: compact ? nil : PanelLayout.readableChat)
                     .frame(maxWidth: compact ? nil : .infinity)
-                    .frame(width: sideOpen ? EmbeddedSplit.chatWidth(liveChatWidth ?? chatWidth, total: totalWidth) : nil)
+                    .frame(width: appSideOpen ? EmbeddedSplit.chatWidth(liveChatWidth ?? chatWidth, total: totalWidth) : nil)
                 }
-                if sideOpen {
+                if let terminalFolder {
+                    // The terminal a command of the chat runs in: the side panel a session's terminal has in Agents.
+                    ChatTerminalPanel(directory: terminalFolder) {
+                        withAnimation(NookTheme.reveal) { viewModel.terminalBesideChat = nil }
+                    }
+                    .sidePanel(.trailing, width: $terminalWidth, defaultWidth: PanelLayout.tool, available: totalWidth,
+                               rest: PanelLayout.minimumConversation + PanelSplit.handle)
+                } else if appSideOpen {
                     EmbeddedSplitHandle(
                         onDrag: { offset in
                             let start = dragStartWidth ?? EmbeddedSplit.chatWidth(chatWidth, total: totalWidth)

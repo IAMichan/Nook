@@ -177,13 +177,13 @@ private final class TerminalContainer: NSView {
 
 extension TerminalStore {
     /// The one way Nook's brain touches a shell: it proposes a command, the user approves the whole command in the plan,
-    /// and it runs in a visible terminal in the workspace, so output and errors can be read there. There is no read-only
+    /// and it runs in a visible terminal next to the chat, so output and errors can be read there. There is no read-only
     /// variant and no hidden execution.
     var tools: [ToolSpec] {
         [
             ToolSpec(
                 name: "run_command",
-                description: "Runs a shell command in a visible terminal of Nook's workspace, in an optional folder. Use it only when the user asks for something that needs a command line; the user approves the exact command first and sees its output in the terminal.",
+                description: "Runs a shell command in a visible terminal of Nook, next to the chat, in an optional folder. Use it only when the user asks for something that needs a command line; the user approves the exact command first and sees its output in the terminal.",
                 schema: [
                     "type": "object",
                     "properties": [
@@ -210,7 +210,7 @@ extension TerminalStore {
                     guard FileManager.default.fileExists(atPath: folder, isDirectory: &isDirectory), isDirectory.boolValue else {
                         throw NookError(tr("terminal.tool.noFolder", folder))
                     }
-                    AppModel.shared.openTerminal(in: folder, command: command, title: String(command.prefix(40)))
+                    AppModel.shared.openTerminalBesideChat(in: folder, command: command, title: String(command.prefix(40)))
                     return tr("terminal.tool.started", command)
                 }
             )
@@ -342,6 +342,47 @@ struct SessionTerminalsView: View {
         .onAppear {
             if store.sessions(in: directory).isEmpty { store.open(in: directory) }
         }
+    }
+}
+
+/// The bar under a terminal panel's header, so the tabs keep the panel's full width: the terminal's folder and its
+/// actions. The same beside a session and beside the chat.
+struct SessionTerminalBar: View {
+    let directory: String
+
+    var body: some View {
+        Group {
+            Image(systemName: "folder")
+                .font(NookTheme.font(10, .medium))
+                .foregroundStyle(NookTheme.textTertiary)
+            Text(AgentPathFormat.tilde(directory))
+                .font(NookTheme.mono(11))
+                .foregroundStyle(NookTheme.textTertiary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(directory)
+            Spacer(minLength: NookTheme.Spacing.md)
+            SessionTerminalActions(directory: directory).id(directory)
+        }
+    }
+}
+
+/// A terminal next to the chat (a command the chat ran): the side panel a session's terminal has, with the same header,
+/// folder bar and terminals, so it looks and works the same as in Agents.
+struct ChatTerminalPanel: View {
+    let directory: String
+    let close: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SidePanelHeader(closeHelp: tr("workbench.terminal.close"), close: close) {
+                SidePanelTitle(symbol: SessionTool.terminal.symbol, title: SessionTool.terminal.title)
+            }
+            SidePanelToolbar { SessionTerminalBar(directory: directory) }
+            SessionTerminalsView(directory: directory).id(directory)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 

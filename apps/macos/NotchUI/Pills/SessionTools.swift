@@ -644,7 +644,7 @@ private struct SessionToolPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            if tool == .terminal { SidePanelToolbar { terminalBar } }
+            if tool == .terminal { SidePanelToolbar { SessionTerminalBar(directory: directory) } }
             if tool == .browser, !directory.isEmpty { DevServerStrip(directory: directory) }
             Group {
                 switch tool {
@@ -745,22 +745,6 @@ private struct SessionToolPanel: View {
             return SidePanelTabItem(value: .tool(item), title: item.title, icon: AnyView(SidePanelSymbol(symbol: item.symbol)),
                                     fresh: fresh, help: item.help)
         }
-    }
-
-    /// Under the tabs, so they keep the panel's full width: the terminal's folder and its actions.
-    @ViewBuilder
-    private var terminalBar: some View {
-        Image(systemName: "folder")
-            .font(NookTheme.font(10, .medium))
-            .foregroundStyle(NookTheme.textTertiary)
-        Text(AgentPathFormat.tilde(directory))
-            .font(NookTheme.mono(11))
-            .foregroundStyle(NookTheme.textTertiary)
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .help(directory)
-        Spacer(minLength: NookTheme.Spacing.md)
-        SessionTerminalActions(directory: directory).id(directory)
     }
 
     /// + : the tools to open, each in its own tab (or the tab it already has), in Nook's own dropdown panel.
