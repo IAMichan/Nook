@@ -41,6 +41,9 @@ final class NotchController {
     /// Where the floating notch is while you drag it: right under the pointer, not held inside a screen, so it can be
     /// halfway onto the next one. Saved and fitted into its screen when you let go (`dragEnded`).
     private var dragAnchor: (centerX: CGFloat, top: CGFloat)?
+    /// The drag took the notch onto another screen: on release that screen is remembered. A drag on the same screen
+    /// keeps the choice as it was ("mouse", "auto", "main").
+    private var dragChangedScreen = false
 
     /// Notch on every screen: the other screens show an idle copy. When idle, the real Nook moves
     /// to the screen with the mouse, so you can open it there.
@@ -355,6 +358,7 @@ final class NotchController {
             geometry = NotchGeometry.make(for: target, floating: true)
             viewModel.geometry = geometry
             updateCanvas()
+            dragChangedScreen = true
         }
         positionPanel()
     }
@@ -364,10 +368,12 @@ final class NotchController {
         dragStart = nil
         guard let dropped = dragAnchor else { return }
         dragAnchor = nil
+        let changedScreen = dragChangedScreen
+        dragChangedScreen = false
         settings.floatOffsetX = Double(dropped.centerX - geometry.screenFrame.midX)
         // Y axis runs downward: dragging downward increases distance below menu bar.
         settings.floatOffsetY = max(0, Double(visibleFrame.maxY - dropped.top))
-        if let screen = NSScreen.screens.first(where: { $0.frame == geometry.screenFrame }),
+        if changedScreen, let screen = NSScreen.screens.first(where: { $0.frame == geometry.screenFrame }),
            settings.screenChoice != screen.localizedName {
             settings.screenChoice = screen.localizedName
         }
@@ -512,7 +518,8 @@ final class NotchController {
     private var lastCheckedMouseLocation = NSPoint(x: -10_000, y: -10_000)
 
     private func installMonitors() {
-        let moveMask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged]
+        // The button going up too: a drag whose gesture never ended ends there, also without a move after it.
+        let moveMask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .leftMouseUp]
         if let m = NSEvent.addGlobalMonitorForEvents(matching: moveMask, handler: { [weak self] _ in
             MainActor.assumeIsolated { self?.pointerMoved() }
         }) { monitors.append(m) }

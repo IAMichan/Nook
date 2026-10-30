@@ -674,6 +674,9 @@ private struct NotchResizeHandles: View {
             }
             .overlay(alignment: .bottomLeading) { handle(.bottomLeft, .bottomLeading).frame(width: corner, height: corner) }
             .overlay(alignment: .bottomTrailing) { handle(.bottomRight, .bottomTrailing).frame(width: corner, height: corner) }
+            // Gone mid-drag (the notch closed), the gesture never ends: the drag ends here, or the next one starts from
+            // where this one did.
+            .onDisappear { if viewModel.resizing { viewModel.endResize() } }
     }
 
     private func handle(_ edge: NotchResize.Edge, _ position: FrameResizePosition) -> some View {
@@ -689,9 +692,9 @@ private struct NotchResizeHandles: View {
                 // The view model follows the pointer on the screen: the edge itself, and a floating window, move while
                 // you drag it.
                 DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { _ in
+                    .onChanged { value in
                         if hovered != edge { hovered = edge }
-                        viewModel.resize(edge)
+                        viewModel.resize(edge, translation: value.translation)
                     }
                     .onEnded { _ in viewModel.endResize(); hovered = nil }
             )

@@ -1001,7 +1001,8 @@ final class NotchViewModel: ObservableObject {
 
     /// Measured from the pointer on the screen, not in the window: a floating notch held inside its screen moves its
     /// window while it grows, and a translation in window coordinates then ran away from the pointer and back.
-    func resize(_ edge: NotchResize.Edge) {
+    /// `translation`: the gesture's own (window points, y down), only used to find where the drag started on the screen.
+    func resize(_ edge: NotchResize.Edge, translation gesture: CGSize) {
         let base: CGSize
         let card: Bool
         switch state {
@@ -1016,7 +1017,10 @@ final class NotchViewModel: ObservableObject {
         resizing = true
         autoCloseTask?.cancel()
         let mouse = NSEvent.mouseLocation
-        let start = resizeStart ?? (extra: card ? cardExtra : panelExtra, mouse: mouse)
+        // The first change comes after the pointer already moved a little: the drag started where it was then. The
+        // window has not moved yet, so the gesture's translation still holds on the screen.
+        let start = resizeStart ?? (extra: card ? cardExtra : panelExtra,
+                                    mouse: NSPoint(x: mouse.x - gesture.width, y: mouse.y + gesture.height))
         resizeStart = start
         // Screen points with y down, as `NotchResize` takes them.
         let translation = CGSize(width: mouse.x - start.mouse.x, height: start.mouse.y - mouse.y)
