@@ -48,6 +48,9 @@ final class ChatCaptureService: ObservableObject {
     /// Chats read in their own app (on the phone, in the app on this Mac) since Nook last read them: what Nook still had
     /// waiting for them goes.
     var onReadElsewhere: ([String]) -> Void = { _ in }
+    /// The chats on screen or waiting in line as a card (their keys in `inbox`): their apps are read quickly meanwhile,
+    /// so a card follows its chat as fast for every app as WhatsApp's linked phone brings it.
+    var watching: () -> Set<String> = { [] }
     /// Only a message this recent is news; older ones that come in (a first look, a long sleep) are for the Chats tab.
     static let newsWindow: TimeInterval = 600
 
@@ -380,6 +383,22 @@ final class ChatCaptureService: ObservableObject {
 
     /// Time between the quick reads after a bridged app's notification.
     private static let nudgeGap: TimeInterval = 5
+    /// Time between two reads at most of an app with a chat card up: its card shows a new message soon, also for an app
+    /// that is otherwise read once a minute (Slack, Teams) and without its notifications. Not shorter: one Slack read
+    /// asks for up to a dozen conversations, and Slack allows about fifty a minute.
+    private static let watchGap: TimeInterval = 20
+
+    /// The apps of the chats with a card up.
+    private func watchedApps() -> Set<String> {
+        let ids = watching()
+        guard !ids.isEmpty else { return [] }
+        return Set(ids.compactMap { inbox.threads[$0]?.app })
+    }
+
+    /// Whether a bridge reads the app of a chat with a card up.
+    private func watches(_ bridge: ChatBridge, _ apps: Set<String>) -> Bool {
+        bridge === serviceBridge ? !apps.isDisjoint(with: serviceBridge.covered) : apps.contains(bridge.app)
+    }
 
     /// Something was sent from Nook to a bridged app's chat: its bridge reads now, and twice more shortly after, so the
     /// message shows in the chat.
@@ -388,7 +407,8 @@ final class ChatCaptureService: ObservableObject {
     /// A notification of a bridged app came in: its bridge reads now, and twice more shortly after.
     private func nudge(_ app: String) {
         // A bridge that keeps failing waits out its backoff: a nudge would otherwise ask a refusing service every second.
-        for bridge in bridges where bridge.app == app && bridgeFailures[bridge.bridgeID] == nil {
+        // The chat helper reads the apps it covers: a notification of one of them nudges it, as any other bridge.
+        for bridge in bridges where watches(bridge, [app]) && bridgeFailures[bridge.bridgeID] == nil {
             bridgeDue[bridge.bridgeID] = nil
             bridgeNudges[bridge.bridgeID] = 3
         }
@@ -421,6 +441,7 @@ final class ChatCaptureService: ObservableObject {
     /// answer) never holds up the others, so a message in a quick one shows the moment it is there.
     func pollBridges() async {
         var started: [Task<Void, Never>] = []
+        let watched = watchedApps()
         for bridge in bridges {
             // Each write to these fires `objectWillChange`, which redraws every chat view: write only what changed, so a
             // quiet tick every second costs no redraw.
@@ -444,7 +465,8 @@ final class ChatCaptureService: ObservableObject {
             if let due = bridgeDue[id], due > Date() { continue }
             let nudges = bridgeNudges[id] ?? 0
             bridgeNudges[id] = nudges > 1 ? nudges - 1 : nil
-            bridgeDue[id] = Date().addingTimeInterval(nudges > 1 ? min(bridge.interval, Self.nudgeGap) : bridge.interval)
+            let interval = watches(bridge, watched) ? min(bridge.interval, Self.watchGap) : bridge.interval
+            bridgeDue[id] = Date().addingTimeInterval(nudges > 1 ? min(interval, Self.nudgeGap) : interval)
             reading.insert(id)
             started.append(Task { await self.read(bridge) })
         }

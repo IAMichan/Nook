@@ -55,7 +55,7 @@ needs a column in that matrix.
 | Photo caption in the chat list | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (the list shows a status, not the message) |
 | People by name, not by number | ✓ (your Contacts, then `/user/my/contacts`) | ✓ (your Contacts, then `/contacts`) | ✓ (Contacts) | ✓ (Telegram's names) | ✓ (the network's names) | ✓ | ✓ | ✓ (Snapchat's names) |
 | Opened chat read from the app at once | ✓ (the chat's history) | ✓ (the chat's history) | ✓ | ✓ | ✓ (that chat read again) | ✓ | ✓ | ✓ |
-| Notch card follows its chat live | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Notch card follows its chat live (its app read at least every 20 s while the card is up or waits, `ChatCaptureService.watching`) | ✓ (live) | ✓ (live) | ✓ (every 2 s) | ✓ (every 3 s) | ✓ (live line, else every 10 s) | ✓ (every 20 s, else 60 s) | ✓ (every 20 s, else 60 s) | ✓ (every 20 s, else 30 s) |
 | Shared links shown short (`[url](url)` → `site/path`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Edit, delete and info from the message's ⌄ menu (↑ in an empty field edits) | ✓ (when the gateway can) | ✓ (when the gateway can) | – from Nook (Messages lets no other app edit); an edit or unsend made in Messages shows (`date_edited`, `date_retracted`) | ✓ | ✓ (where the network allows it) | ✓ | ✓ | – (the website takes only new text) |
 | Link previews and embeds (picture, video, sound, page card) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
