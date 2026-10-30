@@ -122,7 +122,10 @@ struct PanelView: View {
         }
         .animation(NookTheme.reveal, value: searching)
         .background {
-            // Same guard as ⌘K below: never flip the search unseen while a sheet covers the tab.
+            // Native shortcuts for ⌘K and ⇧⌘F: never flip the search unseen while a sheet covers the tab.
+            Button("") { searching.toggle() }.keyboardShortcut("k", modifiers: [.command])
+                .disabled(sheet != nil || app.demoMode)
+                .opacity(0).accessibilityHidden(true)
             Button("") { searching.toggle() }.keyboardShortcut("f", modifiers: [.command, .shift])
                 .disabled(sheet != nil || app.demoMode)
                 .opacity(0).accessibilityHidden(true)

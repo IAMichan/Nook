@@ -11,7 +11,7 @@ struct SearchPanel: View {
     let select: (PanelTab) -> Void
     let close: () -> Void
 
-    @StateObject private var center = SearchCenter()
+    @ObservedObject private var center = SearchCenter.shared
     /// Contact photos for chat results, as the Chats tab shows them.
     @ObservedObject private var photos = ContactPhotos.shared
     @State private var text = ""
@@ -81,10 +81,9 @@ struct SearchPanel: View {
         .shadow(color: .black.opacity(0.5), radius: 24, y: 8)
         .focusOnAppear($focused)
         .onAppear {
-            center.load(app)
-            photos.refresh()
+            center.prepareOpen(app)
         }
-        .onDisappear { center.cancel() }
+        .onDisappear { center.cancelSearch() }
         .onChange(of: text) { _, value in
             index = 0
             center.search(value)

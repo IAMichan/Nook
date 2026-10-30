@@ -6,6 +6,8 @@ import Combine
 /// from disk once and kept (by when the session last changed), so opening search again is instant.
 @MainActor
 final class SearchCenter: ObservableObject {
+    static let shared = SearchCenter()
+
     @Published private(set) var hits: [SearchHit] = []
     @Published private(set) var query = SearchQuery()
     /// The text the hits are for.
@@ -18,6 +20,7 @@ final class SearchCenter: ObservableObject {
     private var text = ""
     private var searchTask: Task<Void, Never>?
     private var indexTask: Task<Void, Never>?
+    private var loadedAt: Date?
 
     /// Session passages read from disk, by session, with the `updatedAt` they were read at.
     private static var transcripts: [UUID: (updated: Date, passages: [SearchPassage])] = [:]
@@ -27,15 +30,23 @@ final class SearchCenter: ObservableObject {
     static let limit = 200
 
     /// Collects every document and indexes them; the sessions' transcripts on disk follow in a second pass.
-    func load(_ app: AppModel) {
+    func load(_ app: AppModel, force: Bool = false) {
+        if let loadedAt, !force, !index.isEmpty, Date().timeIntervalSince(loadedAt) < 30 {
+            return
+        }
         indexTask?.cancel()
-        let documents = app.searchDocuments(transcripts: Self.transcripts.mapValues { $0.passages })
-        indexing = true
+        if index.isEmpty {
+            indexing = true
+        }
+        let transcripts = Self.transcripts.mapValues { $0.passages }
         indexTask = Task { [weak self] in
+            let documents = app.searchDocuments(transcripts: transcripts)
+            guard !Task.isCancelled else { return }
             let first = await Task.detached(priority: .userInitiated) { SearchIndex(documents) }.value
             guard let self, !Task.isCancelled else { return }
             self.index = first
-            self.rerun()
+            self.loadedAt = Date()
+            if !self.text.isEmpty { self.rerun() }
             // The transcripts that are not in memory, read once and kept; a session that was deleted lets go of its own.
             let known = Set(app.workspace.runs.map(\.id))
             Self.transcripts = Self.transcripts.filter { known.contains($0.key) }
@@ -47,18 +58,44 @@ final class SearchCenter: ObservableObject {
             }
             guard !missing.isEmpty, !Task.isCancelled else { self.indexing = false; return }
             let full = app.searchDocuments(transcripts: Self.transcripts.mapValues { $0.passages })
-            let complete = await Task.detached(priority: .utility) { SearchIndex(full) }.value
             guard !Task.isCancelled else { return }
+            let complete = await Task.detached(priority: .utility) { SearchIndex(full) }.value
+            guard let self, !Task.isCancelled else { return }
             self.index = complete
+            self.loadedAt = Date()
             self.indexing = false
-            self.rerun()
+            if !self.text.isEmpty { self.rerun() }
         }
+    }
+
+    /// Prepares state when opening search panel.
+    func prepareOpen(_ app: AppModel) {
+        reset()
+        load(app)
+    }
+
+    /// Resets the active search query and results without throwing away the index.
+    func reset() {
+        text = ""
+        searchTask?.cancel()
+        query = SearchQuery()
+        hits = []
+        searched = ""
+    }
+
+    /// Cancels search typing debounce without interrupting indexing.
+    func cancelSearch() {
+        searchTask?.cancel()
     }
 
     /// What the field holds now: scored after a short pause, so a burst of keystrokes is one search.
     func search(_ text: String) {
         self.text = text
         searchTask?.cancel()
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            reset()
+            return
+        }
         let pause: UInt64 = text.count <= 2 ? 30_000_000 : 110_000_000
         searchTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: pause)
