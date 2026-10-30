@@ -35,11 +35,17 @@ fn watch_fullscreen(app: &AppHandle) {
     let app = app.clone();
     let _ = std::thread::Builder::new().name("nook-fullscreen".into()).spawn(move || loop {
         std::thread::sleep(std::time::Duration::from_millis(750));
-        let Some(bar) = app.get_webview_window(BAR) else { continue };
-        let pass = !PANEL_OPEN.load(Ordering::Relaxed) && fullscreen_app_in_front() && !bar.is_focused().unwrap_or(false);
-        if pass != CLICKS_PASS.load(Ordering::Relaxed) {
-            set_clicks_pass(&bar, pass);
-        }
+        let fullscreen = fullscreen_app_in_front();
+        let handle = app.clone();
+        // Decided and applied on the main thread, in order with the panel opening (`bar_expand` runs there), so a
+        // click-through queued from here can never land after the open panel turned it off.
+        let _ = app.run_on_main_thread(move || {
+            let Some(bar) = handle.get_webview_window(BAR) else { return };
+            let pass = fullscreen && !PANEL_OPEN.load(Ordering::Relaxed) && !bar.is_focused().unwrap_or(false);
+            if pass != CLICKS_PASS.load(Ordering::Relaxed) {
+                set_clicks_pass(&bar, pass);
+            }
+        });
     });
 }
 
