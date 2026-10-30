@@ -14,7 +14,7 @@ extension AppModel {
         var map: [String: String] = [:]
         for run in workspace.runs {
             guard let current = run.providerSessionID, !current.isEmpty else { continue }
-            for earlier in run.conversation?.earlierSessions ?? [] {
+            for earlier in run.earlierConversations {
                 map["\(run.provider.displayName)|\(earlier)"] = current
             }
         }
@@ -252,7 +252,7 @@ struct SessionListsCache {
         static func run(_ r: WorkspaceRun) -> String {
             "\(r.id)|\(r.archived)|\(r.status)|\(r.provider.displayName)|\(r.profileID)|\(r.providerSessionID ?? "")|"
                 + "\(r.workingDirectory)|\(r.title)|\(r.updatedAt.timeIntervalSinceReferenceDate)|"
-                + (r.conversation?.earlierSessions ?? []).joined(separator: ",")
+                + r.earlierConversations.joined(separator: ",")
         }
     }
 
