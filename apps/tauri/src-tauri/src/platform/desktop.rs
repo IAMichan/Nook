@@ -4,6 +4,8 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use crate::state::AppState;
 
 pub const BAR: &str = "bar";
@@ -21,7 +23,54 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     create_bar(app)?;
     create_tray(app)?;
     register_shortcuts(app);
+    watch_fullscreen(app);
     Ok(())
+}
+
+/// While a game or another app runs full screen, clicks pass through the closed bar to that app, so a click near the
+/// top of the screen never lands on Nook by accident. The open panel (from a shortcut, the tray or a message that opens
+/// it) and a focused bar always take clicks.
+#[cfg(windows)]
+fn watch_fullscreen(app: &AppHandle) {
+    let app = app.clone();
+    let _ = std::thread::Builder::new().name("nook-fullscreen".into()).spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(750));
+        let fullscreen = fullscreen_app_in_front();
+        let handle = app.clone();
+        // Decided and applied on the main thread, in order with the panel opening (`bar_expand` runs there), so a
+        // click-through queued from here can never land after the open panel turned it off.
+        let _ = app.run_on_main_thread(move || {
+            let Some(bar) = handle.get_webview_window(BAR) else { return };
+            let pass = fullscreen && !PANEL_OPEN.load(Ordering::Relaxed) && !bar.is_focused().unwrap_or(false);
+            if pass != CLICKS_PASS.load(Ordering::Relaxed) {
+                set_clicks_pass(&bar, pass);
+            }
+        });
+    });
+}
+
+#[cfg(not(windows))]
+fn watch_fullscreen(_app: &AppHandle) {}
+
+/// Whether the bar lets clicks through right now.
+static CLICKS_PASS: AtomicBool = AtomicBool::new(false);
+
+/// Whether the bar shows its open panel, even without focus.
+static PANEL_OPEN: AtomicBool = AtomicBool::new(false);
+
+fn set_clicks_pass(bar: &tauri::WebviewWindow, pass: bool) {
+    if bar.set_ignore_cursor_events(pass).is_ok() {
+        CLICKS_PASS.store(pass, Ordering::Relaxed);
+    }
+}
+
+/// Windows' own answer to "is a full-screen app in front?": a Direct3D game in exclusive full screen, a borderless
+/// full-screen window (most games, a video, a slideshow) or presentation mode.
+#[cfg(windows)]
+fn fullscreen_app_in_front() -> bool {
+    use windows::Win32::UI::Shell::{SHQueryUserNotificationState, QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN};
+    unsafe { SHQueryUserNotificationState() }
+        .is_ok_and(|state| state == QUNS_BUSY || state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_PRESENTATION_MODE)
 }
 
 fn create_bar(app: &AppHandle) -> tauri::Result<()> {
@@ -52,7 +101,12 @@ pub fn place_bar(app: &AppHandle, expanded: bool) {
 
 /// Like [`place_bar`]; `notice` widens the closed bar for a compact agent notice.
 pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool) {
+    PANEL_OPEN.store(expanded, Ordering::Relaxed);
     let Some(window) = app.get_webview_window(BAR) else { return };
+    if expanded {
+        // Over a full-screen game the closed bar lets clicks through; the open panel must take them right away.
+        set_clicks_pass(&window, false);
+    }
     let settings = app.state::<AppState>().settings();
     let (w, h) = if !expanded && notice {
         NOTICE
