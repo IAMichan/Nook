@@ -410,8 +410,10 @@ struct ChatsTab: View {
             photos.refresh()
         }
         // The pictures of the chats in the list whose app gives them on request, newest first, as their app shows them.
-        // Again once a linked account's list of chats came in.
+        // Again once a linked account's list of chats came in. Only once the switch to this tab has settled, as on Agents.
         .task(id: whatsApp.connected.map { "\($0.account) \($0.knownChats.count)" }.joined(separator: ",")) {
+            try? await Task.sleep(for: NookTheme.tabSettle)
+            guard !Task.isCancelled else { return }
             await app.loadChatAvatars(all)
         }
         // ⌘⇧[ and ⌘⇧] go to the chat above or below in the list, as they go through sessions on Agents.

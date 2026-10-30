@@ -229,6 +229,10 @@ enum NookTheme {
     static let close = Animation.spring(duration: 0.3, bounce: 0)
     /// Tab switching within the same panel: tighter, and without overshoot so the content does not wobble.
     static let swap = Animation.spring(duration: 0.28, bounce: 0)
+    /// The new tab's content fading in once you switch: short, so the tab is there almost at once.
+    static let tabFade = Animation.easeOut(duration: 0.14)
+    /// How long a tab waits before work that redraws the whole app (a refresh on opening it), so the switch is over first.
+    static let tabSettle: Duration = .milliseconds(320)
     /// Hover feedback on buttons and chips: quick and settled.
     static let hover = Animation.spring(duration: 0.2, bounce: 0)
     /// Showing or hiding part of a panel: a section that expands, a preview or side panel, a selection that changes.

@@ -49,9 +49,14 @@ struct PanelView: View {
                         .padding(.leading, headerInset)
                 }
                 HStack(alignment: .top, spacing: 0) {
+                    // Switching tabs: the old tab goes at once and the new one fades in on its own, outside the spring that
+                    // moves the tab capsule and resizes the panel. In that spring the old and the new tab were both on
+                    // screen and laid out on every frame, and every change the new tab made as it appeared (its width, its
+                    // lists) was animated too: that was the lag between Nook, Agents, Chats and Music.
                     content
                         .id(tab)
-                        .transition(.opacity.combined(with: .offset(y: 6)))
+                        .transition(.asymmetric(insertion: .opacity.animation(NookTheme.tabFade), removal: .identity))
+                        .transaction(value: tab) { $0.animation = nil }
                         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     if let side = splitTab {
                         PanelSplitPane(viewModel: viewModel, tab: side, inWindow: inWindow, swap: { swapSplit(side) })
