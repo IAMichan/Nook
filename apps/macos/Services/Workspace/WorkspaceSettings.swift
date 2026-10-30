@@ -159,7 +159,8 @@ final class WorkspaceSettings: ObservableObject {
         // On by default: a merged session's worktree (with its build, often several GB) is otherwise never removed. Git
         // still refuses a worktree with uncommitted changes, and the branch stays.
         worktreeCleanupOnMerge = defaults.object(forKey: "ws.worktreeCleanupOnMerge") as? Bool ?? true
-        worktreeCleanupDays = defaults.object(forKey: "ws.worktreeCleanupDays") as? Int ?? 0
+        // A week after a session settled (finished or archived, and quiet) its worktree goes too, under the same rules.
+        worktreeCleanupDays = defaults.object(forKey: "ws.worktreeCleanupDays") as? Int ?? 7
         showCost = defaults.object(forKey: "ws.showCost") as? Bool ?? true
         agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true
         codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true

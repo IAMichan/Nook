@@ -56,6 +56,8 @@ struct WorktreeRow: Identifiable, Equatable {
     var ahead: Int?
     var behind: Int?
     var baseBranch: String?
+    /// Disk the worktree takes, its builds included; nil for the main checkout.
+    var bytes: Int64?
     var id: String { worktree.path }
 }
 
@@ -2023,6 +2025,7 @@ final class WorkspaceManager: ObservableObject {
                     var row = WorktreeRow(repoRoot: repo, worktree: worktree, runIDs: linked.map(\.id))
                     if FileManager.default.fileExists(atPath: worktree.path) {
                         row.changedFiles = git.changedFileCount(worktree.path)
+                        if !worktree.isMain { row.bytes = DiskUsage.allocatedSize(of: worktree.path) }
                         let base = linked.compactMap(\.baseBranch).first
                         row.baseBranch = base
                         if let base, let divergence = git.divergence(worktree.path, base: base) {

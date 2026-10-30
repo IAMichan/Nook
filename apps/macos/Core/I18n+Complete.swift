@@ -676,6 +676,8 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "ws.worktree.removeTitle": "Worktree entfernen?",
         "ws.worktrees.col.branch": "Branch",
         "ws.worktrees.col.changes": "Änderungen",
+        "ws.worktrees.col.size": "Größe",
+        "ws.worktrees.total": "%@ auf der Festplatte",
         "ws.worktrees.col.session": "Sitzung",
         "ws.worktrees.col.worktree": "Worktree",
         "ws.worktrees.emptyMessage": "Starte eine Sitzung mit „Neuer Git-Worktree“, damit Agents nebeneinander arbeiten, ohne sich gegenseitig die Dateien anzufassen.",

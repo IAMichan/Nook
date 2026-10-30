@@ -25,6 +25,10 @@ extension WorkspaceManager {
         } catch {
             return nil
         }
+        // The server's TMPDIR is ours, and unlike the system's nothing ever empties it: whatever it ran there (builds,
+        // test packages of several hundred MB) stays. Remove what has not been touched for two days.
+        let temp = paths.temp
+        Task.detached(priority: .utility) { DiskUsage.purge(temp, olderThan: 2 * 86_400) }
         return AntigravityAcp.environment(profile: profile.path, harness: harness, browserHelper: paths.browserHelper.path,
                                           temp: paths.temp.path)
     }
