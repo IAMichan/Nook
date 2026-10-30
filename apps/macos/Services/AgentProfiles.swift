@@ -168,12 +168,15 @@ final class AgentProfileStore: ObservableObject {
     @Published private(set) var all: [AgentProfile] = []
     /// Default account per agent for launching sessions and background thinking.
     @Published private(set) var preferred: [AgentKind: String] = [:]
+    /// The account Nook's own brain thinks through per agent, picked in the chat's model picker; else `preferred`.
+    @Published private(set) var brainPreferred: [AgentKind: String] = [:]
 
     private static let profilesKey = "agentProfiles"
     private static let preferredKey = "agentPreferredProfiles"
+    private static let brainPreferredKey = "agentBrainProfiles"
     /// Folders of accounts you removed from Nook: never adopted again automatically.
     private static let dismissedKey = "agentDismissedHomes"
-    /// Read by ClaudeCodeBrain across threads: config dir of preferred Claude account.
+    /// Read by ClaudeCodeBrain across threads: config dir of the Claude account the brain thinks through.
     nonisolated static let brainHomeKey = "claudeBrainConfigDir"
 
     init() {
@@ -196,6 +199,11 @@ final class AgentProfileStore: ObservableObject {
                 if let kind = AgentKind(rawValue: key), result.contains(where: { $0.id == value }) { preferred[kind] = value }
             }
         }
+        if let raw = defaults.dictionary(forKey: Self.brainPreferredKey) as? [String: String] {
+            for (key, value) in raw {
+                if let kind = AgentKind(rawValue: key), result.contains(where: { $0.id == value }) { brainPreferred[kind] = value }
+            }
+        }
         syncBrainHome()
     }
 
@@ -214,6 +222,16 @@ final class AgentProfileStore: ObservableObject {
 
     func preferredProfile(_ kind: AgentKind) -> AgentProfile {
         preferred[kind].flatMap(profile(id:)) ?? profile(id: kind.rawValue) ?? .defaultProfile(kind)
+    }
+
+    /// The account Nook's brain thinks through for an agent: the one picked for it, else the agent's default.
+    func brainProfile(_ kind: AgentKind) -> AgentProfile {
+        brainPreferred[kind].flatMap(profile(id:)) ?? preferredProfile(kind)
+    }
+
+    func setBrainProfile(_ profile: AgentProfile) {
+        brainPreferred[profile.kind] = profile.id
+        save()
     }
 
     func isPreferred(_ profile: AgentProfile) -> Bool {
@@ -276,6 +294,7 @@ final class AgentProfileStore: ObservableObject {
         dismissed.insert(AgentProfile.normalize(profile.homeURL.path))
         Keychain.write("", account: profile.keychainAccount)
         if preferred[profile.kind] == id { preferred[profile.kind] = nil }
+        if brainPreferred[profile.kind] == id { brainPreferred[profile.kind] = nil }
         save()
     }
 
@@ -376,11 +395,12 @@ final class AgentProfileStore: ObservableObject {
         let defaults = UserDefaults.standard
         if let data = try? JSONEncoder().encode(all) { defaults.set(data, forKey: Self.profilesKey) }
         defaults.set(Dictionary(uniqueKeysWithValues: preferred.map { ($0.key.rawValue, $0.value) }), forKey: Self.preferredKey)
+        defaults.set(Dictionary(uniqueKeysWithValues: brainPreferred.map { ($0.key.rawValue, $0.value) }), forKey: Self.brainPreferredKey)
         syncBrainHome()
     }
 
     private func syncBrainHome() {
-        let claude = preferredProfile(.claude)
+        let claude = brainProfile(.claude)
         if let home = claude.home {
             UserDefaults.standard.set(home, forKey: Self.brainHomeKey)
         } else {

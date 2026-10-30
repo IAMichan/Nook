@@ -66,7 +66,7 @@ enum SubscriptionBrain {
     static func isSignedIn(_ provider: AIProvider) -> Bool {
         if let kind = provider.subscriptionAgent {
             let app = AppModel.shared
-            return app.history.profileAccounts[app.profiles.preferredProfile(kind).id] != nil
+            return app.history.profileAccounts[app.profiles.brainProfile(kind).id] != nil
         }
         switch provider {
         case .vibeCLI:
@@ -115,8 +115,8 @@ enum SubscriptionBrain {
             }
             let searches = allowWebSearch && provider.cliSearchesWeb
             let fullSystem = system + "\n\n" + SubscriptionBrain.protocolText(tools, allowWebSearch: searches)
-            // The account chosen as default under Settings › Agents, for the agents Nook runs.
-            let extra = provider.subscriptionAgent.map { AppModel.shared.profiles.preferredProfile($0).environment } ?? [:]
+            // The account picked for the brain in the chat's model picker, else the default under Settings › Agents.
+            let extra = provider.subscriptionAgent.map { AppModel.shared.profiles.brainProfile($0).environment } ?? [:]
             var environment = AgentCommand.environment(base: ProcessInfo.processInfo.environment, executable: path, extra: extra)
             // Nook's own thinking: the agent's hooks, if any, leave it out of the notch.
             environment["NOOK_INTERNAL"] = "1"
@@ -448,6 +448,11 @@ extension AIProvider {
         case .grokCLI: return .grok
         default: return nil
         }
+    }
+
+    /// The provider that thinks through an agent's own login, nil for an agent the brain cannot think through.
+    static func subscription(for kind: AgentKind) -> AIProvider? {
+        allCases.first { $0.subscriptionAgent == kind }
     }
 
     /// Whether the agent may search the web for Nook when the Web source is allowed.
