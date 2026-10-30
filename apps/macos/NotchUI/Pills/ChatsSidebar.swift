@@ -260,6 +260,7 @@ private struct ChatsSidebarRow<Glyph: View>: View {
             .frame(maxWidth: .infinity, minHeight: 30, alignment: compact ? .center : .leading)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
                 .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+            .selectionMark(selected)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

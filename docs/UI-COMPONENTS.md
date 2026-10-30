@@ -15,6 +15,7 @@ copying it again.
 | `NookTheme.mint`, `amber`, `coral`, `violet`, `iris` | State: done, waiting on you, error, merged, Nook itself |
 | `NookTheme.Syntax.keyword`, `string`, `comment`, `number`, `type`, `property`, `tag`, `attribute` | Syntax colors of code in a diff (`DiffText`, via `DiffSyntaxStyle`) and in the file viewer (`FileViewer`), muted under the diff's own tints; each has a dark and a light value. Only for code, never for state |
 | `NookTheme.rowRest`, `rowHover`, `rowSelected`, `rowFill(selected:hovering:rest:)` | List rows and cards at rest, under the pointer, and selected |
+| `.selectionMark(_:)` | The accent bar at the leading edge of the selected row of a list (Agents, Chats, pull requests), on top of `rowSelected`, so where you are never depends on the fill alone |
 | `NookTheme.TextStyle.caption`, `detail`, `label`, `body`, `strong`, `title`, `heading`, `display`, `code` | The type scale: the same kind of text is the same size everywhere. `detail` is the line under a title (a setting's explanation, a hint, an error); `heading` heads a sheet or a setup step. Never SwiftUI's own `.caption`, `.callout`, or `.headline` |
 | `NookTheme.font(_:_:)`, `mono(_:_:)`, `rounded(_:_:)` | A size the scale does not cover (an icon, a numeral); never `Font.system(size:)` inline |
 | `NookTheme.Radius.chip`, `control`, `card`, `panel`, `sheet`, `pill` | Corner radii: 6, 8, 10, 12, 14, 20. Name the element, not the number |
@@ -36,8 +37,10 @@ informs without shouting; motion settles without overshoot. When you add a view:
   action is filled.
 - Words before chrome: a title, one line under it, and nothing in uppercase or tracked.
 
-The dark theme reads calm because it uses so little: a pure grey ramp (canvas `#0A0A0A`, raised surfaces about 3 % lighter, no blue cast), separation by tonal steps
-and faint white fills instead of grey panels or lines, and color only where it carries meaning. In practice:
+The dark theme reads calm because it uses so little: a pure grey ramp (canvas `#0A0A0A`, raised surfaces about 4–8 % lighter, no blue cast), separation by tonal steps
+and faint white fills instead of grey panels or lines, and color only where it carries meaning. Calm never costs
+clarity: every text color, `textTertiary` included, reads at WCAG AA (4.5:1 or more) on every surface up to `smoke`,
+and a selected row stands a full step above a hovered one with a `selectionMark` at its edge. In practice:
 
 - **Color means state, nothing else.** A status mark and its word, an error, a diff's `+`/`−` in the diff itself, and
   links (`NookTheme.blue`, no underline). Headers, composer controls, menus, bubbles, tool rows and counters stay grey.
@@ -57,6 +60,13 @@ and faint white fills instead of grey panels or lines, and color only where it c
   the round send button 8 pt from the corner (a one-line box is a 48 pt capsule). Your own message is a soft
   `NookTheme.bubble` with `Radius.bubble` and no edge; the agent's answer has no bubble, its running text in
   `textStrong` (a step under the headings in `paper`) with relaxed line spacing.
+- **One message component.** Every conversation (the Nook chat, a session Nook runs, an agent's own transcript, and
+  the iPhone's chat and transcripts) draws its messages with `TranscriptUserMessage` and `TranscriptReply`: the same
+  14 pt text, the same `TranscriptStyle.turnGap` above each of your messages, and the same footer (time and copy, plus
+  an answer's own actions such as try again) on hover. The work between the messages is one set of views too
+  (`TranscriptWork.swift`), whether Nook runs the session or it comes from the agent's own transcript. In an agent's conversation, one Nook runs or one from its own
+  transcript, only the final answer of a turn has the footer, the turn's changed files sit inside that answer above
+  it, and the newest answer's options can be clicked. Never draw a message bubble or an answer of your own.
 
 ## Keeping it one design
 
@@ -145,6 +155,8 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | --- | --- | --- |
 | `NookPrimaryButton`, `SmallPrimaryButton`, `NookGhostButton`, `SmallGhostButton` | `NookButtons.swift` | Text buttons on cards, in chat, and in the panel's own forms (optional SF Symbol before the title). They dim by themselves when `.disabled`; do not add an `.opacity` for it. Inside the panel use these, not `.borderedProminent` |
 | `NookNotice`, `NookNoticeEnd`, `NoticeClock` | `NookNotice.swift` | The one shape of every short notice: the strips under the notch (result, suggestion, moment), `PanelNoticeBar` and the toast. Mark, message and line, its actions, and with `countdown` the OK with its ring. `NookNoticeEnd` is that end (actions + OK with ring) on its own, shared by `NookNotice`, the compact agent notice in the notch's row and a card with an OK; `NoticeClock` runs the same time out and holds while the pointer is on the notice |
+| `TranscriptUserMessage`, `TranscriptReply`, `TranscriptMessageFooter`, `TranscriptTime`, `TranscriptStyle` | `TranscriptMessage.swift` | The messages of every conversation: yours as a bubble on the right (pictures above it, a long one folded, a steer mark), the answer as Markdown on the left with what came with it in `extras` (a chart, a mail, a turn's changed files) and its own `actions` in the hover footer. Used by `ChatMessageView` (Nook chat), `EventRow` (a session Nook runs) and `TranscriptConversation` (an agent's transcript); the iPhone has the same two views in `TranscriptViews.swift` |
+| `TranscriptWorkLine`, `TranscriptThought`, `TranscriptStepDetail`, `TranscriptWorkGroup`, `TranscriptFold`, `TranscriptFoldLine`, `TranscriptWorkingLine`, `TranscriptLiveLine`, `TranscriptStepText`, `TranscriptSymbols` | `TranscriptWork.swift` | The agent's work between the messages, the same in a session Nook runs (`EventRow`, `ToolRow`, `TimelineBlockView`) and in an agent's own transcript (`TranscriptConversation`): a step as a verb and what it was done to, a thought's headline, steps in a row behind one sentence, a finished turn folded under "Worked for …", "Working for …" under your message and the live line at the end. A `RunEvent` becomes a step with `AgentToolStep(event:)` |
 | `NookAcknowledgeButton`, `CountdownRing` | `NookButtons.swift` | The white "OK" that closes a notice at once, with a ring counting down until it closes by itself (card `acknowledge` + `countdown`, compact strip) |
 | `NookActionBar` | `NookButtons.swift` | A notice's own actions (`NookNoticeAction`) in one dark bar with thin dividers, next to its OK; drawn by `NookNoticeEnd`, never placed by hand |
 | `NookNoticeActions`, `NookNoticeAction` | `NookNoticeActions.swift` | The button row at the bottom of every notification (cards, approvals, questions, panel notices): main action and its "not now" in one pill (`NookSplitButton`), muted extras, rarer actions in a "…" menu (`NookMoreMenu`), optional mic. Use it for any new notification instead of loose buttons |

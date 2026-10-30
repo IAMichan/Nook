@@ -218,7 +218,8 @@ struct ChatView: View {
     }
 }
 
-/// A message in a Nook chat: yours in a soft grey bubble, Nook's as open text under its mark, as in the notch.
+/// A message in a Nook chat, on the same `TranscriptUserMessage` and `TranscriptReply` as an agent's conversation, so
+/// both read alike, as on the Mac.
 struct ChatLineView: View {
     let line: ChatLine
 
@@ -227,14 +228,8 @@ struct ChatLineView: View {
             if line.text.isEmpty, line.streaming {
                 ThinkingLine(status: line.status)
             } else {
-                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                    NookMark(size: 22)
-                    Markdown.text(line.text)
-                        .font(Theme.TextStyle.body)
-                        .lineSpacing(3)
-                        .foregroundStyle(line.failed ? Theme.coral : Theme.textStrong)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                TranscriptReply(text: line.text, date: Date(timeIntervalSince1970: line.date), failed: line.failed,
+                                footer: !line.streaming) {
                     if line.onMac {
                         Label {
                             Text("Nook made a plan, draft or chart: see it on your Mac.").foregroundStyle(Theme.textStrong)
@@ -247,7 +242,7 @@ struct ChatLineView: View {
                 }
             }
         } else {
-            MessageBubble(text: line.text, mine: true)
+            TranscriptUserMessage(text: line.text)
         }
     }
 }

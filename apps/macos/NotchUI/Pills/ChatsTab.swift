@@ -1138,6 +1138,7 @@ private struct ChatsRow: View {
             .padding(.vertical, NookTheme.Spacing.md)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
                 .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+            .selectionMark(selected)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

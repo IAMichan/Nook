@@ -7,6 +7,45 @@ The phone sees two kinds of sessions:
 - **Sessions Nook runs (Workspace):** approve or deny, answer questions, send messages, and stop them.
 - **Agents running in a terminal on your Mac** (through their hooks, e.g. Claude Code in Terminal or iTerm) and requests through Nook's workspace bridge: they appear in the list and send push notifications for approvals, questions, and finished or failed turns. Approvals can be denied, and low-risk ones allowed, from the phone or straight from the notification; questions and messages are answered in the terminal (`apps/macos/Services/Companion/CompanionAgents.swift`).
 
+## Starting from the phone
+
+**Today** opens with three quick actions: **New session** (a coding agent, the New session sheet on the Agents tab),
+**Ask Nook** (a new chat with Nook) and **Answer a chat** (the Chats tab), each with what is going on there (sessions at
+work, unread chats). An action the Mac does not allow this phone, or that the Mac is too old for, stays in sight dimmed
+with a lock and says why and what to change when tapped (`QuickActionBlock`), so nothing you look for quietly
+disappears; the Agents tab's New session button does the same.
+
+In **Chats**, *Can answer* lists the chats Nook writes in for you; a chat you can only read says so in the list (*Read
+only*) and, at its end, how to link its app in Nook › Settings › Chats to answer it from the phone.
+
+While a session Nook runs works, its composer offers **Steer now** (into the running turn, as the Mac's composer
+steers) or **After this turn** (in line); the choice is remembered (`CompanionRequest.steer`, `SessionDigest.canSteer`,
+`CompanionFeature.steer`). An approval or a question is docked right above the composer, in sight however far up you
+read. The Agents list has search and a project filter, and touching and holding the app's icon offers New session, Ask
+Nook, Answer a chat and the two sessions that need you most (`AppShortcut`). These follow phone app.
+
+**Live conversation.** With a current Mac, an open session no longer asks every few seconds: the phone says which
+session is on screen (`CompanionOp.watch`), the Mac answers with its recent conversation and from then on sends only
+what changed after the last entry both have alike, over the live connection (`TimelineDelta`, `timelineAfter`). A phone
+that misses the entry an update builds on asks for the whole conversation once; after a reconnect the open session is
+watched again. An older Mac keeps the asking.
+
+**Review.** *Changes* in a session's header lists every file it changed in its folder, the most changed first, with its
+lines added and removed and its patch (`CompanionOp.diff`, cut to fit one answer). Tap a line, and another for a range,
+then *Comment*: the comment goes into the session's message as a `<review_comment>` with the lines quoted, the block the
+Mac's review sends.
+
+**Pictures and model.** The composer of a session and of a new session take up to two pictures (JPEGs made small
+enough on the phone, `CompanionImage`); the Mac saves them where its composer keeps pictures and gives the agent their
+paths below the words. A new session can pick its model from the Mac's composer menu for that agent; anything else
+falls back to your default.
+
+**Nothing lost.** A message the Mac refuses stays in the session with why (*Not sent*), to edit and send again with its
+pictures, or to discard.
+
+A notification that an agent's turn finished, failed or hit a limit has a **Reply** field: what you type goes to that
+session as a message (through the outbox), without opening the app.
+
 ## Pairing
 
 1. **On your Mac:** Go to **Settings › Devices**, enable **iPhone Companion**, and click **Pair an iPhone**. Nook displays a one-time QR code (and a `nook://pair?…` link) valid for 5 minutes.
@@ -58,7 +97,7 @@ Each paired phone has its own **scopes** (`CompanionScope`, `packages/protocol/S
 - **Replay & rate protection (`RequestGuard`):** Every request carries a timestamp (max 60 s skew) and a unique nonce. The Mac rejects stale or replayed requests and enforces a limit of 120 requests/minute per device, up to 8 concurrent connections, 256 KB max message size, and a 30 s connection timeout.
 - **Least-privilege policy (`CompanionPolicy`):** Denying a tool call is always permitted from the phone; **allowing a tool call from the phone is restricted to low-risk operations** (reading/editing files or shell commands classified as safe by `CommandRisk`). High-risk or unknown commands, web actions, and MCP tools must be approved on the Mac itself.
 - **Starting sessions is narrowed:** the phone can only start an agent with a connected account in a folder from the Mac's recent projects (never an arbitrary path), and a session started from the phone never uses *allow everything* (`bypass`): it falls back to *accept edits*, so risky actions still wait for approval. A folder another session works in is refused, as in the composer.
-- **Full audit trail:** Every action taken from the phone is recorded in the local SQLite audit log (`companion_allow`, `companion_deny`, `companion_answer`, `companion_send`, `companion_stop`, `companion_start`, `companion_ask`, `companion_chat_stop`, `companion_music`, `companion_chat_send`, `companion_chat_read`, `companion_chat_unread`, `companion_update_request`, `companion_paired`); a message sent to a chat is also logged as `whatsapp_send`, as from the Mac.
+- **Full audit trail:** Every action taken from the phone is recorded in the local SQLite audit log (`companion_allow`, `companion_deny`, `companion_answer`, `companion_send`, `companion_steer`, `companion_stop`, `companion_start`, `companion_ask`, `companion_chat_stop`, `companion_music`, `companion_chat_send`, `companion_chat_read`, `companion_chat_unread`, `companion_update_request`, `companion_paired`); a message sent to a chat is also logged as `whatsapp_send`, as from the Mac.
 
 ## Staying Connected
 
