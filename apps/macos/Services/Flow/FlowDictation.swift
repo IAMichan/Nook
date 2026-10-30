@@ -347,11 +347,14 @@ enum FlowPaste {
     @MainActor static func focusTakesText() -> Bool? {
         let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?"
         let system = AXUIElementCreateSystemWide()
+        // A hung app would otherwise hold the main thread for the default ~6 s.
+        AXUIElementSetMessagingTimeout(system, 0.25)
         var value: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &value)
         if status == .noValue { return front == "com.apple.finder" ? false : nil }
         guard status == .success, let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
         let element = value as! AXUIElement
+        AXUIElementSetMessagingTimeout(element, 0.25)
         var roleValue: CFTypeRef?
         AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleValue)
         let role = roleValue as? String

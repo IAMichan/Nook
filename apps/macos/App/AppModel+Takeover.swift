@@ -204,7 +204,8 @@ extension AppModel {
         var image: ChatImage?
         var recognized = ""
         if let shot = await ScreenReader.windowImage(of: app) {
-            image = ChatImage.encode(shot.image)
+            // A full-window JPEG encode takes tens of milliseconds: off the main thread.
+            image = await Task.detached(priority: .userInitiated) { [cg = shot.image] in ChatImage.encode(cg) }.value
             recognized = (try? await ScreenReader.recognize(shot.image)) ?? ""
         }
         let text = DoubleTapLogic.windowText(shown: window?.text ?? "", recognized: recognized)
@@ -306,7 +307,7 @@ extension AppModel {
         }
         var images: [ChatImage] = []
         if screenAllowed, let front, let shot = await ScreenReader.windowImage(of: front, scale: 1),
-           let image = ChatImage.encode(shot.image) {
+           let image = await Task.detached(priority: .userInitiated, operation: { [cg = shot.image] in ChatImage.encode(cg) }).value {
             images = [image]
         }
         let memories = recalledMemories(for: task, scope: .automatic, tools: []).map(\.text)

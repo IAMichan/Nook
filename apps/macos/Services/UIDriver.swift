@@ -175,7 +175,7 @@ enum UIDriver {
             done.append(describe(step))
             try? await Task.sleep(nanoseconds: settle)
         }
-        let window = read(app).title ?? ""
+        let window = await read(app).title ?? ""
         let result = tr("control.result", appName, done.joined(separator: " → "), window)
         return notes.isEmpty ? result : result + " " + notes.joined(separator: " ")
     }
@@ -191,7 +191,7 @@ enum UIDriver {
             try await bringToFront(app)
             // Give the window (or pane) time to appear before the next step looks for it.
             for _ in 0..<15 {
-                if !read(app).items.isEmpty { break }
+                if await !read(app).items.isEmpty { break }
                 try? await Task.sleep(nanoseconds: 200_000_000)
             }
             return nil
@@ -207,7 +207,7 @@ enum UIDriver {
         // Where the step acts: a named element (looked up again now), or a point.
         var element: (element: UIControl.Element, ref: AXUIElement)?
         if let label = step.element {
-            let items = read(app).items
+            let items = await read(app).items
             switch UIControl.match(label, role: step.role, index: step.index, in: items.map(\.element)) {
             case .success(let found):
                 element = items.first { $0.element == found }
@@ -305,7 +305,7 @@ enum UIDriver {
             guard let point else { throw NookError(tr("control.error.noTarget")) }
             var end = step.toX.flatMap { x in step.toY.map { CGPoint(x: x, y: $0) } }
             if let label = step.toElement {
-                let items = read(app).items
+                let items = await read(app).items
                 switch UIControl.match(label, role: nil, index: nil, in: items.map(\.element)) {
                 case .success(let found): end = CGPoint(x: found.centerX, y: found.centerY)
                 case .failure(.ambiguous(_, let count)): throw NookError(tr("control.error.ambiguous", count, label))
@@ -329,7 +329,8 @@ enum UIDriver {
         guard let shot = await ScreenReader.windowImage(of: app, scale: 1) else {
             return "Nook could not take a picture of \(app.localizedName ?? "the app") (no window on screen, or screen recording is not allowed). Use read_ui."
         }
-        picture = ChatImage.encode(shot.image)
+        // A full-window JPEG encode takes tens of milliseconds: off the main thread, where the takeover cursor moves.
+        picture = await Task.detached(priority: .userInitiated) { [cg = shot.image] in ChatImage.encode(cg) }.value
         let frame = shot.frame
         var lines = ["Window of \(app.localizedName ?? "the app") at x \(Int(frame.minX)), y \(Int(frame.minY)), \(Int(frame.width))×\(Int(frame.height)) points. In the picture, pixel (px, py) is screen point (\(Int(frame.minX)) + px, \(Int(frame.minY)) + py)."]
         let seen = UIControl.describeSeen(await ScreenReader.seenLines(of: app, limit: 250), limit: 6_000)
@@ -468,10 +469,10 @@ enum UIDriver {
 
     /// A read that gives a just-woken browser or a window that is still loading a moment to fill in its tree.
     static func settledRead(_ app: NSRunningApplication) async -> Window {
-        var window = read(app)
+        var window = await read(app)
         for _ in 0..<4 where window.items.filter({ UIControl.tier($0.element.role) <= 1 }).count < UIControl.fewControls {
             try? await Task.sleep(nanoseconds: 250_000_000)
-            window = read(app)
+            window = await read(app)
         }
         return window
     }
@@ -482,15 +483,22 @@ enum UIDriver {
     }
 
     /// Enough for a long web page; what reaches the brain is trimmed by `UIControl.describe`, fields and buttons first.
-    private static let maxElements = 900
+    private nonisolated static let maxElements = 900
     /// Of those, at most this many scrolled out of view: a long filter list above a shop's products must not use up
     /// the room before the products in view are reached.
-    private static let maxOffscreen = 300
-    private static let maxDepth = 40
+    private nonisolated static let maxOffscreen = 300
+    private nonisolated static let maxDepth = 40
 
-    /// The elements of the app's windows, focused window first, in the order they appear in the tree.
-    static func read(_ app: NSRunningApplication) -> Window {
-        let root = AXUIElementCreateApplication(app.processIdentifier)
+    /// The elements of the app's windows, focused window first, in the order they appear in the tree. The walk runs off
+    /// the main thread, so Nook's cursor keeps moving while a long web page is read.
+    static func read(_ app: NSRunningApplication) async -> Window {
+        let pid = app.processIdentifier
+        let bundleID = app.bundleIdentifier
+        return await Task.detached(priority: .userInitiated) { UIDriver.read(pid: pid, bundleID: bundleID) }.value
+    }
+
+    private nonisolated static func read(pid: pid_t, bundleID: String?) -> Window {
+        let root = AXUIElementCreateApplication(pid)
         _ = AXUIElementSetMessagingTimeout(root, 1.5)
         var windows: [AXUIElement] = []
         if let focused: AXUIElement = attribute(root, kAXFocusedWindowAttribute) { windows.append(focused) }
@@ -510,7 +518,7 @@ enum UIDriver {
         }
         // A system agent (Control Center) has no window until one of its menu bar items is clicked: those items come
         // after its open panel, so Focus, Wi-Fi and Bluetooth can be reached from the menu bar.
-        if AppNames.systemAgents.contains(app.bundleIdentifier ?? ""),
+        if AppNames.systemAgents.contains(bundleID ?? ""),
            let extras: AXUIElement = attribute(root, kAXExtrasMenuBarAttribute) {
             for item in (attribute(extras, kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
                 collect(item, depth: 1, focused: focusedElement, bounds: nil, into: &items)
@@ -520,7 +528,7 @@ enum UIDriver {
     }
 
     /// `bounds` is the window's frame: an element outside it is scrolled out of view (nil: everything counts as in view).
-    private static func collect(_ element: AXUIElement, depth: Int, focused: AXUIElement?, bounds: CGRect?,
+    private nonisolated static func collect(_ element: AXUIElement, depth: Int, focused: AXUIElement?, bounds: CGRect?,
                                 into items: inout [(element: UIControl.Element, ref: AXUIElement)]) {
         guard depth <= maxDepth, items.count < maxElements else { return }
         let axRole: String = attribute(element, kAXRoleAttribute) ?? ""
@@ -556,7 +564,7 @@ enum UIDriver {
 
     /// The name a person sees for an element: its title, its description, the text of the label next to it, the first
     /// text inside a row, or the texts inside a link or button (a web page's product link holds its name and no title).
-    private static func label(of element: AXUIElement, role: String) -> String {
+    private nonisolated static func label(of element: AXUIElement, role: String) -> String {
         for name in [kAXTitleAttribute, kAXDescriptionAttribute] {
             if let text: String = attribute(element, name), !text.trimmingCharacters(in: .whitespaces).isEmpty {
                 return text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -577,7 +585,7 @@ enum UIDriver {
         return ""
     }
 
-    private static func firstText(in element: AXUIElement, depth: Int) -> String? {
+    private nonisolated static func firstText(in element: AXUIElement, depth: Int) -> String? {
         guard depth < 5 else { return nil }
         for child in (attribute(element, kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
             let role: String = attribute(child, kAXRoleAttribute) ?? ""
@@ -591,7 +599,7 @@ enum UIDriver {
     }
 
     /// The texts inside an element in reading order, until there is enough for a label.
-    private static func innerTexts(in element: AXUIElement, depth: Int, into texts: inout [String]) {
+    private nonisolated static func innerTexts(in element: AXUIElement, depth: Int, into texts: inout [String]) {
         guard depth < 6, texts.count < 4, texts.joined(separator: " ").count < 120 else { return }
         for child in (attribute(element, kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
             let role: String = attribute(child, kAXRoleAttribute) ?? ""
@@ -623,7 +631,7 @@ enum UIDriver {
 
     // MARK: Accessibility values
 
-    private static func attribute<T>(_ element: AXUIElement, _ name: String) -> T? {
+    private nonisolated static func attribute<T>(_ element: AXUIElement, _ name: String) -> T? {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success, let value else { return nil }
         if T.self == AXUIElement.self {
@@ -632,7 +640,7 @@ enum UIDriver {
         return value as? T
     }
 
-    private static func frame(of element: AXUIElement) -> CGRect? {
+    private nonisolated static func frame(of element: AXUIElement) -> CGRect? {
         var position = CGPoint.zero
         var size = CGSize.zero
         guard let positionValue: CFTypeRef = attribute(element, kAXPositionAttribute), CFGetTypeID(positionValue) == AXValueGetTypeID(),

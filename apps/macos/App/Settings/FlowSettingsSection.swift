@@ -6,6 +6,8 @@ struct FlowSettingsSection: View {
     @ObservedObject private var store = FlowStore.shared
     @ObservedObject private var flow = FlowDictation.shared
     @State private var dictionary = FlowStore.shared.dictionaryText
+    /// The pending save of the dictionary: parsing and publishing it on every keystroke would redraw Settings each time.
+    @State private var dictionarySave: Task<Void, Never>?
 
     var body: some View {
         // Three short groups instead of one long one: turning it on, how it writes, and what it remembers.
@@ -45,7 +47,14 @@ struct FlowSettingsSection: View {
                         TextEditor(text: $dictionary)
                             .font(NookTheme.TextStyle.code)
                             .frame(minHeight: 90)
-                            .onChange(of: dictionary) { _, value in store.dictionaryText = value }
+                            .onChange(of: dictionary) { _, value in
+                                dictionarySave?.cancel()
+                                dictionarySave = Task { @MainActor in
+                                    try? await Task.sleep(nanoseconds: 500_000_000)
+                                    guard !Task.isCancelled else { return }
+                                    FlowStore.shared.dictionaryText = value
+                                }
+                            }
                         SettingNote(tr("flow.settings.dictionaryHint"))
                     }
                 }

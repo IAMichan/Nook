@@ -53,7 +53,6 @@ struct SettingsView: View {
     @EnvironmentObject var app: AppModel
     @ObservedObject var settings = AppSettings.shared
 
-    @State var keyDraft = ""
     @State var refreshTick = 0
     @ObservedObject var local = EmbeddedModel.shared
     @ObservedObject var permissions = PermissionMonitor.shared
@@ -68,8 +67,6 @@ struct SettingsView: View {
     @State var fetchedModels: [String] = []
     @State var fetchingModels = false
     @State var recommendations: [ModelAdvisor.Recommendation] = []
-    /// What is typed in the search field above the sidebar.
-    @State var searchQuery = ""
     /// The part of Typing & dictation on screen: completing (0) or dictation and voice (1).
     @AppStorage("settings.typingPart") var typingPart = 0
     /// The mood the large preview under Appearance shows.
@@ -81,46 +78,25 @@ struct SettingsView: View {
     @ObservedObject var doubleTap = DoubleTap.shared
 
     var body: some View {
+        // Once per redraw: both read every linked source and chat app, and the sidebar, header and Overview all use them.
+        let problems = ConnectionProblems.current(app)
+        let needs = attention(problems: problems)
         NavigationSplitView {
-            List(selection: Binding(
-                get: { Optional(app.settingsSection) },
-                set: { value in
-                    // The List writes its selection while SwiftUI is still updating the view; publish on the next turn.
-                    guard let value, value != app.settingsSection else { return }
-                    DispatchQueue.main.async { app.settingsSection = value }
-                }
-            )) {
-                if searchQuery.trimmingCharacters(in: .whitespaces).isEmpty {
-                    ForEach(SettingsSection.Group.allCases) { group in
-                        Section(group.title) {
-                            ForEach(group.sections) { section in
-                                Label {
-                                    Text(section.title)
-                                } icon: {
-                                    SettingsTile(section, size: 20)
-                                }
-                                .badge(badge(for: section))
-                                .tag(section)
-                            }
-                        }
-                    }
-                } else {
-                    searchResults
-                }
-            }
-            .searchable(text: $searchQuery, placement: .sidebar, prompt: Text(tr("settings.search.prompt")))
-            .scrollContentBackground(.hidden)
-            .background(NookTheme.surface)
-            .navigationSplitViewColumnWidth(min: 200, ideal: 215, max: 250)
+            SettingsSidebar(badges: [
+                .start: needs.count,
+                .connections: problems.count,
+                .autocomplete: AutocompleteController.shared.needsAttention ? 1 : 0
+            ])
         } detail: {
             Form {
                 Section {
-                    SettingsHeader(section: app.settingsSection, mood: headerMood)
+                    // Nook looks satisfied when nothing needs you, otherwise calm.
+                    SettingsHeader(section: app.settingsSection, mood: needs.isEmpty ? .done : .rest)
                 }
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 0, trailing: 0))
-                detail(for: app.settingsSection)
+                detail(for: app.settingsSection, attention: needs, problems: problems.count)
             }
             .formStyle(.grouped)
             // Every row reads at the panel's body size; captions and notes set their own smaller style.
@@ -156,25 +132,11 @@ struct SettingsView: View {
         }
     }
 
-    /// Sidebar badge count indicating pending actions.
-    func badge(for section: SettingsSection) -> Int {
-        switch section {
-        case .start: return attention.count
-        case .connections: return ConnectionProblems.current(app).count
-        case .autocomplete: return AutocompleteController.shared.needsAttention ? 1 : 0
-        default: return 0
-        }
-    }
-
-    /// Nook looks satisfied when nothing needs you, otherwise calm.
-    var headerMood: NookMood {
-        attention.isEmpty ? .done : .rest
-    }
-
+    /// `attention` and `problems` are what the body worked out once for this redraw.
     @ViewBuilder
-    func detail(for section: SettingsSection) -> some View {
+    func detail(for section: SettingsSection, attention: [AttentionItem], problems: Int) -> some View {
         switch section {
-        case .start: startSection
+        case .start: startSection(attention: attention, problems: problems)
         case .general: generalSection
         case .appearance: appearanceSection
         case .shortcuts: shortcutsSection
@@ -206,6 +168,49 @@ struct SettingsView: View {
         case .workspace: workspaceSection
         case .privacy: privacySection
         }
+    }
+}
+
+/// The sidebar with its search field. A view of its own, so a keystroke in the search redraws only the sidebar, not
+/// every page and count of Settings.
+private struct SettingsSidebar: View {
+    @EnvironmentObject var app: AppModel
+    /// The count on each section's row; a section without one shows none.
+    var badges: [SettingsSection: Int]
+    /// What is typed in the search field above the sidebar.
+    @State private var searchQuery = ""
+
+    var body: some View {
+        List(selection: Binding(
+            get: { Optional(app.settingsSection) },
+            set: { value in
+                // The List writes its selection while SwiftUI is still updating the view; publish on the next turn.
+                guard let value, value != app.settingsSection else { return }
+                DispatchQueue.main.async { app.settingsSection = value }
+            }
+        )) {
+            if searchQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+                ForEach(SettingsSection.Group.allCases) { group in
+                    Section(group.title) {
+                        ForEach(group.sections) { section in
+                            Label {
+                                Text(section.title)
+                            } icon: {
+                                SettingsTile(section, size: 20)
+                            }
+                            .badge(badges[section] ?? 0)
+                            .tag(section)
+                        }
+                    }
+                }
+            } else {
+                searchResults
+            }
+        }
+        .searchable(text: $searchQuery, placement: .sidebar, prompt: Text(tr("settings.search.prompt")))
+        .scrollContentBackground(.hidden)
+        .background(NookTheme.surface)
+        .navigationSplitViewColumnWidth(min: 200, ideal: 215, max: 250)
     }
 
     /// The search results in the sidebar: every setting by its own name, with the section it lives in.

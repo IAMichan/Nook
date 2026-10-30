@@ -46,7 +46,8 @@ extension SettingsView {
 
     /// Everything that needs you, in one list: the setup steps still open, connections that stopped working, agent links
     /// that are out of date, and completing when it is missing something. The Overview shows it, the sidebar counts it.
-    var attention: [AttentionItem] {
+    /// `problems` is `ConnectionProblems.current(app)`, which the body works out once per redraw.
+    func attention(problems: [ConnectionProblems.Problem]) -> [AttentionItem] {
         var items = checklist.filter { !$0.done }.map { step in
             AttentionItem(id: "step." + step.title, title: step.title, detail: step.detail, state: .todo, button: step.button) {
                 if let request = step.request {
@@ -56,7 +57,7 @@ extension SettingsView {
                 }
             }
         }
-        items += ConnectionProblems.current(app).map { problem in
+        items += problems.map { problem in
             AttentionItem(id: "connection." + problem.id, title: problem.title, detail: problem.detail, state: problem.state,
                           button: tr("settings2.fix")) { app.settingsSection = .connections }
         }
@@ -76,10 +77,10 @@ extension SettingsView {
         return items
     }
 
-    var startSection: some View {
+    /// `items` is `attention(problems:)` and `problems` the number of connections that stopped working.
+    func startSection(attention items: [AttentionItem], problems: Int) -> some View {
         Group {
             // One list of what needs you, from every page; once it is empty a single calm line says so.
-            let items = attention
             Section {
                 if items.isEmpty {
                     StatusRow(title: tr("hub.overview.allGood"), detail: tr("hub.overview.allGoodDetail"), state: .done) {
@@ -106,7 +107,8 @@ extension SettingsView {
             Section(tr("settings.start.glance")) {
                 glanceRow(.brain, detail: settings.brainReady ? settings.activeModelName : tr("settings.checklist.brain.notReady"),
                           state: settings.brainReady ? .done : .todo)
-                glanceRow(.connections, detail: connectionsGlance.text, state: connectionsGlance.state)
+                let connections = connectionsGlance(broken: problems)
+                glanceRow(.connections, detail: connections.text, state: connections.state)
                 glanceRow(.agents, detail: tr("settings.start.agentsLinked", linkedAgentCount), state: linkedAgentCount > 0 ? .done : .todo)
                 let granted = SystemPermission.allCases.filter { permissions.isGranted($0) }.count
                 // Only the recommended permissions make this a to-do; the optional ones (contacts, the microphone…) never do.
@@ -127,9 +129,8 @@ extension SettingsView {
     }
 
     /// Active sources, and how many need a new sign-in.
-    var connectionsGlance: (text: String, state: StatusState) {
+    func connectionsGlance(broken: Int) -> (text: String, state: StatusState) {
         let active = app.connectors.active.count
-        let broken = ConnectionProblems.current(app).count
         if broken > 0 { return (tr("settings.start.connectionsBroken", active, broken), .warning) }
         return (tr("settings.checklist.connectors.detail", active), active > 0 ? .done : .todo)
     }

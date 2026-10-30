@@ -7,8 +7,7 @@ import ApplicationServices
 /// Selecting tries, in order: the accessibility layer (no mouse moves), the mouse (a click at the start and a shift-click at
 /// the end, where the app's own window is on top), and the keyboard (the cursor at the start, then shift+→). Typing goes
 /// through the clipboard and ⌘V (`FlowPaste`), deleting with the Delete key; both are undone with ⌘Z in the app. Password
-/// fields are never read or written.
-@MainActor
+/// fields are never read or written. Reading is not on the main actor (it walks the other app's window); changing it is.
 struct DoubleTapDocument {
     var element: AXUIElement
     var text: String
@@ -25,8 +24,8 @@ struct DoubleTapDocument {
 
     /// The focused text of the app, or else the longest text area of its focused window (the page of a word processor when
     /// the focus is on a toolbar). Nil when there is none, or when the focus is a password field.
-    static func read(_ app: NSRunningApplication) -> DoubleTapDocument? {
-        let root = AXUIElementCreateApplication(app.processIdentifier)
+    static func read(pid: pid_t) -> DoubleTapDocument? {
+        let root = AXUIElementCreateApplication(pid)
         _ = AXUIElementSetMessagingTimeout(root, 1.5)
         let focused: AXUIElement? = attribute(root, kAXFocusedUIElementAttribute)
         if let focused, isSecure(focused) { return nil }
@@ -70,7 +69,7 @@ struct DoubleTapDocument {
 
     /// Selects `edit`'s text and types its new text over it (or deletes it), then checks the document reads as it should.
     /// `show`: where Nook acts (screen point, top-left origin), for its violet cursor.
-    func apply(_ edit: DoubleTapEdit, in app: NSRunningApplication, show: ((CGPoint, String) -> Void)?) async -> Bool {
+    @MainActor func apply(_ edit: DoubleTapEdit, in app: NSRunningApplication, show: ((CGPoint, String) -> Void)?) async -> Bool {
         guard let before = current(), (before as NSString).length >= edit.range.location + edit.range.length,
               DoubleTapLogic.fold((before as NSString).substring(with: edit.range)) == DoubleTapLogic.fold(edit.find) else {
             return false
@@ -97,7 +96,7 @@ struct DoubleTapDocument {
 
     /// Selects a range: through the accessibility layer, else with the mouse, else with the keyboard. True when the app
     /// shows exactly that text selected.
-    private func select(_ range: NSRange, in app: NSRunningApplication) async -> Bool {
+    @MainActor private func select(_ range: NSRange, in app: NSRunningApplication) async -> Bool {
         let wanted = DoubleTapLogic.fold((text as NSString).substring(with: range))
         func selected() -> Bool {
             if let now = Self.selectedRange(element), now == range { return true }
@@ -206,6 +205,9 @@ struct DoubleTapDocument {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value) == .success, let value,
               CFGetTypeID(value) == CFArrayGetTypeID() else { return [] }
-        return (value as? [AXUIElement]) ?? []
+        let children = (value as? [AXUIElement]) ?? []
+        // A child does not take the root's timeout: one hung element would otherwise wait the global default.
+        for child in children { AXUIElementSetMessagingTimeout(child, 1.5) }
+        return children
     }
 }

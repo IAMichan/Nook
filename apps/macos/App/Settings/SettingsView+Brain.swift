@@ -295,19 +295,13 @@ extension SettingsView {
                 .controlSize(.large)
                 SettingNote(tr("brain.key.autoPaste"))
             }
-            HStack {
-                SecureField(settings.provider.keyPlaceholder, text: $keyDraft)
-                    .onSubmit { if !keyDraft.isEmpty { saveKey() } }
-                Button(tr("button.save"), action: saveKey)
-                    .disabled(keyDraft.isEmpty)
-            }
+            KeyDraftField(placeholder: settings.provider.keyPlaceholder, onSave: saveKey)
             // On this one row: on the Group around it the key would be saved once per row.
             .onDisappear { keyCatcher.stop() }
             // perf: `caught` is set once per copied key and reset right after, so every value is a new key.
             .onReceive(keyCatcher.$caught.compactMap { $0 }) { key in
                 // A key copied on the service's page, picked up on the way back: saved and tested at once.
-                keyDraft = key
-                saveKey()
+                saveKey(key)
                 keyCatcher.caught = nil
             }
             HStack {
@@ -316,8 +310,7 @@ extension SettingsView {
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                     ConfirmedButton(tr("accounts.removeKey"), question: tr("confirm.removeKey"), detail: tr("confirm.keychain.detail")) {
-                        keyDraft = ""
-                        saveKey()
+                        saveKey("")
                     }
                     .buttonStyle(.borderless)
                     .font(NookTheme.TextStyle.detail)
@@ -552,12 +545,12 @@ extension SettingsView {
         }
     }
 
-    func saveKey() {
+    /// Saves `keyDraft` for the chosen service, or removes its key when it is empty.
+    func saveKey(_ keyDraft: String) {
         let provider = settings.provider
         if provider == .claude {
             if !keyDraft.isEmpty {
                 let saved = settings.saveAPIKey(keyDraft)
-                keyDraft = ""
                 if !saved.looksValid {
                     testResult = (false, tr("brain.key.invalid"))
                 }
@@ -575,7 +568,6 @@ extension SettingsView {
         } else {
             let error = settings.saveProviderKey(keyDraft, for: provider)
             let removed = keyDraft.isEmpty
-            keyDraft = ""
             if let error {
                 ToastCenter.shared.error(tr("settings.brain.keyNotSaved"), detail: error)
             } else {
@@ -599,6 +591,27 @@ extension SettingsView {
 }
 
 /// The maker's mark of a model in a settings row, or a plain chip when we don't know the maker.
+/// The key being typed, in a view of its own: a keystroke then redraws this row, not the whole of Settings.
+private struct KeyDraftField: View {
+    var placeholder: String
+    var onSave: (String) -> Void
+    @State private var draft = ""
+
+    var body: some View {
+        HStack {
+            SecureField(placeholder, text: $draft)
+                .onSubmit { if !draft.isEmpty { save() } }
+            Button(tr("button.save"), action: save)
+                .disabled(draft.isEmpty)
+        }
+    }
+
+    private func save() {
+        onSave(draft)
+        draft = ""
+    }
+}
+
 private struct ModelLogo: View {
     let name: String
 
