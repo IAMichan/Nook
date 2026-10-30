@@ -151,8 +151,9 @@ struct ChatTranscript: View {
                                          content: geometry.contentSize.height)
             } action: { old, new in
                 // The chat grew while you were at its newest message (pictures appearing, a chat's history or a new
-                // message arriving): it stays at the newest at once, instead of sliding up through the whole chat.
-                if new.content != old.content, old.nearBottom, !interacting, !loadingOlder, !drawingOlder {
+                // message arriving), or its room shrank (the field grows with a longer message): it stays at the newest
+                // at once, so the messages move up with the field instead of slipping under it.
+                if new.content != old.content || new.container != old.container, old.nearBottom, !interacting, !loadingOlder, !drawingOlder {
                     var still = Transaction()
                     still.disablesAnimations = true
                     withTransaction(still) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
