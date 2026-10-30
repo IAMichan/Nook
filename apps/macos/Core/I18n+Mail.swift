@@ -5,6 +5,10 @@ import Foundation
 
 let mailChatTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "chats.mail.connectHint": "Koppel Mail en Nook laadt meteen je mail van elk account, per persoon.",
+        "chats.mail.closedHint": "Mail is dicht. Nook kan Mail onzichtbaar openen en je mail nu lezen.",
+        "chats.mail.readNow": "Mail nu lezen",
+        "chats.mail.reading": "Nook leest je mail…",
         "chats.apps.how.mail": "Lees elk account in de Mail-app",
         "chats.apps.own.mail": "Via de Mail-app",
         "chats.own.mail.step": "Koppel de Mail-app",
@@ -23,6 +27,10 @@ let mailChatTranslations: [AppLanguage: [String: String]] = [
         "chats.mail.muteNewslettersDetail": "Mail van no-reply-adressen, nieuwsbrieven en meldingen staat in de Chats-tab, maar meldt zich niet.",
     ],
     .en: [
+        "chats.mail.connectHint": "Link Mail and Nook loads your mail from every account right away, per person.",
+        "chats.mail.closedHint": "Mail is closed. Nook can open Mail out of sight and read your mail now.",
+        "chats.mail.readNow": "Read Mail now",
+        "chats.mail.reading": "Nook is reading your mail…",
         "chats.apps.how.mail": "Read every account in the Mail app",
         "chats.apps.own.mail": "Through the Mail app",
         "chats.own.mail.step": "Link the Mail app",
@@ -41,6 +49,10 @@ let mailChatTranslations: [AppLanguage: [String: String]] = [
         "chats.mail.muteNewslettersDetail": "Mail from no-reply addresses, newsletters and notifications shows in the Chats tab, but does not notify you.",
     ],
     .de: [
+        "chats.mail.connectHint": "Verbinde Mail und Nook lädt sofort deine Mails aus jedem Konto, nach Person.",
+        "chats.mail.closedHint": "Mail ist geschlossen. Nook kann Mail unsichtbar öffnen und deine Mails jetzt lesen.",
+        "chats.mail.readNow": "Mail jetzt lesen",
+        "chats.mail.reading": "Nook liest deine Mails …",
         "chats.apps.how.mail": "Lies jedes Konto in der Mail-App",
         "chats.apps.own.mail": "Über die Mail-App",
         "chats.own.mail.step": "Verbinde die Mail-App",
@@ -59,6 +71,10 @@ let mailChatTranslations: [AppLanguage: [String: String]] = [
         "chats.mail.muteNewslettersDetail": "Mails von No-Reply-Adressen, Newsletter und Benachrichtigungen stehen im Tab Chats, melden sich aber nicht.",
     ],
     .fr: [
+        "chats.mail.connectHint": "Associez Mail et Nook charge aussitôt vos e-mails de chaque compte, par personne.",
+        "chats.mail.closedHint": "Mail est fermé. Nook peut ouvrir Mail hors de vue et lire vos e-mails maintenant.",
+        "chats.mail.readNow": "Lire Mail maintenant",
+        "chats.mail.reading": "Nook lit vos e-mails…",
         "chats.apps.how.mail": "Lire chaque compte de l’app Mail",
         "chats.apps.own.mail": "Via l’app Mail",
         "chats.own.mail.step": "Associez l’app Mail",
@@ -77,6 +93,10 @@ let mailChatTranslations: [AppLanguage: [String: String]] = [
         "chats.mail.muteNewslettersDetail": "Les e-mails d’adresses no-reply, les newsletters et les notifications figurent dans l’onglet Discussions, sans vous avertir.",
     ],
     .es: [
+        "chats.mail.connectHint": "Vincula Mail y Nook carga al momento tu correo de cada cuenta, por persona.",
+        "chats.mail.closedHint": "Mail está cerrado. Nook puede abrir Mail sin que se vea y leer tu correo ahora.",
+        "chats.mail.readNow": "Leer Mail ahora",
+        "chats.mail.reading": "Nook está leyendo tu correo…",
         "chats.apps.how.mail": "Lee cada cuenta de la app Mail",
         "chats.apps.own.mail": "Con la app Mail",
         "chats.own.mail.step": "Vincula la app Mail",

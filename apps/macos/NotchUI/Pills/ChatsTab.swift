@@ -645,9 +645,9 @@ struct ChatsTab: View {
     }
 
     /// The apps that have chats here: the ones with something new first, then the busiest, and the one filtered on
-    /// even when it has none yet. After them every source that is on and on this Mac (its app is installed, you added it
-    /// yourself, or Nook reads it with your login, as Instagram), also before it brought in a message: a source you switched
-    /// on shows up here, not only once it has chats.
+    /// even when it has none yet. After them every source that is on and linked (you added it yourself, or Nook reads it
+    /// with your login or link, as Instagram or Mail), also before it brought in a message. An app that is merely
+    /// installed waits until it brings in a chat, so the sidebar shows what you linked, not every app on this Mac.
     private var apps: [String] {
         let counts = Dictionary(grouping: all, by: \.app).mapValues(\.count)
         let fresh = newByApp
@@ -658,7 +658,7 @@ struct ChatsTab: View {
         }
         if capture.enabled {
             for source in capture.sources.active
-            where !result.contains(source.id) && (Self.isPresent(source) || capture.bridge(for: source.id)?.isReady == true) {
+            where !result.contains(source.id) && Self.isLinked(source) {
                 result.append(source.id)
             }
         }
@@ -666,21 +666,13 @@ struct ChatsTab: View {
         return result
     }
 
-    /// Whether a source belongs on this Mac: one you added, or a known app that is installed. The known web-only apps
-    /// (LinkedIn, X…) wait until they bring in a chat, or the sidebar would list every app Nook knows.
+    /// Whether a source is linked: one you added yourself, or a known app Settings › Chats shows as linked (a login, a
+    /// phone link, Mail, the chat helper). The rest wait until they bring in a chat.
     @MainActor
-    private static func isPresent(_ source: MessagingApp) -> Bool {
+    private static func isLinked(_ source: MessagingApp) -> Bool {
         if !MessagingApps.builtIn.contains(where: { $0.id == source.id }) { return true }
-        return source.bundleIDs.contains { bundleID in
-            if let known = installed[bundleID] { return known }
-            let found = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
-            installed[bundleID] = found
-            return found
-        }
+        return ChatAppStates.state(source.id, chats: 0)?.linked == true
     }
-
-    /// Which apps are installed, looked up once per launch.
-    @MainActor private static var installed: [String: Bool] = [:]
 
     /// The leftmost column: the views and apps, and under them the panel footer (settings, pull requests, usage, refresh),
     /// as wide as the sidebar, or one icon under the other in the rail.
@@ -863,6 +855,8 @@ struct ChatsTab: View {
                         .foregroundStyle(NookTheme.coralSoft)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
+                } else if filter == capture.mailBridge.app {
+                    mailEmpty
                 } else if let bridge = capture.bridge(for: filter),
                           ![capture.messagesBridge.app, capture.whatsAppDesktopBridge.app].contains(bridge.app), !bridge.isReady {
                     // Slack, Telegram, Teams and the chat helper's apps keep their history elsewhere: connected once, Nook reads it from
@@ -880,6 +874,22 @@ struct ChatsTab: View {
             ListEmptyNote(tr("chats.noMatch"))
                 .frame(maxWidth: .infinity)
                 .padding(.top, NookTheme.Spacing.xl)
+        }
+    }
+
+    /// Mail with no chats yet: link it right here, or read it now while Mail is closed (Nook starts it out of sight), so a
+    /// first batch of mail shows at once instead of waiting for a notification.
+    @ViewBuilder
+    private var mailEmpty: some View {
+        let mail = capture.mailBridge
+        if !mail.isLinked {
+            ListEmptyNote(tr("chats.mail.connectHint"))
+            SmallGhostButton(title: tr("chats.mail.link")) { capture.linkMail() }
+        } else if !mail.isReady {
+            ListEmptyNote(tr("chats.mail.closedHint"))
+            SmallGhostButton(title: tr("chats.mail.readNow")) { capture.readMailNow() }
+        } else {
+            ListEmptyNote(tr("chats.mail.reading"))
         }
     }
 
