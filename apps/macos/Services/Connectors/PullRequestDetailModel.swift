@@ -104,7 +104,7 @@ final class PullRequestDetailModel: ObservableObject {
             do {
                 // Not tied to the page: leaving the pull request halfway must not end the read as a failed one.
                 let fresh = try await Task { try await GitHubPullRequestDetail.summary(repo: repo, number: number, token: token) }.value
-                show(fresh.keepingActivity(of: detail))
+                show(fresh.keepingActivity(of: detail).keepingConflict(of: detail ?? Self.cache[key]?.detail))
                 error = nil
                 let changed = Self.activityKey(fresh) != activityKey
                 if activityTask == nil, changed {
@@ -213,9 +213,10 @@ final class PullRequestDetailModel: ObservableObject {
             }.value
             // An open page may have read it meanwhile; its read is newer.
             guard let read, (cache[entry]?.at ?? .distantPast) < started else { return nil }
-            remember(read.keepingActivity(of: cache[entry]?.detail), key: entry)
-            PullRequestStore.shared.update(with: read)
-            return (read, cache[entry]?.at ?? started)
+            let kept = read.keepingActivity(of: cache[entry]?.detail).keepingConflict(of: cache[entry]?.detail)
+            remember(kept, key: entry)
+            PullRequestStore.shared.update(with: kept)
+            return (kept, cache[entry]?.at ?? started)
         }
         let done = Task {
             guard let kept = await summary.value else {

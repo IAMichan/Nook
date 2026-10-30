@@ -51,6 +51,27 @@ final class PullRequestGraphQLTests: XCTestCase {
         XCTAssertEqual(replaced.reviews.map(\.number), [])
     }
 
+    func testAnUnknownMergeabilityKeepsTheConflictItKnew() throws {
+        func node(_ number: Int, _ mergeable: String) -> String {
+            #"{"number":\#(number),"title":"","state":"OPEN","isDraft":false,"mergeable":"\#(mergeable)","author":{"login":"a"},"repository":{"nameWithOwner":"a/b"}}"#
+        }
+        func read(_ nodes: [String]) throws -> AccountPullRequests {
+            let answer = #"{"data":{"viewer":{"login":"a"},"mine":{"nodes":["# + nodes.joined(separator: ",") + "]}}}"
+            let rows = try PullRequestGraphQL.parse(Data(answer.utf8)).mine
+            return AccountPullRequests(id: "github", name: "", login: "", mine: rows, reviews: [], error: nil)
+        }
+        let before = try read([node(1, "CONFLICTING"), node(2, "MERGEABLE"), node(3, "CONFLICTING")])
+        XCTAssertEqual(before.mine.map(\.conflict), [true, false, true])
+        XCTAssertEqual(before.mine.map(\.conflictKnown), [true, true, true])
+
+        // Another pull request merged into the base: GitHub works out every other one's mergeability again.
+        let after = try read([node(1, "UNKNOWN"), node(2, "UNKNOWN"), node(3, "MERGEABLE"), node(4, "UNKNOWN")])
+        XCTAssertEqual(after.mine.map(\.conflict), [false, false, false, false], "GitHub's answer alone says nothing")
+        let kept = AccountPullRequests.keepingConflicts([after], from: [before])[0]
+        XCTAssertEqual(kept.mine.map(\.conflict), [true, false, false, false],
+                       "#1 stays in conflict until GitHub knows; #3 was resolved; #4 is new")
+    }
+
     func testParse() throws {
         let answer = #"""
         {"data":{"viewer":{"login":"michan"},
