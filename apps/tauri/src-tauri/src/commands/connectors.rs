@@ -5,6 +5,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use nook_core::connectors::accounts::{self, ServiceAccount};
+use nook_core::connectors::actions::{self, ActionRuns, ActionsRepos, RunDetail, Workflow};
 use nook_core::connectors::cloud::{self, ServiceInfo};
 use nook_core::connectors::github;
 use nook_core::connectors::hub::Connector;
@@ -452,6 +453,100 @@ pub async fn github_review_pull_request(
         }
         Err(e) => {
             state.store.audit("github_review_pr", &args, &format!("FOUT: {}", e.message));
+            Err(e.message)
+        }
+    }
+}
+
+// GitHub Actions (Agents › Actions)
+
+fn actions_repo(repo: &str) -> Res<()> {
+    if !github::is_repository(repo) {
+        return Err("Typ een repository als eigenaar/naam, bijvoorbeeld IAMichan/nook.".into());
+    }
+    Ok(())
+}
+
+/// The account tokens to try for a repository, the one that read it last first; an error when none is connected.
+fn actions_tokens(c: &Connectors, account: Option<&str>) -> Res<Vec<(String, String)>> {
+    let tokens = c.github.tokens_in_order(account);
+    if tokens.is_empty() {
+        return Err(NO_GITHUB.into());
+    }
+    Ok(tokens)
+}
+
+/// The repositories every GitHub account pushed to lately, for the picker on the Actions page. Not an error while
+/// GitHub is not connected: the page says so itself.
+#[tauri::command]
+pub async fn github_actions_repos(c: State<'_, Connectors>) -> Res<ActionsRepos> {
+    let tokens = c.github.tokens_in_order(None);
+    if tokens.is_empty() {
+        return Ok(ActionsRepos { available: false, repos: vec![] });
+    }
+    Ok(ActionsRepos { available: true, repos: actions::load_repos(&c.env, &tokens).await? })
+}
+
+/// The active workflows of a repository, for the chips above its runs.
+#[tauri::command]
+pub async fn github_actions_workflows(c: State<'_, Connectors>, account: Option<String>, repo: String) -> Res<Vec<Workflow>> {
+    actions_repo(&repo)?;
+    let tokens = actions_tokens(&c, account.as_deref())?;
+    Ok(actions::load_workflows(&c.env, &tokens, &repo).await?)
+}
+
+/// The latest workflow runs of a repository: of one workflow or all, and all, only running or only failed ones.
+#[tauri::command]
+pub async fn github_actions_runs(
+    c: State<'_, Connectors>,
+    account: Option<String>,
+    repo: String,
+    workflow: Option<i64>,
+    status: String,
+) -> Res<ActionRuns> {
+    actions_repo(&repo)?;
+    if !actions::STATUS_FILTERS.contains(&status.as_str()) {
+        return Err("Onbekend filter.".into());
+    }
+    let tokens = actions_tokens(&c, account.as_deref())?;
+    Ok(actions::load_runs(&c.env, &tokens, &repo, workflow.filter(|w| *w > 0), &status).await?)
+}
+
+/// One workflow run with its jobs, for the detail view.
+#[tauri::command]
+pub async fn github_actions_run(c: State<'_, Connectors>, account: Option<String>, repo: String, run: i64) -> Res<RunDetail> {
+    actions_repo(&repo)?;
+    if run <= 0 {
+        return Err("Deze run bestaat niet.".into());
+    }
+    let tokens = actions_tokens(&c, account.as_deref())?;
+    Ok(actions::load_run(&c.env, &tokens, &repo, run).await?)
+}
+
+/// Re-runs a workflow run (`rerun`), only its failed jobs (`rerunFailed`), or cancels it (`cancel`); only after a click
+/// in the view, and written to the action log either way.
+#[tauri::command]
+pub async fn github_actions_run_action(
+    c: State<'_, Connectors>,
+    state: State<'_, AppState>,
+    account: Option<String>,
+    repo: String,
+    run: i64,
+    action: String,
+) -> Res<()> {
+    actions_repo(&repo)?;
+    if run <= 0 || actions::action_path(&action).is_none() {
+        return Err("Deze actie bestaat niet.".into());
+    }
+    let tokens = actions_tokens(&c, account.as_deref())?;
+    let tool = format!("github_actions_{action}");
+    match actions::run_action(&c.env, &tokens, &repo, run, &action).await {
+        Ok(used) => {
+            state.store.audit(&tool, &format!("{repo} · run {run} · {used}"), "OK");
+            Ok(())
+        }
+        Err(e) => {
+            state.store.audit(&tool, &format!("{repo} · run {run}"), &format!("FOUT: {}", e.message));
             Err(e.message)
         }
     }

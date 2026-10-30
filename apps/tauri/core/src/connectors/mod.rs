@@ -6,6 +6,7 @@
 //! - een bron praat alleen met het adres dat de gebruiker instelde.
 
 pub mod accounts;
+pub mod actions;
 pub mod agenda;
 pub mod brand;
 pub mod catalog;
