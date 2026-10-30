@@ -133,9 +133,14 @@ struct ChatTranscript: View {
                     userScrolled()
                 }
                 if new.nearTop, scrolledByUser { loadOlder(proxy, automatic: true) }
-                if new.nearBottom != atBottom {
-                    atBottom = new.nearBottom
-                    if atBottom { missed = 0 }
+                // Only you scroll away from the newest message: a message that came in and made the chat taller is
+                // not you reading back, so it does not stop the chat from following it down.
+                let moved = new.content == old.content && new.container == old.container
+                if new.nearBottom, !atBottom {
+                    atBottom = true
+                    missed = 0
+                } else if !new.nearBottom, atBottom, moved {
+                    atBottom = false
                 }
             }
             .onScrollPhaseChange { _, phase in
@@ -153,11 +158,16 @@ struct ChatTranscript: View {
                         missed += 1
                         return
                     }
-                    withAnimation(NookTheme.scroll) { proxy.scrollTo(last, anchor: .bottom) }
+                    // Once the new message is laid out: scrolled to in the same update, it is not there yet and the
+                    // chat stays where it was.
+                    DispatchQueue.main.async {
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo(last, anchor: .bottom) }
+                    }
                 } else {
                     var jump = Transaction()
                     jump.disablesAnimations = true
                     withTransaction(jump) { proxy.scrollTo(last, anchor: .bottom) }
+                    DispatchQueue.main.async { withTransaction(jump) { proxy.scrollTo(last, anchor: .bottom) } }
                 }
             }
             // Someone starts typing: their bubble comes into view under the last message.
