@@ -300,6 +300,9 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     /// The agent's own conversation this session started from when it could not continue it (see
     /// `carryOverConversation`): taking that conversation over again opens this session, not a second one.
     var carriedOverFrom: String? = nil
+    /// The agent's own conversation this session took over as a copy (`adopt(fork:)`, a chat still open in its own app):
+    /// the copy gets a new session id, and the original is still this chat to you, so it is not listed a second time.
+    var copiedFrom: String? = nil
     /// Stopped on a usage limit: since when, when the limit resets (nil: unknown), and whether the session then goes
     /// on by itself.
     var limitedAt: Date? = nil
@@ -364,7 +367,13 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
 
     /// Does `session` name this run's conversation: its current session id or an earlier one (a resumed chat gets a new id)?
     func isConversation(_ session: String) -> Bool {
-        providerSessionID == session || carriedOverFrom == session || conversation?.earlierSessions?.contains(session) == true
+        providerSessionID == session || earlierConversations.contains(session)
+    }
+
+    /// The agent's conversation ids this session stands for besides its current one: earlier ids of a resumed chat, and
+    /// the chat it was carried over or copied from. The lists show those as this session, not as a chat of their own.
+    var earlierConversations: [String] {
+        (conversation?.earlierSessions ?? []) + [carriedOverFrom, copiedFrom].compactMap { $0 }.filter { !$0.isEmpty }
     }
 }
 
