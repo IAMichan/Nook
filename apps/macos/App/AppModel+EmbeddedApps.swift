@@ -26,7 +26,7 @@ extension AppModel {
             // Every chat Nook has opens as the card a new message brings up (its messages so far and a field to answer),
             // the same for every app; WhatsApp's linked phone fetches the chat first (`openWhatsAppChat`).
             if WhatsAppAccounts.shared.resolve(name) == nil,
-               let id = chatsEntryID(named: name), let thread = ChatCaptureService.shared.inbox.threads[id] {
+               let id = chatsEntryID(named: name), let thread = ChatCaptureService.shared.loadedInbox.threads[id] {
                 chat.append(ChatMessage(role: .nook, text: tr("whatsapp.open.card", thread.name)))
                 presentChat(id, asked: true)
                 return true

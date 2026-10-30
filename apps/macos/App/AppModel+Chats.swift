@@ -51,7 +51,7 @@ extension AppModel {
     /// whatever the rules.
     func presentChat(_ id: String, asked opened: Bool = false) {
         let capture = ChatCaptureService.shared
-        guard let thread = capture.inbox.threads[id] else { return }
+        guard let thread = capture.loadedInbox.threads[id] else { return }
         let token = Self.chatCardPrefix + id
         let asked = opened || viewModel.hasCard(id: token)
         guard asked ? !thread.messages.isEmpty : thread.messages.contains(where: { !$0.isMine }) else { return }
@@ -96,7 +96,7 @@ extension AppModel {
     /// when it is on screen already. `opened`: you opened the chat yourself, so the card takes the keyboard and comes
     /// first.
     private func showChatCard(_ id: String, opened: Bool) {
-        guard let thread = ChatCaptureService.shared.inbox.threads[id], !thread.messages.isEmpty else { return }
+        guard let thread = ChatCaptureService.shared.loadedInbox.threads[id], !thread.messages.isEmpty else { return }
         Self.drawnChatCards[id] = thread
         let token = Self.chatCardPrefix + id
         let appName = MessagingApps.app(id: thread.app)?.name ?? thread.app
@@ -168,7 +168,7 @@ extension AppModel {
     /// Read on a chat's card, by your own click: read in Nook, and in its app too where answering does so for that app
     /// (Settings › Chats) and something was new.
     private func readFromCard(_ id: String) {
-        guard let thread = ChatCaptureService.shared.inbox.threads[id] else { return }
+        guard let thread = ChatCaptureService.shared.loadedInbox.threads[id] else { return }
         let entry = ChatsEntry.entry(thread)
         let hadUnread = thread.unread > 0
         markChatReadInNook(entry)
@@ -187,7 +187,7 @@ extension AppModel {
     /// "Let Nook answer" on a chat's card: Nook reads only this chat and proposes an answer you approve. Asking for a
     /// draft teaches memory nothing about you.
     private func letNookAnswer(_ id: String) {
-        guard let thread = ChatCaptureService.shared.inbox.threads[id] else { return }
+        guard let thread = ChatCaptureService.shared.loadedInbox.threads[id] else { return }
         // Read as Read on the card reads it: in Nook, and in the app where Settings › Chats says so.
         readFromCard(id)
         // WhatsApp's linked phone is read by its key across accounts; every other chat by its name and app.
@@ -204,7 +204,7 @@ extension AppModel {
     /// quoted), where Nook writes in it; else it is copied for its app. The card shows it going out above its field;
     /// when that fails it says why and puts the text back, so nothing typed is lost.
     func replyFromCard(_ text: String, card: NookCard, replyTo: String? = nil) {
-        guard let id = Self.chatCardThread(card), let thread = ChatCaptureService.shared.inbox.threads[id] else { return }
+        guard let id = Self.chatCardThread(card), let thread = ChatCaptureService.shared.loadedInbox.threads[id] else { return }
         let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // "@nook …" is a request to Nook, never a message for the chat; the card's field lets Nook write it.
         guard !reply.isEmpty, ChatDraft.instruction(in: reply) == nil else { return }
@@ -239,7 +239,7 @@ extension AppModel {
     /// An emoji on a message in a chat card, after your own click: it goes to the chat (the same emoji again takes it
     /// back) and is logged as every action in a chat is; the card follows, or says why it could not.
     func reactCardMessage(_ bubble: ChatBubble, _ emoji: String, card: NookCard) {
-        guard let id = Self.chatCardThread(card), let thread = ChatCaptureService.shared.inbox.threads[id],
+        guard let id = Self.chatCardThread(card), let thread = ChatCaptureService.shared.loadedInbox.threads[id],
               let route = chatRoute(for: thread) else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -254,7 +254,7 @@ extension AppModel {
     /// A click on a file in a chat card's bubble: from this Mac when Nook has it, fetched from its app where Nook can
     /// (WhatsApp's gateway), else in its app. The card stays open and says what happens.
     func openCardAttachment(_ bubble: ChatBubble, card: NookCard) {
-        guard let id = Self.chatCardThread(card), let thread = ChatCaptureService.shared.inbox.threads[id] else { return }
+        guard let id = Self.chatCardThread(card), let thread = ChatCaptureService.shared.loadedInbox.threads[id] else { return }
         if bubble.file == nil, let name = bubble.attachment { editShownCard(card.id) { $0.notice = tr("whatsapp.file.opening", name) } }
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -273,7 +273,7 @@ extension AppModel {
     func copyCardReply(_ text: String, card: NookCard) {
         let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !reply.isEmpty, ChatDraft.instruction(in: reply) == nil,
-              let id = Self.chatCardThread(card), let thread = ChatCaptureService.shared.inbox.threads[id]
+              let id = Self.chatCardThread(card), let thread = ChatCaptureService.shared.loadedInbox.threads[id]
         else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(reply, forType: .string)
@@ -328,15 +328,15 @@ extension AppModel {
         let capture = ChatCaptureService.shared
         if let target = WhatsAppAccounts.shared.resolve(name) {
             let id = ChatInbox.key(app: capture.whatsAppGatewayBridge.app, id: target.key)
-            if let thread = capture.inbox.threads[id], capture.isShown(thread) { return id }
+            if let thread = capture.loadedInbox.threads[id], capture.isShown(thread) { return id }
         }
-        return capture.inbox.thread(named: name, among: capture.isShown)?.id
+        return capture.loadedInbox.thread(named: name, among: capture.isShown)?.id
     }
 
     /// The chats "@chat …" offers, newest first, the same for every app: each with where it is and how many are new.
     func chatChoices() -> [(name: String, detail: String)] {
         let capture = ChatCaptureService.shared
-        return capture.inbox.sorted.filter(capture.isShown).map { thread in
+        return capture.loadedInbox.sorted.filter(capture.isShown).map { thread in
             let context = Self.chatContext(thread)
             return (thread.name, thread.unread > 0 ? context + " · " + tr("whatsapp.card.unread", thread.unread) : context)
         }
@@ -360,7 +360,7 @@ extension AppModel {
         guard case .chat(let bubbles) = card.detail else {
             return try await draftChatMessage(app: "Nook", chat: "Nook", transcript: "Nook: " + card.title, instruction: instruction)
         }
-        let thread = Self.chatCardThread(card).flatMap { ChatCaptureService.shared.inbox.threads[$0] }
+        let thread = Self.chatCardThread(card).flatMap { ChatCaptureService.shared.loadedInbox.threads[$0] }
         let app = thread.map { MessagingApps.app(id: $0.app)?.name ?? $0.app } ?? card.replyCopiesTo ?? card.context
         let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: card.title)
         return try await draftChatMessage(app: app, chat: card.title, transcript: transcript, instruction: instruction)

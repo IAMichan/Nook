@@ -76,8 +76,34 @@ final class ProjectSettingsTests: XCTestCase {
     func testScopeChoicesKeepFoldersWithOverrides() {
         var overrides = ProjectOverrides()
         overrides.set(.isolation, .string("folder"), for: "/old")
-        let choices = ProjectSettings.scopeChoices(recent: ["/a", "/b/", "/a", "/c"], overrides: overrides, limit: 2)
-        XCTAssertEqual(choices, ["/a", "/b", "/old"])
+        let choices = ProjectSettings.scopeChoices(favorites: ["/fav/"], recent: ["/a", "/b/", "/fav", "/a", "/c"], overrides: overrides, limit: 3)
+        XCTAssertEqual(choices, ["/fav", "/a", "/b", "/old"])
+    }
+
+    func testFavoriteFoldersToggleAndStayOnTopOfTheMenu() {
+        var favorites: [String] = []
+        favorites = ProjectSettings.togglingFavorite("/work/nook/", in: favorites)
+        favorites = ProjectSettings.togglingFavorite("/work/infaris", in: favorites)
+        XCTAssertEqual(favorites, ["/work/nook", "/work/infaris"])
+        XCTAssertTrue(ProjectSettings.isFavorite("/work/nook", in: favorites))
+        XCTAssertTrue(ProjectSettings.isFavorite("/work/nook/", in: favorites))
+        XCTAssertFalse(ProjectSettings.isFavorite("/work/other", in: favorites))
+
+        let existing: Set<String> = ["/work/nook", "/work/infaris", "/work/wt1", "/work/wt2", "/work/wt3", "/work/wt4"]
+        let menu = ProjectSettings.projectMenu(
+            favorites: favorites + ["/work/missing"],
+            recent: ["/work/wt1", "/work/nook/", "/work/wt2", "/work/wt3", "/work/wt4", "/work/missing"],
+            exists: { existing.contains($0) },
+            normalize: ProjectOverrides.normalize,
+            limit: 5
+        )
+        XCTAssertEqual(menu.favorites, ["/work/nook", "/work/infaris"], "existing favorites come first, in order")
+        XCTAssertEqual(menu.recent, ["/work/wt1", "/work/wt2", "/work/wt3"], "favorites are not repeated under recent")
+
+        // Unstarring removes the folder from favorites and keeps the rest in order.
+        favorites = ProjectSettings.togglingFavorite("/work/nook", in: favorites)
+        XCTAssertEqual(favorites, ["/work/infaris"])
+        XCTAssertEqual(ProjectSettings.togglingFavorite("   ", in: favorites), ["/work/infaris"])
     }
 
     func testPermissionFallsBackToOneTheAgentSupports() {

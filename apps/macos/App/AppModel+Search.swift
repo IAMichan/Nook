@@ -150,7 +150,7 @@ extension AppModel {
     private func searchChats() -> [SearchDocument] {
         var documents: [SearchDocument] = []
         let capture = ChatCaptureService.shared
-        for thread in capture.inbox.sorted where capture.isShown(thread) {
+        for thread in capture.loadedInbox.sorted where capture.isShown(thread) {
             let app = MessagingApps.app(id: thread.app)?.name ?? thread.app
             // The account too, while the app has more than one linked ("WhatsApp · Business").
             let subtitle = thread.account.map { app + " · " + $0 } ?? app

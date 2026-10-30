@@ -122,7 +122,10 @@ struct PanelView: View {
     private var tabItems: [NookTabBar<PanelTab>.Item] {
         let tabs = PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || tab == .music)
         let waiting = app.activeAgents.filter { $0.status == .waiting || $0.approvalID != nil }.count
-        let unread = tab != .chat && app.chat.list(query: "", showArchived: false).contains { $0.status == .unread }
+        // The conversations the Nook list shows, without sorting them only to ask whether one is unread.
+        let unread = tab != .chat && app.chat.conversations.contains {
+            !$0.archived && (!$0.isEmpty || $0.busy) && $0.status == .unread
+        }
         let chatsUnread = tab != .inbox && chatsDot.lit
         return tabs.enumerated().map { index, value in
             NookTabBar<PanelTab>.Item(value: value, title: value.title,
@@ -173,7 +176,11 @@ struct PanelView: View {
         // Centered on the header (after Nook's room on the left); the empty space around it still moves the window.
         .overlay { headerCapsule }
         .padding(.leading, headerInset)
-        .onHover { hovering in withAnimation(NookTheme.hover) { headerHover = hovering } }
+        // Only the notch shows something on hover (the window button); in the window it would redraw the panel for nothing.
+        .onHover { hovering in
+            guard !inWindow else { return }
+            withAnimation(NookTheme.hover) { headerHover = hovering }
+        }
     }
 
     /// The tabs, a thin line, then search, talk and the bell: one `graphite` capsule with a hairline edge and a soft
@@ -212,7 +219,7 @@ struct PanelView: View {
                 NookChatTab(viewModel: viewModel, openOnAgents: openOnAgents)
             }
         case .agents: AgentsTab(viewModel: viewModel)
-        case .inbox: ChatsTab(viewModel: viewModel, openOnAgents: openOnAgents)
+        case .inbox: ChatsTab(viewModel: viewModel, openOnAgents: openOnAgents, inWindow: inWindow)
         case .music: MusicTab()
         }
     }
@@ -227,7 +234,9 @@ struct PanelApprovalBar: View {
     /// The task open over the tab, if any: the session behind it is not on screen.
     let sheet: NotchSheet?
     @ObservedObject var hub: AgentHub
-    @ObservedObject var workspace: WorkspaceManager
+    /// Not observed: it changes with every streamed token, and `AppModel` already redraws when a session it runs asks
+    /// for an approval or has a question.
+    let workspace: WorkspaceManager
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @EnvironmentObject private var app: AppModel
 

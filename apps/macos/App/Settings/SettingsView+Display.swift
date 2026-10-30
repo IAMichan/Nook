@@ -50,6 +50,10 @@ extension SettingsView {
                     set: { app.viewModel.openOnHover = $0; refreshTick += 1 }
                 ))
             }
+            Section(tr("settings.window.title")) {
+                SettingToggle(tr("settings.window.openAtLaunch"), detail: tr("settings.window.openAtLaunchDetail"),
+                              isOn: $settings.openWindowAtLaunch)
+            }
             energySection
             // Rarely needed: folded away at the end, like on every page.
             Section {

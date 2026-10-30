@@ -47,7 +47,7 @@ final class ChatInboxConnector: ContextSource {
 
     func contextLines() -> [String] {
         guard isActive, capture.status == .running else { return [] }
-        let unread = capture.inbox.sorted.filter { $0.unread > 0 && capture.isShown($0) }
+        let unread = capture.loadedInbox.sorted.filter { $0.unread > 0 && capture.isShown($0) }
         var lines = ["Chats from the user's other chat apps (collected from their notifications on this Mac; Telegram, Instagram, Messenger, Signal and more): read one with chat_inbox, or find a message in all of them (the user's own sent ones too) with its query."]
         let writable = Self.writableApps()
         lines.append(writable.isEmpty ? "Nook cannot answer in these apps."
@@ -60,7 +60,7 @@ final class ChatInboxConnector: ContextSource {
     private static func writableApps() -> [String] {
         let capture = ChatCaptureService.shared
         var apps: [String] = []
-        for thread in capture.inbox.sorted where capture.isShown(thread) && !apps.contains(thread.app) {
+        for thread in capture.loadedInbox.sorted where capture.isShown(thread) && !apps.contains(thread.app) {
             if AppModel.shared.chatRoute(for: thread) != nil { apps.append(thread.app) }
         }
         return apps.map { MessagingApps.app(id: $0)?.name ?? $0 }
@@ -91,7 +91,7 @@ final class ChatInboxConnector: ContextSource {
                 run: { input in
                     // Every chat that shows, the same way for every app (`ChatCaptureService.isShown`).
                     let capture = ChatCaptureService.shared
-                    let inbox = capture.inbox
+                    let inbox = capture.loadedInbox
                     let shown = inbox.sorted.filter(capture.isShown)
                     let app = AppData.string(input["app"]).trimmingCharacters(in: .whitespaces).lowercased()
                     let appID = app.isEmpty ? nil : (MessagingApps.app(named: app)?.id ?? app)
@@ -137,8 +137,8 @@ final class ChatInboxConnector: ContextSource {
                     let appID = app.isEmpty ? nil : (MessagingApps.app(named: app)?.id ?? app)
                     let chat = AppData.string(input["to"]).trimmingCharacters(in: .whitespacesAndNewlines)
                     let text = AppData.string(input["message"])
-                    guard let thread = capture.inbox.thread(named: chat, app: appID, among: capture.isShown) else {
-                        let names = capture.inbox.sorted.filter(capture.isShown).prefix(12).map(\.name).joined(separator: ", ")
+                    guard let thread = capture.loadedInbox.thread(named: chat, app: appID, among: capture.isShown) else {
+                        let names = capture.loadedInbox.sorted.filter(capture.isShown).prefix(12).map(\.name).joined(separator: ", ")
                         throw NookError("No chat is called \"\(chat)\". Recent chats: \(names.isEmpty ? "none" : names).")
                     }
                     let appName = MessagingApps.app(id: thread.app)?.name ?? thread.app

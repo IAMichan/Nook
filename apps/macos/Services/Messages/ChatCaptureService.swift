@@ -133,7 +133,7 @@ final class ChatCaptureService: ObservableObject {
     /// What came in before this long ago, on a first start, counts as read: it was likely seen on the Mac already.
     private static let freshness: TimeInterval = 3600
 
-    private static var file: URL { NookPaths.supportDirectory.appendingPathComponent("chat-inbox.json") }
+    private nonisolated static var file: URL { NookPaths.supportDirectory.appendingPathComponent("chat-inbox.json") }
     private var timer: Timer?
     private var polling = false
     private var lastChange: Date?
@@ -147,9 +147,8 @@ final class ChatCaptureService: ObservableObject {
     private var generation = 0
 
     private init() {
-        var inbox = SafeStorage.load(ChatInbox.self, from: Self.file).value ?? ChatInbox()
-        inbox.trim()
-        self.inbox = inbox
+        // Read in the background (`chat-inbox.json` holds weeks of messages): the inbox is empty until it is in.
+        inbox = ChatInbox()
         enabled = ConnectorToggle.isOn(ChatInboxConnector.sourceID, default: false)
         serviceBridge.skips = { [weak self] app in
             guard let self else { return false }
@@ -164,12 +163,60 @@ final class ChatCaptureService: ObservableObject {
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.flushSave(wait: true) }
         }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let read = Self.readInbox()
+            await self?.finishLoading(read)
+        }
+    }
+
+    /// Whether `chat-inbox.json` is read. Every change to the inbox starts with `ensureLoaded`, and nothing is written
+    /// before, so a change made from an empty inbox never replaces the chats on disk.
+    private var loaded = false
+
+    private nonisolated static func readInbox() -> ChatInbox {
+        var inbox = SafeStorage.load(ChatInbox.self, from: file).value ?? ChatInbox()
+        inbox.trim()
+        return inbox
+    }
+
+    private func finishLoading(_ read: ChatInbox) {
+        guard !loaded else { return }
+        loaded = true
+        inbox = read
+        if startWhenLoaded {
+            startWhenLoaded = false
+            start()
+        }
+    }
+
+    /// `start` came before the inbox was read.
+    private var startWhenLoaded = false
+
+    /// The inbox for something that reads it once and acts on it (a tool of the brain, a search, sending a reply): read
+    /// right now when the background read is not done yet, so it never finds the empty inbox of the first moment after
+    /// launch. Views read `inbox`, which redraws them once it is in.
+    var loadedInbox: ChatInbox {
+        ensureLoaded()
+        return inbox
+    }
+
+    /// Reads the inbox right now when the background read is not done yet: a change in the first moment after launch
+    /// waits for it, as all of them did before.
+    private func ensureLoaded() {
+        guard !loaded else { return }
+        finishLoading(Self.readInbox())
     }
 
     private var databasePath: String { NotificationRecord.databasePath(home: AppDatabase.home) }
 
     func start() {
         guard enabled else { return }
+        // At launch the inbox is still being read in the background: collecting starts once it is in, instead of reading
+        // it a second time here on the main thread.
+        guard loaded else {
+            startWhenLoaded = true
+            return
+        }
         timer?.invalidate()
         lastChange = nil
         retryAt = nil
@@ -213,6 +260,7 @@ final class ChatCaptureService: ObservableObject {
     }
 
     func stop() {
+        startWhenLoaded = false
         timer?.invalidate()
         timer = nil
         generation += 1
@@ -223,7 +271,8 @@ final class ChatCaptureService: ObservableObject {
 
     /// Reads what was added to the database since the last look. Does nothing while the database did not change.
     func poll() async {
-        guard enabled, !polling else { return }
+        // Not before the inbox is read (a connector's refresh at launch): `start` looks once it is in.
+        guard enabled, !polling, loaded else { return }
         let change = modified()
         if status == .running, !backlog, change != nil, change == lastChange { return }
         if let retryAt, retryAt > Date() { return }
@@ -418,6 +467,7 @@ final class ChatCaptureService: ObservableObject {
         do {
             let chats = try await bridge.read()
             guard current() else { return }
+            ensureLoaded()
             // Merged into a copy: a read that brings nothing new (most of them) then leaves the published inbox alone.
             let before = inbox
             var merged = inbox
@@ -457,6 +507,7 @@ final class ChatCaptureService: ObservableObject {
     /// A chat you opened: its app is read now (the chat helper reads that very chat again), so it shows what the app
     /// has at this moment, the same for every app Nook reads itself. A chat only notifications bring has nothing to ask.
     func refresh(_ id: String) {
+        ensureLoaded()
         guard enabled, let thread = inbox.threads[id], thread.bridged == true else { return }
         if serviceBridge.refresh(app: thread.app, name: thread.name) {
             bridgeDue[serviceBridge.app] = nil
@@ -525,6 +576,7 @@ final class ChatCaptureService: ObservableObject {
     /// Forgets an app you added, and the chats collected from it.
     func removeSource(_ id: String) {
         changeSources { $0.remove(id) }
+        ensureLoaded()
         let gone = inbox.threads.values.filter { $0.app == id }.map(\.id)
         guard !gone.isEmpty else { return }
         for thread in gone { inbox.remove(thread) }
@@ -541,6 +593,7 @@ final class ChatCaptureService: ObservableObject {
 
     /// Read in Nook: kept in `chat-inbox.json`, so a restart does not bring the badge back. The app itself is not told.
     func markRead(_ id: String) {
+        ensureLoaded()
         guard inbox.threads[id]?.unread ?? 0 > 0 else { return }
         inbox.markRead(id)
         save()
@@ -548,6 +601,7 @@ final class ChatCaptureService: ObservableObject {
 
     /// Read in the app too: after Nook told the app, or opened the chat there.
     func markReadInApp(_ id: String) {
+        ensureLoaded()
         guard inbox.threads[id] != nil else { return }
         inbox.markReadInApp(id)
         save()
@@ -555,23 +609,27 @@ final class ChatCaptureService: ObservableObject {
 
     /// Shows your emoji on a message (or takes it back) as you just sent it to its app.
     func toggleReaction(_ emoji: String, on message: String, in id: String) {
+        ensureLoaded()
         inbox.toggleReaction(emoji, on: message, in: id)
         save()
     }
 
     func markUnread(_ id: String) {
+        ensureLoaded()
         guard inbox.threads[id]?.unread == 0 else { return }
         inbox.markUnread(id)
         save()
     }
 
     func markAllRead() {
+        ensureLoaded()
         guard inbox.totalUnread > 0 else { return }
         inbox.markAllRead()
         save()
     }
 
     func remove(_ id: String) {
+        ensureLoaded()
         inbox.remove(id)
         save()
     }
@@ -602,6 +660,7 @@ final class ChatCaptureService: ObservableObject {
     /// Scrolls back in a chat: the batch before the oldest message it shows, kept from now on. No cap: each scroll back
     /// goes further, as far as the app keeps the chat. False when no older one came in.
     func loadOlder(_ id: String) async -> Bool {
+        ensureLoaded()
         guard let thread = inbox.threads[id], let history = history(thread) else { return false }
         let before = thread.messages.count
         let oldest = thread.messages.first
@@ -625,6 +684,7 @@ final class ChatCaptureService: ObservableObject {
     /// An app whose messages Nook may not keep was turned off (WhatsApp through the linked phone): its chats let go of
     /// them, in memory as they never were on disk. What Nook knows of each chat itself stays.
     func forgetMessages(of ids: Set<String>) {
+        ensureLoaded()
         var next = inbox
         next.forgetMessages(of: ids)
         guard next != inbox else { return }
@@ -635,6 +695,7 @@ final class ChatCaptureService: ObservableObject {
     /// Chats of an account you removed: gone from Nook, without the mark a chat you removed leaves (no newer message
     /// brings them back, since nothing reads that account any more).
     func drop(_ ids: Set<String>) {
+        ensureLoaded()
         let gone = ids.filter { inbox.threads[$0] != nil }
         guard !gone.isEmpty else { return }
         for id in gone { inbox.threads[id] = nil }
@@ -643,6 +704,7 @@ final class ChatCaptureService: ObservableObject {
 
     /// Chats brought over from another app (`BeeperImporter`), merged like a bridge's; how many changed.
     func importChats(_ chats: [BridgedChat]) -> Int {
+        ensureLoaded()
         var changed = 0
         for chat in chats where inbox.merge(chat) { changed += 1 }
         if changed > 0 { save() }
@@ -651,6 +713,7 @@ final class ChatCaptureService: ObservableObject {
 
     /// Forgets every collected chat; the next look starts after the newest notification.
     func clear() {
+        ensureLoaded()
         let last = inbox.lastRecord
         let lookedBack = inbox.lookedBack
         inbox = ChatInbox()
@@ -684,7 +747,7 @@ final class ChatCaptureService: ObservableObject {
 
     /// Writes what is waiting now; `wait` holds on until it is on disk (Nook quits).
     private func flushSave(wait: Bool = false) {
-        guard savePending else { return }
+        guard savePending, loaded else { return }
         savePending = false
         let inbox = inbox
         let file = Self.file

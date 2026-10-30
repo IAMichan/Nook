@@ -153,7 +153,7 @@ final class WhatsAppGatewayBridge: ChatKeyedHistoryBridge, ChatNewsBridge {
         }
         books[account] = nil
         let capture = ChatCaptureService.shared
-        let ids = Set(capture.inbox.threads.values.filter { thread in
+        let ids = Set(capture.loadedInbox.threads.values.filter { thread in
             thread.app == app && thread.chatID.map { WAChatKey.split($0).account == account } == true
         }.map(\.id))
         if remove { capture.drop(ids) } else { capture.forgetMessages(of: ids) }

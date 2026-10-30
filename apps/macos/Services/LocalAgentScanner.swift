@@ -19,12 +19,21 @@ enum LocalAgentScanner {
         let name: String
         let commands: Set<String>      // executable name
         let packages: [String]         // path substring if running via node or python
+        var homeVariable: String? = nil
+        var homeSubdirectory: String? = nil
+
+        func home(in line: String) -> String {
+            guard let variable = homeVariable,
+                  let value = AgentProcessEnvironment.value(of: variable, in: line) else { return "" }
+            guard let sub = homeSubdirectory else { return value }
+            return URL(fileURLWithPath: value, isDirectory: true).appendingPathComponent(sub, isDirectory: true).path
+        }
     }
 
     private static let kinds: [Kind] = [
-        Kind(name: "Claude Code", commands: ["claude"], packages: ["@anthropic-ai/claude-code"]),
-        Kind(name: "Codex", commands: ["codex"], packages: ["@openai/codex"]),
-        Kind(name: "Gemini CLI", commands: ["gemini"], packages: ["@google/gemini-cli"]),
+        Kind(name: "Claude Code", commands: ["claude"], packages: ["@anthropic-ai/claude-code"], homeVariable: "CLAUDE_CONFIG_DIR"),
+        Kind(name: "Codex", commands: ["codex"], packages: ["@openai/codex"], homeVariable: "CODEX_HOME"),
+        Kind(name: "Gemini CLI", commands: ["gemini"], packages: ["@google/gemini-cli"], homeVariable: "GEMINI_CLI_HOME", homeSubdirectory: ".gemini"),
         Kind(name: "Aider", commands: ["aider"], packages: []),
         Kind(name: "OpenCode", commands: ["opencode"], packages: ["opencode-ai"]),
         Kind(name: "Copilot CLI", commands: ["copilot"], packages: ["@github/copilot"]),
@@ -98,16 +107,12 @@ enum LocalAgentScanner {
     private static func inspect(_ pid: pid_t, buffer: inout [UInt8]) -> (name: String, home: String)? {
         // Fails for other users' processes, like `ps` does; those are never your agents.
         guard let process = arguments(pid, buffer: &buffer), !process.arguments.isEmpty,
-              let name = identify(process.arguments.joined(separator: " ")) else { return nil }
+              let kind = identify(process.arguments.joined(separator: " ")) else { return nil }
         // The same line `ps -E` prints: the command line, then the environment.
         let line = (process.arguments + process.environment).joined(separator: " ")
         guard !AgentProcessEnvironment.isNookOwned(line) else { return nil }
         // The agent's own account variable (see AgentKind.homeVariable), as the folder its data is in.
-        let kind = AgentKind(agentName: name)
-        let home = kind.flatMap { kind in
-            kind.homeVariable.flatMap { AgentProcessEnvironment.value(of: $0, in: line) }.map { kind.home(fromVariable: $0) }
-        } ?? ""
-        return (name, home)
+        return (kind.name, kind.home(in: line))
     }
 
     // MARK: Kernel reads
@@ -183,7 +188,7 @@ enum LocalAgentScanner {
     }
 
     /// Identifies an agent from its command line; excludes .app bundles and search commands.
-    private static func identify(_ command: String) -> String? {
+    private static func identify(_ command: String) -> Kind? {
         let lower = command.lowercased()
         if lower.hasPrefix("grep ") || lower.contains(" grep ") { return nil }
 
@@ -203,8 +208,8 @@ enum LocalAgentScanner {
             candidates += tokens.dropFirst().prefix(3).filter { !$0.hasPrefix("-") }.map { URL(fileURLWithPath: $0).lastPathComponent }
         }
         for kind in kinds {
-            if candidates.contains(where: { kind.commands.contains($0) }) { return kind.name }
-            if interpreters.contains(program), kind.packages.contains(where: { lower.contains($0) }) { return kind.name }
+            if candidates.contains(where: { kind.commands.contains($0) }) { return kind }
+            if interpreters.contains(program), kind.packages.contains(where: { lower.contains($0) }) { return kind }
         }
         return nil
     }

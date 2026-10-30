@@ -87,7 +87,7 @@ extension AppModel {
             if chat.conversation(id) != nil { openConversation(id) } else { showChat() }
         case .chat(let id):
             // The chat's card, as it came up; the Chats tab for a chat Nook no longer holds.
-            if ChatCaptureService.shared.inbox.threads[id] != nil { presentChat(id, asked: true) } else { showChats(ChatsFocus(chat: id)) }
+            if ChatCaptureService.shared.loadedInbox.threads[id] != nil { presentChat(id, asked: true) } else { showChats(ChatsFocus(chat: id)) }
         case .nowhere:
             break
         }
