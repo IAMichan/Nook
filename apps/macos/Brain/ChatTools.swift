@@ -49,12 +49,13 @@ enum ChatTools {
             ),
             ToolSpec(
                 name: "compose_mail",
-                description: "Composes a complete email and displays it as a draft in chat. The user can review/edit it there and send with one click or open in Mail. ALWAYS use this when the user asks to write, draft, reply to, or forward an email. Write the entire email in body, including greeting and sign-off, in appropriate tone and language for the recipient. Look up the address in context, on screen, or using search_mail; if unknown, leave to empty and mention it in your answer. Do not repeat the email body in your answer: summarize what you wrote in one sentence.",
+                description: "Composes a complete email and displays it as a draft in chat. The user can review/edit it there and send with one click or open in Mail. ALWAYS use this when the user asks to write, draft, reply to, or forward an email. Write the entire email in body, including greeting and sign-off, in appropriate tone and language for the recipient. Look up the address in context, on screen, or using search_mail; if unknown, leave to empty and mention it in your answer. When the user asks to change a draft, call compose_mail again with the whole new version: it replaces the open draft right away, without asking. Never use take_over for an email, and never propose another step to send it: the user sends it from the draft. Do not repeat the email body in your answer: summarize what you wrote in one sentence.",
                 schema: [
                     "type": "object",
                     "properties": [
                         "to": ["type": "string", "description": "Recipient email address(es), comma-separated. Empty if unknown."],
                         "cc": ["type": "string", "description": "CC email address(es), optional."],
+                        "from": ["type": "string", "description": "The user's own address to send from, only when they name one (\"vanuit mijn gmail\", \"from work@x.nl\"). Empty: the default account."],
                         "subject": ["type": "string", "description": "Subject line. For replies: \"Re: \" followed by original subject."],
                         "body": ["type": "string", "description": "Full text of the email, excluding subject line."]
                     ],
@@ -71,7 +72,8 @@ enum ChatTools {
                         to: ((input["to"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
                         cc: ((input["cc"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
                         subject: subject,
-                        body: body
+                        body: body,
+                        from: ((input["from"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     )
                     onMail(draft)
                     return "The email draft is displayed in chat. The user will review it and send it using the Send button."

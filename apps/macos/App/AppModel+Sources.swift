@@ -29,7 +29,11 @@ extension AppModel {
         let hidden = settings.privateSources
         guard !hidden.isEmpty else { return [] }
         let named = Set(SourceCatalog.mentions(in: text).flatMap { $0.ids })
-        return hidden.intersection(named.union(scope.focus).union(scope.mode == .only ? scope.included : []))
+        var focus = scope.focus
+        // Contacts only look up an address: a mail to an address the request gives itself never needed them, so
+        // there is nothing to warn about.
+        if text.range(of: #"[^\s@]+@[^\s@]+\.[^\s@]+"#, options: .regularExpression) != nil { focus.remove("contacts") }
+        return hidden.intersection(named.union(focus).union(scope.mode == .only ? scope.included : []))
     }
 
     /// Opens a cited source safely (https URL, local file inside user home, or mail URL).
@@ -149,7 +153,8 @@ extension AppModel {
         var ids = Set(available.map(\.source))
         ids.formUnion(connectors.sources.map(\.id))
         let order = SourceCatalog.all.map(\.id)
-        // The calendar is in the context only for the coming week of Apple Calendar. The planner can still pick it, as
+        // The calendar is in the context only when the question is about time, and then only for the coming week of
+        // Apple Calendar. The planner can always pick it, as
         // one source for every calendar (Apple Calendar, ICS calendars, Cal.com), so a question about a day is checked
         // in all of them.
         ids.subtract(QueryPlanner.agendas)

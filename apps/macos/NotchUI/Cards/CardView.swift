@@ -44,7 +44,7 @@ struct CardView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay {
-            if let zoomed, case .photo(let url) = zoomed.media, let image = zoomed.image {
+            if let zoomed, case .photo(let url) = zoomed.media, let image = zoomed.image ?? ChatMediaImages.image(url) {
                 ChatPhotoZoom(url: url, preview: image, name: zoomed.attachment ?? "",
                               onClose: { withAnimation(NookTheme.reveal) { self.zoomed = nil } },
                               onOpen: { self.zoomed = nil; onOpen(zoomed) })
@@ -110,7 +110,11 @@ struct CardView: View {
     /// context as one quiet line ("· Calendar, GitHub"), not a row of chips that competes with the status.
     private var header: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            if let source = card.appIcon { CardAppIcon(source: source) }
+            if let agent = card.agent {
+                AgentLogo(agent: agent, size: 16)
+            } else if let source = card.appIcon {
+                CardAppIcon(source: source)
+            }
             Text(card.context)
                 .font(NookTheme.TextStyle.label)
                 .foregroundStyle(NookTheme.textSecondary)
@@ -166,6 +170,8 @@ struct CardView: View {
             .font(long ? NookTheme.TextStyle.body : NookTheme.TextStyle.heading)
             .lineSpacing(long ? 4 : 1)
             .foregroundStyle(NookTheme.paper)
+            // An agent notice keeps its title to the two lines its card is sized for; the reply is under it.
+            .lineLimit(card.agent == nil ? nil : 2)
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
     }
@@ -214,7 +220,7 @@ struct CardView: View {
         }
     }
 
-    /// Every full card answers as the Chats tab does: Cmd+Return sends, "@" opens the menu, "@nook …" lets Nook write the
+    /// Every full card answers as the Chats tab does: Return sends, "@" opens the menu, "@nook …" lets Nook write the
     /// message into the field.
     private var chatField: some View {
         ChatReplyField(text: $reply, notice: $chatNotice, focus: $replyFocused,
@@ -275,6 +281,8 @@ struct CardView: View {
             EventDetail(top: top, big: big, line: line, subline: subline)
         case .command(let command, let note):
             CommandDetail(command: command, note: note)
+        case .prose(let text, let note):
+            ProseDetail(text: text, note: note)
         case .waveform:
             WaveformDetail()
         case .steps(let steps):
@@ -288,17 +296,20 @@ struct CardView: View {
             FactsDetail(facts: facts)
         case .note(let text, let label):
             NoteDetail(text: text, label: label)
+        case .summary(let text):
+            SummaryDetail(text: text)
         case .chat(let bubbles):
             // A message card's chat can be answered: each message can be quoted in the field, or get an emoji.
             ChatTranscript(bubbles: bubbles, contact: card.title, onOpen: onOpen,
                            onZoom: { bubble in withAnimation(NookTheme.reveal) { zoomed = bubble } },
-                           onReply: quoteAction, onReact: card.chatReply && card.replyCopiesTo == nil ? onReact : nil)
+                           onReply: quoteAction,
+                           onReact: card.chatReply && card.replyCopiesTo == nil && card.chatReacts ? onReact : nil)
         }
     }
 
     /// Quotes a message of a message card's chat in its field; nil for any other card.
     private var quoteAction: ((ChatBubble) -> Void)? {
-        guard card.chatReply, card.replyCopiesTo == nil else { return nil }
+        guard card.chatReply, card.replyCopiesTo == nil, card.chatQuotes else { return nil }
         return { bubble in
             withAnimation(NookTheme.reveal) { replyingTo = bubble }
             replyFocused = true
@@ -454,6 +465,30 @@ private struct CommandDetail: View {
             }
             .frame(maxHeight: command.count > 140 ? 120 : nil)
             .font(NookTheme.mono(13))
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
+
+            Text(note)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
+        }
+    }
+}
+
+/// What an agent wrote for you to approve (a pull request, a brief), formatted, in the same well as a command.
+private struct ProseDetail: View {
+    let text: String
+    let note: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            ScrollView(.vertical) {
+                MarkdownView(text: text, size: 13)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxHeight: 120)
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -667,6 +702,24 @@ private struct DiffDetail: View {
 }
 
 /// A longer text, never cut off: it wraps, and a very long one scrolls. The label names it below.
+/// What an agent said last under the card's title: quieter than the title, at most three lines, selectable.
+private struct SummaryDetail: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(NookTheme.TextStyle.body)
+            .lineSpacing(3)
+            .foregroundStyle(NookTheme.textSecondary)
+            .lineLimit(3)
+            .truncationMode(.tail)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help(text)
+    }
+}
+
 private struct NoteDetail: View {
     let text: String
     let label: String

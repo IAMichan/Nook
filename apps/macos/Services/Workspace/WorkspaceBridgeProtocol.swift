@@ -60,6 +60,14 @@ enum BridgeTool: String, CaseIterable, Sendable {
         }
     }
 
+    /// Its approval shows text written for people (a pull request, a brief, a message) as Markdown, not as a command.
+    var approvalReadsAsProse: Bool {
+        switch self {
+        case .pullRequestCreate, .delegateTask, .sessionSend: return true
+        default: return false
+        }
+    }
+
     /// The tool behind a name as an agent reports it: bare, or with an MCP prefix (`mcp__nook__…`, `nook__…`, `nook.…`).
     static func named(_ name: String) -> BridgeTool? {
         if let tool = BridgeTool(rawValue: name) { return tool }
@@ -129,13 +137,13 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .terminalStop:
             return "Stops the process in a terminal you started with terminal_run (Ctrl-C). With close: true the terminal is also closed."
         case .browserOpen:
-            return "Opens a page in Nook's built-in browser, visible to the user next to your session: https addresses, or http on this Mac (localhost, 127.0.0.1) such as the dev server you started. Waits until the page has loaded and reports its title."
+            return "Opens a page in Nook's built-in browser, visible to the user in a small window in the corner of your session's chat: https addresses, or http on this Mac (localhost, 127.0.0.1) such as the dev server you started. Waits until the page has loaded and reports its title."
         case .browserRead:
             return "Reads the page open in Nook's browser: title, address, visible text, and console errors and warnings logged since it loaded."
         case .browserScreenshot:
             return "Takes a screenshot of the page in Nook's browser, to check layout and visual changes. Works best while the browser is visible in Nook."
         case .pullRequestCreate:
-            return "Proposes a pull request for the current branch of your folder. The user approves it in Nook first; Nook then pushes the branch and opens the pull request on GitHub with the user's own connection (or the GitHub page to finish it). Commit your work before calling this. Returns the link."
+            return "Proposes a pull request for the current branch of your folder. The user approves it in Nook first unless the session has full rights; Nook then pushes the branch and opens the pull request on GitHub with the user's own connection (or the GitHub page to finish it). Commit your work before calling this. Returns the link."
         case .orchestratorCapabilities:
             return "Lists the agents Nook can run as a delegated task (installed or not, their models and the rights they offer), your own mode and rights, and the limits on delegating. Call it before delegate_task when you want another agent or model."
         case .delegateTask:
@@ -400,7 +408,8 @@ enum BridgePolicy {
         if caller.mode == .plan { return .refuse(.planMode) }
         switch tool {
         case .pullRequestCreate:
-            return .ask(.outward)
+            // It pushes and leaves this Mac, so you see it first, unless you gave the session every right.
+            return caller.permission == .bypass ? .allow : .ask(.outward)
         case .scheduleTask, .updateScheduledTask, .runScheduledTaskNow:
             // Work that runs later without anyone watching: always your decision, whatever the session's rights.
             return .ask(.schedule)

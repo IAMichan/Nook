@@ -54,20 +54,21 @@ extension AppModel {
     /// Models to offer for an agent: its default, the models the agent itself offers and the ones the model manifest
     /// knows (see WorkspaceManager+ModelManifest), the ones you typed, and the models you used with it recently; your
     /// favorites first.
-    func models(for provider: RunProvider) -> [String] {
+    /// An ACP agent you added has its own models, by its profile; models others used with theirs are left out.
+    func models(for provider: RunProvider, profileID: String? = nil) -> [String] {
         var recent: [String] = []
-        for session in history.sessions where session.agent == provider.kind && !session.model.isEmpty {
+        for session in history.sessions where provider != .acp && session.agent == provider.kind && !session.model.isEmpty {
             if !recent.contains(session.model) { recent.append(session.model) }
             if recent.count >= 6 { break }
         }
-        return workspace.menuModelIDs(for: provider, extra: recent)
+        return workspace.menuModelIDs(for: provider, profileID: profileID, extra: recent)
     }
 
     /// How a model reads in a menu: the agent's own name for it ("GPT-5.1-Codex") or the manifest's ("opus" reads
     /// "Claude Opus 5.5"), "Default" for none.
-    func modelName(_ model: String, for provider: RunProvider) -> String {
+    func modelName(_ model: String, for provider: RunProvider, profileID: String? = nil) -> String {
         if model.isEmpty { return tr("ws.model.default") }
-        return workspace.modelChoice(model, for: provider)?.name ?? model
+        return workspace.modelChoice(model, for: provider, profileID: profileID)?.name ?? model
     }
 
     /// What the menu says about a model that needs a newer agent: "Needs Claude Code 2.1.300 or newer".
@@ -83,27 +84,23 @@ extension AppModel {
 
     /// The family a model belongs to when the agent lists one model per thinking level (Antigravity's
     /// "Gemini 3 Pro (High)" and "(Low)"); the level is then picked with the effort control. Nil otherwise.
-    func modelFamily(_ model: String, for provider: RunProvider) -> ModelVariants.Family? {
-        guard provider.usesACP, let offered = workspace.agentModels[provider] else { return nil }
-        return ModelVariants.family(of: model, in: offered)
+    func modelFamily(_ model: String, for provider: RunProvider, profileID: String? = nil) -> ModelVariants.Family? {
+        workspace.modelMenu(for: provider, profileID: profileID).family(of: model)
     }
 
     /// The model's name without its level when its level is picked with the effort control ("Gemini 3 Pro").
-    func modelMenuName(_ model: String, for provider: RunProvider) -> String {
-        modelFamily(model, for: provider)?.name ?? modelName(model, for: provider)
+    func modelMenuName(_ model: String, for provider: RunProvider, profileID: String? = nil) -> String {
+        modelFamily(model, for: provider, profileID: profileID)?.name ?? modelName(model, for: provider, profileID: profileID)
     }
 
     /// The models for the model menu: one entry per family of levels.
-    func menuModels(for provider: RunProvider) -> [String] {
-        let all = models(for: provider)
-        guard provider.usesACP, let offered = workspace.agentModels[provider] else { return all }
-        return ModelVariants.collapse(all, in: offered)
+    func menuModels(for provider: RunProvider, profileID: String? = nil) -> [String] {
+        workspace.modelMenu(for: provider, profileID: profileID).collapsed(models(for: provider, profileID: profileID))
     }
 
     /// The model to run when you pick `model` in the menu: keeps the level of `current` when the new family has it.
-    func menuPick(_ model: String, keeping current: String, for provider: RunProvider) -> String {
-        guard provider.usesACP, let offered = workspace.agentModels[provider] else { return model }
-        return ModelVariants.pick(model, keeping: current, in: offered)
+    func menuPick(_ model: String, keeping current: String, for provider: RunProvider, profileID: String? = nil) -> String {
+        workspace.modelMenu(for: provider, profileID: profileID).pick(model, keeping: current)
     }
 
     /// Asks the connected agents which models they offer (at most every five minutes each), reads their versions, and
@@ -114,6 +111,23 @@ extension AppModel {
         })
         workspace.readAgentVersions(connectedProviders)
         workspace.refreshModelManifest()
+        refreshListedSessions()
+    }
+
+    /// Asks the agents whose earlier sessions come from themselves (OpenCode, Cursor, Grok, the ACP agents you added) for
+    /// them, every connected account, so they show with the sessions read from disk and continue in Nook. Sessions Nook
+    /// runs itself already have their place in the list.
+    func refreshListedSessions() {
+        for provider in connectedProviders where provider.capabilities.pastSessions == .agent {
+            for profile in connectedProfiles(for: provider) {
+                workspace.listAgentSessions(provider, profileID: profile.id) { [weak self] listed in
+                    guard let self else { return }
+                    let own = Set(self.workspace.runs.compactMap(\.providerSessionID))
+                    let sessions = listed.filter { !own.contains($0.id) }.map { PastSession(listed: $0, agent: provider.kind, profileID: profile.id) }
+                    self.history.setListedSessions(sessions, account: provider.rawValue + "|" + profile.id)
+                }
+            }
+        }
     }
 
     /// Resolves account profile for a running session, or nil if unknown.
@@ -163,6 +177,12 @@ extension AppModel {
         guard !hasProgram || !loggedIn else {
             finishConnect(profile)
             return
+        }
+        // Installed but signed out: the agent's own browser login, without a Terminal window, where it has one.
+        if hasProgram {
+            agentConnect[profile.id] = nil
+            if signInInBrowser(profile) { return }
+            agentConnect[profile.id] = .working(tr("app.connect.working"))
         }
 
         let who = profile.isDefault ? kind.name : "\(kind.name) (\(profile.label))"
@@ -228,6 +248,59 @@ extension AppModel {
                 self.finishConnect(profile)
             }
         }
+    }
+
+    /// Signs this account in through the agent's own browser login, without a Terminal window: the agent opens the sign-in
+    /// page, waits for it, and quits. Nook then comes back to the front and runs `then`. False when the agent has no such
+    /// login or is not installed, so the caller falls back to the Terminal.
+    @discardableResult
+    func signInInBrowser(_ profile: AgentProfile, then: (() -> Void)? = nil) -> Bool {
+        guard let arguments = profile.kind.browserLoginArguments,
+              let executable = history.executables[profile.kind] else { return false }
+        if agentConnect[profile.id]?.isBusy == true { return true }
+        agentConnect[profile.id] = .waitingForLogin(tr("app.connect.browserLogin", profile.kind.name))
+        let environment = AgentCommand.environment(base: ProcessInfo.processInfo.environment, executable: executable,
+                                                   extra: profile.environment)
+        Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) {
+                Self.runBrowserLogin(executable, arguments: arguments, environment: environment)
+            }.value
+            guard let self else { return }
+            if let failure = result {
+                self.agentConnect[profile.id] = .failed(failure)
+                ToastCenter.shared.error(failure)
+                return
+            }
+            self.finishConnect(profile)
+            NSApp.activate(ignoringOtherApps: true)
+            then?()
+        }
+        return true
+    }
+
+    /// Runs a browser login to its end (at most fifteen minutes). Nil when it succeeded, else what went wrong.
+    private nonisolated static func runBrowserLogin(_ executable: String, arguments: [String],
+                                                    environment: [String: String]) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        process.environment = environment
+        process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+        let output = Pipe()
+        // No stdin: the agent cannot ask for a pasted code and waits for the browser instead.
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = output
+        process.standardError = output
+        do { try process.run() } catch { return tr("app.connect.browserLoginFailed", error.localizedDescription) }
+        let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 15 * 60, execute: timeout)
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        timeout.cancel()
+        guard process.terminationStatus != 0 else { return nil }
+        if process.terminationReason == .uncaughtSignal { return tr("app.connect.browserLoginTimeout") }
+        let last = String(decoding: data, as: UTF8.self).split(separator: "\n").last.map(String.init) ?? ""
+        return tr("app.connect.browserLoginFailed", String(last.prefix(200)))
     }
 
     func finishConnect(_ profile: AgentProfile) {

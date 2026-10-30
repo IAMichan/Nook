@@ -16,6 +16,17 @@ protocol ChatBridge: AnyObject {
     var interval: TimeInterval { get }
     /// The chats that changed since the last read (everything on the first), with their newest messages.
     func read() async throws -> [BridgedChat]
+    /// What the capture service keeps its turns, reads and failures under: the app's id, unless two bridges read one
+    /// app (WhatsApp on this Mac and WhatsApp through the linked phone), which then each have their own.
+    var bridgeID: String { get }
+    /// Reads also while collecting chats (Settings › Chats) is off: an app switched on on its own (WhatsApp through the
+    /// linked phone, which has its own switch and needs no Full Disk Access).
+    var alwaysOn: Bool { get }
+}
+
+extension ChatBridge {
+    var bridgeID: String { app }
+    var alwaysOn: Bool { false }
 }
 
 /// A bridge that scrolls back in a chat, as far as its app keeps the history: the batch of messages older than the
@@ -27,6 +38,24 @@ protocol ChatHistoryBridge: ChatBridge {
     /// The batch of messages of the chat `name` sent before `before` (the oldest one Nook shows, with its id in Nook
     /// when it came from this bridge), as a chat to merge, and whether the app has more before those.
     func older(name: String, before: Date, oldestID: String?) async throws -> (chat: BridgedChat?, hasMore: Bool)
+}
+
+/// A bridge whose chats its app knows by an id (`BridgedChat.chatID`), scrolling back in them by that id: WhatsApp
+/// through the linked phone, whose gateway brings each older batch.
+@MainActor
+protocol ChatKeyedHistoryBridge: ChatBridge {
+    /// Whether the chat with this id may have older messages in its app.
+    func canLoadOlder(chatID: String) -> Bool
+    /// The chat with its older messages, to merge, and whether the app has more before those.
+    func older(chatID: String) async throws -> (chat: BridgedChat?, hasMore: Bool)
+}
+
+/// A bridge whose app says itself which chats got news (WhatsApp's linked phone, which knows what came in live and what
+/// is a catch-up or history): those are told, instead of what the inbox makes of the read.
+@MainActor
+protocol ChatNewsBridge: ChatBridge {
+    /// The chats (their ids in `ChatInbox`) with news since the last time, once.
+    func takeNews() -> [String]
 }
 
 /// How many older messages one scroll back brings, for every bridge.
@@ -44,7 +73,8 @@ enum ChatHistory {
 @MainActor
 final class MessagesBridge: ChatHistoryBridge {
     let app = "messages"
-    let interval: TimeInterval = 5
+    /// Often: a read first looks only at when the database changed, which costs nothing while it did not.
+    let interval: TimeInterval = 2
     private(set) var isWorking = false
     /// What goes besides text: every file as itself (a sticker as its picture, a voice message as an audio file), a
     /// place or a contact as text. Messages has no polls another app can send.
@@ -79,6 +109,10 @@ final class MessagesBridge: ChatHistoryBridge {
     private var lastTapback: Int64?
     /// Whether the database has `associated_message_emoji` (a tapback with any emoji); an older one does not.
     private var customTapbacks = true
+    /// The newest edit or unsend looked at, on Messages' own clock, and whether the database keeps them at all
+    /// (`date_edited`, `date_retracted`: a database from before messages could be edited does not).
+    private var lastEdit: Int64?
+    private var keepsEdits = true
 
     var isReady: Bool { FileManager.default.fileExists(atPath: path) }
 
@@ -158,7 +192,8 @@ final class MessagesBridge: ChatHistoryBridge {
         }
         var messages: [String: [InboxMessage]] = [:]
         var newest = lastRow ?? 0
-        let retapped = try await tapped()
+        let (retapped, tapbackCursor) = try await tapped()
+        let (changedRows, unsent, editCursor) = try await changed(since: recent)
         let unnamed = try await groupNames(rows, contacts: contacts)
         let files = try await attachments(rows)
         let extra = try await extras(rows, contacts: contacts)
@@ -196,6 +231,36 @@ final class MessagesBridge: ChatHistoryBridge {
                 messages[known.chat, default: []].append(known.message)
             }
         }
+        // Messages read earlier that were edited since (their new text) or unsent ("Undo Send"): the chat shows the new
+        // text, or drops the message, as for every app (`BridgedChat.deleted`).
+        var dropped: [String: [String]] = [:]
+        let readNow = Set(rows.compactMap { NotificationRecord.integer($0["id"]) })
+        let edited = changedRows.filter { row in
+            NotificationRecord.integer(row["id"]).map { !readNow.contains($0) } ?? false
+        }
+        if !edited.isEmpty {
+            let changedFiles = try await attachments(edited)
+            let changedExtras = try await extras(edited, contacts: contacts)
+            for row in edited {
+                guard let id = NotificationRecord.integer(row["id"]) else { continue }
+                let chat = AppData.string(row["chat"])
+                guard names[chat] != nil else { continue }
+                if unsent.contains(id) {
+                    dropped[chat, default: []].append("imessage-\(id)")
+                    mine[id] = nil
+                    seen[AppData.string(row["guid"])] = nil
+                    continue
+                }
+                guard let built = build(row, media: changedFiles[id], extras: changedExtras, contacts: contacts) else { continue }
+                remember(row, chat: chat, message: built.inbox)
+                if built.message.fromMe, mine[id] != nil {
+                    var tracked = built.inbox
+                    tracked.reactions = nil
+                    mine[id] = (chat, tracked)
+                }
+                messages[chat, default: []].append(built.inbox)
+            }
+        }
         trimSeen()
         // Your earlier messages whose ticks moved since (delivered, read): the chat shows them now.
         let fresh = Set(rows.compactMap { NotificationRecord.integer($0["id"]) })
@@ -225,7 +290,11 @@ final class MessagesBridge: ChatHistoryBridge {
         var unread: [String: Int] = [:]
         for row in unreadRows { unread[AppData.string(row["chat"])] = Int(AppData.number(row["unread"]) ?? 0) }
 
+        // Both cursors move only now that the whole read worked: a query that fails halfway (a locked database) reads
+        // the same messages and tapbacks again next time, instead of losing them.
         lastRow = newest
+        lastTapback = tapbackCursor
+        if let editCursor { lastEdit = editCursor }
         lastChange = change
         isWorking = true
         // An iMessage and an sms conversation with the same person are one chat in Nook, with both their counts.
@@ -233,6 +302,7 @@ final class MessagesBridge: ChatHistoryBridge {
         for (chat, name) in names {
             var merged = chats[name] ?? BridgedChat(app: app, name: name, messages: [], unread: 0)
             merged.messages += messages[chat] ?? []
+            merged.deleted += dropped[chat] ?? []
             merged.unread = (merged.unread ?? 0) + (unread[chat] ?? 0)
             if let people = members[chat], !people.isEmpty { merged.members = people }
             chats[name] = merged
@@ -329,8 +399,8 @@ final class MessagesBridge: ChatHistoryBridge {
             rows = try await query("""
             SELECT m.associated_message_guid AS target, m.associated_message_type AS type,
                    \(customTapbacks ? "m.associated_message_emoji" : "NULL") AS emoji, m.is_from_me AS me,
-                   COALESCE(m.handle_id, 0) AS sender
-            FROM message m
+                   COALESCE(h.id, '') AS sender
+            FROM message m LEFT JOIN handle h ON h.ROWID = m.handle_id
             WHERE m.ROWID > \(first) AND m.associated_message_type BETWEEN 2000 AND 3999
                 AND m.associated_message_guid IN (\(pointers))
             ORDER BY m.ROWID
@@ -346,30 +416,61 @@ final class MessagesBridge: ChatHistoryBridge {
                                    emoji: AppData.string(tapback["emoji"]), sender: mine ? "me" : AppData.string(tapback["sender"]),
                                    mine: mine)
         }
-        return AppData.Tapback.reactions(tapbacks)
+        // Who put each emoji there, by their name in Contacts (else their number or address).
+        let contacts = await ContactDirectory.names()
+        return AppData.Tapback.reactions(tapbacks) { handle in
+            let clean = AppData.cleanHandle(handle)
+            return clean.isEmpty ? nil : contacts[AppData.key(clean)] ?? clean
+        }
     }
 
-    /// The messages read earlier (by guid) that got a tapback, or lost one, since the last look. The first read only
-    /// marks where to look from: the tapbacks until then come with its own messages.
-    private func tapped() async throws -> Set<String> {
+    /// The messages read earlier (by guid) that got a tapback, or lost one, since the last look, and where the next look
+    /// starts (kept by `read` once all of it worked). The first read only marks where to look from: the tapbacks until
+    /// then come with its own messages.
+    /// The messages (in the window the reads look at, `recent`) edited or unsent since the last read, as full rows, with
+    /// the unsent ones among them by row, and how far this read looked. The first read only notes where it starts.
+    private func changed(since recent: String) async throws -> (rows: [[String: Any]], unsent: Set<Int64>, cursor: Int64?) {
+        guard keepsEdits else { return ([], [], nil) }
+        let stamp = "MAX(COALESCE(m.date_edited, 0), COALESCE(m.date_retracted, 0))"
+        do {
+            guard let lastEdit else {
+                let top = try await query("SELECT COALESCE(MAX(\(stamp)), 0) AS top FROM message m")
+                return ([], [], top.first.flatMap { NotificationRecord.integer($0["top"]) } ?? 0)
+            }
+            let marks = try await query("""
+            SELECT m.ROWID AS id, \(stamp) AS changed, COALESCE(m.date_retracted, 0) AS retracted FROM message m
+            WHERE \(recent) AND COALESCE(m.associated_message_type, 0) = 0 AND \(stamp) > \(lastEdit)
+            """)
+            guard !marks.isEmpty else { return ([], [], lastEdit) }
+            let cursor = marks.compactMap { NotificationRecord.integer($0["changed"]) }.max() ?? lastEdit
+            let unsent = Set(marks.filter { (AppData.number($0["retracted"]) ?? 0) != 0 }.compactMap { NotificationRecord.integer($0["id"]) })
+            let ids = marks.compactMap { NotificationRecord.integer($0["id"]) }.sorted().map(String.init).joined(separator: ",")
+            return (try await query(Self.select + " WHERE m.ROWID IN (\(ids))"), unsent, cursor)
+        } catch where error.localizedDescription.contains("no such column") {
+            // A database from before messages could be edited or unsent: nothing changes after it is read.
+            keepsEdits = false
+            return ([], [], nil)
+        }
+    }
+
+    private func tapped() async throws -> (targets: Set<String>, cursor: Int64) {
         guard let lastTapback else {
             let top = try await query("SELECT COALESCE(MAX(ROWID), 0) AS top FROM message")
-            self.lastTapback = top.first.flatMap { NotificationRecord.integer($0["top"]) } ?? 0
-            return []
+            return ([], top.first.flatMap { NotificationRecord.integer($0["top"]) } ?? 0)
         }
         let rows = try await query("""
         SELECT ROWID AS id, associated_message_guid AS target FROM message
         WHERE ROWID > \(lastTapback) AND associated_message_type BETWEEN 2000 AND 3999 ORDER BY ROWID
         """)
-        self.lastTapback = rows.compactMap { NotificationRecord.integer($0["id"]) }.max() ?? lastTapback
-        return Set(rows.compactMap { AppData.Tapback.target(AppData.string($0["target"])) }.filter { seen[$0] != nil })
+        let cursor = rows.compactMap { NotificationRecord.integer($0["id"]) }.max() ?? lastTapback
+        return (Set(rows.compactMap { AppData.Tapback.target(AppData.string($0["target"])) }.filter { seen[$0] != nil }), cursor)
     }
 
     // MARK: Sending
 
     /// Your text to the chat `name`, through the Messages app.
     func send(text: String, to name: String) async throws {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
         try await deliver([.text(text)], to: name)
     }
 
@@ -413,7 +514,7 @@ final class MessagesBridge: ChatHistoryBridge {
     /// first; what is found is kept, so the chat's next read and send know it.
     private func resolve(_ name: String) async throws -> [String] {
         var found: [(chat: String, guid: String)] = []
-        let rows = ChatCaptureService.shared.inbox.threads[ChatInbox.key(app: app, chat: name)]?.messages
+        let rows = ChatCaptureService.shared.loadedInbox.threads[ChatInbox.key(app: app, chat: name)]?.messages
             .compactMap { $0.id.hasPrefix("imessage-") ? Int64($0.id.dropFirst("imessage-".count)) : nil } ?? []
         if !rows.isEmpty {
             for row in try await query("""
@@ -607,7 +708,8 @@ final class MessagesBridge: ChatHistoryBridge {
 @MainActor
 final class WhatsAppDesktopBridge: ChatHistoryBridge {
     let app = "whatsapp"
-    let interval: TimeInterval = 5
+    /// Often: a read first looks only at when the database changed, which costs nothing while it did not.
+    let interval: TimeInterval = 2
     private(set) var isWorking = false
 
     private static let chats = 30
@@ -618,6 +720,11 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge {
 
     private var lastRow: Int64?
     private var lastChange: Date?
+    /// New rows that had nothing to show yet, with when Nook first saw them: WhatsApp writes a message's row before its
+    /// text is decrypted, and fills it in a moment later. They are read again until they say something, so a message
+    /// shows as soon as it is there, not only when its chat is opened. Given up after `waitingFor`.
+    private var waiting: [Int64: Date] = [:]
+    private static let waitingFor: TimeInterval = 600
     /// Every chat read so far by its row, with its name in Nook, for the unread counts.
     private var names: [String: String] = [:]
     /// Whether the group member table can be joined (it is not in every version of the app).
@@ -637,7 +744,7 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge {
 
     var isReady: Bool {
         // WhatsApp linked through the chat helper (as Beeper did it) brings it live, with its whole history.
-        !WhatsAppLink.shared.isConnected && !ChatHelper.linked(app) && FileManager.default.fileExists(atPath: Self.path)
+        !WhatsAppAccounts.shared.isConnected && !ChatHelper.linked(app) && FileManager.default.fileExists(atPath: Self.path)
     }
 
     func read() async throws -> [BridgedChat] {
@@ -648,9 +755,14 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge {
         let contacts = await ContactDirectory.names()
         // Private chats (0) and groups (1); not broadcast lists or status updates.
         let kinds = "s.ZSESSIONTYPE IN (0, 1)"
-        let rows: [[String: Any]]
+        var rows: [[String: Any]]
         if let lastRow {
             rows = try await select("WHERE m.Z_PK > \(lastRow) AND \(kinds) ORDER BY m.Z_PK")
+            waiting = waiting.filter { Date().timeIntervalSince($0.value) < Self.waitingFor }
+            if !waiting.isEmpty {
+                let ids = waiting.keys.sorted().map(String.init).joined(separator: ",")
+                rows = try await select("WHERE m.Z_PK IN (\(ids)) AND \(kinds) ORDER BY m.Z_PK") + rows
+            }
         } else {
             rows = try await select("""
             WHERE \(kinds) AND m.ZCHATSESSION IN (
@@ -668,7 +780,12 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge {
             if name.isEmpty { name = contacts[AppData.key(AppData.string(row["jid"]))] ?? WAJID.displayNumber(AppData.string(row["jid"])) }
             names[chat] = name
             if group { groups.insert(chat) }
-            guard let message = Self.message(row, contacts: contacts) else { continue }
+            guard let message = Self.message(row, contacts: contacts) else {
+                // Read again at the next look, until WhatsApp filled it in (see `waiting`).
+                if lastRow != nil, waiting[id] == nil, waiting.count < 200 { waiting[id] = Date() }
+                continue
+            }
+            waiting[id] = nil
             if message.isMine { self.mine[id] = (chat, message) }
             messages[chat, default: []].append(message)
         }
@@ -899,13 +1016,19 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
     /// turn even when their newest activity looks the same. Kept apart from `seen`, so a change told while a read is
     /// under way is not lost when that read ends (Instagram tells of the message a moment after the chat moved).
     private var stale: Set<String> = []
+    /// How often in a row a chat was read before its newest message was there (see `ChatServiceData.isBehind`).
+    private var behind: [String: Int] = [:]
+    /// Each chat's unread count as last passed on: a chat read on your phone (or in the app) changes only this, not its
+    /// newest message, and still goes to the inbox at once, so it is read in Nook too.
+    private var reportedUnread: [String: Int] = [:]
+    private static let behindRetries = 3
     /// Files the helper downloaded for Nook, by their `mxc://` address.
     private var downloaded: [String: String] = [:]
     /// The helper's id of every chat it brought in, by its app and its name in Nook: where what you send from Nook goes.
     private var chatIDs: [String: String] = [:]
     /// Every chat at the last read by its id, for what can be done in it (pinned, muted, editing…).
     @Published private(set) var chats: [String: ChatServiceData.Chat] = [:]
-    /// The live line is open: changes come in the moment they happen (Settings › Chats shows it).
+    /// The live line is open: changes come in the moment they happen (Settings › Connections shows it).
     @Published private(set) var isLive = false
     private let live = ChatLiveStream()
 
@@ -950,6 +1073,8 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
     func reset() {
         seen = [:]
         stale = []
+        behind = [:]
+        reportedUnread = [:]
         covered = []
         isWorking = false
     }
@@ -975,6 +1100,15 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
             let byID = Dictionary(listed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             if byID != chats { chats = byID }
             var result: [BridgedChat] = []
+            for chat in listed where !(stale.contains(chat.id) || (chat.last.map({ seen[chat.id] != $0 }) ?? (seen[chat.id] == nil))) {
+                // Nothing new in it, but read (or marked unread) somewhere else since: only its count goes.
+                guard let reported = reportedUnread[chat.id], reported != chat.unread else { continue }
+                reportedUnread[chat.id] = chat.unread
+                result.append(BridgedChat(app: chat.app, name: chat.title, messages: [], unread: chat.unread))
+            }
+            // The chats read before one that fails are already marked seen: their messages must still go to the inbox, or
+            // they never come again. The failed one stays stale and is read again at the next tick.
+            var failure: Error?
             for chat in listed where stale.contains(chat.id) || (chat.last.map({ seen[chat.id] != $0 }) ?? (seen[chat.id] == nil)) {
                 // Before the read: a change told while it runs marks the chat again, for the next turn.
                 stale.remove(chat.id)
@@ -983,17 +1117,33 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                     answer = try await get(Self.path(chat.id) + "/messages", ["limit": String(Self.history)], token: token)
                 } catch {
                     stale.insert(chat.id)
-                    throw error
+                    failure = error
+                    continue
                 }
                 let messages = await withFiles(ChatServiceData.messages(answer, chat: chat), token: token)
                 let deleted = ChatServiceData.deleted(answer, chat: chat)
+                // The chat moved to a message the answer does not hold yet (the app tells of a chat a moment before its
+                // message is there): read it again at the next turns, a few times, instead of waiting for the chat to
+                // move once more. Its row would show an older message than the chat until then.
+                if ChatServiceData.isBehind(messages, chat: chat), (behind[chat.id] ?? 0) < Self.behindRetries {
+                    behind[chat.id, default: 0] += 1
+                    stale.insert(chat.id)
+                    onChange()
+                } else {
+                    behind[chat.id] = nil
+                }
                 seen[chat.id] = chat.last ?? .distantPast
+                reportedUnread[chat.id] = chat.unread
                 covered.insert(chat.app)
                 chatIDs[chat.app + "|" + chat.title] = chat.id
                 guard !messages.isEmpty || !deleted.isEmpty else { continue }
                 let picture = await local(chat.picture, token: token)
                 result.append(BridgedChat(app: chat.app, name: chat.title, messages: messages, unread: chat.unread, avatar: picture,
                                           members: chat.members.isEmpty ? nil : chat.members, deleted: deleted))
+            }
+            if let failure {
+                if result.isEmpty { throw failure }
+                onChange()
             }
             isWorking = true
             return result
@@ -1053,6 +1203,15 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
               let local = (ChatJSON.object(answer.0)?["srcURL"] as? String).flatMap({ URL(string: $0) }), local.isFileURL else { return nil }
         downloaded[source] = local.path
         return local.path
+    }
+
+    /// A chat you opened in Nook: read again at the next turn, so it shows what the app has now, also what the live line
+    /// did not tell. False when the helper does not hold this chat.
+    @discardableResult
+    func refresh(app: String, name: String) -> Bool {
+        guard let id = chatID(app: app, name: name) else { return false }
+        stale.insert(id)
+        return true
     }
 
     // MARK: Sending
@@ -1121,6 +1280,12 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
         }
     }
 
+    /// Your vote on a poll (its options' texts; an empty choice takes it back), where the chat's network takes votes.
+    func vote(_ choice: [String], on message: String, in chat: String) async throws {
+        guard let id = ChatServiceData.networkID(message, chat: chat) else { throw NookError(tr("chat.poll.failed")) }
+        try await act("POST", Self.path(chat) + "/messages/" + ChatJSON.segment(id) + "/vote", ["answers": choice], chat: chat)
+    }
+
     /// Changes the text of your message.
     func edit(_ message: String, in chat: String, to text: String) async throws {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1185,7 +1350,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await ConnectorHTTP.session.data(for: request)
+            (data, response) = try await ConnectorHTTP.session(timeout: timeout).data(for: request)
         } catch {
             throw NookError(plain ? failure : tr("chats.service.unreachable"))
         }
@@ -1257,6 +1422,8 @@ final class SlackBridge: ChatHistoryBridge {
     private static let perRead = 12
     private static let rotating = 4
     private static let firstHistory = 30
+    /// Pages of newer messages one later read follows at most per conversation (30 each).
+    private static let catchUpPages = 5
 
     private var me: String?
     private var users: [String: String] = [:]
@@ -1278,6 +1445,11 @@ final class SlackBridge: ChatHistoryBridge {
     private var stale: [String: Set<String>] = [:]
     /// Your messages deleted from Nook, per conversation (their id in Nook), for the next read to drop from the chat.
     private var gone: [String: [String]] = [:]
+    /// Where you stand in each conversation as Slack says (`client.counts`), and the newest messages read of each (their
+    /// `ts`, whether yours), to count what is unread in Slack itself.
+    private var lastRead: [String: String] = [:]
+    private var recent: [String: [(ts: Double, mine: Bool)]] = [:]
+    private static let counted = 100
 
     var isReady: Bool { Self.auth != nil }
 
@@ -1295,6 +1467,8 @@ final class SlackBridge: ChatHistoryBridge {
         people = [:]
         stale = [:]
         gone = [:]
+        lastRead = [:]
+        recent = [:]
         isWorking = false
     }
 
@@ -1314,24 +1488,46 @@ final class SlackBridge: ChatHistoryBridge {
                 for conversation in conversations { active[conversation.id] = max(active[conversation.id] ?? 0, conversation.updated) }
                 conversationsAt = Date()
             }
+            // Where you stand in each conversation, as Slack's website asks it (Slack answers it for the website's sign-in):
+            // reading a chat in Slack reads it in Nook too. Without an answer Nook counts new messages itself.
+            let marks = (try? await call("client.counts", [:], auth: auth)).map(SlackData.readMarks) ?? [:]
+            var handed = Set<String>()
             var chats: [BridgedChat] = []
+            // The conversations read before one that fails already moved `newest` on: their messages must still go to the
+            // inbox, or they never come again. The failed one is read again next time; a rate limit or a lost sign-in
+            // ends this round.
+            var failure: Error?
             for conversation in pick() {
                 var parameters = ["channel": conversation.id, "limit": String(Self.firstHistory)]
                 if let ts = newest[conversation.id] { parameters["oldest"] = ts }
-                let json = try await call("conversations.history", parameters, auth: auth)
-                var read = SlackData.messages(json, conversation: conversation, users: users, me: me)
-                for ts in stale[conversation.id] ?? [] {
-                    let again = try await call("conversations.history", [
-                        "channel": conversation.id, "oldest": ts, "latest": ts, "inclusive": "true", "limit": "1",
-                    ], auth: auth)
-                    for message in SlackData.messages(again, conversation: conversation, users: users, me: me)
-                    where !read.contains(where: { $0.id == message.id }) {
-                        read.append(message)
+                var listed: [[String: Any]] = []
+                var read: [InboxMessage]
+                do {
+                    // After the first read every page newer than the last one read comes in, not only the newest 30: a
+                    // busy conversation would otherwise skip what came between two reads for good.
+                    let jsons = try await pages("conversations.history", parameters, auth: auth,
+                                                maxPages: newest[conversation.id] == nil ? 1 : Self.catchUpPages)
+                    listed = jsons.flatMap { $0["messages"] as? [[String: Any]] ?? [] }
+                    read = jsons.flatMap { SlackData.messages($0, conversation: conversation, users: users, me: me) }
+                    for ts in stale[conversation.id] ?? [] {
+                        let again = try await call("conversations.history", [
+                            "channel": conversation.id, "oldest": ts, "latest": ts, "inclusive": "true", "limit": "1",
+                        ], auth: auth)
+                        for message in SlackData.messages(again, conversation: conversation, users: users, me: me)
+                        where !read.contains(where: { $0.id == message.id }) {
+                            read.append(message)
+                        }
                     }
+                } catch let error as NookError where error.kind == .auth || error.kind == .rateLimited {
+                    failure = error
+                    break
+                } catch {
+                    failure = error
+                    continue
                 }
                 stale[conversation.id] = nil
                 let messages = await withFiles(read.sorted { $0.date < $1.date }, auth: auth)
-                if let last = (json["messages"] as? [[String: Any]])?.compactMap({ $0["ts"] as? String })
+                if let last = listed.compactMap({ $0["ts"] as? String })
                     .max(by: { (Double($0) ?? 0) < (Double($1) ?? 0) }) {
                     newest[conversation.id] = last
                     active[conversation.id] = max(active[conversation.id] ?? 0, Double(last) ?? 0)
@@ -1347,16 +1543,42 @@ final class SlackBridge: ChatHistoryBridge {
                     people[conversation.id] = json.map { SlackData.members($0, users: users, me: me) } ?? []
                 }
                 let members = people[conversation.id] ?? []
+                remember(messages, in: conversation.id)
+                handed.insert(conversation.id)
                 chats.append(BridgedChat(app: app, name: SlackData.chatName(conversation, users: users, me: me),
-                                         messages: messages, unread: nil, avatar: picture, members: members.isEmpty ? nil : members,
-                                         deleted: deleted))
+                                         messages: messages, unread: unread(conversation.id, marks: marks), avatar: picture,
+                                         members: members.isEmpty ? nil : members, deleted: deleted))
             }
+            // A chat read (or marked unread) in Slack since, without a new message: its count follows.
+            for conversation in conversations where !handed.contains(conversation.id) && recent[conversation.id] != nil
+                && marks[conversation.id] != nil && marks[conversation.id] != lastRead[conversation.id] {
+                chats.append(BridgedChat(app: app, name: SlackData.chatName(conversation, users: users, me: me), messages: [],
+                                         unread: unread(conversation.id, marks: marks)))
+            }
+            if !marks.isEmpty { lastRead = marks }
+            if chats.isEmpty, let failure { throw failure }
             isWorking = true
             return chats
         } catch {
             isWorking = false
             throw error
         }
+    }
+
+    /// The newest messages read of a conversation, to count from.
+    private func remember(_ messages: [InboxMessage], in conversation: String) {
+        var known = recent[conversation] ?? []
+        for message in messages {
+            let ts = message.date.timeIntervalSince1970
+            if !known.contains(where: { $0.ts == ts }) { known.append((ts, message.isMine)) }
+        }
+        recent[conversation] = Array(known.sorted { $0.ts < $1.ts }.suffix(Self.counted))
+    }
+
+    /// The conversation's unread count in Slack itself, when Slack said where you stand; nil lets Nook count.
+    private func unread(_ conversation: String, marks: [String: String]) -> Int? {
+        guard let read = marks[conversation] else { return nil }
+        return SlackData.unread(recent[conversation] ?? [], lastRead: read)
     }
 
     /// The conversation Nook shows as `name`.
@@ -1497,7 +1719,10 @@ final class SlackBridge: ChatHistoryBridge {
         let (data, response) = try await ConnectorHTTP.session.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         if code == 429 { throw NookError(tr("chats.slack.rateLimited"), kind: .rateLimited) }
+        if code == 401 { throw NookError(tr("chats.slack.signInAgain"), kind: .auth) }
         guard (200..<300).contains(code), let json = ChatJSON.object(data) else { throw NookError("Slack: HTTP \(code)") }
+        // A lost sign-in says so as one, as Teams and Snapchat do: the read stops at once and Settings asks to sign in.
+        if SlackData.signedOut(json) { throw NookError(tr("chats.slack.signInAgain"), kind: .auth) }
         if let error = SlackData.error(json), !ignoring.contains((json["error"] as? String) ?? "") {
             throw NookError(tr("chats.slack.refused", error))
         }
@@ -1550,7 +1775,7 @@ final class SlackBridge: ChatHistoryBridge {
         request.setValue(file.mimeType, forHTTPHeaderField: "Content-Type")
         request.setValue("Nook", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 120
-        let (_, response) = try await ConnectorHTTP.session.data(for: request)
+        let (_, response) = try await ConnectorHTTP.session(timeout: request.timeoutInterval).data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         if code == 429 { throw NookError(tr("chats.slack.rateLimited"), kind: .rateLimited) }
         guard (200..<300).contains(code) else { throw NookError(tr("chats.slack.refused", "HTTP \(code)")) }
@@ -1564,7 +1789,7 @@ final class SlackBridge: ChatHistoryBridge {
     func react(_ emoji: String, to message: String, in name: String, mine: Bool) async throws {
         let (auth, conversation) = try target(name)
         guard let ts = SlackData.ts(of: message, conversation: conversation.id),
-              let shortcode = SlackData.shortcode(emoji: emoji) else { throw NookError(tr("chat.compose.unsupported")) }
+              let shortcode = SlackData.shortcode(emoji: emoji) else { throw NookError(tr("chat.react.notInApp", "Slack")) }
         let fields = ["channel": conversation.id, "timestamp": ts, "name": shortcode]
         if mine {
             _ = try await post("reactions.remove", fields, auth: auth, ignoring: ["no_reaction"])
@@ -1613,7 +1838,7 @@ final class SlackBridge: ChatHistoryBridge {
     /// (one only its notification showed): the text then goes as a message of its own.
     private func threadTS(answering id: String, in conversation: SlackData.Conversation, name: String) -> String? {
         guard let ts = SlackData.ts(of: id, conversation: conversation.id) else { return nil }
-        let answered = ChatCaptureService.shared.inbox.threads[ChatInbox.key(app: app, chat: name)]?.messages.first { $0.id == id }
+        let answered = ChatCaptureService.shared.loadedInbox.threads[ChatInbox.key(app: app, chat: name)]?.messages.first { $0.id == id }
         return answered?.quote?.id.flatMap { SlackData.ts(of: $0, conversation: conversation.id) } ?? ts
     }
 

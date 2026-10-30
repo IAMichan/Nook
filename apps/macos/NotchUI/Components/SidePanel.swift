@@ -1,0 +1,248 @@
+import SwiftUI
+
+// One side panel for everything that opens beside a conversation or a list: the lists of the Nook, Agents and Chats
+// tabs, a command's terminal, the tool panel with its tabs, a turn's diff or a file, a pull request beside its list, an
+// artifact beside its app, and the docked session panel. They all work the same way:
+//
+// - Each sits flat on the canvas with a line on the side of what it sits beside: a drag line (drag to resize,
+//   double-click for its usual width, `.sidePanel(_:width:…)`), or, for a panel of fixed width, only the same room
+//   without a line (`.fixedSidePanel(width:)`). Each slides in from its own edge.
+// - Each starts with a header of the same height (`SidePanelHeader`, or `SidePanelTabBar` for the tool panel) that
+//   ends in the same close button: a cross (`SidePanelCloseButton`).
+// - What a tab shows starts with one bar of the same height under that header (`SidePanelToolbar`): the browser's
+//   address, the terminal's folder, the changes' counts, a file's name. A tab with nothing to show says so with a
+//   `WSEmptyState`, never an empty pane.
+// - A session's header has one toggle per side (`SidePanelToggle`): the list on the left, the bottom panel, the side
+//   panel on the right, each with the mark of its side (`Edge.panelSymbol`), lit while it is open.
+// - The tool panel and a diff or file the conversation opens take turns on the right instead of stacking
+//   (`SessionSideLink`, `SessionDetailOpen`).
+
+extension Edge {
+    /// The mark of the panel on this side of a conversation, on the toggle in a session's header that shows or hides it.
+    var panelSymbol: String {
+        switch self {
+        case .leading: return "sidebar.left"
+        case .trailing: return "sidebar.right"
+        case .top, .bottom: return "rectangle.bottomthird.inset.filled"
+        }
+    }
+}
+
+enum SidePanelMetrics {
+    /// Every side panel's header (a title row or a tab row) is this tall, so what they show starts on one line.
+    static let header: CGFloat = 32
+    /// The bar of what a tab shows, under the header (`SidePanelToolbar`).
+    static let toolbar: CGFloat = 34
+    /// Room between a panel and the drag line on the conversation's side.
+    static let gap: CGFloat = NookTheme.Spacing.sm
+}
+
+extension View {
+    /// Makes this a side panel on `edge` of the conversation: `SidePanelMetrics.gap` from the drag line on the
+    /// conversation's side, as wide as `width` (see `resizablePanel`), sliding in from its own edge.
+    func sidePanel(_ edge: HorizontalEdge, width: Binding<Double>, defaultWidth: Double,
+                   minimum: Double = PanelLayout.minimumPanel, available: Double, rest: Double) -> some View {
+        let leading = edge == .leading
+        return padding(leading ? Edge.Set.trailing : Edge.Set.leading, SidePanelMetrics.gap)
+            .resizablePanel(width: width, defaultWidth: defaultWidth, minimum: minimum, available: available, rest: rest,
+                            edge: leading ? HorizontalEdge.trailing : HorizontalEdge.leading, divider: true)
+            .transition(.move(edge: leading ? Edge.leading : Edge.trailing).combined(with: .opacity))
+    }
+
+    /// Makes this a tab's list on the left: a side panel beside the conversation (`sidePanel`), or the whole width while
+    /// the tab shows one column at a time (`PanelLayout.stacks`).
+    @ViewBuilder
+    func listPanel(stacked: Bool, width: Binding<Double>, defaultWidth: Double, available: Double, rest: Double) -> some View {
+        if stacked {
+            frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            sidePanel(.leading, width: width, defaultWidth: defaultWidth, minimum: PanelLayout.minimumList,
+                      available: available, rest: rest)
+        }
+    }
+
+    /// Makes this a panel of fixed `width` on the right of what it sits beside (the docked session panel): the same
+    /// room and gap as a resizable one, without the drag and without a line, so it reads as part of the conversation.
+    func fixedSidePanel(width: CGFloat) -> some View {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: CGFloat(PanelSplit.handle))
+            self.frame(width: width).padding(.leading, SidePanelMetrics.gap)
+        }
+        .transition(.move(edge: .trailing).combined(with: .opacity))
+    }
+}
+
+/// The top row of a side panel: what it shows on the left (a `SidePanelTitle`, or a picker), its own actions, and at
+/// the end the buttons every panel has: wider or narrower when `wide` is given, then the close button.
+struct SidePanelHeader<Leading: View, Actions: View>: View {
+    let closeHelp: String
+    let wide: Binding<Bool>?
+    let close: () -> Void
+    let leading: Leading
+    let actions: Actions
+
+    init(closeHelp: String, wide: Binding<Bool>? = nil, close: @escaping () -> Void,
+         @ViewBuilder leading: () -> Leading, @ViewBuilder actions: () -> Actions) {
+        self.closeHelp = closeHelp
+        self.wide = wide
+        self.close = close
+        self.leading = leading()
+        self.actions = actions()
+    }
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            leading
+            Spacer(minLength: NookTheme.Spacing.xs)
+            HStack(spacing: NookTheme.Spacing.xxs) {
+                actions
+                if let wide { SidePanelWidenButton(wide: wide) }
+                SidePanelCloseButton(help: closeHelp, action: close)
+            }
+        }
+        .frame(height: SidePanelMetrics.header)
+    }
+}
+
+extension SidePanelHeader where Actions == EmptyView {
+    init(closeHelp: String, wide: Binding<Bool>? = nil, close: @escaping () -> Void,
+         @ViewBuilder leading: () -> Leading) {
+        self.init(closeHelp: closeHelp, wide: wide, close: close, leading: leading) { EmptyView() }
+    }
+}
+
+/// The bar of what a tab shows, right under the panel's header or tabs: the same height and inset in every tab, with
+/// the line under it (`divider`), so switching tabs never moves the content up or down.
+struct SidePanelToolbar<Content: View>: View {
+    var divider = true
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: NookTheme.Spacing.xs) { content() }
+                .padding(.horizontal, NookTheme.Spacing.sm)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: SidePanelMetrics.toolbar)
+            if divider { NookDivider() }
+        }
+    }
+}
+
+/// What a side panel shows, in its header: a quiet mark and the name ("Terminal", a file's name).
+struct SidePanelTitle: View {
+    let symbol: String
+    let title: String
+    var help: String? = nil
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            NookSymbol(symbol, size: 12)
+                .font(NookTheme.font(11, .semibold))
+                .foregroundStyle(NookTheme.textTertiary)
+            Text(title)
+                .font(NookTheme.TextStyle.strong)
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .help(help ?? title)
+    }
+}
+
+/// The last button of every side panel's header: a cross that puts the panel away, the same cross as on a tab.
+struct SidePanelCloseButton: View {
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        ToolbarIconButton("xmark", help, action)
+    }
+}
+
+/// The first button of a conversation's header while its tab shows one column at a time (`PanelLayout.stacks`): back
+/// to the list, the same chevron on every tab.
+struct PanelBackButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        ToolbarIconButton("chevron.left", tr("a11y.back")) {
+            withAnimation(NookTheme.reveal) { action() }
+        }
+    }
+}
+
+/// Wider or narrower: switches a panel between its two usual widths (`PanelLayout.wide`).
+private struct SidePanelWidenButton: View {
+    @Binding var wide: Bool
+
+    var body: some View {
+        ToolbarIconButton(wide ? "arrow.right.to.line" : "arrow.left.to.line", tr(wide ? "ws.outputs.narrow" : "ws.outputs.widen")) {
+            withAnimation(NookTheme.reveal) { wide.toggle() }
+        }
+    }
+}
+
+/// A button in a session's header that opens or closes the panel on `edge`: lit while it is open, with a dot when
+/// that panel has something you have not seen.
+struct SidePanelToggle: View {
+    let edge: Edge
+    let open: Bool
+    var fresh = false
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: edge.panelSymbol)
+                .font(NookTheme.TextStyle.label)
+                .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
+                .frame(width: 26, height: ToolbarGroup.itemHeight)
+                .background(RoundedRectangle(cornerRadius: ToolbarGroup.itemRadius, style: .continuous)
+                    .fill(open ? NookTheme.smoke : Color.clear))
+                .overlay(alignment: .topTrailing) {
+                    if fresh {
+                        Circle().fill(NookTheme.iris).frame(width: 5, height: 5).padding(NookTheme.Spacing.xs)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .animation(NookTheme.reveal, value: fresh)
+        .help(help)
+        .accessibilityLabel(help)
+        .accessibilityAddTraits(open ? .isSelected : [])
+    }
+}
+
+// MARK: One panel on the right
+
+/// From a session's workbench to the conversation inside it: opens a turn's diff or a file step in the side panel on
+/// the right (to the right of the docked session panel, taking turns with the tool panel), and reports which file is shown.
+struct SessionSideLink {
+    var shownFile: String? = nil
+    var showFile: (String) -> Void = { _ in }
+    var openDiff: (TurnDiffSelection) -> Void = { _ in }
+}
+
+extension EnvironmentValues {
+    @Entry var sessionSide = SessionSideLink()
+}
+
+/// From the conversation up to its workbench: the room its own panel takes (a command's terminal on the left), so the
+/// docked session panel steps aside in time.
+struct SessionBesideWidth: PreferenceKey {
+    static let defaultValue: Double = 0
+    static func reduce(value: inout Double, nextValue: () -> Double) { value = max(value, nextValue()) }
+}
+
+/// From the conversation up to its workbench: where its composer sits, so a page the agent opened floats just above it.
+struct SessionComposerBounds: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = nextValue() ?? value }
+}
+
+/// The room a side panel of `width` takes with its drag line and gap.
+enum SidePanelRoom {
+    static func of(_ width: Double) -> Double { width + PanelSplit.handle + Double(SidePanelMetrics.gap) }
+}

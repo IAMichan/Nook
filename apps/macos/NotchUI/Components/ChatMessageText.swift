@@ -59,7 +59,11 @@ struct ChatMessageText: View {
     static func attributed(_ spans: [ChatFormat.Span]) -> AttributedString {
         var result = AttributedString()
         for span in spans {
-            var piece = span.code ? AttributedString(span.text) : ChatLinks.attributed(span.text)
+            var piece = span.code || span.link != nil ? AttributedString(span.text) : ChatLinks.attributed(span.text)
+            if let link = span.link {
+                piece.link = link
+                piece.underlineStyle = .single
+            }
             var intent: InlinePresentationIntent = []
             if span.bold { intent.insert(.stronglyEmphasized) }
             if span.italic { intent.insert(.emphasized) }

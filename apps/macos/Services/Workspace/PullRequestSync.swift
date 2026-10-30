@@ -11,12 +11,18 @@ final class PullRequestSync: ObservableObject {
     @Published private(set) var links: [UUID: [PullRequestLink]] = [:]
     /// Keyed by `folderKey(path:branch:)`.
     @Published private(set) var folderLinks: [String: [PullRequestLink]] = [:]
+    /// The pull requests of the branches a session worked on before its current one, for the list above its composer.
+    /// Their state is followed there (`PullRequestStatusStore`), so they are not asked about here again.
+    @Published private(set) var earlier: [UUID: [PullRequestLink]] = [:]
     private var checked: [UUID: Date] = [:]
     private var folderChecked: [String: Date] = [:]
+    /// Keyed by `folderKey(path:branch:)` with the session's id as the path.
+    private var earlierChecked: [String: Date] = [:]
     private var running = false
     private let defaults = UserDefaults.standard
     private static let key = "agents.pullRequests.v1"
     private static let foldersKey = "agents.pullRequests.folders.v1"
+    private static let earlierKey = "agents.pullRequests.earlier.v1"
 
     init() {
         if let data = defaults.data(forKey: Self.key),
@@ -28,20 +34,37 @@ final class PullRequestSync: ObservableObject {
            let stored = try? JSONDecoder().decode([String: [PullRequestLink]].self, from: data) {
             folderLinks = stored
         }
+        if let data = defaults.data(forKey: Self.earlierKey),
+           let stored = try? JSONDecoder().decode([String: [PullRequestLink]].self, from: data) {
+            earlier = Dictionary(stored.compactMap { key, value in UUID(uuidString: key).map { ($0, value) } },
+                                 uniquingKeysWith: { first, _ in first })
+        }
     }
 
-    func badge(_ id: UUID) -> PullRequestBadge? { PullRequestBadge.text(links: links[id] ?? []) }
+    /// The badge with the newest status of each request (see `PullRequestStatusStore`): a look by a watch or the pull
+    /// request page since this sync's last round shows here too.
+    func badge(_ id: UUID) -> PullRequestBadge? { PullRequestBadge.text(links: PullRequestStatusStore.shared.current(links[id] ?? [])) }
 
     func badge(path: String, branch: String?) -> PullRequestBadge? {
         guard let branch else { return nil }
-        return PullRequestBadge.text(links: folderLinks[Self.folderKey(path: path, branch: branch)] ?? [])
+        return PullRequestBadge.text(links: PullRequestStatusStore.shared.current(folderLinks[Self.folderKey(path: path, branch: branch)] ?? []))
     }
 
     nonisolated static func folderKey(path: String, branch: String) -> String { path + "\n" + branch }
 
     func merged(_ id: UUID) -> Bool { PullRequestSettlement.shouldSettle(links: links[id] ?? []) }
 
-    /// A GitHub pull request merged from Nook: the badges of its sessions turn merged at once, not at the next round.
+    /// The session moved on to a new branch: its old pull requests no longer say anything about it (a merged one would
+    /// settle it), and the new branch is asked about in the next round. They stay listed above its composer.
+    func forget(_ id: UUID) {
+        guard links[id] != nil || checked[id] != nil else { return }
+        retire(id, links[id] ?? [])
+        links[id] = nil
+        checked[id] = nil
+        save()
+    }
+
+    /// A GitHub pull request merged from Nook:the badges of its sessions turn merged at once, not at the next round.
     func markMerged(repository: String, number: Int) {
         func settle(_ list: [PullRequestLink]) -> [PullRequestLink] {
             list.map { link in
@@ -54,6 +77,8 @@ final class PullRequestSync: ObservableObject {
         }
         links = links.mapValues(settle)
         folderLinks = folderLinks.mapValues(settle)
+        earlier = earlier.mapValues(settle)
+        PullRequestStatusStore.shared.record(key: PullRequestStatusStore.key(repo: repository, number: number), glyph: .merged, checks: nil)
         save()
     }
 
@@ -61,7 +86,13 @@ final class PullRequestSync: ObservableObject {
     private enum Job {
         case run(UUID, branch: String)
         case folder(key: String, path: String, branch: String)
+        /// A branch the session left before Nook saw its pull request (the agent opened it and moved on within a round):
+        /// asked until one turns up, so the list above the composer shows every pull request the chat made.
+        case earlier(UUID, branch: String)
     }
+
+    /// How often a branch the session left is asked about while no pull request of it is known.
+    private static let earlierInterval: TimeInterval = 300
 
     /// At most this many branches per round, so one round stays short and never holds up the next.
     private static let perRound = 8
@@ -100,6 +131,14 @@ final class PullRequestSync: ObservableObject {
             due.append((job: .run(run.id, branch: branch), open: PullRequestSettlement.anyOpen(links: known),
                         last: checked[run.id] ?? .distantPast))
         }
+        for run in workspace.runs where !run.archived {
+            let known = Set((earlier[run.id] ?? []).compactMap(\.headBranch))
+            for branch in run.earlierBranches ?? [] where !known.contains(branch) && branch != run.branch {
+                let key = Self.folderKey(path: run.id.uuidString, branch: branch)
+                guard PullRequestSettlement.needsSync(lastChecked: earlierChecked[key], now: now, interval: Self.earlierInterval) else { continue }
+                due.append((job: .earlier(run.id, branch: branch), open: false, last: earlierChecked[key] ?? .distantPast))
+            }
+        }
         var seen = Set<String>()
         for folder in folders {
             guard !folder.path.isEmpty, !folder.branch.isEmpty, !BranchPolicy.isDefaultBranch(folder.branch) else { continue }
@@ -126,15 +165,33 @@ final class PullRequestSync: ObservableObject {
                     let directory = workspace.run(id)?.workingDirectory ?? id.uuidString
                     guard let repo = await remote(directory, read: { await workspace.remoteRepository(id) }),
                           let found = await SourceForge.requests(repo: repo, branch: branch) else { continue }
+                    PullRequestStatusStore.shared.record(found, at: now)
                     let next: [PullRequestLink]? = found.isEmpty ? nil : found
+                    // The requests of a branch the session has since left move to its earlier ones.
+                    let left = (links[id] ?? []).filter { $0.headBranch.map { $0 != branch } ?? false }
+                    if !left.isEmpty { retire(id, left); changed = true }
                     if links[id] != next {
                         links[id] = next
                         changed = true
                     }
+                case .earlier(let id, let branch):
+                    earlierChecked[Self.folderKey(path: id.uuidString, branch: branch)] = now
+                    let directory = workspace.run(id)?.workingDirectory ?? id.uuidString
+                    guard let repo = await remote(directory, read: { await workspace.remoteRepository(id) }),
+                          let found = await SourceForge.requests(repo: repo, branch: branch), !found.isEmpty else { continue }
+                    PullRequestStatusStore.shared.record(found, at: now)
+                    // The row finds them by branch name, so each carries the one it was asked for.
+                    let mine = found.map { link -> PullRequestLink in
+                        var link = link
+                        if link.headBranch == nil { link.headBranch = branch }
+                        return link
+                    }
+                    if retire(id, mine) { changed = true }
                 case .folder(let key, let path, let branch):
                     folderChecked[key] = now
                     guard let repo = await remote(path, read: { await Self.repository(path: path) }),
                           let found = await SourceForge.requests(repo: repo, branch: branch) else { continue }
+                    PullRequestStatusStore.shared.record(found, at: now)
                     let next: [PullRequestLink]? = found.isEmpty ? nil : found
                     if folderLinks[key] != next {
                         folderLinks[key] = next
@@ -166,9 +223,19 @@ final class PullRequestSync: ObservableObject {
         }.value
     }
 
+    @discardableResult
+    private func retire(_ id: UUID, _ left: [PullRequestLink]) -> Bool {
+        let next = SessionBranches.keeping(left, in: earlier[id] ?? [])
+        guard next != earlier[id] ?? [] else { return false }
+        earlier[id] = next
+        return true
+    }
+
     private func save() {
         let stored = Dictionary(uniqueKeysWithValues: links.map { ($0.key.uuidString, $0.value) })
         if let data = try? JSONEncoder().encode(stored) { defaults.set(data, forKey: Self.key) }
         if let data = try? JSONEncoder().encode(folderLinks) { defaults.set(data, forKey: Self.foldersKey) }
+        let kept = Dictionary(uniqueKeysWithValues: earlier.map { ($0.key.uuidString, $0.value) })
+        if let data = try? JSONEncoder().encode(kept) { defaults.set(data, forKey: Self.earlierKey) }
     }
 }

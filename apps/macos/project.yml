@@ -181,8 +181,10 @@ targets:
       - path: Core/I18n+Redesign.swift
       - path: Core/I18n+Selection.swift
       - path: Core/I18n+SettingsLayout.swift
+      - path: Core/I18n+SettingsHub.swift
       - path: Core/I18n+Workspace.swift
       - path: Core/I18n+Energy.swift
+      - path: Core/I18n+WhatsAppAccounts.swift
       - path: Core/I18n+Privacy.swift
       - path: Core/I18n+Toast.swift
       - path: Core/I18n+Confirm.swift
@@ -191,6 +193,7 @@ targets:
       - path: Core/I18n+Search.swift
       - path: Core/I18n+Update.swift
       - path: Core/I18n+Notices.swift
+      - path: Core/I18n+Split.swift
       - path: Core/I18n+DoubleTap.swift
       - path: Core/I18n+Takeover.swift
       - path: Core/I18n+Harness.swift
@@ -209,6 +212,8 @@ targets:
       - path: Core/I18n+ProviderTraffic.swift
       - path: Core/I18n+Companion.swift
       - path: Core/I18n+Snapchat.swift
+      - path: Core/I18n+MailSend.swift
+      - path: Core/I18n+FileViewer.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -234,6 +239,7 @@ targets:
       - path: Services/Messages/SlackData.swift
       - path: Services/Messages/TelegramData.swift
       - path: Services/Messages/TeamsData.swift
+      - path: Services/Messages/TeamsEmoji.swift
       - path: Services/Messages/TeamsWebData.swift
       - path: Services/Messages/SnapchatWebData.swift
       - path: Services/Messages/WebSignInAgent.swift
@@ -243,12 +249,16 @@ targets:
       - path: Services/Messages/ChatLinkData.swift
       - path: Services/Messages/ChatMedia.swift
       - path: Services/Messages/ChatFormat.swift
+      - path: Services/Messages/ChatHiddenMessages.swift
       - path: Services/Messages/ChatPoll.swift
       - path: Services/Messages/ChatOutgoing.swift
+      - path: Services/Messages/ChatContract.swift
+      - path: Services/Messages/ChatNoticeRules.swift
       - path: Services/Messages/ChatStickers.swift
       - path: Services/Messages/OggOpus.swift
       - path: Services/Messages/Giphy.swift
       - path: Services/WhatsApp/WhatsAppSend.swift
+      - path: Services/WhatsApp/WhatsAppExport.swift
       - path: NotchUI/Window/NotchResize.swift
       - path: Brain/Research.swift
       - path: Brain/QueryPlan.swift
@@ -276,12 +286,16 @@ targets:
       - path: Services/SessionFocus.swift
       - path: Services/NoticeLog.swift
       - path: Services/NoticeRules.swift
+      - path: Services/NoticePacer.swift
+      - path: Services/AgentStatusNotice.swift
       - path: Core/NookError.swift
       - path: Core/NookPaths.swift
       - path: Core/SafeStorage.swift
       - path: Core/Accounts.swift
       - path: Services/Connectors/MCP/MCPClient.swift
+      - path: Services/Connectors/GitHubRateLimit.swift
       - path: Services/Connectors/PullRequestGraphQL.swift
+      - path: Services/Connectors/RedirectCredentials.swift
       - path: Services/Connectors/PullRequestDetail.swift
       - path: Services/Connectors/PullRequestReadiness.swift
       - path: Services/Connectors/PullRequestConversation.swift
@@ -340,12 +354,15 @@ targets:
       - path: Services/Companion/KeepAwakePolicy.swift
       - path: Services/Workspace/GitLabAPI.swift
       - path: Services/Workspace/PullRequestLinks.swift
+      - path: Services/Workspace/PullRequestStatus.swift
       - path: Services/Workspace/ScheduledTasks.swift
+      - path: Services/Workspace/WorktreeOrigin.swift
       - path: ../../packages/protocol/Sources/WebhookSecurity.swift
       - path: Services/Workspace/WebhookHTTP.swift
       - path: Services/Workspace/SettingsResolver.swift
       - path: Services/Workspace/ProjectSettings.swift
       - path: Services/Workspace/AgentReadiness.swift
+      - path: Services/Workspace/AgentSignInFailure.swift
       - path: Services/Workspace/ModelComparison.swift
       - path: Services/Workspace/SyntaxTokenizer.swift
       - path: Services/Workspace/Keybindings.swift
@@ -375,6 +392,7 @@ targets:
       - path: Services/Workspace/ProjectScripts.swift
       - path: Services/Workspace/TerminalTitle.swift
       - path: Services/Workspace/FileLinks.swift
+      - path: Services/Workspace/FileViewing.swift
       - path: Services/Workspace/TerminalLinks.swift
       - path: Services/Workspace/WorktreeCleanup.swift
       - path: Services/Workspace/ComposerLists.swift
@@ -384,6 +402,7 @@ targets:
       - path: Services/Workspace/CodexAppServer.swift
       - path: Services/Workspace/AcpAgent.swift
       - path: Services/Workspace/AgentModelCatalog.swift
+      - path: Services/Workspace/AgentModelMenu.swift
       - path: Services/Workspace/ModelManifest.swift
       - path: Services/Workspace/TextGeneration.swift
       - path: Services/Workspace/GitCheckpoints.swift
@@ -392,6 +411,7 @@ targets:
       - path: Services/Workspace/UsageLimits.swift
       - path: Services/Workspace/Antigravity.swift
       - path: Services/Workspace/AgentStreamParsers.swift
+      - path: Services/Workspace/AgentTimeline.swift
       - path: Services/Workspace/GitService.swift
       - path: Services/Workspace/RunStore.swift
       - path: Services/Workspace/RunEventLog.swift

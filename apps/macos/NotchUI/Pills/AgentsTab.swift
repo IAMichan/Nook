@@ -5,6 +5,8 @@ import AppKit
 /// right the session you picked, or, after the new-session button, the place to start one. A row shows the folder and
 /// how long the session has been going, its name, and its branch with the agent's logo; the badge on the logo says
 /// whether it runs under a personal or a work account. Finished sessions wait folded away at the bottom.
+/// The list is a side panel like the ones on the right (`SidePanel.swift`): drag its line to resize it, and beside a
+/// session put it away with the button at the end of its title row or the left toggle in the session's header.
 struct AgentsTab: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
@@ -13,6 +15,8 @@ struct AgentsTab: View {
     @State private var palette = false
     /// How wide the session list is: drag the line beside it, double-click it to reset. Remembered.
     @AppStorage("nook.agents.listWidth") private var listWidth = PanelLayout.agentsList
+    /// The list is put away beside a session, for more room for the conversation. Remembered.
+    @AppStorage(AgentsListVisibility.hiddenKey) private var listHidden = false
     @State private var totalWidth: Double = 0
     /// The folder picked for a new session: its terminal, browser and changes open beside the composer.
     @State private var newDirectory = ""
@@ -40,76 +44,112 @@ struct AgentsTab: View {
         // A process Nook only sees is shown when its conversation can be read; agents are linked in Settings › Agents.
         let live = app.agentSessions.filter { app.demoMode || !$0.isDetected || transcripts[$0.id] != nil }
         // Earlier sessions only of accounts that are still connected, so the list stays about what you actually use.
-        let past = app.demoMode ? [] : Array(lists.past
-            .filter { app.profile(for: $0).map(app.isConnected) ?? false }.prefix(60))
+        // Each account is checked once, and the list stops at the sixty it shows instead of going through every earlier session.
+        let connected = Set(app.profiles.all.filter(app.isConnected).map(\.id))
+        let past = app.demoMode ? [] : Array(lists.past.lazy
+            .filter { app.profile(for: $0).map { connected.contains($0.id) } ?? false }.prefix(60))
         let selection = resolve(live: live, past: past)
         // A session with its side panel open needs room for both: the list gives way first, so a narrow window keeps
         // the conversation and the panel side by side for as long as it can.
         let besideRoom = workbench(selection) && viewModel.sessionTool != .conversation
             ? PanelLayout.minimumPanel + PanelSplit.handle + NookTheme.Spacing.sm + 10 : 0
+        // Only a session whose header has the toggle to bring the list back can do without it (`canHideList`). Too
+        // narrow for both (split view, a small window): the list or what is open, one at a time over the whole width.
+        let stacked = PanelLayout.stacks(totalWidth)
+        let listShown = stacked ? !listHidden : !listHidden || !canHideList(selection)
+        let entries = listEntries(live: live, past: past, transcripts: transcripts)
         HStack(alignment: .top, spacing: 0) {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                listHeader(selection)
-                sessionList(live: live, past: past, transcripts: transcripts, selection: selection)
-                if !app.demoMode {
-                    PanelFooter(selected: selectedID(selection), open: { viewModel.selectedAgentID = $0 },
-                                openSettings: { app.openSettings() }, history: app.history,
-                                onBack: { viewModel.selectedAgentID = beforePullRequests },
-                                openCloud: showsCloudLink ? {
-                                    if let url = URL(string: "https://claude.ai/code") { NSWorkspace.shared.open(url) }
-                                } : nil)
+            if listShown {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                    listHeader(selection)
+                    sessionList(entries, selection: selection)
+                    if !app.demoMode {
+                        PanelFooter(selected: selectedID(selection), open: { open($0) },
+                                    openSettings: { app.openSettings() }, history: app.history,
+                                    onBack: { viewModel.selectedAgentID = beforePullRequests },
+                                    openCloud: showsCloudLink ? {
+                                        if let url = URL(string: "https://claude.ai/code") { NSWorkspace.shared.open(url) }
+                                    } : nil)
+                    }
                 }
+                .listPanel(stacked: stacked, width: $listWidth, defaultWidth: PanelLayout.agentsList, available: totalWidth,
+                           rest: PanelLayout.minimumConversation + PanelSplit.handle + besideRoom)
             }
-            .padding(.trailing, NookTheme.Spacing.xs)
-            .resizablePanel(width: $listWidth, defaultWidth: PanelLayout.agentsList, minimum: PanelLayout.minimumList,
-                            available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle + besideRoom,
-                            edge: .trailing, divider: true)
 
-            Group {
-                switch selection {
-                case .live(let session):
-                    SessionWorkbench(viewModel: viewModel, directory: session.cwd, dockSessionPanel: true,
-                                     agentWorking: session.status == .running || session.status == .waiting) { tools in
-                        AgentSessionDetail(selection: .live(session), headerAccessory: tools)
+            if !stacked || !listShown {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    // A session's header has the toggle back to the list; a page without one gets a back button above it.
+                    if stacked && !canHideList(selection) {
+                        PanelBackButton { listHidden = false }
                     }
-                    .id(session.id)
-                case .past(let session):
-                    SessionWorkbench(viewModel: viewModel, directory: session.cwd, dockSessionPanel: true) { tools in
-                        // An earlier conversation Nook can run opens as a Nook session: the same panel, composer and
-                        // pull request status as one started here. The read-only view is for the rest.
-                        ImportedSession(session: session) {
-                            AgentSessionDetail(selection: .past(session), headerAccessory: tools)
-                        }
-                    }
-                    .id("past:" + session.id)
-                case .run(let id):
-                    let run = app.workspace.run(id)
-                    SessionWorkbench(viewModel: viewModel, directory: run?.workingDirectory ?? "", runID: id,
-                                 dockSessionPanel: run?.remote == nil, agentWorking: run?.status.isActive ?? false) { tools in
-                        AgentRunPanel(workspace: app.workspace, runID: id, headerAccessory: tools)
-                    }
-                    // Each session gets its own panel state: nothing (a pending "restore files" above all) carries over.
-                    .id("run:" + id.uuidString)
-                case .pullRequests: PullRequestsPanel()
-                case .usage: AgentsUsagePanel()
-                case .terminals: AgentsToolPage(title: tr("agents.footer.terminals")) { TerminalsView() }
-                case .browser: AgentsToolPage(title: tr("agents.footer.browser")) { BrowserView() }
-                case .worktrees: AgentsToolPage(title: tr("agents.footer.worktrees")) { WorktreesView() }
-                case .simulator: AgentsToolPage(title: tr("agents.footer.simulator")) { SimulatorView() }
-                case .new:
-                    if app.demoMode {
-                        nothingRunning
-                    } else {
-                        SessionWorkbench(viewModel: viewModel, directory: newDirectory) { tools in
-                            NewSessionComposer(headerAccessory: tools, onDirectory: { newDirectory = $0 }) { id in
-                                viewModel.selectedAgentID = "run:" + id.uuidString
+                    Group {
+                        switch selection {
+                        case .live(let session):
+                            SessionWorkbench(viewModel: viewModel, directory: session.cwd, dockSessionPanel: true,
+                                             agentWorking: session.status == .running || session.status == .waiting) { tools in
+                                AgentSessionDetail(selection: .live(session), headerAccessory: tools)
+                            }
+                            .id(session.id)
+                        case .past(let session):
+                            SessionWorkbench(viewModel: viewModel, directory: session.cwd, dockSessionPanel: true) { tools in
+                                // An earlier conversation Nook can run opens as a Nook session: the same panel, composer and
+                                // pull request status as one started here. The read-only view is for the rest.
+                                ImportedSession(session: session) {
+                                    AgentSessionDetail(selection: .past(session), headerAccessory: tools)
+                                }
+                            }
+                            .id("past:" + session.id)
+                        case .run(let id):
+                            let run = app.workspace.run(id)
+                            SessionWorkbench(viewModel: viewModel, directory: run?.workingDirectory ?? "", runID: id,
+                                         dockSessionPanel: run?.remote == nil, agentWorking: run?.status.isActive ?? false) { tools in
+                                AgentRunPanel(workspace: app.workspace, runID: id, headerAccessory: tools)
+                            }
+                            // Each session gets its own panel state: nothing (a pending "restore files" above all) carries over.
+                            .id("run:" + id.uuidString)
+                        case .pullRequests: PullRequestsPanel()
+                        case .usage: AgentsUsagePanel()
+                        case .terminals: AgentsToolPage(title: tr("agents.footer.terminals")) { TerminalsView() }
+                        case .browser: AgentsToolPage(title: tr("agents.footer.browser")) { BrowserView() }
+                        case .worktrees: AgentsToolPage(title: tr("agents.footer.worktrees")) { WorktreesView() }
+                        case .simulator: AgentsToolPage(title: tr("agents.footer.simulator")) { SimulatorView() }
+                        case .new:
+                            if app.demoMode {
+                                nothingRunning
+                            } else {
+                                SessionWorkbench(viewModel: viewModel, directory: newDirectory) { tools in
+                                    NewSessionComposer(headerAccessory: tools, onDirectory: { newDirectory = $0 }) { id in
+                                        viewModel.selectedAgentID = "run:" + id.uuidString
+                                    }
+                                }
                             }
                         }
                     }
                 }
+                .padding(.leading, listShown ? 10 : 0)
+                .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .padding(.leading, 10)
-            .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        // Switching sessions is a hard cut: the next one shows with its panels in place, nothing slides in. Inside the
+        // list's own animation, so that one only plays when you put the list away or bring it back.
+        .transaction(value: selectedID(selection)) { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+        }
+        .animation(NookTheme.reveal, value: listShown)
+        // Looking at a session counts as having seen what it finished, also with the list put away.
+        // Leaving a session counts too: what finished while you watched it is not "new".
+        // The agent works in a chat you had marked as finished: it is not finished after all, unless you marked it
+        // during this very busy spell. Also while the list is put away.
+        .onChange(of: entries.busyKeys) { _, keys in finishedMarks.reconcile(busy: keys) }
+        .onAppear {
+            finishedMarks.reconcile(busy: entries.busyKeys)
+            visits.visit(selectedID(selection))
+        }
+        .onChange(of: selectedID(selection)) { old, new in
+            visits.visit(old)
+            visits.visit(new)
+            prefetchNeighbours(of: new, in: entries)
         }
         // Exactly the width it is given, however wide a row inside wants to be: measuring a row that runs past the window
         // would hand the panels more room than there is and push everything off both sides.
@@ -127,35 +167,50 @@ struct AgentsTab: View {
             }
         }
         .keyCommands(["commandPalette.toggle": { palette.toggle(); return true }], context: ["paletteOpen": palette])
-        .onAppear {
+        // Keep sessions and usage up to date while the tab remains open. Without the loading state: a refresh in the
+        // background that flips it redraws the whole window twice for a list that is already there.
+        .task {
+            // The first refresh waits until the switch to this tab has settled: what it publishes redraws the whole app,
+            // and in the middle of the switch that made it stutter.
+            try? await Task.sleep(for: NookTheme.tabSettle)
+            guard !Task.isCancelled else { return }
             app.hub.refreshDetected()
             app.adoptAccounts()
             app.history.refresh()
-        }
-        // Keep sessions and usage up to date while the tab remains open.
-        .task {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
                 app.adoptAccounts()
-                app.history.refresh()
+                app.history.refresh(showsProgress: false)
             }
         }
     }
 
     // MARK: List header
 
-    /// "Agents" with the button that starts a new session.
+    /// "Agents" with the button that starts a new session, and beside a session the cross that puts the list away
+    /// (the same close button every side panel ends with); the left toggle in the session's header brings it back.
     private func listHeader(_ selection: Selection) -> some View {
         let isNew: Bool = { if case .new = selection { return true }; return false }()
         return PanelListHeader(tr("tab.agents")) {
             if !app.demoMode {
-                PanelNewButton(label: tr("agents.newSession"), active: isNew) { viewModel.selectedAgentID = "new" }
+                PanelNewButton(label: tr("agents.newSession"), active: isNew) { open("new") }
+            }
+            if canHideList(selection) {
+                SidePanelCloseButton(help: tr("agents.list.hide")) {
+                    withAnimation(NookTheme.reveal) { listHidden = true }
+                }
             }
         }
         .padding(.bottom, NookTheme.Spacing.xs)
     }
 
     // MARK: Selection
+
+    /// Opens a session or a page; while the tab shows one column at a time, that takes the list's place.
+    private func open(_ id: String) {
+        viewModel.selectedAgentID = id
+        if PanelLayout.stacks(totalWidth) { withAnimation(NookTheme.reveal) { listHidden = true } }
+    }
 
     /// What is shown on the right. Without a choice (or when it is gone): whatever waits for you or works, otherwise the
     /// place to start a new session.
@@ -165,6 +220,14 @@ struct AgentsTab: View {
         case .live, .past, .run, .new: return true
         default: return false
         }
+    }
+
+    /// The list can be put away only where the session's header shows the toggle that brings it back: a session in a
+    /// workbench on this Mac, not one on another machine (its header has no panel toggles) and not the sample data.
+    private func canHideList(_ selection: Selection) -> Bool {
+        guard !app.demoMode, workbench(selection) else { return false }
+        if case .run(let id) = selection, app.workspace.run(id)?.remote != nil { return false }
+        return true
     }
 
     private func resolve(live: [AgentSession], past: [PastSession]) -> Selection {
@@ -207,35 +270,45 @@ struct AgentsTab: View {
         }
     }
 
+    /// Reads the timelines of the sessions above and below the one that opened, off the main thread, so stepping
+    /// through the list with the keyboard opens each without a hitch (the pointer resting on a row does the same).
+    private func prefetchNeighbours(of id: String, in entries: ListEntries) {
+        let ids = (entries.running + entries.earlier).map(\.id)
+        guard !app.demoMode, let index = ids.firstIndex(of: id) else { return }
+        for neighbour in [index - 1, index + 1] where ids.indices.contains(neighbour) {
+            let next = ids[neighbour]
+            if next.hasPrefix("run:"), let run = UUID(uuidString: String(next.dropFirst(4))) {
+                app.workspace.prefetchTimeline(run)
+            }
+        }
+    }
+
     // MARK: List
 
-    private func sessionList(live: [AgentSession], past: [PastSession], transcripts: [String: PastSession],
-                             selection: Selection) -> some View {
-        let current = selectedID(selection)
+    /// The list's rows: what works or waits, the earlier sessions, and the conversations that are busy (which cannot
+    /// stay marked as finished). Worked out in `body`, so the marks stay right while the list is put away.
+    private struct ListEntries {
+        let running: [AgentListItem]
+        let earlier: [AgentListItem]
+        let busyKeys: Set<String>
+    }
+
+    private func listEntries(live: [AgentSession], past: [PastSession], transcripts: [String: PastSession]) -> ListEntries {
         let runs = app.demoMode ? [] : WorkspaceRunsSection.recent(app.workspace)
         let built = sorted(runs.map { item($0) } + live.map { item($0, transcript: transcripts[$0.id]) })
         let busyKeys = Set(built.filter(\.isBusy).map(\.finishKey))
         let (running, earlier) = Self.linkSpawned(running: built,
                                                   past: past.map { item($0) }.filter { !busyKeys.contains($0.finishKey) })
+        return ListEntries(running: running, earlier: earlier, busyKeys: busyKeys)
+    }
 
+    private func sessionList(_ entries: ListEntries, selection: Selection) -> some View {
+        let current = selectedID(selection)
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             TimelineView(.periodic(from: .now, by: 30)) { context in
-                AgentInboxList(items: running, past: earlier,
-                               current: current, now: context.date) { viewModel.selectedAgentID = $0 }
+                AgentInboxList(items: entries.running, past: entries.earlier,
+                               current: current, now: context.date) { open($0) }
             }
-        }
-        // The agent works in a chat you had marked as finished: it is not finished after all,
-        // unless you marked it during this very busy spell.
-        .onChange(of: busyKeys) { _, keys in finishedMarks.reconcile(busy: keys) }
-        .onAppear {
-            finishedMarks.reconcile(busy: busyKeys)
-            visits.visit(current)
-        }
-        // Looking at a session counts as having seen what it finished.
-        // Leaving a session counts too: what finished while you watched it is not "new".
-        .onChange(of: current) { old, new in
-            visits.visit(old)
-            visits.visit(new)
         }
     }
 
@@ -409,6 +482,12 @@ struct AgentsTab: View {
     }
 }
 
+/// Whether the session list on the left of the Agents tab is put away; shared by the tab and the toggle in a
+/// session's header (`SessionToolSwitch`).
+enum AgentsListVisibility {
+    static let hiddenKey = "nook.agents.listHidden"
+}
+
 // MARK: Session row
 
 /// One session in the list, the same for every kind of session.
@@ -537,6 +616,7 @@ struct AgentListRow: View {
         .padding(.vertical, slim ? NookTheme.Spacing.md : NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(background))
+        .selectionMark(selected)
         .contentShape(Rectangle())
         .opacity(restOpacity)
     }
@@ -572,10 +652,7 @@ struct AgentListRow: View {
             }
 
             HStack(spacing: NookTheme.Spacing.sm) {
-                Text(contextLine)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(AgentPathFormat.tilde(item.path))
+                contextLine
                 if let pullRequest { PullRequestPill(badge: pullRequest, compact: true) }
                 Spacer(minLength: NookTheme.Spacing.sm)
                 AgentMark(agent: item.agent, account: item.account, size: 14, dimmed: dimmed, ring: background,
@@ -587,10 +664,25 @@ struct AgentListRow: View {
         }
     }
 
-    /// "nook · feature/calm-ui": the folder, and the branch when there is one.
-    private var contextLine: String {
-        guard let branch = item.branch, !branch.isEmpty else { return item.folder }
-        return item.folder + " · " + branch
+    /// "[folder] nook  [branch] feature/calm-ui": the folder, and the branch when there is one. The folder stays whole
+    /// and goes first: a long branch gives way, cut in the middle.
+    private var contextLine: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            NookSymbol("folder", size: 10).font(NookTheme.font(9.5, .semibold))
+            Text(item.folder)
+                .foregroundStyle(NookTheme.textSecondary)
+                .lineLimit(1)
+                .layoutPriority(1)
+            if let branch = item.branch, !branch.isEmpty, branch != item.folder {
+                NookSymbol("arrow.triangle.branch", size: 10).font(NookTheme.font(9.5, .semibold))
+                    .padding(.leading, NookTheme.Spacing.xs)
+                Text(branch)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .help(AgentPathFormat.tilde(item.path))
+        .accessibilityElement(children: .combine)
     }
 
     private var slimBody: some View {
@@ -720,6 +812,8 @@ struct AgentConversation: View {
     let session: AgentSession
     /// Sends an answer to the agent when an option of its last question is tapped; nil when the session cannot be written to.
     var onReply: ((String) -> Void)? = nil
+    /// The composer under the conversation, which scrolls on behind it.
+    var bottomBar: AnyView? = nil
 
     /// Without a transcript: the last prompt and reply the hooks reported.
     private var fallback: [AgentChatMessage] {
@@ -733,7 +827,7 @@ struct AgentConversation: View {
         TranscriptConversation(path: session.transcriptPath, author: session.name,
                                accent: AgentKind(agentName: session.name)?.color ?? NookTheme.iris,
                                working: session.status == .running, fallback: fallback, onReply: onReply,
-                               directory: session.cwd)
+                               bottomBar: bottomBar, directory: session.cwd)
             .id(session.id)
     }
 }

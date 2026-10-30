@@ -128,6 +128,19 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    /// Arguments for a login that opens your browser by itself and quits once you signed in, so Nook runs it without a
+    /// Terminal window. Nil for agents whose login only works in their interactive screen (Gemini CLI, OpenCode) and for
+    /// Antigravity, which Nook signs in over ACP. Grok's `grok login` opens auth.x.ai in the browser.
+    var browserLoginArguments: [String]? {
+        switch self {
+        case .claude: return ["auth", "login"]
+        case .codex: return ["login"]
+        case .cursor: return ["login"]
+        case .grok: return ["login"]
+        case .gemini, .antigravity, .opencode, .acp: return nil
+        }
+    }
+
     /// Candidate paths for the agent, in addition to what your shell finds.
     var executableCandidates: [String] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -144,7 +157,27 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         if let versions = try? FileManager.default.contentsOfDirectory(atPath: nvm) {
             paths += versions.sorted { $0.compare($1, options: .numeric) == .orderedDescending }.map { "\(nvm)/\($0)/bin" }
         }
-        return paths.map { "\($0)/\(command)" }
+        return paths.flatMap { folder in
+            [command].map { "\(folder)/\($0)" } + otherCommands.map { "\(folder)/\($0)" }.filter(isOwnCommand)
+        }
+    }
+
+    /// Other names the agent installs itself under: Cursor's CLI is `agent` too (newer installs name it that first).
+    var otherCommands: [String] {
+        switch self {
+        case .cursor: return ["agent"]
+        case .claude, .codex, .gemini, .antigravity, .opencode, .grok, .acp: return []
+        }
+    }
+
+    /// Whether `path`, under one of `otherCommands`, is this agent's and not another program by that name: Cursor's `agent`
+    /// links into its own install folder (~/.local/share/cursor-agent).
+    private func isOwnCommand(_ path: String) -> Bool {
+        let target = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        switch self {
+        case .cursor: return target.contains("cursor-agent")
+        case .claude, .codex, .gemini, .antigravity, .opencode, .grok, .acp: return true
+        }
     }
 
     /// The default directory of the agent where the primary account resides.
@@ -227,6 +260,8 @@ struct PastSession: Identifiable, Equatable, Codable {
     var firstPrompt = ""
     /// The tasks this session started for other sessions (`SpawnedSessions.key` of their prompts).
     var spawnedTasks: [String] = []
+    /// `title` is the name the agent gave the conversation (the Claude app, `/rename`, Codex's thread names), not its first prompt.
+    var titledByAgent = false
 
     /// Whether `id` names this conversation: its latest session id or an earlier one.
     func isConversation(_ id: String) -> Bool { sessionID == id || earlierIDs.contains(id) }
@@ -235,13 +270,17 @@ struct PastSession: Identifiable, Equatable, Codable {
 
     var project: String {
         let name = URL(fileURLWithPath: cwd).lastPathComponent
-        return cwd.isEmpty || name.isEmpty || name == "/" ? "no folder" : name
+        guard !(cwd.isEmpty || name.isEmpty || name == "/") else { return "no folder" }
+        return WorktreeOrigin.repositoryName(of: cwd) ?? name
     }
 
     /// Where to continue: the folder the session ended in, unless that is gone or off limits (then the one it started in).
     /// Nook never runs an agent in the home folder, so a session that began there continues in the project it moved to.
+    /// A scratch folder outside any repository it stepped into last does not count: it continues in its project, with
+    /// that project's branch and changes (see `SessionFolder`).
     var resumeFolder: String {
-        for candidate in [lastCwd, cwd] where !candidate.isEmpty {
+        let last = lastCwd.isEmpty ? "" : SessionFolder.follow(current: cwd, reported: lastCwd)
+        for candidate in [last, cwd] where !candidate.isEmpty {
             if WorkspacePathPolicy.verdict(for: candidate) == .ok { return candidate }
         }
         return cwd
@@ -264,8 +303,24 @@ struct PastSession: Identifiable, Equatable, Codable {
     }
 }
 
+extension PastSession {
+    /// A session an ACP agent listed itself: what the list says (folder, title, last change); its transcript stays with the
+    /// agent, which replays or resumes it when it continues in Nook.
+    init(listed: AcpListedSession, agent: AgentKind, profileID: String) {
+        let when = listed.updated ?? .distantPast
+        self.init(agent: agent, sessionID: listed.id, title: listed.title, cwd: listed.cwd, branch: "", model: "",
+                  started: when, ended: when, prompts: 1, tokens: TokenTally(), lastPrompt: "", lastReply: "")
+        self.profileID = profileID
+        titledByAgent = !listed.title.isEmpty
+    }
+}
+
 /// Which account an agent is logged in with, from its own configuration.
 struct AgentAccount: Equatable {
+    /// The name of an account that signs in with a key, and of a Google sign-in without an address, in your language.
+    static var apiKeyName: String { tr("accounts.method.apiKey") }
+    static var googleAccountName: String { tr("accounts.googleAccount") }
+
     let agent: AgentKind
     /// Email address, or "API key" if there is no account.
     var name: String
@@ -314,11 +369,29 @@ struct AgentUsageSummary: Equatable {
 @MainActor
 final class AgentHistory: ObservableObject {
     @Published private(set) var sessions: [PastSession] = []
+    /// The sessions read from transcripts on disk, and the ones agents listed themselves (ACP `session/list`) per account:
+    /// `sessions` holds both, each conversation once.
+    private var diskSessions: [PastSession] = []
+    private var listedSessions: [String: [PastSession]] = [:]
+
+    /// What an agent account listed itself (see `WorkspaceManager.listAgentSessions`), replacing what it listed before.
+    func setListedSessions(_ list: [PastSession], account: String) {
+        guard listedSessions[account] != list else { return }
+        listedSessions[account] = list
+        publishSessions()
+    }
+
+    private func publishSessions() {
+        var seen = Set(diskSessions.map(\.id))
+        let listed = listedSessions.keys.sorted().flatMap { listedSessions[$0] ?? [] }.filter { seen.insert($0.id).inserted }
+        let merged = listed.isEmpty ? diskSessions : (diskSessions + listed).sorted { $0.ended > $1.ended }
+        if sessions != merged { sessions = merged }
+    }
     /// Per account (`AgentProfile.id`): who is logged in.
     @Published private(set) var profileAccounts: [String: AgentAccount] = [:]
     /// Per account: tokens and sessions for today and this week.
     @Published private(set) var profileUsage: [String: AgentUsageSummary] = [:]
-    /// Every agent's tokens per hour and model over the last 90 days, for Settings › Usage.
+    /// Every agent's tokens per hour and model over the last 90 days, for Settings › Coding agents.
     @Published private(set) var ledger = UsageLedger()
     /// Which agents are installed on this Mac (presence of ~/.claude or ~/.codex).
     @Published private(set) var installed: Set<AgentKind> = []
@@ -381,7 +454,8 @@ final class AgentHistory: ObservableObject {
                 guard let self else { return }
                 self.scanning = false
                 if self.loading { self.loading = false }
-                if self.sessions != result.sessions { self.sessions = result.sessions }
+                self.diskSessions = result.sessions
+                self.publishSessions()
                 if self.profileAccounts != result.accounts { self.profileAccounts = result.accounts }
                 if self.profileUsage != result.usage { self.profileUsage = result.usage }
                 if self.ledger != result.ledger { self.ledger = result.ledger }
@@ -462,7 +536,7 @@ private final class HistoryScanner: @unchecked Sendable {
     private static let diskSaveInterval: TimeInterval = 10 * 60
     private static var diskURL: URL { NookPaths.supportDirectory.appendingPathComponent("agent-history-cache.plist") }
     /// Raise when the parsing changes within a build number.
-    private static let diskFormat = 1
+    private static let diskFormat = 3
     private static var diskBuild: String {
         "\(diskFormat)|" + ((Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "")
     }
@@ -525,8 +599,16 @@ private final class HistoryScanner: @unchecked Sendable {
         var seenFolders = Set<String>()
 
         for home in homes {
-            // Two accounts with the same directory: read only once.
-            guard fm.fileExists(atPath: home.url.path), seenFolders.insert(home.url.standardizedFileURL.path).inserted else { continue }
+            // Two accounts of one agent with the same directory: read only once. Gemini CLI and Antigravity share ~/.gemini,
+            // and each reads its own part of it.
+            guard fm.fileExists(atPath: home.url.path),
+                  seenFolders.insert(home.kind.rawValue + "|" + home.url.standardizedFileURL.path).inserted else { continue }
+            switch home.kind {
+            // Antigravity is there when its own folder is, not because Gemini CLI made ~/.gemini.
+            case .antigravity:
+                if !home.url.path.hasSuffix("antigravity"), !fm.fileExists(atPath: home.url.appendingPathComponent("antigravity").path) { continue }
+            case .claude, .codex, .gemini, .opencode, .cursor, .grok, .acp: break
+            }
             installed.insert(home.kind)
             let found: [(url: URL, key: CacheKey)]
             switch home.kind {
@@ -534,8 +616,9 @@ private final class HistoryScanner: @unchecked Sendable {
             case .codex: found = codexFiles(home.url, since: since)
             case .gemini: found = geminiFiles(home.url, since: since)
             case .antigravity: found = antigravityFiles(home.url, since: since)
-            // Run over ACP: their history comes from the agent itself (session/load), not from files.
-            case .opencode, .cursor, .grok, .acp: found = []
+            case .cursor: found = cursorFiles(home.url, since: since)
+            // Their history comes from the agent itself (ACP session/list, see ProviderCapabilities.pastSessions).
+            case .opencode, .grok, .acp: found = []
             }
             files += found.map { ($0.url, home.kind, home.id, $0.key) }
         }
@@ -558,6 +641,8 @@ private final class HistoryScanner: @unchecked Sendable {
         } else {
             // Antigravity's titles live in a database: opened only when one of its transcripts has to be read again.
             var antigravitySummaries: [String: (title: String, cwd: String)]?
+            // Cursor's chat folders by chat id, per ~/.cursor: looked up only when one of its transcripts has to be read again.
+            var cursorChats: [String: [String: URL]] = [:]
             var fresh: [String: (key: CacheKey, parsed: Parsed)] = [:]
             var parsedAll: [(profile: String, parsed: Parsed, agent: AgentKind)] = []
             for file in files {
@@ -575,7 +660,13 @@ private final class HistoryScanner: @unchecked Sendable {
                         let summaries = antigravitySummaries ?? readAntigravitySummaries(homes)
                         antigravitySummaries = summaries
                         parsed = parseAntigravity(file.url, summaries: summaries)
-                    case .opencode, .cursor, .grok, .acp: parsed = Parsed(session: nil, entries: [])
+                    case .cursor:
+                        // ~/.cursor/projects/<folder>/agent-transcripts/<id>/<id>.jsonl
+                        let home = (0..<5).reduce(file.url) { url, _ in url.deletingLastPathComponent() }
+                        let chats = cursorChats[home.path] ?? cursorChatFolders(home)
+                        cursorChats[home.path] = chats
+                        parsed = parseCursor(file.url, chats: chats)
+                    case .opencode, .grok, .acp: parsed = Parsed(session: nil, entries: [])
                     }
                 }
                 parsed.session?.profileID = file.profile
@@ -618,7 +709,7 @@ private final class HistoryScanner: @unchecked Sendable {
 
         let executables = locateExecutables()
         installed.formUnion(executables.keys)
-        return Result(sessions: sessions, accounts: accounts, usage: usage, ledger: ledger, installed: installed, executables: executables)
+        return Result(sessions: namedByCodex(sessions, homes: homes), accounts: accounts, usage: usage, ledger: ledger, installed: installed, executables: executables)
     }
 
     /// One session per conversation: the transcripts of a chat that was resumed into new files become one, under the
@@ -636,10 +727,50 @@ private final class HistoryScanner: @unchecked Sendable {
             let parts = group.map { listed[$0].session }
             let first = parts.min { $0.started < $1.started } ?? latest
             latest.started = first.started
-            if !first.title.isEmpty { latest.title = first.title }
+            // A name the agent gave the conversation wins over its first prompt; the latest name over an earlier one.
+            if let named = parts.first(where: \.titledByAgent) {
+                latest.title = named.title
+                latest.titledByAgent = true
+            } else if !first.title.isEmpty {
+                latest.title = first.title
+            }
             latest.prompts = parts.map(\.prompts).max() ?? latest.prompts
             latest.earlierIDs = parts.dropFirst().map(\.sessionID).filter { $0 != latest.sessionID }
             return latest
+        }
+    }
+
+    /// Codex names its threads (the Codex app, `/rename`) in `session_index.jsonl` next to the sessions, apart from the
+    /// transcripts: read on every scan (the file is small, and only again when it changed), the latest line per thread wins.
+    private func namedByCodex(_ sessions: [PastSession], homes: [ProfileHome]) -> [PastSession] {
+        var names: [String: String] = [:]
+        for home in homes where home.kind == .codex {
+            let url = home.url.appendingPathComponent("session_index.jsonl")
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            if let modified, let known = codexThreadNames[url.path], known.modified == modified {
+                names.merge(known.names) { _, new in new }
+                continue
+            }
+            var read: [String: String] = [:]
+            if let data = try? Data(contentsOf: url) {
+                forEachLine(data) { line in
+                    guard let object = json(line), let id = object["id"] as? String,
+                          let name = (object["thread_name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !name.isEmpty else { return }
+                    read[id] = name
+                }
+            }
+            codexThreadNames[url.path] = modified.map { (modified: $0, names: read) }
+            names.merge(read) { _, new in new }
+        }
+        guard !names.isEmpty else { return sessions }
+        return sessions.map { session in
+            guard session.agent == .codex,
+                  let name = ([session.sessionID] + session.earlierIDs).lazy.compactMap({ names[$0] }).first else { return session }
+            var named = session
+            named.title = Self.oneLine(name, 90)
+            named.titledByAgent = true
+            return named
         }
     }
 
@@ -651,7 +782,7 @@ private final class HistoryScanner: @unchecked Sendable {
             case .claude:
                 if home.apiKey {
                     // An API key takes precedence, even if an old login remains in the directory.
-                    accounts[home.id] = AgentAccount(agent: .claude, name: "API-sleutel", organization: "", plan: "API")
+                    accounts[home.id] = AgentAccount(agent: .claude, name: AgentAccount.apiKeyName, organization: "", plan: "API")
                 } else if let account = claudeAccount(home.url, isDefault: home.isDefault) {
                     accounts[home.id] = account
                 }
@@ -887,7 +1018,7 @@ private final class HistoryScanner: @unchecked Sendable {
 
     // MARK: Gemini CLI
 
-    /// ~/.gemini/tmp/<project>/chats/session-*.json
+    /// ~/.gemini/tmp/<project>/chats/session-*.json (up to Gemini CLI 0.32) or session-*.jsonl
     private func geminiFiles(_ home: URL, since: Date) -> [(url: URL, key: CacheKey)] {
         let fm = FileManager.default
         let root = home.appendingPathComponent("tmp", isDirectory: true)
@@ -896,7 +1027,8 @@ private final class HistoryScanner: @unchecked Sendable {
         for project in projects {
             let chats = root.appendingPathComponent(project, isDirectory: true).appendingPathComponent("chats", isDirectory: true)
             guard let names = try? fm.contentsOfDirectory(atPath: chats.path) else { continue }
-            for name in names where name.hasSuffix(".json") {
+            // One JSON file per chat, or from Gemini CLI 0.33 on a JSONL log of it.
+            for name in names where name.hasSuffix(".json") || name.hasSuffix(".jsonl") {
                 let url = chats.appendingPathComponent(name)
                 if let key = attributes(url), key.modified >= since { result.append((url, key)) }
             }
@@ -905,12 +1037,12 @@ private final class HistoryScanner: @unchecked Sendable {
     }
 
     private func parseGemini(_ url: URL) -> Parsed {
-        guard let data = try? Data(contentsOf: url),
-              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let messages = root["messages"] as? [[String: Any]] else { return Parsed(session: nil, entries: []) }
-        // The folder is not in the chat file; newer versions keep it next to the chats in `.project_root`.
-        let projectRoot = url.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(".project_root")
-        let cwd = (try? String(contentsOf: projectRoot, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard let data = try? Data(contentsOf: url), let chat = GeminiChatLog.read(data) else { return Parsed(session: nil, entries: []) }
+        let root = chat.metadata
+        let messages = chat.messages
+        // The folder is not in the chat file itself (see GeminiChatLog.folder); ~/.gemini holds tmp/<project>/chats.
+        let runtime = url.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let cwd = GeminiChatLog.folder(chat: chat, file: url, runtimeDirectory: runtime)
         let modified = attributes(url)?.modified ?? Date()
         var session = PastSession(
             agent: .gemini, sessionID: (root["sessionId"] as? String) ?? url.deletingPathExtension().lastPathComponent,
@@ -976,6 +1108,86 @@ private final class HistoryScanner: @unchecked Sendable {
             if let key = attributes(url), key.modified >= since { result.append((url, key)) }
         }
         return result
+    }
+
+    // MARK: Cursor
+
+    /// ~/.cursor/projects/<folder>/agent-transcripts/<id>/<id>.jsonl (see CursorChats)
+    private func cursorFiles(_ home: URL, since: Date) -> [(url: URL, key: CacheKey)] {
+        let fm = FileManager.default
+        let projects = home.appendingPathComponent("projects", isDirectory: true)
+        guard let folders = try? fm.contentsOfDirectory(atPath: projects.path) else { return [] }
+        var result: [(url: URL, key: CacheKey)] = []
+        for folder in folders {
+            let transcripts = projects.appendingPathComponent(folder, isDirectory: true).appendingPathComponent("agent-transcripts", isDirectory: true)
+            guard let chats = try? fm.contentsOfDirectory(atPath: transcripts.path) else { continue }
+            for chat in chats {
+                let url = transcripts.appendingPathComponent(chat, isDirectory: true).appendingPathComponent(chat + ".jsonl")
+                if let key = attributes(url), key.modified >= since { result.append((url, key)) }
+            }
+        }
+        return result
+    }
+
+    /// Every Cursor chat's folder in `home` (~/.cursor/chats/<hash>/<id>, ~/.cursor/acp-sessions/<id>) by its id.
+    private func cursorChatFolders(_ home: URL) -> [String: URL] {
+        let fm = FileManager.default
+        var result: [String: URL] = [:]
+        let chats = home.appendingPathComponent("chats", isDirectory: true)
+        for hash in (try? fm.contentsOfDirectory(atPath: chats.path)) ?? [] {
+            let folder = chats.appendingPathComponent(hash, isDirectory: true)
+            for id in (try? fm.contentsOfDirectory(atPath: folder.path)) ?? [] {
+                result[id] = folder.appendingPathComponent(id, isDirectory: true)
+            }
+        }
+        let sessions = home.appendingPathComponent("acp-sessions", isDirectory: true)
+        for id in (try? fm.contentsOfDirectory(atPath: sessions.path)) ?? [] where result[id] == nil {
+            result[id] = sessions.appendingPathComponent(id, isDirectory: true)
+        }
+        return result
+    }
+
+    /// A Cursor chat: what was said from its transcript, its folder and times from meta.json, its name from store.db.
+    private func parseCursor(_ url: URL, chats: [String: URL]) -> Parsed {
+        guard let data = try? Data(contentsOf: url) else { return Parsed(session: nil, entries: []) }
+        let id = url.deletingPathExtension().lastPathComponent
+        var info = CursorChats.Info()
+        if let folder = chats[id] {
+            if let meta = try? Data(contentsOf: folder.appendingPathComponent("meta.json")) { info = CursorChats.info(metaJSON: meta) }
+            if let stored = cursorStoreMeta(folder.appendingPathComponent("store.db")) {
+                if info.title.isEmpty { info.title = stored.title }
+                if info.created == nil { info.created = stored.created }
+            }
+        }
+        let messages = AgentTranscript.jsonl(data)
+        let prompts = messages.filter { $0.kind == .user }
+        guard !prompts.isEmpty else { return Parsed(session: nil, entries: []) }
+        let modified = attributes(url)?.modified ?? Date()
+        var session = PastSession(
+            agent: .cursor, sessionID: id, title: info.title, cwd: info.cwd, branch: "", model: "",
+            started: info.created ?? modified, ended: max(info.updated ?? modified, modified),
+            prompts: prompts.count, tokens: TokenTally(), lastPrompt: prompts.last?.text ?? "",
+            lastReply: messages.last { $0.kind == .assistant }?.text ?? ""
+        )
+        session.titledByAgent = !info.title.isEmpty
+        if session.title.isEmpty { session.title = prompts.first?.text ?? "" }
+        session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
+        session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
+        session.lastReply = Self.clip(session.lastReply, 12_000)
+        return Parsed(session: session, entries: [])
+    }
+
+    /// The name and creation time in a Cursor chat's store.db (`meta` row `0`).
+    private func cursorStoreMeta(_ url: URL) -> (title: String, created: Date?)? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else { return nil }
+        defer { sqlite3_close(db) }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT value FROM meta WHERE key = '0'", -1, &stmt, nil) == SQLITE_OK, let stmt else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_step(stmt) == SQLITE_ROW, let value = sqlite3_column_text(stmt, 0) else { return nil }
+        return CursorChats.storeMeta(hex: String(cString: value))
     }
 
     /// Fast lookup of session title and workspace root from ~/.gemini/antigravity/conversation_summaries.db
@@ -1101,6 +1313,7 @@ private final class HistoryScanner: @unchecked Sendable {
     private static let claudeAssistant = Data(#""type":"assistant""#.utf8)
     private static let claudeUser = Data(#""type":"user""#.utf8)
     private static let claudeSummary = Data(#""type":"summary""#.utf8)
+    private static let claudeCustomTitle = Data(#""type":"custom-title""#.utf8)
     private static let claudeQueued = Data(#""queued_command""#.utf8)
     private static let spawnTask = Data("spawn_task".utf8)
     private static let toolResult = Data(#""tool_result""#.utf8)
@@ -1116,6 +1329,8 @@ private final class HistoryScanner: @unchecked Sendable {
     private struct ClaudeState {
         var session: PastSession
         var summaryTitle = ""
+        /// The title Claude gave the session itself (the Claude app names every session; `/rename` changes it): the latest wins.
+        var customTitle = ""
         var entries: [UsageEntry] = []
         var seenUsage = Set<String>()
         /// For `ResumedConversations`: the session ids the lines were written under, and the first and last message.
@@ -1134,6 +1349,8 @@ private final class HistoryScanner: @unchecked Sendable {
     }
 
     private var claudeProgress: [String: Progress<ClaudeState>] = [:]
+    /// Codex's thread names per `session_index.jsonl`, with when that file last changed.
+    private var codexThreadNames: [String: (modified: Date, names: [String: String])] = [:]
     private var codexProgress: [String: Progress<CodexState>] = [:]
     /// Only transcripts touched this recently keep their progress: older ones rarely grow, and this bounds the memory.
     private static let progressWindow: TimeInterval = 6 * 3600
@@ -1179,7 +1396,10 @@ private final class HistoryScanner: @unchecked Sendable {
         }
         var session = result.session
         guard session.ended > .distantPast else { return Parsed(session: nil, entries: result.entries) }
-        if !result.summaryTitle.isEmpty { session.title = result.summaryTitle }
+        if let named = [result.customTitle, result.summaryTitle].first(where: { !$0.isEmpty }) {
+            session.title = named
+            session.titledByAgent = true
+        }
         session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
@@ -1192,6 +1412,11 @@ private final class HistoryScanner: @unchecked Sendable {
     }
 
     private func claudeLine(_ line: Data, into progress: inout ClaudeState) {
+        if line.range(of: Self.claudeCustomTitle) != nil, let object = json(line), object["type"] as? String == "custom-title" {
+            let title = ((object["customTitle"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !title.isEmpty { progress.customTitle = title }
+            return
+        }
         if line.range(of: Self.claudeSummary) != nil, progress.summaryTitle.isEmpty,
            let object = json(line), object["type"] as? String == "summary" {
             progress.summaryTitle = (object["summary"] as? String) ?? ""
@@ -1257,8 +1482,9 @@ private final class HistoryScanner: @unchecked Sendable {
             }
         } else {
             if (object["isMeta"] as? Bool) == true || (object["isSidechain"] as? Bool) == true { return }
-            let text = Self.text(message["content"])
-            guard Self.isTypedPrompt(text) else { return }
+            // Block by block without the agent's own (the Claude app's worktree reminder before your first prompt), as
+            // the conversation view reads it.
+            guard let text = InjectedPrompt.prompt(AgentTranscript.typedText(message["content"])) else { return }
             progress.session.prompts += 1
             progress.session.lastPrompt = text
             if progress.session.title.isEmpty { progress.session.title = text }
@@ -1267,12 +1493,6 @@ private final class HistoryScanner: @unchecked Sendable {
                 progress.firstPromptAt = (object["timestamp"] as? String) ?? ""
             }
         }
-    }
-
-    /// User-typed input, excluding what Claude Code injects automatically (commands, output, interrupts).
-    private static func isTypedPrompt(_ text: String) -> Bool {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
-        return !InjectedPrompt.isInjected(text)
     }
 
     /// ~/.claude.json: which account Claude Code is logged in with. When using a custom directory (CLAUDE_CONFIG_DIR),
@@ -1294,7 +1514,7 @@ private final class HistoryScanner: @unchecked Sendable {
                 return AgentAccount(agent: .claude, name: email, organization: cleanOrg, plan: Self.claudePlan(account.plan))
             }
             if account.hasAPIKey {
-                return AgentAccount(agent: .claude, name: "API-sleutel", organization: "", plan: "")
+                return AgentAccount(agent: .claude, name: AgentAccount.apiKeyName, organization: "", plan: "")
             }
         }
         return nil
@@ -1353,8 +1573,7 @@ private final class HistoryScanner: @unchecked Sendable {
         case "event_msg":
             switch payload["type"] as? String {
             case "user_message":
-                let text = (payload["message"] as? String) ?? ""
-                guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !InjectedPrompt.isInjected(text) else { return }
+                guard let text = InjectedPrompt.prompt((payload["message"] as? String) ?? "") else { return }
                 state.session.prompts += 1
                 state.session.lastPrompt = text
                 if state.session.title.isEmpty { state.session.title = text }
@@ -1400,7 +1619,7 @@ private final class HistoryScanner: @unchecked Sendable {
             return AgentAccount(agent: .codex, name: (claims["email"] as? String) ?? "ChatGPT-account", organization: "", plan: plan)
         }
         if let key = root["OPENAI_API_KEY"] as? String, !key.isEmpty {
-            return AgentAccount(agent: .codex, name: "API-sleutel", organization: "", plan: "")
+            return AgentAccount(agent: .codex, name: AgentAccount.apiKeyName, organization: "", plan: "")
         }
         return nil
     }
@@ -1416,7 +1635,7 @@ private final class HistoryScanner: @unchecked Sendable {
         if let google = geminiAccount(home) {
             return AgentAccount(agent: .antigravity, name: google.name, organization: "", plan: google.plan)
         }
-        return AgentAccount(agent: .antigravity, name: "Google-account", organization: "", plan: "")
+        return AgentAccount(agent: .antigravity, name: AgentAccount.googleAccountName, organization: "", plan: "")
     }
 
     private func geminiAccount(_ home: URL) -> AgentAccount? {
@@ -1427,10 +1646,10 @@ private final class HistoryScanner: @unchecked Sendable {
         let accounts = (try? Data(contentsOf: home.appendingPathComponent("google_accounts.json")))
             .flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } ?? [:]
         if let email = accounts["active"] as? String, !email.isEmpty {
-            return AgentAccount(agent: .gemini, name: email, organization: "", plan: auth == "vertex-ai" ? "Vertex AI" : "Google-account")
+            return AgentAccount(agent: .gemini, name: email, organization: "", plan: auth == "vertex-ai" ? "Vertex AI" : AgentAccount.googleAccountName)
         }
         switch auth {
-        case "gemini-api-key": return AgentAccount(agent: .gemini, name: "API-sleutel", organization: "", plan: "")
+        case "gemini-api-key": return AgentAccount(agent: .gemini, name: AgentAccount.apiKeyName, organization: "", plan: "")
         case "vertex-ai": return AgentAccount(agent: .gemini, name: "Vertex AI", organization: "", plan: "")
         default: return nil
         }

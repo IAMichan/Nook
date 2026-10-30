@@ -11,6 +11,8 @@ struct AgentInboxList: View {
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var visits = SessionVisits.shared
     @ObservedObject private var pullRequests = PullRequestSync.shared
+    /// The badges show the newest status of each request, also one a watch or the pull request page read.
+    @ObservedObject private var pullRequestStatuses = PullRequestStatusStore.shared
     /// Sessions that are running or were, and earlier sessions (settled by nature).
     let items: [AgentListItem]
     let past: [AgentListItem]
@@ -47,12 +49,11 @@ struct AgentInboxList: View {
 
     private func row(_ item: AgentListItem) -> InboxRow {
         let isPast = item.id.hasPrefix("past:")
-        // A process Nook only sees (id "proc-…") runs in a terminal: it never settles by itself.
-        let idle = (item.status == .idle || item.status == .finished) && !item.id.hasPrefix("proc-")
         // A busy session settles only when you settled it during this busy spell (a turn that hangs).
         let settledBusy = item.isBusy && finishedMarks.isMarkedWhileBusy(item.finishKey)
-        let settled = isPast || settledBusy
-            || (!item.isBusy && finishedMarks.isFinished(key: item.finishKey, idle: idle, lastActive: item.started, now: now))
+        // Only you settle a chat (or the auto-settle rules you switched on): one that went quiet stays until you handled it,
+        // across a restart of Nook too.
+        let settled = isPast || settledBusy || (!item.isBusy && finishedMarks.contains(item.finishKey))
         return InboxRow(
             id: item.id, title: item.title, project: item.folder, attention: attention(item),
             pinned: store.state.pinned.contains(item.id), settled: settled,
@@ -75,9 +76,28 @@ struct AgentInboxList: View {
     }
 
     /// The state of the pull request the agent opened from its branch: a session Nook runs by id, any other by folder.
+    /// Until that sync has found one, the pull request the chat itself shows: the same one as the tray above its composer.
     private func pullRequestBadge(_ item: AgentListItem) -> PullRequestBadge? {
-        if let id = runID(item) { return pullRequests.badge(id) }
-        return pullRequests.badge(path: item.path, branch: item.branch)
+        if let id = runID(item) { return pullRequests.badge(id) ?? knownPullRequest(run: id).flatMap(linkBadge) }
+        if let badge = pullRequests.badge(path: item.path, branch: item.branch) { return badge }
+        let reply = item.id.hasPrefix("past:")
+            ? app.history.sessions.first { "past:" + $0.id == item.id }?.lastReply
+            : app.hub.sessions.first { $0.id == item.id }?.lastReply
+        return reply.flatMap(MarkdownBlock.lastGitHubPullRequest(in:)).flatMap(linkBadge)
+    }
+
+    /// The watched pull request, the one Nook opened, else the last one the conversation links. Only a conversation
+    /// already in memory is read: a row never loads one from disk.
+    private func knownPullRequest(run id: UUID) -> URL? {
+        let workspace = app.workspace
+        if let watched = workspace.run(id)?.prWatch.flatMap({ URL(string: $0.url) }) { return watched }
+        if let opened = workspace.openPullRequests[id] { return opened }
+        guard let events = workspace.events[id], !events.isEmpty else { return nil }
+        return RunPullRequestLinks.shared.url(id, events: events)
+    }
+
+    private func linkBadge(_ url: URL) -> PullRequestBadge? {
+        PullRequestBadge.link(url, glyph: pullRequestStatuses.status(url)?.glyph)
     }
 
     /// Folder and branch of every agent Nook did not start, for `PullRequestSync`: the ones running now and the earlier
@@ -116,17 +136,26 @@ struct AgentInboxList: View {
                     .foregroundStyle(NookTheme.amber)
                     .padding(.horizontal, NookTheme.Spacing.lg)
             }
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    ForEach(sections.filter { $0.kind != .settled }, id: \.kind) { section in
-                        sectionView(section, sections: sections, byID: byID, shown: shown)
+            if showsEmptyState(sections) {
+                // Nothing working and the settled shelf closed: a calm, centered invitation instead of a bare line. With no
+                // session at all it sets up an agent, otherwise it starts a new session.
+                WSEmptyState(symbol: "terminal", title: tr("agents.noneWorkingNow"), message: tr("agents.emptyListDetail"),
+                             action: sections.isEmpty
+                                ? (title: tr("onboarding.agents.setUp"), run: { app.startOnboarding(at: OnboardingView.agentsStep) })
+                                : (title: tr("agents.newSession"), run: { select("new") }))
+            } else {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                        ForEach(sections.filter { $0.kind != .settled }, id: \.kind) { section in
+                            sectionView(section, sections: sections, byID: byID, shown: shown)
+                        }
+                        // Only the docked settled shelf left (or nothing): say so instead of an empty space.
+                        if sections.allSatisfy({ $0.kind == .settled }) { emptyState }
                     }
-                    // Only the docked settled shelf left (or nothing): say so instead of an empty space.
-                    if sections.allSatisfy({ $0.kind == .settled }) { emptyState }
                 }
+                .frame(maxHeight: .infinity, alignment: .top)
             }
-            .frame(maxHeight: .infinity, alignment: .top)
-            // What you settled sits at the foot of the list, above the footer, and opens upwards.
+            // What you settled sits at the foot of the list, above the footer, its header above its rows.
             if let settled = sections.first(where: { $0.kind == .settled }) {
                 settledShelf(settled, sections: sections, byID: byID, shown: shown)
             }
@@ -155,15 +184,19 @@ struct AgentInboxList: View {
         }
     }
 
+    /// Nothing here yet and nothing being searched or read: the coding agents step of the first-run flow installs or
+    /// signs in an agent and adds projects.
+    private var showsSetUp: Bool { store.query.isEmpty && !app.history.loading && !app.demoMode }
+
+    /// The whole panel is empty: no search, nothing loading, and at most a closed shelf of settled sessions below.
+    private func showsEmptyState(_ sections: [InboxSection]) -> Bool {
+        showsSetUp && sections.allSatisfy { $0.kind == .settled } && collapsed.contains(.settled)
+    }
+
     @ViewBuilder
     private var emptyState: some View {
         ListEmptyNote(store.query.isEmpty ? (app.history.loading ? tr("agents.checking") : tr("agents.noneWorkingNow")) : tr("inbox.noResults"),
                       padding: NookTheme.Spacing.lg)
-        // Nothing here yet: the coding agents step of the first-run flow installs or signs in an agent and adds projects.
-        if store.query.isEmpty, !app.history.loading, !app.demoMode {
-            SmallGhostButton(title: tr("onboarding.agents.setUp")) { app.startOnboarding(at: OnboardingView.agentsStep) }
-                .padding(.horizontal, NookTheme.Spacing.lg)
-        }
     }
 
     // MARK: Search
@@ -199,8 +232,8 @@ struct AgentInboxList: View {
         }
     }
 
-    /// The settled shelf, docked at the foot of the list: its header stays put and its rows open above it, scrolling
-    /// on their own once they no longer fit.
+    /// The settled shelf, docked at the foot of the list: opening it lifts its header and lays its rows out below,
+    /// scrolling on their own once they no longer fit.
     private func settledShelf(_ section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem],
                               shown: [String]) -> some View {
         let open = !collapsed.contains(section.kind)
@@ -218,6 +251,7 @@ struct AgentInboxList: View {
             }
         }
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            shelfHeader(section, sections: sections, byID: byID)
             if !rows(of: section).isEmpty {
                 ViewThatFits(in: .vertical) {
                     list
@@ -225,7 +259,6 @@ struct AgentInboxList: View {
                 }
                 .frame(maxHeight: 280)
             }
-            shelfHeader(section, sections: sections, byID: byID)
         }
         .modifier(DropTarget(kind: section.kind, section: section, list: self, sections: sections, byID: byID, row: nil))
     }
@@ -251,11 +284,9 @@ struct AgentInboxList: View {
                         .padding(.horizontal, NookTheme.Spacing.sm).padding(.vertical, NookTheme.Spacing.xxs)
                         .background(Capsule().fill(NookTheme.iris.opacity(0.14)))
                 }
-                // The docked settled shelf opens upwards: its chevron points up while closed, down while open.
-                let docked = section.kind == .settled
                 Image(systemName: "chevron.down")
                     .font(NookTheme.font(8.5, .bold))
-                    .rotationEffect(.degrees(open ? 0 : (docked ? 180 : -90)))
+                    .rotationEffect(.degrees(open ? 0 : -90))
                     .foregroundStyle(NookTheme.textTertiary)
             }
             .padding(.horizontal, NookTheme.Spacing.lg)

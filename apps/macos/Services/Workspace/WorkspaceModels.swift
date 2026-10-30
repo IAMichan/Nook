@@ -50,11 +50,18 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass])
-        case .opencode, .cursor, .grok, .antigravity, .acp:
-            // ACP: permission requests, cancel, streamed messages and thoughts, usage updates with context and cost.
+        case .antigravity, .cursor:
+            // ACP, with its conversations on disk: Antigravity's in ~/.gemini/antigravity, Cursor's in ~/.cursor (its ACP
+            // server has no session/list).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass])
+        case .opencode, .grok, .acp:
+            // ACP: permission requests, cancel, streamed messages and thoughts, usage updates with context and cost. Their
+            // earlier sessions come from the agent itself (`session/list`).
+            return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
+                                        reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
+                                        policies: [.ask, .acceptEdits, .bypass], pastSessions: .agent)
         }
     }
 
@@ -97,6 +104,13 @@ struct ProviderCapabilities: Equatable, Sendable {
     /// Without native steering, a message sent during a turn can still change it: Nook interrupts the turn and sends the
     /// message as the next prompt. Needs `interrupt` and ordinary follow-up turns.
     var supportsSteeringByInterruptRestart = true
+    /// Where Nook finds the agent's earlier sessions: its transcripts on disk (`AgentHistory`), or the agent's own list
+    /// (ACP `session/list`, when the agent offers it).
+    var pastSessions: PastSessionSource = .disk
+}
+
+enum PastSessionSource: Equatable, Sendable {
+    case disk, agent
 }
 
 /// How a turn's end reaches Nook. Strong: the agent sends an explicit terminal message (Claude Code's `result`, Codex's
@@ -255,6 +269,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var repoRoot: String?
     var branch: String?
     var baseBranch: String?
+    /// The branches the session worked on before `branch`, oldest first (see `SessionBranches`).
+    var earlierBranches: [String]? = nil
     var worktreePath: String?
     /// Extra instructions for this session (alongside project CLAUDE.md / AGENTS.md).
     var instructions: String
@@ -281,6 +297,9 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     /// goes out with the next turn (see `ConversationRollback`).
     var conversation: ConversationLog? = nil
     var pendingRollback: PendingRollback? = nil
+    /// The agent's own conversation this session started from when it could not continue it (see
+    /// `carryOverConversation`): taking that conversation over again opens this session, not a second one.
+    var carriedOverFrom: String? = nil
     /// Stopped on a usage limit: since when, when the limit resets (nil: unknown), and whether the session then goes
     /// on by itself.
     var limitedAt: Date? = nil
@@ -338,14 +357,14 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
         status = next
         statusDetail = detail
         updatedAt = now
-        if next == .running, turnStartedAt == nil { turnStartedAt = now }
+        if (next == .preparing || next == .running), turnStartedAt == nil { turnStartedAt = now }
         if !next.isActive { turnStartedAt = nil }
         return true
     }
 
     /// Does `session` name this run's conversation: its current session id or an earlier one (a resumed chat gets a new id)?
     func isConversation(_ session: String) -> Bool {
-        providerSessionID == session || conversation?.earlierSessions?.contains(session) == true
+        providerSessionID == session || carriedOverFrom == session || conversation?.earlierSessions?.contains(session) == true
     }
 }
 
@@ -442,6 +461,10 @@ struct PullRequestSnapshot: Equatable, Sendable {
     /// All reviews and comments, oldest first.
     var reviews: [Note]
     var comments: [Note]
+    /// Open but marked as a draft; `state` still says "open", which is what a watch compares.
+    var draft = false
+    /// Open and in conflict with its base branch.
+    var conflicted = false
 }
 
 /// What changed on a watched pull request since the last look: lines for the timeline, and the message for the agent.
@@ -771,6 +794,32 @@ enum WorkspacePathPolicy {
         guard !trimmed.isEmpty else { return "" }
         return URL(fileURLWithPath: (trimmed as NSString).expandingTildeInPath, isDirectory: true)
             .standardizedFileURL.resolvingSymlinksInPath().path
+    }
+}
+
+/// The folder a session works in, for its branch and changes. An agent that steps out of its project for a moment (a
+/// `cd` into a scratch folder or `/tmp`) still works on that project: the session keeps the folder in a repository
+/// instead of following it into one that has no git. A move into another repository (a worktree it entered) counts.
+enum SessionFolder {
+    /// The folder to keep when the agent reports `reported` while the session had `current`.
+    static func follow(current: String, reported: String, isRepository: (String) -> Bool = SessionFolder.isRepository) -> String {
+        guard !reported.isEmpty else { return current }
+        guard !current.isEmpty, current != reported else { return reported }
+        return isRepository(reported) || !isRepository(current) ? reported : current
+    }
+
+    /// Whether `path` lies in a git repository or worktree: a `.git` folder or file in it or above it. No git process.
+    static func isRepository(_ path: String) -> Bool {
+        guard !path.isEmpty else { return false }
+        let fm = FileManager.default
+        var folder = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
+        for _ in 0..<32 {
+            if fm.fileExists(atPath: folder.appendingPathComponent(".git").path) { return true }
+            let parent = folder.deletingLastPathComponent()
+            if parent.path == folder.path { break }
+            folder = parent
+        }
+        return false
     }
 }
 

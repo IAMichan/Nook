@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import Combine
 
 /// A session that Nook runs itself, inside the Agents tab: the whole conversation, approvals, stop, follow-up
 /// messages, and the settings for the next turn (mode, permissions, model). Everything you would otherwise do in a
@@ -11,8 +12,9 @@ struct AgentRunPanel: View {
     let runID: UUID
     /// The terminal and browser icons, next to the branch button.
     var headerAccessory: AnyView? = nil
-    @State private var draft = ""
-    @State private var images: [ImageAttachment] = []
+    /// What you are writing: held, not observed, so a keystroke redraws the composer (`Observing` around it) and not the
+    /// conversation above it. Read and written through `draft`, `images`, `quotes` and `editingQueued` below.
+    @State private var composerState = RunComposerState()
     @State private var expanded: Set<UUID> = []
     /// Opened groups and folded turns ("group:<id>", "fold:<id>").
     @State private var openBlocks: Set<String> = []
@@ -23,12 +25,12 @@ struct AgentRunPanel: View {
     @State private var confirmDelete = false
     @State private var renaming = false
     @State private var titleDraft = ""
+    /// The older branches of a session that worked on many, shown in the tray above the composer.
+    @State private var showsOlderBranches = false
     /// The `#` list needs the repository ("owner/repo") of the session's folder.
     @State private var repository: String?
     /// The agent's skills for `$`, read from its skill folders.
     @State private var skills: [Skill] = []
-    /// A queued message that is being edited in the composer, and the draft that waits behind it.
-    @State private var editingQueued: UUID?
     @State private var scroll = ScrollModel()
     @State private var atEnd = true
     /// The blocks on screen, for where you left the session; not state, so scrolling does not redraw it.
@@ -37,8 +39,6 @@ struct AgentRunPanel: View {
     @State private var visit: TimelineVisit?
     /// The block the "New since your last visit" line sits above; decided as the session opens.
     @State private var newSince: UUID?
-    /// Passages of answers picked for the next message (Quote / Ask about this), as chips above the composer.
-    @State private var quotes = ComposerQuotes()
     @State private var finding = false
     @State private var findQuery = ""
     @State private var findIndex: Int?
@@ -46,24 +46,39 @@ struct AgentRunPanel: View {
     @FocusState private var focused: Bool
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var bridge = WorkspaceBridge.shared
+    /// The pull requests of the session's branches, for the tray above the box.
+    @ObservedObject private var pullRequestSync = PullRequestSync.shared
     /// The outputs tab of the side panel around this session (`SessionWorkbench`), which shows what the agent produced.
     @Environment(\.sessionOutputs) private var outputsLink
-    /// How wide the results and the terminal are: drag the line beside them, double-click it to reset. Remembered.
-    @AppStorage("nook.agents.outputsWidth") private var outputsWidth = PanelLayout.outputs
+    @Environment(\.sessionSide) private var sideLink
+    /// How wide the terminal is: drag the line beside it, double-click it to reset. Remembered.
     @AppStorage("nook.agents.consoleWidth") private var consoleWidth = PanelLayout.console
     @State private var totalWidth: Double = 0
     /// The outputs (by signature) you have seen, for the dot on the outputs tab; nil until the session shows.
     @State private var seenOutputs: Set<String>?
     /// The terminal on the left: the command it shows; nil while it is closed.
     @State private var consoleEventID: UUID?
-    /// A file the agent read or wrote that you clicked: shown beside the conversation.
-    @State private var filePreview: String?
-    /// The diff panel's choice of turn and file; nil while it is closed.
-    @State private var diffSelection: TurnDiffSelection?
     /// The lines git counted per turn (by the turn's id), in place of those read from the agent's edits.
     @State private var countedLines: [String: [String: EditLines]] = [:]
     /// The timeline's blocks, turns and outputs, made again only when the events change (not on every keystroke).
     @State private var derived = RunTimelineDerived()
+
+    private var draft: String {
+        get { composerState.draft }
+        nonmutating set { composerState.draft = newValue }
+    }
+    private var images: [ImageAttachment] {
+        get { composerState.images }
+        nonmutating set { composerState.images = newValue }
+    }
+    private var quotes: ComposerQuotes {
+        get { composerState.quotes }
+        nonmutating set { composerState.quotes = newValue }
+    }
+    private var editingQueued: UUID? {
+        get { composerState.editingQueued }
+        nonmutating set { composerState.editingQueued = newValue }
+    }
 
     var body: some View {
         if let run = workspace.run(runID) {
@@ -76,62 +91,18 @@ struct AgentRunPanel: View {
                     CommandConsolePanel(event: event) {
                         withAnimation(NookTheme.reveal) { self.consoleEventID = nil }
                     }
-                    .resizablePanel(width: $consoleWidth, defaultWidth: PanelLayout.console, minimum: PanelLayout.minimumPanel,
-                                    available: PanelLayout.room(totalWidth, besides: filePreview != nil ? outputsWidth : nil),
-                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .trailing)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+                    .sidePanel(.leading, width: $consoleWidth, defaultWidth: PanelLayout.console,
+                               available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle)
                 }
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                     header(run)
                     timeline(run)
-                    if let pending = workspace.approvals[runID], let first = pending.first {
-                        approval(run, first, more: pending.count - 1).chatColumn()
-                    } else if let request = bridge.pending.first(where: { $0.caller.kind == .run(runID) }) {
-                        // A command or pull request the agent asks for through Nook's workspace.
-                        let approval = ApprovalCenter.make(request)
-                        ApprovalView(approval: approval) { app.approvals.decide(approval, $0) }.chatColumn()
-                    }
-                    if let target = revertTarget {
-                        revertConfirmation(target)
-                    } else if confirmDelete {
-                        deleteConfirmation(run)
-                    } else if let question = workspace.questions[runID]?.first {
-                        // The agent asks something: its question takes the composer's place until answered (Stop stays).
-                        RunQuestionPanel(question: question, agent: run.provider.displayName,
-                                         onStop: { workspace.stop(runID) }) { answers in
-                            workspace.answer(runID, questionID: question.id, answers: answers)
-                        }
-                        .id(question.id)
-                        .chatColumn()
-                    } else {
-                        composer(run).chatColumn()
-                    }
                 }
                 .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                let turns = turnDiffs(run)
-                if let selection = diffSelection, !turns.isEmpty {
-                    TurnDiffPanel(turns: turns, selection: Binding(get: { diffSelection ?? selection }, set: { diffSelection = $0 }),
-                                  directory: run.workingDirectory, wide: PanelLayout.wide($outputsWidth),
-                                  load: run.isRemote ? nil : { turn, files in try await gitDiff(turn, files) }) {
-                        withAnimation(NookTheme.reveal) { diffSelection = nil }
-                    }
-                    .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
-                                    available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
-                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                } else if let filePreview {
-                    FilePreviewPanel(path: filePreview, wide: PanelLayout.wide($outputsWidth)) {
-                        withAnimation(NookTheme.reveal) { self.filePreview = nil }
-                    }
-                    .id(filePreview)
-                    .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
-                                    available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
-                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                }
             }
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+            .preference(key: SessionBesideWidth.self, value: consoleOpen ? SidePanelRoom.of(consoleWidth) : 0)
             // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
             .environment(\.fileLinkBase, run.isRemote ? nil : run.workingDirectory)
             // Selected words of an answer go with the reply as a chip above the composer (right-click › Quote in your
@@ -146,18 +117,12 @@ struct AgentRunPanel: View {
             // What the agent produced goes to the outputs tab of the side panel, with a dot while something is new.
             .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(
                 outputs: outputs,
-                fresh: !outputsLink.shown && seenOutputs.map { SessionOutputs.hasNew(outputs, seen: $0) } == true))
+                turns: turnDiffs(run),
+                pullRequest: derived.createdPullRequest,
+                fresh:!outputsLink.shown && seenOutputs.map { SessionOutputs.hasNew(outputs, seen: $0) } == true))
             // What the outputs tab shows is seen.
             .onChange(of: outputsLink.shown) { _, isShown in
                 if isShown { seenOutputs = Set(outputs.map(SessionOutputs.signature)) }
-            }
-            // ⌘D: the latest turn's diff; again to close it.
-            .keyCommand("diff.toggle", enabled: !turnDiffs(run).isEmpty) {
-                if diffSelection != nil {
-                    withAnimation(NookTheme.reveal) { diffSelection = nil }
-                } else if let last = turnDiffs(run).last {
-                    openDiff(TurnDiffSelection(turn: last.id))
-                }
             }
             .onChange(of: outputs.map(SessionOutputs.signature)) { _, _ in 
                 noticeOutputs(outputs, working: run.status.isActive, turnStart: run.turnStartedAt)
@@ -175,14 +140,14 @@ struct AgentRunPanel: View {
                 Task { repository = await workspace.githubRepository(runID) }
                 loadComposerState(run)
             }
-            .onChange(of: draft) { _, new in ComposerDraftStore.shared.save(sessionID: runID.uuidString, text: new) }
             .onDisappear { rememberVisit(runID) }
             .onChange(of: runID) { previous, _ in
                 rememberVisit(previous)
                 workspace.loadTimeline(runID)
                 if workspace.run(runID)?.repoRoot != nil { workspace.refreshGit(runID) }
                 workspace.prewarm(runID)
-                draft = ""
+                // The draft of the session you left stays saved, and the one of this session comes back.
+                composerState.show(session: runID.uuidString)
                 if let fresh = workspace.run(runID) { loadComposerState(fresh) }
                 renaming = false
                 confirmDelete = false
@@ -192,8 +157,6 @@ struct AgentRunPanel: View {
                 reverting = false
                 openBlocks = []
                 expanded = []
-                filePreview = nil
-                diffSelection = nil
                 countedLines = [:]
                 quotes.removeAll()
                 seenOutputs = nil
@@ -235,10 +198,12 @@ struct AgentRunPanel: View {
     /// "nook / Agents-pagina rustiger maken" (double-click the name to rename it) with the branch button on the right.
     private func header(_ run: WorkspaceRun) -> some View {
         HStack(spacing: NookTheme.Spacing.md) {
+            // The folder keeps its name before the title gives way, but truncates too in a narrow conversation instead
+            // of pushing the header past it (under a wide side panel).
             Text(run.projectName)
                 .foregroundStyle(NookTheme.textTertiary)
                 .lineLimit(1)
-                .fixedSize()
+                .layoutPriority(1)
                 .help(AgentPathFormat.tilde(run.workingDirectory))
             Text("/").foregroundStyle(NookTheme.textTertiary)
             if renaming {
@@ -311,7 +276,7 @@ struct AgentRunPanel: View {
                 Button(tr("ws.action.retry")) { workspace.retry(runID) }
             }
             let finishKey = FinishedSessions.key(run: run)
-            let isFinished = finishedMarks.isFinished(key: finishKey, idle: !run.status.isActive, lastActive: run.updatedAt)
+            let isFinished = finishedMarks.contains(finishKey)
             Button(isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark")) {
                 if isFinished { finishedMarks.reopenByUser(finishKey) } else { finishedMarks.mark(finishKey) }
             }
@@ -437,7 +402,8 @@ struct AgentRunPanel: View {
             workspace.runs.filter { $0.id != runID && !$0.archived }.map { ($0.id.uuidString.lowercased(), $0.title) }
         }
         // Only the commands this agent really has (see AgentCommands).
-        config.commands = AgentCommands.commands(for: run.provider, hasProject: true, surface: .agent)
+        config.commands = AgentCommands.commands(for: run.provider, hasProject: true, surface: .agent,
+                                                 offered: workspace.acpCommands[runID] ?? [])
         config.skills = skills
         config.pullRequests = { repo in await GitHubPullRequests.openPullRequests(repo: repo) }
         config.keepsBigPastes = true
@@ -455,7 +421,7 @@ struct AgentRunPanel: View {
     /// The draft you left in this session, the drafts set aside, and the agent's skills.
     private func loadComposerState(_ run: WorkspaceRun) {
         let store = ComposerDraftStore.shared
-        if draft.isEmpty, let saved = store.draft(for: runID.uuidString) { draft = saved }
+        if composerState.session != runID.uuidString { composerState.show(session: runID.uuidString) }
         composerModel.stash = store.stash
         composerModel.onStashChanged = { [composerModel] in store.setStash(composerModel.stash) }
         let folder = URL(fileURLWithPath: run.workingDirectory, isDirectory: true)
@@ -469,8 +435,8 @@ struct AgentRunPanel: View {
     /// The reasoning effort for the next turns, only for agents that have it.
     @ViewBuilder
     private func effortMenu(_ run: WorkspaceRun) -> some View {
-        let levels = EffortLevels.levels(for: run.provider, model: run.model)
-        if let family = app.modelFamily(run.model, for: run.provider) {
+        let levels = workspace.effortLevels(for: run.provider, profileID: run.profileID, model: run.model)
+        if let family = app.modelFamily(run.model, for: run.provider, profileID: run.profileID) {
             // An agent that lists one model per thinking level: the level picks the model of that family.
             ComposerDivider()
             Menu {
@@ -494,11 +460,13 @@ struct AgentRunPanel: View {
                 }
                 ForEach(levels, id: \.self) { level in
                     Button { workspace.setEffort(runID, level) } label: {
-                        if run.effort == level { Label(tr(EffortLevels.label(level)), systemImage: "checkmark") } else { Text(tr(EffortLevels.label(level))) }
+                        let title = workspace.effortTitle(level, for: run.provider, profileID: run.profileID)
+                        if run.effort == level { Label(title, systemImage: "checkmark") } else { Text(title) }
                     }
                 }
             } label: {
-                ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(run.effort)))
+                ComposerPill(symbol: "gauge.with.dots.needle.33percent",
+                             text: workspace.effortTitle(run.effort, for: run.provider, profileID: run.profileID))
             }
             .composerMenu()
             .help(tr("compose.effort.help"))
@@ -510,11 +478,12 @@ struct AgentRunPanel: View {
     private func composerTrailing(_ run: WorkspaceRun) -> some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
             if let window = run.usage.contextWindow, let used = run.usage.contextTokens, window > 0 {
+                // Every agent that compacts on `/compact` (Claude Code, Codex, an ACP agent that offers it) gets the button.
+                let compacts = AgentCommands.canCompact(run.provider, offered: workspace.acpCommands[runID] ?? [])
                 ComposerContextRing(used: used, window: window,
-                                    onCompact: run.status.isActive || !(run.provider == .claude || run.provider == .codex) ? nil
-                                        : { workspace.send(runID, text: "/compact") })
+                                    onCompact: run.status.isActive || !compacts ? nil : { workspace.send(runID, text: "/compact") })
             }
-            ComposerMic(text: $draft)
+            ComposerMic(text: $composerState.draft)
         }
     }
 
@@ -522,7 +491,9 @@ struct AgentRunPanel: View {
 
     /// The finished turns that changed files, with the lines git counted where it did.
     private func turnDiffs(_ run: WorkspaceRun) -> [TurnDiff] {
-        derived.update(workspace.timeline(runID), run: run).turns.map { turn in
+        let turns = derived.update(workspace.timeline(runID), run: run).turns
+        guard !countedLines.isEmpty else { return turns }
+        return turns.map { turn in
             countedLines[turn.id].map { turn.counted($0, relativeTo: run.workingDirectory) } ?? turn
         }
     }
@@ -535,75 +506,100 @@ struct AgentRunPanel: View {
         }
     }
 
-    /// The real diff of these files in this turn (or in all turns), from the session's git snapshots.
-    private func gitDiff(_ turn: TurnDiff, _ files: [TurnDiff.File]) async throws -> String {
-        guard let start = turn.start, let end = turn.end else { return "" }
-        var parts: [String] = []
-        for file in files {
-            parts.append(try await workspace.turnDiff(runID, path: file.path, start: start, end: end))
-        }
-        return parts.filter { !$0.isEmpty }.joined(separator: "\n")
-    }
-
-    /// Opens the diff panel on a turn (and a file), in place of a file.
-    private func openDiff(_ selection: TurnDiffSelection) {
-        withAnimation(NookTheme.reveal) {
-            filePreview = nil
-            diffSelection = selection
-        }
-    }
-
     // MARK: Timeline
+
+    /// What sits under the timeline: an approval, a confirmation, the agent's question, or the composer.
+    @ViewBuilder
+    private func bottomBar(_ run: WorkspaceRun) -> some View {
+        if let pending = workspace.approvals[runID], let first = pending.first {
+            approval(run, first, more: pending.count - 1).chatColumn()
+        } else if let request = bridge.pending.first(where: { $0.caller.kind == .run(runID) }) {
+            // A command or pull request the agent asks for through Nook's workspace.
+            let approval = ApprovalCenter.make(request)
+            ApprovalView(approval: approval) { app.approvals.decide(approval, $0) }.chatColumn()
+        }
+        if let target = revertTarget {
+            revertConfirmation(target)
+        } else if confirmDelete {
+            deleteConfirmation(run)
+        } else if let question = workspace.questions[runID]?.first {
+            // The agent asks something: its question takes the composer's place until answered (Stop stays).
+            RunQuestionPanel(question: question, agent: run.provider.displayName,
+                             onStop: { workspace.stop(runID) }) { answers in
+                workspace.answer(runID, questionID: question.id, answers: answers)
+            }
+            .id(question.id)
+            .chatColumn()
+        } else {
+            // Redrawn on its own with every keystroke, without the conversation above it.
+            Observing(composerState) { composer(run) }.chatColumn()
+        }
+    }
 
     private func timeline(_ run: WorkspaceRun) -> some View {
         let memo = derived.update(workspace.timeline(runID), run: run)
         let events = memo.events
         let blocks = memo.blocks
-        let cards = Dictionary(turnDiffs(run).compactMap { turn in turn.answerID.map { ($0, turn) } }, uniquingKeysWith: { first, _ in first })
-        let found = finding ? TimelineSearch.search(events, query: findQuery) : .idle
+        let cards = memo.cards
+        let found = finding ? memo.search(findQuery) : .idle
         let current = findIndex.flatMap { found.matches.indices.contains($0) ? found.matches[$0].eventID : nil }
+        // While the agent works, as in an agent's own transcript: "Working for …" right under your message, and the step
+        // that runs now only in the live line at the end, not also in the list above it.
+        let active = run.status.isActive
+        let workingUnder = active ? events.last(where: { $0.kind == .user })?.id : nil
+        let liveStep = active ? events.last.flatMap { $0.kind == .tool && $0.state == .running ? $0.id : nil } : nil
+        let context = TimelineRowContext(structure: memo.revision, status: run.status,
+                                         directory: run.isRemote ? nil : run.workingDirectory, highlighted: current,
+                                         openEvents: expanded, shownFile: sideLink.shownFile, counted: countedLines)
         return ScrollViewReader { proxy in
-            ScrollView(showsIndicators: true) {
-                LazyVStack(alignment: .leading, spacing: 14) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     if events.isEmpty {
                         ListEmptyNote(tr("agents.run.empty"))
                     }
                     // Finished turns fold to "Worked for …", tool calls in a row to one sentence.
                     ForEach(blocks) { block in
-                        VStack(alignment: .leading, spacing: 14) {
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                             if block.id == newSince { TimelineNewDivider() }
-                            TimelineBlockView(block: block, expanded: openBlocks, toggle: toggleBlock) { event in
-                                AnyView(
-                                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                                        eventRow(event)
-                                        // What the turn changed (its card): a file or Open diff opens the diff beside it.
-                                        if let turn = cards[event.id.uuidString] {
-                                            TurnChangesCard(turn: turn, directory: run.workingDirectory) { file in
-                                                openDiff(TurnDiffSelection(turn: turn.id, file: file))
+                            TimelineBlockView(block: block, expanded: openBlocks, context: context, toggle: toggleBlock) { event in
+                                if event.id == liveStep { return AnyView(EmptyView()) }
+                                return AnyView(
+                                    VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                                        // What the turn changed (its card): under the final answer, inside it, as in an
+                                        // agent's own transcript; a file or Open diff opens the diff beside it.
+                                        let card = cards[event.id].map { turn in
+                                            AnyView(TurnChangesCard(turn: turn, directory: run.workingDirectory) { file in
+                                                sideLink.openDiff(TurnDiffSelection(turn: turn.id, file: file))
                                             }
-                                            .task(id: turn.id + "|\(turn.files.count)") { await countLines(turn, run: run) }
+                                            .task(id: turn.id + "|\(turn.files.count)") { await countLines(turn, run: run) })
                                         }
+                                        let inReply = event.kind == .assistant && memo.finalAnswers.contains(event.id)
+                                        eventRow(event, final: memo.finalAnswers.contains(event.id),
+                                                 extras: inReply ? card : nil, answerable: memo.answerable == event.id)
+                                        if !inReply, let card { card }
+                                        if event.id == workingUnder { TranscriptWorkingLine(since: run.turnStartedAt) }
                                     }
                                     .padding(.vertical, current == event.id ? 4 : 0)
                                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.iris.opacity(current == event.id ? 0.16 : 0)))
                                 )
                             }
+                            // While the agent writes, only the block it writes into is drawn again.
+                            .equatable()
                         }
                         .id(block.id)
                     }
-                    if run.status.isActive {
-                        // The agent's task list, live, right above what it does now.
-                        if TaskChecklist.showsInline(run.tasks, active: true), let tasks = run.tasks {
-                            TaskChecklistCard(steps: tasks)
-                        }
-                        LiveActivityRow(live: TimelinePresentation.live(events), activity: AgentActivity.current(events),
-                                        step: run.tasks.flatMap(TaskChecklist.activeStep),
-                                        since: run.turnStartedAt,
-                                        waiting: run.status == .waitingApproval, asking: workspace.questions[runID] != nil,
-                                        accent: NookTheme.textSecondary,
-                                        openConsole: CommandConsole.running(events).map { command -> () -> Void in
-                                            { withAnimation(NookTheme.reveal) { consoleEventID = consoleEventID == command.id ? nil : command.id } }
-                                        })
+                    if active {
+                        // The agent's task list, live, right above what it does now: the same live line as in an agent's
+                        // own transcript.
+                        let turn = TimelinePresentation.lastTurn(events)
+                        TranscriptLiveLine(activity: AgentActivity.current(turn),
+                                           tasks: TaskChecklist.showsInline(run.tasks, active: true) ? run.tasks : nil,
+                                           waiting: run.status == .waitingApproval || workspace.questions[runID] != nil,
+                                           asking: workspace.questions[runID] != nil,
+                                           openConsole: CommandConsole.running(turn).map { command -> () -> Void in
+                                               { withAnimation(NookTheme.reveal) { consoleEventID = consoleEventID == command.id ? nil : command.id } }
+                                           },
+                                           help: TimelinePresentation.live(turn).tool)
                     }
                     if run.status == .failed || run.status == .stopped {
                         recovery(run, events: events, blocks: blocks, proxy: proxy)
@@ -613,7 +609,16 @@ struct AgentRunPanel: View {
                 .scrollTargetLayout()
                 .chatColumn()
             }
-            .padding(.vertical, NookTheme.Spacing.xs)
+            .scrollIndicators(.never)
+            // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
+            .composerInset {
+                VStack(spacing: NookTheme.Spacing.lg) { bottomBar(run) }
+                    .toEndPill(scroll.mode == .free && !atEnd && !finding) {
+                        scroll.jumpedToEnd()
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
+                    }
+            }
+            .padding(.top, NookTheme.Spacing.xs)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onScrollTargetVisibilityChange(idType: UUID.self, threshold: 0.1) { ids in onScreen.ids = Set(ids.map(\.uuidString)) }
             // Scrolling away from the end stops the following until you come back.
@@ -625,15 +630,6 @@ struct AgentRunPanel: View {
             }
             .onScrollPhaseChange { _, phase in
                 if (phase == .interacting || phase == .decelerating) && !atEnd { scroll.userScrolled() }
-            }
-            .overlay(alignment: .bottom) {
-                if scroll.mode == .free, !atEnd, !finding {
-                    TimelineToEndPill {
-                        scroll.jumpedToEnd()
-                        withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
-                    }
-                    .padding(.bottom, NookTheme.Spacing.md)
-                }
             }
             .overlay(alignment: .top) {
                 if finding {
@@ -647,7 +643,7 @@ struct AgentRunPanel: View {
             }
             // A mark per message of yours, to jump through a long session.
             .overlay(alignment: .topTrailing) {
-                let turns = events.filter { $0.kind == .user }
+                let turns = memo.userTurns
                 if turns.count >= 4, !finding {
                     TurnMinimap(turns: turns) { id in
                         scroll.userScrolled()
@@ -679,7 +675,7 @@ struct AgentRunPanel: View {
             .onChange(of: events.count) { _, _ in
                 if scroll.shouldFollowEnd { withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
-            .onChange(of: events.last?.text.count ?? 0) { _, _ in
+            .onChange(of: events.last?.text.utf8.count ?? 0) { _, _ in
                 if run.status.isActive, scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             // You sent something: it is the newest thing and follows again.
@@ -696,6 +692,10 @@ struct AgentRunPanel: View {
 
     /// The timeline's blocks in order with their times, as `timeline(_:)` shows them.
     private func visitRows(_ id: UUID) -> [TimelineLanding.Row] {
+        // The session on screen: its blocks are already made (this runs as it opens and as you leave it).
+        if id == runID, let run = workspace.run(id) {
+            return derived.update(workspace.timeline(id), run: run).blocks.map { ($0.id.uuidString, $0.visitDate) }
+        }
         let events = workspace.timeline(id).filter { !($0.kind == .system && $0.tool == "launch") }
         return TimelinePresentation.blocks(events, active: workspace.run(id)?.status.isActive ?? false)
             .map { ($0.id.uuidString, $0.visitDate) }
@@ -802,13 +802,24 @@ struct AgentRunPanel: View {
                 }
             }
             NookGhostButton(title: tr("ws.action.retry")) { workspace.retry(runID) }
+            // The login ran out: sign in again in the browser, and the turn runs again once you are back.
+            if run.status == .failed, AgentSignInFailure.needsSignIn(run.statusDetail),
+               AgentSignInFailure.canSignInAgain(run.provider) {
+                let profile = app.profiles.profile(id: run.profileID) ?? .defaultProfile(run.provider.kind)
+                let signingIn = app.agentConnect[profile.id]?.isBusy == true
+                NookPrimaryButton(title: signingIn ? tr("accounts.reauthWaiting") : tr("accounts.reauth"),
+                                  symbol: "person.badge.key") {
+                    app.reauthenticate(profile) { workspace.retry(runID) }
+                }
+                .disabled(signingIn)
+            }
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.surface))
     }
 
     @ViewBuilder
-    private func eventRow(_ event: RunEvent) -> some View {
+    private func eventRow(_ event: RunEvent, final: Bool = true, extras: AnyView? = nil, answerable: Bool = false) -> some View {
         if event.kind == .assistant, event.tool == "plan" {
             let idle = !(workspace.run(runID)?.status.isActive ?? false)
             // Only the latest plan, and only until you sent something after it.
@@ -839,7 +850,7 @@ struct AgentRunPanel: View {
                         .disabled(!workspace.canTransfer(runID))
                 }
         } else if event.kind == .assistant {
-            eventView(event)
+            eventView(event, final: final, extras: extras, answerable: answerable)
                 .contextMenu {
                     // "Fork from this response".
                     Button(tr("agents.fork.fromResponse")) { forkThrough(event) }
@@ -899,30 +910,26 @@ struct AgentRunPanel: View {
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.surface))
     }
 
-    private func eventView(_ event: RunEvent) -> some View {
+    private func eventView(_ event: RunEvent, final: Bool = true, extras: AnyView? = nil, answerable: Bool = false) -> some View {
         EventRow(
             event: event,
+            final: final,
+            extras: extras,
+            // A question at the end of the newest answer, answered with a click, as in an agent's own transcript.
+            onChoose: answerable ? { workspace.send(runID, text: $0) } : nil,
             expanded: expanded.contains(event.id),
             toggle: { toggle(event.id) },
             openFile: { path in app.viewModel.open(.changes(runID, file: path)) },
             decide: { decision in
                 if let request = event.callID { workspace.decide(runID, requestID: request, decision) }
             },
-            showFile: showFile,
+            showFile: sideLink.showFile,
             // A session on another machine has its files there, not on this Mac.
             directory: workspace.run(runID).flatMap { $0.isRemote ? nil : $0.workingDirectory },
-            shownFile: filePreview
+            shownFile: sideLink.shownFile
         )
         // Undone by going back to before an earlier message: the agent no longer remembers it.
         .opacity(event.rolledBack == true ? 0.45 : 1)
-    }
-
-    /// Opens a file in the side panel; the file that is open already closes again.
-    private func showFile(_ file: String) {
-        withAnimation(NookTheme.reveal) {
-            filePreview = filePreview == file ? nil : file
-            if filePreview != nil { diffSelection = nil }
-        }
     }
 
     private func toggleBlock(_ key: String) {
@@ -986,9 +993,10 @@ struct AgentRunPanel: View {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             // Return while a queued message is open in the box saves it instead of sending.
             if editingQueued != nil { saveQueuedEdit(); return }
-            guard !text.isEmpty, !active else { return }
+            guard composerModel.hasContent(text), !active else { return }
             let outgoing = composerModel.outgoing(text)
             draft = ""
+            images = []
             let message = quotes.message(outgoing.send)
             quotes.removeAll()
             workspace.send(runID, text: message)
@@ -1001,9 +1009,10 @@ struct AgentRunPanel: View {
             {
                 if editingQueued != nil { saveQueuedEdit(); return }
                 let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !text.isEmpty else { return }
+                guard composerModel.hasContent(text) else { return }
                 let outgoing = composerModel.outgoing(text)
                 draft = ""
+                images = []
                 let message = quotes.message(outgoing.send)
                 quotes.removeAll()
                 if ComposerDispatch.resolve(busy: true, intent: intent, canSteer: canSteer) == .steer,
@@ -1016,7 +1025,7 @@ struct AgentRunPanel: View {
         return VStack(alignment: .leading, spacing: 5) {
             UsageLimitBanner(run: run)
             // The subagents the agent started this turn, and its task list.
-            let subagents = active ? Subagents.latest(workspace.timeline(runID)) : []
+            let subagents = active ? Subagents.latest(TimelinePresentation.lastTurn(workspace.timeline(runID))) : []
             if !subagents.isEmpty { SubagentBar(agents: subagents) }
             // While the agent works its list shows in the timeline; one it left unfinished waits here.
             if let tasks = run.tasks, !tasks.isEmpty, !TaskChecklist.showsInline(tasks, active: run.status.isActive) {
@@ -1027,7 +1036,7 @@ struct AgentRunPanel: View {
             VStack(spacing: 0) {
                 aboveBox(watch: run.prWatch, waiting: workspace.queued[runID] ?? MessageQueue())
                 SessionComposer(
-                    text: $draft,
+                    text: $composerState.draft,
                     prompt: active ? (steers ? tr("agents.run.steerPrompt", run.provider.kind.shortName)
                                              : tr("agents.run.busyPrompt", run.provider.kind.shortName)) : tr("agents.run.prompt"),
                     canSend: !active,
@@ -1052,7 +1061,7 @@ struct AgentRunPanel: View {
                           alternate: active ? deliver(preferred == .steer ? .queue : .steer) : nil,
                           label: steers ? tr("compose.steer") : tr("compose.queue"),
                           symbol: steers ? "arrow.turn.down.right" : "text.append")
-                .images($images)
+                .images($composerState.images)
                 .zIndex(1)
             }
             // ⇧⌘Return while it works: the first message waiting in line goes in now, as the queue's own button does.
@@ -1068,21 +1077,31 @@ struct AgentRunPanel: View {
     /// The tray above the box, when there is something to show in it.
     @ViewBuilder
     private func aboveBox(watch: PullRequestWatch?, waiting: MessageQueue) -> some View {
-        // The watched pull request, or the session's open one you stopped watching (or never watched).
-        let pullRequest = watch.flatMap { URL(string: $0.url) } ?? watchablePullRequest()
-        if pullRequest != nil || !waiting.isEmpty || !quotes.isEmpty {
+        // The watched pull request, the session's open one you stopped watching (or never watched), else the one that
+        // merged or closed: its state stays in view. Only one that can still change can be watched.
+        let watchable = watchablePullRequest()
+        let pullRequest = watch.flatMap { URL(string: $0.url) } ?? watchable ?? PullRequestLink.shown(in: pullRequestSync.links[runID] ?? [])
+        let canWatch = watch != nil || watchable != nil
+        // A session that worked on more than one branch lists each, with the state of its pull request.
+        let branches = workspace.run(runID).map { run in
+            SessionBranches.rows(earlier: run.earlierBranches ?? [], earlierLinks: pullRequestSync.earlier[runID] ?? [],
+                                 current: run.branch, currentPullRequest: pullRequest)
+        } ?? []
+        if pullRequest != nil || !branches.isEmpty || !waiting.isEmpty || !quotes.isEmpty {
             ComposerTray(edge: .top) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     if !quotes.isEmpty {
                         ComposerQuoteChips(quotes: quotes.items) { id in quotes.remove(id) }
-                        if pullRequest != nil || !waiting.isEmpty { ComposerTrayDivider() }
+                        if pullRequest != nil || !branches.isEmpty || !waiting.isEmpty { ComposerTrayDivider() }
                     }
-                    if let pullRequest {
-                        PullRequestWatchStrip(url: pullRequest, watch: watch) {
+                    if !branches.isEmpty {
+                        branchList(branches, watch: watch, canWatchCurrent: canWatch)
+                    } else if let pullRequest {
+                        PullRequestWatchStrip(url: pullRequest, watch: watch, toggle: canWatch ? {
                             workspace.watchPullRequest(runID, url: watch == nil ? pullRequest : nil)
-                        }
+                        } : nil)
                     }
-                    if pullRequest != nil && !waiting.isEmpty { ComposerTrayDivider() }
+                    if (pullRequest != nil || !branches.isEmpty) && !waiting.isEmpty { ComposerTrayDivider() }
                     if !waiting.isEmpty {
                         QueuedMessagesStrip(
                             queue: waiting, editing: editingQueued,
@@ -1109,16 +1128,63 @@ struct AgentRunPanel: View {
         }
     }
 
+    /// The session's branches in the tray, oldest first and the current one last, their names in one column so the pull
+    /// requests line up. A chat with many keeps the newest ones open and folds the older ones behind one row.
+    @ViewBuilder
+    private func branchList(_ rows: [SessionBranches.Row], watch: PullRequestWatch?, canWatchCurrent: Bool) -> some View {
+        let folded = SessionBranches.folded(rows, open: showsOlderBranches)
+        let titles = Dictionary(((pullRequestSync.earlier[runID] ?? []) + (pullRequestSync.links[runID] ?? []))
+            .compactMap { link in link.title.map { (link.url, $0) } }, uniquingKeysWith: { _, newer in newer })
+        if folded.hidden > 0 || showsOlderBranches && rows.count > SessionBranches.shownWhenFolded {
+            Button {
+                withAnimation(NookTheme.reveal) { showsOlderBranches.toggle() }
+            } label: {
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    Image(systemName: "chevron.up")
+                        .font(NookTheme.font(8.5, .bold))
+                        .rotationEffect(.degrees(showsOlderBranches ? 180 : 0))
+                    Text(showsOlderBranches ? tr("ws.branches.hideOlder")
+                                            : tr("ws.branches.showOlder", folded.hidden, folded.hiddenPullRequests))
+                }
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, NookTheme.Spacing.xs)
+            .padding(.vertical, NookTheme.Spacing.xxs)
+        }
+        ForEach(folded.shown) { row in
+            branchRow(row, watch: watch, title: row.pullRequest.flatMap { titles[$0.absoluteString] }, canWatchCurrent: canWatchCurrent)
+        }
+    }
+
+    /// One of the session's branches in the tray: its pull request with state, title and checks (watched from here, one
+    /// at a time), or its name and "no pull request" while it has none. `canWatchCurrent`: the current branch's pull
+    /// request can still change (a merged or closed one is only shown).
+    @ViewBuilder
+    private func branchRow(_ row: SessionBranches.Row, watch: PullRequestWatch?, title: String?, canWatchCurrent: Bool) -> some View {
+        if let url = row.pullRequest {
+            let watched = watch.flatMap { URL(string: $0.url) } == url
+            PullRequestWatchStrip(url: url, watch: watched ? watch : nil, branch: row.branch, isCurrent: row.isCurrent,
+                                  title: title, toggle: watched || !row.isCurrent || canWatchCurrent ? {
+                workspace.watchPullRequest(runID, url: watched ? nil : url)
+            } : nil)
+        } else if let branch = row.branch {
+            BranchTrayRow(branch: branch, isCurrent: row.isCurrent)
+        }
+    }
+
     /// The agent with its account and the model. A model counts from the next turn (a running Claude Code switches at
     /// once); another account or agent moves the session there with a summary of what happened (shown in the timeline),
     /// which waits until the agent is idle.
     private func modelMenu(_ run: WorkspaceRun) -> some View {
         let profile = app.profile(for: run)
         let account = profile.map { AccountLabel.name($0, app: app) }
-        let model = run.model.isEmpty ? nil : app.modelMenuName(run.model, for: run.provider)
+        let model = run.model.isEmpty ? nil : app.modelMenuName(run.model, for: run.provider, profileID: run.profileID)
         let idle = workspace.canTransfer(runID)
         let providers = idle ? app.connectedProviders : [run.provider]
-        return ComposerDropdown(width: providers.count > 1 ? 340 : 296, takesRoom: true) {
+        return ModelPickerDropdown {
             ComposerPill(agent: run.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
                          text: [run.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "),
                          short: model ?? run.provider.displayName)
@@ -1155,6 +1221,49 @@ struct AgentRunPanel: View {
     }
 }
 
+/// What you are writing in a session's composer: the text, its pictures, the passages quoted into it, and the queued
+/// message open in it. `AgentRunPanel` holds it without observing it.
+@MainActor
+final class RunComposerState: ObservableObject {
+    /// The session the draft belongs to: each change to it is saved for that session, as you type.
+    private(set) var session: String?
+    private var switching = false
+    @Published var draft = "" {
+        didSet {
+            guard !switching, draft != oldValue, let session else { return }
+            ComposerDraftStore.shared.save(sessionID: session, text: draft)
+        }
+    }
+
+    /// Shows the draft saved for `session` (empty when there is none), saving nothing on the way: clearing the box of
+    /// the session you leave is not a change you made to its draft.
+    func show(session: String) {
+        switching = true
+        defer { switching = false }
+        self.session = session
+        draft = ComposerDraftStore.shared.draft(for: session) ?? ""
+    }
+    @Published var images: [ImageAttachment] = []
+    /// Passages of answers picked for the next message (Quote / Ask about this), as chips above the composer.
+    @Published var quotes = ComposerQuotes()
+    /// A queued message that is being edited in the composer, and the draft that waits behind it.
+    @Published var editingQueued: UUID?
+}
+
+/// Draws `content` again whenever `object` changes, without the view around it: that view can hold the object without
+/// observing it.
+struct Observing<Object: ObservableObject, Content: View>: View {
+    @ObservedObject var object: Object
+    @ViewBuilder let content: () -> Content
+
+    init(_ object: Object, @ViewBuilder content: @escaping () -> Content) {
+        self.object = object
+        self.content = content
+    }
+
+    var body: some View { content() }
+}
+
 /// What `AgentRunPanel` draws from a session's events: the shown events, their blocks, the turns that changed files, the
 /// outputs and the running command. Each walks the whole timeline, and the panel's body runs on every keystroke in its
 /// composer (the draft is its state), on hover and while the side panels resize; this makes them again only when the
@@ -1166,25 +1275,149 @@ private final class RunTimelineDerived {
     private(set) var events: [RunEvent] = []
     private(set) var blocks: [TimelineBlock] = []
     private(set) var turns: [TurnDiff] = []
+    /// The answer that ends each finished turn: only it carries the footer (copy and time), as in an agent's own
+    /// transcript (`TranscriptPresentation`).
+    private(set) var finalAnswers: Set<UUID> = []
+    /// Each turn's changed-files card, under the turn's final answer (inside the reply, above its footer); a turn without
+    /// an answer keeps it under the line that ends it.
+    private(set) var cards: [UUID: TurnDiff] = [:]
+    /// The newest final answer while the agent waits: a question at its end can be answered with a click.
+    private(set) var answerable: UUID?
     private(set) var outputs: [SessionOutput] = []
     private(set) var runningCommand: UUID?
     /// The last pull request the agent reported with `<pr-created>`, for the tray above the composer.
     private(set) var createdPullRequest: URL?
 
+    /// Counts the changes to the events other than more text in the answer being written (`TimelineRowContext`).
+    private(set) var revision = 0
+    /// Your messages, for the marks beside a long session.
+    private(set) var userTurns: [RunEvent] = []
+    /// The pull request the events before the last one link, so a streamed answer only has to look at itself.
+    private var pullRequestBeforeLast: URL?
+    /// Each turn's blocks, so only the turn that changed is laid out again.
+    private var blockCache = TimelineBlockCache()
+    /// The last search in the find bar, for the events it searched.
+    private var found: (query: String, events: [RunEvent], result: TimelineSearchResult)?
+
+    /// The find bar's matches, searched again only when the query or the events changed.
+    func search(_ query: String) -> TimelineSearchResult {
+        if let found, found.query == query, found.events == events { return found.result }
+        let result = TimelineSearch.search(events, query: query)
+        found = (query, events, result)
+        return result
+    }
+
     @discardableResult
     func update(_ all: [RunEvent], run: WorkspaceRun) -> RunTimelineDerived {
         let active = run.status.isActive
-        if let key, key.active == active, key.directory == run.workingDirectory, key.tasks == run.tasks, key.all == all {
-            return self
-        }
+        let sameRun = key.map { $0.active == active && $0.directory == run.workingDirectory && $0.tasks == run.tasks } ?? false
+        if sameRun, let key, key.all == all { return self }
+        // While the agent writes, only the text of its last answer grows, many times a second. The blocks show that text;
+        // the turns, outputs, running command and earlier links do not read it, and each walks the whole session (an edit's
+        // diff, every tool's input as JSON), so they stay as they are.
+        let streamed = sameRun && key.map { Self.onlyStreamed(from: $0.all, to: all) } == true
         key = (all, active, run.tasks, run.workingDirectory)
         events = all.filter { !($0.kind == .system && $0.tool == "launch") }
-        blocks = TimelinePresentation.blocks(events, active: active)
+        blocks = TimelinePresentation.blocks(events, active: active, cache: &blockCache)
+        if streamed, let last = all.last {
+            createdPullRequest = RunPullRequestLinks.pullRequest(in: last) ?? pullRequestBeforeLast
+            return self
+        }
+        revision &+= 1
         turns = TurnDiff.collect(events: all)
+        finalAnswers = []
+        cards = [:]
+        let byTurn = Dictionary(turns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        // Split as `TurnDiff.collect` does, so a turn and its card share the id of its first event.
+        let split = TimelinePresentation.split(all)
+        for (index, turn) in split.enumerated() {
+            // A turn still at work gets its final answer (and its card) when it is done.
+            let finished = index < split.count - 1 || !active
+            let answer = finished ? turn.last(where: { $0.kind == .assistant && $0.tool != "plan" && BackgroundWork.notice($0.text).isEmpty }) : nil
+            if let answer { finalAnswers.insert(answer.id) }
+            guard let first = turn.first, let diff = byTurn[first.id.uuidString] else { continue }
+            if let answer {
+                cards[answer.id] = diff
+            } else if let end = diff.answerID.flatMap(UUID.init(uuidString:)) {
+                cards[end] = diff
+            }
+        }
+        answerable = active ? nil : events.last(where: { $0.kind == .assistant }).flatMap { finalAnswers.contains($0.id) ? $0.id : nil }
         outputs = SessionOutputs.collect(all, tasks: run.tasks, directory: run.workingDirectory)
-        runningCommand = CommandConsole.running(all)?.id
-        createdPullRequest = all.last { $0.kind == .assistant && $0.text.contains("/pull/") }
-            .flatMap { MarkdownBlock.lastGitHubPullRequest(in: $0.text) }
+        runningCommand = CommandConsole.running(TimelinePresentation.lastTurn(all))?.id
+        userTurns = events.filter { $0.kind == .user }
+        pullRequestBeforeLast = RunPullRequestLinks.last(in: Array(all.dropLast()))
+        createdPullRequest = all.last.flatMap(RunPullRequestLinks.pullRequest(in:)) ?? pullRequestBeforeLast
         return self
+    }
+
+    /// Whether `new` is `old` with only more (or other) text in its last answer or thinking: the same events, the last one
+    /// the same apart from its text, already written to, and not a plan (whose text is an output) nor turning into a
+    /// background notice.
+    private static func onlyStreamed(from old: [RunEvent], to new: [RunEvent]) -> Bool {
+        guard old.count == new.count, var before = old.last, let after = new.last, before.id == after.id,
+              before.kind == .assistant || before.kind == .thinking, before.tool != "plan",
+              // The first words make an answer of an empty event: the turns read which event answers.
+              !before.text.isEmpty else { return false }
+        let wasNotice = BackgroundWork.isNotice(before)
+        before.text = after.text
+        return before == after && wasNotice == BackgroundWork.isNotice(after) && old.dropLast().elementsEqual(new.dropLast())
+    }
+}
+
+/// The last pull request a run's conversation links, for the tray above its composer and the badge on its row. Kept per
+/// run and read again only when the conversation changed, as every row of the list asks on each redraw.
+@MainActor
+final class RunPullRequestLinks {
+    static let shared = RunPullRequestLinks()
+    private var memo: [UUID: (count: Int, last: UUID?, url: URL?)] = [:]
+
+    func url(_ id: UUID, events: [RunEvent]) -> URL? {
+        if let hit = memo[id], hit.count == events.count, hit.last == events.last?.id { return hit.url }
+        let url = Self.last(in: events)
+        memo[id] = (events.count, events.last?.id, url)
+        return url
+    }
+
+    nonisolated static func last(in events: [RunEvent]) -> URL? {
+        events.reversed().lazy.compactMap(pullRequest(in:)).first
+    }
+
+    /// The last pull request link an event carries: the agent's words, or what a tool that made or showed one printed
+    /// (`gh pr create` prints its link, and the agent does not always repeat it).
+    nonisolated static func pullRequest(in event: RunEvent) -> URL? {
+        switch event.kind {
+        case .assistant:
+            return MarkdownBlock.lastGitHubPullRequest(in: event.text)
+        case .tool:
+            guard let output = event.output, showsPullRequest([event.tool, event.text, event.detail]) else { return nil }
+            return MarkdownBlock.lastGitHubPullRequest(in: output)
+        default:
+            return nil
+        }
+    }
+
+    /// The same for a conversation Nook reads from an agent's transcript (a session it only sees).
+    nonisolated static func last(in messages: [AgentChatMessage]) -> URL? {
+        for message in messages.reversed() {
+            switch message.kind {
+            case .assistant:
+                if let url = MarkdownBlock.lastGitHubPullRequest(in: message.text) { return url }
+            case .tools:
+                for step in message.steps.reversed() {
+                    guard let output = step.output, showsPullRequest([step.name, step.summary, step.command]) else { continue }
+                    if let url = MarkdownBlock.lastGitHubPullRequest(in: output) { return url }
+                }
+            default:
+                continue
+            }
+        }
+        return nil
+    }
+
+    /// A tool call that makes or shows a pull request, so the link in its output is that pull request's.
+    private nonisolated static func showsPullRequest(_ parts: [String?]) -> Bool {
+        let call = parts.compactMap { $0 }.joined(separator: " ").lowercased()
+        return call.contains("pr create") || call.contains("pr view") || call.contains("pull_request") || call.contains("pullrequest")
     }
 }

@@ -3,6 +3,8 @@ import SwiftUI
 /// The entire notch: a single black shape that changes size, with Nook always on the left.
 struct NotchRootView: View {
     @ObservedObject var viewModel: NotchViewModel
+    /// The notch's state, size and strips, which the view model publishes apart from the rest.
+    @ObservedObject private var surface: NotchSurface
     @EnvironmentObject private var app: AppModel
     // Redraws the closed notch's ring when you mark a chat as finished or read a session.
     @ObservedObject private var finishedMarks = FinishedSessions.shared
@@ -11,6 +13,11 @@ struct NotchRootView: View {
     @ObservedObject private var energy = EnergyMonitor.shared
     /// Lets the closed notch's ring follow Nook. Held, not observed: only the ring redraws when he moves.
     @State private var orbMotion = NookMotion()
+
+    init(viewModel: NotchViewModel) {
+        self.viewModel = viewModel
+        surface = viewModel.surface
+    }
 
     var body: some View {
         let size = viewModel.size
@@ -286,10 +293,7 @@ struct NotchRootView: View {
         let ok: (() -> Void)? = viewModel.noticeSeconds == nil ? nil : { viewModel.acknowledgeNotice() }
         return HStack(spacing: 0) {
             HStack(spacing: NookTheme.Spacing.md) {
-                Image(systemName: tone.symbol)
-                    .font(NookTheme.font(13, .bold))
-                    .foregroundStyle(tone.color)
-                    .frame(width: 16)
+                NoticeMark(symbol: tone.symbol, tone: tone.color, agent: viewModel.doneAgent)
                 Text(message)
                     .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
@@ -337,7 +341,7 @@ struct NotchRootView: View {
 
             StripLine {
                 NookNotice(title: message, symbol: viewModel.doneTone.symbol, tone: viewModel.doneTone.color,
-                           actions: doneActions, countdown: viewModel.noticeSeconds, paused: noticePaused,
+                           agent: viewModel.doneAgent, actions: doneActions, countdown: viewModel.noticeSeconds, paused: noticePaused,
                            onOK: { viewModel.acknowledgeNotice() })
                 .id(viewModel.noticeStamp)
             }

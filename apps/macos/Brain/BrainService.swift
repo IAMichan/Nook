@@ -149,7 +149,7 @@ final class BrainService {
         // "done!" or ask for permission instead). Ask once more, with only that tool and the dates spelled out. A larger
         // model gets the same second chance when it claims the action is done or prepared without proposing it.
         let claimsReady = Self.claimsDone(plan.text) || ChatIntent.claimsPrepared(plan.text)
-        if profile.isSmall || (plan.actions.isEmpty && claimsReady), let action = intent.primaryAction, !runner.trace.contains(action),
+        if profile.isSmall || (plan.actions.isEmpty && claimsReady), let action = intent.action(among: allTools.map(\.name)), !runner.trace.contains(action),
            let spec = allTools.first(where: { $0.name == action }), !Self.asksBack(plan.text) {
             if let focused = try await fillIn(spec, request: userText, history: history, context: fitted[1],
                                                screen: untrusted.map { _ in fitted[2] }, profile: profile, onText: onText) {
@@ -167,7 +167,7 @@ final class BrainService {
         }
         // A WhatsApp message asked for while no phone is linked: Nook cannot send it at all yet, so say how to link one
         // instead of letting the model pretend it did.
-        if plan.actions.isEmpty, intent.primaryAction == "whatsapp_send", !allTools.contains(where: { $0.name == "whatsapp_send" }) {
+        if plan.actions.isEmpty, intent.primaryAction == "whatsapp_send", intent.action(among: allTools.map(\.name)) == nil {
             return BrainPlan(text: tr("brain.whatsAppNotLinked"), actions: plan.actions)
         }
         // Nothing runs before the user approves it, so a reply without a proposed action that says the message was sent
@@ -198,8 +198,9 @@ final class BrainService {
     /// to search for. Nil when it gives no usable plan in time; Nook then falls back to its keyword research.
     func plan(question: String, history: [ChatTurn], sources: [QueryPlanner.Source]) async -> QueryPlan? {
         let selection = settings.selection
-        // Claude Code starts a whole command-line session per call: too slow for a step before every answer.
-        if selection.runtime == .external, selection.provider == .claudeCode { return nil }
+        // A subscription through a coding agent starts a whole command-line session per call: too slow for a step before
+        // every answer.
+        if selection.runtime == .external, selection.provider.isSubscription { return nil }
         let profile = settings.brainProfile
         let prompt = QueryPlanner.prompt(question: question, history: history, sources: sources)
         let known = Set(sources.map(\.id))
@@ -278,10 +279,10 @@ final class BrainService {
         return plan.text
     }
 
-    /// Whether the chosen brain takes pictures (MLX and Claude Code do not).
+    /// Whether the chosen brain takes pictures (MLX, Claude Code and Gemini CLI do not; Codex does).
     var canSee: Bool {
         let selection = settings.selection
-        return selection.runtime != .mlx && !(selection.runtime == .external && selection.provider == .claudeCode)
+        return selection.runtime != .mlx && !(selection.runtime == .external && !selection.provider.cliTakesImages)
     }
 
     /// Memory: reads the user's recent messages and names what is worth remembering (see `Reflection`). Runs in the
@@ -289,7 +290,7 @@ final class BrainService {
     /// command-line session for a background note is too heavy.
     func reflect(user: [String], nook: [String], known: [MemoryItem]) async -> String? {
         let selection = settings.selection
-        if selection.runtime == .external, selection.provider == .claudeCode { return nil }
+        if selection.runtime == .external, selection.provider.isSubscription { return nil }
         let profile = settings.brainProfile
         let prompt = Reflection.prompt(user: user, nook: nook, known: known)
         let started = CFAbsoluteTimeGetCurrent()
@@ -364,6 +365,11 @@ final class BrainService {
             conversation = ClaudeCodeBrain.conversation(model: settings.activeProviderModel, system: system,
                                                         prompt: Self.historyPrefix(history, limit: 12, length: 1500) + prompt,
                                                         allowWebSearch: webAllowed)
+        case .codexCLI, .geminiCLI, .grokCLI, .kimiCLI, .vibeCLI:
+            conversation = SubscriptionBrain.conversation(provider: selection.provider, model: settings.activeProviderModel,
+                                                          system: system,
+                                                          prompt: Self.historyPrefix(history, limit: 12, length: 1500) + prompt,
+                                                          allowWebSearch: webAllowed)
         case .ollama:
             // `selection`, not the provider's stored model: on the screen brain this is the model picked for screen work.
             conversation = OllamaConversation(model: selection.model, system: system,
@@ -512,6 +518,9 @@ final class BrainService {
         switch settings.provider {
         case .claudeCode:
             conversation = ClaudeCodeBrain.conversation(model: settings.activeProviderModel, system: "You are a test.", prompt: probe, allowWebSearch: false)
+        case .codexCLI, .geminiCLI, .grokCLI, .kimiCLI, .vibeCLI:
+            conversation = SubscriptionBrain.conversation(provider: settings.provider, model: settings.activeProviderModel,
+                                                          system: "You are a test.", prompt: probe, allowWebSearch: false)
         case .ollama:
             conversation = OllamaConversation(model: settings.activeProviderModel, system: "You are a test.", history: [], prompt: probe, profile: settings.brainProfile)
         case .claude:
@@ -536,7 +545,7 @@ final class BrainService {
             guard settings.apiKey != nil else { return }
             target = endpoint
         } else {
-            guard settings.provider != .claudeCode, let url = URL(string: settings.provider.baseURL + "/models") else { return }
+            guard !settings.provider.isSubscription, let url = URL(string: settings.provider.baseURL + "/models") else { return }
             target = url
         }
         var request = URLRequest(url: target)
@@ -593,7 +602,7 @@ final class BrainService {
             lines.append("If a required detail is really missing (for example the time of a meeting), ask one short question instead.")
         }
         // The intent tells a small model where to look, which it cannot reliably work out from a long list itself.
-        if let action = intent.primaryAction, names.contains(action) {
+        if let action = intent.action(among: names) {
             lines.append("This request asks you to act: call \(action) now.")
         } else if let first = intent.tools.first(where: { names.contains($0) }) {
             lines.append("For this request, \(first) is the most likely tool if the context does not already answer it.")
@@ -612,7 +621,7 @@ final class BrainService {
         if names.contains("github_merge_prs") {
             lines.append("To merge several or all pull requests, first list them with github_overview (or github_search), then call github_merge_prs once with all of them.")
         }
-        if names.contains("compose_mail") { lines.append("To write an email, use compose_mail (look up the address with search_contacts if you only have a name).") }
+        if names.contains("compose_mail") { lines.append("To write an email, use compose_mail (look up the address with search_contacts if you only have a name), never take_over. To change a draft, call compose_mail again with the new version: it replaces the draft at once.") }
         if names.contains("use_source") { lines.append("If you need a connected source whose tools you do not have, call use_source first.") }
         if names.contains("remember") {
             lines.append("If the user asks you to remember something, or tells you a lasting fact about themselves or a preference, call remember with one short sentence. If they correct something under \"What Nook remembers\", call remember with replaces set to its id. If they ask you to forget something, call forget.")

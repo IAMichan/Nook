@@ -406,10 +406,27 @@ struct SourceScope: Equatable, Codable {
 /// Which sources should be sent in full for this query. The rest are sent as a single summary line ("Mail: 12 unread,
 /// search with search_mail"), so the brain knows they exist without sending full content on every turn.
 enum SourceRouter {
-    /// Always sent in full: compact and almost always useful for understanding the day. Reminders are not: a list of
-    /// to-dos in every prompt pulls a small model off the question ("stuur Arjan een bericht"), so they come along only
-    /// when the question is about reminders, tasks or the day.
-    static let core: Set<String> = ["calendar", SourceCatalog.loops]
+    /// Always sent in full: compact and almost always useful. The calendar and reminders are not: a week of
+    /// appointments or a list of to-dos in every prompt pulls the model off the question ("reageer op de mail van
+    /// Gijs"), so they come along only when the question is about time, plans or the day (see `wantsCalendar`).
+    static let core: Set<String> = [SourceCatalog.loops]
+
+    /// Words that put a question on the calendar on their own, in every language Nook speaks: an appointment, a
+    /// meeting, being free or busy, planning or moving something, "when" and "what time".
+    private static let calendarCue = #"afspra?ak\w*|agenda'?s?\b|kalender\w*|calendars?\b|meetings?\b|vergader\w*|overleg\w*|appointments?\b|termine?\b|besprechung\w*|rendez-vous|r[ée]unions?\b|calendrier|citas?\b|reuni[oó]n\w*|calendario|gepland|ingepland|inplannen|plan (een|in|het|de|ik|we)\b|schedul\w*|reschedul\w*|verzet\w*|verplaats\w*|beschikba\w*|availab\w*|verfügbar|disponible|vrij (ben|zijn|heb|hebben|is)\b|free (on|at|time|slot)|bezet\b|busy\b|wanneer (heb|ben|is|moet|zie|spreek|kan|kunnen|zijn|was)\b|hoe laat\b|what time\b|when (is|do|am|are|can|was)\b|wann (habe|bin|ist|kann)\b|um wie viel uhr|mijn dag\b|my day\b|mein tag\b|dagplanning|weekplanning|verjaardag\w*|birthdays?\b|geburtstag\w*|evenement\w*|events?\b"#
+
+    /// Whether the calendar belongs with this question: it names the calendar or a plan, asks about the user's own time
+    /// on a day ("heb ik morgen iets?"), or is a short follow-up to a question that did ("en donderdag?").
+    static func wantsCalendar(_ text: String, history: [ChatTurn] = []) -> Bool {
+        if matches(calendarCue, text) || Prefetch.agendaWindow(for: text) != nil { return true }
+        guard let last = history.last(where: \.fromUser), last.text != text,
+              text.split(whereSeparator: \.isWhitespace).count <= 8, SourceCatalog.mentions(in: text).isEmpty else { return false }
+        return matches(calendarCue, last.text) || Prefetch.agendaWindow(for: last.text) != nil
+    }
+
+    private static func matches(_ pattern: String, _ text: String) -> Bool {
+        text.range(of: #"(?<![\p{L}\d])(?:"# + pattern + ")", options: [.regularExpression, .caseInsensitive]) != nil
+    }
 
     private static let intents: [(pattern: String, ids: [String])] = [
         (#"\w*mail\w*|inbox|postvak\w*|ongelezen|unread|ungelesen|niet\W+(\w+\W+){0,2}gelezen|not\W+(\w+\W+){0,2}read|afzender\w*|senders?|bericht\w*|messages?|antwoord\w*|reply|replies|schreef|schrijf|wrote|follow.?up|opvolg\w*|toegezegd|beloofd|commitments?|afgesproken|agreed|discuss\w*|besproken|gesprek"#, ["mail", "customsources"]),
@@ -437,10 +454,15 @@ enum SourceRouter {
     /// Broad queries ("summarize my week", "what happened") may consult all available sources.
     private static let broad = #"samenvat\w*|vat\b.*samen|overzicht|summar\w*|zusammenfass\w*|alles|everything|all (my|of)|wat is er gebeurd|what happened|deze week|this week|diese woche|bereid\w* .*voor|prepare|voorbereid\w*"#
 
+    /// A summary of one thing the question points at ("vat deze mail samen", "summarize this article") is not a broad
+    /// question: a period ("deze week") still is.
+    private static let single = #"(dit|deze|die|dat|this|that|diese[nrms]?|dieses|ce|cette|cet|este|esta)\s+(?!(week|weekend|maand|jaar|kwartaal|dag|ochtend|middag|avond|month|year|quarter|day|morning|woche|monat|jahr|tag|semaine|mois|année|jour|semana|mes|año|día)\b)[\p{L}-]+"#
+
     static func relevant(to text: String, scope: SourceScope, active: Set<String>, history: [ChatTurn] = []) -> Set<String> {
         let allowed = active.filter { scope.allows($0) }
-        if text.range(of: broad, options: [.regularExpression, .caseInsensitive]) != nil { return allowed }
+        if text.range(of: broad, options: [.regularExpression, .caseInsensitive]) != nil, !matches(single, text) { return allowed }
         var wanted = core.union(scope.focus)
+        if wantsCalendar(text, history: history) { wanted.insert("calendar") }
         if scope.mode == .only { wanted.formUnion(scope.included) }
         for intent in intents + SourceCatalog.registeredIntents where text.range(of: #"(?<![\p{L}\d])(?:"# + intent.pattern + #")"#, options: [.regularExpression, .caseInsensitive]) != nil {
             wanted.formUnion(intent.ids)
@@ -450,7 +472,7 @@ enum SourceRouter {
         // A chat message to write ("schrijf een antwoord aan Arjan op WhatsApp", or a follow-up in a WhatsApp conversation):
         // words like "bericht", "antwoord" and "schrijf" only describe the message, so they do not send Nook off to the
         // mail unless the question names it.
-        if ChatIntent.detect(text, history: history).primaryAction == "whatsapp_send" {
+        if ["whatsapp_send", "chat_send"].contains(ChatIntent.detect(text, history: history).primaryAction) {
             wanted.subtract(["mail", "customsources"].filter { !mentioned.contains($0) })
         }
         return allowed.intersection(wanted)
@@ -467,6 +489,7 @@ enum SourceCapabilities {
         "list_notes": "notities bekijken", "search_notes": "notities zoeken", "read_note": "notitie lezen", "create_note": "notitie maken",
         "search_messages": "alle gesprekken doorzoeken", "read_messages": "gesprek lezen", "search_whatsapp": "alle chats doorzoeken",
         "read_whatsapp": "chat lezen", "whatsapp_live": "live chats via je telefoon", "whatsapp_send": "WhatsApp-bericht sturen",
+        "chat_inbox": "chats van al je chatapps lezen", "chat_send": "chatbericht sturen",
         "search_call_notes": "opgenomen gesprekken doorzoeken", "read_call_note": "gesprek lezen", "mac_status": "processor, geheugen, batterij en schijf", "messages_open_chats": "ongelezen en onbeantwoorde gesprekken", "whatsapp_open_chats": "ongelezen en onbeantwoorde chats", "search_bear": "notities doorzoeken", "read_bear": "notitie lezen", "search_things": "taken en projecten doorzoeken",
         "search_mail": "mail zoeken (inbox en verzonden)", "read_mail": "hele mail lezen", "mail_unread": "ongelezen mail tellen", "inbox_mail": "recente mail lezen", "compose_mail": "mailconcept (jij verstuurt)",
         "trash_mail": "mail naar prullenmand", "mark_mail": "mail markeren (gelezen, vlag)",
@@ -563,8 +586,9 @@ enum Prefetch {
         }
     }
 
-    /// Sources whose data is always in the context in full already.
-    static let inContext: Set<String> = SourceRouter.core
+    /// Sources Nook never searches up front with the question's words: open loops are always in the context, and the
+    /// calendar is in it whenever the question is about time (and otherwise read by date with check_availability).
+    static let inContext: Set<String> = SourceRouter.core.union(["calendar"])
 
     private static let unread = #"ongelezen|unread|ungelesen|niet\W+(\w+\W+){0,2}gelezen|not\W+(\w+\W+){0,2}read"#
     private static let reply = #"beantwoord\w*|antwoord\w*|reageer|reageren|terugmail\w*|terugschrijv\w*|reply|respond|answer|follow.?up|opvolg\w*"#

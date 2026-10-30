@@ -37,6 +37,24 @@ struct PullRequestDetail: Equatable, Sendable {
     var canPush: Bool? = nil
     /// The people and teams asked for a review who have not answered yet, as GitHub lists them.
     var requestedReviewers: [String] = []
+    /// The teams among `requestedReviewers`: a team has no picture of its own, so the page draws it differently.
+    var requestedTeams: [String] = []
+    /// The people the pull request is assigned to.
+    var assignees: [String] = []
+    /// The milestone it belongs to, if any.
+    var milestone: String? = nil
+    /// The owner of the head branch's repository when the pull request comes from a fork ("ada" for `ada:feature`); nil
+    /// when head and base are the same repository, or the fork is gone.
+    var headOwner: String? = nil
+    /// Auto-merge, once someone turned it on: GitHub merges by itself when everything it waits for is in.
+    var autoMerge: PullRequestAutoMerge? = nil
+    /// The conversation is locked: only people with write access can still comment. GitHub's reason ("too heated",
+    /// "off-topic", "resolved", "spam") when one was given.
+    var locked = false
+    var lockReason: String? = nil
+    /// The issues this pull request closes when it merges ("Closes #12" in its description, or linked by hand), from
+    /// GraphQL with the timeline.
+    var linkedIssues: [PullRequestLinkedIssue] = []
     var labels: [String] = []
     /// Each label's color as six hex digits, as the list's rows have them.
     var labelColors: [String: String] = [:]
@@ -48,6 +66,9 @@ struct PullRequestDetail: Equatable, Sendable {
     var lineCommentCount: Int? = nil
     /// False until the timeline, commits and files have arrived: the summary shows first, the rest follows.
     var activityLoaded = true
+    /// GitHub is working out mergeability again (`mergeable` is nil, as after another pull request merged into the
+    /// base), and the last read of this same head was a conflict: it still counts as one until GitHub says otherwise.
+    var conflictPending = false
 
     var id: String { "\(repo)#\(number)" }
     var isOpen: Bool { state == .open || state == .draft }
@@ -57,14 +78,25 @@ struct PullRequestDetail: Equatable, Sendable {
         events = activity.events
         commits = activity.commits
         files = activity.files
+        linkedIssues = activity.issues
         activityLoaded = true
+    }
+
+    /// A fresh summary in which GitHub is still working out mergeability keeps the conflict of the read before it, when
+    /// that read was of the same head. A merge into the base makes GitHub forget for a moment; that is not a resolution.
+    /// A new head may have resolved it, so after a push it says "checking" instead.
+    func keepingConflict(of old: PullRequestDetail?) -> PullRequestDetail {
+        guard mergeable == nil, mergeState != "dirty", let old, old.headSHA == headSHA, old.conflicted else { return self }
+        var result = self
+        result.conflictPending = true
+        return result
     }
 
     /// The activity a fresh summary keeps from the read before it, until its own activity arrives.
     func keepingActivity(of old: PullRequestDetail?) -> PullRequestDetail {
         guard !activityLoaded, let old, old.activityLoaded else { return self }
         var result = self
-        result.apply(PullRequestActivity(events: old.events, commits: old.commits, files: old.files))
+        result.apply(PullRequestActivity(events: old.events, commits: old.commits, files: old.files, issues: old.linkedIssues))
         return result
     }
 
@@ -95,7 +127,7 @@ struct PullRequestDetail: Equatable, Sendable {
             }
         }
     }
-    var conflicted: Bool { mergeable == false || mergeState == "dirty" }
+    var conflicted: Bool { mergeable == false || mergeState == "dirty" || (mergeable == nil && conflictPending) }
 
     /// Whether the merge button can be pressed. GitHub has the last word (branch protection, an admin bypass), so only
     /// what certainly fails is held back here.
@@ -131,11 +163,31 @@ struct PullRequestDetail: Equatable, Sendable {
     }
 }
 
+/// Auto-merge on a pull request: how GitHub will merge it, and who turned it on.
+struct PullRequestAutoMerge: Equatable, Sendable {
+    /// Nil when GitHub names a method Nook does not know.
+    let method: PullRequestMergeMethod?
+    let enabledBy: String
+}
+
 /// The part of a pull request that takes the most requests to read: the timeline, the commits and the files.
 struct PullRequestActivity: Equatable, Sendable {
     var events: [PullRequestEvent] = []
     var commits: [PullRequestCommit] = []
     var files: [PullRequestFile] = []
+    var issues: [PullRequestLinkedIssue] = []
+}
+
+/// An issue a pull request closes when it merges.
+struct PullRequestLinkedIssue: Identifiable, Equatable, Sendable {
+    /// "owner/name" of the issue's repository; it can be another repository than the pull request's.
+    let repo: String
+    let number: Int
+    let title: String
+    let open: Bool
+    let url: URL?
+
+    var id: String { "\(repo)#\(number)" }
 }
 
 /// One entry on the timeline page: an event, or the commits one person added one after the other, shown as one.
@@ -184,6 +236,17 @@ struct PullRequestCheck: Identifiable, Equatable, Sendable {
     /// The conclusion or state GitHub gave ("success", "failure", "in_progress"…), shown under the name.
     let detail: String
     let url: URL?
+    /// A check run (with GitHub's own status words in `detail`) rather than a commit status (with its own sentence).
+    var isCheckRun = false
+    /// Runs right now; a pending check that has not started yet is queued.
+    var running = false
+    var started: Date? = nil
+    var finished: Date? = nil
+    /// GitHub's id of a check run, to read its report (`/check-runs/{id}`); nil for a commit status.
+    var checkRunID: Int? = nil
+    /// The login of the app or account that reports the check ("coderabbitai[bot]"), to find what it wrote on the pull
+    /// request when the check itself carries no report.
+    var reporter: String? = nil
 
     var id: String { name + "|" + (url?.absoluteString ?? "") }
 }
@@ -259,6 +322,11 @@ struct PullRequestCommit: Identifiable, Equatable, Sendable {
     var id: String { sha }
     var shortSHA: String { String(sha.prefix(7)) }
     var subject: String { message.components(separatedBy: "\n").first ?? message }
+    /// The message under the subject, without the blank line between them; empty for a one-line message.
+    var details: String {
+        guard let end = message.firstIndex(of: "\n") else { return "" }
+        return message[end...].trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 }
 
 struct PullRequestFile: Identifiable, Equatable, Sendable {
@@ -304,8 +372,24 @@ enum PullRequestDetailParser {
             headSHA: (head["sha"] as? String) ?? "", additions: int(pull["additions"]) ?? 0, deletions: int(pull["deletions"]) ?? 0,
             changedFiles: int(pull["changed_files"]) ?? 0, created: date(pull["created_at"]), updated: date(pull["updated_at"]),
             mergeable: pull["mergeable"] as? Bool, mergeState: ((pull["mergeable_state"] as? String) ?? "unknown").lowercased())
+        detail.requestedTeams = ((pull["requested_teams"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
         detail.requestedReviewers = ((pull["requested_reviewers"] as? [[String: Any]]) ?? []).compactMap { $0["login"] as? String }
-            + ((pull["requested_teams"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
+            + detail.requestedTeams
+        detail.assignees = ((pull["assignees"] as? [[String: Any]]) ?? []).compactMap { $0["login"] as? String }
+        detail.milestone = ((pull["milestone"] as? [String: Any])?["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        // A fork's branch is named with its owner, as GitHub does ("ada:feature"); the fork may since have been deleted.
+        if let headRepo = head["repo"] as? [String: Any], let headName = headRepo["full_name"] as? String,
+           !repo.isEmpty, headName.lowercased() != repo.lowercased() {
+            detail.headOwner = ((headRepo["owner"] as? [String: Any])?["login"] as? String)
+                ?? headName.split(separator: "/").first.map(String.init)
+        }
+        detail.locked = (pull["locked"] as? Bool) == true
+        detail.lockReason = (pull["active_lock_reason"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        if let auto = pull["auto_merge"] as? [String: Any] {
+            detail.autoMerge = PullRequestAutoMerge(
+                method: (auto["merge_method"] as? String).flatMap(PullRequestMergeMethod.init(rawValue:)),
+                enabledBy: login(auto["enabled_by"]))
+        }
         detail.labels = ((pull["labels"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
         detail.labelColors = PullRequestGraphQL.labelColors((pull["labels"] as? [[String: Any]]) ?? [])
         detail.nodeID = (pull["node_id"] as? String) ?? ""
@@ -345,7 +429,12 @@ enum PullRequestDetailParser {
             else { outcome = .passing }
             return PullRequestCheck(name: (run["name"] as? String) ?? "?", outcome: outcome,
                                     detail: status == "completed" ? conclusion : status,
-                                    url: ((run["html_url"] as? String) ?? (run["details_url"] as? String)).flatMap(URL.init(string:)))
+                                    url: ((run["html_url"] as? String) ?? (run["details_url"] as? String)).flatMap(URL.init(string:)),
+                                    isCheckRun: true, running: status == "in_progress",
+                                    started: date(run["started_at"]),
+                                    finished: status == "completed" ? date(run["completed_at"]) : nil,
+                                    checkRunID: int(run["id"]),
+                                    reporter: ((run["app"] as? [String: Any])?["slug"] as? String).map { $0 + "[bot]" })
         }
         // The combined status lists every context once, with its latest state.
         for status in statuses {
@@ -354,7 +443,8 @@ enum PullRequestDetailParser {
             let description = (status["description"] as? String) ?? state
             result.append(PullRequestCheck(name: (status["context"] as? String) ?? "?", outcome: outcome,
                                            detail: description.isEmpty ? state : description,
-                                           url: (status["target_url"] as? String).flatMap(URL.init(string:))))
+                                           url: (status["target_url"] as? String).flatMap(URL.init(string:)),
+                                           reporter: (status["creator"] as? [String: Any])?["login"] as? String))
         }
         func rank(_ check: PullRequestCheck) -> Int {
             switch check.outcome { case .failing: return 0; case .pending: return 1; case .passing: return 2; case .skipped: return 3 }
@@ -449,6 +539,40 @@ enum PullRequestDetailParser {
         return try? JSONSerialization.data(withJSONObject: [
             "query": query, "variables": ["owner": parts[0], "name": parts[1], "number": number],
         ])
+    }
+
+    /// The GraphQL request for the issues the pull request closes. Its own request, so a host without the field (an old
+    /// GitHub Enterprise) still gets the threads' state.
+    static func linkedIssuesBody(repo: String, number: Int) -> Data? {
+        let parts = repo.split(separator: "/", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+        let query = """
+        query($owner: String!, $name: String!, $number: Int!) {
+          repository(owner: $owner, name: $name) {
+            pullRequest(number: $number) {
+              closingIssuesReferences(first: 25) { nodes { number title state url repository { nameWithOwner } } }
+            }
+          }
+        }
+        """
+        return try? JSONSerialization.data(withJSONObject: [
+            "query": query, "variables": ["owner": parts[0], "name": parts[1], "number": number],
+        ])
+    }
+
+    /// The issues from the answer to `linkedIssuesBody`, in GitHub's order; empty when it had none or failed.
+    static func linkedIssues(_ answer: Any?) -> [PullRequestLinkedIssue] {
+        let data = (answer as? [String: Any])?["data"] as? [String: Any]
+        let pull = ((data?["repository"] as? [String: Any])?["pullRequest"] as? [String: Any])
+        let nodes = ((pull?["closingIssuesReferences"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []
+        return nodes.compactMap { node in
+            guard let number = int(node["number"]) else { return nil }
+            return PullRequestLinkedIssue(
+                repo: ((node["repository"] as? [String: Any])?["nameWithOwner"] as? String) ?? "",
+                number: number, title: (node["title"] as? String) ?? "",
+                open: ((node["state"] as? String) ?? "OPEN").uppercased() == "OPEN",
+                url: (node["url"] as? String).flatMap(URL.init(string:)))
+        }
     }
 
     /// The threads' state from the answer to `reviewThreadsBody`, by the event id of each thread's first comment.
@@ -588,7 +712,8 @@ extension PullRequestItem {
         case .open, .draft: item.state = .open
         }
         item.draft = detail.state == .draft
-        item.conflict = detail.state == .open && detail.conflicted
+        // While GitHub works mergeability out again, the row keeps the conflict it knew.
+        item.conflict = detail.state == .open && (detail.conflicted || (detail.mergeable == nil && item.conflict))
         return item
     }
 }

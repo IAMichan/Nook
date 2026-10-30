@@ -6,20 +6,23 @@ extension SettingsView {
 
     var privateSourcesSection: some View {
         Section {
-            ForEach(SourceCatalog.all, id: \.id) { source in
-                // The privacy level can keep a source on this Mac by itself (the screen when strict): shown locked.
-                let byLevel = settings.privacyLevel.localOnlySources.contains(source.id)
-                Toggle(isOn: byLevel ? .constant(true) : localOnlyBinding(source.id)) {
-                    Label(source.title, systemImage: byLevel || settings.localOnlySources.contains(source.id) ? "lock.fill" : "lock.open")
+            // A switch per source is a long list: folded away, with how many are kept on this Mac on its label.
+            DisclosureGroup(tr("settings.private.choose", settings.localOnlySources.count, SourceCatalog.all.count)) {
+                ForEach(SourceCatalog.all, id: \.id) { source in
+                    // The privacy level can keep a source on this Mac by itself (the screen when strict): shown locked.
+                    let byLevel = settings.privacyLevel.localOnlySources.contains(source.id)
+                    Toggle(isOn: byLevel ? .constant(true) : localOnlyBinding(source.id)) {
+                        Label(source.title, systemImage: byLevel || settings.localOnlySources.contains(source.id) ? "lock.fill" : "lock.open")
+                    }
+                    .disabled(byLevel)
+                    .help(byLevel ? tr("settings.private.byLevel") : "")
                 }
-                .disabled(byLevel)
-                .help(byLevel ? tr("settings.private.byLevel") : "")
-            }
-            HStack {
-                Button(tr("settings.private.all")) { settings.localOnlySources = SourceCatalog.personal }
-                Button(tr("settings.private.none")) { settings.localOnlySources = [] }
-                    .disabled(settings.localOnlySources.isEmpty)
-                Spacer()
+                HStack {
+                    Button(tr("settings.private.all")) { settings.localOnlySources = SourceCatalog.personal }
+                    Button(tr("settings.private.none")) { settings.localOnlySources = [] }
+                        .disabled(settings.localOnlySources.isEmpty)
+                    Spacer()
+                }
             }
             SettingNote(settings.isLocalBrain
                         ? tr("settings.private.activeLocal")

@@ -88,7 +88,24 @@ extension AppModel {
 
     /// The merged list: every conversation once, grouped by what needs the user first.
     var mergedSessions: [AgentSessionRecord] {
-        AgentSessionRegistry.merge(sessionRecords())
+        sessionLists().merged
+    }
+
+    /// The merged list and what follows from it, worked out again only when a list it comes from changes. The Agents
+    /// tab asks on every redraw, and merging every session list costs more than the rest of the tab.
+    private func sessionLists() -> SessionListsCache {
+        let key = SessionListsCache.Key(sessions: (hub.sessions + hub.detected).map(SessionListsCache.Key.live),
+                                        runs: workspace.runs.map(SessionListsCache.Key.run),
+                                        past: history.sessions, profiles: profiles.all)
+        if let cache = sessionListsCache, cache.key == key { return cache }
+        let merged = AgentSessionRegistry.merge(sessionRecords())
+        let free = pastNotCovered(merged: merged)
+        let transcripts = detectedTranscripts(free: free)
+        let linked = Set(transcripts.values.map(\.id))
+        let cache = SessionListsCache(key: key, merged: merged, transcripts: transcripts,
+                                      past: free.filter { !linked.contains($0.id) })
+        sessionListsCache = cache
+        return cache
     }
 
     /// Earlier sessions from transcripts, without the ones that are also a running session or a session Nook runs
@@ -100,10 +117,8 @@ extension AppModel {
     /// `detectedTranscripts()` and `pastSessionsOutsideWorkspace` together. Merging every session list is the costly
     /// part of both: this does it once, for a view that needs the two.
     func detectedTranscriptsAndPast() -> (transcripts: [String: PastSession], past: [PastSession]) {
-        let free = pastNotCovered
-        let transcripts = detectedTranscripts(free: free)
-        let linked = Set(transcripts.values.map(\.id))
-        return (transcripts, free.filter { !linked.contains($0.id) })
+        let lists = sessionLists()
+        return (lists.transcripts, lists.past)
     }
 
     /// The transcript behind each process Nook only sees (started before Nook opened, or without hooks), by session id: the
@@ -111,10 +126,10 @@ extension AppModel {
     /// turn, newest process first. With it such a session shows its conversation straight away.
     func detectedTranscripts() -> [String: PastSession] {
         guard !hub.detected.isEmpty else { return [:] }
-        return detectedTranscripts(free: pastNotCovered)
+        return sessionLists().transcripts
     }
 
-    /// `detectedTranscripts()` with the earlier sessions not covered elsewhere (`pastNotCovered`) already worked out.
+    /// `detectedTranscripts()` with the earlier sessions not covered elsewhere (`pastNotCovered(merged:)`) already worked out.
     private func detectedTranscripts(free: [PastSession]) -> [String: PastSession] {
         guard !hub.detected.isEmpty else { return [:] }
         var result: [String: PastSession] = [:]
@@ -133,8 +148,8 @@ extension AppModel {
         return result
     }
 
-    private var pastNotCovered: [PastSession] {
-        let shown = Set(mergedSessions.filter { $0.leading != .transcript }.compactMap(\.conversationKey))
+    private func pastNotCovered(merged: [AgentSessionRecord]) -> [PastSession] {
+        let shown = Set(merged.filter { $0.leading != .transcript }.compactMap(\.conversationKey))
         let continued = continuedSessionIDs
         return history.sessions.filter { past in
             // A resumed chat is covered when a running session continues any of its transcripts.
@@ -188,4 +203,46 @@ extension AppModel {
             }
         }
     }
+
+    /// Sessions Nook took over before it knew their title were named after their folder ("macos"): they take the title
+    /// the agent gave the conversation (the Claude app names every session) or its first question, once history has it.
+    func nameSessionsAfterAgents() {
+        for run in workspace.runs where !run.archived && !run.isRemote {
+            guard let current = run.providerSessionID, !current.isEmpty,
+                  run.title == URL(fileURLWithPath: run.projectPath).lastPathComponent else { continue }
+            let agent = run.provider.displayName
+            guard let past = history.sessions.first(where: { $0.agent.name == agent && $0.isConversation(current) }),
+                  !past.title.isEmpty else { continue }
+            workspace.rename(run.id, to: past.title)
+        }
+    }
+}
+
+/// The merged session lists and the inputs they were worked out from (see `AppModel.sessionLists()`).
+struct SessionListsCache {
+    /// Only what `sessionRecords()` reads of a running session or a session Nook runs: their steps, replies and streamed
+    /// text change many times a second while agents work, and none of it changes the lists.
+    struct Key: Equatable {
+        let sessions: [String]
+        let runs: [String]
+        let past: [PastSession]
+        let profiles: [AgentProfile]
+
+        static func live(_ s: AgentSession) -> String {
+            "\(s.id)|\(s.status)|\(s.approvalID != nil)|\(s.name)|\(s.home)|\(s.cwd)|\(s.project)|\(s.sessionID)"
+        }
+
+        static func run(_ r: WorkspaceRun) -> String {
+            "\(r.id)|\(r.archived)|\(r.status)|\(r.provider.displayName)|\(r.profileID)|\(r.providerSessionID ?? "")|"
+                + "\(r.workingDirectory)|\(r.title)|\(r.updatedAt.timeIntervalSinceReferenceDate)|"
+                + (r.conversation?.earlierSessions ?? []).joined(separator: ",")
+        }
+    }
+
+    let key: Key
+    let merged: [AgentSessionRecord]
+    /// The transcript behind each process Nook only sees, by session id.
+    let transcripts: [String: PastSession]
+    /// Earlier sessions no running session, Nook session or process covers.
+    let past: [PastSession]
 }

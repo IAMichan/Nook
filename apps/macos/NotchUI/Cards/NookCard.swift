@@ -83,6 +83,8 @@ struct ChatBubble: Equatable, Identifiable {
     var reactions: [BubbleReaction] = []
     /// A poll this message asks, with the votes so far.
     var poll: ChatPoll? = nil
+    /// A message you just sent that Nook shows before its app has it back (`ChatOutbox`): it can be copied, nothing else.
+    var local = false
 }
 
 /// The message a bubble answers, as a chat app shows it above the answer: who wrote it and the start of its text.
@@ -99,11 +101,16 @@ struct BubbleReaction: Equatable, Identifiable {
     var emoji: String
     var count: Int
     var mine: Bool
+    /// Who else put it there, by name, where the app says; empty when only the count is known.
+    var people: [String] = []
 
     var id: String { emoji }
 }
 
 extension ChatBubble {
+    /// A call its app noted in the chat: it shows as a call row instead of its line.
+    var call: ChatCall? { attachment == nil && poll == nil ? ChatFormat.call(text) : nil }
+
     /// A conversation as plain text for the pasteboard, one message per line: "[12:04] Anna: See you at eight".
     /// `contact` names the other side of a private chat, where the bubbles carry no sender.
     static func transcript(_ bubbles: [ChatBubble], contact: String) -> String {
@@ -169,6 +176,8 @@ enum CardDetail: Equatable {
     case none
     case event(top: String, big: String, line: String, subline: String)
     case command(String, note: String)
+    /// Text for people (a pull request, a brief) as Markdown, scrolled when long, with the note under it.
+    case prose(String, note: String)
     case waveform
     case steps([PlanStep])
     case choices(ChoiceSet)
@@ -176,6 +185,8 @@ enum CardDetail: Equatable {
     case facts([Fact])
     /// A longer text under a small label, complete and wrapped (the step a takeover asks about).
     case note(String, label: String)
+    /// A quiet line or three under the title: what an agent said last, or what went wrong (`AgentStatusNotice.detail`).
+    case summary(String)
     case chat([ChatBubble])
 }
 
@@ -199,6 +210,8 @@ struct NookCard: Equatable, Identifiable {
     var context: String
     /// The source whose app icon goes before the context ("whatsapp"), as in `SourceBrand`.
     var appIcon: String? = nil
+    /// The coding agent whose logo goes before the context ("Claude Code"), as in `AgentLogo`.
+    var agent: String? = nil
     var title: String
     var detail: CardDetail
     var primary: CardAction
@@ -218,6 +231,10 @@ struct NookCard: Equatable, Identifiable {
     /// A chat of an app Nook cannot write in (Telegram, Messages…), by that app's name: the field works as in the Chats
     /// tab, so what you type (or let Nook write) is copied and the app opens to paste it; no quotes or emoji.
     var replyCopiesTo: String? = nil
+    /// A chat card whose app takes an answer to one message (`ChatAbilities.reply`): its messages can be quoted.
+    var chatQuotes: Bool = true
+    /// A chat card whose app takes emoji from Nook (`ChatAbilities.react`): its messages can get one.
+    var chatReacts: Bool = true
     /// Only the field, with its send button inside it: a small card that asks one thing (the double tap's "what should
     /// Nook do?"). The title stays for VoiceOver and the buttons for Escape, but neither is drawn.
     var compact: Bool = false

@@ -25,6 +25,7 @@ struct AuditEntry: Identifiable, Equatable {
 final class NookStore {
     private var db: OpaquePointer?
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+    /// Held around every use of `db`: the connection is used from the main thread and from background work.
     private let lock = NSLock()
 
     /// How long the action log is kept. It can contain message text, so it is not kept forever.
@@ -80,7 +81,9 @@ final class NookStore {
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         exec("PRAGMA journal_mode = WAL;")
         migrate()
-        pruneAudit()
+        // A long log is a long delete: not while Nook starts. Every use of the connection holds `lock`, so this waits
+        // for one on the main thread or makes it wait, and the store lives as long as the work it started.
+        DispatchQueue.global(qos: .utility).async { [self] in pruneAudit() }
     }
 
     deinit { sqlite3_close(db) }
@@ -132,6 +135,8 @@ final class NookStore {
 
     @discardableResult
     func addLoop(title: String, source: String, due: Date?) -> OpenLoop {
+        lock.lock()
+        defer { lock.unlock() }
         let loop = OpenLoop(id: UUID().uuidString, title: title, source: source, created: Date(), due: due)
         var stmt: OpaquePointer?
         let sql = "INSERT INTO loops (id, title, source, created, due, done) VALUES (?, ?, ?, ?, ?, 0)"
@@ -148,6 +153,8 @@ final class NookStore {
     }
 
     func openLoops() -> [OpenLoop] {
+        lock.lock()
+        defer { lock.unlock() }
         var result: [OpenLoop] = []
         var stmt: OpaquePointer?
         let sql = "SELECT id, title, source, created, due FROM loops WHERE done = 0 ORDER BY created ASC"
@@ -169,6 +176,8 @@ final class NookStore {
     }
 
     func completeLoop(id: String) {
+        lock.lock()
+        defer { lock.unlock() }
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, "UPDATE loops SET done = 1 WHERE id = ?", -1, &stmt, nil) == SQLITE_OK {
             sqlite3_bind_text(stmt, 1, id, -1, transient)
@@ -192,6 +201,8 @@ final class NookStore {
 
     /// When exactly this action (same tool, same input) last succeeded, within `window` seconds.
     func executedAction(_ key: String, within window: TimeInterval) -> Date? {
+        lock.lock()
+        defer { lock.unlock() }
         var stmt: OpaquePointer?
         var result: Date?
         if sqlite3_prepare_v2(db, "SELECT ts FROM executed_actions WHERE key = ? AND ts >= ?", -1, &stmt, nil) == SQLITE_OK {
@@ -204,6 +215,7 @@ final class NookStore {
     }
 
     func recordExecuted(_ key: String, tool: String, result: String) {
+        lock.lock()
         var stmt: OpaquePointer?
         let sql = "INSERT OR REPLACE INTO executed_actions (key, ts, tool, result) VALUES (?, ?, ?, ?)"
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
@@ -214,6 +226,7 @@ final class NookStore {
             sqlite3_step(stmt)
         }
         sqlite3_finalize(stmt)
+        lock.unlock()
         // Old entries do not need to be retained.
         exec("DELETE FROM executed_actions WHERE ts < \(Date().addingTimeInterval(-7 * 86_400).timeIntervalSince1970)")
     }
@@ -258,6 +271,8 @@ final class NookStore {
     }
 
     func audit(tool: String, args: String, result: String) {
+        lock.lock()
+        defer { lock.unlock() }
         var stmt: OpaquePointer?
         let sql = "INSERT INTO audit (ts, tool, args, result) VALUES (?, ?, ?, ?)"
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
@@ -274,6 +289,8 @@ final class NookStore {
 
     /// Every stored memory. A row that cannot be read (from a newer version) is skipped, never deleted.
     func memories() -> [MemoryItem] {
+        lock.lock()
+        defer { lock.unlock() }
         var result: [MemoryItem] = []
         var stmt: OpaquePointer?
         let decoder = JSONDecoder()
@@ -288,6 +305,8 @@ final class NookStore {
     }
 
     func saveMemory(_ item: MemoryItem) {
+        lock.lock()
+        defer { lock.unlock() }
         guard let data = try? JSONEncoder().encode(item), let body = String(data: data, encoding: .utf8) else { return }
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO memories (id, body, updated) VALUES (?, ?, ?)", -1, &stmt, nil) == SQLITE_OK {
@@ -300,6 +319,8 @@ final class NookStore {
     }
 
     func deleteMemory(id: String) {
+        lock.lock()
+        defer { lock.unlock() }
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, "DELETE FROM memories WHERE id = ?", -1, &stmt, nil) == SQLITE_OK {
             sqlite3_bind_text(stmt, 1, id, -1, transient)
@@ -308,13 +329,15 @@ final class NookStore {
         sqlite3_finalize(stmt)
     }
 
-    /// Forgets everything Nook learned (Settings › Memory).
+    /// Forgets everything Nook learned (Settings › Assistant).
     func clearMemories() {
         exec("DELETE FROM memories; DELETE FROM memory_state;")
     }
 
     /// Small learned state, stored as JSON text under a key.
     func memoryState(_ key: String) -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
         var stmt: OpaquePointer?
         var result: Data?
         if sqlite3_prepare_v2(db, "SELECT body FROM memory_state WHERE key = ?", -1, &stmt, nil) == SQLITE_OK {
@@ -326,6 +349,8 @@ final class NookStore {
     }
 
     func setMemoryState(_ key: String, _ data: Data) {
+        lock.lock()
+        defer { lock.unlock() }
         guard let body = String(data: data, encoding: .utf8) else { return }
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO memory_state (key, body) VALUES (?, ?)", -1, &stmt, nil) == SQLITE_OK {

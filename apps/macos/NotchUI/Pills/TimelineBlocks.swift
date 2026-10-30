@@ -3,12 +3,24 @@ import AppKit
 import UniformTypeIdentifiers
 
 /// One block of a session's timeline (see TimelinePresentation): a single event, a group of tool calls behind one
-/// sentence, or a finished turn folded into "Worked for 2m 13s". Groups and folds open in place.
-struct TimelineBlockView: View {
+/// sentence, or a finished turn folded into "Worked for 2m 13s". Groups and folds open in place, drawn with the same
+/// views as an agent's own transcript (`TranscriptWorkGroup`, `TranscriptFold`).
+struct TimelineBlockView: View, Equatable {
     let block: TimelineBlock
     let expanded: Set<String>
+    /// Everything else its rows show (the session's status, what is open, the find bar's match…). With it, a block that
+    /// did not change is not drawn again while the agent writes into the last one (see `.equatable()` where it is used);
+    /// without it, it always is.
+    var context: TimelineRowContext? = nil
     let toggle: (String) -> Void
     let eventRow: (RunEvent) -> AnyView
+
+    /// The closures are made again on every redraw of the session and read the panel's current state when they run, so
+    /// they do not count.
+    static func == (lhs: TimelineBlockView, rhs: TimelineBlockView) -> Bool {
+        guard let context = lhs.context else { return false }
+        return context == rhs.context && lhs.expanded == rhs.expanded && lhs.block == rhs.block
+    }
 
     var body: some View {
         switch block {
@@ -16,85 +28,37 @@ struct TimelineBlockView: View {
             eventRow(event)
         case .tools(let id, let events, let tally):
             let key = "group:" + id.uuidString
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                TimelineSummaryRow(symbol: tally.failed ? "exclamationmark.triangle" : Self.symbol(tally),
-                                   text: ToolTallyText.sentence(tally), open: expanded.contains(key),
-                                   tint: tally.failed ? NookTheme.coralSoft : nil, checks: tally.checks,
-                                   lines: tally.lines) { toggle(key) }
-                if expanded.contains(key) {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                        ForEach(events) { eventRow($0) }
-                    }
-                    .padding(.leading, 18)
-                }
+            TranscriptWorkGroup(tally: tally, open: expanded.contains(key), toggle: { toggle(key) }) {
+                ForEach(events) { eventRow($0) }
             }
-        case .fold(let id, let seconds, let blocks):
+        case .fold(let id, let seconds, let blocks, let checks):
+            // What the turn's tests and builds came to stays in sight while its work is folded away.
             let key = "fold:" + id.uuidString
-            VStack(alignment: .leading, spacing: 10) {
-                // What the turn's tests and builds came to stays in sight while its work is folded away.
-                TimelineSummaryRow(symbol: "checkmark.circle", text: tr("ws.fold.worked", AgentPathFormat.duration(seconds)),
-                                   open: expanded.contains(key), tint: nil,
-                                   checks: Verification.checks(TimelinePresentation.events(blocks))) { toggle(key) }
-                if expanded.contains(key) {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-                        ForEach(blocks) { inner in
-                            TimelineBlockView(block: inner, expanded: expanded, toggle: toggle, eventRow: eventRow)
-                        }
-                    }
-                    .padding(.leading, NookTheme.Spacing.lg)
-                    .overlay(alignment: .leading) { Rectangle().fill(NookTheme.line2).frame(width: 1) }
+            TranscriptFold(text: tr("ws.fold.worked", AgentPathFormat.duration(seconds)), open: expanded.contains(key),
+                           checks: checks, toggle: { toggle(key) }) {
+                ForEach(blocks) { inner in
+                    TimelineBlockView(block: inner, expanded: expanded, context: context, toggle: toggle, eventRow: eventRow)
                 }
             }
-        }
-    }
-
-    /// The symbol of the group's most important kind of work.
-    private static func symbol(_ tally: ToolTally) -> String {
-        switch tally.parts.first?.category {
-        case .command: return "terminal"
-        case .edit: return "pencil"
-        case .read: return "doc.text"
-        case .search: return "magnifyingglass"
-        default: return "wrench.and.screwdriver"
         }
     }
 }
 
-/// A quiet, clickable line that opens what it summarizes.
-struct TimelineSummaryRow: View {
-    let symbol: String
-    let text: String
-    let open: Bool
-    let tint: Color?
-    /// The tests, builds and linters among what it summarizes.
-    var checks: [VerificationCheck] = []
-    /// The lines its edits added and removed.
-    var lines: EditLines? = nil
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 7) {
-                Image(systemName: symbol).font(NookTheme.font(10.5, .semibold)).frame(width: 14)
-                Text(text).lineLimit(1)
-                Image(systemName: "chevron.right")
-                    .font(NookTheme.font(8.5, .bold))
-                    .rotationEffect(.degrees(open ? 90 : 0))
-                    .opacity(hovering || open ? 0.9 : 0.5)
-                if let lines { EditLinesLabel(lines: lines) }
-                if !checks.isEmpty { VerificationChips(checks: checks) }
-                Spacer(minLength: 0)
-            }
-            .font(NookTheme.TextStyle.detail)
-            .foregroundStyle(tint ?? (hovering ? NookTheme.textSecondary : NookTheme.textTertiary))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .animation(NookTheme.reveal, value: open)
-        .accessibilityAddTraits(open ? .isSelected : [])
-    }
+/// What a session's timeline rows show besides their block: each change draws every block again.
+struct TimelineRowContext: Equatable {
+    /// Bumped when the session's events changed in any way but more text in the answer being written: the plan card,
+    /// the turn cards and the menus of your messages read the whole session.
+    var structure: Int
+    var status: RunStatus
+    var directory: String?
+    /// The event the find bar is on.
+    var highlighted: UUID?
+    /// The events whose details are open.
+    var openEvents: Set<UUID>
+    /// The file open beside the conversation.
+    var shownFile: String?
+    /// The lines git counted per turn and file.
+    var counted: [String: [String: EditLines]]
 }
 
 /// "+7 −8": the lines an edit (or a group of edits) added and removed.
@@ -110,86 +74,6 @@ struct EditLinesLabel: View {
         .font(NookTheme.mono(size))
         .monospacedDigit()
         .fixedSize()
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// While the agent works: one line with what it is doing in words ("Running the tests", "Reading index.html") and for
-/// how long, and under it the headline of its latest thought or the task it works on.
-struct LiveActivityRow: View {
-    let live: LiveActivity
-    let activity: AgentActivity
-    /// The step of the agent's task list that runs now.
-    var step: String? = nil
-    let since: Date?
-    let waiting: Bool
-    /// Waiting for an answer to a question rather than for an approval.
-    var asking = false
-    let accent: Color
-    /// Opens the terminal with the command that runs; nil when no command runs.
-    var openConsole: (() -> Void)? = nil
-    @State private var hovering = false
-
-    var body: some View {
-        if let openConsole, !waiting {
-            Button(action: openConsole) { row.contentShape(Rectangle()) }
-                .buttonStyle(.plain)
-                .onHover { hovering = $0 }
-                .help(tr("ws.console.open"))
-                .accessibilityHint(tr("ws.console.open"))
-        } else {
-            row
-        }
-    }
-
-    @ViewBuilder
-    private var row: some View {
-        let headline = AgentActivityText.headline(activity, step: step)
-        // The second line adds what the first does not say yet.
-        let detail = [live.thought, step].compactMap { $0 }.first { !$0.isEmpty && $0 != headline }
-        HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-            PulseDot(color: waiting ? NookTheme.amber : accent, animated: !waiting)
-                .frame(width: 14, height: 14)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    if !waiting {
-                        Image(systemName: AgentActivityText.symbol(activity))
-                            .font(NookTheme.TextStyle.caption)
-                            .foregroundStyle(NookTheme.textTertiary)
-                    }
-                    Group {
-                        if waiting {
-                            Text(tr(asking ? "ws.timeline.asking" : "ws.timeline.waiting")).foregroundStyle(NookTheme.textSecondary)
-                        } else {
-                            ShimmerText(text: headline)
-                        }
-                    }
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(openConsole == nil ? live.tool ?? headline : tr("ws.console.open"))
-                    if let since, !waiting {
-                        TimelineView(.periodic(from: .now, by: 1)) { context in
-                            Text(AgentPathFormat.duration(context.date.timeIntervalSince(since)))
-                                .foregroundStyle(NookTheme.textTertiary)
-                                .monospacedDigit()
-                        }
-                    }
-                    if openConsole != nil, !waiting {
-                        Image(systemName: "sidebar.left")
-                            .font(NookTheme.font(10, .medium))
-                            .foregroundStyle(hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
-                            .opacity(hovering ? 1 : 0.6)
-                    }
-                }
-                if let detail, !waiting {
-                    Text(detail)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .lineLimit(1)
-                }
-            }
-            .font(NookTheme.TextStyle.detail)
-            Spacer(minLength: 0)
-        }
         .accessibilityElement(children: .combine)
     }
 }
@@ -277,8 +161,10 @@ enum ToolTallyText {
         guard !parts.isEmpty else { return tr("ws.group.other.many", 0) }
         let named = parts.prefix(2).map { phrase($0.category, $0.count) }
         let rest = parts.dropFirst(2).reduce(0) { $0 + $1.count }
-        if rest > 0 { return tr("ws.group.more", named[0], named[1], rest) }
-        return named.count == 2 ? tr("ws.group.and", named[0], named[1]) : named[0]
+        let text = rest > 0 ? tr("ws.group.more", named[0], named[1], rest)
+            : (named.count == 2 ? tr("ws.group.and", named[0], named[1]) : named[0])
+        // "changed 2 files" opens a sentence of its own with a capital.
+        return text.prefix(1).uppercased() + text.dropFirst()
     }
 
     private static func phrase(_ category: ToolCategory, _ count: Int) -> String {

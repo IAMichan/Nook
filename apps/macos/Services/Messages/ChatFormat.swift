@@ -2,7 +2,8 @@ import Foundation
 
 /// A chat message's own markup, read the way the chat apps show it, the same for every app: *bold*, _italic_,
 /// ~strikethrough~ and `code` (WhatsApp and Slack write them like this; **bold** and __italic__ as Markdown has them),
-/// ```code blocks```, quotes ("> …") and lists ("• …", "- …", "1. …"). Foundation only, so it can be tested anywhere;
+/// links written as Markdown ("[label](https://…)", as Instagram's shared reels and posts come in), ```code blocks```,
+/// quotes ("> …") and lists ("• …", "- …", "1. …"). Foundation only, so it can be tested anywhere;
 /// `ChatMessageText` draws it.
 enum ChatFormat {
     /// A piece of text with its style.
@@ -12,6 +13,9 @@ enum ChatFormat {
         var italic = false
         var strike = false
         var code = false
+        /// Where it leads, for a link written as Markdown: `text` is then what it shows (its label, or a short form of
+        /// the address when the label is the address itself).
+        var link: URL? = nil
     }
 
     /// One line or block of a message.
@@ -81,8 +85,23 @@ enum ChatFormat {
         }
     }
 
-    /// The message as plain text, without its markup: for a chat's line in a list and for what is copied.
+    /// The message as plain text, without its markup: for a chat's line in a list and for what is copied. Kept per text:
+    /// the Chats tab asks it for every chat's newest message each time it lists them.
     static func plain(_ text: String) -> String {
+        let key = text as NSString
+        if let kept = plainCache.object(forKey: key) { return kept as String }
+        let made = unstyled(text)
+        plainCache.setObject(made as NSString, forKey: key)
+        return made
+    }
+
+    private static let plainCache: NSCache<NSString, NSString> = {
+        let cache = NSCache<NSString, NSString>()
+        cache.countLimit = 2_000
+        return cache
+    }()
+
+    private static func unstyled(_ text: String) -> String {
         blocks(text).map { block in
             switch block {
             case .paragraph(let spans), .quote(let spans): return spans.map(\.text).joined()
@@ -114,7 +133,12 @@ enum ChatFormat {
         var index = text.startIndex
         while index < text.endIndex {
             let rest = text[index...]
-            if rest.hasPrefix("http://") || rest.hasPrefix("https://") {
+            if rest.hasPrefix("["), let found = markdownLink(text, at: index) {
+                if !plain.isEmpty { result.append(Span(text: plain)) }
+                plain = ""
+                result.append(found.0)
+                index = found.1
+            } else if rest.hasPrefix("http://") || rest.hasPrefix("https://") {
                 let end = rest.firstIndex(where: \.isWhitespace) ?? text.endIndex
                 plain += text[index..<end]
                 index = end
@@ -130,6 +154,82 @@ enum ChatFormat {
         }
         if !plain.isEmpty { result.append(Span(text: plain)) }
         return result
+    }
+
+    /// A Markdown link that starts at `index` ("[label](https://…)"), as one span, and where it ends. Only a web or mail
+    /// address counts as its target; anything else stays the text it is.
+    private static func markdownLink(_ text: String, at index: String.Index) -> (Span, String.Index)? {
+        let rest = text[text.index(after: index)...]
+        guard let close = rest.range(of: "](")?.lowerBound else { return nil }
+        let label = rest[..<close]
+        guard !label.contains("\n"), !label.contains("[") else { return nil }
+        let target = rest[rest.index(close, offsetBy: 2)...]
+        guard let end = target.firstIndex(of: ")") else { return nil }
+        let address = String(target[..<end])
+        guard !address.contains(where: \.isWhitespace), let url = URL(string: address),
+              ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+        let shown = label.trimmingCharacters(in: .whitespaces)
+        let isAddress = shown.isEmpty || shown.hasPrefix("http://") || shown.hasPrefix("https://")
+        return (Span(text: isAddress ? shortLink(url) : shown, link: url), text.index(after: end))
+    }
+
+    /// What a web address in a message leads to, for how the chat shows it under the text: a picture, a video or a
+    /// sound file shows as itself, any other page as a preview card of its title and picture.
+    enum LinkKind: Equatable, Sendable {
+        case image, video, audio, page
+    }
+
+    /// The first web address in a message (written out, or as a Markdown link), for its preview; nil when it has none.
+    static func firstLink(_ text: String) -> URL? {
+        guard text.contains("http") else { return nil }
+        for block in blocks(text) {
+            let spans: [Span]
+            switch block {
+            case .paragraph(let found), .quote(let found), .item(_, let found): spans = found
+            case .code: continue
+            }
+            for span in spans where !span.code {
+                if let link = span.link, ["http", "https"].contains(link.scheme?.lowercased() ?? "") { return link }
+                guard let start = span.text.range(of: "https://") ?? span.text.range(of: "http://") else { continue }
+                let rest = span.text[start.lowerBound...]
+                let end = rest.firstIndex(where: { $0.isWhitespace || $0 == ">" || $0 == ")" }) ?? rest.endIndex
+                var address = String(rest[..<end])
+                // A sentence's own punctuation is no part of the address.
+                while let last = address.last, ".,;:!?\"'".contains(last) { address.removeLast() }
+                if let url = URL(string: address), url.host != nil { return url }
+            }
+        }
+        return nil
+    }
+
+    /// The kind of a link by its file's extension; anything without a known one is a page.
+    static func linkKind(_ url: URL) -> LinkKind {
+        switch url.pathExtension.lowercased() {
+        case "jpg", "jpeg", "png", "gif", "webp", "heic", "bmp": return .image
+        case "mp4", "mov", "m4v", "webm": return .video
+        case "mp3", "m4a", "aac", "wav", "ogg", "opus", "flac": return .audio
+        default: return .page
+        }
+    }
+
+    /// A page whose preview is a video (a YouTube, Vimeo, TikTok or Instagram reel link): its card has a play mark.
+    static func isVideoPage(_ url: URL) -> Bool {
+        let host = (url.host ?? "").lowercased()
+        let path = url.path.lowercased()
+        return ["youtube.com", "youtu.be", "vimeo.com", "tiktok.com"].contains { host == $0 || host.hasSuffix("." + $0) }
+            || (host.hasSuffix("instagram.com") && (path.hasPrefix("/reel") || path.hasPrefix("/tv/")))
+    }
+
+    /// A web address as a chat shows it in a line: its site and path without "https://", "www." or the query, cut short
+    /// when long ("instagram.com/reel/DevP29EPzQg").
+    static func shortLink(_ url: URL) -> String {
+        guard url.scheme?.lowercased() != "mailto" else { return url.absoluteString.replacingOccurrences(of: "mailto:", with: "") }
+        var host = url.host ?? url.absoluteString
+        if host.hasPrefix("www.") { host = String(host.dropFirst(4)) }
+        var path = url.path
+        if path.hasSuffix("/") { path.removeLast() }
+        let full = host + path
+        return full.count > 48 ? String(full.prefix(47)) + "…" : full
     }
 
     /// The styled pieces that start at `index`, if a marker opens there, and where they end.
@@ -175,4 +275,96 @@ enum ChatFormat {
         }
         return nil
     }
+}
+
+/// A call as a chat notes it among the messages: voice or video, missed or not, who rang and how long it lasted, as far
+/// as its app says. Every app's call reads the same way (`ChatFormat.call`) and shows as the same row in the chat.
+struct ChatCall: Equatable, Sendable {
+    var video = false
+    /// Nobody answered (or it was declined).
+    var missed = false
+    /// You rang; nil when the app's line does not say, and the side of the message tells.
+    var outgoing: Bool? = nil
+    /// How long it lasted, when the app says.
+    var seconds: Double? = nil
+
+    /// What the chat calls it: "Video call", or "Missed voice call" for one you did not answer.
+    func title(mine: Bool) -> String {
+        if missed, !(outgoing ?? mine) { return tr(video ? "chat.call.missedVideo" : "chat.call.missedVoice") }
+        return tr(video ? "chat.call.video" : "chat.call.voice")
+    }
+
+    /// The line under it: who rang, and how long it lasted or that nobody answered ("Incoming · 2:13").
+    func detail(mine: Bool) -> String {
+        let way = tr((outgoing ?? mine) ? "chat.call.outgoing" : "chat.call.incoming")
+        if let seconds, seconds > 0, !missed { return "\(way) · \(Self.clock(seconds))" }
+        if missed, outgoing ?? mine { return "\(way) · \(tr("chat.call.noAnswer"))" }
+        return way
+    }
+
+    /// One line for the chat list and for Nook: "📞 Missed voice call".
+    func summary(mine: Bool) -> String { "📞 " + title(mine: mine) }
+
+    /// "0:42", "1:02:05".
+    static func clock(_ seconds: Double) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        let (hours, minutes, rest) = (total / 3600, total % 3600 / 60, total % 60)
+        return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, rest) : String(format: "%d:%02d", minutes, rest)
+    }
+
+    /// The line an app's call reads as when it brings no words of its own (Telegram): `ChatFormat.call` reads it back.
+    var line: String {
+        var words = [missed ? "Missed" : (outgoing == true ? "Outgoing" : outgoing == false ? "Incoming" : ""),
+                     video ? "video call" : "voice call"].filter { !$0.isEmpty }.joined(separator: " ")
+        if let seconds, seconds > 0, !missed { words += " (\(Self.clock(seconds)))" }
+        return words
+    }
+}
+
+extension ChatFormat {
+    /// A message that is a call: the line an app puts in the chat for one ("Incoming call", "Missed video call",
+    /// "Gemiste spraakoproep", "Appel vocal (2:13)"), in English, Dutch, German, French and Spanish. Nil for anything
+    /// else, also a sentence that only talks about calling ("Call me?").
+    static func call(_ text: String) -> ChatCall? {
+        guard text.count <= 60, !text.contains("?"), !text.contains("\n") else { return nil }
+        let lower = text.lowercased()
+        var call = ChatCall()
+        if let clock = lower.range(of: #"\d{1,2}:\d{2}(:\d{2})?"#, options: .regularExpression) {
+            let parts = lower[clock].split(separator: ":").compactMap { Double($0) }
+            call.seconds = parts.reduce(0) { $0 * 60 + $1 }
+        } else if let minutes = lower.range(of: #"\d+\s*min"#, options: .regularExpression) {
+            call.seconds = Double(lower[minutes].prefix { $0.isNumber }).map { $0 * 60 }
+        }
+        let words = lower.split { !$0.isLetter }.map(String.init)
+            .filter { !Self.callUnits.contains($0) }
+        guard !words.isEmpty, words.contains(where: Self.callWords.contains),
+              words.allSatisfy({ Self.callWords.contains($0) || Self.callModifiers.contains($0) }),
+              words.contains(where: Self.callModifiers.contains) || call.seconds != nil else { return nil }
+        call.video = words.contains { $0.hasPrefix("video") || $0.hasPrefix("vidéo") }
+        call.missed = words.contains(where: Self.missedWords.contains)
+        if words.contains(where: Self.incomingWords.contains) { call.outgoing = false }
+        if words.contains(where: Self.outgoingWords.contains) { call.outgoing = true }
+        return call
+    }
+
+    private static let callWords: Set<String> = [
+        "call", "anruf", "sprachanruf", "videoanruf", "gruppenanruf", "oproep", "spraakoproep", "videooproep",
+        "groepsoproep", "gesprek", "videogesprek", "spraakgesprek", "appel", "llamada", "videollamada", "facetime",
+    ]
+    private static let missedWords: Set<String> = [
+        "missed", "declined", "gemiste", "gemist", "geweigerde", "geweigerd", "verpasster", "verpasst", "abgelehnter",
+        "abgelehnt", "manqué", "refusé", "perdida", "rechazada",
+    ]
+    private static let incomingWords: Set<String> = ["incoming", "inkomende", "inkomend", "eingehender", "eingehend", "entrant", "entrante"]
+    private static let outgoingWords: Set<String> = ["outgoing", "uitgaande", "uitgaand", "ausgehender", "ausgehend", "sortant", "saliente"]
+    private static let callModifiers: Set<String> = missedWords.union(incomingWords).union(outgoingWords).union([
+        "voice", "audio", "video", "group", "spraak", "groeps", "vocal", "vidéo", "de", "voz", "grupal",
+        // One word that already says which kind of call it is ("Videoanruf", "Spraakoproep").
+        "sprachanruf", "videoanruf", "spraakoproep", "videooproep", "videogesprek", "spraakgesprek", "videollamada",
+    ])
+    /// The words of a duration ("2 min", "45 sec"), left out before the rest is read.
+    private static let callUnits: Set<String> = [
+        "min", "mins", "minute", "minutes", "minuut", "minuten", "minuto", "minutos", "sec", "secs", "s", "second",
+        "seconds", "seconde", "seconden", "sekunde", "sekunden", "secondes", "segundo", "segundos", "h", "hr", "uur", "std",
+    ]
 }

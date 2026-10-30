@@ -70,15 +70,23 @@ struct ChatTicks: View {
 /// way to add one, and at the foot what the marks mean. Folded to a rail of icons when the panel is narrow.
 struct ChatsSidebar: View {
     let compact: Bool
+    /// How wide it is: the rail, or as wide as its line was dragged.
+    let width: Double
     @Binding var view: ChatsView
     /// The app the list shows only (its source id), or nil for every app.
     @Binding var app: String?
+    /// Within the chosen app, the account the list shows only (by its name), or nil for all of them.
+    @Binding var account: String?
     /// How many chats each view lists, within the chosen app.
     let counts: [ChatsView: Int]
     /// The apps to offer, busiest and newest first.
     let apps: [String]
     /// Chats with something new per app.
     let newByApp: [String: Int]
+    /// The chosen app's accounts, while it has chats in more than one: they show under it.
+    let accounts: [String]
+    /// Chats with something new per account of the chosen app.
+    let newByAccount: [String: Int]
     let addSource: () -> Void
 
     var body: some View {
@@ -111,6 +119,7 @@ struct ChatsSidebar: View {
                             } action: {
                                 withAnimation(NookTheme.swap) { app = app == id ? nil : id }
                             }
+                            if app == id { accountRows }
                         }
                     }
                     ChatsSidebarRow(title: tr("chats.addSource"), count: 0, countTint: NookTheme.textTertiary,
@@ -129,8 +138,23 @@ struct ChatsSidebar: View {
                 legend
             }
         }
-        .frame(width: compact ? PanelLayout.chatsRail : PanelLayout.chatsSidebar)
+        .frame(width: width)
         .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    /// The chosen app's accounts, under it and set in: a click shows that account's chats only, again shows all of them.
+    @ViewBuilder
+    private var accountRows: some View {
+        ForEach(accounts, id: \.self) { name in
+            ChatsSidebarRow(title: name, count: newByAccount[name] ?? 0, countTint: NookTheme.amber,
+                            selected: account == name, compact: compact) {
+                Image(systemName: "person.crop.circle")
+                    .font(NookTheme.font(11.5, .medium))
+            } action: {
+                withAnimation(NookTheme.swap) { account = account == name ? nil : name }
+            }
+            .padding(.leading, compact ? 0 : NookTheme.Spacing.lg)
+        }
     }
 
     /// What the marks in the list mean, said once, quietly, at the foot.
@@ -238,6 +262,7 @@ private struct ChatsSidebarRow<Glyph: View>: View {
             .frame(maxWidth: .infinity, minHeight: 30, alignment: compact ? .center : .leading)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
                 .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+            .selectionMark(selected)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -395,5 +420,52 @@ struct ChatMarkButton: View {
         case .read:
             ChatTicks(count: 2, tint: NookTheme.mint)
         }
+    }
+}
+
+/// In the tray above the answer field of a chat Nook can only read, the same for every app: what is missing here and
+/// the one step that brings it. An app Nook can link (WhatsApp, Telegram, Instagram, Slack, Teams…) gets a button to
+/// Settings › Connections; one it can only see through notifications says so and opens the app. A cross puts it away for
+/// that app.
+struct ChatLimitsLine: View {
+    let appName: String
+    /// Nook can link this app fully (through its chat helper or a bridge of its own).
+    let linkable: Bool
+    let link: () -> Void
+    let openApp: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            Image(systemName: "eye")
+                .font(NookTheme.font(11, .semibold))
+                .foregroundStyle(NookTheme.amber)
+                .frame(minWidth: 16)
+                .accessibilityHidden(true)
+            Text(tr(linkable ? "chats.limits.linkable" : "chats.limits.notifications", appName))
+                .font(NookTheme.TextStyle.label)
+                .foregroundStyle(NookTheme.textSecondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: NookTheme.Spacing.sm)
+            if linkable {
+                SmallGhostButton(title: tr("chats.limits.link", appName), action: link)
+            } else {
+                SmallGhostButton(title: tr("chats.openApp", appName), action: openApp)
+            }
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .font(NookTheme.font(10, .semibold))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(tr("chats.limits.hide"))
+            .accessibilityLabel(tr("chats.limits.hide"))
+        }
+        // The same row as the read line and the queued messages' header (see `ChatReadLine`).
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .padding(.vertical, 3)
     }
 }

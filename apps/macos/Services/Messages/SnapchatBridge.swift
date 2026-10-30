@@ -80,8 +80,10 @@ final class SnapchatBridge: ChatHistoryBridge {
 
     /// Your text in the chat `name`, after your own click; the chat is read again right after.
     func send(text: String, to name: String) async throws {
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
         guard let row = rows[name] else { throw SnapchatWebSession.Problem.notFound(name) }
-        try await session.send(text, to: row)
+        try await session.send(body, to: row)
         if kept[row.id] == nil { kept[row.id] = [] }
         lines[row.id] = nil
     }

@@ -40,7 +40,7 @@ extension WorkspaceManager {
             let reference = McpApp.Reference(file: file.path, server: server, tool: tool, resourceUri: resourceUri, csp: document.csp,
                                              permissions: document.permissions, prefersBorder: document.prefersBorder,
                                              arguments: arguments, result: result)
-            guard let eventID = self.turns[id]?.toolEvents[callID] ?? self.timeline(id).last(where: { $0.callID == callID })?.id else {
+            guard let eventID = self.turns[id]?.timeline.eventID(forCall: callID) ?? self.timeline(id).last(where: { $0.callID == callID })?.id else {
                 try? FileManager.default.removeItem(at: file)
                 return
             }

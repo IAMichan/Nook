@@ -536,7 +536,7 @@ struct ChatMicButton: View {
     let failed: (Error) -> Void
 
     var body: some View {
-        NookIconButton(systemName: "mic.fill", label: tr("chat.compose.voice"), filled: true, size: 28) {
+        NookIconButton(systemName: "mic.fill", label: tr("chat.compose.voice"), size: ChatReplyField.buttonSide) {
             Task { @MainActor in
                 do { try await recorder.start() } catch { failed(error) }
             }
@@ -566,7 +566,7 @@ struct ChatRecordingBar: View {
             }
             LevelBars(level: recorder.level)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            NookIconButton(systemName: "arrow.up", label: tr("chats.send"), filled: true, size: 28) {
+            NookIconButton(systemName: "arrow.up", label: tr("chats.send"), filled: true, size: ChatReplyField.buttonSide) {
                 if let voice = recorder.finish() { send(voice) }
             }
         }
@@ -1070,9 +1070,9 @@ private struct ChatStickerShelf: View {
 // MARK: GIFs from GIPHY
 
 extension Giphy {
-    /// Your own GIPHY API key from Settings › Chats, else Nook's.
+    /// Your own GIPHY API key from Settings › Connections, else Nook's.
     static var key: String? { key(own: ownKey) }
-    /// The key you added yourself in Settings › Chats; nil when Nook's own is used.
+    /// The key you added yourself in Settings › Connections; nil when Nook's own is used.
     static var ownKey: String? { CloudHelp.secret(keyAccount) }
 }
 
@@ -1095,7 +1095,7 @@ private struct ChatGIFShelf: View {
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                SmallPrimaryButton(title: tr("chat.compose.gifs.addKey")) { app.openSettings(section: .chats) }
+                SmallPrimaryButton(title: tr("chat.compose.gifs.addKey")) { app.openSettings(section: .connections) }
             } else {
                 NookSearchField(prompt: tr("chat.compose.gifs.search"), text: $model.gifQuery, style: .inline, focus: $focused)
                 results

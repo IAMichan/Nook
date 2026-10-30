@@ -47,9 +47,10 @@ struct EditLines: Equatable, Sendable {
     static func of(tool: String, input: [String: Any]) -> EditLines? {
         var result = EditLines()
         switch tool.lowercased() {
-        case "edit", "replace":
+        case "edit" where input["edits"] == nil, "replace":
             result = between((input["old_string"] as? String) ?? "", (input["new_string"] as? String) ?? "")
-        case "multiedit":
+        // MultiEdit, and an ACP agent's edit that changed several places (AcpToolCall.editInput).
+        case "multiedit", "edit":
             guard let edits = input["edits"] as? [[String: Any]] else { return nil }
             for edit in edits {
                 result = result + between((edit["old_string"] as? String) ?? "", (edit["new_string"] as? String) ?? "")
@@ -166,16 +167,32 @@ enum TimelineBlock: Identifiable, Equatable {
     case event(RunEvent)
     /// Two or more tool calls (and file changes) in a row.
     case tools(id: UUID, events: [RunEvent], tally: ToolTally)
-    /// A finished turn's work between your message and the answer, and the `seconds` it took.
-    case fold(id: UUID, seconds: Double, blocks: [TimelineBlock])
+    /// A finished turn's work between your message and the answer, the `seconds` it took, and the tests and builds it
+    /// ran (worked out once here, not on every redraw of the timeline).
+    case fold(id: UUID, seconds: Double, blocks: [TimelineBlock], checks: [VerificationCheck])
 
     var id: UUID {
         switch self {
         case .event(let event): return event.id
         case .tools(let id, _, _): return id
-        case .fold(let id, _, _): return id
+        case .fold(let id, _, _, _): return id
         }
     }
+}
+
+/// The blocks of each turn of the last layout, to make the next one from (`TimelinePresentation.blocks(_:active:cache:)`).
+struct TimelineBlockCache {
+    struct Turn {
+        var events: [RunEvent]
+        var open: Bool
+        var blocks: [TimelineBlock]
+    }
+
+    fileprivate(set) var turns: [Turn] = []
+    /// The tool groups of the last turn, by id, with the calls they were counted from.
+    fileprivate var tallies: [UUID: (events: [RunEvent], tally: ToolTally)] = [:]
+
+    init() {}
 }
 
 /// What the agent is doing right now: the running (or last) tool and the headline of its latest thinking.
@@ -188,31 +205,65 @@ enum TimelinePresentation {
     /// Groups the events of a session into blocks. `active`: the last turn is still running. Once it finished, the last
     /// turn folds like the earlier ones.
     static func blocks(_ events: [RunEvent], active: Bool) -> [TimelineBlock] {
-        let turns = split(visible(events, active: active))
+        var cache = TimelineBlockCache()
+        return blocks(events, active: active, cache: &cache)
+    }
+
+    /// The same blocks, made only for the turns that changed since `cache` was filled: while the agent works only its
+    /// last turn does, many times a second, and presenting a turn reads every edit's diff and every command's input.
+    static func blocks(_ events: [RunEvent], active: Bool, cache: inout TimelineBlockCache) -> [TimelineBlock] {
+        // The turns as `visible` splits them: what it hides is never a message of yours nor a wake, so hiding per turn
+        // keeps the same turns.
+        let turns = split(events)
+        var kept: [TimelineBlockCache.Turn] = []
+        kept.reserveCapacity(turns.count)
         var blocks: [TimelineBlock] = []
         for (index, turn) in turns.enumerated() {
-            let isLast = index == turns.count - 1
-            blocks += present(turn, open: isLast && active)
+            let open = index == turns.count - 1 && active
+            if index < cache.turns.count, cache.turns[index].open == open, cache.turns[index].events == turn {
+                kept.append(cache.turns[index])
+            } else {
+                let tallies = cache.tallies
+                let made = present(visible(turn: turn, hidingRunning: open), open: open) { run in
+                    if let known = tallies[run[0].id], known.events == run { return known.tally }
+                    return ToolTally(run)
+                }
+                kept.append(TimelineBlockCache.Turn(events: turn, open: open, blocks: made))
+            }
+            blocks += kept[index].blocks
         }
+        cache.turns = kept
+        // The groups' tallies, for a group that grew by a call in the open turn: the next layout counts it again, and any
+        // other group comes back as it was.
+        cache.tallies = [:]
+        for case .tools(let id, let events, let tally) in kept.last?.blocks ?? [] { cache.tallies[id] = (events, tally) }
         return blocks
     }
 
-    /// One line per command: an approval you gave says nothing the tool call it let through does not, and the tool that
-    /// runs right now is the live line under the timeline (with its time), so neither gets a row of its own.
-    static func visible(_ events: [RunEvent], active: Bool) -> [RunEvent] {
+    /// `visible` for one turn: the approvals that let a call of the turn through, and the running tool when it is the
+    /// last turn and still at work.
+    private static func visible(turn: [RunEvent], hidingRunning: Bool) -> [RunEvent] {
         var hidden: Set<UUID> = []
-        let turns = split(events)
-        for turn in turns {
+        if turn.contains(where: { $0.kind == .approval && $0.state == .allowed }) {
             let calls = Set(turn.filter { $0.kind == .tool }.map { key($0.tool, $0.text) })
             for approval in turn where approval.kind == .approval && approval.state == .allowed
                 && calls.contains(key(approval.tool, approval.text)) {
                 hidden.insert(approval.id)
             }
         }
-        if active, let turn = turns.last, let running = turn.last(where: { $0.kind == .tool && $0.state == .running }) {
+        if hidingRunning, let running = turn.last(where: { $0.kind == .tool && $0.state == .running }) {
             hidden.insert(running.id)
         }
-        return hidden.isEmpty ? events : events.filter { !hidden.contains($0.id) }
+        return hidden.isEmpty ? turn : turn.filter { !hidden.contains($0.id) }
+    }
+
+    /// One line per command: an approval you gave says nothing the tool call it let through does not, and the tool that
+    /// runs right now is the live line under the timeline (with its time), so neither gets a row of its own.
+    static func visible(_ events: [RunEvent], active: Bool) -> [RunEvent] {
+        let turns = split(events)
+        return turns.enumerated().flatMap { index, turn in
+            visible(turn: turn, hidingRunning: active && index == turns.count - 1)
+        }
     }
 
     /// A tool call and the approval that asked for it share tool and summary; a nested call carries "↳ " in front.
@@ -234,7 +285,7 @@ enum TimelinePresentation {
             switch block {
             case .event(let event): return [event]
             case .tools(_, let events, _): return events
-            case .fold(_, _, let inner): return events(inner)
+            case .fold(_, _, let inner, _): return events(inner)
             }
         }
     }
@@ -255,6 +306,13 @@ enum TimelinePresentation {
 
     // MARK: Turns
 
+    /// The last of `split`'s turns, found from the end: what the live line, the running command and the subagents read,
+    /// without splitting the whole session for it.
+    static func lastTurn(_ events: [RunEvent]) -> [RunEvent] {
+        guard let start = events.lastIndex(where: { $0.kind == .user || $0.kind == .system && $0.tool == "wake" }) else { return events }
+        return Array(events[start...])
+    }
+
     /// A turn starts at each message of yours, and where the agent woke up by itself after background work; anything
     /// before the first one is a turn of its own.
     static func split(_ events: [RunEvent]) -> [[RunEvent]] {
@@ -265,7 +323,8 @@ enum TimelinePresentation {
         return turns
     }
 
-    private static func present(_ turn: [RunEvent], open: Bool) -> [TimelineBlock] {
+    private static func present(_ turn: [RunEvent], open: Bool,
+                                tally: ([RunEvent]) -> ToolTally = { ToolTally($0) }) -> [TimelineBlock] {
         guard let first = turn.first else { return [] }
         let finished = turn.last { $0.kind == .result }
         let troubled = turn.contains { $0.kind == .error || $0.kind == .approval && $0.state == .pending }
@@ -273,20 +332,20 @@ enum TimelinePresentation {
         // Fold only a turn that ended well: its answer stays, the work in between folds away.
         guard !open, first.kind == .user, let finished, !troubled,
               let answer = turn.lastIndex(where: { $0.kind == .assistant && !BackgroundWork.isNotice($0) }) else {
-            return group(turn)
+            return group(turn, tally: tally)
         }
         let work = turn.enumerated().filter { $0.offset != 0 && $0.offset != answer && $0.element.kind != .result }.map(\.element)
-        guard work.contains(where: { $0.kind != .assistant || BackgroundWork.isNotice($0) }) else { return group(turn) }
+        guard work.contains(where: { $0.kind != .assistant || BackgroundWork.isNotice($0) }) else { return group(turn, tally: tally) }
         let seconds = max(0, finished.date.timeIntervalSince(first.date))
         // The fold takes the id of the first work it hides: never the same as a block shown next to it.
-        return [.event(first), .fold(id: work[0].id, seconds: seconds, blocks: group(work)),
+        return [.event(first), .fold(id: work[0].id, seconds: seconds, blocks: group(work), checks: Verification.checks(work)),
                 .event(turn[answer]), .event(finished)]
     }
 
     /// Two or more tool calls in a row become one block, also across the agent's thinking between them and its notes
     /// that it started work in the background (see BackgroundWork.notice): those open with the block. Thinking before the first call or after the last stays on its own, and errors and
     /// approvals are never hidden inside a group.
-    static func group(_ events: [RunEvent]) -> [TimelineBlock] {
+    static func group(_ events: [RunEvent], tally: ([RunEvent]) -> ToolTally = { ToolTally($0) }) -> [TimelineBlock] {
         var blocks: [TimelineBlock] = []
         var run: [RunEvent] = []
         func isWork(_ event: RunEvent) -> Bool { event.kind == .tool || event.kind == .fileChange }
@@ -298,7 +357,7 @@ enum TimelinePresentation {
             while let last = run.last, !isWork(last) { trailing.insert(run.removeLast(), at: 0) }
             blocks += leading.map { TimelineBlock.event($0) }
             if run.filter(isWork).count >= 2 {
-                blocks.append(.tools(id: run[0].id, events: run, tally: ToolTally(run)))
+                blocks.append(.tools(id: run[0].id, events: run, tally: tally(run)))
             } else {
                 blocks += run.map { TimelineBlock.event($0) }
             }
@@ -424,8 +483,8 @@ enum BackgroundWork {
     /// after each command it leaves running ("task-148 has been launched in the background. I will wait for it to
     /// complete before proceeding."): a quiet line among the commands, not an answer. Empty for any other text.
     static func notice(_ text: String) -> [String] {
-        let pattern = #"\s*([\w.-]+) has been (?:launched|started) in the background\.?(?:\s*I will wait for it to (?:complete|finish) before proceeding\.?)?\s*"#
-        guard !text.isEmpty, text.count <= 2_000, let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [] }
+        // Most answers are longer than a notice: their size alone rules them out, before counting characters.
+        guard !text.isEmpty, text.utf8.count <= 8_000, text.count <= 2_000, let regex = noticePattern else { return [] }
         var tasks: [String] = []
         var end = text.startIndex
         for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
@@ -435,6 +494,11 @@ enum BackgroundWork {
         }
         return end == text.endIndex ? tasks : []
     }
+
+    /// Compiled once: every assistant message of a session is checked against it each time its timeline is laid out.
+    private static let noticePattern = try? NSRegularExpression(
+        pattern: #"\s*([\w.-]+) has been (?:launched|started) in the background\.?(?:\s*I will wait for it to (?:complete|finish) before proceeding\.?)?\s*"#,
+        options: [.caseInsensitive])
 
     static func isNotice(_ event: RunEvent) -> Bool {
         event.kind == .assistant && !notice(event.text).isEmpty
@@ -449,5 +513,38 @@ enum BackgroundWork {
         if tail.count > 4000 { tail = String(tail.suffix(4000)) }
         if !tail.isEmpty { message += "\n\nOutput tail:\n" + tail }
         return message
+    }
+}
+
+extension AgentToolStep {
+    /// A tool call of a session Nook runs as a step of an agent's own transcript, so both read alike ("Ran npm test",
+    /// "Edited Login.swift") in the shared work lines (`TranscriptWorkLine`). The event's title is "Tool · what it was
+    /// about"; the input gives the command, the file and a task list.
+    init(event: RunEvent) {
+        let tool = event.tool ?? ""
+        var title = event.text
+        if title.hasPrefix("↳ ") { title.removeFirst(2) }
+        let summary: String
+        if let range = title.range(of: " · ") {
+            summary = String(title[range.upperBound...])
+        } else {
+            summary = title == tool ? "" : title
+        }
+        self.init(id: event.id.uuidString, name: tool, summary: summary)
+        switch event.state ?? .done {
+        case .failed, .denied: state = .failed
+        case .running, .pending: state = .running
+        default: state = .done
+        }
+        let input = AgentActivity.input(event.detail) ?? [:]
+        command = ToolSummary.command(input)
+        path = ToolSummary.path(input)
+        file = path
+        lines = state == .failed ? nil : EditLines.of(event)
+        tasks = SessionOutputs.taskList(tool: tool, input: input)
+        output = event.output.map(McpUI.stripped).flatMap { $0.isEmpty ? nil : $0 }
+        if state == .failed {
+            error = output?.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init)
+        }
     }
 }

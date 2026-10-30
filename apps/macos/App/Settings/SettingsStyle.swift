@@ -18,15 +18,10 @@ extension SettingsSection {
         case .notifications: return "bell.fill"
         case .brain: return "brain"
         case .assistant: return "sparkles"
-        case .memory: return "brain.head.profile"
-        case .autocomplete: return "text.cursor"
-        case .dictation: return "mic.fill"
-        case .connections: return "app.connected.to.app.below.fill"
-        case .chats: return "bubble.left.and.bubble.right.fill"
+        case .autocomplete: return "keyboard.fill"
+        case .connections: return "person.crop.circle.badge.checkmark"
         case .agents: return "terminal.fill"
-        case .usage: return "chart.bar.fill"
         case .workspace: return "folder.fill"
-        case .devices: return "iphone"
         case .privacy: return "hand.raised.fill"
         }
     }
@@ -35,7 +30,6 @@ extension SettingsSection {
     var tileColors: (Color, Color) {
         switch self {
         case .autocomplete: return (Color(hex: 0x8FE3FF), Color(hex: 0x2FA8D8))
-        case .memory: return (Color(hex: 0xB9AEFF), Color(hex: 0x8B7CF6))
         default: return (NookTheme.smoke, NookTheme.graphite)
         }
     }
@@ -182,64 +176,6 @@ struct SetupStep<Content: View>: View {
     }
 }
 
-/// A rounded card used in the "add" galleries.
-struct GalleryCard<Icon: View, Accessory: View>: View {
-    let title: String
-    let detail: String
-    @ViewBuilder var icon: () -> Icon
-    @ViewBuilder var accessory: () -> Accessory
-    var action: () -> Void
-
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                HStack(alignment: .top) {
-                    icon()
-                    Spacer(minLength: 4)
-                    accessory()
-                }
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    Text(title)
-                        .font(NookTheme.TextStyle.strong)
-                        .foregroundStyle(NookTheme.paper)
-                        .lineLimit(1)
-                    Text(detail)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .lineLimit(2, reservesSpace: true)
-                        .multilineTextAlignment(.leading)
-                }
-            }
-            .padding(NookTheme.Spacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            // A fill a step above the page and no edge: the cards group by their own surface, as the panel's cards do.
-            .background(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
-                    .fill(hovering ? NookTheme.smoke : NookTheme.graphite)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .animation(NookTheme.hover, value: hovering)
-    }
-}
-
-/// The grid the gallery cards sit in.
-struct GalleryGrid<Content: View>: View {
-    @ViewBuilder var content: () -> Content
-
-    var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 170, maximum: 260), spacing: NookTheme.Spacing.md)],
-                  spacing: NookTheme.Spacing.md) {
-            content()
-        }
-        .padding(.vertical, NookTheme.Spacing.xs)
-    }
-}
-
 /// A friendly explanation at the top of a page, under the header that already shows the section's icon.
 struct IntroCard: View {
     let title: String
@@ -261,6 +197,25 @@ struct IntroCard: View {
 }
 
 /// Sheet chrome shared by every setup sheet: big icon and title on top, content, and one clear button at the bottom.
+/// One part of a sheet for something already set up ("Accounts", "In Nook"): its name, then its rows. A sheet of parts
+/// keeps them in the same order everywhere, with a `NookDivider` between them and anything rarely needed folded away last.
+struct SheetPart<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: () -> Content
+
+    init(_ title: String, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            NookSectionLabel(title, inset: 0)
+            content()
+        }
+    }
+}
+
 struct SetupSheet<Icon: View, Content: View, Footer: View>: View {
     let title: String
     let subtitle: String

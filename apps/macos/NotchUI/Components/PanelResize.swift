@@ -64,14 +64,22 @@ enum PanelLayout {
     /// window needs before it docks; under that it is the branch button's popover.
     static let sessionPanel: CGFloat = 300
     static let sessionPanelRoom: Double = 1100
+    /// The extra room the session panel needs to dock again after it stepped aside.
+    static let dockHysteresis: Double = 48
     /// An artifact beside the app that made it (a Claude artifact next to Claude).
     static let artifact: Double = 420
     /// The chat list on the left of the Chats tab.
-    static let chatsList: Double = 290
+    static let chatsList: Double = 320
     /// The Chats tab's sidebar with its views and apps; under `chatsSidebarRoom` it folds to a rail of icons.
     static let chatsSidebar: CGFloat = 184
     static let chatsRail: CGFloat = 48
     static let chatsSidebarRoom: Double = 1000
+    /// Dragging the sidebar's line narrower than `chatsSidebarFold` folds it to the rail; it gets no wider than
+    /// `chatsSidebarMax`.
+    static let chatsSidebarFold: Double = 140
+    static let chatsSidebarMax: Double = 320
+    /// The second tab of split view, beside the one you are on.
+    static let split: Double = 440
     /// The list of Nooks beside the chat, in the notch and in the main window.
     static let chatList: Double = 200
     static let chatListWindow: Double = 260
@@ -83,6 +91,14 @@ enum PanelLayout {
     static let minimumPanel: Double = 240
     /// What a conversation keeps next to the panels.
     static let minimumConversation: Double = 360
+    /// The room a list and a conversation need side by side: the narrowest list, its line and gap, and the narrowest
+    /// conversation. Narrower than this (split view, a small window) a tab shows one of them at a time (`stacks`).
+    static let sideBySide: Double = minimumList + PanelSplit.handle + Double(SidePanelMetrics.gap) + minimumConversation
+
+    /// Whether a tab of `total` width shows its list and its conversation one at a time, each over the whole width, with
+    /// a back button (`PanelBackButton`) from the conversation to the list, as a phone does. False while the width is
+    /// not known yet.
+    static func stacks(_ total: Double) -> Bool { total > 0 && total < sideBySide }
 
     /// The width a panel may share with the conversation, `total` minus the other panel open beside it (with its line);
     /// 0 while the total is not known yet.
@@ -102,5 +118,13 @@ extension View {
     func chatColumn() -> some View {
         frame(maxWidth: PanelLayout.chatColumn, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    /// Puts the composer (and what sits on it) over the bottom of a conversation's scroll view: the conversation goes on
+    /// behind it instead of stopping above a band of background, and its end scrolls up to `spacing` above the composer.
+    func composerInset<Bar: View>(spacing: CGFloat = NookTheme.Spacing.xxxl, @ViewBuilder _ bar: () -> Bar) -> some View {
+        safeAreaInset(edge: .bottom, spacing: 0) {
+            bar().padding(.top, spacing)
+        }
     }
 }

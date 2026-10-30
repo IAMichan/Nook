@@ -192,8 +192,14 @@ final class TeamsWebDataTests: XCTestCase {
     func testReactionKeysMatchTheEmojiNookShows() {
         XCTAssertEqual(TeamsData.key(emoji: "👍"), "like")
         XCTAssertEqual(TeamsData.key(emoji: "❤"), "heart", "with or without the emoji mark")
-        XCTAssertEqual(TeamsData.key(emoji: "🙏"), "1f64f")
-        XCTAssertEqual(TeamsData.emoji(key: "laugh"), "😂")
+        XCTAssertEqual(TeamsData.key(emoji: "🙏"), "praying", "a key from Teams' own list, never a bare code point")
+        XCTAssertEqual(TeamsData.key(emoji: "😂"), "cwl")
+        XCTAssertEqual(TeamsData.key(emoji: "🎉"), "1f389_partypopper")
+        XCTAssertNotNil(TeamsData.key(emoji: "👋🏼"), "a skin tone has a key of its own")
+        XCTAssertNil(TeamsData.key(emoji: "🫟"), "an emoji Teams does not offer is not sent as a placeholder")
+        XCTAssertEqual(TeamsData.emoji(key: "laugh"), "😆", "as Teams shows it")
+        XCTAssertEqual(TeamsData.emoji(key: "cwl"), "😂")
+        XCTAssertEqual(TeamsData.emoji(key: "smile"), "🙂", "named keys come back too, not dropped")
         XCTAssertEqual(TeamsData.emoji(key: "1f64f_foldedhands"), "🙏")
         XCTAssertEqual(TeamsData.emoji(key: "🎉"), "🎉", "Graph writes newer reactions as the emoji itself")
         XCTAssertNil(TeamsData.emoji(key: "custom_thing"))
@@ -246,5 +252,47 @@ final class TeamsWebDataTests: XCTestCase {
                                         now: Date(timeIntervalSince1970: 1_700_000_010))
         XCTAssertEqual(body["consumptionhorizon"] as? String, "1700000005000;1700000010000;1700000005000")
         XCTAssertEqual(TeamsWebData.readUntil(body), Date(timeIntervalSince1970: 1_700_000_005), "reads back as until when")
+    }
+
+    /// A call in the chat shows as every app's call once it ended or was missed; its start says nothing yet.
+    func testACallIsACallRow() {
+        let ended = #"<partlist type="ended" alt=""><part identity="8:orgid:a"><name>Jan</name><duration>125</duration></part></partlist>"#
+        XCTAssertEqual(TeamsWebData.call(ended, mine: true)?.seconds, 125)
+        XCTAssertEqual(TeamsWebData.call(ended, mine: true).flatMap { ChatFormat.call($0.line) }?.seconds, 125)
+        let missed = #"<partlist type="missed" alt=""><part identity="8:orgid:a"><name>Jan</name></part></partlist>"#
+        XCTAssertEqual(TeamsWebData.call(missed, mine: false).flatMap { ChatFormat.call($0.line) }?.missed, true)
+        XCTAssertNil(TeamsWebData.call(#"<partlist type="started" alt=""></partlist>"#, mine: false))
+        let me = "8:orgid:me"
+        let chat = TeamsData.Chat(id: "19:x@unq.gbl.spaces", name: "Jan", isGroup: false, last: nil, readUntil: nil)
+        let json: [String: Any] = ["messages": [["id": "1", "messagetype": "Event/Call", "content": ended,
+                                                 "composetime": "2026-10-20T10:00:00.000Z", "from": "https://x/v1/users/ME/contacts/" + me]]]
+        let message = TeamsWebData.messages(json, chat: chat, me: me).first
+        XCTAssertEqual(message?.call?.seconds, 125)
+        XCTAssertEqual(message?.isMine, true)
+    }
+
+    /// How far the others read a chat gives your messages their readers, and two ticks once everyone read them.
+    func testReadHorizonsGiveYourMessagesTheirTicks() {
+        let me = "8:orgid:me"
+        let json: [String: Any] = ["consumptionhorizons": [
+            ["id": "8:orgid:jan", "consumptionhorizon": "1700000002000;1700000003000;123"],
+            ["id": "8:orgid:eva", "consumptionhorizon": "1700000001000;1700000001500;456"],
+            ["id": me, "consumptionhorizon": "1700000009000;1700000009000;789"],
+        ]]
+        let horizons = TeamsWebData.horizons(json, me: me)
+        XCTAssertEqual(horizons, ["8:orgid:jan": 1_700_000_002_000, "8:orgid:eva": 1_700_000_001_000], "you are left out")
+        let messages = [
+            InboxMessage(id: "teams-1700000001000", sender: "", text: "a", date: Date(), fromMe: true),
+            InboxMessage(id: "teams-1700000002000", sender: "", text: "b", date: Date(), fromMe: true),
+            InboxMessage(id: "teams-1700000003000", sender: "", text: "c", date: Date(), fromMe: true),
+            InboxMessage(id: "teams-1700000000500", sender: "Jan", text: "d", date: Date(), fromMe: false),
+        ]
+        let read = TeamsWebData.read(messages, horizons: horizons, group: true, names: ["8:orgid:jan": "Jan", "8:orgid:eva": "Eva"])
+        XCTAssertEqual(read[0].receipt, .read, "both read it")
+        XCTAssertEqual(read[0].readers?.map(\.name), ["Eva", "Jan"])
+        XCTAssertEqual(read[1].readers?.map(\.name), ["Jan"])
+        XCTAssertNotEqual(read[1].receipt, .read, "Eva did not read it yet")
+        XCTAssertNil(read[2].readers)
+        XCTAssertNil(read[3].readers, "theirs keeps no readers")
     }
 }

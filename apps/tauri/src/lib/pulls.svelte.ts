@@ -1,16 +1,30 @@
 // The pull request list kept between visits (`PullRequestStore` on the Mac): the last list shows at once, also after a
 // restart, and refreshes in the background when it is older than half a minute. A failed refresh keeps an account's rows.
 import { untrack } from "svelte";
-import { connectorsApi, type AccountPullRequests } from "./connectors";
+import { connectorsApi, type AccountPullRequests, type PullRequestItem } from "./connectors";
 
 const CACHE = "pulls.list";
 const STALE_AFTER = 30_000;
 
+// A list saved before reviews, sizes and issues existed lacks those fields.
+const row = (i: PullRequestItem): PullRequestItem => ({ ...i, review: i.review ?? "none", comments: i.comments ?? 0, additions: i.additions ?? 0, deletions: i.deletions ?? 0, conflicting: i.conflicting ?? false });
+
+/// Fills in what an older list or an older backend does not send, so a view never meets a missing field.
+function normalize(a: AccountPullRequests): AccountPullRequests {
+  return {
+    ...a,
+    mine: (a.mine ?? []).map(row),
+    reviews: (a.reviews ?? []).map(row),
+    watched: (a.watched ?? []).map(row),
+    issues: a.issues ?? [],
+    unreadable: a.unreadable ?? [],
+  };
+}
+
 function saved(): AccountPullRequests[] {
   try {
     const list = JSON.parse(localStorage.getItem(CACHE) ?? "[]") as AccountPullRequests[];
-    // A list saved before watching existed has no watched rows.
-    return Array.isArray(list) ? list.map((a) => ({ ...a, watched: a.watched ?? [], unreadable: a.unreadable ?? [] })) : [];
+    return Array.isArray(list) ? list.map(normalize) : [];
   } catch {
     return [];
   }
@@ -48,7 +62,7 @@ class PullRequestStore {
       this.available = fresh.available;
       this.error = null;
       // An account that failed this time keeps its last rows, with the error shown.
-      this.accounts = fresh.accounts.map((account) => {
+      this.accounts = fresh.accounts.map(normalize).map((account) => {
         const old = account.error ? this.accounts.find((a) => a.id === account.id) : undefined;
         return old ? { ...old, error: account.error, errorKind: account.errorKind } : account;
       });

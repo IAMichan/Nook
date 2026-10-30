@@ -7,8 +7,8 @@
   import type { PullRequestItem } from "../../../lib/connectors";
   import { renderMarkdown } from "../../../lib/markdown";
   import {
-    activitySentence, chosenMethod, detailStateNames, diffLines, eventLabel, itemId, jobId, methodNames, noteText, pullsApi,
-    type MergeMethod, type PullRequestCheck, type PullRequestDetail, type PullRequestEvent, type PullRequestFile,
+    activitySentence, chosenMethod, ciStatusLine, detailStateNames, diffLines, eventLabel, itemId, jobId, methodNames, noteText, pullsApi,
+    type MergeMethod, type PullRequestCheck, type PullRequestDetail, type PullRequestEvent, type PullRequestFile, type ReviewEvent,
   } from "../../../lib/pulls";
   import { pullRequests } from "../../../lib/pulls.svelte";
   import { ago } from "../time";
@@ -31,6 +31,10 @@
   let confirming = $state(false);
   let merging = $state(false);
   let mergeError = $state<string | null>(null);
+  let reviewing = $state(false);
+  let reviewText = $state("");
+  let reviewBusy = $state(false);
+  let reviewNote = $state<{ ok: boolean; text: string } | null>(null);
   // The relative times in the conversation and the commits tick along, once a minute.
   let now = $state(Date.now());
 
@@ -84,7 +88,13 @@
       if (!cancelled && detail?.isOpen && detail.mergeable === null) recheck = setTimeout(() => !cancelled && load(), 3000);
     });
     const timer = setInterval(() => (now = Date.now()), 60_000);
+    // Something you cannot merge yourself (no rights, held back by reviews or checks) is looked at again every half
+    // minute, so it shows as merged as soon as someone else does it.
+    const watch = setInterval(() => {
+      if (detail?.isOpen && !detail.canMerge && detail.state !== "draft") untrack(load);
+    }, 30_000);
     return () => {
+      clearInterval(watch);
       cancelled = true;
       clearTimeout(recheck);
       clearInterval(timer);
@@ -121,6 +131,29 @@
     } catch (e) {
       mergeError = String(e);
       merging = false;
+    }
+  }
+
+  /// Posts the review typed in the bar. A comment and a request for changes need text; an approval does not.
+  async function sendReview(event: ReviewEvent) {
+    if (!detail || reviewBusy) return;
+    if (event !== "APPROVE" && !reviewText.trim()) {
+      reviewNote = { ok: false, text: "Schrijf eerst een opmerking." };
+      return;
+    }
+    reviewBusy = true;
+    reviewNote = null;
+    try {
+      reviewNote = { ok: true, text: await pullsApi.review(accountId, detail.repo, detail.number, event, reviewText.trim()) };
+      reviewText = "";
+      reviewing = false;
+      pullRequests.markStale();
+      await load();
+      pullRequests.refresh(true);
+    } catch (e) {
+      reviewNote = { ok: false, text: String(e) };
+    } finally {
+      reviewBusy = false;
     }
   }
 
@@ -186,10 +219,10 @@
             <!-- A GitHub Actions job opens its steps and log here; a check from another app only has its own page. -->
             <button class="line" disabled={!check.url} onclick={() => (jobId(check.url) !== null ? (openCheck = check) : open(check.url))}>
               <span class="mark">
-                {#if check.outcome === "passing"}<span class="good">✓</span>{:else if check.outcome === "failing"}<span class="bad">✕</span>{:else if check.outcome === "pending"}<span class="dot waiting"></span>{:else}<span class="faint">–</span>{/if}
+                {#if check.outcome === "passing"}<span class="good">✓</span>{:else if check.outcome === "failing"}<span class="bad">✕</span>{:else if check.outcome === "pending"}<span class="dot" class:working={check.running} class:waiting={!check.running}></span>{:else}<span class="faint">–</span>{/if}
               </span>
               <span class="name">{check.name}</span>
-              <span class="faint small ellipsis">{check.detail}</span>
+              <span class="small ellipsis" class:faint={check.outcome !== "failing"} class:bad={check.outcome === "failing"}>{ciStatusLine(check, now)}</span>
               <span class="spacer"></span>
               {#if check.url}<span class="faint small">{jobId(check.url) !== null ? "›" : "↗"}</span>{/if}
             </button>
@@ -256,6 +289,25 @@
     </div>
 
     <div class="bar">
+      {#if detail.isOpen}
+        {#if reviewing}
+          <textarea rows="3" placeholder="Opmerking bij je review (verplicht voor wijzigingen en reacties)" bind:value={reviewText}></textarea>
+          <div class="barline">
+            <button class="ghost" disabled={reviewBusy} onclick={() => ((reviewing = false), (reviewNote = null))}>Annuleren</button>
+            <span class="spacer"></span>
+            <button disabled={reviewBusy} onclick={() => sendReview("COMMENT")}>Reageren</button>
+            <button disabled={reviewBusy} onclick={() => sendReview("REQUEST_CHANGES")}>Wijzigingen vragen</button>
+            <button class="primary" disabled={reviewBusy} onclick={() => sendReview("APPROVE")}>Goedkeuren</button>
+          </div>
+        {:else}
+          <div class="barline">
+            <span class="muted small grow">Review</span>
+            <button onclick={() => ((reviewing = true), (reviewNote = null))}>Review schrijven…</button>
+            <button class="primary" disabled={reviewBusy} onclick={() => sendReview("APPROVE")}>{reviewBusy ? "Bezig…" : "Goedkeuren"}</button>
+          </div>
+        {/if}
+        {#if reviewNote}<span class={reviewNote.ok ? "good small" : "err"}>{reviewNote.text}</span>{/if}
+      {/if}
       {#if confirming}
         <!-- The confirmation stays inside the bar, so no separate window is involved. -->
         <div class="barline">
@@ -271,7 +323,8 @@
         <div class="barline">
           <span class={ready ? "good" : detail.canMerge ? "wait" : "faint"}>{ready ? "✓" : detail.canMerge ? "⚠" : "ⓘ"}</span>
           <span class="muted small grow">{noteText(detail.mergeNote)}</span>
-          {#if detail.isOpen && detail.canPush !== false && detail.methods.length}
+          {#if detail.isOpen && !detail.canMerge && detail.state !== "draft" && detail.mergeNote !== "conflict"}<span class="faint small">Wacht op merge…</span>{/if}
+          {#if detail.isOpen && detail.canMerge && detail.methods.length}
             <select aria-label="Merge-methode" value={method} disabled={merging} onchange={(e) => pick(e.currentTarget.value as MergeMethod)}>
               {#each detail.methods as m (m)}<option value={m}>{methodNames[m]}</option>{/each}
             </select>
@@ -383,4 +436,5 @@
   .pre { white-space: pre-line; }
   .err { color: var(--coral); font-size: 12px; user-select: text; }
   select { font-size: 12px; padding: 5px 8px; }
+  textarea { width: 100%; box-sizing: border-box; resize: vertical; font-size: 12.5px; }
 </style>

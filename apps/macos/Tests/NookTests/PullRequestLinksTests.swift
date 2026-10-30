@@ -253,6 +253,27 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(BranchPolicy.suggestBranchName(task: "", id: id, prefix: "wt/", existing: []), "wt/sessie-3fa2")
     }
 
+    func testShownPullRequestPrefersOpenThenNewestLanded() {
+        let old = PullRequestLink(host: .github, repository: "o/r", number: 3, url: "https://github.com/o/r/pull/3",
+                                  state: .closed, updatedAt: Date(timeIntervalSince1970: 100))
+        let merged = PullRequestLink(host: .github, repository: "o/r", number: 7, url: "https://github.com/o/r/pull/7",
+                                     state: .merged, updatedAt: Date(timeIntervalSince1970: 200))
+        let open = PullRequestLink(host: .gitlab, repository: "o/r", number: 9, url: "https://gitlab.com/o/r/-/merge_requests/9")
+        let other = PullRequestLink(host: .bitbucket, repository: "o/r", number: 11, url: "https://bitbucket.org/o/r/pull-requests/11")
+        XCTAssertEqual(PullRequestLink.shown(in: [old, merged, open])?.absoluteString, open.url)
+        XCTAssertEqual(PullRequestLink.shown(in: [merged, old])?.absoluteString, merged.url)
+        XCTAssertNil(PullRequestLink.shown(in: [other]))
+        XCTAssertNil(PullRequestLink.shown(in: []))
+    }
+
+    func testBadgeFromALinkAlone() {
+        let url = URL(string: "https://github.com/o/r/pull/3265")!
+        XCTAssertEqual(PullRequestBadge.link(url, glyph: nil), PullRequestBadge(glyph: .open, label: .number(3265)))
+        XCTAssertEqual(PullRequestBadge.link(url, glyph: .merged)?.glyph, .merged)
+        XCTAssertEqual(PullRequestBadge.link(URL(string: "https://gitlab.com/o/r/-/merge_requests/9")!, glyph: nil)?.label, .number(9))
+        XCTAssertNil(PullRequestBadge.link(URL(string: "https://github.com/o/r")!, glyph: nil))
+    }
+
     func testFastForwardDecision() {
         XCTAssertEqual(BranchPolicy.shouldFastForward(ahead: 0, behind: 0, dirty: false), .upToDate)
         XCTAssertEqual(BranchPolicy.shouldFastForward(ahead: 2, behind: 0, dirty: true), .upToDate)
@@ -260,5 +281,60 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(BranchPolicy.shouldFastForward(ahead: 0, behind: 3, dirty: true), .skipDirty)
         XCTAssertEqual(BranchPolicy.shouldFastForward(ahead: 1, behind: 3, dirty: false), .skipDiverged)
         XCTAssertEqual(BranchPolicy.shouldFastForward(ahead: 1, behind: 3, dirty: true), .skipDiverged)
+    }
+
+    // MARK: A session's branches
+
+    func testLeavingBranchKeepsEarlierOnesInOrder() {
+        XCTAssertEqual(SessionBranches.leaving("feat-a", for: "feat-b", earlier: nil, base: "main"), ["feat-a"])
+        XCTAssertEqual(SessionBranches.leaving("feat-b", for: "feat-c", earlier: ["feat-a"], base: "main"), ["feat-a", "feat-b"])
+        XCTAssertNil(SessionBranches.leaving("main", for: "feat-a", earlier: nil, base: "main"), "the default branch is not listed")
+        XCTAssertEqual(SessionBranches.leaving("feat-b", for: "feat-a", earlier: ["feat-a"], base: nil), ["feat-b"],
+                       "going back to a branch takes it out of the earlier ones")
+    }
+
+    func testKeepingReplacesAnOlderReadOfTheSameRequest() {
+        var first = link(1, head: "feat-a"); first.url = "https://github.com/a/b/pull/1"
+        var merged = first; merged.state = .merged
+        var second = link(2, head: "feat-b"); second.url = "https://github.com/a/b/pull/2"
+        let kept = SessionBranches.keeping([merged, second], in: [first])
+        XCTAssertEqual(kept.map(\.number), [1, 2])
+        XCTAssertEqual(kept.first?.state, .merged)
+    }
+
+    func testRowsListEveryBranchWithItsPullRequest() {
+        var first = link(1, head: "feat-a"); first.url = "https://github.com/a/b/pull/1"
+        let current = URL(string: "https://github.com/a/b/pull/2")!
+        let rows = SessionBranches.rows(earlier: ["feat-a"], earlierLinks: [first], current: "feat-b", currentPullRequest: current)
+        XCTAssertEqual(rows.map(\.branch), ["feat-a", "feat-b"])
+        XCTAssertEqual(rows.map(\.pullRequest), [URL(string: first.url), current])
+        XCTAssertEqual(rows.map(\.isCurrent), [false, true])
+    }
+
+    func testRowsAreEmptyForASessionWithOneBranch() {
+        let current = URL(string: "https://github.com/a/b/pull/2")!
+        XCTAssertTrue(SessionBranches.rows(earlier: [], earlierLinks: [], current: "feat-b", currentPullRequest: current).isEmpty)
+    }
+
+    func testAWatchedEarlierPullRequestIsNotShownTwice() {
+        var first = link(1, head: "feat-a"); first.url = "https://github.com/a/b/pull/1"
+        let watched = URL(string: first.url)!
+        let rows = SessionBranches.rows(earlier: ["feat-a"], earlierLinks: [first], current: "feat-b", currentPullRequest: watched)
+        XCTAssertEqual(rows.map(\.pullRequest), [watched, nil])
+    }
+
+    func testManyBranchesFoldTheOlderOnes() {
+        let url = URL(string: "https://github.com/a/b/pull/1")!
+        let rows = [SessionBranches.Row(branch: "a", pullRequest: url, isCurrent: false),
+                    SessionBranches.Row(branch: "b", pullRequest: nil, isCurrent: false),
+                    SessionBranches.Row(branch: "c", pullRequest: nil, isCurrent: false),
+                    SessionBranches.Row(branch: "d", pullRequest: nil, isCurrent: false),
+                    SessionBranches.Row(branch: "e", pullRequest: nil, isCurrent: true)]
+        let folded = SessionBranches.folded(rows, open: false)
+        XCTAssertEqual(folded.shown.map(\.branch), ["c", "d", "e"])
+        XCTAssertEqual(folded.hidden, 2)
+        XCTAssertEqual(folded.hiddenPullRequests, 1)
+        XCTAssertEqual(SessionBranches.folded(rows, open: true).shown.count, 5)
+        XCTAssertEqual(SessionBranches.folded(Array(rows.suffix(4)), open: false).hidden, 0, "four rows stay open: folding one saves nothing")
     }
 }

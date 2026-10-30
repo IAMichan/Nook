@@ -270,7 +270,8 @@ final class PullRequestWatchSettings: ObservableObject {
 /// open pull requests are read again when older than 30 seconds, one quick request per account; the closed and merged
 /// ones and the watched organizations, which take far longer to search and hardly change, follow in the background at
 /// most every three minutes and never hold the list up. A failed refresh keeps the rows; a passing failure (no
-/// connection for a moment, GitHub slow to answer) only shows once it happened twice in a row.
+/// connection for a moment, GitHub slow to answer) only shows once it happened twice in a row. With the panel closed, a
+/// quiet read keeps it current (see `PullRequestBackgroundRefresh`).
 @MainActor
 final class PullRequestStore: ObservableObject {
     static let shared = PullRequestStore()
@@ -296,6 +297,7 @@ final class PullRequestStore: ObservableObject {
     private var background: Task<Void, Never>?
     /// A forced refresh asked for while the background pass was running: it runs again right after.
     private var backgroundAgain = false
+    private var quietLoop: Task<Void, Never>?
     /// Pull requests merged from Nook, with when. GitHub's search takes a while to see a merge; until it does (or for
     /// ten minutes at most) the list shows them merged anyway, instead of open again after the next refresh.
     private var mergedHere: [String: Date] = [:]
@@ -309,12 +311,32 @@ final class PullRequestStore: ObservableObject {
         }
     }
 
-    /// Refreshes when stale (or always with `force`); returns at once while a refresh is already running.
-    func refresh(force: Bool = false) async {
-        available = GitHubPullRequestList.isAvailable
+    /// Reads the list now and then while its panel is closed, from launch on. Sleeps the whole interval in between,
+    /// so a closed panel costs one wake-up and one request per account every ten minutes at most.
+    func followInBackground(enabled: @escaping @MainActor () -> Bool) {
+        guard quietLoop == nil else { return }
+        quietLoop = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(PullRequestBackgroundRefresh.wait(plan: EnergyMonitor.shared.plan)))
+                guard let self else { return }
+                let energy = EnergyMonitor.shared
+                guard enabled(), GitHubPullRequestList.isAvailable,
+                      PullRequestBackgroundRefresh.isDue(lastRead: self.fetchedAt, now: Date(), plan: energy.plan,
+                                                         signals: energy.signals) else { continue }
+                await self.refresh(quiet: true)
+            }
+        }
+    }
+
+    /// Refreshes when stale (or always with `force`); returns at once while a refresh is already running. A `quiet`
+    /// one (nobody looking) changes nothing that is shown unless GitHub's answer did, and keeps the rows when every
+    /// account failed: a closed laptop lid or a dropped connection is not worth an error the next time you look.
+    func refresh(force: Bool = false, quiet: Bool = false) async {
+        let isAvailable = GitHubPullRequestList.isAvailable
+        if available != isAvailable { available = isAvailable }
         guard available else {
             // GitHub was disconnected: no old rows from an account Nook can no longer read.
-            loaded = true
+            if !loaded { loaded = true }
             if !accounts.isEmpty {
                 accounts = []
                 try? FileManager.default.removeItem(at: file)
@@ -325,41 +347,55 @@ final class PullRequestStore: ObservableObject {
             if force { again = true }
             return
         }
+        // The panel asks every half minute; a slow pass it is waiting for should not wait for a quiet read's gate.
+        let slowAfter = quiet ? PullRequestBackgroundRefresh.slowInterval : Self.backgroundAfter
         guard force || Date().timeIntervalSince(fetchedAt) > Self.staleAfter else {
-            refreshInBackground(force: false)
+            refreshInBackground(force: false, after: slowAfter)
             return
         }
         loading = true
-        showsProgress = force || accounts.allSatisfy(\.isEmpty)
+        showsProgress = !quiet && (force || accounts.allSatisfy(\.isEmpty))
         // Not tied to the view that asked: closing the panel halfway must not end the refresh as a failed one.
         let fresh = await Task { await GitHubPullRequestList.loadOwn() }.value
-        loaded = true
+        loading = false
+        if quiet && !fresh.isEmpty && fresh.allSatisfy({ $0.error != nil }) {
+            // Offline or asleep: the rows stay, and the panel tries again (and says why) when it opens.
+            if again {
+                again = false
+                await refresh(force: true)
+            }
+            return
+        }
+        if !loaded { loaded = true }
         fetchedAt = Date()
         if fresh.contains(where: { $0.error == nil }) { lastRead = fetchedAt }
         let cutoff = Date().addingTimeInterval(-Self.mergeGrace)
         mergedHere = mergedHere.filter { $0.value > cutoff }
         // Yours and your reviews show as soon as they are in; the closed ones and the watched rows from last time stay
         // until the background pass has read them again.
-        accounts = AccountPullRequests.attaching([:], to: fresh.map(merge)).map(settled)
-        loading = false
-        showsProgress = false
-        refreshInBackground(force: force)
+        let updated = AccountPullRequests.keepingConflicts(AccountPullRequests.attaching([:], to: fresh.map(merge)), from: accounts)
+            .map(settled)
+        // Most answers repeat what is shown: only a change redraws the list and is written to disk.
+        let changed = updated != accounts
+        if changed { accounts = updated }
+        if showsProgress { showsProgress = false }
+        refreshInBackground(force: force, after: slowAfter)
         if again {
             again = false
             await refresh(force: true)
             return
         }
-        save()
+        if changed { save() }
     }
 
     /// The slow part, on its own: the closed and merged rows and the watched search, both accounts' at once. It runs
     /// when it is due (or asked for), one at a time, and puts its rows in when they are in.
-    private func refreshInBackground(force: Bool) {
+    private func refreshInBackground(force: Bool, after: TimeInterval = PullRequestStore.backgroundAfter) {
         if background != nil {
             if force { backgroundAgain = true }
             return
         }
-        guard force || Date().timeIntervalSince(backgroundAt) > Self.backgroundAfter else { return }
+        guard force || Date().timeIntervalSince(backgroundAt) > after else { return }
         // Each account with its login, which the search of its own repositories needs.
         let readable = Dictionary(accounts.filter { $0.error == nil }.map { ($0.id, $0.login) }, uniquingKeysWith: { first, _ in first })
         guard !readable.isEmpty else { return }
@@ -373,9 +409,13 @@ final class PullRequestStore: ObservableObject {
                 guard let rows = closedRows[account.id] else { return account }
                 return account.replacingClosed(mine: rows.mine, reviews: rows.reviews)
             }
-            self.accounts = AccountPullRequests.attaching(watchedRows, to: updated).map(self.settled)
+            let next = AccountPullRequests.keepingConflicts(AccountPullRequests.attaching(watchedRows, to: updated), from: self.accounts)
+                .map(self.settled)
             self.background = nil
-            self.save()
+            if next != self.accounts {
+                self.accounts = next
+                self.save()
+            }
             if self.backgroundAgain {
                 self.backgroundAgain = false
                 self.refreshInBackground(force: true)
@@ -434,7 +474,10 @@ final class PullRequestStore: ObservableObject {
                                        ci: detail.checks.isEmpty ? item.ci : detail.checkSummary,
                                        state: mergedHere[item.id] != nil && state == .open ? .merged : state,
                                        additions: detail.additions, deletions: detail.deletions,
-                                       review: item.review, conflict: detail.mergeState == "dirty", labels: detail.labels,
+                                       review: item.review,
+                                       // While GitHub works mergeability out again, the row keeps the conflict it knew.
+                                       conflict: detail.conflicted || (detail.mergeable == nil && item.conflict),
+                                       labels: detail.labels,
                                        labelColors: detail.labelColors, headBranch: detail.headBranch.isEmpty ? item.headBranch : detail.headBranch,
                                        baseBranch: detail.baseBranch.isEmpty ? item.baseBranch : detail.baseBranch,
                                        nodeID: detail.nodeID.isEmpty ? item.nodeID : detail.nodeID)

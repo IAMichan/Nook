@@ -81,9 +81,14 @@ pub fn workspace_overview(state: State<'_, WorkspaceState>) -> Overview {
 }
 
 #[tauri::command]
-pub fn workspace_save_settings(app: tauri::AppHandle, state: State<'_, WorkspaceState>, settings: WorkspaceSettings) {
+pub fn workspace_save_settings(app: tauri::AppHandle, state: State<'_, WorkspaceState>, mut settings: WorkspaceSettings) {
+    let mut current = lock(&state.settings);
+    settings.favorite_projects = current.favorite_projects.clone();
+    settings.recent_projects = current.recent_projects.clone();
+    settings.last_project = current.last_project.clone();
     settings.save_to(&WorkspaceSettings::file());
-    *lock(&state.settings) = settings;
+    *current = settings;
+    drop(current);
     let _ = app.emit("workspace-changed", ());
 }
 
@@ -92,6 +97,15 @@ pub fn workspace_forget_project(state: State<'_, WorkspaceState>, path: String) 
     let mut s = lock(&state.settings);
     s.forget_project(&path);
     s.save_to(&WorkspaceSettings::file());
+}
+
+#[tauri::command]
+pub fn workspace_toggle_favorite_project(app: tauri::AppHandle, state: State<'_, WorkspaceState>, path: String) {
+    let mut s = lock(&state.settings);
+    s.toggle_favorite_project(&path);
+    s.save_to(&WorkspaceSettings::file());
+    drop(s);
+    let _ = app.emit("workspace-changed", ());
 }
 
 #[tauri::command]
@@ -371,6 +385,10 @@ pub struct QuickView {
     action: Option<QuickAction>,
     label: Option<&'static str>,
     reason: Option<&'static str>,
+    /// Waar het werk van de actie heen gaat: bij de open pull request, of een nieuwe branch.
+    destination: Option<&'static str>,
+    /// De andere weg naast de hoofdactie: een eigen nieuwe branch en pull request.
+    alternatives: Vec<QuickAction>,
     repository: Option<RemoteRepository>,
     host_name: Option<String>,
     remote: Option<String>,
@@ -408,6 +426,7 @@ pub async fn workspace_quick(app: AppHandle, run: String) -> Res<QuickView> {
             behind: status.behind,
             ahead_of_base: compare.and_then(|c| git.commits_ahead(&dir, &c)).unwrap_or(0),
             has_open_pull_request: false,
+            pull_request_landed: false,
         };
         Some((state, repository, remote, base))
     })
@@ -417,16 +436,22 @@ pub async fn workspace_quick(app: AppHandle, run: String) -> Res<QuickView> {
     let mut pull_request = None;
     if let (Some(repo), Some(branch)) = (&repository, &state.branch) {
         if repo.host == SourceControlHost::Github && !tokens.is_empty() {
-            pull_request = source_control::open_github_pull_request(&tokens, &repo.display_name(), branch).await;
+            let (open, landed) = source_control::github_branch_pull_requests(&tokens, &repo.display_name(), branch).await;
+            pull_request = open;
+            state.pull_request_landed = landed;
         }
     }
     state.has_open_pull_request = pull_request.is_some();
     let resolved = source_control::resolve(&state);
+    let destination = resolved.ok().and_then(|a| source_control::destination(&state, a));
+    let alternatives = source_control::alternatives(&state);
     let can_create_here = repository.as_ref().is_some_and(|r| r.host == SourceControlHost::Github) && !tokens.is_empty();
     Ok(QuickView {
         action: resolved.ok(),
         label: resolved.ok().map(QuickAction::label),
         reason: resolved.err().map(|r| r.message()),
+        destination,
+        alternatives,
         host_name: repository.as_ref().map(|r| r.host.name()),
         state,
         repository,
@@ -435,6 +460,28 @@ pub async fn workspace_quick(app: AppHandle, run: String) -> Res<QuickView> {
         pull_request,
         can_create_here,
     })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartedBranch {
+    branch: String,
+    cut: Option<String>,
+}
+
+/// Een nieuwe branch voor een nieuwe pull request (na jouw klik op "Nieuwe branch en PR").
+#[tauri::command]
+pub async fn workspace_start_branch(state: State<'_, WorkspaceState>, run: String, topic: String) -> Res<StartedBranch> {
+    let run = id(&run)?;
+    let m = state.manager.clone();
+    blocking(move || m.start_branch(run, &topic).map(|(branch, cut)| StartedBranch { branch, cut })).await?
+}
+
+#[tauri::command]
+pub async fn workspace_move_onto_base(state: State<'_, WorkspaceState>, run: String, cut: String) -> Res<bool> {
+    let run = id(&run)?;
+    let m = state.manager.clone();
+    blocking(move || m.move_onto_base(run, &cut)).await?
 }
 
 #[tauri::command]

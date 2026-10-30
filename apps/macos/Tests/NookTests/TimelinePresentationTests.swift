@@ -21,15 +21,48 @@ final class TimelinePresentationTests: XCTestCase {
         ]
     }
 
+    /// Built from the turns of the last layout, the blocks are the same as built from scratch, at every step of a session
+    /// that streams, runs tools that need approval, finishes and starts a next turn.
+    func testCachedBlocksMatchFreshOnesWhileASessionGoesOn() {
+        var events: [RunEvent] = []
+        var cache = TimelineBlockCache()
+        func check(active: Bool, _ step: String) {
+            XCTAssertEqual(TimelinePresentation.blocks(events, active: active, cache: &cache),
+                           TimelinePresentation.blocks(events, active: active), step)
+        }
+        events = finishedTurn()
+        check(active: false, "a finished turn")
+        events.append(event(.user, "Nog iets", at: 200))
+        check(active: true, "a new message")
+        events.append(event(.approval, "Bash · swift build", tool: "Bash", state: .pending, at: 201))
+        check(active: true, "an approval asked")
+        events[events.count - 1].state = .allowed
+        events.append(event(.tool, "Bash · swift build", tool: "Bash", state: .running, at: 202))
+        check(active: true, "the approved call runs")
+        events[events.count - 1].state = .done
+        events.append(event(.tool, "Edit · App.swift", tool: "Edit", detail: #"{"file_path":"/p/App.swift"}"#, state: .done, at: 210))
+        check(active: true, "the group grows")
+        events.append(event(.assistant, "Klaar", at: 220))
+        check(active: true, "the answer starts")
+        events[events.count - 1].text += " met de build."
+        check(active: true, "the answer streams")
+        events.append(event(.result, "20s", state: .done, at: 222))
+        check(active: false, "the turn is done")
+        XCTAssertEqual(cache.turns.count, 2)
+    }
+
     func testFinishedTurnFoldsBetweenQuestionAndAnswer() throws {
         let blocks = TimelinePresentation.blocks(finishedTurn() + [event(.user, "Nog iets", at: 200)], active: false)
         XCTAssertEqual(blocks.count, 5)
-        guard case .event(let user) = blocks[0], case .fold(_, let seconds, let inner) = blocks[1],
+        guard case .event(let user) = blocks[0], case .fold(_, let seconds, let inner, let checks) = blocks[1],
               case .event(let answer) = blocks[2], case .event(let result) = blocks[3] else { return XCTFail("\(blocks)") }
         XCTAssertEqual(user.text, "Fix de test")
         XCTAssertEqual(answer.text, "Opgelost.")
         XCTAssertEqual(result.kind, .result)
         XCTAssertEqual(seconds, 133)
+        // The tests it ran stay on the fold's line, worked out with the blocks rather than on every redraw.
+        XCTAssertEqual(checks.map(\.kind), [.tests])
+        XCTAssertEqual(checks.first?.outcome, .passed)
         // Inside: the thinking, then the three tool calls as one group.
         XCTAssertEqual(inner.count, 2)
         guard case .tools(_, let tools, let tally) = inner[1] else { return XCTFail("\(inner)") }
@@ -199,5 +232,31 @@ final class TimelinePresentationTests: XCTestCase {
         let folded = TimelinePresentation.blocks(finished + [event(.user, "Nog iets", at: 9)], active: false)
         guard case .event(let answer) = folded[2] else { return XCTFail("\(folded)") }
         XCTAssertEqual(answer.text, "Klaar.", "a notice is never the answer of a turn")
+    }
+
+    /// A tool call of a session Nook runs reads as a step of an agent's own transcript: the same tool, what it was about,
+    /// its command and file, and why it failed.
+    func testToolEventsBecomeTranscriptSteps() {
+        let command = AgentToolStep(event: event(.tool, "Bash · npm test", tool: "Bash", detail: #"{"command":"npm test"}"#,
+                                                 state: .done))
+        XCTAssertEqual(command.name, "Bash")
+        XCTAssertEqual(command.summary, "npm test")
+        XCTAssertEqual(command.command, "npm test")
+        XCTAssertEqual(command.state, .done)
+
+        let edit = AgentToolStep(event: event(.tool, "↳ Edit · Login.swift", tool: "Edit",
+                                              detail: #"{"file_path":"/repo/Login.swift"}"#, state: .running))
+        XCTAssertEqual(edit.summary, "Login.swift", "a nested call loses its arrow")
+        XCTAssertEqual(edit.file, "/repo/Login.swift")
+        XCTAssertEqual(edit.state, .running)
+
+        var failing = event(.tool, "Bash · make", tool: "Bash", detail: #"{"command":"make"}"#, state: .failed)
+        failing.output = "make: *** No rule to make target\nmore"
+        let failed = AgentToolStep(event: failing)
+        XCTAssertEqual(failed.state, .failed)
+        XCTAssertEqual(failed.error, "make: *** No rule to make target")
+
+        XCTAssertEqual(AgentToolStep(event: event(.tool, "TodoWrite", tool: "TodoWrite")).summary, "",
+                       "a title that is only the tool's name says nothing more")
     }
 }

@@ -153,6 +153,47 @@ fn parse(data: &[u8]) -> Value {
     serde_json::from_slice(data).unwrap_or(Value::Null)
 }
 
+/// A chat's picture (a person's profile photo, a group's) as the gateways name it: an address on WhatsApp's own
+/// picture server. Nook fetches it from there only, never with the gateway's credentials.
+pub mod avatar {
+    use super::*;
+
+    /// The picture's address in a gateway's answer: GOWA's `{"results": {"url"}}`, OpenWA's `{"url"}`. None when the
+    /// chat has no picture (or hides it), and for any address that is not WhatsApp's own picture server.
+    pub fn url(data: &[u8]) -> Option<url::Url> {
+        let v = parse(data);
+        let raw = v["results"]["url"].as_str().or_else(|| v["url"].as_str())?;
+        let url = url::Url::parse(raw).ok()?;
+        is_whatsapp(&url).then_some(url)
+    }
+
+    /// `https://pps.whatsapp.net/...` (and WhatsApp's other picture hosts), nothing else.
+    pub fn is_whatsapp(url: &url::Url) -> bool {
+        url.scheme() == "https" && url.host_str().is_some_and(|h| h == "whatsapp.net" || h.to_lowercase().ends_with(".whatsapp.net"))
+    }
+
+    /// The picture's bytes from WhatsApp's picture server: no cookies, no redirects, none of the gateway's headers.
+    pub async fn fetch(url: &url::Url) -> Option<Vec<u8>> {
+        if !is_whatsapp(url) {
+            return None;
+        }
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(15))
+            .build()
+            .ok()?;
+        let response = client.get(url.clone()).send().await.ok()?;
+        if response.status().as_u16() != 200 || response.content_length().is_some_and(|n| n > MAX_AVATAR) {
+            return None;
+        }
+        let bytes = response.bytes().await.ok()?;
+        (bytes.len() as u64 <= MAX_AVATAR).then(|| bytes.to_vec())
+    }
+
+    pub const MAX_AVATAR: u64 = 2_000_000;
+}
+
 // GOWA
 
 pub mod gowa {
@@ -704,6 +745,33 @@ impl Provider {
         }
     }
 
+    /// Where a chat's picture is on WhatsApp's picture server; None when it has none (or hides it).
+    pub async fn avatar(&self, chat: &str) -> Option<url::Url> {
+        match self.kind {
+            GatewayKind::Gowa => {
+                // A community's picture is only given when asked as one: a group without a picture is asked that way too.
+                for community in [false, true] {
+                    if community && !jid::is_group(chat) {
+                        break;
+                    }
+                    let query = [("phone", chat.to_string()), ("is_preview", "true".into()), ("is_community", community.to_string())];
+                    if let Some(url) = self.gowa_scoped("GET", "/user/avatar", &query, None).await.ok().and_then(|d| avatar::url(&d)) {
+                        return Some(url);
+                    }
+                }
+                None
+            }
+            GatewayKind::Openwa => {
+                let path = if jid::is_group(chat) {
+                    format!("/groups/{}/picture", path_component(chat))
+                } else {
+                    format!("/contacts/{}/profile-picture", path_component(&openwa::id(chat)))
+                };
+                avatar::url(&self.openwa_scoped("GET", &path, &[], None).await.ok()?)
+            }
+        }
+    }
+
     /// De chats op de telefoon, nieuwste eerst: naar wie Nook op naam mag sturen. GOWA is paged through until
     /// the list runs out or `limit` chats are in.
     pub async fn chats(&self, limit: usize) -> WaResult<Vec<ChatInfo>> {
@@ -746,6 +814,17 @@ impl Provider {
 mod tests {
     use super::*;
     use crate::connectors::testserver::TestServer;
+
+    #[test]
+    fn avatar_addresses_are_only_whatsapps_own() {
+        let gowa = br#"{"code":"SUCCESS","results":{"url":"https://pps.whatsapp.net/v/t61/a.jpg","id":"1","type":"image"}}"#;
+        assert_eq!(avatar::url(gowa).unwrap().host_str(), Some("pps.whatsapp.net"));
+        assert!(avatar::url(br#"{"url":"https://pps.whatsapp.net/x.jpg"}"#).is_some());
+        assert!(avatar::url(br#"{"url":"http://pps.whatsapp.net/x.jpg"}"#).is_none());
+        assert!(avatar::url(br#"{"url":"https://evil.example/pps.whatsapp.net/x.jpg"}"#).is_none());
+        assert!(avatar::url(br#"{"url":"https://notwhatsapp.net/x.jpg"}"#).is_none());
+        assert!(avatar::url(br#"{"results":{}}"#).is_none());
+    }
 
     #[test]
     fn gowa_answers() {

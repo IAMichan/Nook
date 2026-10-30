@@ -12,7 +12,8 @@
     type WhatsAppSettingsChat,
     type WhatsAppView,
   } from "../../lib/connectors";
-  import { bubbleText, fileLabel, initials, kindLabel, modeLabel, settingsChats, ticks } from "../../lib/whatsapp";
+  import { bubbleText, fileLabel, kindLabel, modeLabel, settingsChats, ticks } from "../../lib/whatsapp";
+  import Avatar from "./Avatar.svelte";
   import ServiceIcon from "./ServiceIcon.svelte";
 
   let view = $state<WhatsAppView | null>(null);
@@ -128,7 +129,7 @@
             <input class="search" placeholder="Zoek een chat" bind:value={query} />
             {#each listed.shown as chat (chat.jid)}
               <div class="row chatmode">
-                <span class="inline"><span class="avatar">{initials(chat.name)}</span><span>{chat.name}<br /><span class="faint small">{kindLabel[chat.kind]}</span></span></span>
+                <span class="inline"><Avatar chat={chat.jid} name={chat.name} size={22} /><span>{chat.name}<br /><span class="faint small">{kindLabel[chat.kind]}</span></span></span>
                 <span class="segmented" title={rule(chat)}>
                   {#each modes as mode (mode)}
                     <button class:on={chat.mode === mode} onclick={() => setMode(chat, mode)}>{modeLabel[mode]}</button>
@@ -141,7 +142,7 @@
             <p class="faint small"><strong>Verborgen chats</strong></p>
             {#each listed.hidden as chat (chat.jid)}
               <div class="row">
-                <span class="inline"><span class="avatar">{initials(chat.name)}</span>{chat.name}</span>
+                <span class="inline"><Avatar chat={chat.jid} name={chat.name} size={22} />{chat.name}</span>
                 <button onclick={async () => { await connectorsApi.whatsappUnhide(chat.jid); await load(); }}>Weer tonen</button>
               </div>
             {/each}
@@ -208,7 +209,6 @@
   .spacer { flex: 1; }
   .chat input { flex: 1; }
   .search { width: 100%; margin: 4px 0; }
-  .avatar { width: 22px; height: 22px; border-radius: 50%; background: var(--smoke); color: var(--text2); font-size: 9px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; flex: none; }
   .chatmode { padding: 4px 0; }
   .segmented { display: inline-flex; border: 1px solid var(--line2); border-radius: 8px; overflow: hidden; flex: none; }
   .segmented button { border: none; border-radius: 0; padding: 3px 9px; font-size: 11px; background: transparent; color: var(--text2); }

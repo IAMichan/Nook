@@ -23,11 +23,12 @@ extension AppModel {
             Task { await closeEmbeddedApp() }
             chat.append(ChatMessage(role: .nook, text: title.map { tr("embedded.closed", $0) } ?? tr("embedded.nothingOpen")))
         case .chat(let name):
-            // A chat from another app (Telegram, LinkedIn…) has no card: it opens in the Chats tab.
-            if !WhatsAppLink.shared.isConnected || WhatsAppLink.shared.resolve(name) == nil,
-               let id = chatsEntryID(named: name), let thread = ChatCaptureService.shared.inbox.threads[id] {
-                chat.append(ChatMessage(role: .nook, text: tr("chats.openedChat", thread.name)))
-                showChats(ChatsFocus(chat: id))
+            // Every chat Nook has opens as the card a new message brings up (its messages so far and a field to answer),
+            // the same for every app; WhatsApp's linked phone fetches the chat first (`openWhatsAppChat`).
+            if WhatsAppAccounts.shared.resolve(name) == nil,
+               let id = chatsEntryID(named: name), let thread = ChatCaptureService.shared.loadedInbox.threads[id] {
+                chat.append(ChatMessage(role: .nook, text: tr("whatsapp.open.card", thread.name)))
+                presentChat(id, asked: true)
                 return true
             }
             openWhatsAppChat(name)
@@ -99,6 +100,27 @@ extension AppModel {
         return true
     }
 
+    /// A file link opens in Nook's own viewer at its line: in the session's side panel when clicked in an agent's
+    /// conversation (`beside`), else in a window of its own. ⌘ or ⌃ held while clicking opens it in your editor
+    /// instead, and a folder shows in Finder. Nothing is handed to the file's own app.
+    func openFileInNook(_ target: FileTarget, beside: Bool) {
+        var isFolder: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: target.path, isDirectory: &isFolder) else {
+            ToastCenter.shared.info(tr("ws.file.missing", AgentPathFormat.tilde(target.path)))
+            return
+        }
+        if isFolder.boolValue {
+            workspace.revealInFinder(target.path)
+        } else if !NSEvent.modifierFlags.isDisjoint(with: [.command, .control]) {
+            workspace.openFile(target)
+        } else if beside {
+            FileViewerStore.shared.open(target)
+            viewModel.sessionTool = .file
+        } else {
+            FileViewerWindow.shared.show(target)
+        }
+    }
+
     /// A github.com pull request link opens in Nook, read with the account that lists it (else the first GitHub
     /// account): in the session's side panel when clicked in an agent's conversation (`beside`), else on the Pull
     /// requests page. Its top bar opens it on GitHub. Returns false when Nook cannot read it (another forge, GitHub
@@ -127,12 +149,13 @@ extension AppModel {
     /// with Jan's chat in it: in WhatsApp Web Nook searches the chat and clicks it, and in the Mac app you pick it there
     /// yourself. Nothing is typed or marked read.
     func openWhatsAppChat(_ name: String) {
-        // A linked phone knows the chat's exact name and number; without one the name goes as typed.
-        let target = WhatsAppLink.shared.resolve(name)
-        if let target, WhatsAppLink.shared.isConnected {
-            openWhatsAppCard(target.jid, name: target.name)
+        // A linked phone knows the chat's exact name and number (in whichever account it is); without one the name goes
+        // as typed.
+        if let found = WhatsAppAccounts.shared.resolve(name) {
+            openWhatsAppCard(found.key, name: found.name)
             return
         }
+        let target = WhatsAppLink.shared.resolve(name)
         guard let whatsApp = EmbeddedAppCatalog.find("whatsapp") else { return }
         let shown = target?.name ?? name
         let opened = openEmbeddedApp(whatsApp)
@@ -162,12 +185,12 @@ extension AppModel {
     }
 
     /// The card for one chat, asked for: its messages from the phone first (a chat that never wrote since Nook started
-    /// has none here yet), then the card in front of the chat.
-    private func openWhatsAppCard(_ jid: String, name: String) {
+    /// has none here yet), then the card in front of the chat. `key` is the chat's key across accounts (`WAChatKey`).
+    private func openWhatsAppCard(_ key: String, name: String) {
+        let (link, jid) = WhatsAppAccounts.shared.route(key)
         let chat = WAJID.normalized(jid)
         self.chat.append(ChatMessage(role: .nook, text: tr("whatsapp.open.card", name)))
         Task { @MainActor [weak self] in
-            let link = WhatsAppLink.shared
             _ = await link.loadHistory(chat)
             if link.inbox.conversations[chat]?.messages.isEmpty ?? true {
                 _ = try? await link.messages(of: chat, limit: WAInbox.keep)
@@ -177,7 +200,10 @@ extension AppModel {
                 self.chat.append(ChatMessage(role: .nook, text: tr("whatsapp.open.empty", name)))
                 return
             }
-            self.presentWhatsApp(chat, asked: true)
+            // The chat as the shared inbox has it once the link's news is in, then its card as every app's.
+            let capture = ChatCaptureService.shared
+            await capture.readAndWait(capture.whatsAppGatewayBridge)
+            self.presentChat(ChatInbox.key(app: capture.whatsAppGatewayBridge.app, id: link.chatKey(chat)), asked: true)
         }
     }
 

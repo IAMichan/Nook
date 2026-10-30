@@ -71,6 +71,14 @@ final class ComposerModel: ObservableObject {
     private var trigger: ComposerTrigger?
     /// The text was just set by the composer itself (history, a chosen line): the change is not typing.
     var applying = false
+    /// The pictures going out with this send, set by `SessionComposer` only while the caller's send runs. `outgoing`
+    /// puts their paths below the text, so the box keeps showing your words and the pictures instead of the paths.
+    var pictures: [ImageAttachment] = []
+
+    /// Whether there is anything to send: words, or pictures alone.
+    func hasContent(_ text: String) -> Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pictures.isEmpty
+    }
 
     struct Outgoing: Equatable {
         /// What the agent receives: references as short markers plus the context envelope. The timeline and the queue show
@@ -80,12 +88,15 @@ final class ComposerModel: ObservableObject {
 
     var isOpen: Bool { !suggestions.isEmpty }
 
-    /// Takes the text you send: remembers it for ArrowUp and turns references into what the agent receives.
+    /// Takes the text you send: remembers it for ArrowUp, turns references into what the agent receives and puts the
+    /// paths of the pictures below it (agents read pictures from disk).
     func outgoing(_ text: String) -> Outgoing {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         history.record(clean)
-        let sent = ContextRefs.project(clean, excerpts: excerpts)
+        let projected = ContextRefs.project(clean, excerpts: excerpts)
+        let sent = pictures.isEmpty ? projected : ImageAttachment.appendingPaths(of: pictures, to: projected)
         excerpts = [:]
+        pictures = []
         close()
         return Outgoing(send: sent)
     }
@@ -223,7 +234,11 @@ final class ComposerModel: ObservableObject {
             }
     }
 
-    private func commandDetail(_ command: ComposerCommand) -> String? { tr(AgentCommands.descriptionKey(for: command)) }
+    private func commandDetail(_ command: ComposerCommand) -> String? {
+        // An agent's own command says what it does in its own words, or nothing.
+        if let detail = command.detail { return detail.isEmpty ? nil : detail }
+        return tr(AgentCommands.descriptionKey(for: command))
+    }
 
     private func pullRequestRow(repo: String, number: Int, title: String?) -> ComposerSuggestion {
         ComposerSuggestion(id: "pr:\(number)", title: "#\(number)" + (title.map { " " + $0 } ?? ""), detail: repo, symbol: PullRequestIcon.generic,

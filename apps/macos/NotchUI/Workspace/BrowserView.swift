@@ -129,6 +129,7 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
         parkTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: Self.parkSeconds * 1_000_000_000)
             guard !Task.isCancelled, let self, self.parked == nil, self.shownInWorkbench == 0, !BrowserPopup.shared.isVisible,
+                  SessionBrowserOwner.shared.shownInChat == 0,
                   !self.loading, let url = self.webView.url, url.scheme != "about" else { return }
             self.parked = (url, self.webView.title ?? "")
             self.webView.loadHTMLString("", baseURL: nil)
@@ -157,6 +158,7 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
         guard let url = BrowserSearchEngine.address(input, engine: .current()) else { return }
         parked = nil
         openedBy = nil
+        SessionBrowserOwner.shared.owner = nil
         webView.load(URLRequest(url: url))
     }
 
@@ -164,6 +166,7 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
     func open(_ url: URL) {
         parked = nil
         openedBy = nil
+        SessionBrowserOwner.shared.owner = nil
         lastError = nil
         webView.load(URLRequest(url: url))
     }
@@ -396,11 +399,11 @@ struct BrowserView: View {
                     askAboutPage()
                 }
                 if let onClose {
-                    ToolbarIconButton("xmark", tr("embedded.close"), onClose)
+                    SidePanelCloseButton(help: tr("embedded.close"), action: onClose)
                 }
             }
             .padding(.horizontal, NookTheme.Spacing.xs)
-            .frame(height: 36)
+            .frame(height: SidePanelMetrics.toolbar)
             if let agent = store.openedBy {
                 HStack(spacing: NookTheme.Spacing.sm) {
                     AgentMark(agent: agent, account: nil, size: 12, ring: .clear)
@@ -431,7 +434,7 @@ struct BrowserView: View {
         }
         .onDisappear {
             store.shownInWorkbench = max(0, store.shownInWorkbench - 1)
-            if store.shownInWorkbench == 0 { store.outOfSight() }
+            if store.shownInWorkbench == 0, SessionBrowserOwner.shared.shownInChat == 0 { store.outOfSight() }
         }
         .onChange(of: bridge.unseen) { _, _ in bridge.markBrowserSeen() }
     }
@@ -500,7 +503,9 @@ final class BrowserPopup: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         panel = nil
-        if let store = BrowserStore.existing, store.shownInWorkbench == 0 { store.outOfSight() }
+        if let store = BrowserStore.existing, store.shownInWorkbench == 0, SessionBrowserOwner.shared.shownInChat == 0 {
+            store.outOfSight()
+        }
     }
 
     /// The full browser: in the main window when that is in front, otherwise in the notch.
@@ -552,6 +557,124 @@ private struct BrowserPopupView: View {
         }
         .background(NookTheme.field)
         .ignoresSafeArea()
+    }
+}
+
+/// Which session's agent opened the page in Nook's browser. That page shows small in the bottom right corner of that
+/// session's chat (`SessionBrowserCorner`) and nowhere else: not in a window over every app, not in other chats. Its own
+/// object, so a chat can watch it without starting the browser.
+@MainActor
+final class SessionBrowserOwner: ObservableObject {
+    static let shared = SessionBrowserOwner()
+
+    struct Owner: Equatable {
+        /// The session Nook runs, when it is one.
+        let run: UUID?
+        /// Where the agent works; identifies a session Nook does not run.
+        let directory: String
+    }
+
+    /// The session whose agent opened the current page; nil once you browse yourself or put the page away.
+    @Published var owner: Owner?
+    /// How many chats show the page in their corner now: while one does, the page is in sight and is not put away.
+    var shownInChat = 0
+
+    func opened(by caller: BridgeCaller) {
+        switch caller.kind {
+        case .run(let id): owner = Owner(run: id, directory: caller.directory)
+        case .external: owner = Owner(run: nil, directory: caller.directory)
+        }
+    }
+
+    /// Whether the session shown with `runID` in `directory` is the one whose agent opened the page.
+    func owns(runID: UUID?, directory: String) -> Bool {
+        guard let owner else { return false }
+        if let run = owner.run, let runID { return run == runID }
+        guard !owner.directory.isEmpty, !directory.isEmpty else { return false }
+        return WorkspacePathPolicy.normalize(owner.directory) == WorkspacePathPolicy.normalize(directory)
+    }
+}
+
+/// The page an agent opened, small in the bottom right corner of its own session's chat, just above the composer, so
+/// you follow along without leaving the conversation. Only that session shows it; expanding opens the browser tab in the
+/// side panel, the cross puts it away until the agent opens a page again.
+struct SessionBrowserCorner: View {
+    let runID: UUID?
+    let directory: String
+    /// The session shows the browser in a panel already.
+    let hidden: Bool
+    let expand: () -> Void
+    @ObservedObject private var owner = SessionBrowserOwner.shared
+
+    var body: some View {
+        let shown = !hidden && owner.owns(runID: runID, directory: directory)
+        ZStack(alignment: .bottomTrailing) {
+            if shown {
+                SessionBrowserCard(store: BrowserStore.shared, directory: directory, expand: expand) { owner.owner = nil }
+                    .transition(.scale(scale: 0.92, anchor: .bottomTrailing).combined(with: .opacity))
+            }
+        }
+        .animation(NookTheme.reveal, value: shown)
+    }
+}
+
+private struct SessionBrowserCard: View {
+    @ObservedObject var store: BrowserStore
+    let directory: String
+    let expand: () -> Void
+    let close: () -> Void
+
+    static let size = CGSize(width: 380, height: 260)
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                if let agent = store.openedBy {
+                    AgentMark(agent: agent, account: nil, size: 12, ring: .clear)
+                } else {
+                    Image(systemName: "safari")
+                        .font(NookTheme.font(11, .semibold))
+                        .foregroundStyle(NookTheme.textSecondary)
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(store.title.isEmpty ? tr("browser.popup.title") : store.title)
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
+                    Text(store.address)
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: 0)
+                if store.loading { ProgressView().controlSize(.mini) }
+                ToolbarIconButton("arrow.up.left.and.arrow.down.right", tr("browser.popup.expand"), expand)
+                SidePanelCloseButton(help: tr("embedded.close"), action: close)
+            }
+            .padding(.leading, NookTheme.Spacing.md)
+            .padding(.trailing, NookTheme.Spacing.xs)
+            .frame(height: 34)
+            NookDivider()
+            WebViewHost(webView: store.webView)
+        }
+        .frame(width: Self.size.width, height: Self.size.height)
+        .background(NookTheme.field)
+        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).stroke(NookTheme.fieldStroke, lineWidth: 1))
+        .shadow(color: NookTheme.notch.opacity(0.45), radius: 14, y: 6)
+        .onAppear {
+            SessionBrowserOwner.shared.shownInChat += 1
+            store.inSight()
+            // The web view can only be in one place: here now, so the popup goes.
+            BrowserPopup.shared.close()
+            WorkspaceBridge.shared.markSeen(directory, SessionTool.browser.rawValue)
+        }
+        .onDisappear {
+            let owner = SessionBrowserOwner.shared
+            owner.shownInChat = max(0, owner.shownInChat - 1)
+            if owner.shownInChat == 0, store.shownInWorkbench == 0, !BrowserPopup.shared.isVisible { store.outOfSight() }
+        }
     }
 }
 

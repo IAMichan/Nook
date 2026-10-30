@@ -2,7 +2,7 @@ import SwiftUI
 import Charts
 import UniformTypeIdentifiers
 
-/// Settings › Autocomplete: suggestions as you type in any app, with a GGUF model on this Mac or the brain's own model.
+/// Settings › Typing & dictation › Completing: suggestions as you type in any app, with a GGUF model on this Mac or the brain's own model.
 struct AutocompleteSettingsSection: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = AutocompleteStore.shared
@@ -29,55 +29,57 @@ struct AutocompleteSettingsSection: View {
 
     var body: some View {
         Group {
+            // The switch and how it is doing come first; what completing is sits behind the ⓘ.
             Section {
-                IntroCard(title: tr("autocomplete.hero.title"), text: tr("autocomplete.hero.detail"))
-            }
-            .listRowInsets(EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14))
-
-            Section {
-                Picker("", selection: $store.settingsTab) {
-                    ForEach(AutocompleteSettingsTab.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-            }
-            .listRowBackground(Color.clear)
-
-            switch store.settingsTab {
-            case .general:
-                Section {
-                    SettingToggle(tr("autocomplete.enable"), detail: tr("autocomplete.enableDetail", store.prefs.acceptWord.label, store.prefs.acceptAll.label),
-                                  isOn: $store.prefs.enabled)
-                        .onChange(of: store.prefs.enabled) { _, on in
-                            if on, !autocomplete.trusted { autocomplete.askForAccessibility() }
-                            autocomplete.refresh()
-                        }
-                    if store.prefs.enabled {
-                        status
-                        SettingToggle(tr("autocomplete.menuBarCount"), detail: tr("autocomplete.menuBarCountDetail"), isOn: $store.prefs.menuBarCount)
+                SettingToggle(tr("autocomplete.enable"), detail: tr("autocomplete.enableDetail", store.prefs.acceptWord.label, store.prefs.acceptAll.label),
+                              isOn: $store.prefs.enabled)
+                    .onChange(of: store.prefs.enabled) { _, on in
+                        if on, !autocomplete.trusted { autocomplete.askForAccessibility() }
+                        autocomplete.refresh()
                     }
+                if store.prefs.enabled {
+                    status
+                    SettingToggle(tr("autocomplete.menuBarCount"), detail: tr("autocomplete.menuBarCountDetail"), isOn: $store.prefs.menuBarCount)
                 }
-                modelSection
-                downloadSection
-                suggestionsSection
-                batterySection
-                keysLink
-            case .apps:
-                appsSection
-                sitesSection
-            case .style:
-                contextSection
-                personalSection
-                extrasSection
-            case .playground:
-                AutocompletePlaygroundSection()
-            case .stats:
-                statsSection
+            } header: {
+                SettingsSectionTitle(tr("autocomplete.hero.title"), info: tr("autocomplete.hero.detail"))
+            }
+            // Picks up Accessibility the moment it is switched on in System Settings.
+            .onAppear { PermissionMonitor.shared.watch() }
+            .onDisappear { PermissionMonitor.shared.unwatch() }
+
+            // Everything else only matters while completing is on: its parts as tabs.
+            if store.prefs.enabled {
+                Section {
+                    Picker("", selection: $store.settingsTab) {
+                        ForEach(AutocompleteSettingsTab.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+                .listRowBackground(Color.clear)
+
+                switch store.settingsTab {
+                case .general:
+                    modelSection
+                    downloadSection
+                    suggestionsSection
+                    batterySection
+                    keysLink
+                case .apps:
+                    appsSection
+                    sitesSection
+                case .style:
+                    contextSection
+                    personalSection
+                    extrasSection
+                case .playground:
+                    AutocompletePlaygroundSection()
+                case .stats:
+                    statsSection
+                }
             }
         }
-        // Picks up Accessibility the moment it is switched on in System Settings.
-        .onAppear { PermissionMonitor.shared.watch() }
-        .onDisappear { PermissionMonitor.shared.unwatch() }
     }
 
     // MARK: Status

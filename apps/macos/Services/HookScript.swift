@@ -69,7 +69,7 @@ enum HookScript {
     $mode = 'permission' if $name eq 'PermissionRequest' || $name eq 'permissionRequest';
 
     my %env = map { ($_ => (defined $ENV{$_} ? $ENV{$_} : '')) }
-        qw(TERM_PROGRAM __CFBundleIdentifier ITERM_SESSION_ID TERM_SESSION_ID CLAUDE_CODE_ENTRYPOINT CLAUDE_CONFIG_DIR CODEX_HOME NOOK_RUN_ID ANTIGRAVITY_CONVERSATION_ID ANTIGRAVITY_APP_DATA_DIR);
+        qw(TERM_PROGRAM __CFBundleIdentifier ITERM_SESSION_ID TERM_SESSION_ID CLAUDE_CODE_ENTRYPOINT CLAUDE_CONFIG_DIR CODEX_HOME GEMINI_CLI_HOME NOOK_RUN_ID ANTIGRAVITY_CONVERSATION_ID ANTIGRAVITY_APP_DATA_DIR);
 
     # nook_show_step: synthetic tool step (pre then post) for agents that only report completion.
     my @events = ($event);

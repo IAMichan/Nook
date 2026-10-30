@@ -61,7 +61,26 @@ final class NotchPanel: NSPanel {
     // Typing in the notch: the emoji picker may open for its field, so watch for it (see `CharacterPaletteWatch`).
     override func becomeKey() {
         super.becomeKey()
+        becameKey = Date()
         CharacterPaletteWatch.shared.start()
+    }
+
+    /// When the notch last got the keyboard.
+    private var becameKey = Date.distantPast
+
+    // A text field selects all its text when it gets the keyboard. Coming back to a prompt you were writing, that
+    // selection would make the next key you type replace the whole draft: right after the notch gets the keyboard
+    // back, the cursor goes to the end of the text instead.
+    override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
+        let before = firstResponder
+        guard super.makeFirstResponder(responder) else { return false }
+        guard responder is NSTextField, firstResponder !== before, Date().timeIntervalSince(becameKey) < 1.5,
+              let editor = firstResponder as? NSTextView, editor.isFieldEditor else { return true }
+        let end = (editor.string as NSString).length
+        if editor.selectedRange().length > 0, editor.selectedRange().length == end {
+            editor.setSelectedRange(NSRange(location: end, length: 0))
+        }
+        return true
     }
 
     // Ensures the panel renders above the menu bar and notch.

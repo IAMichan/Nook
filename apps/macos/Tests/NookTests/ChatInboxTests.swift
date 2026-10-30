@@ -341,6 +341,69 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(inbox.threads["x"]?.messages.map(\.text), ["Amen"], "kept from before: it goes")
     }
 
+    /// A poll through the chat helper is every app's poll: who chose what, you first, and whether you may vote.
+    func testAHelpersPollIsEveryAppsPoll() {
+        var chat = ChatServiceData.Chat(id: "!p", app: "whatsapp", title: "Team", isGroup: true, unread: 0, last: nil)
+        chat.me = "@me:nook.local"
+        chat.people = ["@whatsapp_eva:nook.local": "Eva", "@whatsapp_bob:nook.local": "Bob"]
+        let json: [String: Any] = ["items": [
+            ["id": "$poll", "timestamp": "2026-10-18T21:20:00Z", "type": "POLL", "text": "Lunch?", "senderName": "Eva",
+             "poll": ["question": "Lunch?", "multiple": false, "options": [
+                ["id": "a", "text": "Pizza", "voters": ["@whatsapp_eva:nook.local", "@me:nook.local", "@whatsapp_bob:nook.local"]],
+                ["id": "b", "text": "Sushi", "voters": [String]()],
+             ]]],
+        ]]
+        let message = ChatServiceData.messages(json, chat: chat).first
+        XCTAssertEqual(message?.text, "Lunch?")
+        XCTAssertEqual(message?.poll?.options.map(\.votes), [3, 0])
+        XCTAssertEqual(message?.poll?.chosen, ["Pizza"])
+        XCTAssertEqual(message?.poll?.options.first?.voters, [tr("chat.poll.you"), "Bob", "Eva"])
+        XCTAssertNil(ChatServiceData.poll(["type": "TEXT", "text": "hi"], chat: chat))
+        let listed = ChatServiceData.chats(["items": [["id": "!p", "network": "whatsapp", "accountID": "local-whatsapp", "title": "Team",
+                                                       "type": "group", "canVote": true]]])
+        XCTAssertEqual(listed.first?.canVote, true)
+    }
+
+    func testLinksInAMessageShowWhatTheyLeadTo() {
+        XCTAssertEqual(ChatFormat.firstLink("look at https://example.com/a, nice!"), URL(string: "https://example.com/a"),
+                       "the sentence's comma is no part of the address")
+        XCTAssertEqual(ChatFormat.firstLink("[here](https://x.com/p) and https://y.com"), URL(string: "https://x.com/p"))
+        XCTAssertNil(ChatFormat.firstLink("`https://code.example`"), "an address in code is code, not a link")
+        XCTAssertNil(ChatFormat.firstLink("no link at all"))
+        XCTAssertEqual(ChatFormat.linkKind(URL(string: "https://a.com/cat.GIF")!), .image)
+        XCTAssertEqual(ChatFormat.linkKind(URL(string: "https://a.com/clip.mp4?x=1")!), .video)
+        XCTAssertEqual(ChatFormat.linkKind(URL(string: "https://a.com/song.mp3")!), .audio)
+        XCTAssertEqual(ChatFormat.linkKind(URL(string: "https://a.com/news")!), .page)
+        XCTAssertTrue(ChatFormat.isVideoPage(URL(string: "https://youtu.be/abc")!))
+        XCTAssertTrue(ChatFormat.isVideoPage(URL(string: "https://www.instagram.com/reel/DevP29EPzQg/")!))
+        XCTAssertFalse(ChatFormat.isVideoPage(URL(string: "https://www.instagram.com/p/C1/")!))
+    }
+
+    @MainActor
+    func testMessagesDeletedForMeStayGone() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("hidden-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let store = ChatHiddenMessages(file: file)
+        store.hide("m2", in: "instagram|anna")
+        let messages = ["m1", "m2", "m3"]
+        XCTAssertEqual(store.visible(messages, in: "instagram|anna") { $0 }, ["m1", "m3"])
+        XCTAssertEqual(store.visible(messages, in: "telegram|jan") { $0 }, messages, "only that chat")
+        XCTAssertEqual(ChatHiddenMessages(file: file).ids(in: "instagram|anna"), ["m2"], "a restart does not bring it back")
+    }
+
+    func testChatMovedBeforeItsMessageIsReadAgain() {
+        let moved = Date(timeIntervalSince1970: 1_000)
+        let chat = ChatServiceData.Chat(id: "!i", app: "instagram", title: "Anna", isGroup: false, unread: 1, last: moved)
+        let older = InboxMessage(id: "1", text: "hi", date: moved.addingTimeInterval(-30))
+        XCTAssertTrue(ChatServiceData.isBehind([older], chat: chat), "the list moved on: the newest message is still coming")
+        let newest = InboxMessage(id: "2", text: "there", date: moved.addingTimeInterval(-0.4))
+        XCTAssertFalse(ChatServiceData.isBehind([older, newest], chat: chat), "within the rounding of the two times")
+        XCTAssertFalse(ChatServiceData.isBehind([], chat: chat), "nothing read is no message behind")
+        var undated = chat
+        undated.last = nil
+        XCTAssertFalse(ChatServiceData.isBehind([older], chat: undated))
+    }
+
     func testMessagesGoToTheirChat() {
         var inbox = ChatInbox()
         XCTAssertTrue(inbox.add(notice("Anna", "one"), id: "1"))
@@ -663,6 +726,15 @@ final class ChatInboxTests: XCTestCase {
                        "a web address stays whole")
         XCTAssertEqual(ChatFormat.spans("*_both_*"), [Span(text: "both", bold: true, italic: true)])
         XCTAssertEqual(ChatFormat.spans("*open"), [Span(text: "*open")], "an unclosed marker stays")
+        // A shared reel comes in as a Markdown link whose label is the address: it shows short, and still opens.
+        let reel = "https://www.instagram.com/reel/DevP29EPzQg/?id=401249_7643&is_sponsored=false"
+        XCTAssertEqual(ChatFormat.spans("[https://www.instagram.com/reel/DevP29EPzQg](\(reel))"),
+                       [Span(text: "instagram.com/reel/DevP29EPzQg", link: URL(string: reel))])
+        XCTAssertEqual(ChatFormat.spans("look [here](https://x.com/a) now"),
+                       [Span(text: "look "), Span(text: "here", link: URL(string: "https://x.com/a")), Span(text: " now")])
+        XCTAssertEqual(ChatFormat.spans("[not](a link)"), [Span(text: "[not](a link)")], "only a web address is a target")
+        XCTAssertEqual(ChatFormat.plain("[https://www.instagram.com/p/C1/](https://www.instagram.com/p/C1/)"),
+                       "instagram.com/p/C1", "a chat's line shows the short link, not the markup")
     }
 
     func testChatBlocks() {
@@ -873,7 +945,7 @@ final class ChatInboxTests: XCTestCase {
         let messages = ChatServiceData.messages(answer, chat: chat)
         XCTAssertEqual(messages.map(\.id), ["beeper-!a-1"])
         XCTAssertEqual(messages.first?.receipt, .read)
-        XCTAssertEqual(messages.first?.reactions, [InboxReaction(emoji: "😂", count: 1, mine: false)])
+        XCTAssertEqual(messages.first?.reactions, [InboxReaction(emoji: "😂", count: 1, mine: false, people: ["Anna"])], "with who put it there")
         XCTAssertEqual(ChatServiceData.deleted(answer, chat: chat), ["beeper-!a-2"])
         XCTAssertEqual(ChatServiceData.networkID("beeper-!a-1", chat: "!a"), "1")
         XCTAssertNil(ChatServiceData.networkID("beeper-!b-1", chat: "!a"), "a message of another chat")
@@ -893,6 +965,55 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(thread.messages.first?.reactions?.first?.emoji, "❤️")
         XCTAssertFalse(inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: [], unread: 0, deleted: ["m2"]), now: date),
                        "a deletion already shown changes nothing")
+    }
+
+    /// Someone's new emoji on your message is the chat's line until something newer is written; yours, one already
+    /// there, and one taken back are not.
+    func testANewReactionIsTheChatsLineUntilANewerMessage() {
+        var inbox = ChatInbox()
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let mine = InboxMessage(id: "m1", text: "Ja lijkt me sluw", date: date, fromMe: true)
+        var liked = mine
+        liked.reactions = [InboxReaction(emoji: "👍", count: 1, mine: false, people: ["Daan"])]
+        // Already on it the first time Nook sees the message: old news.
+        inbox.merge(BridgedChat(app: "telegram", name: "Daan", messages: [liked], unread: 0), now: date)
+        let key = ChatInbox.key(app: "telegram", chat: "Daan")
+        XCTAssertNil(inbox.threads[key]?.newestReaction)
+
+        var hearts = liked
+        hearts.reactions = [InboxReaction(emoji: "👍", count: 1, mine: false, people: ["Daan"]),
+                            InboxReaction(emoji: "❤️", count: 1, mine: true)]
+        inbox.merge(BridgedChat(app: "telegram", name: "Daan", messages: [hearts], unread: 0), now: date.addingTimeInterval(10))
+        XCTAssertNil(inbox.threads[key]?.newestReaction, "your own emoji is no news")
+
+        var again = hearts
+        again.reactions = [InboxReaction(emoji: "❤️", count: 2, mine: true, people: ["Daan"]),
+                           InboxReaction(emoji: "👍", count: 1, mine: false, people: ["Daan"])]
+        inbox.merge(BridgedChat(app: "telegram", name: "Daan", messages: [again], unread: 0), now: date.addingTimeInterval(20))
+        let note = try! XCTUnwrap(inbox.threads[key]?.newestReaction)
+        XCTAssertEqual(note.emoji, "❤️")
+        XCTAssertEqual(note.person, "Daan")
+        XCTAssertEqual(note.message, "m1")
+        XCTAssertEqual(note.text, "Ja lijkt me sluw")
+        XCTAssertEqual(note.date, date.addingTimeInterval(20))
+
+        // Taken back: the line is the message again.
+        inbox.merge(BridgedChat(app: "telegram", name: "Daan", messages: [hearts], unread: 0), now: date.addingTimeInterval(30))
+        XCTAssertNil(inbox.threads[key]?.reaction)
+
+        inbox.merge(BridgedChat(app: "telegram", name: "Daan", messages: [again], unread: 0), now: date.addingTimeInterval(40))
+        XCTAssertNotNil(inbox.threads[key]?.newestReaction)
+        let answer = InboxMessage(id: "m2", text: "Haha", date: date.addingTimeInterval(50))
+        inbox.merge(BridgedChat(app: "telegram", name: "Daan", messages: [again, answer], unread: nil), now: date.addingTimeInterval(50))
+        XCTAssertNil(inbox.threads[key]?.newestReaction, "a newer message is the line again")
+
+        // A notification's reaction says the same, dated when it came.
+        let notified = date.addingTimeInterval(60)
+        XCTAssertTrue(inbox.add(ChatNotice(app: "telegram", chat: "Daan", sender: "",
+                                           text: "Reageerde met 😂 op Ja lijkt me", date: notified), id: "n1"))
+        XCTAssertEqual(inbox.threads[key]?.newestReaction?.emoji, "😂")
+        XCTAssertEqual(inbox.threads[key]?.newestReaction?.message, "m1")
+        XCTAssertEqual(inbox.threads[key]?.newestReaction?.date, notified)
     }
 
     func testChatJSONHelpers() {
@@ -1102,6 +1223,131 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(TelegramData.text(["@type": "messageDocument", "document": ["file_name": "plan.pdf"]]), "plan.pdf")
         XCTAssertNil(TelegramData.text(["@type": "messagePinMessage"]), "a service message shows nothing")
         XCTAssertEqual(TelegramData.request(["@type": "getMe"]), #"{"@type":"getMe"}"#)
+    }
+
+    // MARK: Reactions from notifications
+
+    func testReactionNoticesGoOnTheirMessage() {
+        XCTAssertEqual(ChatCapture.reaction("\u{200E}Reageerde met 👍🏼 op Komt gord")?.emoji, "👍🏼")
+        XCTAssertEqual(ChatCapture.reaction("Reageerde met 👍🏼 op Komt gord")?.target, "Komt gord")
+        XCTAssertEqual(ChatCapture.reaction("Reacted ❤️ to: “See you at eight”")?.target, "See you at eight")
+        XCTAssertEqual(ChatCapture.reaction("Hat mit 😂 auf „Bis dann“ reagiert")?.target, "Bis dann")
+        XCTAssertNil(ChatCapture.reaction("Reacted 😂 to your message")?.target)
+        XCTAssertNil(ChatCapture.reaction("I reacted 😂 to that"), "a message about reacting is a message")
+        XCTAssertNil(ChatCapture.reaction("Reageerde snel"), "no emoji, no reaction")
+        XCTAssertEqual(ChatInbox.key(app: "whatsapp", chat: "\u{200E}Mijn Schat❤️"), ChatInbox.key(app: "whatsapp", chat: "Mijn Schat❤️"))
+
+        let now = Date()
+        var inbox = ChatInbox()
+        inbox.merge(BridgedChat(app: "whatsapp", name: "Mijn Schat", messages: [
+            InboxMessage(id: "1", text: "Komt goed", date: now.addingTimeInterval(-60), fromMe: true),
+            InboxMessage(id: "2", text: "Top", date: now.addingTimeInterval(-30), fromMe: true),
+        ], unread: 0))
+        let key = ChatInbox.key(app: "whatsapp", chat: "Mijn Schat")
+        XCTAssertTrue(inbox.add(ChatNotice(app: "whatsapp", chat: "\u{200E}Mijn Schat", sender: "",
+                                           text: "\u{200E}Reageerde met 👍🏼 op Komt goed", date: now), id: "n1"))
+        XCTAssertEqual(inbox.threads.count, 1, "the reaction makes no chat of its own")
+        XCTAssertEqual(inbox.threads[key]?.messages.count, 2, "nor a message")
+        XCTAssertEqual(inbox.threads[key]?.messages.first?.reactions,
+                       [InboxReaction(emoji: "👍🏼", count: 1, mine: false, people: ["Mijn Schat"])], "with who put it there")
+        XCTAssertFalse(inbox.add(ChatNotice(app: "whatsapp", chat: "Mijn Schat", sender: "",
+                                            text: "Reageerde met 👍🏼 op Komt goed", date: now), id: "n2"), "shown once")
+    }
+
+    func testAChatReadInItsAppIsReadInNook() {
+        let now = Date()
+        var inbox = ChatInbox()
+        let messages = [InboxMessage(id: "1", text: "Hoi", date: now.addingTimeInterval(-60), fromMe: false),
+                        InboxMessage(id: "2", text: "Ben je er?", date: now.addingTimeInterval(-30), fromMe: false)]
+        inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: messages, unread: 2))
+        let key = ChatInbox.key(app: "instagram", chat: "Anna")
+        XCTAssertEqual(inbox.threads[key]?.readState, .unread(2))
+        // Read on the phone: the app's count drops, nothing new comes with it.
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: [], unread: 0)))
+        XCTAssertEqual(inbox.threads[key]?.readState, .read)
+        // The same after Nook read it first.
+        inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: messages + [
+            InboxMessage(id: "3", text: "Hallo?", date: now, fromMe: false)], unread: 1))
+        inbox.markRead(key)
+        XCTAssertEqual(inbox.threads[key]?.readState, .readInNook)
+        inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: [], unread: 0))
+        XCTAssertEqual(inbox.threads[key]?.readState, .read)
+    }
+
+    func testReactionsSayWhoPutThemThere() {
+        let info: [String: Any] = ["reactions": ["reactions": [[
+            "type": ["@type": "reactionTypeEmoji", "emoji": "👍"], "total_count": 3, "is_chosen": true,
+            "recent_sender_ids": [["@type": "messageSenderUser", "user_id": 7], ["@type": "messageSenderUser", "user_id": 1]],
+        ]]]]
+        XCTAssertEqual(TelegramData.reactions(info, users: [7: "Anna", 1: "Me"], me: 1),
+                       [InboxReaction(emoji: "👍", count: 3, mine: true, people: ["Anna"])], "you are not among the names")
+        let slack: [String: Any] = ["reactions": [["name": "heart", "users": ["U1", "U2"], "count": 2]]]
+        XCTAssertEqual(SlackData.reactions(slack, me: "U2", users: ["U1": "Jan", "U2": "Me"]).first?.people, ["Jan"])
+        let tapbacks = [AppData.Tapback(target: "A", emoji: "❤️", adds: true, sender: "+31612345678", mine: false)]
+        XCTAssertEqual(AppData.Tapback.reactions(tapbacks) { _ in "Opa Henk" }["A"]?.first?.people, ["Opa Henk"])
+    }
+
+    func testAChatSplitByMarksInItsNameIsOneAgain() throws {
+        let now = Date()
+        var inbox = ChatInbox()
+        inbox.merge(BridgedChat(app: "whatsapp", name: "Arjan den Hartog", messages: [
+            InboxMessage(id: "1", text: "Dat sowieso", date: now.addingTimeInterval(-600), fromMe: true)], unread: 0))
+        // As an earlier version stored it: the same chat under a key with the mark in it, holding a newer message.
+        let data = try JSONEncoder().encode(inbox)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var threads = try XCTUnwrap(json["threads"] as? [String: Any])
+        threads["whatsapp|\u{200E}arjan den hartog"] = [
+            "id": "whatsapp|\u{200E}arjan den hartog", "app": "whatsapp", "name": "\u{200E}Arjan den Hartog", "unread": 1,
+            "messages": [["id": "n1", "text": "nou gwn", "date": now.timeIntervalSinceReferenceDate, "sender": ""]],
+        ]
+        json["threads"] = threads
+        var split = try JSONDecoder().decode(ChatInbox.self, from: JSONSerialization.data(withJSONObject: json))
+        split.trim()
+        XCTAssertEqual(split.threads.count, 1, "one chat again")
+        XCTAssertEqual(split.threads[ChatInbox.key(app: "whatsapp", chat: "Arjan den Hartog")]?.messages.last?.text, "nou gwn",
+                       "with the newest message last, as its row shows it")
+    }
+
+    // MARK: Calls
+
+    func testCallLinesReadAsCalls() {
+        XCTAssertEqual(ChatFormat.call("Incoming call"), ChatCall(outgoing: false))
+        XCTAssertEqual(ChatFormat.call("Missed video call"), ChatCall(video: true, missed: true))
+        XCTAssertEqual(ChatFormat.call("📞 Outgoing voice call (2:13)"), ChatCall(outgoing: true, seconds: 133))
+        XCTAssertEqual(ChatFormat.call("Gemiste spraakoproep"), ChatCall(missed: true))
+        XCTAssertEqual(ChatFormat.call("Verpasster Videoanruf")?.video, true)
+        XCTAssertEqual(ChatFormat.call("Appel vocal manqué")?.missed, true)
+        XCTAssertEqual(ChatFormat.call("Videollamada")?.video, true)
+        XCTAssertEqual(ChatFormat.call("Voice call · 5 min")?.seconds, 300)
+        XCTAssertNil(ChatFormat.call("call me?"), "a question about calling is a message")
+        XCTAssertNil(ChatFormat.call("bel me over 5 min goed"))
+        XCTAssertNil(ChatFormat.call("Call"), "one word alone says too little")
+        XCTAssertNil(ChatFormat.call("FaceTime"))
+        // Telegram's call reads back the same way, and every line of one is a call again.
+        let line = TelegramData.text(["@type": "messageCall", "is_video": true, "duration": 75,
+                                      "discard_reason": ["@type": "callDiscardReasonHungUp"]])
+        XCTAssertEqual(line.flatMap(ChatFormat.call), ChatCall(video: true, seconds: 75))
+        let missed = TelegramData.text(["@type": "messageCall", "discard_reason": ["@type": "callDiscardReasonMissed"]])
+        XCTAssertEqual(missed.flatMap(ChatFormat.call), ChatCall(missed: true))
+    }
+
+    /// Every line Nook writes for a call reads back as one. Needs the real translations: `core-tests.sh` shims `tr()` to
+    /// return the key, which is no call line in any language.
+    func testCallTitlesReadBackAsCalls() throws {
+        guard tr("chat.call.voice") != "chat.call.voice" else { throw XCTSkip("needs the translated call titles") }
+        for call in [ChatCall(), ChatCall(video: true), ChatCall(missed: true), ChatCall(video: true, missed: true)] {
+            XCTAssertEqual(ChatFormat.call(call.title(mine: false))?.video, call.video)
+        }
+    }
+
+    func testCallsSayWhatTheyWere() {
+        let missed = ChatCall(missed: true)
+        XCTAssertEqual(missed.title(mine: false), tr("chat.call.missedVoice"))
+        XCTAssertEqual(missed.title(mine: true), tr("chat.call.voice"), "a call nobody picked up at the other end is no missed call of yours")
+        XCTAssertEqual(missed.detail(mine: true), tr("chat.call.outgoing") + " · " + tr("chat.call.noAnswer"))
+        XCTAssertEqual(ChatCall(video: true, seconds: 3725).detail(mine: false), tr("chat.call.incoming") + " · 1:02:05")
+        let message = InboxMessage(id: "1", text: "Missed voice call", date: Date())
+        XCTAssertEqual(message.summary, "📞 " + tr("chat.call.missedVoice"))
     }
 
     // MARK: Teams
@@ -1327,6 +1573,25 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertTrue(ChatInbox.transcript(thread).hasSuffix("] Jan: dinner?"))
     }
 
+    func testSearchFindsYourOwnMessagesInEveryApp() {
+        let teams = InboxThread(id: "teams|aron", app: "teams", name: "Aron", messages: [
+            InboxMessage(id: "1", text: "Zijn de stopcontacten al binnen?", date: now, fromMe: true),
+            InboxMessage(id: "2", text: "Nog niet", date: now.addingTimeInterval(60))
+        ])
+        let whatsApp = InboxThread(id: "wa|anna", app: "whatsapp", name: "Anna", messages: [
+            InboxMessage(id: "3", text: "Stopcontácten gekocht!", date: now.addingTimeInterval(120), fromMe: true)
+        ])
+        let found = ChatInbox.search([teams, whatsApp], query: "stopcontacten").split(separator: "\n")
+        XCTAssertEqual(found.count, 2, "sent messages of every app, accents ignored")
+        XCTAssertTrue(found[0].hasPrefix("- WhatsApp · Anna · "), "newest first")
+        XCTAssertTrue(found[0].hasSuffix(" · You: Stopcontácten gekocht!"), String(found[0]))
+        XCTAssertTrue(found[1].hasSuffix(" · You: Zijn de stopcontacten al binnen?"), String(found[1]))
+        XCTAssertEqual(ChatInbox.search([teams], query: "stopcontacten binnen").split(separator: "\n").count, 1, "every word")
+        XCTAssertEqual(ChatInbox.search([teams], query: "lamp"), "")
+        XCTAssertEqual(ChatInbox.search([teams], query: "  "), "")
+        XCTAssertTrue(ChatInbox.transcript(teams).contains("] You: Zijn de stopcontacten"), "your own message is yours")
+    }
+
     // MARK: Sent, delivered, read
 
     func testReceiptsOnlyMoveForward() {
@@ -1404,6 +1669,17 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(filled, [.read, nil, .read, .read, .read, .delivered, .failed, .sent],
                        "older ones go as far as a later one did; theirs have none; a red mark stays; the newest unknown has one tick")
         XCTAssertEqual(ChatReceipts.filled([(true, .pending), (true, nil)]), [.pending, .sent], "a clock stays a clock")
+        XCTAssertEqual(ChatReceipts.filled([(true, .pending), (true, .read)]), [.read, .read],
+                       "a clock before a message that went out is one its app never took back")
+    }
+
+    func testAChatListShowsTheTicksOfTheMessageItShows() {
+        let receipts = ChatReceipts.filled([(true, .delivered), (true, .read), (false, nil)])
+        let ids = ["mine", "hidden", "theirs"]
+        XCTAssertEqual(ChatReceipts.newest(receipts, ids: ids, shown: "mine"), .read,
+                       "a message you hid after yours: the list shows your message's own ticks")
+        XCTAssertNil(ChatReceipts.newest(receipts, ids: ids, shown: "theirs"), "their message has none")
+        XCTAssertNil(ChatReceipts.newest(receipts, ids: ids, shown: nil), "an empty chat has none")
     }
 
     func testAMemberWhoWroteLaterHasReadYourMessage() {

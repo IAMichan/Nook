@@ -7,6 +7,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private var countWatch: AnyCancellable?
 
+    /// Started by macOS at login (a Login Item), not by you: the main window then opens without taking the keyboard.
+    private var launchedAtLogin = false
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Only readable now: the open-application event that started Nook says whether it came from the Login Items.
+        let event = NSAppleEventManager.shared().currentAppleEvent
+        launchedAtLogin = event?.eventID == kAEOpenApplication
+            && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         model.start()
@@ -16,6 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Restarted into an update: the main window opens on the screen the update was started from.
         if let screen = AppUpdater.takeRestartScreen() {
             model.openWindow(on: screen)
+        } else if model.settings.openWindowAtLaunch {
+            // The main window is where most of the work happens: it opens every time Nook starts, in front when you
+            // started Nook yourself and behind the app you are in when macOS started it at login.
+            model.openWindow(activate: !launchedAtLogin)
         } else if WorkspaceWindowController.wasOpen {
             // The main window stays open until you close it: after a restart (a new build) it is back.
             model.openWindow(activate: false)

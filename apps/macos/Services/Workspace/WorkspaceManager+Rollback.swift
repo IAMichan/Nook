@@ -113,6 +113,7 @@ extension WorkspaceManager {
             // The waiting Claude Code process remembers everything: the next turn resumes a copy instead.
             closeClaudeProcess(id)
         }
+        checkpointIndices[id] = trimmed.kept.count
         update(id) { run in
             run.checkpoints = trimmed.kept
             guard follows else { return }

@@ -56,6 +56,15 @@ enum SlackData {
         return error
     }
 
+    /// Slack's reasons that mean the sign-in itself is gone (signed out on the website, a revoked or expired token, a
+    /// deactivated account): no read or send works until you sign in again, so reading stops instead of retrying.
+    static let signedOutErrors: Set<String> = ["invalid_auth", "not_authed", "token_revoked", "token_expired", "account_inactive"]
+
+    /// Whether Slack's answer says the sign-in is gone (`signedOutErrors`).
+    static func signedOut(_ json: [String: Any]) -> Bool {
+        (json["ok"] as? Bool) != true && signedOutErrors.contains((json["error"] as? String) ?? "")
+    }
+
     /// The cursor of the next page, nil on the last.
     static func nextCursor(_ json: [String: Any]) -> String? {
         let cursor = ((json["response_metadata"] as? [String: Any])?["next_cursor"] as? String) ?? ""
@@ -137,6 +146,8 @@ enum SlackData {
             var text = clean((message["text"] as? String) ?? "", users: users)
             // An app (GitHub, Jira…) often writes nothing itself and puts everything in its attachments.
             if text.isEmpty { text = clean(attachmentText(message), users: users) }
+            // A huddle shows as a call, as every app's calls do.
+            if let huddle = huddle(message) { text = huddle.line }
             let media = (message["files"] as? [[String: Any]])?.first.flatMap(Self.file)
             guard !text.isEmpty || media != nil else { return nil }
             let user = (message["user"] as? String) ?? (message["bot_id"] as? String) ?? ""
@@ -147,11 +158,45 @@ enum SlackData {
             // Slack keeps no delivery or read receipts: your message is on Slack, and that is all it says.
             if mine { inbox.receipt = .sent }
             // Always set, also when there are none: an emoji taken back in Slack leaves the message in Nook too.
-            inbox.reactions = Self.reactions(message, me: me)
+            inbox.reactions = Self.reactions(message, me: me, users: users)
             inbox.quote = Self.quote(message, conversation: conversation, users: users, me: me)
             return inbox
         }
         return messages.sorted { $0.date < $1.date }
+    }
+
+    /// A huddle in a conversation (`subtype: huddle_thread`, its `room`) as a call: how long it lasted once it ended,
+    /// or that nobody answered. Nil for any other message, and for a huddle still going.
+    static func huddle(_ message: [String: Any]) -> ChatCall? {
+        guard message["subtype"] as? String == "huddle_thread", let room = message["room"] as? [String: Any] else { return nil }
+        let start = (room["date_start"] as? NSNumber)?.doubleValue ?? 0
+        let end = (room["date_end"] as? NSNumber)?.doubleValue ?? 0
+        let missed = room["was_missed"] as? Bool == true || room["was_rejected"] as? Bool == true
+        let ended = room["has_ended"] as? Bool == true && end > start && start > 0
+        // A huddle still going says nothing yet: it shows once it ended (or was missed).
+        guard ended || missed else { return nil }
+        return ChatCall(missed: missed, seconds: ended && !missed ? end - start : nil)
+    }
+
+    /// Where you stand in each direct conversation, from `client.counts` (Slack's website asks it too): the newest
+    /// message you read (`last_read`, a `ts`) by the conversation's id. Empty for an answer without them (a pasted
+    /// token Slack does not answer this for).
+    static func readMarks(_ json: [String: Any]) -> [String: String] {
+        var marks: [String: String] = [:]
+        for key in ["ims", "mpims"] {
+            for conversation in json[key] as? [[String: Any]] ?? [] {
+                guard let id = conversation["id"] as? String, let read = conversation["last_read"] as? String else { continue }
+                marks[id] = read
+            }
+        }
+        return marks
+    }
+
+    /// How many messages of others came after `lastRead` (a `ts`) among `messages` (`ts`, whether yours).
+    static func unread(_ messages: [(ts: Double, mine: Bool)], lastRead: String) -> Int {
+        // Half a microsecond of slack: a `ts` that went through `Date` comes back a hair off.
+        let read = (Double(lastRead) ?? 0) + 0.000_000_5
+        return messages.filter { !$0.mine && $0.ts > read }.count
     }
 
     /// A message's id in Nook: its conversation and Slack's `ts` of it ("slack-D1-1700000010.000100").
@@ -184,18 +229,20 @@ enum SlackData {
 
     /// The emoji on a message (`reactions: [{name, count, users}]`), the most used first; yours when your id is among
     /// its people. A skin tone counts with the emoji itself; a workspace's own emoji (no Unicode one) is left out.
-    static func reactions(_ message: [String: Any], me: String?) -> [InboxReaction] {
+    static func reactions(_ message: [String: Any], me: String?, users: [String: String] = [:]) -> [InboxReaction] {
         var result: [InboxReaction] = []
         for reaction in message["reactions"] as? [[String: Any]] ?? [] {
             guard let name = reaction["name"] as? String, let character = Self.emoji(shortcode: name) else { continue }
             let people = reaction["users"] as? [String] ?? []
             let count = max((reaction["count"] as? Int) ?? people.count, 1)
             let mine = me.map { people.contains($0) } ?? false
+            let names = people.filter { $0 != me }.compactMap { users[$0] }
             if let index = result.firstIndex(where: { $0.emoji == character }) {
                 result[index].count += count
                 result[index].mine = result[index].mine || mine
+                if !names.isEmpty { result[index].people = (result[index].people ?? []) + names }
             } else {
-                result.append(InboxReaction(emoji: character, count: count, mine: mine))
+                result.append(InboxReaction(emoji: character, count: count, mine: mine, people: names.isEmpty ? nil : names))
             }
         }
         return result.enumerated().sorted {

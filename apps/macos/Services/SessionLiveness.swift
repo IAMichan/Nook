@@ -25,6 +25,16 @@ enum SessionLiveness {
     /// the turn stays unknown rather than guessed.
     static let tailBytes: UInt64 = 256 * 1024
 
+    /// How long a hooked session stays listed after its last event, in Nook and across a restart alike. A done one stays
+    /// as long as the sessions Nook runs itself (`WorkspaceRunsSection.recent`), so a chat you have not handled yet is still
+    /// there after a night away; one that still reads as busy is settled long before by `verdict`.
+    static let doneLifetime: TimeInterval = 24 * 3600
+    static let busyLifetime: TimeInterval = 12 * 3600
+
+    static func isExpired(done: Bool, age: TimeInterval) -> Bool {
+        age >= (done ? doneLifetime : busyLifetime)
+    }
+
     /// For a session that reads as busy: `working` when it runs, false when it waits for you.
     static func verdict(working: Bool, lastEvent: Date, turn: Turn, transcriptModified: Date?,
                         missingScans: Int, now: Date) -> Verdict? {

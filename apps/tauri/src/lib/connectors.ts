@@ -264,6 +264,27 @@ export interface PullRequestItem {
   author: string;
   ci: Ci;
   state: "open" | "closed" | "merged";
+  review: ReviewDecision;
+  /// Comments and reviews on the conversation.
+  comments: number;
+  additions: number;
+  deletions: number;
+  /// A merge conflict with the base branch.
+  conflicting: boolean;
+}
+
+export type ReviewDecision = "none" | "approved" | "changesRequested" | "required";
+
+/// An open issue assigned to you.
+export interface IssueItem {
+  repo: string;
+  number: number;
+  title: string;
+  url: string | null;
+  updated: string | null;
+  author: string;
+  comments: number;
+  labels: string[];
 }
 
 export type Ci = "unknown" | "pending" | "passing" | "failing";
@@ -274,6 +295,8 @@ export interface AccountPullRequests {
   login: string;
   mine: PullRequestItem[];
   reviews: PullRequestItem[];
+  /// The open issues assigned to you.
+  issues: IssueItem[];
   error: string | null;
   errorKind: ErrorKind | null;
   /// The other pull requests in the watched organizations and repositories.
@@ -328,6 +351,8 @@ export const connectorsApi = {
   whatsappIgnore: (chat: string) => invoke<void>("whatsapp_ignore", { chat }),
   whatsappUnmute: () => invoke<void>("whatsapp_unmute"),
   whatsappCard: (chat: string) => invoke<WhatsAppCard | null>("whatsapp_card", { chat }),
+  /** Profile photos of these chats as small data URLs, by chat; a chat without one is left out. */
+  whatsappAvatars: (chats: string[]) => invoke<Record<string, string>>("whatsapp_avatars", { chats }),
   whatsappCardLoad: (chat: string) => invoke<boolean>("whatsapp_card_load", { chat }),
   whatsappOpenFile: (chat: string, message: string) => invoke<void>("whatsapp_open_file", { chat, message }),
   whatsappAskNook: (chat: string) => invoke<string>("whatsapp_ask_nook", { chat }),

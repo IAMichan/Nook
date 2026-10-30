@@ -78,6 +78,31 @@ final class AgentCoverageTests: XCTestCase {
         XCTAssertEqual(messages[3].text, "En AppDelegate?")
     }
 
+    func testGeminiChatShowsItsToolCallsAsSteps() {
+        let chat: [String: Any] = ["messages": [
+            ["id": "u1", "type": "user", "content": "Draai de tests"],
+            ["id": "g1", "type": "gemini", "content": "Ik draai ze.", "toolCalls": [
+                ["id": "t1", "name": "run_shell_command", "args": ["command": "swift test", "description": "Run the tests"],
+                 "status": "success", "resultDisplay": "All tests passed"],
+                ["id": "t2", "name": "replace", "args": ["file_path": "/p/main.swift", "old_string": "a", "new_string": "b"],
+                 "status": "error", "resultDisplay": "Error: could not find the text\nmore"],
+                ["id": "t3", "name": "read_file", "args": ["absolute_path": "/p/App.swift"], "status": "executing"]
+            ]]
+        ]]
+        let messages = AgentTranscript.gemini(try! JSONSerialization.data(withJSONObject: chat))
+        XCTAssertEqual(messages.map(\.kind), [.user, .assistant, .tools], "the same steps Claude Code and Codex show")
+        let steps = messages[2].steps
+        XCTAssertEqual(steps.map(\.name), ["Shell", "Edit", "Read"])
+        XCTAssertEqual(steps.map(\.summary), ["Run the tests", "main.swift", "App.swift"])
+        XCTAssertEqual(steps.map(\.state), [.done, .failed, .running])
+        XCTAssertEqual(steps[0].command, "swift test")
+        XCTAssertEqual(steps[0].output, "All tests passed")
+        XCTAssertEqual(steps[1].error, "Error: could not find the text")
+        XCTAssertEqual(steps[1].path, "/p/main.swift")
+        XCTAssertEqual(steps[1].lines, EditLines(added: 1, removed: 1))
+        XCTAssertEqual(steps[2].file, "/p/App.swift")
+    }
+
     func testWholeConversationIsRead() throws {
         var objects: [[String: Any]] = []
         for index in 0..<120 {

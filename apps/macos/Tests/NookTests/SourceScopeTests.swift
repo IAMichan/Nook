@@ -101,9 +101,31 @@ final class SourceScopeTests: XCTestCase {
         let active: Set<String> = ["calendar", "mail", "github", "stripe", "browser", "files"]
         let relevant = SourceRouter.relevant(to: "Wat heeft Lisa gemaild over de offerte?", scope: .automatic, active: active)
         XCTAssertTrue(relevant.contains("mail"))
-        XCTAssertTrue(relevant.contains("calendar"), "calendar is always included")
+        XCTAssertFalse(relevant.contains("calendar"), "a question about a mail does not need the calendar")
         XCTAssertFalse(relevant.contains("stripe"))
         XCTAssertFalse(relevant.contains("github"))
+    }
+
+    func testCalendarOnlyComesAlongForQuestionsAboutTime() {
+        let active: Set<String> = ["calendar", "mail", "whatsapp", "loops"]
+        for question in ["Reageer alvast op de mail van Gijs dat wij die dysons kunnen toevoegen",
+                         "Stuur Arjan een WhatsApp dat de PR gemerged is", "Wat is de hoofdstad van Frankrijk?",
+                         "Schrijf een update voor het team over de release", "Vat deze mail van Lisa kort samen"] {
+            XCTAssertFalse(SourceRouter.relevant(to: question, scope: .automatic, active: active).contains("calendar"), question)
+        }
+        for question in ["Heb ik morgen een gesprek met Aron?", "Wanneer is mijn volgende afspraak?", "Plan een call met Jan op vrijdag",
+                         "Ben ik donderdag vrij?", "What time is my meeting?", "Verzet de vergadering naar 15:00",
+                         "Wat staat er in mijn agenda?", "Hoe ziet mijn dag eruit?", "Habe ich heute Termine?"] {
+            XCTAssertTrue(SourceRouter.relevant(to: question, scope: .automatic, active: active).contains("calendar"), question)
+        }
+    }
+
+    func testAShortFollowUpToACalendarQuestionKeepsTheCalendar() {
+        let active: Set<String> = ["calendar", "mail"]
+        let history = [ChatTurn(fromUser: true, text: "Heb ik morgen een afspraak?"), ChatTurn(fromUser: false, text: "Ja, om 10:00.")]
+        XCTAssertTrue(SourceRouter.relevant(to: "En donderdag?", scope: .automatic, active: active, history: history).contains("calendar"))
+        let mail = SourceRouter.relevant(to: "Stuur Lisa een mail dat ik later kom", scope: .automatic, active: active, history: history)
+        XCTAssertTrue(mail.contains("mail"))
     }
 
     func testRemindersOnlyComeAlongWhenAskedFor() {

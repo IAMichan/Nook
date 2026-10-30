@@ -22,6 +22,8 @@ extension WorkspaceManager {
         var log: (RunEvent) -> Void = { _ in }
         var committed: () -> Void = {}
         var openedPullRequest: (URL) -> Void = { _ in }
+        /// A new branch for a new pull request: what was known about the old branch's pull request no longer applies.
+        var switchedBranch: (String) -> Void = { _ in }
     }
 
     private func quickTarget(_ run: WorkspaceRun) -> QuickGitTarget? {
@@ -43,7 +45,32 @@ extension WorkspaceManager {
                           self.openPullRequests[id] = link
                           // A GitHub pull request Nook opened for the session is watched from the start.
                           if self.run(id)?.prWatch == nil, PullRequestWatch.canWatch(link) { self.watchPullRequest(id, url: link) }
+                      },
+                      switchedBranch: { [weak self] branch in
+                          guard let self else { return }
+                          self.followBranch(id, to: branch)
+                          // The merged pull request's watch makes way for the new one.
+                          if self.run(id)?.prWatch != nil { self.watchPullRequest(id, url: nil) }
                       })
+    }
+
+    /// The session works on another branch now (a new one for a new pull request, or one the agent switched to): it is
+    /// the session's branch from here on, and the one it left stays listed above the composer with its pull request.
+    func followBranch(_ id: UUID, to branch: String) {
+        guard !branch.isEmpty, let run = run(id), run.branch != branch else { return }
+        update(id) {
+            $0.earlierBranches = SessionBranches.leaving($0.branch, for: branch, earlier: $0.earlierBranches, base: $0.baseBranch)
+            $0.branch = branch
+        }
+        openPullRequests[id] = nil
+        PullRequestSync.shared.forget(id)
+    }
+
+    /// A conversation links a pull request: the first time Nook sees it, the answers kept for a minute no longer count,
+    /// so the next look asks the forge and the button turns from "create" to what comes next at once.
+    func pullRequestLinked(_ url: URL) {
+        guard linkedPullRequests.insert(url).inserted else { return }
+        pullRequestChecked.removeAll()
     }
 
     /// Where the button stands for a session; nil outside a repository.
@@ -75,20 +102,28 @@ extension WorkspaceManager {
         }.value
         let branch = status.detached ? nil : status.branch
         var open = known
+        var landed = false
         if let repo = facts.repo, let branch, let lookup = pullRequestLookup {
             let key = repo.key + " " + branch
             if let last = pullRequestChecked[key], Date().timeIntervalSince(last) < 60 {
-                // Asked a moment ago: keep that answer.
+                // Asked a moment ago, perhaps for another view of the same branch: keep that answer (or the pull
+                // request this view just opened itself).
+                open = pullRequestOpen[key] ?? known
+                if open != known { found(open) }
             } else {
                 pullRequestChecked[key] = Date()
                 // Usually the same answer as last time: publishing it again would redraw every view of the workspace.
-                open = await lookup(repo, branch)
+                let answer = await lookup(repo, branch)
+                open = answer.open
+                pullRequestOpen[key] = answer.open
+                if answer.landed { pullRequestLanded.insert(key) } else { pullRequestLanded.remove(key) }
                 found(open)
             }
+            landed = open == nil && pullRequestLanded.contains(key)
         }
         return GitQuickState(hasChanges: !status.isClean, branch: branch, isDefaultBranch: branch != nil && branch == facts.base,
                              hasUpstream: status.upstream != nil, hasRemote: facts.remote, ahead: status.ahead, behind: status.behind,
-                             aheadOfBase: facts.ahead, hasOpenPullRequest: open != nil)
+                             aheadOfBase: facts.ahead, hasOpenPullRequest: open != nil, pullRequestLanded: landed)
     }
 
     /// Carries out the action, step by step; `progress` gets each step's label. Returns the pull request, if one opened.
@@ -104,7 +139,8 @@ extension WorkspaceManager {
     @discardableResult
     func performQuickGit(folder root: String, _ action: GitQuickAction, progress: @escaping (String) -> Void) async throws -> URL? {
         guard let target = quickTarget(folder: root) else { throw StartError.noGit }
-        let hooks = QuickGitHooks(openedPullRequest: { [weak self] in self?.folderPullRequests[root] = $0 })
+        let hooks = QuickGitHooks(openedPullRequest: { [weak self] in self?.folderPullRequests[root] = $0 },
+                                  switchedBranch: { [weak self] _ in self?.folderPullRequests[root] = nil })
         return try await performQuickGit(target, action, hooks: hooks, progress: progress)
     }
 
@@ -117,6 +153,7 @@ extension WorkspaceManager {
             hooks.log(RunEvent(kind: .system, text: tr("ws.event.pulled")))
             return nil
         }
+        var message: (subject: String, body: String)?
         if action.commits {
             progress(tr("ws.quick.generatingCommit"))
             let context = try await Task.detached(priority: .userInitiated) { try git.commitContext(directory) }.value
@@ -125,12 +162,32 @@ extension WorkspaceManager {
             let answer = await generateText(TextGeneration.commitPrompt(branch: branch, files: context.files, patch: context.patch, style: style),
                                             schema: TextGeneration.commitSchema, prefer: target.provider, profileID: target.profileID,
                                             cwd: target.isRemote ? NSHomeDirectory() : directory)
-            let subject = TextGeneration.commitSubject((answer?["subject"] as? String) ?? "")
-            let body = (answer?["body"] as? String) ?? ""
+            message = (TextGeneration.commitSubject((answer?["subject"] as? String) ?? ""), (answer?["body"] as? String) ?? "")
+        }
+        var cut: String?
+        if action.startsBranch {
+            progress(tr("ws.quick.branching"))
+            let topic: String
+            if let message { topic = message.subject } else { topic = await Task.detached { git.recentSubjects(directory).first ?? "" }.value }
+            let name = WorktreeNaming.branchName(task: topic, id: UUID(), prefix: settings.sessionDefaults(for: target.root).branchPrefix)
+            cut = try await Task.detached(priority: .userInitiated) { try git.startBranch(directory, name: name, remote: Self.remote(git, directory)) }.value
+            hooks.log(RunEvent(kind: .system, text: tr("ws.event.branched", name)))
+            hooks.switchedBranch(name)
+        }
+        if let message {
             progress(tr("ws.quick.committing"))
-            let sha = try await Task.detached(priority: .userInitiated) { try git.commitAll(directory, subject: subject, body: body) }.value
-            hooks.log(RunEvent(kind: .system, text: tr("ws.event.committed", sha, ToolSummary.oneLine(subject, 80))))
+            let sha = try await Task.detached(priority: .userInitiated) { try git.commitAll(directory, subject: message.subject, body: message.body) }.value
+            hooks.log(RunEvent(kind: .system, text: tr("ws.event.committed", sha, ToolSummary.oneLine(message.subject, 80))))
             hooks.committed()
+        }
+        if let cut {
+            // Only the new work: the commits of the merged pull request stay out of the new one.
+            let sessionBase = target.baseBranch
+            await Task.detached(priority: .userInitiated) {
+                let remote = Self.remote(git, directory)
+                guard let base = Self.pullRequestBase(sessionBase ?? git.defaultBranch(directory, remote: remote), remote: remote) else { return }
+                git.moveOntoBase(directory, base: base, remote: remote, cut: cut)
+            }.value
         }
         if action.pushes {
             progress(tr("ws.quick.pushing"))
@@ -248,6 +305,12 @@ extension WorkspaceManager {
     func currentBranch(folder root: String) async -> String? {
         guard let git = gitService else { return nil }
         return await Task.detached { git.currentBranch(root) }.value
+    }
+
+    /// The remote the button pushes to: origin, else the first one.
+    nonisolated static func remote(_ git: GitService, _ directory: String) -> String {
+        let remotes = git.remotes(directory)
+        return remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
     }
 
     /// The branch a pull request merges into, without the remote's name ("origin/main" → "main").

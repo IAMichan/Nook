@@ -11,19 +11,14 @@ struct OnboardingAgentsStep: View {
     static let kinds: [AgentKind] = [.claude, .codex, .gemini, .opencode, .cursor]
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-                Text(tr("onboarding.agents.title")).font(NookTheme.TextStyle.strong)
-                Text(tr("onboarding.agents.detail")).foregroundStyle(NookTheme.textSecondary)
-                VStack(spacing: NookTheme.Spacing.xs) {
-                    ForEach(Self.kinds) { kind in agentRow(kind) }
-                    ForEach(CustomAgents.load()) { agent in acpRow(agent) }
-                }
-                Button(tr("onboarding.agents.addAcp")) { app.openSettings(section: .agents) }
-                    .buttonStyle(.link)
-                projects
+        OnboardingPage(title: tr("onboarding.agents.title"), detail: tr("onboarding.agents.detail")) {
+            VStack(spacing: NookTheme.Spacing.xs) {
+                ForEach(Self.kinds) { kind in agentRow(kind) }
+                ForEach(CustomAgents.load()) { agent in acpRow(agent) }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            Button(tr("onboarding.agents.addAcp")) { app.openSettings(section: .agents) }
+                .buttonStyle(.link)
+            projects
         }
         .onAppear { app.history.refresh() }
     }
@@ -81,14 +76,14 @@ struct OnboardingAgentsStep: View {
         HStack(spacing: NookTheme.Spacing.lg) {
             AgentLogo(agent: agent, size: 20)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(title).font(NookTheme.TextStyle.strong)
+                Text(title).font(NookTheme.TextStyle.strong).lineLimit(1)
                 Text(detail)
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(failed ? NookTheme.coral : NookTheme.textSecondary)
                     .lineLimit(2)
             }
             Spacer(minLength: NookTheme.Spacing.md)
-            trailing()
+            trailing().fixedSize()
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, NookTheme.Spacing.md)
@@ -101,7 +96,7 @@ struct OnboardingAgentsStep: View {
         let fm = FileManager.default
         let sessions = app.history.sessions.map { (folder: $0.cwd, date: $0.ended) }
             + app.workspace.runs.map { (folder: $0.projectPath, date: $0.updatedAt) }
-        return AgentReadiness.projectCandidates(sessions: sessions, known: ws.recentProjects,
+        return AgentReadiness.projectCandidates(sessions: sessions, known: ws.favoriteProjects + ws.recentProjects,
                                                 home: fm.homeDirectoryForCurrentUser.path, now: Date(),
                                                 gitRoot: { AgentReadiness.gitRoot(of: $0, fileExists: fm.fileExists(atPath:)) })
     }
@@ -119,7 +114,7 @@ struct OnboardingAgentsStep: View {
     }
 
     private func projectRow(_ candidate: AgentReadiness.ProjectCandidate) -> some View {
-        let added = candidate.added || ws.recentProjects.contains(candidate.path)
+        let added = candidate.added || ws.recentProjects.contains(candidate.path) || ws.isFavoriteProject(candidate.path)
         return HStack(spacing: NookTheme.Spacing.lg) {
             Image(systemName: "folder").foregroundStyle(NookTheme.textSecondary).frame(width: 20)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {

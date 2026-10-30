@@ -4,7 +4,7 @@
   // gebeurt pas na jouw klik; pushen naar de standaardbranch vraagt eerst of je dat echt wilt.
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { agents } from "../../../lib/agents.svelte";
-  import { isActive, workspaceApi, type FileChange, type GitView, type QuickView, type TreeRow, type WorkspaceRun } from "../../../lib/workspace/api";
+  import { isActive, workspaceApi, type FileChange, type GitView, type QuickAction, type QuickView, type TreeRow, type WorkspaceRun } from "../../../lib/workspace/api";
   import { workspace } from "../../../lib/workspace/store.svelte";
   import UnifiedDiffView from "../UnifiedDiffView.svelte";
 
@@ -19,6 +19,8 @@
   let busy = $state<string | null>(null);
   let error = $state<string | null>(null);
   let done = $state<string | null>(null);
+  // De actie die nu loopt: die van de knop, of de andere weg ("Nieuwe branch en PR").
+  let chosen = $state<QuickAction | null>(null);
   // Formulieren: commit, bevestigen van de standaardbranch, pull request.
   let form = $state<"" | "commit" | "confirmDefault" | "pr">("");
   let subject = $state("");
@@ -122,24 +124,42 @@
     }
   }
 
+  const label = (action: QuickAction) => (action.startsWith("branch") ? "Nieuwe branch en PR" : (quick?.label ?? "Git"));
+
   /// De knop: committen vraagt eerst het bericht, pushen naar de standaardbranch een bevestiging, een PR het formulier.
-  function quickClick() {
-    if (!quick?.action) return;
+  /// Een nieuwe branch landt nooit op de standaardbranch en vraagt dus geen bevestiging.
+  function quickClick(action: QuickAction | null = quick?.action ?? null) {
+    if (!action || !quick) return;
+    chosen = action;
     done = null;
-    if (quick.action.startsWith("commit")) {
+    if (action.startsWith("commit") || action === "branchCommitPushPr") {
       subject = subject || run.title;
       form = "commit";
-    } else if (quick.state.isDefaultBranch && quick.action === "push") {
+    } else if (quick.state.isDefaultBranch && action === "push") {
       form = "confirmDefault";
-    } else if (quick.action === "pull") {
+    } else if (action === "pull") {
       step("Pullen…", () => workspaceApi.pull(run.id)).then(() => load(false));
+    } else if (action === "branchPushPr") {
+      newBranch(run.title).then((ok) => { if (ok) continueAfterCommit(); });
     } else {
       continueAfterCommit();
     }
   }
 
+  /// Een nieuwe branch voor de nieuwe pull request; het snijpunt houdt de commits van de vorige erbuiten.
+  let cut: string | null = null;
+  async function newBranch(topic: string): Promise<boolean> {
+    return step("Nieuwe branch starten…", async () => {
+      const started = await workspaceApi.startBranch(run.id, topic);
+      cut = started.cut;
+      done = `Nieuwe branch: ${started.branch}`;
+    });
+  }
+
   async function commit() {
     if (!subject.trim()) return;
+    const action = chosen;
+    if (action === "branchCommitPushPr" && !(await newBranch(subject))) return;
     const ok = await step("Committen…", async () => {
       const sha = await workspaceApi.commitAll(run.id, subject, body);
       done = `Gecommit als ${sha}`;
@@ -148,8 +168,8 @@
     if (!ok) return;
     subject = "";
     body = "";
-    if (quick?.action === "commitPush" || quick?.action === "commitPushPr") {
-      if (quick.state.isDefaultBranch) form = "confirmDefault";
+    if (action === "commitPush" || action === "commitPushPr" || action === "branchCommitPushPr") {
+      if (quick?.state.isDefaultBranch && action !== "branchCommitPushPr") form = "confirmDefault";
       else await continueAfterCommit();
     }
     load(false);
@@ -164,10 +184,15 @@
 
   async function continueAfterCommit() {
     form = "";
-    const action = quick?.action;
+    const action = chosen ?? quick?.action;
+    if (cut) {
+      const from = cut;
+      cut = null;
+      await step("Op de basis zetten…", () => workspaceApi.moveOntoBase(run.id, from));
+    }
     const pushes = action && action !== "commit" && action !== "pull" && action !== "createPr";
     if (pushes && !(await push())) return;
-    if (action === "commitPushPr" || action === "pushPr" || action === "createPr") await openPrForm();
+    if (action === "commitPushPr" || action === "pushPr" || action === "createPr" || action?.startsWith("branch")) await openPrForm();
     load(false);
   }
 
@@ -203,20 +228,26 @@
     <span class="spacer"></span>
     {#if quick?.pullRequest}<button class="ghost" onclick={() => openUrl(quick!.pullRequest!)}>Bekijk PR</button>{/if}
     <button class="primary" disabled={!quick?.action || active || !!busy}
-      title={quick?.reason ?? "Wat de knop doet hangt af van de branch: committen, pushen, een pull request maken of pullen."} onclick={quickClick}>
+      title={quick?.reason ?? "Wat de knop doet hangt af van de branch: committen, pushen, een pull request maken of pullen."} onclick={() => quickClick()}>
       {busy ?? quick?.label ?? "Git"}
     </button>
+    {#each quick?.alternatives ?? [] as other}
+      <button class="ghost" disabled={active || !!busy} title="Zet deze wijzigingen op een nieuwe branch met een eigen pull request." onclick={() => quickClick(other)}>{label(other)}</button>
+    {/each}
     <button class="ghost" title="Opnieuw lezen" onclick={() => load(true)}>↻</button>
     <button class="ghost" onclick={onclose}>Sluit</button>
   </div>
   {#if quick && !quick.action && quick.reason}<p class="faint small">{quick.reason}</p>{/if}
+  {#if quick?.action && quick.destination && !busy}<p class="faint small">{quick.destination}</p>{/if}
   {#if active}<p class="faint small">De agent werkt nog; committen en pushen kan als hij klaar is.</p>{/if}
   {#if error}<p class="err">{error}</p>{/if}
   {#if done}<p class="ok">{done}</p>{/if}
 
   {#if form === "commit"}
     <div class="form">
-      <div class="faint small">Op {quick?.state.branch ?? "?"} in {run.workingDirectory}. Er wordt alleen gecommit; pushen doet de knop daarna.</div>
+      <div class="faint small">{chosen === "branchCommitPushPr"
+        ? `Op een nieuwe branch (vanaf ${quick?.state.branch ?? "?"}) in ${run.workingDirectory}, met een eigen pull request.`
+        : `Op ${quick?.state.branch ?? "?"} in ${run.workingDirectory}. Er wordt alleen gecommit; pushen doet de knop daarna.`}</div>
       <input bind:value={subject} placeholder="Bericht" />
       <textarea bind:value={body} rows="3" placeholder="Toelichting (optioneel)"></textarea>
       <div class="row"><button class="ghost" onclick={() => (subject = run.title)}>Gebruik de naam van de sessie</button><span class="spacer"></span>

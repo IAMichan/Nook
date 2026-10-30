@@ -163,7 +163,8 @@ struct RunInspector: View {
             InfoRow(label: tr("ws.usage.input"), value: WSFormat.tokens(usage.inputTokens))
             InfoRow(label: tr("ws.usage.output"), value: WSFormat.tokens(usage.outputTokens))
             InfoRow(label: tr("ws.usage.cacheRead"), value: caps.reportsCacheTokens ? WSFormat.tokens(usage.cacheReadTokens) : nil)
-            if run.provider == .claude {
+            // Every agent that reports what it wrote to its cache (Claude Code, Codex app-server, ACP agents).
+            if caps.reportsCacheTokens, usage.cacheWriteTokens != nil {
                 InfoRow(label: tr("ws.usage.cacheWrite"), value: WSFormat.tokens(usage.cacheWriteTokens))
             }
             InfoRow(label: tr("ws.usage.context"), value: contextText(usage, caps: caps), help: tr("ws.header.contextHelp"))
@@ -178,11 +179,18 @@ struct RunInspector: View {
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(WS.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
-            if run.provider == .claude, let profile = app.profile(for: run), let plan = app.hub.subscriptionUsage(for: profile) {
-                // Subscription limit for account (entire account, not just this session), parsed from status line.
-                InfoRow(label: tr("ws.usage.accountQuota"), value: plan.label, help: tr("ws.usage.accountQuotaHelp"))
+            if let profile = app.profile(for: run), let quota = Self.quotaLine(app.quota.limits(for: profile)) {
+                // The account's subscription limits (the whole account, not just this session), for every agent that reports them.
+                InfoRow(label: tr("ws.usage.accountQuota"), value: quota, help: tr("ws.usage.accountQuotaHelp"))
             }
         }
+    }
+
+    /// "5 hours 34% · Week 12%": the windows the agent reported; nil when it reported none.
+    static func quotaLine(_ limits: [QuotaLimit]) -> String? {
+        let reported = limits.filter { $0.note == nil }
+        guard !reported.isEmpty else { return nil }
+        return reported.map { "\($0.label) \(Int($0.percent.rounded()))%" }.joined(separator: " · ")
     }
 
     private func contextText(_ usage: RunUsage, caps: ProviderCapabilities) -> String? {

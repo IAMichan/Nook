@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The chat apps Settings › Chats offers, in the order they show while none is linked: the apps most chats come from
+/// The chat apps Settings › Accounts & connections offers, in the order they show while none is linked: the apps most chats come from
 /// first. Nook links those in `ownWay` itself; the others show only while a chat service on this Mac can link them (or
 /// one is linked), as does any other app such a service offers.
 enum ChatAppsCatalog {
@@ -20,7 +20,7 @@ enum ChatAppsCatalog {
     }
 }
 
-/// One app on Settings › Chats: whether it is linked, how and as whom, and whether its chats are on.
+/// One chat app on Settings › Accounts & connections: whether it is linked, how and as whom, and whether its chats are on.
 struct ChatAppState: Identifiable, Equatable {
     var id: String
     var name: String
@@ -34,79 +34,7 @@ struct ChatAppState: Identifiable, Equatable {
     var isOn: Bool
 }
 
-/// The top of Settings › Chats: every chat app at a glance. The linked ones as rows (state, account, a switch and
-/// Manage), the others as cards with Link; both open `ChatAppSheet`, which walks a link through its steps.
-struct ChatAppsSection: View {
-    @ObservedObject private var capture = ChatCaptureService.shared
-    @ObservedObject private var linker = ChatLinker.shared
-    @ObservedObject private var linked = ChatCaptureService.shared.serviceBridge
-    @ObservedObject private var whatsApp = WhatsAppLink.shared
-    @ObservedObject private var telegram = ChatCaptureService.shared.telegramBridge
-    @ObservedObject private var teams = ChatCaptureService.shared.teamsBridge
-    @State private var open: ChatAppSheetItem?
-    let setCollecting: (Bool) -> Void
-
-    private var states: [ChatAppState] { ChatAppStates.all() }
-
-    var body: some View {
-        let all = states
-        let done = all.filter(\.linked)
-        let todo = all.filter { !$0.linked }
-        Section {
-            IntroCard(title: tr("chats.apps.summary", done.count, all.count), text: tr("chats.apps.intro"))
-            if !done.isEmpty {
-                NookSectionLabel(tr("chats.apps.linked"))
-                ForEach(done) { row($0) }
-            }
-            if !todo.isEmpty {
-                NookSectionLabel(tr("chats.apps.notLinked"))
-                GalleryGrid {
-                    ForEach(todo) { card($0) }
-                }
-            }
-            if let problem = linker.problem, ChatServiceBridge.token != nil {
-                SettingNote(problem, tone: .warning)
-            }
-        } header: {
-            Text(tr("chats.apps.title"))
-        }
-        .sheet(item: $open) { item in
-            ChatAppSheet(app: item.id, setCollecting: setCollecting)
-        }
-        .task { await linker.refresh() }
-        // The helper started or stopped: what can be linked is listed again.
-        .onChange(of: linked.isWorking) { _, _ in Task { await linker.refresh() } }
-    }
-
-    private func row(_ state: ChatAppState) -> some View {
-        ServiceRowLayout(domain: state.site, symbol: "bubble.left.and.bubble.right.fill", tint: NookTheme.iris, title: state.name,
-                         detail: state.detail, status: state.status, detailIsError: state.detailIsError, source: state.id) {
-            Toggle("", isOn: Binding(get: { state.isOn }, set: { on in
-                capture.setSource(state.id, on: on)
-                if on, !capture.enabled { setCollecting(true) }
-            }))
-            .labelsHidden()
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            .help(tr("chats.apps.showInChats", state.name))
-            Button(tr("chats.apps.manage")) { open = ChatAppSheetItem(id: state.id) }
-                .controlSize(.small)
-        }
-    }
-
-    private func card(_ state: ChatAppState) -> some View {
-        GalleryCard(title: state.name, detail: state.detail) {
-            ServiceTile(domain: state.site, fallback: "bubble.left.and.bubble.right.fill", tint: NookTheme.iris, size: 30,
-                        source: state.id)
-        } accessory: {
-            ConnectMethodBadge(method: .signIn, text: tr("chats.apps.link"))
-        } action: {
-            open = ChatAppSheetItem(id: state.id)
-        }
-    }
-}
-
-/// Where every chat app stands, from the shared bridges and the chat service's list: the overview's rows and cards.
+/// Where every chat app stands, from the shared bridges and the chat service's list: the page's rows and the Add sheet.
 @MainActor
 enum ChatAppStates {
     static func all() -> [ChatAppState] {
@@ -169,11 +97,12 @@ enum ChatAppStates {
         let capture = ChatCaptureService.shared
         let telegram = capture.telegramBridge
         let teams = capture.teamsBridge
-        let whatsApp = WhatsAppLink.shared
+        let whatsApp = WhatsAppAccounts.shared
         switch id {
         case "whatsapp":
             guard WhatsAppSettings.enabled, whatsApp.isConnected else { return nil }
-            return tr("chats.apps.own.whatsapp")
+            let linked = whatsApp.connected.count
+            return linked > 1 ? tr("chats.apps.accounts", linked) : tr("chats.apps.own.whatsapp")
         case telegram.app:
             return telegram.isReady ? tr("chats.apps.as", telegram.account ?? "Telegram") : nil
         case teams.app:

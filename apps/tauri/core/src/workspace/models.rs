@@ -880,10 +880,10 @@ pub(crate) mod tests {
     fn worktree_path_avoids_existing() {
         let existing = std::cell::RefCell::new(std::collections::HashSet::new());
         let first = worktree_path("/r", "My Repo", "task", |p| existing.borrow().contains(p));
-        assert_eq!(first, std::path::Path::new("/r/my-repo/task").to_string_lossy());
+        assert_eq!(first, std::path::Path::new("/r").join("my-repo").join("task").to_string_lossy());
         existing.borrow_mut().insert(first);
         let second = worktree_path("/r", "My Repo", "task", |p| existing.borrow().contains(p));
-        assert_eq!(second, std::path::Path::new("/r/my-repo/task-2").to_string_lossy());
+        assert_eq!(second, std::path::Path::new("/r").join("my-repo").join("task-2").to_string_lossy());
     }
 
     #[test]

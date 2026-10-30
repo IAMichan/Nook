@@ -20,6 +20,8 @@ struct WAChatInfo: Equatable, Sendable {
     var unread: Int = 0
     /// Whether the chat is pinned on the phone, when the gateway says (OpenWA); nil when it does not.
     var pinned: Bool? = nil
+    /// Whether the chat is muted on the phone, when the gateway says (OpenWA); nil when it does not.
+    var muted: Bool? = nil
 }
 
 /// What a message holds besides text: a label is shown, and the file itself is only fetched when the notch card shows it
@@ -182,6 +184,11 @@ struct WAPollLedger: Codable, Equatable, Sendable {
 enum WAReceiptStore {
     static var file: URL { NookPaths.supportDirectory.appendingPathComponent("whatsapp-receipts.json") }
 
+    /// The file of one account (see `WAAccount`): the first account keeps the file it always had.
+    static func file(account: String) -> URL {
+        account.isEmpty ? file : NookPaths.supportDirectory.appendingPathComponent("whatsapp-receipts-\(account).json")
+    }
+
     static func load(from file: URL = file) -> WAReceiptLedger {
         guard let data = try? Data(contentsOf: file),
               let ledger = try? JSONDecoder().decode(WAReceiptLedger.self, from: data) else { return WAReceiptLedger() }
@@ -203,6 +210,11 @@ enum WAReceiptStore {
 enum WAPollStore {
     static var file: URL { NookPaths.supportDirectory.appendingPathComponent("whatsapp-poll-votes.json") }
 
+    /// The file of one account (see `WAAccount`): the first account keeps the file it always had.
+    static func file(account: String) -> URL {
+        account.isEmpty ? file : NookPaths.supportDirectory.appendingPathComponent("whatsapp-poll-votes-\(account).json")
+    }
+
     static func load(from file: URL = file) -> WAPollLedger {
         guard let data = try? Data(contentsOf: file),
               let ledger = try? JSONDecoder().decode(WAPollLedger.self, from: data) else { return WAPollLedger() }
@@ -219,6 +231,49 @@ enum WAPollStore {
         guard let data = try? JSONEncoder().encode(ledger) else { return }
         try? data.write(to: file, options: [.atomic])
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+    }
+}
+
+// MARK: - Accounts
+
+/// A WhatsApp account linked besides the first one (a business number, a second phone): its own device at GOWA, or its
+/// own session at OpenWA, on the same gateway. The first account has no entry: it is the one Nook always linked.
+struct WAAccount: Codable, Equatable, Identifiable, Sendable {
+    /// The gateway's device id (GOWA) or session name (OpenWA), and what the keys of its chats start with.
+    var id: String
+    /// What you call it ("Business").
+    var name: String
+
+    /// The id of a new account: "nook-" and six random letters and digits, never one already taken.
+    static func newID(taken: Set<String>) -> String {
+        let characters = Array("abcdefghijklmnopqrstuvwxyz0123456789")
+        while true {
+            let id = "nook-" + String((0..<6).map { _ in characters.randomElement()! })
+            if !taken.contains(id) { return id }
+        }
+    }
+
+    /// A name as Settings takes it: trimmed, at most 40 characters; empty stays empty (the account then goes by its
+    /// number).
+    static func cleanName(_ name: String) -> String {
+        String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
+    }
+}
+
+/// A WhatsApp chat as the rest of Nook knows it, whichever account it is in: a chat of the first account by its JID
+/// alone (so what Nook kept of it from before there were more accounts still holds), one of another account as
+/// "<account id>~<JID>". The two never meet: no JID holds a "~".
+enum WAChatKey {
+    static let separator: Character = "~"
+
+    static func make(_ jid: String, account: String) -> String {
+        account.isEmpty ? jid : account + String(separator) + jid
+    }
+
+    /// The account and the chat's JID at its gateway.
+    static func split(_ key: String) -> (account: String, jid: String) {
+        guard let index = key.firstIndex(of: separator) else { return ("", key) }
+        return (String(key[..<index]), String(key[key.index(after: index)...]))
     }
 }
 
@@ -345,6 +400,16 @@ struct WAConversation: Identifiable, Equatable, Sendable {
     var lastActivity: Date
     /// A group's other members (you left out), once the gateway was asked; nil while that is not known.
     var members: [WAMember]? = nil
+    /// The newest emoji someone else put on one of your messages here (`person`: their id): the chat's line while
+    /// nothing newer was written.
+    var reaction: ChatReactionNote? = nil
+
+    /// The emoji the chat's line shows instead of its newest message: one that came after it, on a message still here.
+    var newestReaction: ChatReactionNote? {
+        guard let reaction, reaction.date >= (messages.last?.date ?? .distantPast),
+              messages.contains(where: { $0.id == reaction.message }) else { return nil }
+        return reaction
+    }
 
     /// A member's name in this group: the one the gateway gives, else the name they wrote under here, else their number.
     func memberName(_ id: String) -> String {
@@ -752,8 +817,10 @@ struct WAInbox: Equatable, Sendable {
     @discardableResult
     mutating func applyReceipt(_ status: WAReceipt, ids: [String], chat: String, at date: Date = Date()) -> String? {
         let key = WAJID.normalized(chat)
-        // The gateway can name the chat differently (a person's @lid against their number): then every chat is looked at.
-        let keys = conversations[key] != nil ? [key] : Array(conversations.keys)
+        // The gateway can name a person's chat differently (their @lid against their number), and Nook can keep both: the
+        // named chat first, then every other one for what it does not hold. A group's id is always the same.
+        let others = WAJID.kind(key) == .group && conversations[key] != nil ? [] : conversations.keys.filter { $0 != key }
+        let keys = (conversations[key] != nil ? [key] : []) + others
         var pending = Set(ids)
         var changed: String?
         for chatKey in keys {
@@ -807,12 +874,17 @@ struct WAInbox: Equatable, Sendable {
     }
 
     /// A message Nook already keeps, as the gateway shows it again (a chat's history): its reactions as they stand now,
-    /// and what it answers when that was not known yet.
+    /// your message's ticks when the history says more (a receipt that came while the webhook was down), and what it
+    /// answers when that was not known yet.
     private mutating func refresh(_ message: WAMessage, in chat: String) {
         guard var conversation = conversations[chat],
               let index = conversation.messages.firstIndex(where: { $0.id == message.id }) else { return }
         var kept = conversation.messages[index]
         if !message.reactions.isEmpty { kept.reactions = message.reactions }
+        if kept.fromMe, let receipt = message.receipt {
+            kept.receipt = kept.receipt.map { $0.advanced(to: receipt) } ?? receipt
+            receiptLedger.record(kept)
+        }
         if kept.replyTo == nil { kept.replyTo = message.replyTo }
         if kept.quotedText == nil { kept.quotedText = message.quotedText }
         if kept.poll == nil, var poll = message.poll {
@@ -893,7 +965,8 @@ struct WAInbox: Equatable, Sendable {
     /// Someone put `emoji` on a message (an empty one takes theirs back). The chat that changed, nil when Nook does not
     /// keep that message.
     @discardableResult
-    mutating func applyReaction(_ emoji: String, message id: String, chat: String, sender: String, fromMe: Bool) -> String? {
+    mutating func applyReaction(_ emoji: String, message id: String, chat: String, sender: String, fromMe: Bool,
+                                 now: Date = Date()) -> String? {
         let key = WAJID.normalized(chat)
         // As with receipts, the gateway can name the chat differently: then every chat is looked at.
         let keys = conversations[key] != nil ? [key] : Array(conversations.keys)
@@ -902,6 +975,14 @@ struct WAInbox: Equatable, Sendable {
                   let index = conversation.messages.firstIndex(where: { $0.id == id }) else { continue }
             conversation.messages[index].reactions = conversation.messages[index].reactions
                 .applying(emoji, sender: sender, fromMe: fromMe)
+            let target = conversation.messages[index]
+            if !fromMe, !emoji.isEmpty, target.fromMe {
+                conversation.reaction = ChatReactionNote(emoji: emoji, person: sender, message: id, text: target.text, date: now)
+            } else if !fromMe, emoji.isEmpty, conversation.reaction?.message == id,
+                      conversation.reaction.map({ WAJID.sameReactor($0.person, sender) }) == true {
+                // The emoji the line shows was taken back.
+                conversation.reaction = nil
+            }
             conversations[chatKey] = conversation
             return chatKey
         }
@@ -981,6 +1062,21 @@ struct WAInbox: Equatable, Sendable {
     /// History loaded at connection: whether it was read is unknown, so nothing counts as new.
     mutating func markAllRead() {
         for key in conversations.keys { conversations[key]?.unread = 0 }
+    }
+
+    /// The chats a gateway that counts unread messages itself (OpenWA) lists as read while Nook still counts something
+    /// new in them: read on the phone or in WhatsApp elsewhere, which such a gateway says only through its count. A chat
+    /// whose newest message from someone else is newer than the list's entry is left alone: the list is behind on it.
+    /// `carried` gives what a chat still counts from before Nook restarted.
+    func readInGateway(_ chats: [WAChatInfo], carried: (String) -> WAUnreadCarry?) -> [String] {
+        chats.compactMap { chat in
+            guard chat.unread == 0 else { return nil }
+            let conversation = conversations[chat.jid]
+            let carry = carried(chat.jid)
+            guard (conversation?.unread ?? 0) + (carry?.count ?? 0) > 0 else { return nil }
+            let newest = max(conversation?.messages.last { !$0.fromMe }?.date ?? .distantPast, carry?.last ?? .distantPast)
+            return chat.last >= newest ? chat.jid : nil
+        }
     }
 
     mutating func rename(_ chat: String, to name: String) {
@@ -1570,9 +1666,13 @@ enum WAGOWA {
     }
 
     /// `GET /devices` → `results: [{id, phone_number, display_name, state, jid, created_at}]`.
-    /// The device Nook uses: a logged-in one first, else the first one.
-    static func device(_ data: Data) -> (id: String, status: WAStatus)? {
-        guard let list = results(data) as? [[String: Any]], !list.isEmpty else { return nil }
+    /// The device Nook uses: `id` when an account names its own (nil when the gateway has none by that id yet); else a
+    /// logged-in one first, else the first one, of those no other account uses (`excluding`).
+    static func device(_ data: Data, id wanted: String? = nil, excluding: Set<String> = []) -> (id: String, status: WAStatus)? {
+        guard let all = results(data) as? [[String: Any]] else { return nil }
+        let list = wanted.map { wanted in all.filter { $0["id"] as? String == wanted } }
+            ?? all.filter { !excluding.contains($0["id"] as? String ?? "") }
+        guard !list.isEmpty else { return nil }
         let pick = list.first { $0["state"] as? String == "logged_in" } ?? list[0]
         guard let id = pick["id"] as? String, !id.isEmpty else { return nil }
         let jid = nonEmpty(pick["jid"])
@@ -1880,12 +1980,17 @@ enum WAOpenWA {
     }
 
     /// The same list's `pinned` flags, by the chat's id as OpenWA gives it: only the chats that carry one.
-    static func pinned(_ data: Data) -> [String: Bool] {
+    static func pinned(_ data: Data) -> [String: Bool] { flags("pinned", data) }
+
+    /// The same list's `muted` flags, as `pinned`.
+    static func muted(_ data: Data) -> [String: Bool] { flags("muted", data) }
+
+    private static func flags(_ field: String, _ data: Data) -> [String: Bool] {
         guard let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { return [:] }
         var out: [String: Bool] = [:]
         for c in list {
-            guard let id = c["id"] as? String, !id.isEmpty, let pinned = c["pinned"] as? Bool else { continue }
-            out[id] = pinned
+            guard let id = c["id"] as? String, !id.isEmpty, let flag = c[field] as? Bool else { continue }
+            out[id] = flag
         }
         return out
     }

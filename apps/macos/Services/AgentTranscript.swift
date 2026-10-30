@@ -138,7 +138,8 @@ enum AgentTranscript {
     private static var cache: [String: CacheEntry] = [:]
 
     static func recent(path: String, limit: Int = fullLimit) -> [AgentChatMessage] {
-        let isGemini = path.hasSuffix(".json")
+        // Gemini CLI writes one JSON file per chat, or (0.33 and newer) a JSONL log of changes to it.
+        let isGemini = path.hasSuffix(".json") || GeminiChatLog.isLog(path: path)
         guard path.hasSuffix(".jsonl") || isGemini else { return [] }
         let attrs = try? FileManager.default.attributesOfItem(atPath: path)
         let attrSize = (attrs?[.size] as? NSNumber)?.uint64Value
@@ -231,7 +232,7 @@ enum AgentTranscript {
         return jsonl(data).first { $0.kind == .user }
     }
 
-    /// Claude Code, Antigravity and Codex: one JSON object per line.
+    /// Claude Code, Antigravity, Codex and Cursor: one JSON object per line.
     static func jsonl(_ data: Data) -> [AgentChatMessage] {
         jsonl(data, continuing: [], firstLine: 0)
     }
@@ -244,7 +245,8 @@ enum AgentTranscript {
             let index = firstLine + offset
             guard let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else { continue }
             let id = (object["uuid"] as? String) ?? (object["id"] as? String) ?? "\(object["step_index"] ?? index)"
-            let type = (object["type"] as? String) ?? ""
+            // Cursor's CLI writes Claude Code's blocks under "role" instead of "type" (agent-transcripts/<id>/<id>.jsonl).
+            let type = (object["type"] as? String) ?? (object["role"] as? String) ?? ""
             let when = date(object["timestamp"])
 
             // Claude Code
@@ -333,8 +335,8 @@ enum AgentTranscript {
                     let ptype = payload["type"] as? String {
                 switch ptype {
                 case "user_message":
-                    let text = ((payload["message"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !text.isEmpty else { continue }
+                    // Without an `<environment_context>` or other block of Codex's own in front, as in `AgentHistory`.
+                    guard let text = InjectedPrompt.prompt((payload["message"] as? String) ?? "") else { continue }
                     messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text), date: when))
                 case "agent_message":
                     append(reply: (payload["message"] as? String) ?? "", id: id, at: when, to: &messages)
@@ -398,10 +400,10 @@ enum AgentTranscript {
         return messages
     }
 
-    /// Gemini CLI: `{"messages": [{"type": "user" | "gemini", "content": …, "thoughts": [{"subject", "description"}]}]}`.
+    /// Gemini CLI: `{"messages": [{"type": "user" | "gemini", "content": …, "thoughts": [{"subject", "description"}]}]}`,
+    /// or the JSONL log newer versions write (see `GeminiChatLog`).
     static func gemini(_ data: Data) -> [AgentChatMessage] {
-        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let list = root["messages"] as? [[String: Any]] else { return [] }
+        guard let list = GeminiChatLog.read(data)?.messages else { return [] }
         var messages: [AgentChatMessage] = []
         for (index, message) in list.enumerated() {
             let id = (message["id"] as? String) ?? "gemini-\(index)"
@@ -420,6 +422,30 @@ enum AgentTranscript {
                 }
                 append(thinking: thoughts.joined(separator: "\n\n"), id: id, at: when, to: &messages)
                 append(reply: content, id: id, at: when, to: &messages)
+                // The tools it called after writing, each with how it went: the same steps Claude Code and Codex show.
+                for (callIndex, call) in ((message["toolCalls"] as? [[String: Any]]) ?? []).enumerated() {
+                    let callID = (call["id"] as? String) ?? "\(id)-call-\(callIndex)"
+                    let raw = (call["name"] as? String) ?? ""
+                    let input = (call["args"] as? [String: Any]) ?? [:]
+                    let callDate = date(call["timestamp"]) ?? when
+                    let path = ToolSummary.path(input)
+                    append(step: AgentToolStep(id: callID, name: geminiToolName(raw), summary: geminiSummary(raw, input),
+                                               command: ToolSummary.command(input),
+                                               path: ToolCategory.of(tool: raw) == .edit ? path : nil,
+                                               lines: EditLines.of(tool: raw, input: input),
+                                               file: opensFile(raw) ? path : nil,
+                                               patch: EditPatch.make(tool: raw, input: input)),
+                           at: callDate, to: &messages)
+                    let display = call["resultDisplay"] as? String
+                    switch call["status"] as? String {
+                    case "success":
+                        finish(step: callID, failed: false, output: display, at: callDate, in: &messages)
+                    case "error", "cancelled":
+                        finish(step: callID, failed: true, error: display.flatMap(errorLine), output: display, at: callDate, in: &messages)
+                    default:
+                        continue
+                    }
+                }
             default:
                 continue
             }
@@ -583,6 +609,33 @@ enum AgentTranscript {
         }
     }
 
+    /// Gemini CLI's tools by the names the other agents' steps use, so a step reads the same whichever agent ran it.
+    private static func geminiToolName(_ raw: String) -> String {
+        switch raw {
+        case "run_shell_command": return "Shell"
+        case "read_file", "read_many_files": return "Read"
+        case "write_file": return "Write"
+        case "replace": return "Edit"
+        case "glob": return "Glob"
+        case "search_file_content": return "Grep"
+        case "google_web_search": return "WebSearch"
+        case "web_fetch": return "WebFetch"
+        default: return toolName(raw)
+        }
+    }
+
+    /// Gemini CLI: what a step was about, from its own argument names.
+    private static func geminiSummary(_ raw: String, _ input: [String: Any]) -> String {
+        if let path = ToolSummary.path(input), raw != "run_shell_command" { return oneLine(URL(fileURLWithPath: path).lastPathComponent) }
+        if let paths = input["paths"] as? [String], let first = paths.first {
+            return oneLine(paths.count == 1 ? first : "\(first) +\(paths.count - 1)")
+        }
+        for key in ["description", "command", "pattern", "query", "url", "prompt"] {
+            if let value = input[key] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return oneLine(value) }
+        }
+        return ""
+    }
+
     /// Codex: the command it runs (`["bash", "-lc", "…"]` reads as the script), or the first telling argument.
     private static func codexSummary(_ name: String, _ arguments: [String: Any]) -> String {
         if let command = arguments["command"] as? [String] {
@@ -647,10 +700,15 @@ enum AgentTranscript {
 
     /// What you typed in a user line: the agent's own blocks in front of it (the Claude desktop app opens a chat with
     /// `<system-reminder>` blocks before the prompt) are left out, so the prompt that started the chat still shows.
-    private static func typedText(_ content: Any?) -> String {
+    /// Your words in a user message: per text block, without the blocks the agent added (also used by `AgentHistory`).
+    static func typedText(_ content: Any?) -> String {
         if let blocks = content as? [[String: Any]] {
-            return blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
-                .map { InjectedPrompt.typed($0) }.filter { !$0.isEmpty }.joined(separator: "\n")
+            // A block that is nothing but the agent's own (a reminder in front of your words) stays whole in `typed`:
+            // dropped here, or it would make the whole message look injected.
+            let texts = blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
+                .map { InjectedPrompt.typed($0) }.filter { !$0.isEmpty }
+            let yours = texts.filter { !InjectedPrompt.isInjected($0) }
+            return (yours.isEmpty ? texts : yours).joined(separator: "\n")
         }
         return InjectedPrompt.typed(text(content))
     }
@@ -701,7 +759,9 @@ enum AgentTranscript {
 enum InjectedPrompt {
     private static let prefixes = [
         "<command-", "<local-command", "<system-reminder", "<bash-", "<user-memory", "<task-notification",
-        "<environment_context", "<user_instructions", "<turn_aborted", "Caveat:", "[Request interrupted"
+        "<environment_context", "<user_instructions", "<turn_aborted", "[Request interrupted",
+        // Claude Code's note before the output of local commands; a prompt of yours may start with "Caveat:" too.
+        "Caveat: The messages below were generated by the user while running local commands"
     ]
     /// A whole message wrapped in one tag of the agent's own (with a dash or underscore, which HTML tags do not have):
     /// `<some-tag …>…</some-tag>`.
@@ -726,6 +786,14 @@ enum InjectedPrompt {
             rest = remainder
         }
         return rest
+    }
+
+    /// What you typed in a message, without the blocks the agent put in front of it (the Claude app opens the first
+    /// message of a worktree session with a `<system-reminder>`); nil when the whole message is the agent's own.
+    static func prompt(_ text: String) -> String? {
+        let typed = typed(text)
+        guard !typed.isEmpty, !isInjected(typed) else { return nil }
+        return typed
     }
 
     static func isInjected(_ text: String) -> Bool {
@@ -757,5 +825,154 @@ enum InjectedPrompt {
     private static func replacing(_ regex: NSRegularExpression?, in text: String, with template: String) -> String {
         guard let regex else { return text }
         return regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text), withTemplate: template)
+    }
+}
+
+/// A Gemini CLI chat as messages and metadata. Up to 0.32 a chat is one JSON object (`{sessionId, startTime, lastUpdated,
+/// messages}`); from 0.33 on it is `chats/session-<time>-<id>.jsonl`, a log: a metadata line (`sessionId`, `projectHash`),
+/// then messages (by `id`), `{"$patch": …}` (a message's content or tool results changed, messages removed or reordered),
+/// `{"$set": …}` (metadata, or all messages at once) and `{"$rewindTo": id}` (that message and everything after it are gone).
+/// Read the way Gemini CLI reads it (packages/core/src/services/chatRecordingService.ts).
+enum GeminiChatLog {
+    struct Chat {
+        var metadata: [String: Any]
+        var messages: [[String: Any]]
+    }
+
+    /// A chat log of Gemini CLI: `…/.gemini/tmp/<project>/chats/….jsonl`.
+    static func isLog(path: String) -> Bool {
+        path.hasSuffix(".jsonl") && path.contains("/.gemini/tmp/") && path.contains("/chats/")
+    }
+
+    /// The chat in `data`, either form; nil when it is neither.
+    static func read(_ data: Data) -> Chat? {
+        if let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], let messages = root["messages"] as? [[String: Any]] {
+            return Chat(metadata: root, messages: messages)
+        }
+        var metadata: [String: Any] = [:]
+        var order: [String] = []
+        var byID: [String: [String: Any]] = [:]
+        var sawLine = false
+        func set(_ messages: [[String: Any]]) {
+            order = []
+            byID = [:]
+            for message in messages { if let id = message["id"] as? String { add(id, message) } }
+        }
+        func add(_ id: String, _ message: [String: Any]) {
+            if byID[id] == nil { order.append(id) }
+            byID[id] = message
+        }
+        func patch(_ change: [String: Any]) {
+            guard let id = change["id"] as? String, var message = byID[id] else { return }
+            if let content = change["content"] { message["content"] = content }
+            if let results = change["toolCalls"] as? [[String: Any]], var calls = message["toolCalls"] as? [[String: Any]] {
+                for result in results {
+                    guard let index = calls.firstIndex(where: { ($0["id"] as? String) == (result["id"] as? String) }),
+                          let value = result["result"] else { continue }
+                    calls[index]["result"] = value
+                }
+                message["toolCalls"] = calls
+            }
+            byID[id] = message
+        }
+        for line in data.split(separator: UInt8(ascii: "\n")) where !line.isEmpty {
+            guard let record = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else { continue }
+            sawLine = true
+            if let rewind = record["$rewindTo"] as? String {
+                if let index = order.firstIndex(of: rewind) {
+                    for id in order[index...] { byID[id] = nil }
+                    order.removeSubrange(index...)
+                } else {
+                    set([])
+                }
+            } else if let change = record["$patch"] as? [String: Any] {
+                patch(change)
+                for update in (change["updates"] as? [[String: Any]]) ?? [] { patch(update) }
+                for id in (change["removeIds"] as? [String]) ?? [] where byID[id] != nil {
+                    byID[id] = nil
+                    order.removeAll { $0 == id }
+                }
+                if let ids = change["orderIds"] as? [String] {
+                    let moved = ids.filter { byID[$0] != nil }
+                    let movedSet = Set(moved)
+                    order = order.filter { !movedSet.contains($0) } + moved
+                }
+            } else if let id = record["id"] as? String {
+                add(id, record)
+            } else if let values = record["$set"] as? [String: Any] {
+                if let messages = values["messages"] as? [[String: Any]] { set(messages) }
+                metadata.merge(values.filter { $0.key != "messages" }) { $1 }
+            } else if record["sessionId"] is String {
+                if let messages = record["messages"] as? [[String: Any]] { set(messages) }
+                metadata.merge(record.filter { $0.key != "messages" }) { $1 }
+            }
+        }
+        guard sawLine else { return nil }
+        return Chat(metadata: metadata, messages: order.compactMap { byID[$0] })
+    }
+
+    /// The folder a chat belongs to: its own `directories`, else the `.project_root` next to the chats, else the project
+    /// whose short name (`projects.json`, `{"projects": {path: name}}`) is the chat's folder.
+    static func folder(chat: Chat, file: URL, runtimeDirectory: URL) -> String {
+        if let first = (chat.metadata["directories"] as? [String])?.first, !first.isEmpty { return first }
+        let project = file.deletingLastPathComponent().deletingLastPathComponent()
+        if let root = (try? String(contentsOf: project.appendingPathComponent(".project_root"), encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines), root.hasPrefix("/") {
+            return root
+        }
+        let registry = runtimeDirectory.appendingPathComponent("projects.json")
+        guard let data = try? Data(contentsOf: registry),
+              let projects = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["projects"] as? [String: String] else { return "" }
+        return projects.first { $0.value == project.lastPathComponent }?.key ?? ""
+    }
+}
+
+/// Cursor's CLI keeps each chat in `~/.cursor/chats/<md5 of its folder>/<chat id>/` (an agent session in
+/// `~/.cursor/acp-sessions/<id>/`): `meta.json` with the folder and times, and `store.db`, whose `meta` row `0` holds a
+/// hex-encoded JSON with the chat's name. What was said is in `~/.cursor/projects/<folder with / as ->/agent-transcripts/
+/// <id>/<id>.jsonl` (see `AgentTranscript.jsonl`). The format is Cursor's own and undocumented: read defensively.
+enum CursorChats {
+    struct Info: Equatable {
+        var cwd = ""
+        var title = ""
+        var created: Date?
+        var updated: Date?
+        /// False for a chat that was opened but never used.
+        var hasConversation = true
+    }
+
+    /// `meta.json`: `{cwd, createdAtMs, updatedAtMs, hasConversation, title?}`.
+    static func info(metaJSON data: Data) -> Info {
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return Info() }
+        return Info(cwd: (object["cwd"] as? String) ?? "", title: (object["title"] as? String) ?? "",
+                    created: milliseconds(object["createdAtMs"]), updated: milliseconds(object["updatedAtMs"]),
+                    hasConversation: (object["hasConversation"] as? Bool) ?? true)
+    }
+
+    /// The `meta` row of `store.db`: hex of a JSON object with `name` (the title) and `createdAt` (ms).
+    static func storeMeta(hex: String) -> (title: String, created: Date?)? {
+        let clean = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard clean.count.isMultiple(of: 2), !clean.isEmpty else { return nil }
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(clean.count / 2)
+        var index = clean.startIndex
+        while index < clean.endIndex {
+            let next = clean.index(index, offsetBy: 2)
+            guard let byte = UInt8(clean[index..<next], radix: 16) else { return nil }
+            bytes.append(byte)
+            index = next
+        }
+        guard let object = (try? JSONSerialization.jsonObject(with: Data(bytes))) as? [String: Any] else { return nil }
+        return ((object["name"] as? String) ?? "", milliseconds(object["createdAt"]))
+    }
+
+    /// The folder name Cursor files a chat's transcripts under: the path without its first `/`, the others as `-`.
+    static func transcriptFolder(cwd: String) -> String {
+        String(cwd.drop { $0 == "/" }).replacingOccurrences(of: "/", with: "-")
+    }
+
+    private static func milliseconds(_ value: Any?) -> Date? {
+        guard let number = value as? NSNumber, number.doubleValue > 0 else { return nil }
+        return Date(timeIntervalSince1970: number.doubleValue / 1000)
     }
 }

@@ -413,12 +413,16 @@ struct WorkspaceSettingsSection: View {
     @State private var scope = ""
 
     var body: some View {
+        // What a new session starts with and where it opens, how sessions behave and tidy up, then automation; the raw
+        // traffic log is folded away last.
         Group {
             defaults
             openIn
             behavior
             scheduled
             bridge
+            RemoteMachinesSection()
+            advanced
         }
     }
 
@@ -463,7 +467,7 @@ struct WorkspaceSettingsSection: View {
     private var scopePicker: some View {
         Picker(tr("settings.scope.title"), selection: $scope) {
             Text(tr("settings.scope.global")).tag("")
-            ForEach(ProjectSettings.scopeChoices(recent: ws.recentProjects, overrides: ws.projectOverrides), id: \.self) { path in
+            ForEach(ProjectSettings.scopeChoices(favorites: ws.favoriteProjects, recent: ws.recentProjects, overrides: ws.projectOverrides), id: \.self) { path in
                 Text(URL(fileURLWithPath: path).lastPathComponent).tag(path).help(AgentPathFormat.tilde(path))
             }
         }
@@ -650,17 +654,12 @@ struct WorkspaceSettingsSection: View {
             Toggle(tr("settings.ws.codexAppServer"), isOn: $ws.codexAppServer)
             LabeledContent("Antigravity") { AntigravitySetupRow(inSettings: true) }
         }
-        // A raw log of what agents send and receive, for reproducing a bug as a replay fixture.
-        Section {
-            Toggle(tr("settings.ws.trafficLog"), isOn: $ws.providerTrafficLog)
-        } footer: {
-            Text(tr("settings.ws.trafficLog.footer"))
-        }
-        Section {
+        Section(tr("ws.section.restart")) {
             Toggle(tr("settings.ws.autoResumeLimited"), isOn: $ws.autoResumeLimited)
             Toggle(tr("settings.ws.continueAfterRelaunch"), isOn: $ws.continueAfterRelaunch)
             Toggle(tr("settings.ws.confirmQuit"), isOn: $confirmQuit)
         }
+        // The list and the worktrees keep themselves tidy; one in use or with uncommitted changes always stays.
         Section {
             Toggle(tr("settings.ws.inboxWorking"), isOn: $inbox.showWorking)
             Toggle(tr("settings.ws.autoSettle"), isOn: $inbox.autoSettle.enabled)
@@ -675,9 +674,6 @@ struct WorkspaceSettingsSection: View {
                 Text(tr("settings.ws.days", 30)).tag(30)
                 Text(tr("settings.ws.days", 90)).tag(90)
             }
-        }
-        // Worktrees that remove themselves; one in use or with uncommitted changes always stays.
-        Section {
             Toggle(tr("settings.ws.worktreeCleanupMerged"), isOn: $ws.worktreeCleanupOnMerge)
             Picker(tr("settings.ws.worktreeCleanupSettled"), selection: $ws.worktreeCleanupDays) {
                 Text(tr("settings.ws.never")).tag(0)
@@ -685,8 +681,17 @@ struct WorkspaceSettingsSection: View {
                 Text(tr("settings.ws.days", 7)).tag(7)
                 Text(tr("settings.ws.days", 30)).tag(30)
             }
-        } footer: {
-            Text(tr("settings.ws.worktreeCleanup.footer"))
+        } header: {
+            SettingsSectionTitle(tr("ws.section.tidy"), info: tr("settings.ws.worktreeCleanup.footer"))
+        }
+    }
+
+    /// Rarely needed: a raw log of what agents send and receive, for reproducing a bug as a replay fixture.
+    private var advanced: some View {
+        Section {
+            DisclosureGroup(tr("settings.display.advanced")) {
+                SettingToggle(tr("settings.ws.trafficLog"), detail: tr("settings.ws.trafficLog.footer"), isOn: $ws.providerTrafficLog)
+            }
         }
     }
 

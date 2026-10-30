@@ -113,7 +113,7 @@ extension TimelineBlock {
         switch self {
         case .event(let event): return event.date
         case .tools(_, let events, _): return events.first?.date
-        case .fold(_, _, let blocks): return blocks.lazy.compactMap(\.visitDate).first
+        case .fold(_, _, let blocks, _): return blocks.lazy.compactMap(\.visitDate).first
         }
     }
 }

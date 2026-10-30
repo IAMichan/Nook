@@ -54,6 +54,35 @@ struct OpenInTarget: Identifiable, Hashable {
     }
 }
 
+/// What the session panels showed last, per folder (and per session Nook runs), so a session you switch back to shows
+/// its panel straight away instead of filling it in row by row while git and the forge are asked again.
+@MainActor
+final class SessionPanelMemory {
+    static let shared = SessionPanelMemory()
+
+    /// The apps to open a folder in; the same for every folder, read once.
+    var targets: [OpenInTarget] = []
+    var machine = ""
+    private var scripts: [String: [ProjectScript]] = [:]
+    private var quick: [String: GitQuickState] = [:]
+
+    func panel(_ directory: String, runID: UUID?) -> (scripts: [ProjectScript], quick: GitQuickState?) {
+        (scripts[directory] ?? [], quick[Self.key(directory, runID)])
+    }
+
+    func remember(scripts found: [ProjectScript], for directory: String) {
+        scripts[directory] = found
+    }
+
+    func remember(quick state: GitQuickState?, for directory: String, runID: UUID?) {
+        quick[Self.key(directory, runID)] = state
+    }
+
+    private static func key(_ directory: String, _ runID: UUID?) -> String {
+        runID.map { "run:" + $0.uuidString } ?? directory
+    }
+}
+
 /// This Mac's name, as Finder shows it (Settings › General › Sharing). Read from the system configuration, which answers
 /// at once; `Host.current()` resolves every host name and address first and can block for seconds.
 enum MachineName {
@@ -67,6 +96,7 @@ enum MachineName {
 struct SessionPanel: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
+    @Environment(\.sessionPullRequest) private var linkedPullRequest
     @ObservedObject var model: FolderGitModel
     /// A session Nook runs: commit, push and pull request go through its workspace (and its agent writes the texts).
     let runID: UUID?
@@ -87,6 +117,22 @@ struct SessionPanel: View {
     @State private var progress: String?
     @State private var confirmDefault: GitQuickAction?
     @State private var error: String?
+
+    init(model: FolderGitModel, runID: UUID?, agentWorking: Bool, showChanges: @escaping () -> Void,
+         close: @escaping () -> Void, docked: Bool = false) {
+        self.model = model
+        self.runID = runID
+        self.agentWorking = agentWorking
+        self.showChanges = showChanges
+        self.close = close
+        self.docked = docked
+        // What this panel showed last time, so switching sessions shows it at once and keeps its height while it is read again.
+        let known = SessionPanelMemory.shared.panel(model.directory, runID: runID)
+        _targets = State(initialValue: SessionPanelMemory.shared.targets)
+        _machine = State(initialValue: SessionPanelMemory.shared.machine)
+        _scripts = State(initialValue: known.scripts)
+        _quick = State(initialValue: known.quick)
+    }
 
     private var directory: String { model.directory }
     private var run: WorkspaceRun? { runID.flatMap { workspace.run($0) } }
@@ -119,20 +165,62 @@ struct SessionPanel: View {
         .frame(maxWidth: docked ? .infinity : nil, alignment: .leading)
         .background(docked ? Color.clear : DropdownStyle.panel)
         .task(id: directory) {
-            targets = OpenInTarget.available()
             let folder = directory
-            machine = await Task.detached(priority: .utility) { MachineName.local }.value
-            scripts = await Task.detached(priority: .utility) { ProjectScripts.load(folder: folder) }.value
-            await model.refresh()
+            // Git first: it decides most of the panel. The rest reads alongside it.
+            async let git: Void = model.refresh()
+            async let found = Task.detached(priority: .utility) { ProjectScripts.load(folder: folder) }.value
+            if SessionPanelMemory.shared.targets.isEmpty { SessionPanelMemory.shared.targets = OpenInTarget.available() }
+            if SessionPanelMemory.shared.machine.isEmpty {
+                SessionPanelMemory.shared.machine = await Task.detached(priority: .utility) { MachineName.local }.value
+            }
+            if targets != SessionPanelMemory.shared.targets { targets = SessionPanelMemory.shared.targets }
+            if machine != SessionPanelMemory.shared.machine { machine = SessionPanelMemory.shared.machine }
+            let loaded = await found
+            if scripts != loaded { scripts = loaded }
+            SessionPanelMemory.shared.remember(scripts: loaded, for: folder)
+            await git
         }
-        // Looked at again whenever git does (after a turn, a commit, a refresh).
-        .task(id: runID.flatMap { workspace.git[$0]?.updated }) {
-            guard let runID, progress == nil else { return }
-            quick = await workspace.quickGitState(runID)
+        .onChange(of: quick) { _, now in SessionPanelMemory.shared.remember(quick: now, for: directory, runID: runID) }
+        // Looked at again whenever git does (after a turn, a commit, a refresh), and when the conversation links a new
+        // pull request: an agent that pushed and then opened one changed nothing in git.
+        .task(id: PanelLook(git: runID.flatMap { workspace.git[$0]?.updated }, link: linkedPullRequest)) {
+            guard runID != nil, progress == nil else { return }
+            await readState()
         }
-        // A session Nook only sees: looked at again whenever its folder's git status changes.
-        .task(id: runID == nil ? model.status : nil) {
+        // A session Nook only sees: looked at again whenever its folder's git status changes, or its conversation links one.
+        .task(id: PanelLook(git: runID == nil ? model.status : nil, link: linkedPullRequest)) {
             guard runID == nil, progress == nil else { return }
+            await readState()
+        }
+        // A pushed branch without a pull request: asked again every minute, for one opened where Nook does not see it
+        // (on the forge's site, or by a tool that printed no link).
+        .task(id: awaitsPullRequest) {
+            guard awaitsPullRequest else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                if !Task.isCancelled, progress == nil { await readState() }
+            }
+        }
+    }
+
+    /// What makes the panel look at the branch again: what git reported, and the conversation's pull request link.
+    private struct PanelLook<Git: Equatable>: Equatable {
+        let git: Git?
+        let link: URL?
+    }
+
+    private var awaitsPullRequest: Bool {
+        guard let quick else { return false }
+        return quick.hasUpstream && quick.aheadOfBase > 0 && !quick.isDefaultBranch && !quick.hasOpenPullRequest && !quick.pullRequestLanded
+    }
+
+    /// The button's state, for the session Nook runs or the folder of one it only sees. A pull request link the
+    /// conversation shows for the first time is asked about at once, not after the minute a lookup is kept.
+    private func readState() async {
+        if let linkedPullRequest { workspace.pullRequestLinked(linkedPullRequest) }
+        if let runID {
+            quick = await workspace.quickGitState(runID)
+        } else {
             await readFolderState()
         }
     }
@@ -230,6 +318,7 @@ struct SessionPanel: View {
                     return ProjectScripts.load(folder: folder)
                 }.value
                 scripts = found
+                SessionPanelMemory.shared.remember(scripts: found, for: folder)
                 error = nil
                 resetScriptForm()
             } catch let failure {
@@ -296,22 +385,31 @@ struct SessionPanel: View {
     /// terminal or the Claude desktop app) through its folder.
     private var commitRow: some View {
         let active = runID == nil ? agentWorking : run?.status.isActive == true
+        let files = runID.flatMap { workspace.git[$0]?.status?.files } ?? model.files
+        // The changes listed below count, also when the button's own read of the branch is a moment older.
+        let state = quick.map { var state = $0; state.hasChanges = state.hasChanges || !files.isEmpty; return state }
         let resolved: (action: GitQuickAction?, reason: String?)
-        switch quick.map(GitQuickResolver.resolve) {
+        switch state.map(GitQuickResolver.resolve) {
         case .success(let found)?: resolved = (found, nil)
         case .failure(let why)?: resolved = (nil, tr(why.key))
         case nil: resolved = (nil, tr("agents.git.noChanges"))
         }
         let action = resolved.action
         let reason = active ? tr("ws.error.busy") : resolved.reason
-        let files = runID.flatMap { workspace.git[$0]?.status?.files } ?? model.files
+        let destination = state.flatMap { state in action.flatMap { GitQuickResolver.destinationKey(state, action: $0) } }.map { tr($0) }
+        let alternatives = state.map(GitQuickResolver.alternatives) ?? []
         let behind = (quick?.behind ?? 0) > 0
         return PanelRow(icon: progress != nil ? AnyView(ProgressView().controlSize(.mini)) : symbol(action.map(Self.actionSymbol) ?? "checkmark.circle"),
                         title: progress ?? action.map { tr($0.labelKey) } ?? tr("ws.quick.commit"),
-                        detail: progress == nil && action == nil ? reason : nil,
+                        detail: progress == nil ? (action == nil ? reason : destination) : nil,
                         disabledReason: progress ?? (action == nil || active ? reason : nil),
                         action: { if let action { start(action) } },
                         menu: AnyView(Group {
+                            ForEach(alternatives, id: \.labelKey) { other in
+                                Button(tr(other.labelKey)) { start(other) }
+                                    .disabled(active || progress != nil)
+                            }
+                            if !alternatives.isEmpty { Divider() }
                             Button(tr("ws.git.commit")) { open(commit: true) }
                                 .disabled(files.isEmpty || active)
                             Button(tr("ws.git.push")) { push() }
@@ -343,12 +441,14 @@ struct SessionPanel: View {
         case .commit: return "checkmark.circle"
         case .commitPush, .push: return "arrow.up.circle"
         case .commitPushPR, .pushPR, .createPR: return PullRequestIcon.generic
+        case .branchCommitPushPR, .branchPushPR: return "arrow.triangle.branch"
         case .pull: return "arrow.down.circle"
         }
     }
 
     private func start(_ action: GitQuickAction) {
-        if quick?.isDefaultBranch == true && action.pushes { confirmDefault = action } else { perform(action) }
+        // A new branch never lands on the default one, so it needs no confirmation.
+        if quick?.isDefaultBranch == true && action.pushes && !action.startsBranch { confirmDefault = action } else { perform(action) }
     }
 
     private func perform(_ action: GitQuickAction) {

@@ -9,8 +9,8 @@ extension AppModel {
     func startBuddy() {
         refreshOutfit()
         // Dress again when the wardrobe, the birthday or the music changes; the half-minute tick covers the clock.
-        settings.$nookWardrobe.map { _ in () }
-            .merge(with: settings.$birthday.map { _ in () }, NookPresence.shared.$listeningToMusic.map { _ in () })
+        settings.$nookWardrobe.removeDuplicates().map { _ in () }
+            .merge(with: settings.$birthday.removeDuplicates().map { _ in () }, NookPresence.shared.$listeningToMusic.removeDuplicates().map { _ in () })
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.refreshOutfit() }
             .store(in: &buddy.bag)

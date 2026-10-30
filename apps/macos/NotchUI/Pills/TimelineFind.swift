@@ -12,7 +12,7 @@ enum TimelineContainers {
                 case .tools(let id, let events, _):
                     let path = inside + ["group:" + id.uuidString]
                     for event in events { result[event.id] = path }
-                case .fold(let id, _, let inner):
+                case .fold(let id, _, let inner, _):
                     let path = inside + ["fold:" + id.uuidString]
                     for case .event(let event) in inner { result[event.id] = path }
                     for case .tools(let gid, let events, _) in inner {
@@ -94,5 +94,17 @@ struct TimelineToEndPill: View {
         }
         .buttonStyle(.plain)
         .transition(.opacity.combined(with: .move(edge: .bottom)))
+    }
+}
+
+extension View {
+    /// The "scroll to end" pill just above this view (a composer over a conversation), without taking room from it.
+    func toEndPill(_ shown: Bool, action: @escaping () -> Void) -> some View {
+        overlay(alignment: .top) {
+            if shown {
+                TimelineToEndPill(action: action)
+                    .alignmentGuide(.top) { $0[.bottom] + NookTheme.Spacing.md }
+            }
+        }
     }
 }

@@ -61,7 +61,7 @@ public final class I18n: ObservableObject, @unchecked Sendable {
 
     /// Every table of texts, newest first: a later table never hides an earlier key, but wins over the base table.
     static var tables: [[AppLanguage: [String: String]]] {
-        [snapchatTranslations, providerTrafficTranslations, chatTimelineTranslations, releaseTranslations, relayPushTranslations, bridgeTranslations, agentLifecycleTranslations, workspaceFeatureTranslations, companionTranslations, beeperImportTranslations, chatReadTranslations, keybindingTranslations, harnessTranslations, searchTranslations, pullRequestTranslations, takeoverTranslations, chatMediaTranslations, chatComposeTranslations, doubleTapTranslations, noticesTranslations, privacyTranslations, toastTranslations, confirmTranslations, energyTranslations, updateTranslations, quietTranslations, buddyTranslations, controlTranslations, settingsLayoutTranslations, lookTranslations, selectionTranslations, homeTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
+        [settingsHubTranslations, whatsAppAccountTranslations, fileViewerTranslations, mailSendTranslations, snapchatTranslations, providerTrafficTranslations, chatTimelineTranslations, releaseTranslations, relayPushTranslations, bridgeTranslations, agentLifecycleTranslations, workspaceFeatureTranslations, companionTranslations, beeperImportTranslations, chatReadTranslations, keybindingTranslations, harnessTranslations, searchTranslations, pullRequestTranslations, takeoverTranslations, chatMediaTranslations, chatComposeTranslations, doubleTapTranslations, noticesTranslations, splitTranslations, privacyTranslations, toastTranslations, confirmTranslations, energyTranslations, updateTranslations, quietTranslations, buddyTranslations, controlTranslations, settingsLayoutTranslations, lookTranslations, selectionTranslations, homeTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
     }
 
     /// Per language, every key with the text `lookup` finds for it: the tables merged in their order of precedence, with
@@ -756,6 +756,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "agents.switcher.manage": "Accounts beheren",
         "agents.switcher.help": "Wissel van %@-account. Nieuwe sessies vanuit Nook gebruiken het standaardaccount.",
         "agents.noneWorkingNow": "Er werkt nu geen agent",
+        "agents.emptyListDetail": "Start Claude Code, Codex of Gemini in je terminal en hij verschijnt hier vanzelf.",
         "agents.recent": "Recent",
         "agents.nothingRunningDetail": "Start een agent in je terminal; hij verschijnt hier vanzelf. Onderaan zie je altijd het gebruik van je accounts.",
         "agents.viewAccount": "Bekijk dit account: gebruik, limieten en eerdere sessies",
@@ -1538,6 +1539,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "agents.switcher.manage": "Manage accounts",
         "agents.switcher.help": "Switch %@ account. New sessions started from Nook use the default account.",
         "agents.noneWorkingNow": "No agent is working right now",
+        "agents.emptyListDetail": "Start Claude Code, Codex or Gemini in your terminal and it shows up here by itself.",
         "agents.recent": "Recent",
         "agents.nothingRunningDetail": "Start an agent in your terminal; it shows up here by itself. Below you always see your accounts' usage.",
         "agents.viewAccount": "View this account: usage, limits and past sessions",
@@ -2315,6 +2317,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "agents.switcher.manage": "Konten verwalten",
         "agents.switcher.help": "%@-Konto wechseln. Neue Sitzungen aus Nook verwenden das Standardkonto.",
         "agents.noneWorkingNow": "Gerade arbeitet kein Agent",
+        "agents.emptyListDetail": "Starte Claude Code, Codex oder Gemini im Terminal, dann erscheint er hier von selbst.",
         "agents.recent": "Zuletzt",
         "agents.nothingRunningDetail": "Starte Claude Code, Codex oder Gemini CLI im Terminal; er erscheint hier innerhalb von zehn Sekunden. Verbundene Agents zeigen hier live, was sie tun, und du bestätigst ihre Anfragen in der Notch.",
         "agents.viewAccount": "Dieses Konto ansehen: Nutzung, Limits und frühere Sitzungen",

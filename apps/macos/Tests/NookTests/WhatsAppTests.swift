@@ -81,6 +81,29 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertNil(stale[chat])
     }
 
+    /// OpenWA says a chat was read on the phone only through its count: a chat it lists as read, as of Nook's newest
+    /// message there or later, is read; one the list is behind on, or one with nothing new in Nook, is left alone.
+    func testAChatReadOnThePhoneIsReadWhenTheGatewayCountsNothing() {
+        let read = "31600000001@s.whatsapp.net"
+        let behind = "31600000002@s.whatsapp.net"
+        let quiet = "31600000003@s.whatsapp.net"
+        let carried = "31600000004@s.whatsapp.net"
+        var inbox = WAInbox()
+        inbox.add(message("1", chat: read, at: 5), filters: WAFilters())
+        inbox.add(message("2", chat: behind, at: 9), filters: WAFilters())
+        inbox.add(message("3", chat: quiet, at: 5), filters: WAFilters(), history: true)
+        let at = { (seconds: TimeInterval) in Date(timeIntervalSince1970: 1_800_000_000 + seconds) }
+        let list = [
+            WAChatInfo(jid: read, name: "Anna", last: at(5), unread: 0),
+            WAChatInfo(jid: behind, name: "Bob", last: at(8), unread: 0),
+            WAChatInfo(jid: quiet, name: "Cas", last: at(5), unread: 0),
+            WAChatInfo(jid: carried, name: "Dirk", last: at(7), unread: 0),
+            WAChatInfo(jid: "31600000005@s.whatsapp.net", name: "Eva", last: at(7), unread: 2),
+        ]
+        let carry = [carried: WAUnreadCarry(count: 1, last: at(6))]
+        XCTAssertEqual(Set(inbox.readInGateway(list) { carry[$0] }), [read, carried])
+    }
+
     /// "@open chat Jan" in the Mac app: a person's chat opens by their number; a group or a hidden id has no such link.
     func testAppLinkOpensAPersonsChatByNumber() {
         XCTAssertEqual(WAJID.appLink("31600000001@s.whatsapp.net")?.absoluteString, "whatsapp://send?phone=31600000001")
@@ -737,6 +760,32 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertNil(ticks("old"))
     }
 
+    func testHistoryCatchesUpOnTicksMissedWhileTheWebhookWasDown() {
+        var inbox = WAInbox()
+        let chat = "31600000001@s.whatsapp.net"
+        inbox.add(message("out", chat: chat, fromMe: true), filters: WAFilters())
+        var again = message("out", chat: chat, fromMe: true)
+        again.receipt = .read
+        inbox.add(again, filters: WAFilters(), history: true)
+        XCTAssertEqual(inbox.conversations[chat]?.messages.first?.receipt, .read)
+        XCTAssertEqual(inbox.receiptLedger.entries["out"]?.receipt, .read, "kept across a restart too")
+        // History that says less never takes ticks back.
+        again.receipt = .sent
+        inbox.add(again, filters: WAFilters(), history: true)
+        XCTAssertEqual(inbox.conversations[chat]?.messages.first?.receipt, .read)
+    }
+
+    func testAReceiptFindsItsMessageUnderThePersonsOtherID() {
+        var inbox = WAInbox()
+        let number = "31600000001@s.whatsapp.net"
+        let lid = "123456789012345@lid"
+        inbox.add(message("out", chat: number, fromMe: true), filters: WAFilters())
+        inbox.add(message("in", chat: lid, at: 1), filters: WAFilters())
+        // The gateway names the person by their @lid, while your message is in the chat under their number.
+        XCTAssertEqual(inbox.applyReceipt(.read, ids: ["out"], chat: lid), number)
+        XCTAssertEqual(inbox.conversations[number]?.messages.first?.receipt, .read)
+    }
+
     func testAGroupsTicksWaitForEveryMember() {
         var inbox = WAInbox()
         let group = "1203630@g.us"
@@ -906,5 +955,73 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(inbox.conversations[chat]?.messages.count, 1)
         XCTAssertEqual(inbox.conversations[chat]?.messages.first?.reactions.map(\.emoji), ["🙏"])
         XCTAssertEqual(inbox.conversations[chat]?.messages.first?.replyTo, "0")
+    }
+
+    /// Their emoji on your message is the chat's line until something newer comes; yours, or one on theirs, is not.
+    func testTheirReactionOnYourMessageIsTheChatsLine() {
+        let chat = "31600000001@s.whatsapp.net"
+        var inbox = WAInbox()
+        inbox.add(message("1", chat: chat, text: "Ja lijkt me sluw", fromMe: true), filters: WAFilters())
+        inbox.add(message("2", chat: chat, at: 1), filters: WAFilters())
+        let reacted = Date(timeIntervalSince1970: 1_800_000_010)
+        inbox.applyReaction("👍", message: "2", chat: chat, sender: "", fromMe: true, now: reacted)
+        inbox.applyReaction("😂", message: "2", chat: chat, sender: chat, fromMe: false, now: reacted)
+        XCTAssertNil(inbox.conversations[chat]?.newestReaction, "only an emoji on your own message")
+
+        inbox.applyReaction("👍", message: "1", chat: chat, sender: chat, fromMe: false, now: reacted)
+        let note = try! XCTUnwrap(inbox.conversations[chat]?.newestReaction)
+        XCTAssertEqual(note.emoji, "👍")
+        XCTAssertEqual(note.person, chat)
+        XCTAssertEqual(note.text, "Ja lijkt me sluw")
+
+        inbox.applyReaction("", message: "1", chat: chat, sender: chat, fromMe: false, now: reacted)
+        XCTAssertNil(inbox.conversations[chat]?.reaction, "taken back")
+
+        inbox.applyReaction("👍", message: "1", chat: chat, sender: chat, fromMe: false, now: reacted)
+        inbox.add(message("3", chat: chat, at: 20), filters: WAFilters())
+        XCTAssertNil(inbox.conversations[chat]?.newestReaction, "a newer message is the line again")
+    }
+
+    // MARK: More than one account
+
+    func testChatKeyLeavesTheFirstAccountsJIDAlone() {
+        let jid = "31612345678@s.whatsapp.net"
+        XCTAssertEqual(WAChatKey.make(jid, account: ""), jid, "what Nook kept of the first account still holds")
+        XCTAssertEqual(WAChatKey.split(jid).account, "")
+        XCTAssertEqual(WAChatKey.split(jid).jid, jid)
+    }
+
+    func testChatKeyTellsTheSameChatInTwoAccountsApart() {
+        let jid = "120363000000000000@g.us"
+        let key = WAChatKey.make(jid, account: "nook-ab12cd")
+        XCTAssertNotEqual(key, WAChatKey.make(jid, account: ""))
+        XCTAssertEqual(WAChatKey.split(key).account, "nook-ab12cd")
+        XCTAssertEqual(WAChatKey.split(key).jid, jid)
+    }
+
+    func testNewAccountIDIsFreshAndSafeForTheGateway() {
+        let taken: Set<String> = ["nook", "nook-aaaaaa"]
+        let id = WAAccount.newID(taken: taken)
+        XCTAssertFalse(taken.contains(id))
+        XCTAssertTrue(id.hasPrefix("nook-"))
+        XCTAssertFalse(id.contains(WAChatKey.separator))
+        XCTAssertEqual(WAAccount.cleanName("  Zakelijk  "), "Zakelijk")
+        XCTAssertEqual(WAAccount.cleanName(String(repeating: "x", count: 80)).count, 40)
+    }
+
+    func testGOWADeviceOfEachAccount() {
+        let data = Data("""
+        {"code":"SUCCESS","results":[
+          {"id":"nook","state":"logged_in","jid":"31600000001@s.whatsapp.net"},
+          {"id":"nook-biz123","state":"logged_in","jid":"31600000002@s.whatsapp.net"},
+          {"id":"nook-new456","state":"disconnected"}
+        ]}
+        """.utf8)
+        // The first account leaves the others' devices alone, also when one of them was linked first.
+        XCTAssertEqual(WAGOWA.device(data, excluding: ["nook-biz123", "nook-new456"])?.id, "nook")
+        XCTAssertEqual(WAGOWA.device(data, id: "nook-biz123")?.status.me, "31600000002@s.whatsapp.net")
+        XCTAssertEqual(WAGOWA.device(data, id: "nook-new456")?.status.link, .needsQR)
+        XCTAssertNil(WAGOWA.device(data, id: "nook-gone00"), "an account's device that is missing is made, not borrowed")
+        XCTAssertNil(WAGOWA.device(data, excluding: ["nook", "nook-biz123", "nook-new456"]))
     }
 }

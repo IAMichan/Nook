@@ -33,6 +33,12 @@ final class WorkspaceModelsTests: XCTestCase {
         XCTAssertNil(run.turnStartedAt)
         XCTAssertEqual(run.statusDetail, "boom")
         XCTAssertTrue(run.canContinue)
+
+        let preparedAt = Date(timeIntervalSince1970: 1_000)
+        XCTAssertTrue(run.move(to: .preparing, now: preparedAt))
+        XCTAssertEqual(run.turnStartedAt, preparedAt, "sending a message starts the turn timer immediately in .preparing")
+        XCTAssertTrue(run.move(to: .running, now: preparedAt.addingTimeInterval(2)))
+        XCTAssertEqual(run.turnStartedAt, preparedAt, "transitioning from .preparing to .running keeps the original turn start")
     }
 
     // MARK: Input Validation
@@ -204,6 +210,38 @@ final class WorkspaceModelsTests: XCTestCase {
         XCTAssertEqual(ToolSummary.fileChanges(tool: "Write", input: ["file_path": "/x/y.txt"]).first?.kind, "written")
         XCTAssertTrue(ToolSummary.fileChanges(tool: "Read", input: ["file_path": "/x/y.txt"]).isEmpty)
     }
+
+    // MARK: Session folder
+
+    func testSessionFolderStaysInItsRepository() {
+        let repos: Set<String> = ["/code/nook", "/code/nook/.claude/worktrees/a", "/code/other"]
+        let isRepo: (String) -> Bool = { repos.contains($0) }
+        // A `cd` into a scratch folder without git keeps the project, so its branch and changes stay in view.
+        XCTAssertEqual(SessionFolder.follow(current: "/code/nook/.claude/worktrees/a", reported: "/tmp/scratchpad/dd", isRepository: isRepo),
+                       "/code/nook/.claude/worktrees/a")
+        // Into another repository or worktree, or out of a folder that had no git either: it follows.
+        XCTAssertEqual(SessionFolder.follow(current: "/code/nook", reported: "/code/nook/.claude/worktrees/a", isRepository: isRepo),
+                       "/code/nook/.claude/worktrees/a")
+        XCTAssertEqual(SessionFolder.follow(current: "/Users/me", reported: "/code/other", isRepository: isRepo), "/code/other")
+        XCTAssertEqual(SessionFolder.follow(current: "/Users/me", reported: "/tmp/x", isRepository: isRepo), "/tmp/x")
+        XCTAssertEqual(SessionFolder.follow(current: "", reported: "/tmp/x", isRepository: isRepo), "/tmp/x")
+        XCTAssertEqual(SessionFolder.follow(current: "/code/nook", reported: "", isRepository: isRepo), "/code/nook")
+    }
+
+    func testSessionFolderFindsGitInAParent() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("session-folder-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let worktree = root.appendingPathComponent("repo/.claude/worktrees/a")
+        let deep = worktree.appendingPathComponent("src/app")
+        let outside = root.appendingPathComponent("scratch")
+        try FileManager.default.createDirectory(at: deep, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        // A worktree's `.git` is a file pointing at the repository.
+        try "gitdir: /elsewhere".write(to: worktree.appendingPathComponent(".git"), atomically: true, encoding: .utf8)
+        XCTAssertTrue(SessionFolder.isRepository(deep.path))
+        XCTAssertFalse(SessionFolder.isRepository(outside.path))
+        XCTAssertEqual(SessionFolder.follow(current: worktree.path, reported: outside.path), worktree.path)
+    }
 }
 
 enum TestData {
@@ -238,4 +276,5 @@ enum TestData {
                        "Bestanden mappen › Move file · Destination: /b.txt, Source: /a.txt")
         XCTAssertEqual(McpToolName.arguments(["source": "/a.txt", "max_depth": 2]), "Max depth: 2\nSource: /a.txt")
     }
+
 }

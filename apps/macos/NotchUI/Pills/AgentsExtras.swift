@@ -71,9 +71,7 @@ struct PanelFooter: View {
                     history.refresh(minimumInterval: 0)
                     updater.check()
                 }) {
-                    ToolGlyph(symbol: "arrow.triangle.2.circlepath")
-                        .rotationEffect(.degrees(busy ? 360 : 0))
-                        .animation(busy ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: busy)
+                    TurningGlyph(symbol: "arrow.triangle.2.circlepath", turning: busy)
                 }
                 .disabled(busy)
             }
@@ -95,16 +93,18 @@ private struct FooterIcon<Glyph: View>: View {
     @State private var hovering = false
 
     var body: some View {
+        let color = active || hovering ? NookTheme.paper : NookTheme.textTertiary
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.xs) {
                 glyph()
+                    .environment(\.footerGlyphColor, color)
                 if showsLabel {
                     Text(label)
                         .font(NookTheme.TextStyle.body)
                         .lineLimit(1)
                 }
             }
-            .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textTertiary)
+            .foregroundStyle(color)
             .padding(.horizontal, showsLabel ? NookTheme.Spacing.sm : 0)
             .frame(minWidth: 32, minHeight: 30, maxHeight: 30)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear)))
@@ -214,6 +214,121 @@ private struct ToolGlyph: View {
         Image(systemName: symbol)
             .font(NookTheme.TextStyle.body)
             .frame(width: 16, height: 16)
+    }
+}
+
+extension EnvironmentValues {
+    /// The color `FooterIcon` draws its glyph in, for a glyph AppKit draws (`TurningGlyph`), which `foregroundStyle`
+    /// does not reach.
+    @Entry fileprivate var footerGlyphColor = NookTheme.textTertiary
+}
+
+/// A tool's symbol that turns once a second while `turning`. Core Animation turns it, not a SwiftUI timeline: a refresh
+/// is exactly when the main thread is busy (the Keychain read, the app redrawing when the scan comes in), and every
+/// timeline frame waited for it there, so the arrow stuttered and looked stuck. The render server turns the layer on
+/// its own and the window is not laid out for it.
+private struct TurningGlyph: View {
+    let symbol: String
+    let turning: Bool
+    @ObservedObject private var energy = EnergyMonitor.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.footerGlyphColor) private var color
+
+    var body: some View {
+        TurningSymbol(symbol: symbol, color: NSColor(color),
+                      turning: turning && !reduceMotion && energy.plan.pace != .paused)
+            .frame(width: 16, height: 16)
+    }
+}
+
+private struct TurningSymbol: NSViewRepresentable {
+    let symbol: String
+    let color: NSColor
+    let turning: Bool
+
+    func makeNSView(context: Context) -> TurningSymbolView { TurningSymbolView() }
+
+    func updateNSView(_ view: TurningSymbolView, context: Context) {
+        view.show(symbol: symbol, color: color)
+        view.turning = turning
+    }
+}
+
+private final class TurningSymbolView: NSView {
+    private let symbolLayer = CALayer()
+    private var shown: (symbol: String, color: NSColor)?
+    private static let turnKey = "turn"
+
+    var turning = false {
+        didSet { if turning != oldValue { updateTurn() } }
+    }
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        symbolLayer.contentsGravity = .center
+        layer?.addSublayer(symbolLayer)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        // Turned around its middle: a sublayer, so AppKit does not move its anchor back.
+        symbolLayer.bounds = bounds
+        symbolLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        CATransaction.commit()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        draw()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        draw()
+        // A layer leaving its window drops its animations.
+        updateTurn()
+    }
+
+    func show(symbol: String, color: NSColor) {
+        if let shown, shown.symbol == symbol, shown.color == color { return }
+        shown = (symbol, color)
+        draw()
+    }
+
+    private func draw() {
+        guard let shown else { return }
+        // The size and weight of `NookTheme.TextStyle.body`, which `ToolGlyph` draws its symbol in.
+        let configuration = NSImage.SymbolConfiguration(pointSize: 13.5, weight: .regular)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [shown.color]))
+        let image = NSImage(systemSymbolName: shown.symbol, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
+        let scale = window?.backingScaleFactor ?? 2
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        symbolLayer.contentsScale = scale
+        symbolLayer.contents = image?.layerContents(forContentsScale: scale)
+        CATransaction.commit()
+    }
+
+    private func updateTurn() {
+        guard turning, window != nil else {
+            symbolLayer.removeAnimation(forKey: Self.turnKey)
+            return
+        }
+        guard symbolLayer.animation(forKey: Self.turnKey) == nil else { return }
+        let turn = CABasicAnimation(keyPath: "transform.rotation.z")
+        turn.fromValue = 0
+        // Clockwise: the layer's y axis points up.
+        turn.toValue = -2 * Double.pi
+        turn.duration = 1
+        turn.repeatCount = .infinity
+        symbolLayer.add(turn, forKey: Self.turnKey)
     }
 }
 

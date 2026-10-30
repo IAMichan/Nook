@@ -173,6 +173,8 @@ struct SessionComposer<Controls: View>: View {
         // The composer keeps to the conversation's reading column on its own, so a wide window never stretches it
         // from edge to edge, wherever it is placed.
         .chatColumn()
+        // A page the session's agent opened floats just above it (SessionBrowserCorner).
+        .anchorPreference(key: SessionComposerBounds.self, value: .bounds) { $0 }
     }
 
     private func assign(_ value: String) {
@@ -274,9 +276,9 @@ struct SessionComposer<Controls: View>: View {
     private func sendKey(alternate: Bool) -> Bool {
         if chooseSelected() { return true }
         if alternate {
-            if busy, !isEmpty, let flipAction { flipAction() }
+            if busy, !isEmpty, let flipAction { fire(flipAction) }
         } else if !busy, enabled {
-            onSend()
+            fire(onSend)
         }
         return true
     }
@@ -310,6 +312,7 @@ struct SessionComposer<Controls: View>: View {
             .foregroundStyle(NookTheme.paper)
             .lineLimit(lines)
             .focused(focused)
+            .onChange(of: focused.wrappedValue) { _, now in if now { Self.placeCaretAtEnd() } }
             .onSubmit(submit)
             .onChange(of: text) { old, new in textChanged(old, new) }
     }
@@ -339,8 +342,11 @@ struct SessionComposer<Controls: View>: View {
                 }
             }
             if choicesBelow {
-                HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
+                // The text gets 4 pt of its own above and below, so lines that wrap keep 12 pt from the edges while the
+                // send button stays 8 pt in; one line still fits beside the button, so the 48 pt capsule does not grow.
+                HStack(alignment: .center, spacing: NookTheme.Spacing.lg) {
                     withKeys(field(focused: focused), focused: focused.wrappedValue)
+                        .padding(.vertical, NookTheme.Spacing.xs)
                         .frame(minHeight: minHeight, alignment: .center)
                     sendCluster
                 }
@@ -436,18 +442,45 @@ struct SessionComposer<Controls: View>: View {
         }
     }
 
-    /// Sends. For agents the pictures first become paths below the text, so the caller's own send sees one text.
+    /// Sends. For agents the pictures go out as paths below the text. A rich composer hands them to its model, whose
+    /// `outgoing` adds the paths to what is sent: the box never shows them, and keeps your words and the pictures while a
+    /// session starts in the background. The caller clears the pictures once the message went out. A plain composer has no
+    /// model, so the paths go into the text for the moment of the send.
     private func fire(_ action: () -> Void) {
-        if imagesAsPaths, let imagesBinding, !imagesBinding.wrappedValue.isEmpty {
-            text = ImageAttachment.appendingPaths(of: imagesBinding.wrappedValue, to: text)
-            imagesBinding.wrappedValue = []
+        guard imagesAsPaths, let imagesBinding, !imagesBinding.wrappedValue.isEmpty else { return action() }
+        if let extras {
+            extras.model.pictures = imagesBinding.wrappedValue
+            action()
+            extras.model.pictures = []
+            return
         }
+        let typed = text
+        let pictures = imagesBinding.wrappedValue
+        let outgoing = ImageAttachment.appendingPaths(of: pictures, to: typed)
+        text = outgoing
+        imagesBinding.wrappedValue = []
         action()
+        if text == outgoing {
+            text = typed
+            imagesBinding.wrappedValue = pictures
+        }
     }
 
     private func insertPath(_ url: URL) {
         let path = url.path.contains(" ") ? "\"\(url.path)\"" : url.path
         text += (text.isEmpty || text.hasSuffix(" ") ? "" : " ") + path + " "
+    }
+
+    /// AppKit selects a text field's whole text when it gets the keyboard, so coming back to a draft would leave it
+    /// selected and the next key would replace it. A full selection becomes a caret at the end; a click keeps its spot.
+    private static func placeCaretAtEnd() {
+        DispatchQueue.main.async {
+            guard let editor = (NSApp.keyWindow ?? NSApp.mainWindow)?.firstResponder as? NSTextView else { return }
+            let length = (editor.string as NSString).length
+            let selected = editor.selectedRange()
+            guard length > 0, selected.location == 0, selected.length == length else { return }
+            editor.setSelectedRange(NSRange(location: length, length: 0))
+        }
     }
 
     /// Cmd-V with a picture on the clipboard adds it here; with text it pastes as always.

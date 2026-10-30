@@ -32,15 +32,23 @@ struct PulseDot: View {
             if animated && !reduceMotion {
                 // A timeline at the ambient rate, not a `repeatForever` animation: that runs at the display's own rate (up to
                 // 120 times a second) for as long as the dot is there, and every frame redraws the whole window it is in.
-                TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended), paused: energy.plan.pace == .paused)) { context in
-                    // An ease-out over 1.4 s, starting over: the ring grows and fades.
-                    let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4
-                    let eased = 1 - (1 - phase) * (1 - phase)
-                    Circle()
-                        .stroke(color.opacity(0.7 * (1 - eased)), lineWidth: 1.5)
-                        .frame(width: 8, height: 8)
-                        .scaleEffect(1 + 1.3 * eased)
+                // In a graph of its own (`SeparateGraph`), so its frames do not update the list or panel around it; the ring
+                // grows past the dot, so the graph is larger than the dot and laid out at its size.
+                SeparateGraph {
+                    TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended), paused: energy.plan.pace == .paused)) { context in
+                        // An ease-out over 1.4 s, starting over: the ring grows and fades.
+                        let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4
+                        let eased = 1 - (1 - phase) * (1 - phase)
+                        Circle()
+                            .stroke(color.opacity(0.7 * (1 - eased)), lineWidth: 1.5)
+                            .frame(width: 8, height: 8)
+                            .scaleEffect(1 + 1.3 * eased)
+                    }
+                    .frame(width: 24, height: 24)
                 }
+                .frame(width: 24, height: 24)
+                .allowsHitTesting(false)
+                .frame(width: 16, height: 16)
             }
             Circle().fill(color).frame(width: 8, height: 8)
         }
@@ -56,23 +64,30 @@ struct ShimmerText: View {
     @Environment(\.nookAttended) private var attended
 
     var body: some View {
-        TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended), paused: energy.plan.pace == .paused)) { context in
-            let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.2) / 2.2
-            Text(text)
-                .foregroundStyle(
-                    LinearGradient(
-                        stops: [
-                            .init(color: NookTheme.textMuted, location: 0),
-                            .init(color: NookTheme.textMuted, location: max(0, phase - 0.15)),
-                            .init(color: NookTheme.paper, location: phase),
-                            .init(color: NookTheme.textMuted, location: min(1, phase + 0.15)),
-                            .init(color: NookTheme.textMuted, location: 1)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-        }
+        // The text itself stands still; only the light moves, in a graph of its own (`SeparateGraph`) cut to the text's
+        // shape. A timeline around the text laid out the whole window again on every frame, for as long as an agent works.
+        Text(text)
+            .foregroundStyle(NookTheme.textMuted)
+            .overlay {
+                SeparateGraph {
+                    TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended), paused: energy.plan.pace == .paused)) { context in
+                        let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.2) / 2.2
+                        LinearGradient(
+                            stops: [
+                                .init(color: NookTheme.paper.opacity(0), location: 0),
+                                .init(color: NookTheme.paper.opacity(0), location: max(0, phase - 0.15)),
+                                .init(color: NookTheme.paper, location: phase),
+                                .init(color: NookTheme.paper.opacity(0), location: min(1, phase + 0.15)),
+                                .init(color: NookTheme.paper.opacity(0), location: 1)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    }
+                }
+                .allowsHitTesting(false)
+                .mask { Text(text) }
+            }
     }
 }
 
@@ -134,6 +149,20 @@ struct PullRequestStateBadge: View {
         .background(Capsule().fill(tint.opacity(0.14)))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
+    }
+}
+
+/// A pull request's state badge as it is now: read from `PullRequestStatusStore`, the one status every place in Nook
+/// shares, and read again while it shows, so it never lags behind the row badge or the pull request page.
+struct PullRequestLiveStateBadge: View {
+    let url: URL
+    /// What to show before any read has said (a watch's last look, say).
+    var fallback: PullRequestBadge.Glyph = .open
+    @ObservedObject private var statuses = PullRequestStatusStore.shared
+
+    var body: some View {
+        PullRequestStateBadge(glyph: statuses.status(url)?.glyph ?? fallback, number: Int(url.lastPathComponent))
+            .task(id: url) { await PullRequestStatusStore.follow(url) }
     }
 }
 

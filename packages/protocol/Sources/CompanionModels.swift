@@ -98,6 +98,13 @@ enum CompanionOp: String, Codable, Sendable, CaseIterable {
     case options, start
     /// The recent conversation of one session (`session`).
     case timeline
+    /// The session the phone has open (`session`; nil when it closed it): its conversation follows by itself over the
+    /// subscribed connection, as changes after the entry the phone has (`CompanionResponse.timelineAfter`), instead of
+    /// the phone asking every few seconds (`CompanionFeature.liveTimeline`).
+    case watch
+    /// What a session changed in its folder (`session`): every changed file with its lines and its patch
+    /// (`CompanionResponse.diff`, `CompanionFeature.diff`).
+    case diff
     /// Nook's own chats: the list, one conversation (`conversation`), a question (`text`; a new conversation when
     /// `conversation` is nil) and stopping the answer that is being written.
     case chats, chat, ask, chatStop
@@ -159,7 +166,16 @@ enum CompanionFeature {
     static let relay = "relay"
     /// The Mac takes `requestUpdate`: it opens its update panel when the phone asks.
     static let requestUpdate = "requestUpdate"
-    static let all = [start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate]
+    /// A message to a working session can steer its turn instead of waiting for it (`CompanionRequest.steer`).
+    static let steer = "steer"
+    /// The Mac takes `watch` and sends the open session's conversation as it changes (`TimelineDelta`).
+    static let liveTimeline = "liveTimeline"
+    /// The Mac answers `diff` with a session's changed files.
+    static let diff = "diff"
+    /// The Mac takes pictures with `send` and `start` (`CompanionRequest.images`).
+    static let images = "images"
+    static let all = [start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate,
+                      steer, liveTimeline, diff, images]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -172,9 +188,13 @@ struct LaunchRequest: Codable, Equatable, Sendable {
     var title: String?
     var plan: Bool
     var worktree: Bool
+    /// One of the agent's `LaunchOptions.Agent.models`; nil keeps the Mac's default for the agent.
+    var model: String?
 
-    init(agent: String, project: String, task: String, title: String? = nil, plan: Bool = false, worktree: Bool = false) {
+    init(agent: String, project: String, task: String, title: String? = nil, plan: Bool = false, worktree: Bool = false,
+         model: String? = nil) {
         self.agent = agent; self.project = project; self.task = task; self.title = title; self.plan = plan; self.worktree = worktree
+        self.model = model
     }
 }
 
@@ -184,6 +204,15 @@ struct LaunchOptions: Codable, Equatable, Sendable {
         var id: String
         var name: String
         var canPlan: Bool
+        /// The models the phone may pick for this agent, the Mac's default first; nil from a Mac that keeps the choice.
+        var models: [Model]? = nil
+        var defaultModel: String? = nil
+    }
+
+    /// A model an agent can run on: the id the Mac starts it with, and its name as the Mac shows it.
+    struct Model: Codable, Equatable, Identifiable, Sendable {
+        var id: String
+        var name: String
     }
 
     struct Project: Codable, Equatable, Identifiable, Sendable {
@@ -222,13 +251,20 @@ struct CompanionRequest: Codable, Equatable, Sendable {
     /// phone that predates versions.
     var protocolVersion: Int?
     var appVersion: String?
+    /// With `send` to a session that works: true takes the message into the running turn now (steering it, as the Mac's
+    /// composer does), false or nil puts it in line for after the turn (`CompanionFeature.steer`).
+    var steer: Bool?
+    /// Pictures that go with `send` or `start` (`CompanionFeature.images`): the Mac saves them and gives the agent their
+    /// paths below the words, as its own composer does.
+    var images: [CompanionImage]?
 
     init(id: String = UUID().uuidString, sent: Double = Date().timeIntervalSince1970, op: CompanionOp, session: String? = nil,
          item: String? = nil, text: String? = nil, allow: Bool? = nil, conversation: String? = nil, launch: LaunchRequest? = nil,
-         replyTo: String? = nil, live: LiveActivityRegistration? = nil, protocolVersion: Int? = nil, appVersion: String? = nil) {
+         replyTo: String? = nil, live: LiveActivityRegistration? = nil, protocolVersion: Int? = nil, appVersion: String? = nil,
+         steer: Bool? = nil, images: [CompanionImage]? = nil) {
         self.id = id; self.sent = sent; self.op = op; self.session = session; self.item = item; self.text = text; self.allow = allow
         self.conversation = conversation; self.launch = launch; self.replyTo = replyTo; self.live = live
-        self.protocolVersion = protocolVersion; self.appVersion = appVersion
+        self.protocolVersion = protocolVersion; self.appVersion = appVersion; self.steer = steer; self.images = images
     }
 
     /// A request that says which versions this side speaks: `hello`, `list` and `subscribe` carry them.
@@ -277,6 +313,13 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     var appVersion: String?
     /// What this phone may do (`CompanionScope` names), with `features`; nil from a Mac without scopes (everything).
     var scopes: [String]?
+    /// On an update the Mac sends by itself: the session `timeline` belongs to (`watch`).
+    var timelineSession: String? = nil
+    /// When set, `timeline` holds only the entries after this one, which replace whatever the phone has after it
+    /// (`TimelineDelta`); nil means `timeline` is the whole recent conversation.
+    var timelineAfter: String? = nil
+    /// The changed files of `diff`, the most changed first.
+    var diff: [DiffFileDigest]? = nil
 
     static func failure(_ id: String, _ error: CompanionError, message: String? = nil) -> CompanionResponse {
         CompanionResponse(id: id, ok: false, error: error, message: message)
@@ -314,6 +357,9 @@ struct SessionDigest: Codable, Equatable, Identifiable, Sendable {
     var model: String? = nil
     /// `SessionAction` raw values the phone may take on this session; nil from a Mac without `CompanionFeature.manage`.
     var actions: [String]? = nil
+    /// The running turn can take a message right now (`CompanionRequest.steer`); nil from a Mac without
+    /// `CompanionFeature.steer`, false while it cannot (idle, waiting on you, or an agent that cannot be steered).
+    var canSteer: Bool? = nil
 }
 
 extension LiveActivitySnapshot {
@@ -332,10 +378,14 @@ struct TimelineEntry: Codable, Equatable, Identifiable, Sendable {
     var id: String
     var kind: Kind
     var text: String
-    /// The tool's name, or the file of a change.
+    /// The tool's name, or the file of a change; `compacted` on the note that the agent's context was compacted.
     var detail: String?
     var date: Double
     var failed: Bool
+
+    /// The `detail` of a compaction note, which the phone shows as a quiet word across the conversation rather than as
+    /// a line of the work.
+    static let compacted = "compacted"
 }
 
 /// One of Nook's own chats in the list.
@@ -685,4 +735,59 @@ struct PairedDevice: Codable, Equatable, Identifiable, Sendable {
 extension Array where Element == SessionDigest {
     /// Sessions that wait on you (an approval or a question), for the app badge.
     var needingYou: Int { filter { !$0.items.isEmpty }.count }
+}
+
+/// A picture from the phone: a JPEG, base64, small enough to travel in one frame (`CompanionImage.maxBytes`).
+struct CompanionImage: Codable, Equatable, Sendable {
+    var jpeg: String
+
+    /// What one picture may weigh before base64, and how many go with one message: together well under `maxFrame`.
+    static let maxBytes = 90 * 1024
+    static let maxCount = 2
+
+    /// The picture's bytes when they are a JPEG within the limit; nil for anything else.
+    var data: Data? {
+        guard let data = Data(base64Encoded: jpeg), data.count <= Self.maxBytes,
+              data.count > 3, data.prefix(3) == Data([0xFF, 0xD8, 0xFF]) else { return nil }
+        return data
+    }
+}
+
+/// One file a session changed, as the phone's review shows it: its path, how it changed, its lines and its patch (cut
+/// at `maxPatch`, `truncated` then).
+struct DiffFileDigest: Codable, Equatable, Identifiable, Sendable {
+    var path: String
+    /// added, modified, deleted, renamed or untracked.
+    var kind: String
+    var added: Int?
+    var removed: Int?
+    var patch: String?
+    var truncated: Bool
+
+    var id: String { path }
+
+    /// What one file's patch, and all of them together, may take in one answer.
+    static let maxPatch = 40 * 1024
+    static let maxTotal = 150 * 1024
+}
+
+/// How the open session's conversation travels after the first answer to `watch`: only the entries after the last one
+/// both sides still have alike. The phone puts them after that entry; when it does not have it (it missed an update), it
+/// asks for the whole conversation once.
+enum TimelineDelta {
+    /// What to send to move a phone that has `old` to `new`: the entry to put the rest after (nil: send `new` whole).
+    static func delta(from old: [TimelineEntry], to new: [TimelineEntry]) -> (after: String?, entries: [TimelineEntry]) {
+        guard let first = new.first, let start = old.firstIndex(where: { $0.id == first.id }) else { return (nil, new) }
+        var shared = 0
+        while shared < new.count, start + shared < old.count, old[start + shared] == new[shared] { shared += 1 }
+        guard shared > 0 else { return (nil, new) }
+        return (new[shared - 1].id, Array(new[shared...]))
+    }
+
+    /// The phone's conversation after an update; nil when it lacks the entry the update builds on (ask for all of it).
+    static func apply(_ entries: [TimelineEntry], after: String?, to old: [TimelineEntry]?, limit: Int = 400) -> [TimelineEntry]? {
+        guard let after else { return entries }
+        guard let old, let index = old.lastIndex(where: { $0.id == after }) else { return nil }
+        return Array((Array(old[...index]) + entries).suffix(limit))
+    }
 }

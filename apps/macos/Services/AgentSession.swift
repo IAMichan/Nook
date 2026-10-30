@@ -98,6 +98,8 @@ struct AgentSession: Identifiable, Equatable {
     var transcriptPath: String = ""
     /// The last thing you asked, in full.
     var lastPrompt: String = ""
+    /// The first thing you asked that Nook heard: the session's title, so a new prompt does not rename it.
+    var firstPrompt: String = ""
     /// The agent's last reply, in full.
     var lastReply: String = ""
     /// When the session started, as far as Nook knows.

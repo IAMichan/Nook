@@ -38,6 +38,32 @@ enum WhatsAppSettings {
         get { let value = defaults.integer(forKey: "whatsappPort"); return (1024...65535).contains(value) ? value : defaultPort }
         set { defaults.set(newValue, forKey: "whatsappPort") }
     }
+
+    /// The accounts linked besides the first one, in the order they were added (see `WAAccount`).
+    static var accounts: [WAAccount] {
+        get { defaults.data(forKey: "whatsappAccounts").flatMap { try? JSONDecoder().decode([WAAccount].self, from: $0) } ?? [] }
+        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "whatsappAccounts") }
+    }
+
+    /// What you call the first account; empty, it goes by its number.
+    static var mainName: String {
+        get { defaults.string(forKey: "whatsappAccountName") ?? "" }
+        set { defaults.set(WAAccount.cleanName(newValue), forKey: "whatsappAccountName") }
+    }
+
+    /// Where an account keeps a choice of its own: the first account under the key it always had, another under the key
+    /// with its id after it.
+    static func key(_ base: String, account: String) -> String {
+        account.isEmpty ? base : base + "." + account
+    }
+
+    /// The port of an account's webhook: the first account's own, each other account the next one up, in the order
+    /// they were added. Nil for one that would go past the last port.
+    static func port(account: String) -> Int? {
+        guard !account.isEmpty else { return port }
+        guard let index = accounts.firstIndex(where: { $0.id == account }), port + index + 1 <= 65535 else { return nil }
+        return port + index + 1
+    }
     /// When each chat was last read, by its JID: in Nook ("whatsappReadInNook") or in WhatsApp itself
     /// ("whatsappReadInWhatsApp"). Kept so a restart does not bring back what you already read; marks older than
     /// `ChatReadMarks.maxAge` are forgotten.
@@ -50,43 +76,34 @@ enum WhatsAppSettings {
     }
 
     /// Each chat's unread messages when Nook last ran (see `WAUnreadCarry`), by its JID.
-    static var unreadCarry: [String: WAUnreadCarry] {
-        get {
-            defaults.data(forKey: "whatsappUnreadCarry")
-                .flatMap { try? JSONDecoder().decode([String: WAUnreadCarry].self, from: $0) } ?? [:]
-        }
-        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "whatsappUnreadCarry") }
+    static func unreadCarry(account: String) -> [String: WAUnreadCarry] {
+        defaults.data(forKey: key("whatsappUnreadCarry", account: account))
+            .flatMap { try? JSONDecoder().decode([String: WAUnreadCarry].self, from: $0) } ?? [:]
     }
 
-    /// Read receipts when a message is answered or marked read in the notch; never on mere reception.
-    static var markReadOnReply: Bool {
-        get { defaults.object(forKey: "whatsappMarkRead") as? Bool ?? true }
-        set { defaults.set(newValue, forKey: "whatsappMarkRead") }
-    }
-    static var filters: WAFilters {
-        get {
-            let modes = (defaults.dictionary(forKey: "whatsappChatModes") as? [String: String] ?? [:])
-                .compactMapValues(WAChatMode.init(rawValue:))
-            return WAFilters(muteGroups: defaults.object(forKey: "whatsappMuteGroups") as? Bool ?? true,
-                             muteStatus: defaults.object(forKey: "whatsappMuteStatus") as? Bool ?? true,
-                             muteChannels: defaults.object(forKey: "whatsappMuteChannels") as? Bool ?? true,
-                             ignored: Set(defaults.stringArray(forKey: "whatsappIgnored") ?? []),
-                             modes: modes)
-        }
-        set {
-            defaults.set(newValue.muteGroups, forKey: "whatsappMuteGroups")
-            defaults.set(newValue.muteStatus, forKey: "whatsappMuteStatus")
-            defaults.set(newValue.muteChannels, forKey: "whatsappMuteChannels")
-            defaults.set(Array(newValue.ignored).sorted(), forKey: "whatsappIgnored")
-            defaults.set(newValue.modes.mapValues(\.rawValue), forKey: "whatsappChatModes")
-        }
+    static func setUnreadCarry(_ carry: [String: WAUnreadCarry], account: String) {
+        defaults.set(try? JSONEncoder().encode(carry), forKey: key("whatsappUnreadCarry", account: account))
     }
 
     /// The chats pinned on the phone as far as Nook knows, by their JID: the ones you pinned from Nook, and what the
     /// gateway's chat list says (OpenWA). Forgotten when WhatsApp is turned off.
-    static var pinnedChats: Set<String> {
-        get { Set(defaults.stringArray(forKey: "whatsappPinnedChats") ?? []) }
-        set { defaults.set(Array(newValue).sorted(), forKey: "whatsappPinnedChats") }
+    static func pinnedChats(account: String) -> Set<String> {
+        Set(defaults.stringArray(forKey: key("whatsappPinnedChats", account: account)) ?? [])
+    }
+
+    static func setPinnedChats(_ chats: Set<String>, account: String) {
+        defaults.set(Array(chats).sorted(), forKey: key("whatsappPinnedChats", account: account))
+    }
+
+    /// What an account you removed kept on this Mac: its read marks, its unread counts, its pins, its votes and ticks.
+    static func forget(account: String) {
+        guard !account.isEmpty else { return }
+        for base in ["whatsappUnreadCarry", "whatsappPinnedChats", "whatsappReadInNook", "whatsappReadInWhatsApp",
+                     "whatsappMarkedUnread"] {
+            defaults.removeObject(forKey: key(base, account: account))
+        }
+        try? FileManager.default.removeItem(at: WAPollStore.file(account: account))
+        try? FileManager.default.removeItem(at: WAReceiptStore.file(account: account))
     }
 
     /// GOWA: `user:pass` for basic auth. OpenWA: the API key.
@@ -106,11 +123,15 @@ enum WhatsAppSettings {
         return secret
     }
 
-    static func makeProvider() -> WhatsAppProvider? {
+    /// The gateway as one account talks to it: every account on the same gateway, each on a device (GOWA) or session
+    /// (OpenWA) of its own.
+    static func makeProvider(account: String = "") -> WhatsAppProvider? {
         guard let base = URL(string: url), base.scheme?.hasPrefix("http") == true, base.host != nil else { return nil }
+        let own = account.isEmpty ? nil : account
+        let others = Set(accounts.map(\.id))
         switch gateway {
-        case .gowa: return GOWAProvider(base: base, basicAuth: credential)
-        case .openwa: return OpenWAProvider(base: base, apiKey: credential)
+        case .gowa: return GOWAProvider(base: base, basicAuth: credential, account: own, others: others)
+        case .openwa: return OpenWAProvider(base: base, apiKey: credential, account: own, others: others)
         }
     }
 }
@@ -134,7 +155,10 @@ struct WAPreview {
 
 @MainActor
 final class WhatsAppLink: ObservableObject {
-    static let shared = WhatsAppLink()
+    /// The first account, the one Nook always linked; the others are in `WhatsAppAccounts`.
+    static let shared = WhatsAppLink(account: "")
+    /// The account this link is for: empty for the first, else its `WAAccount` id.
+    let account: String
     nonisolated static let webhookPath = "/whatsapp"
     /// A message older than this when it reaches Nook is a catch-up (after a sleep or an outage), never announced:
     /// the webhook is instant and polling at most half a minute late.
@@ -157,9 +181,9 @@ final class WhatsAppLink: ObservableObject {
     }
 
     /// Votes received are kept on disk (see `WAPollLedger`), so a poll shows them again after a restart.
-    @Published private(set) var inbox = WAInbox(polls: WAPollStore.load(), receipts: WAReceiptStore.load()) {
+    @Published private(set) var inbox: WAInbox {
         didSet {
-            if inbox.pollLedger != oldValue.pollLedger { WAPollStore.save(inbox.pollLedger) }
+            if inbox.pollLedger != oldValue.pollLedger { WAPollStore.save(inbox.pollLedger, to: WAPollStore.file(account: account)) }
             if inbox.receiptLedger.revision != oldValue.receiptLedger.revision { saveReceipts() }
             keepUnread()
         }
@@ -178,8 +202,10 @@ final class WhatsAppLink: ObservableObject {
         receiptSave?.cancel()
         receiptSave = Task { [weak self] in
             try? await Task.sleep(for: .seconds(2))
-            guard !Task.isCancelled, let ledger = self?.inbox.receiptLedger else { return }
-            await Task.detached(priority: .utility) { WAReceiptStore.save(ledger) }.value
+            guard !Task.isCancelled, let self else { return }
+            let ledger = inbox.receiptLedger
+            let file = WAReceiptStore.file(account: account)
+            await Task.detached(priority: .utility) { WAReceiptStore.save(ledger, to: file) }.value
         }
     }
 
@@ -205,22 +231,26 @@ final class WhatsAppLink: ObservableObject {
     /// made the list quadratic and stalled the main thread.
     private var knownIndex: [String: Int] = [:]
     /// When a chat was last read in WhatsApp itself: marked read from Nook (by hand), or read on the phone.
-    @Published private(set) var readInWhatsApp = WhatsAppSettings.readMarks(WhatsAppLink.readInWhatsAppKey) {
-        didSet { WhatsAppSettings.setReadMarks(readInWhatsApp, Self.readInWhatsAppKey); keepUnread() }
+    @Published private(set) var readInWhatsApp: [String: Date] {
+        didSet { WhatsAppSettings.setReadMarks(readInWhatsApp, WhatsAppSettings.key(Self.readInWhatsAppKey, account: account)); keepUnread() }
     }
     /// When you last read a chat in Nook: WhatsApp's own unread count from before then no longer shows. Kept across
     /// launches, so a chat you read in Nook stays read after a restart.
-    @Published private(set) var readInNook = WhatsAppSettings.readMarks(WhatsAppLink.readInNookKey) {
-        didSet { WhatsAppSettings.setReadMarks(readInNook, Self.readInNookKey); keepUnread() }
+    @Published private(set) var readInNook: [String: Date] {
+        didSet { WhatsAppSettings.setReadMarks(readInNook, WhatsAppSettings.key(Self.readInNookKey, account: account)); keepUnread() }
     }
     /// What each chat counted unread when Nook last ran (see `WAUnreadCarry`): it shows until the chat is read or
     /// answered in, so a restart does not make every chat read.
-    private var carriedUnread = WhatsAppSettings.unreadCarry.filter {
-        Date().timeIntervalSince($0.value.last) < ChatReadMarks.maxAge
-    }
+    private var carriedUnread: [String: WAUnreadCarry]
     /// What the next launch starts from, as last written.
     private var keptUnread: [String: WAUnreadCarry]?
+    /// Chats you marked unread by hand while Nook holds none of their messages (a chat known only from the phone's
+    /// list): they count one new message until you read them. Kept across launches, as the read marks are.
+    @Published private(set) var markedUnread: [String: Date] {
+        didSet { WhatsAppSettings.setReadMarks(markedUnread, WhatsAppSettings.key(Self.markedUnreadKey, account: account)) }
+    }
     private static let readInNookKey = "whatsappReadInNook"
+    private static let markedUnreadKey = "whatsappMarkedUnread"
     private static let readInWhatsAppKey = "whatsappReadInWhatsApp"
     /// Each chat's picture on this Mac (a person's profile photo, a group's), by its JID, once fetched.
     @Published private(set) var avatars: [String: String] = [:]
@@ -236,20 +266,30 @@ final class WhatsAppLink: ObservableObject {
         config.timeoutIntervalForRequest = 20
         return URLSession(configuration: config)
     }()
-    @Published var filters = WhatsAppSettings.filters {
-        didSet { WhatsAppSettings.filters = filters }
-    }
+    /// What this account sorts its gateway's messages by: the notice rules every chat app follows, for this account's
+    /// own chats (`ChatNoticeRulesStore.filters(account:)`). A hidden chat is not even kept.
+    @Published private(set) var filters: WAFilters
+    /// The chats muted on the phone, as far as Nook knows: muted from Nook, or so in the gateway's chat list (OpenWA).
+    /// Not WhatsApp's notice rules in Nook (`mute(_:)`), which only quiet the chat here.
+    @Published private(set) var mutedChats: Set<String> = []
     /// The chats pinned on the phone, as far as Nook knows (see `WhatsAppSettings.pinnedChats`).
-    @Published private(set) var pinnedChats = WhatsAppSettings.pinnedChats {
-        didSet { if pinnedChats != oldValue { WhatsAppSettings.pinnedChats = pinnedChats } }
+    @Published private(set) var pinnedChats: Set<String> {
+        didSet { if pinnedChats != oldValue { WhatsAppSettings.setPinnedChats(pinnedChats, account: account) } }
     }
 
-    /// A new message reached you (not a muted group, not your own): the notch shows it.
+    /// A new message reached you (not a muted group, not your own): the notch shows it. Each of these three gives the
+    /// chat's key across accounts (`WAChatKey`), not its JID.
     var onMessage: ((_ chat: String) -> Void)?
     /// Your own messages in a chat got new ticks (delivered, read).
     var onReceipt: ((_ chat: String) -> Void)?
     /// You read a chat on the phone: what Nook still had waiting for it goes.
     var onReadElsewhere: ((_ chat: String) -> Void)?
+    /// This account let go of everything it kept (WhatsApp turned off, the account removed): the shared inbox lets go
+    /// of its chats' messages too (`WhatsAppGatewayBridge`).
+    var onForget: (() -> Void)?
+
+    /// A chat of this account as the rest of Nook knows it (see `WAChatKey`).
+    func chatKey(_ jid: String) -> String { WAChatKey.make(jid, account: account) }
 
     var isConnected: Bool { link == .connected }
 
@@ -291,10 +331,24 @@ final class WhatsAppLink: ObservableObject {
     private var generation = 0
     private var bag = Set<AnyCancellable>()
 
-    private init() {
+    init(account: String) {
+        self.account = account
+        let key = { (base: String) in WhatsAppSettings.key(base, account: account) }
+        inbox = WAInbox(polls: WAPollStore.load(from: WAPollStore.file(account: account)),
+                        receipts: WAReceiptStore.load(from: WAReceiptStore.file(account: account)))
+        readInWhatsApp = WhatsAppSettings.readMarks(key(Self.readInWhatsAppKey))
+        readInNook = WhatsAppSettings.readMarks(key(Self.readInNookKey))
+        markedUnread = WhatsAppSettings.readMarks(key(Self.markedUnreadKey))
+        carriedUnread = WhatsAppSettings.unreadCarry(account: account).filter {
+            Date().timeIntervalSince($0.value.last) < ChatReadMarks.maxAge
+        }
+        pinnedChats = WhatsAppSettings.pinnedChats(account: account)
+        filters = ChatNoticeRulesStore.shared.filters(account: account)
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)
             .sink { [weak self] _ in DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self?.wake() } }
             .store(in: &bag)
+        // The gateway and the opened files are everyone's: the first account lets go of them.
+        guard account.isEmpty else { return }
         NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
             .sink { _ in MainActor.assumeIsolated {
                 WhatsAppGOWAProcess.shared.stopNow()
@@ -305,8 +359,19 @@ final class WhatsAppLink: ObservableObject {
 
     /// Called once at launch.
     func start() {
-        Self.clearOpenedFiles()
+        if account.isEmpty { Self.clearOpenedFiles() }
         update()
+    }
+
+    /// The account was removed in Settings: the link stops, the gateway lets go of its device or session, and what it
+    /// kept on this Mac goes.
+    func remove() {
+        let provider = provider ?? WhatsAppSettings.makeProvider(account: account)
+        stop(forget: true)
+        // The ticks written a moment after the last change would bring its file back.
+        receiptSave?.cancel()
+        WhatsAppSettings.forget(account: account)
+        if let provider { Task { await provider.removeAccount() } }
     }
 
     /// Settings changed (on/off, gateway, address, password, port): start over.
@@ -328,7 +393,7 @@ final class WhatsAppLink: ObservableObject {
     // MARK: Lifecycle
 
     private func begin() {
-        guard let provider = WhatsAppSettings.makeProvider() else {
+        guard let provider = WhatsAppSettings.makeProvider(account: account) else {
             link = .failed(tr("whatsapp.status.badURL"))
             return
         }
@@ -337,8 +402,8 @@ final class WhatsAppLink: ObservableObject {
         link = .connecting
         startListener(kind: provider.kind)
         WhatsAppGOWAProcess.shared.sync()
-        let timer = Timer(timeInterval: 5, repeats: true) { _ in
-            MainActor.assumeIsolated { WhatsAppLink.shared.onTick() }
+        let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.onTick() }
         }
         timer.tolerance = 2
         RunLoop.main.add(timer, forMode: .common)
@@ -380,6 +445,8 @@ final class WhatsAppLink: ObservableObject {
             inbox.clear()
             knownChats = []
             pinnedChats = []
+            mutedChats = []
+            onForget?()
         }
     }
 
@@ -487,21 +554,23 @@ final class WhatsAppLink: ObservableObject {
             // Signed by the gateway with Nook's secret, over the exact bytes received.
             guard WAWebhook.verify(kind: kind, headers: request.headers, body: request.body, secret: secret) else { return 401 }
             let body = request.body
-            Task { @MainActor in WhatsAppLink.shared.received(body, kind: kind) }
+            Task { @MainActor [weak self] in self?.received(body, kind: kind) }
             return 200
         }
         listener.onListening = { ok in
-            Task { @MainActor in
-                let link = WhatsAppLink.shared
-                guard link.provider != nil else { return }
+            Task { @MainActor [weak self] in
+                guard let link = self, link.provider != nil else { return }
                 if !ok { link.webhook = .portBusy }
                 else if link.webhook == .off || link.webhook == .portBusy { link.webhook = .listening; link.refresh() }
             }
         }
-        if !listener.start(port: UInt16(WhatsAppSettings.port)) { webhook = .portBusy }
+        guard let port = webhookPort, listener.start(port: UInt16(port)) else { webhook = .portBusy; return }
     }
 
-    private var webhookURL: String { "http://127.0.0.1:\(WhatsAppSettings.port)\(Self.webhookPath)" }
+    /// Each account has a port of its own (see `WhatsAppSettings.port(account:)`).
+    var webhookPort: Int? { WhatsAppSettings.port(account: account) }
+
+    private var webhookURL: String { "http://127.0.0.1:\(webhookPort ?? WhatsAppSettings.port)\(Self.webhookPath)" }
 
     private func register(_ provider: WhatsAppProvider, gen: Int) async {
         do {
@@ -522,13 +591,13 @@ final class WhatsAppLink: ObservableObject {
         case .message(let message)?:
             ingest([message], announce: true)
         case .receipt(let ids, let chat, let status)?:
-            if let changed = inbox.applyReceipt(status, ids: ids, chat: chat) { onReceipt?(changed) }
+            if let changed = inbox.applyReceipt(status, ids: ids, chat: chat) { onReceipt?(chatKey(changed)) }
         case .memberReceipt(let ids, let chat, let member, let status)?:
-            if let changed = inbox.applyMemberReceipt(status, ids: ids, chat: chat, member: member) { onReceipt?(changed) }
+            if let changed = inbox.applyMemberReceipt(status, ids: ids, chat: chat, member: member) { onReceipt?(chatKey(changed)) }
             // Who is in the group says when everyone has it: asked once, the first time a member answers.
             if WAJID.isGroup(chat), membersLoaded[WAJID.normalized(chat)] == nil {
                 Task { @MainActor [weak self] in
-                    if let self, await self.loadMembers(chat) { self.onReceipt?(WAJID.normalized(chat)) }
+                    if let self, await self.loadMembers(chat) { self.onReceipt?(self.chatKey(WAJID.normalized(chat))) }
                 }
             }
         case .typing(let chat, let people)?:
@@ -541,26 +610,32 @@ final class WhatsAppLink: ObservableObject {
                 guard person != me.map(WAJID.normalized) else { continue }
                 if typing.active {
                     let name = typing.name.isEmpty ? names?.name(typing.from) ?? "" : typing.name
-                    ChatTypingCenter.shared.typing(chat: "wa|" + key, person: person, name: group ? name : "",
+                    ChatTypingCenter.shared.typing(chat: ChatInbox.key(app: "whatsapp", id: chatKey(key)), person: person, name: group ? name : "",
                                                    kind: typing.recording ? .recording : .text)
                 } else {
-                    ChatTypingCenter.shared.stopped(chat: "wa|" + key, person: person)
+                    ChatTypingCenter.shared.stopped(chat: ChatInbox.key(app: "whatsapp", id: chatKey(key)), person: person)
                 }
             }
         case .readElsewhere(let chat)?:
-            let key = WAJID.normalized(chat)
-            readInWhatsApp[key] = Date()
-            guard inbox.conversations[key] != nil else { return }
-            inbox.markRead(key)
-            onReadElsewhere?(key)
+            readElsewhere(WAJID.normalized(chat))
         case .reaction(let chat, let message, let emoji, let sender, let fromMe)?:
             // A new emoji redraws the chat's card when it is on screen, as new ticks do; it never brings one up.
             if let changed = inbox.applyReaction(emoji, message: message, chat: chat, sender: sender, fromMe: fromMe) {
-                onReceipt?(changed)
+                onReceipt?(chatKey(changed))
             }
         default:
             break
         }
+    }
+
+    /// Read on the phone or in WhatsApp elsewhere: read in Nook and in WhatsApp, so the badge goes and "Mark as read"
+    /// has nothing left to tell.
+    private func readElsewhere(_ key: String) {
+        readInWhatsApp[key] = Date()
+        clearMarkedUnread(key)
+        guard inbox.conversations[key] != nil else { return }
+        inbox.markRead(key)
+        onReadElsewhere?(chatKey(key))
     }
 
     private var webhookAlive: Bool {
@@ -597,6 +672,13 @@ final class WhatsAppLink: ObservableObject {
         knownChats = chats.map {
             WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread, pinned: $0.pinned)
         }
+        // OpenWA sends no word when you read a chat on the phone: its count going to nothing says it.
+        if gatewayCountsUnread {
+            let read = inbox.readInGateway(knownChats) { key in
+                self.carriedUnread[key].flatMap { $0.holds(readSince: self.readSince(key)) ? $0 : nil }
+            }
+            for key in read { readElsewhere(key) }
+        }
         // Who the numbers are: your Contacts first (what you call someone), then the phone's address book.
         // A failed request answers with an empty list: the last list stays, rather than every name going back to a number.
         let listed = await provider.contacts()
@@ -612,6 +694,12 @@ final class WhatsAppLink: ObservableObject {
             var pins = pinnedChats
             for chat in told { if chat.pinned == true { pins.insert(chat.jid) } else { pins.remove(chat.jid) } }
             pinnedChats = pins
+        }
+        let muteTold = knownChats.filter { $0.muted != nil }
+        if !muteTold.isEmpty {
+            var muted = mutedChats
+            for chat in muteTold { if chat.muted == true { muted.insert(chat.jid) } else { muted.remove(chat.jid) } }
+            mutedChats = muted
         }
         // Channels come in under their number ("+120363…"): the channel list names them and says where their picture is.
         for channel in await provider.channels() where gen == generation {
@@ -688,7 +776,7 @@ final class WhatsAppLink: ObservableObject {
             let key = WAJID.normalized(message.chat)
             // Their message is here: they stopped typing it.
             if !message.fromMe {
-                ChatTypingCenter.shared.stopped(chat: "wa|" + key, person: WAJID.isGroup(key) ? WAJID.normalized(message.sender) : key)
+                ChatTypingCenter.shared.stopped(chat: ChatInbox.key(app: "whatsapp", id: chatKey(key)), person: WAJID.isGroup(key) ? WAJID.normalized(message.sender) : key)
             }
             let outcome = next.add(message, filters: filters, quietBefore: quietBefore)
             if !keys.contains(key) { keys.append(key) }
@@ -696,7 +784,7 @@ final class WhatsAppLink: ObservableObject {
         }
         if next != inbox { inbox = next }
         for key in keys { nameGroupIfNeeded(key) }
-        if announce, let fresh { onMessage?(fresh) }
+        if announce, let fresh { onMessage?(chatKey(fresh)) }
     }
 
     /// Groups arrive under their id (GOWA's webhook carries no group name): asked once.
@@ -1016,6 +1104,12 @@ final class WhatsAppLink: ObservableObject {
         let key = WAJID.normalized(chat)
         inbox.markRead(key)
         readInNook[key] = Date()
+        clearMarkedUnread(key)
+    }
+
+    /// Takes back a "Mark as unread" once the chat is read.
+    private func clearMarkedUnread(_ key: String) {
+        if markedUnread[key] != nil { markedUnread[key] = nil }
     }
 
     /// Whether a chat is still unread in WhatsApp itself: its newest message is someone else's and WhatsApp did not say
@@ -1029,7 +1123,7 @@ final class WhatsAppLink: ObservableObject {
         let readThere = readInWhatsApp[key] ?? .distantPast
         if let conversation = inbox.conversations[key], let last = conversation.messages.last {
             // OpenWA counts unread itself: a chat it says is read, as of this message or later, is read there.
-            if WhatsAppSettings.gateway == .openwa, let known = known(key), known.unread == 0, known.last >= last.date {
+            if gatewayCountsUnread, let known = known(key), known.unread == 0, known.last >= last.date {
                 return false
             }
             return !last.fromMe && last.date > readThere
@@ -1043,10 +1137,14 @@ final class WhatsAppLink: ObservableObject {
     /// from history loaded at launch shows no mark in the list rather than a wrong one.
     func readIsKnown(_ chat: String) -> Bool {
         let key = WAJID.normalized(chat)
-        if WhatsAppSettings.gateway == .openwa || readInNook[key] != nil || readInWhatsApp[key] != nil { return true }
+        if gatewayCountsUnread || readInNook[key] != nil || readInWhatsApp[key] != nil { return true }
         if inbox.conversations[key]?.messages.last?.fromMe == true { return true }
         return unread(key) > 0
     }
+
+    /// Whether the gateway counts unread messages itself (OpenWA). The running gateway's own kind when there is one: the
+    /// Chats tab asks this for every chat on each redraw, and a settings read per chat kept the main thread busy.
+    private var gatewayCountsUnread: Bool { (provider?.kind ?? WhatsAppSettings.gateway) == .openwa }
 
     /// The phone's entry for a chat (`jid` normalized), without going through the whole list.
     private func known(_ jid: String) -> WAChatInfo? {
@@ -1061,15 +1159,21 @@ final class WhatsAppLink: ObservableObject {
     }
 
     /// "Mark as read", by hand: read in Nook and in WhatsApp, so the people who wrote see that you read it (blue ticks
-    /// where they have them). Always sent: you chose to.
-    func markReadInWhatsApp(_ chat: String) {
+    /// where they have them). Always sent: you chose to. Read in Nook at once; a gateway that refuses (or a phone that is
+    /// not linked) throws with a sentence you can act on, as every other chat app's "Mark as read" does.
+    func markReadInWhatsApp(_ chat: String) async throws {
         let key = WAJID.normalized(chat)
         readInNook[key] = Date()
-        readInWhatsApp[key] = Date()
         inbox.markRead(key)
-        guard let provider, isConnected else { return }
+        clearMarkedUnread(key)
+        guard let provider, isConnected else { throw NookError(statusLine) }
         let last = inbox.conversations[key]?.messages.last { !$0.fromMe }?.id
-        Task { try? await provider.markRead(chat: key, lastIncoming: last) }
+        do {
+            try await provider.markRead(chat: key, lastIncoming: last)
+        } catch let error as WAError {
+            throw Self.actionSentence(error)
+        }
+        readInWhatsApp[key] = Date()
     }
 
     /// The unread count a chat shows in Nook: what came in while Nook ran, else what WhatsApp itself counts (when the
@@ -1078,19 +1182,11 @@ final class WhatsAppLink: ObservableObject {
         let key = WAJID.normalized(chat)
         let counted = (inbox.conversations[key]?.unread ?? 0) + carried(key)
         if counted > 0 { return counted }
+        if markedUnread[key] != nil { return 1 }
         guard let known = known(key), known.unread > 0 else { return 0 }
-        if let read = readInNook[key], known.last <= read { return 0 }
+        // Read in Nook, or on the phone, since the list's newest message.
+        if let read = [readInNook[key], readInWhatsApp[key]].compactMap({ $0 }).max(), known.last <= read { return 0 }
         return known.unread
-    }
-
-    /// Unread messages in the chats the pill shows, also those still unread from before a restart.
-    var visibleUnread: Int {
-        let visible = inbox.visible(filters: filters)
-        let shown = Set(visible.map(\.id))
-        return visible.reduce(0) { $0 + $1.unread } + carriedUnread.keys.reduce(0) { total, key in
-            // The same chats the pill lists: a quiet group that mentioned you counts too.
-            shown.contains(key) || (!filters.ignored.contains(key) && !filters.isQuiet(key)) ? total + carried(key) : total
-        }
     }
 
     /// What a chat still counts unread from before Nook restarted: nothing once it was read or answered in since.
@@ -1109,23 +1205,47 @@ final class WhatsAppLink: ObservableObject {
         let kept = WAUnreadCarry.kept(carried: carriedUnread, inbox: inbox, readSince: readSince)
         guard kept != keptUnread else { return }
         keptUnread = kept
-        WhatsAppSettings.unreadCarry = kept
+        WhatsAppSettings.setUnreadCarry(kept, account: account)
+    }
+
+    // MARK: The shared inbox
+
+    /// What the shared inbox needs of a chat besides its messages (`WhatsAppExport.Facts`): where it stands by this
+    /// link's own count and marks, its picture, whether the phone lists it, and the files fetched for `messages`.
+    func exportFacts(_ jid: String, account name: String?, messages: [WAMessage]) -> WhatsAppExport.Facts {
+        let key = WAJID.normalized(jid)
+        var facts = WhatsAppExport.Facts(key: chatKey(key))
+        facts.account = name
+        facts.unread = unread(key)
+        facts.waitsInApp = waitsInWhatsApp(key)
+        facts.readKnown = readIsKnown(key)
+        facts.avatar = avatars[key]
+        let listed = known(key)
+        facts.listed = listed != nil
+        facts.activity = listed?.last
+        for message in messages {
+            if let file = previews[message.id]?.file.path { facts.files[message.id] = file }
+        }
+        return facts
     }
 
     /// Marks the chat unread in Nook (WhatsApp itself keeps it as it is).
     func markUnread(_ chat: String) {
-        carriedUnread[WAJID.normalized(chat)] = nil
-        readInNook[WAJID.normalized(chat)] = nil
-        inbox.markUnread(chat)
+        let key = WAJID.normalized(chat)
+        carriedUnread[key] = nil
+        readInNook[key] = nil
+        // A chat Nook has no messages of yet has no count to raise: the mark stands in for one.
+        if inbox.conversations[key] == nil { markedUnread[key] = Date() } else { inbox.markUnread(key) }
     }
 
     func markRead(_ chat: String) {
         let key = WAJID.normalized(chat)
         let hadUnread = (inbox.conversations[key]?.unread ?? 0) + carried(key) > 0
         readInNook[key] = Date()
+        clearMarkedUnread(key)
         guard let provider, let conversation = inbox.conversations[key] else { return }
         inbox.markRead(key)
-        guard hadUnread, WhatsAppSettings.markReadOnReply else { return }
+        guard hadUnread, ChatNoticeRulesStore.shared.rules.readsOnReply("whatsapp") else { return }
         let last = conversation.messages.last { !$0.fromMe }?.id
         Task { try? await provider.markRead(chat: key, lastIncoming: last) }
     }
@@ -1163,23 +1283,6 @@ final class WhatsAppLink: ObservableObject {
         return unique
     }
 
-    /// The chats "@chat …" offers, newest first: those that wrote lately (with how many are new), then the
-    /// others on the phone. Never the ones you chose never to see.
-    func chatChoices() -> [(name: String, detail: String)] {
-        var seen: Set<String> = []
-        var choices: [(name: String, detail: String)] = []
-        let label = "WhatsApp"
-        for conversation in inbox.sorted where seen.insert(conversation.id).inserted {
-            choices.append((conversation.name, conversation.unread > 0
-                ? label + " · " + tr("whatsapp.card.unread", conversation.unread) : label))
-        }
-        for chat in knownChats.sorted(by: { $0.last > $1.last })
-        where !filters.ignored.contains(chat.jid) && seen.insert(chat.jid).inserted {
-            choices.append((chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name, label))
-        }
-        return choices
-    }
-
     /// Sends a text to a chat, as an answer to its message `replyTo` when set. Throws with a sentence the user can act on.
     @discardableResult
     func send(_ text: String, to recipient: String, replyTo: String? = nil,
@@ -1202,7 +1305,7 @@ final class WhatsAppLink: ObservableObject {
             mine.replyTo = replyTo
             inbox.add(mine, filters: filters, name: target.name)
             // Answering reads the conversation.
-            if WhatsAppSettings.markReadOnReply {
+            if ChatNoticeRulesStore.shared.rules.readsOnReply("whatsapp") {
                 let last = inbox.conversations[target.jid]?.messages.last { !$0.fromMe }?.id
                 Task { try? await provider.markRead(chat: target.jid, lastIncoming: last) }
             }
@@ -1325,6 +1428,26 @@ final class WhatsAppLink: ObservableObject {
     var canDelete: Bool { isConnected && provider?.canDelete == true }
     var canPin: Bool { isConnected && provider?.canPin == true }
     var canArchive: Bool { isConnected && provider?.canArchive == true }
+    var canMuteInWhatsApp: Bool { isConnected && provider?.canMute == true }
+
+    /// Whether the chat is muted on the phone, as far as Nook knows (see `mutedChats`).
+    func isMutedInWhatsApp(_ chat: String) -> Bool { mutedChats.contains(WAJID.normalized(chat)) }
+
+    /// Mutes the chat on the phone for good, or unmutes it, after your own click.
+    func setMutedInWhatsApp(_ muted: Bool, chat: String) async throws {
+        guard let provider, isConnected else { throw NookError(statusLine) }
+        guard provider.canMute else { throw NookError(tr("chat.compose.unsupported")) }
+        let key = WAJID.normalized(chat)
+        let gen = generation
+        do {
+            try await provider.setMuted(muted, chat: key)
+        } catch let error as WAError {
+            throw Self.actionSentence(error)
+        }
+        guard gen == generation else { return }
+        if muted { mutedChats.insert(key) } else { mutedChats.remove(key) }
+        Log.connectors.info("WhatsApp: chat \(muted ? "muted" : "unmuted")")
+    }
 
     /// Whether the chat is pinned on the phone, as far as Nook knows: pinned from Nook, or so in the gateway's chat
     /// list. False when that is not known.
@@ -1425,33 +1548,25 @@ final class WhatsAppLink: ObservableObject {
     }
 
     func ignore(_ chat: String) {
-        let key = WAJID.normalized(chat)
-        filters.ignored.insert(key)
-        inbox.remove(key)
+        ChatNoticeRulesStore.shared.setHidden(true, chat: ChatInbox.key(app: "whatsapp", id: chatKey(WAJID.normalized(chat))))
     }
 
     /// Keeps the chat but stops it from reaching you (the card's Mute).
     func mute(_ chat: String) {
-        filters.setMode(.muted, for: chat)
+        ChatNoticeRulesStore.shared.setMode(.muted, for: ChatInbox.key(app: "whatsapp", id: chatKey(WAJID.normalized(chat))))
     }
 
-    /// Every chat the Settings list can name: the ones with messages, then the gateway's list, newest first.
-    var chatsForSettings: [(jid: String, name: String)] {
-        var seen = Set<String>()
-        var result: [(jid: String, name: String)] = []
-        for conversation in inbox.sorted where seen.insert(conversation.id).inserted {
-            result.append((conversation.id, conversation.name))
-        }
-        for chat in knownChats where seen.insert(chat.jid).inserted {
-            let fallback = WAJID.kind(chat.jid) == .status ? tr("whatsapp.kind.status") : WAJID.displayNumber(chat.jid)
-            result.append((chat.jid, chat.name.isEmpty ? fallback : chat.name))
-        }
-        return result
+    /// The notice rules changed (`ChatNoticeRulesStore`): this account follows them, and lets go of a chat now hidden.
+    func applyNoticeRules() {
+        let next = ChatNoticeRulesStore.shared.filters(account: account)
+        guard next != filters else { return }
+        filters = next
+        for jid in next.ignored where inbox.conversations[jid] != nil { inbox.remove(jid) }
     }
 
     /// One check from Settings' "Test": what the gateway says, in a sentence.
     func testConnection() async -> String {
-        guard let provider = provider ?? WhatsAppSettings.makeProvider() else { return tr("whatsapp.status.badURL") }
+        guard let provider = provider ?? WhatsAppSettings.makeProvider(account: account) else { return tr("whatsapp.status.badURL") }
         var attempt = 0
         while true {
             do {

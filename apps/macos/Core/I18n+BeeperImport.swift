@@ -1,6 +1,6 @@
 import Foundation
 
-// Texts for moving from Beeper to Nook (Settings › Chats › Moving from Beeper), and for Nook's own chat helper that took
+// Texts for moving from Beeper to Nook (Settings › Connections › Moving from Beeper), and for Nook's own chat helper that took
 // Beeper's place.
 
 let beeperImportTranslations: [AppLanguage: [String: String]] = [

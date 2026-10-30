@@ -29,6 +29,8 @@ enum ChatServiceData {
         var canEdit = true
         var canDelete = true
         var canReact = true
+        /// Its network takes votes on polls from Nook (WhatsApp and Signal through the helper).
+        var canVote = false
     }
 
     /// The networks by the words in their name or account id ("instagramgo", "Facebook/Messenger", "Twitter/X"), most
@@ -63,7 +65,7 @@ enum ChatServiceData {
                         me: people.first { $0["isSelf"] as? Bool == true }?["id"] as? String, people: names(people),
                         isPinned: chat["isPinned"] as? Bool == true, isMuted: chat["isMuted"] as? Bool == true,
                         canEdit: supports(abilities?["edit"]), canDelete: supports(abilities?["delete"]),
-                        canReact: supports(abilities?["reaction"]))
+                        canReact: supports(abilities?["reaction"]), canVote: chat["canVote"] as? Bool == true)
         }
     }
 
@@ -94,6 +96,13 @@ enum ChatServiceData {
         return nil
     }
 
+    /// Whether a chat's messages stop before its newest activity: the list says it moved later than the newest message
+    /// read (by more than a second, the rounding of the two), so that message is still on its way.
+    static func isBehind(_ messages: [InboxMessage], chat: Chat) -> Bool {
+        guard let last = chat.last, let newest = messages.last?.date else { return false }
+        return newest < last.addingTimeInterval(-1)
+    }
+
     /// The messages of /v1/chats/{id}/messages that were deleted, by their id in Nook.
     static func deleted(_ json: [String: Any], chat: Chat) -> [String] {
         (json["items"] as? [[String: Any]] ?? []).compactMap { message in
@@ -103,16 +112,21 @@ enum ChatServiceData {
     }
 
     /// The emoji on a message, the most used first; yours are those of `me`.
-    static func reactions(_ message: [String: Any], me: String?) -> [InboxReaction] {
-        var counts: [String: (count: Int, mine: Bool, first: Int)] = [:]
+    static func reactions(_ message: [String: Any], me: String?, people: [String: String] = [:]) -> [InboxReaction] {
+        var counts: [String: (count: Int, mine: Bool, first: Int, names: [String])] = [:]
         for (index, reaction) in (message["reactions"] as? [[String: Any]] ?? []).enumerated() {
             guard let key = reaction["reactionKey"] as? String, !key.isEmpty else { continue }
-            let mine = me != nil && reaction["participantID"] as? String == me
-            let known = counts[key] ?? (0, false, index)
-            counts[key] = (known.count + 1, known.mine || mine, known.first)
+            let person = reaction["participantID"] as? String
+            let mine = me != nil && person == me
+            var known = counts[key] ?? (0, false, index, [])
+            known.count += 1
+            known.mine = known.mine || mine
+            if !mine, let person, let name = people[person], !name.isEmpty { known.names.append(name) }
+            counts[key] = known
         }
         return counts.sorted { $0.value.count != $1.value.count ? $0.value.count > $1.value.count : $0.value.first < $1.value.first }
-            .map { InboxReaction(emoji: $0.key, count: $0.value.count, mine: $0.value.mine) }
+            .map { InboxReaction(emoji: $0.key, count: $0.value.count, mine: $0.value.mine,
+                                 people: $0.value.names.isEmpty ? nil : $0.value.names) }
     }
 
     /// How far your message got: its send status, then whether it was delivered or seen.
@@ -245,8 +259,9 @@ enum ChatServiceData {
                 inbox.receipt = receipt(message)
                 inbox.readers = readers(message, chat: chat)
             }
+            inbox.poll = poll(message, chat: chat)
             // An empty list too: the last emoji taken back leaves none.
-            inbox.reactions = reactions(message, me: chat.me)
+            inbox.reactions = reactions(message, me: chat.me, people: chat.people)
             // The message it answers, by the service's id ("linkedMessageID"; "replyToMessageID" as Nook sends it).
             if let answered = ((message["linkedMessageID"] as? String) ?? (message["replyToMessageID"] as? String)), !answered.isEmpty {
                 inbox.quote = InboxQuote(id: messageID(answered, chat: chat.id))
@@ -254,6 +269,22 @@ enum ChatServiceData {
             return inbox
         }
         return messages.sorted { $0.date < $1.date }
+    }
+
+    /// A poll (`type: POLL`, its text the question) with who chose each option, the same as every app's poll: you as
+    /// "You" first, the others by name; one the chat does not name still counts.
+    static func poll(_ message: [String: Any], chat: Chat) -> ChatPoll? {
+        guard message["type"] as? String == "POLL", let poll = message["poll"] as? [String: Any] else { return nil }
+        let options = (poll["options"] as? [[String: Any]] ?? []).compactMap { option -> ChatPoll.Option? in
+            guard let text = option["text"] as? String, !text.isEmpty else { return nil }
+            let ids = option["voters"] as? [String] ?? []
+            let mine = chat.me.map { ids.contains($0) } ?? false
+            let others = ids.filter { $0 != chat.me }.compactMap { chat.people[$0] }.filter { !$0.isEmpty }
+                .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            return ChatPoll.Option(text: text, votes: ids.count, chosen: mine, voters: (mine ? [tr("chat.poll.you")] : []) + others)
+        }
+        guard !options.isEmpty else { return nil }
+        return ChatPoll(question: (poll["question"] as? String) ?? "", options: options, multiple: poll["multiple"] as? Bool == true)
     }
 
     /// An attachment: what it is (the service says whether it is a GIF, a sticker or a voice message), and where it is:

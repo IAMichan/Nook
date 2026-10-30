@@ -94,6 +94,35 @@ final class AcpAgentTests: XCTestCase {
                        [.usage(used: 53000, size: 200000, costUSD: 0.42)])
     }
 
+    func testReadsSettleOnceTheAgentMovesOn() {
+        func call(_ id: String, _ kind: String, _ status: String? = "in_progress") -> AcpToolCall {
+            AcpToolCall(id: id, title: "Running view_file", kind: kind, status: status, input: nil, output: "", paths: [])
+        }
+        func done(_ id: String) -> AcpEvent { .toolCallUpdate(call(id, "", "completed")) }
+        // Antigravity 1.3.0 as recorded: a read per step, each closed only when the turn ends.
+        var reads = AcpOpenReads()
+        XCTAssertEqual(reads.settle(after: .toolCall(call("a", "read"))), [])
+        XCTAssertEqual(reads.settle(after: .usage(used: 1, size: 2, costUSD: nil)), [])
+        XCTAssertEqual(reads.settle(after: .toolCall(call("b", "read"))), ["a"], "a later batch means the read came back")
+        XCTAssertEqual(reads.settle(after: .messageChunk(" ")), [])
+        XCTAssertEqual(reads.settle(after: .messageChunk("The first line")), ["b"])
+        XCTAssertEqual(reads.settle(after: done("a")), [])
+
+        // Reads announced together may run side by side; a command is never settled.
+        reads = AcpOpenReads()
+        XCTAssertEqual(reads.settle(after: .toolCall(call("c", "read"))), [])
+        XCTAssertEqual(reads.settle(after: .toolCall(call("d", "read"))), [])
+        XCTAssertEqual(reads.settle(after: .toolCall(call("e", "execute"))), [])
+        XCTAssertEqual(reads.settle(after: done("c")), [])
+        XCTAssertEqual(reads.settle(after: .thoughtChunk("Next")), ["d"])
+
+        // A read the agent closed itself is not settled again.
+        reads = AcpOpenReads()
+        XCTAssertEqual(reads.settle(after: .toolCall(call("f", "read"))), [])
+        XCTAssertEqual(reads.settle(after: done("f")), [])
+        XCTAssertEqual(reads.settle(after: .messageChunk("Done")), [])
+    }
+
     func testRequests() {
         func events(_ line: String) -> [AcpEvent] { AcpMapper.events(AcpRPC.parse(line)!) }
         let permission = events(#"{"jsonrpc":"2.0","id":5,"method":"session/request_permission","params":{"sessionId":"s","toolCall":{"toolCallId":"t2","title":"npm test","kind":"execute"},"options":[{"optionId":"o1","name":"Allow","kind":"allow_once"}]}}"#)
@@ -112,5 +141,293 @@ final class AcpAgentTests: XCTestCase {
         XCTAssertEqual(stop.usage.outputTokens, 30, "thought tokens count as output")
         XCTAssertEqual(stop.usage.cacheReadTokens, 40)
         XCTAssertEqual(AcpRPC.stop([:]).reason, "end_turn")
+    }
+
+    // MARK: Session settings
+
+    /// Antigravity's `session/new` reply: a model and a mode config option next to `models` and `modes`.
+    private static let antigravitySession: [String: Any] = [
+        "sessionId": "s1",
+        "modes": ["currentModeId": "default", "availableModes": [["id": "default"], ["id": "auto_edit"], ["id": "yolo"]]],
+        "configOptions": [
+            ["id": "model", "category": "model", "type": "select", "currentValue": "gemini-3.8-flash-high",
+             "options": [["value": "gemini-4-argon-medium", "name": "Gemini 4 Argon (Medium)"],
+                         ["value": "gemini-3.8-flash-high", "name": "Gemini 3.8 Flash (High)"]]],
+            ["id": "mode", "category": "mode", "type": "select", "currentValue": "default",
+             "options": [["value": "default"], ["value": "auto_edit"], ["value": "yolo"]]]
+        ],
+        "models": ["currentModelId": "gemini-3.8-flash-high",
+                   "availableModels": [["modelId": "gemini-4-argon-medium"], ["modelId": "gemini-3.8-flash-high"]]]
+    ]
+
+    func testSessionSettingsSetTheModelBeforeTheMode() {
+        let info = Self.antigravitySession
+        XCTAssertEqual(AcpSessionSettings.currentModel(info), "gemini-3.8-flash-high")
+        XCTAssertEqual(AcpSessionSettings.currentMode(info), "default")
+        let steps = AcpSessionSettings.steps(session: "s1", info: info, model: "gemini-4-argon-medium", appliedModel: "gemini-3.8-flash-high",
+                                             mode: "yolo", appliedMode: "default")
+        XCTAssertEqual(steps, [
+            .init(method: "session/set_config_option", params: ["sessionId": "s1", "configId": "model", "value": "gemini-4-argon-medium"],
+                  target: .model("gemini-4-argon-medium")),
+            .init(method: "session/set_config_option", params: ["sessionId": "s1", "configId": "mode", "value": "yolo"], target: .mode("yolo"))
+        ])
+    }
+
+    func testSessionSettingsSkipWhatIsAlreadySet() {
+        let info = Self.antigravitySession
+        XCTAssertEqual(AcpSessionSettings.steps(session: "s1", info: info, model: "gemini-3.8-flash-high", appliedModel: "gemini-3.8-flash-high",
+                                                mode: "default", appliedMode: "default"), [])
+        XCTAssertEqual(AcpSessionSettings.steps(session: "s1", info: info, model: "", appliedModel: nil, mode: nil, appliedMode: nil), [],
+                       "no model chosen: the agent's own default stays")
+        XCTAssertEqual(AcpSessionSettings.steps(session: "s1", info: info, model: "", appliedModel: nil, mode: "unknown", appliedMode: "default"),
+                       [], "a mode the agent does not offer is not sent")
+    }
+
+    func testSessionSettingsWithoutConfigOptions() {
+        let info: [String: Any] = [
+            "modes": ["currentModeId": "code", "availableModes": [["id": "code"], ["id": "architect-plan"]]],
+            "models": ["currentModelId": "a", "availableModels": [["modelId": "a"], ["modelId": "b"]]]
+        ]
+        XCTAssertEqual(AcpSessionSettings.mode(plan: true, info: info), "architect-plan")
+        XCTAssertEqual(AcpSessionSettings.mode(plan: false, info: info), "code", "leaving Plan mode returns to the mode it started in")
+        var planned = info
+        planned["modes"] = ["currentModeId": "architect-plan", "availableModes": [["id": "code"], ["id": "architect-plan"]]]
+        XCTAssertEqual(AcpSessionSettings.mode(plan: false, info: planned, starting: "code"), "code",
+                       "the session's options follow the agent into plan mode; leaving it goes back to where it started")
+        XCTAssertEqual(AcpSessionSettings.steps(session: "s", info: info, model: "b", appliedModel: "a", mode: "architect-plan", appliedMode: "code"), [
+            .init(method: "session/set_model", params: ["sessionId": "s", "modelId": "b"], target: .model("b")),
+            .init(method: "session/set_mode", params: ["sessionId": "s", "modeId": "architect-plan"], target: .mode("architect-plan"))
+        ])
+    }
+
+    private static let thinkingSession: [String: Any] = [
+        "configOptions": [
+            ["id": "model", "category": "model", "type": "select", "currentValue": "pro",
+             "options": [["value": "pro", "name": "Pro"], ["value": "flash", "name": "Flash"]]],
+            ["id": "reasoning", "category": "thought_level", "type": "select", "currentValue": "medium",
+             "options": [["group": "Levels", "name": "Levels",
+                          "options": [["value": "low", "name": "Low"], ["value": "medium", "name": "Medium"],
+                                      ["value": "max", "name": "Maximum"]]]]],
+            ["id": "mode", "category": "mode", "type": "select", "currentValue": "code",
+             "options": [["value": "code"], ["value": "plan"]]]
+        ]
+    ]
+
+    func testSessionSettingsSetTheEffortBetweenModelAndMode() {
+        let info = Self.thinkingSession
+        XCTAssertEqual(AcpSessionSettings.currentEffort(info), "medium")
+        XCTAssertEqual(AcpSessionSettings.effortLevels(info), [AgentModel(id: "low", name: "Low"),
+                                                               AgentModel(id: "medium", name: "Medium", isDefault: true),
+                                                               AgentModel(id: "max", name: "Maximum")])
+        let steps = AcpSessionSettings.steps(session: "s", info: info, model: "flash", appliedModel: "pro", effort: "max",
+                                             appliedEffort: "medium", mode: "plan", appliedMode: "code")
+        XCTAssertEqual(steps.map(\.target), [.model("flash"), .effort("max"), .mode("plan")])
+        XCTAssertEqual(steps[1].params, ["sessionId": "s", "configId": "reasoning", "value": "max"])
+        XCTAssertEqual(steps[1].method, "session/set_config_option")
+    }
+
+    func testSessionSettingsSkipAnEffortTheAgentDoesNotOffer() {
+        let info = Self.thinkingSession
+        XCTAssertEqual(AcpSessionSettings.steps(session: "s", info: info, model: "", appliedModel: nil, effort: "medium",
+                                                appliedEffort: "medium", mode: nil, appliedMode: nil), [], "already set")
+        XCTAssertEqual(AcpSessionSettings.steps(session: "s", info: info, model: "", appliedModel: nil, effort: "xhigh",
+                                                appliedEffort: "medium", mode: nil, appliedMode: nil), [], "not one of its levels")
+        XCTAssertEqual(AcpSessionSettings.steps(session: "s", info: Self.antigravitySession, model: "", appliedModel: nil, effort: "high",
+                                                appliedEffort: nil, mode: nil, appliedMode: nil), [], "no thought_level option")
+        XCTAssertNil(AcpSessionSettings.currentEffort(Self.antigravitySession))
+        XCTAssertEqual(AcpSessionSettings.effortLevels(Self.antigravitySession), [])
+    }
+
+    func testConfigOptionsReplaceTheSessionsOptions() {
+        let changed: [[String: Any]] = [
+            ["id": "reasoning", "category": "thought_level", "type": "select", "currentValue": "high",
+             "options": [["value": "high", "name": "High"]]]
+        ]
+        let info = AcpSessionSettings.updating(Self.thinkingSession, configOptions: changed)
+        XCTAssertEqual(AcpSessionSettings.currentEffort(info), "high")
+        XCTAssertEqual(AcpSessionSettings.effortLevels(info).map(\.id), ["high"])
+        XCTAssertEqual(AcpSessionSettings.currentEffort(AcpSessionSettings.updating(Self.thinkingSession, configOptions: nil)), "medium")
+    }
+
+    func testSessionStateUpdates() {
+        func events(_ update: [String: Any]) -> [AcpEvent] {
+            AcpMapper.events(.notification(method: "session/update", params: JSONBox(["sessionId": "s", "update": update])))
+        }
+        let commands = events(["sessionUpdate": "available_commands_update", "availableCommands": [
+            ["name": "web", "description": "Search the web", "input": ["hint": "query"]],
+            ["name": "/compact", "description": ""],
+            ["name": "two words"],
+            ["name": "web"]
+        ]])
+        XCTAssertEqual(commands, [.commands([AgentSlashCommand(name: "web", detail: "Search the web", takesInput: true),
+                                             AgentSlashCommand(name: "compact", detail: nil, takesInput: false)])])
+        XCTAssertEqual(events(["sessionUpdate": "current_mode_update", "currentModeId": "plan"]), [.currentMode("plan")])
+        let options = events(["sessionUpdate": "config_option_update", "configOptions": [["id": "model"]]])
+        XCTAssertEqual(options.count, 1)
+        XCTAssertTrue(options.allSatisfy(\.isSessionState))
+        XCTAssertTrue(commands.allSatisfy(\.isSessionState))
+        XCTAssertFalse(AcpEvent.messageChunk("hi").isSessionState)
+        XCTAssertFalse(commands.contains(where: \.isWakeEvidence), "an offer is not work")
+    }
+
+    func testErrorsThatNookAnswersItself() {
+        XCTAssertTrue(AgentErrorText.needsSignIn("Authentication required"))
+        XCTAssertTrue(AgentErrorText.needsSignIn("Error: not logged in. Run login first."))
+        XCTAssertFalse(AgentErrorText.needsSignIn("Authenticate called with method oauth"), "a log line is not the error")
+        XCTAssertTrue(AgentErrorText.sessionGone("Session not found: 3f2a"))
+        XCTAssertTrue(AgentErrorText.sessionGone("no rollout found for thread id 019a"))
+        XCTAssertTrue(AgentErrorText.sessionGone("Unknown session abc"))
+        XCTAssertFalse(AgentErrorText.sessionGone("Model not found"), "only the conversation being gone starts a new one")
+        XCTAssertFalse(AgentErrorText.sessionGone("network timeout"))
+        XCTAssertEqual(AcpRPC.authMethodIDs(["authMethods": [["id": "oauth-personal", "name": "Google"], ["id": "gemini-api-key"], ["name": "x"]]]),
+                       ["oauth-personal", "gemini-api-key"])
+        XCTAssertEqual((AcpRPC.cancelledOutcome["outcome"] as? [String: String])?["outcome"], "cancelled")
+    }
+
+    func testGeminiChatLogReadsTheJsonlForm() throws {
+        let lines = [
+            #"{"sessionId":"s1","projectHash":"abc","startTime":"2026-10-29T10:00:00.000Z","lastUpdated":"2026-10-29T10:00:00.000Z","kind":"main"}"#,
+            #"{"id":"u1","timestamp":"2026-10-29T10:00:01.000Z","type":"user","content":[{"text":"Fix the login"}]}"#,
+            #"{"id":"g1","timestamp":"2026-10-29T10:00:02.000Z","type":"gemini","content":"","model":"gemini-3-pro","toolCalls":[{"id":"t1","name":"read_file","args":{}}]}"#,
+            #"{"$patch":{"id":"g1","content":"Done.","toolCalls":[{"id":"t1","result":[{"text":"ok"}]}]}}"#,
+            #"{"id":"u2","type":"user","content":"and the logout"}"#,
+            #"{"id":"g2","type":"gemini","content":"Working"}"#,
+            #"{"$rewindTo":"u2"}"#,
+            #"{"$set":{"lastUpdated":"2026-10-29T10:05:00.000Z","directories":["/Users/me/app"]}}"#
+        ]
+        let chat = try XCTUnwrap(GeminiChatLog.read(Data(lines.joined(separator: "\n").utf8)))
+        XCTAssertEqual(chat.messages.compactMap { $0["id"] as? String }, ["u1", "g1"], "a rewind drops that message and what follows")
+        XCTAssertEqual(chat.messages[1]["content"] as? String, "Done.", "a patch fills in the content")
+        XCTAssertNotNil((chat.messages[1]["toolCalls"] as? [[String: Any]])?.first?["result"])
+        XCTAssertEqual(chat.metadata["sessionId"] as? String, "s1")
+        XCTAssertEqual(chat.metadata["lastUpdated"] as? String, "2026-10-29T10:05:00.000Z")
+        XCTAssertEqual(GeminiChatLog.folder(chat: chat, file: URL(fileURLWithPath: "/x/.gemini/tmp/app/chats/a.jsonl"),
+                                            runtimeDirectory: URL(fileURLWithPath: "/x/.gemini")), "/Users/me/app")
+        let messages = AgentTranscript.gemini(Data(lines.joined(separator: "\n").utf8))
+        XCTAssertEqual(messages.first?.text, "Fix the login")
+    }
+
+    func testGeminiChatLogStillReadsTheJsonForm() throws {
+        let json = #"{"sessionId":"s0","messages":[{"id":"a","type":"user","content":"hi"}]}"#
+        XCTAssertEqual(try XCTUnwrap(GeminiChatLog.read(Data(json.utf8))).messages.count, 1)
+        XCTAssertNil(GeminiChatLog.read(Data("not json".utf8)))
+        XCTAssertTrue(GeminiChatLog.isLog(path: "/Users/me/.gemini/tmp/app/chats/session-2026-10-29T10-00-abcd1234.jsonl"))
+        XCTAssertFalse(GeminiChatLog.isLog(path: "/Users/me/.claude/projects/x/abc.jsonl"))
+    }
+
+    func testSessionCapabilities() {
+        let all = AcpSessionCapabilities(initialize: ["agentCapabilities": [
+            "loadSession": true, "sessionCapabilities": ["list": [String: Any](), "resume": [String: Any](), "fork": [String: Any]()]
+        ]])
+        XCTAssertEqual(all, AcpSessionCapabilities(load: true, list: true, resume: true))
+        XCTAssertEqual(all.continueMethod, "session/resume", "resume continues without replaying what Nook keeps")
+        let loadOnly = AcpSessionCapabilities(initialize: ["agentCapabilities": ["loadSession": true, "sessionCapabilities": ["list": NSNull()]]])
+        XCTAssertEqual(loadOnly, AcpSessionCapabilities(load: true), "null is not offered")
+        XCTAssertEqual(loadOnly.continueMethod, "session/load")
+        XCTAssertFalse(AcpSessionCapabilities(initialize: [:]).continues)
+    }
+
+    func testListedSessions() {
+        let page = AcpListedSession.page([
+            "sessions": [
+                ["sessionId": "ses_1", "cwd": "/Users/me/app", "title": "Fix login", "updatedAt": "2026-10-29T10:00:00.000Z"],
+                ["sessionId": "ses_2", "cwd": "/Users/me/web", "updatedAt": "2026-10-28T09:00:00Z"],
+                ["sessionId": "", "cwd": "/x"],
+                ["sessionId": "ses_3"]
+            ],
+            "nextCursor": "c2"
+        ])
+        XCTAssertEqual(page.sessions.map(\.id), ["ses_1", "ses_2"], "a session without id or folder is left out")
+        XCTAssertEqual(page.sessions.first?.title, "Fix login")
+        XCTAssertNotNil(page.sessions.first?.updated)
+        XCTAssertNotNil(page.sessions.last?.updated, "seconds without fractions read too")
+        XCTAssertEqual(page.next, "c2")
+        XCTAssertNil(AcpListedSession.page(["sessions": [], "nextCursor": ""]).next)
+        XCTAssertEqual(AcpRPC.listParams(cursor: nil).count, 0)
+        XCTAssertEqual(AcpRPC.listParams(cursor: "c2")["cursor"] as? String, "c2")
+    }
+
+    func testReplayBecomesMessages() {
+        func update(_ kind: String, _ text: String) -> [AcpEvent] {
+            AcpMapper.events(.notification(method: "session/update", params: JSONBox(["sessionId": "s", "update": [
+                "sessionUpdate": kind, "content": ["type": "text", "text": text]
+            ]])))
+        }
+        var replay = AcpReplay()
+        for event in update("user_message_chunk", "Fix ") + update("user_message_chunk", "the login")
+            + update("agent_message_chunk", "Done") + update("agent_message_chunk", ".") + update("agent_thought_chunk", "hm") {
+            replay.add(event)
+        }
+        XCTAssertEqual(replay.finished.map(\.text), ["Fix the login", "Done."])
+        XCTAssertEqual(replay.finished.map(\.side), [.user, .agent])
+    }
+
+    func testPicturesGoAsImagesOrLinks() {
+        let png = URL(fileURLWithPath: "/tmp/shot.png")
+        let heic = URL(fileURLWithPath: "/tmp/photo.heic")
+        let read: (URL) -> Data? = { _ in Data([1, 2, 3]) }
+        let taking = AcpRPC.attachments([png, heic], images: true, read: read)
+        XCTAssertEqual(taking[0]["type"] as? String, "image")
+        XCTAssertEqual(taking[0]["mimeType"] as? String, "image/png")
+        XCTAssertEqual(taking[0]["data"] as? String, Data([1, 2, 3]).base64EncodedString())
+        XCTAssertEqual(taking[1]["type"] as? String, "resource_link", "a type models do not read goes as its file")
+        let linking = AcpRPC.attachments([png], images: false, read: read)
+        XCTAssertEqual(linking[0]["type"] as? String, "resource_link")
+        XCTAssertEqual(linking[0]["uri"] as? String, "file:///tmp/shot.png")
+        XCTAssertEqual(linking[0]["name"] as? String, "shot.png")
+        let prompt = AcpRPC.promptParams(sessionID: "s", text: "hi", attachments: linking)["prompt"] as? [[String: Any]]
+        XCTAssertEqual(prompt?.count, 2)
+        XCTAssertTrue(AcpSessionCapabilities(initialize: ["agentCapabilities": ["promptCapabilities": ["image": true]]]).images)
+    }
+
+    func testEditsBecomeTheInputEditRowsRead() throws {
+        let one = AcpMapper.events(.notification(method: "session/update", params: JSONBox(["sessionId": "s", "update": [
+            "sessionUpdate": "tool_call", "toolCallId": "t1", "title": "Edit", "kind": "edit",
+            "content": [["type": "diff", "path": "/w/a.swift", "oldText": "let a = 1", "newText": "let a = 2"]]
+        ]])))
+        guard case .toolCall(let call) = try XCTUnwrap(one.first) else { return XCTFail("a tool call") }
+        let input = try XCTUnwrap(call.editInput?.object as? [String: Any])
+        XCTAssertEqual(input["old_string"] as? String, "let a = 1")
+        XCTAssertEqual(input["new_string"] as? String, "let a = 2")
+        XCTAssertEqual(EditLines.of(tool: call.toolName, input: input), EditLines(added: 1, removed: 1))
+        XCTAssertNotNil(EditPatch.make(tool: call.toolName, input: input))
+        var two = call
+        two.diffs.append(AcpDiff(path: "/w/new.swift", oldText: nil, newText: "a\nb"))
+        let several = try XCTUnwrap(two.editInput?.object as? [String: Any])
+        XCTAssertEqual((several["edits"] as? [[String: Any]])?.count, 2)
+        XCTAssertEqual(EditLines.of(tool: two.toolName, input: several), EditLines(added: 3, removed: 1),
+                       "several places, and a new file, count as one edit")
+        XCTAssertNil(AcpToolCall(id: "x", title: "", kind: "read", status: nil, input: nil, output: "", paths: []).editInput)
+    }
+
+    func testCursorChats() throws {
+        let info = CursorChats.info(metaJSON: Data(#"{"schemaVersion":1,"createdAtMs":1761630000000,"updatedAtMs":1761630090000,"hasConversation":true,"cwd":"/Users/me/app"}"#.utf8))
+        XCTAssertEqual(info.cwd, "/Users/me/app")
+        XCTAssertEqual(info.created, Date(timeIntervalSince1970: 1_761_630_000))
+        XCTAssertTrue(info.hasConversation)
+        let json = #"{"agentId":"c1","name":"Fix login","createdAt":1761630000000,"mode":"agent"}"#
+        let hex = Data(json.utf8).map { String(format: "%02x", $0) }.joined()
+        let stored = try XCTUnwrap(CursorChats.storeMeta(hex: hex))
+        XCTAssertEqual(stored.title, "Fix login")
+        XCTAssertNil(CursorChats.storeMeta(hex: "zz"))
+        XCTAssertEqual(CursorChats.transcriptFolder(cwd: "/Users/me/Repository/X"), "Users-me-Repository-X")
+        let lines = [
+            #"{"role":"user","message":{"content":[{"type":"text","text":"Fix the login"}]}}"#,
+            #"{"role":"assistant","message":{"content":[{"type":"text","text":"Looking."},{"type":"tool_use","name":"read_file","input":{"path":"a.swift"}}]}}"#,
+            #"{"type":"turn_ended","status":"success"}"#
+        ]
+        let messages = AgentTranscript.jsonl(Data(lines.joined(separator: "\n").utf8))
+        XCTAssertEqual(messages.first { $0.kind == .user }?.text, "Fix the login")
+        XCTAssertEqual(messages.first { $0.kind == .assistant }?.text, "Looking.")
+    }
+
+    func testAgentLogLinesKeepOnlyErrors() {
+        let lines = [
+            "I1029 16:35:47.481079 8387203840 agent.py:109] Starting connection and creating conversation...",
+            "W1029 16:35:51.682007 6195638272 proxy_server.py:225] Proxy client disconnected: [Errno 32] Broken pipe",
+            "E1029 16:35:52.000001 6195638272 server.py:12] Quota exceeded for gemini-4-argon-high",
+            "Traceback (most recent call last):"
+        ]
+        XCTAssertEqual(AgentLogLines.withoutLog(lines), ["Quota exceeded for gemini-4-argon-high", "Traceback (most recent call last):"])
     }
 }

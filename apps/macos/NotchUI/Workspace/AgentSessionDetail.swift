@@ -117,22 +117,15 @@ struct AgentSessionDetail: View {
         return app.history.sessions.first { $0.agent == kind && $0.cwd == session.cwd }
     }
 
-    /// The earlier record of this conversation, for its title and branch.
-    private func known(_ session: AgentSession) -> PastSession? {
-        if let transcript = transcript(for: session) { return transcript }
-        guard let id = app.conversationID(for: session) else { return nil }
-        return app.history.sessions.first { $0.isConversation(id) }
-    }
-
-    private func title(for session: AgentSession) -> String {
-        let named = AgentFormat.sessionTitle(session, known: known(session))
+    private func title(for session: AgentSession, known: PastSession?) -> String {
+        let named = AgentFormat.sessionTitle(session, known: known)
         return named.isEmpty ? session.name : named
     }
 
     /// The session as the conversation view needs it: with the transcript of a session that was already running.
-    private func withTranscript(_ session: AgentSession) -> AgentSession {
+    private func withTranscript(_ session: AgentSession, _ transcript: PastSession?) -> AgentSession {
         var shown = session
-        if let transcript = transcript(for: session) {
+        if let transcript {
             if shown.transcriptPath.isEmpty { shown.transcriptPath = transcript.path }
             if shown.lastPrompt.isEmpty { shown.lastPrompt = transcript.lastPrompt }
             if shown.lastReply.isEmpty { shown.lastReply = transcript.lastReply }
@@ -142,9 +135,11 @@ struct AgentSessionDetail: View {
     }
 
     private func liveDetail(_ session: AgentSession) -> some View {
-        let shown = withTranscript(session)
+        // The earlier record of this conversation (its transcript, title and branch), looked up once per redraw.
+        let past = transcript(for: session)
+        let shown = withTranscript(session, past)
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            header(folder: session.project, title: title(for: session), directory: session.cwd,
+            header(folder: session.project, title: title(for: session, known: past), directory: session.cwd,
                    agentWorking: session.status == .running || session.status == .waiting)
 
             if shown.transcriptPath.isEmpty && !session.steps.isEmpty {
@@ -163,13 +158,20 @@ struct AgentSessionDetail: View {
 
             if app.demoMode {
                 Spacer(minLength: 0)
+                liveBottomBar(session, shown: shown, known: past)
             } else {
                 // Every agent Nook can answer (Antigravity too, through its agent API), not only the ones it takes over.
                 AgentConversation(session: shown, onReply: app.canReply(to: session) ? { answer in
                     perform { try await app.reply(to: session, message: answer) }
-                } : nil)
+                } : nil, bottomBar: AnyView(liveBottomBar(session, shown: shown, known: past)))
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
 
+    /// What sits under a live session's conversation: an approval, or the composer with its error line and tray.
+    private func liveBottomBar(_ session: AgentSession, shown: AgentSession, known: PastSession?) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {
                 let approval = ApprovalCenter.make(request)
                 ApprovalView(approval: approval) { app.approvals.decide(approval, $0) }
@@ -180,14 +182,13 @@ struct AgentSessionDetail: View {
             } else {
                 errorLine
                 VStack(spacing: 0) {
-                    pullRequestTray(pullRequest(cwd: session.cwd, branch: known(session).flatMap { $0.branch.isEmpty ? nil : $0.branch } ?? GitHead.branch(for: session.cwd) ?? "", reply: pullRequestText(shown)))
+                    pullRequestTray(pullRequest(cwd: session.cwd, branch: known.flatMap { $0.branch.isEmpty ? nil : $0.branch } ?? GitHead.branch(for: session.cwd) ?? "", reply: pullRequestText(shown)))
                     liveComposer(shown).zIndex(1)
                 }
                 // The tray keeps to the box's column, so it follows the box when that is narrower than the panel.
                 .chatColumn()
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     /// A workspace request from an agent running in a terminal in this session's folder.
@@ -221,7 +222,7 @@ struct AgentSessionDetail: View {
 
     /// The agent asks something in words (not a multiple-choice question): its question, quietly, above the composer.
     private func waitingNote(_ session: AgentSession) -> some View {
-        ScrollView(showsIndicators: true) {
+        ScrollView {
             Text(session.summary)
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.paper)
@@ -229,6 +230,7 @@ struct AgentSessionDetail: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .scrollIndicators(.never)
         .frame(maxHeight: 90)
         .fixedSize(horizontal: false, vertical: true)
         .padding(NookTheme.Spacing.lg)
@@ -237,7 +239,7 @@ struct AgentSessionDetail: View {
 
     /// The change an approval is about, scrollable so it can be read in full before deciding.
     private func approvalDiff(_ session: AgentSession) -> some View {
-        ScrollView(showsIndicators: true) {
+        ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 Text(session.file)
                     .foregroundStyle(NookTheme.textTertiary)
@@ -254,18 +256,18 @@ struct AgentSessionDetail: View {
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, 10)
         }
+        .scrollIndicators(.never)
         .frame(maxWidth: .infinity, maxHeight: 110, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.well))
     }
 
-    /// The pull request of a session Nook does not run: the one for its folder and branch, else the last one its reply
-    /// links. Shown in a tray above the composer, as for a session Nook runs.
+    /// The pull request of a session Nook does not run: the open one for its folder and branch, else the last one its
+    /// reply links, else the branch's one that merged or closed. Shown in a tray above the composer, as for a session
+    /// Nook runs.
     private func pullRequest(cwd: String, branch: String, reply: String) -> URL? {
-        if !cwd.isEmpty, !branch.isEmpty,
-           let link = PullRequestSync.shared.folderLinks[PullRequestSync.folderKey(path: cwd, branch: branch)]?
-            .first(where: { ($0.state == .open || $0.state == .draft) && ($0.host == .github || $0.host == .gitlab) }),
-           let url = URL(string: link.url) { return url }
-        return MarkdownBlock.lastGitHubPullRequest(in: reply)
+        let links = cwd.isEmpty || branch.isEmpty ? [] : PullRequestSync.shared.folderLinks[PullRequestSync.folderKey(path: cwd, branch: branch)] ?? []
+        if let open = PullRequestLink.shown(in: links.filter(\.state.isOpen)) { return open }
+        return MarkdownBlock.lastGitHubPullRequest(in: reply) ?? PullRequestLink.shown(in: links)
     }
 
     /// What a live session said, for a pull request link: its last reply, and for an agent whose conversation Nook cannot
@@ -289,15 +291,26 @@ struct AgentSessionDetail: View {
         let canSend = app.canReply(to: session)
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty, canSend else { return }
+            guard composerModel.hasContent(text), canSend, !working else { return }
+            let savedDraft = draft
+            let savedImages = images
             let outgoing = composerModel.outgoing(text).send
             let picked = choice
             let settings = turnSettings
+            draft = ""
+            images = []
+            choice = nil
+            turnSettings = AgentTurnSettings()
             perform {
-                try await app.reply(to: session, message: outgoing, choice: picked, settings: settings)
-                draft = ""
-                choice = nil
-                turnSettings = AgentTurnSettings()
+                do {
+                    try await app.reply(to: session, message: outgoing, choice: picked, settings: settings)
+                } catch {
+                    draft = savedDraft
+                    images = savedImages
+                    choice = picked
+                    turnSettings = settings
+                    throw error
+                }
             }
         }
         if app.demoMode {
@@ -337,9 +350,9 @@ struct AgentSessionDetail: View {
             let current = choice ?? original
             let shown = app.profiles.profile(id: current.profileID)
             let account = shown.map { AccountLabel.name($0, app: app) }
-            let model = current.model.isEmpty ? nil : app.modelName(current.model, for: current.provider)
+            let model = current.model.isEmpty ? nil : app.modelName(current.model, for: current.provider, profileID: current.profileID)
             let providers = app.connectedProviders
-            ComposerDropdown(width: providers.count > 1 ? 340 : 296, takesRoom: true) {
+            ModelPickerDropdown {
                 ComposerPill(agent: current.provider.displayName, account: shown.map { AccountKind.of($0, app: app) },
                              text: [current.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "),
                              short: model ?? current.provider.displayName)
@@ -391,18 +404,19 @@ struct AgentSessionDetail: View {
             }
             .disabled(turnSettings.mode == .plan)
             .help(permission.help(for: provider))
-            let levels = EffortLevels.levels(for: provider, model: choice?.model ?? "")
+            let levels = app.workspace.effortLevels(for: provider, profileID: choice?.profileID, model: choice?.model ?? "")
             if !levels.isEmpty {
                 ComposerDivider()
                 Menu {
                     ForEach([nil] + levels.map { Optional($0) }, id: \.self) { level in
                         Button { turnSettings.effort = level } label: {
-                            let title = tr(EffortLevels.label(level))
+                            let title = app.workspace.effortTitle(level, for: provider, profileID: choice?.profileID)
                             if turnSettings.effort == level { Label(title, systemImage: "checkmark") } else { Text(title) }
                         }
                     }
                 } label: {
-                    ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(turnSettings.effort)))
+                    ComposerPill(symbol: "gauge.with.dots.needle.33percent",
+                                 text: app.workspace.effortTitle(turnSettings.effort, for: provider, profileID: choice?.profileID))
                 }
                 .composerMenu()
                 .help(tr("compose.effort.help"))
@@ -414,7 +428,7 @@ struct AgentSessionDetail: View {
     private func sessionMenu(_ session: AgentSession) -> some View {
         let finishKey = FinishedSessions.key(session: session)
         let busy = session.status == .running || session.status == .waiting || session.approvalID != nil
-        let isFinished = finishedMarks.isFinished(key: finishKey, idle: !busy && !session.isDetected, lastActive: session.updated)
+        let isFinished = finishedMarks.contains(finishKey)
         return ComposerPlusMenu(attach: { attachFile(in: session.cwd) }) {
             Divider()
             Button(isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark")) {
@@ -459,7 +473,7 @@ struct AgentSessionDetail: View {
                 .foregroundStyle(NookTheme.paper)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
-            ScrollView(showsIndicators: true) {
+            ScrollView {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                     ForEach(Array(item.options.enumerated()), id: \.offset) { _, option in
                         let chosen = picks.contains(option.label)
@@ -498,6 +512,7 @@ struct AgentSessionDetail: View {
                     }
                 }
             }
+            .scrollIndicators(.never)
             .frame(maxHeight: 170)
             .fixedSize(horizontal: false, vertical: true)
             if item.multiSelect {
@@ -570,15 +585,26 @@ struct AgentSessionDetail: View {
         let canContinue = app.canReply(to: session)
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty, canContinue else { return }
+            guard composerModel.hasContent(text), canContinue, !working else { return }
+            let savedDraft = draft
+            let savedImages = images
             let outgoing = composerModel.outgoing(text).send
             let picked = choice
             let settings = turnSettings
+            draft = ""
+            images = []
+            choice = nil
+            turnSettings = AgentTurnSettings()
             perform {
-                try await app.reply(to: session, message: outgoing, choice: picked, settings: settings)
-                draft = ""
-                choice = nil
-                turnSettings = AgentTurnSettings()
+                do {
+                    try await app.reply(to: session, message: outgoing, choice: picked, settings: settings)
+                } catch {
+                    draft = savedDraft
+                    images = savedImages
+                    choice = picked
+                    turnSettings = settings
+                    throw error
+                }
             }
         }
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
@@ -592,36 +618,42 @@ struct AgentSessionDetail: View {
                     perform { try await app.reply(to: session, message: answer) }
                 } : nil,
                 footer: tr("agents.past.meta", NookDates.ago(session.ended), AgentFormat.duration(session.duration), session.prompts),
+                bottomBar: AnyView(pastBottomBar(session, canContinue: canContinue, send: send)),
                 directory: session.cwd
             )
             .id("past:" + session.id)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
 
+    /// The composer under an earlier session's conversation, with its error line and pull request tray.
+    private func pastBottomBar(_ session: PastSession, canContinue: Bool, send: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             errorLine
             VStack(spacing: 0) {
-            pullRequestTray(pullRequest(cwd: session.cwd, branch: session.branch.isEmpty ? (GitHead.branch(for: session.cwd) ?? "") : session.branch, reply: session.lastReply))
-            SessionComposer(
-                text: $draft,
-                prompt: canContinue ? tr("agents.reply.resume")
-                    : (session.cwd.isEmpty ? tr("agents.nook.noFolder") : tr("agents.nook.unsupported", session.agent.name)),
-                canSend: canContinue,
-                sending: working,
-                onSend: send
-            ) {
-                // "Open in Nook" adopts the conversation: only for agents Nook runs itself (not Antigravity).
-                pastMenu(session, canContinue: app.canContinueInNook(session))
-                agentMenu(name: session.agent.name, kind: session.agent, profile: app.profile(for: session),
-                          canSwitch: app.canContinueInNook(session))
-                if app.canContinueInNook(session) { turnControls(kind: session.agent) }
-            }
-            .rich(composerModel, composerConfig(folder: session.cwd))
-            .choicesBelowBox()
-            .images($images)
-            .trailing { ComposerMic(text: $draft) }
-            .zIndex(1)
+                pullRequestTray(pullRequest(cwd: session.cwd, branch: session.branch.isEmpty ? (GitHead.branch(for: session.cwd) ?? "") : session.branch, reply: session.lastReply))
+                SessionComposer(
+                    text: $draft,
+                    prompt: canContinue ? tr("agents.reply.resume")
+                        : (session.cwd.isEmpty ? tr("agents.nook.noFolder") : tr("agents.nook.unsupported", session.agent.name)),
+                    canSend: canContinue,
+                    sending: working,
+                    onSend: send
+                ) {
+                    // "Open in Nook" adopts the conversation: only for agents Nook runs itself (not Antigravity).
+                    pastMenu(session, canContinue: app.canContinueInNook(session))
+                    agentMenu(name: session.agent.name, kind: session.agent, profile: app.profile(for: session),
+                              canSwitch: app.canContinueInNook(session))
+                    if app.canContinueInNook(session) { turnControls(kind: session.agent) }
+                }
+                .rich(composerModel, composerConfig(folder: session.cwd))
+                .choicesBelowBox()
+                .images($images)
+                .trailing { ComposerMic(text: $draft) }
+                .zIndex(1)
             }
             .chatColumn()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     /// Without a readable transcript: the last prompt and reply the history scan kept.
@@ -669,7 +701,7 @@ struct AgentSessionDetail: View {
         if !profile.label.isEmpty { return profile.label }
         let account = app.history.profileAccounts[profile.id]
         if let org = account?.organization, !org.isEmpty { return org }
-        if account?.name == "API-sleutel" { return account?.name ?? "" }
+        if account?.name == AgentAccount.apiKeyName { return account?.name ?? "" }
         return tr("agents.personal")
     }
 

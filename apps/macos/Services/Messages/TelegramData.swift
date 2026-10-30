@@ -224,7 +224,7 @@ enum TelegramData {
                                    media: attached?.media, poll: asked)
         message.receipt = receipt(object, readOutbox: chat.readOutbox)
         message.quote = quote(object, chat: chat.id)
-        if let info = object["interaction_info"] { message.reactions = reactions(info) }
+        if let info = object["interaction_info"] { message.reactions = reactions(info, users: users) }
         return message
     }
 
@@ -245,7 +245,7 @@ enum TelegramData {
 
     /// The emoji on a message from its `interaction_info`: `reactions.reactions` (TDLib 1.8.21 and later) or a list
     /// of them (before). Custom emoji and paid stars are left out; an empty list when there are none.
-    static func reactions(_ info: Any?) -> [InboxReaction] {
+    static func reactions(_ info: Any?, users: [Int64: String] = [:], me: Int64? = nil) -> [InboxReaction] {
         let value = (info as? [String: Any])?["reactions"]
         let list = ((value as? [String: Any])?["reactions"] as? [[String: Any]]) ?? (value as? [[String: Any]]) ?? []
         let chips = list.compactMap { reaction -> InboxReaction? in
@@ -253,8 +253,13 @@ enum TelegramData {
             // Before 1.8.21 the emoji itself was the reaction.
             let emoji = kind.isEmpty ? reaction["reaction"] as? String : (type(kind) == "reactionTypeEmoji" ? kind["emoji"] as? String : nil)
             guard let emoji, !emoji.isEmpty else { return nil }
+            // Who put it there lately (`recent_sender_ids`, a few people), by their names in Telegram.
+            let names = (reaction["recent_sender_ids"] as? [[String: Any]] ?? []).compactMap { sender -> String? in
+                guard type(sender) == "messageSenderUser", let user = int64(sender["user_id"]), user != me else { return nil }
+                return users[user]
+            }
             return InboxReaction(emoji: emoji, count: Int(int64(reaction["total_count"]) ?? 1),
-                                 mine: reaction["is_chosen"] as? Bool == true)
+                                 mine: reaction["is_chosen"] as? Bool == true, people: names.isEmpty ? nil : names)
         }
         return chips.enumerated().sorted { $0.element.count != $1.element.count ? $0.element.count > $1.element.count : $0.offset < $1.offset }
             .map(\.element)
@@ -378,6 +383,13 @@ enum TelegramData {
         case "messageSticker":
             return ((content["sticker"] as? [String: Any])?["emoji"] as? String) ?? "🙂"
         case "messageLocation", "messageVenue": return "📍"
+        case "messageCall":
+            // Its line as `ChatFormat.call` reads it back: the chat shows it as a call, in your language.
+            let reason = type(content["discard_reason"] as? [String: Any] ?? [:])
+            let seconds = Double(int64(content["duration"]) ?? 0)
+            return ChatCall(video: content["is_video"] as? Bool == true,
+                            missed: reason == "callDiscardReasonMissed" || reason == "callDiscardReasonDeclined",
+                            seconds: seconds > 0 ? seconds : nil).line
         case "messageContact": return "👤"
         case "messagePoll":
             // A plain string in older TDLib, formatted text since 1.8.33.
@@ -522,8 +534,9 @@ enum TelegramData {
     }
 
     /// `deleteMessages` for everyone in the chat.
-    static func deleteMessages(chat: Int64, messages: [Int64]) -> [String: Any] {
-        ["@type": "deleteMessages", "chat_id": chat, "message_ids": messages, "revoke": true]
+    /// Deletes messages for everyone (`revoke`), or for you alone on all your devices.
+    static func deleteMessages(chat: Int64, messages: [Int64], revoke: Bool = true) -> [String: Any] {
+        ["@type": "deleteMessages", "chat_id": chat, "message_ids": messages, "revoke": revoke]
     }
 
     /// Whether `sending_state` says a message is still on its way from this device: Nook shows it once Telegram has it.

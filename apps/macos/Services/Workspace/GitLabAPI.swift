@@ -139,7 +139,8 @@ enum GitLabAPI {
             return PullRequestSnapshot.Note(author: author(note), verdict: "", text: text)
         }
         return PullRequestSnapshot(state: state, checks: checks, failedChecks: failedJobs.compactMap { $0["name"] as? String },
-                                   reviews: reviews, comments: comments)
+                                   reviews: reviews, comments: comments, draft: self.state(mergeRequest) == .draft,
+                                   conflicted: PullRequestMergeability.gitlabConflicted(mergeRequest))
     }
 }
 

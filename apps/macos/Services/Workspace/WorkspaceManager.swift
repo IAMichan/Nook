@@ -116,6 +116,8 @@ final class WorkspaceManager: ObservableObject {
     var acpIdleClose: [UUID: Task<Void, Never>] = [:]
     /// ACP: what the agent sent after its turn ended, until it shows it is really working again (see wakeAcp).
     var acpWakeBuffer: [UUID: [AcpEvent]] = [:]
+    /// ACP: the conversation a loaded session replays into a timeline that has none yet (a session the agent listed).
+    var acpReplays: [UUID: AcpReplay] = [:]
     /// ACP: ends a turn the agent started by itself, once it has been quiet for a moment.
     var acpWakeFinish: [UUID: Task<Void, Never>] = [:]
     /// Sessions with work still running in the background: they stay open longer between turns (see BackgroundWork).
@@ -133,13 +135,20 @@ final class WorkspaceManager: ObservableObject {
     @Published var selectedRunID: UUID?
     /// The models each agent offers itself (Codex `model/list`, ACP sessions); see WorkspaceManager+Models.
     @Published var agentModels: [RunProvider: [AgentModel]] = [:]
+    /// The models of each ACP agent you added, by its `AgentProfile.id`: each runs its own command line and models.
+    @Published var customAgentModels: [String: [AgentModel]] = [:]
+    /// The thinking levels each ACP agent offers (its "thought_level" config option), by `effortKey`.
+    @Published var agentEfforts: [String: [AgentModel]] = [:]
+    /// The `/` commands each ACP session announced (`available_commands_update`).
+    @Published var acpCommands: [UUID: [AgentSlashCommand]] = [:]
     /// The open pull request of a session's branch, when GitHub says there is one (for the git button).
     @Published var openPullRequests: [UUID: URL] = [:]
     /// The same for sessions Nook only sees, by repository root.
     var folderPullRequests: [String: URL] = [:]
-    /// GitHub through Nook's connector, configured by AppModel: the open pull request of a branch, and opening one (nil
-    /// while GitHub is not connected: the git button then opens GitHub's compare page with title and description filled in).
-    var pullRequestLookup: ((_ repo: RemoteRepository, _ branch: String) async -> URL?)?
+    /// GitHub through Nook's connector, configured by AppModel: the open pull request of a branch (and whether an earlier
+    /// one was merged or closed), and opening one (nil while GitHub is not connected: the git button then opens GitHub's
+    /// compare page with title and description filled in).
+    var pullRequestLookup: ((_ repo: RemoteRepository, _ branch: String) async -> (open: URL?, landed: Bool))?
     var pullRequestCreate: ((_ repo: RemoteRepository, _ title: String, _ body: String, _ head: String, _ base: String) async throws -> URL?)?
     /// A watched pull request as it is now (GitHub, with your connected accounts).
     var pullRequestSnapshot: ((URL) async -> PullRequestSnapshot?)?
@@ -149,6 +158,8 @@ final class WorkspaceManager: ObservableObject {
     /// Comments on a session's diff, waiting to go to the agent together.
     @Published var reviewComments: [UUID: [ReviewComment]] = [:]
     var modelsRefreshed: [RunProvider: Date] = [:]
+    /// When each agent account was last asked for its sessions (see `listAgentSessions`).
+    var sessionsListed: [String: Date] = [:]
     /// The model manifest in use: the bundled one, or a newer valid copy from Nook's repository (see
     /// WorkspaceManager+ModelManifest).
     @Published var modelManifest: ModelManifest?
@@ -173,6 +184,12 @@ final class WorkspaceManager: ObservableObject {
     var pendingSendNow: [UUID: String] = [:]
     /// When GitHub was last asked about a branch's pull request ("owner/repo branch"), so it is asked once a minute at most.
     var pullRequestChecked: [String: Date] = [:]
+    /// The pull request links Nook has seen in a conversation: the first sight of one is asked about at once.
+    var linkedPullRequests: Set<URL> = []
+    /// The open pull request those lookups found, by the same key, so every view of a branch gets the same answer.
+    var pullRequestOpen: [String: URL] = [:]
+    /// Branches ("owner/repo branch") whose pull request was merged or closed, from the same lookups.
+    var pullRequestLanded: Set<String> = []
     /// Sessions whose Antigravity sign-in page already opened.
     var antigravitySignIns: Set<UUID> = []
     /// Antigravity sign-ins outside a session (when you link the account), per account: the server and what to call when done.
@@ -241,6 +258,14 @@ final class WorkspaceManager: ObservableObject {
     /// Stop in progress per session (see WorkspaceManager+Stop), the approvals you gave "for this session" (Codex only
     /// remembers the exact command, so Nook keeps its own), and the background work an agent still has running.
     var stopCoordinators: [UUID: StopCoordinator] = [:]
+    /// Worktree or remote preparation still running before the first turn starts; cancelled if you press Stop.
+    var prepareTasks: [UUID: Task<Void, Never>] = [:]
+    /// Last inspected project metadata per normalized folder, so opening "New Session" or starting is instant.
+    private var projectCache: [String: ProjectInfo] = [:]
+    /// When a repository's remote-tracking base (`repo\nbase`) was last fetched, so starting does not fetch again right away.
+    private var remoteBaseRefreshed: [String: Date] = [:]
+    /// Next checkpoint index per session, claimed before async git work so concurrent checkpoints never share an index.
+    var checkpointIndices: [UUID: Int] = [:]
     /// When the worktree cleanup rules last looked (see WorkspaceManager+WorktreeCleanup).
     var worktreeCleanupAt: Date?
     /// Writes an entry to the audit log (tool, arguments, result); configured by AppModel.
@@ -250,22 +275,15 @@ final class WorkspaceManager: ObservableObject {
 
     /// State tracked by Nook during a single turn.
     struct TurnState {
-        var liveTextID: UUID?
-        /// Claude Code: the last finished answer, which a failed turn's result may repeat word for word.
-        var lastTextID: UUID?
-        var toolEvents: [String: UUID] = [:]
-        var toolNames: [String: String] = [:]
-        var toolInputs: [String: JSONBox] = [:]
+        /// The turn's open answer, thought and tool calls (see AgentTimeline).
+        var timeline = AgentTimeline()
         var messageUsage: [String: TokenCounts] = [:]
         var lastContext: Int?
         var finished = false
         var stopping = false
         var lastError: String?
         var started = Date()
-        /// codex app-server: the item the live answer belongs to, the thought being streamed, and token totals.
-        var liveTextItem: String?
-        var liveReasoningID: UUID?
-        var liveReasoningItem: String?
+        /// codex app-server: token totals when the turn started.
         var codexBaseline: TokenCounts?
         var contextWindow: Int?
         /// ACP: the session's cost so far, as the agent reports it.
@@ -276,14 +294,11 @@ final class WorkspaceManager: ObservableObject {
         var acpContinuations = 0
         /// ACP: what the agent thought this turn, kept for a turn whose only words went into its thinking.
         var acpThought = ""
+        /// ACP: file reads still open, settled once the agent moves on (see AcpOpenReads).
+        var acpOpenReads = AcpOpenReads()
         /// Claude Code: a steering message went in, so a result that says "aborted" ends a segment, not the turn.
         var steered = false
         var steeredUsage: [TurnUsage] = []
-        /// Claude Code's thinking as it streams: the block being written, whether a thinking block is open, and the
-        /// finished streamed blocks waiting for their complete copy (nil: the block streamed no text).
-        var liveThinkingID: UUID?
-        var thinkingOpen = false
-        var streamedThinking: [UUID?] = []
         /// Claude Code's blocked usage-limit windows during the turn, with their reset if known.
         var limitWindows: [String: Date?] = [:]
         /// A turn the agent started by itself after background work, with no message of yours to answer.
@@ -295,6 +310,8 @@ final class WorkspaceManager: ObservableObject {
         // Agents' process groups are written down; the ones a crashed Nook left behind are stopped.
         ProcessGroupLedger.install()
         agentModels = AgentModelStore(url: Self.modelStoreURL).load()
+        customAgentModels = AgentModelStore(url: Self.customModelStoreURL).loadRaw()
+        agentEfforts = AgentModelStore(url: Self.effortStoreURL).loadRaw()
         modelManifest = ModelManifest.preferred(bundled: .bundled(), cached: ModelManifestStore(url: Self.manifestStoreURL).load())
         // The session list can be long: read it off the main thread so launching Nook does not wait for it.
         Task.detached(priority: .userInitiated) { [weak self] in
@@ -446,10 +463,28 @@ final class WorkspaceManager: ObservableObject {
 
     // MARK: Inspecting Project
 
+    /// Last inspected metadata for `path`, if already known in this launch.
+    func cachedProject(_ path: String) -> ProjectInfo? {
+        projectCache[WorkspacePathPolicy.normalize(path)]
+    }
+
+    /// Whether `base` in `root` needs a fresh `git fetch` (at most once every two minutes per repository and base branch).
+    func shouldRefreshRemoteBase(root: String, base: String, now: Date = Date()) -> Bool {
+        let key = WorkspacePathPolicy.normalize(root) + "\n" + base
+        if let last = remoteBaseRefreshed[key], now.timeIntervalSince(last) < 120 { return false }
+        remoteBaseRefreshed[key] = now
+        return true
+    }
+
+    private func warmRemoteBase(_ base: String, in root: String) {
+        guard base.contains("/"), let git = gitService, shouldRefreshRemoteBase(root: root, base: base) else { return }
+        Task.detached(priority: .utility) { git.refreshRemoteBase(base, in: root) }
+    }
+
     /// Information required by "New Session" for a directory. Evaluated off the main thread.
     func inspectProject(_ path: String) async -> ProjectInfo {
         let git = gitService
-        return await Task.detached(priority: .userInitiated) {
+        let info = await Task.detached(priority: .userInitiated) {
             let normalized = WorkspacePathPolicy.normalize(path)
             var info = ProjectInfo(path: normalized, name: URL(fileURLWithPath: normalized).lastPathComponent,
                                    verdict: WorkspacePathPolicy.verdict(for: normalized), repoRoot: nil, currentBranch: nil,
@@ -469,6 +504,12 @@ final class WorkspaceManager: ObservableObject {
             }
             return info
         }.value
+        projectCache[info.path] = info
+        if let root = info.repoRoot {
+            projectCache[WorkspacePathPolicy.normalize(root)] = info
+            if let base = info.defaultBase { warmRemoteBase(base, in: root) }
+        }
+        return info
     }
 
     /// Clones a repository, then selects it as the active project.
@@ -503,9 +544,9 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
-    /// Validates configuration, prepares folder or worktree, and launches the agent. If worktree creation fails,
-    /// no session is added so you can retry. If the agent subsequently fails, the session is marked "failed"
-    /// and can be retried with "Retry" without duplicating the session.
+    /// Validates configuration, opens the session immediately in the workspace, and prepares its folder or worktree
+    /// while launching the agent. If worktree or agent startup fails, the session is marked "failed" and can be retried
+    /// with "Retry" without duplicating the session.
     @discardableResult
     func start(_ config: NewRunConfig, allowSharedFolder: Bool = false) async throws -> UUID {
         if let problem = config.problem { throw StartError.config(problem) }
@@ -518,32 +559,27 @@ final class WorkspaceManager: ObservableObject {
 
         let id = UUID()
         var workingDirectory = projectPath
-        var repoRoot: String?
-        var branch: String?
+        let cached = projectCache[projectPath]
+        var repoRoot = cached?.repoRoot
+        var branch = cached?.currentBranch
         var worktreePath: String?
         let git = gitService
 
-        if let git { repoRoot = await Task.detached { git.repositoryRoot(for: projectPath) }.value }
-
         if config.isolation == .worktree {
             guard let git else { throw StartError.noGit }
+            if repoRoot == nil {
+                repoRoot = await Task.detached(priority: .userInitiated) { git.repositoryRoot(for: projectPath) }.value
+            }
             guard let root = repoRoot else { throw StartError.notRepository }
-            let base = config.baseBranch
             // The project's own branch prefix (Settings › Workspace, per project) wins over the global one.
             let prefix = settings.sessionDefaults(for: root).branchPrefix
             let name = ProjectSettings.branchName(config.branchName, globalPrefix: WorktreeNaming.branchPrefix, projectPrefix: prefix)
             let rootFolder = config.worktreeRoot.isEmpty ? settings.worktreeRoot : config.worktreeRoot
             let repoName = URL(fileURLWithPath: root).lastPathComponent
+            let reserved = Set(runs.compactMap(\.worktreePath))
             let path = WorktreeNaming.worktreePath(root: (rootFolder as NSString).expandingTildeInPath, repoName: repoName,
                                                    slug: WorktreeNaming.directorySlug(branch: name, prefix: prefix),
-                                                   exists: { FileManager.default.fileExists(atPath: $0) })
-            do {
-                try await Task.detached(priority: .userInitiated) {
-                    try git.addWorktree(repo: root, path: path, branch: name, base: base)
-                }.value
-            } catch {
-                throw StartError.git(error.localizedDescription)
-            }
+                                                   exists: { reserved.contains($0) || FileManager.default.fileExists(atPath: $0) })
             workingDirectory = path
             worktreePath = path
             branch = name
@@ -551,17 +587,15 @@ final class WorkspaceManager: ObservableObject {
             if !allowSharedFolder, let other = activeRuns(sharing: projectPath).first {
                 throw StartError.shared(other.title)
             }
-            if let git, repoRoot != nil {
-                branch = await Task.detached { git.currentBranch(projectPath) }.value
-            }
         }
 
         let now = Date()
         let title = config.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let visibleTask = ContextRefs.visible(config.task)
         var run = WorkspaceRun(
             id: id,
             title: title.isEmpty ? WorktreeNaming.title(from: config.task) : title,
-            task: ContextRefs.visible(config.task),
+            task: visibleTask,
             provider: config.provider,
             profileID: config.profileID,
             model: config.model,
@@ -582,7 +616,7 @@ final class WorkspaceManager: ObservableObject {
             updatedAt: now,
             archived: false,
             usage: RunUsage(),
-            turnStartedAt: nil,
+            turnStartedAt: now,
             reviewedAt: nil,
             lastChangeAt: nil,
             changedFiles: nil,
@@ -594,36 +628,117 @@ final class WorkspaceManager: ObservableObject {
         events[id] = []
         settings.rememberProject(repoRoot ?? projectPath)
         selectedRunID = id
-        if let worktreePath {
-            append(id, RunEvent(kind: .system, text: tr("ws.event.worktreeCreated", branch ?? "", AgentPathFormat.tilde(worktreePath))))
-            // The first snapshot, before the agent does anything: "back to here" on the first message.
-            if let git {
-                let ref = GitService.checkpointRef(session: id, index: 0)
-                // A new worktree is exactly its branch's HEAD: point the snapshot there instead of reading every file.
-                if (try? await Task.detached(priority: .userInitiated) { try git.checkpointHead(worktreePath, ref: ref) }.value) != nil {
-                    update(id) { $0.checkpoints = [RunCheckpoint(ref: ref, date: Date(), conversation: .empty)] }
-                }
-            }
-            // The project's setup (nook.json `runOnWorktreeCreate`), visible in a terminal next to the session.
-            let setup = await Task.detached(priority: .userInitiated) { ProjectScripts.load(folder: worktreePath) }.value
-            for script in setup where script.runOnWorktreeCreate {
-                runScript?(worktreePath, script.command, script.name)
-                append(id, RunEvent(kind: .system, text: tr("ws.event.setupScript", script.name)))
-            }
-        } else if repoRoot != nil, let git {
-            // In your own folder too, a snapshot before the agent starts: what each turn changed can then be shown on
-            // its own. Taking it changes nothing: not the files, the index or a branch.
-            let ref = GitService.checkpointRef(session: id, index: 0)
-            let directory = workingDirectory
-            if (try? await Task.detached(priority: .userInitiated) { try git.checkpoint(directory, ref: ref) }.value) != nil {
-                update(id) { $0.checkpoints = [RunCheckpoint(ref: ref, date: Date(), conversation: .empty)] }
-            }
-        }
-        let visibleTask = ContextRefs.visible(config.task)
         if visibleTask != config.task { displayPrompt[id] = visibleTask }
-        launchTurn(id, prompt: config.task, executable: executable)
+        if let worktreePath, let root = repoRoot {
+            append(id, RunEvent(kind: .system, text: tr("ws.event.worktreeCreated", branch ?? "", AgentPathFormat.tilde(worktreePath))))
+            append(id, RunEvent(kind: .user, text: shownPrompt(id, config.task)))
+            prepareWorktreeAndLaunch(id, root: root, path: worktreePath, branch: branch ?? "", base: config.baseBranch,
+                                     prompt: config.task, executable: executable)
+        } else {
+            launchTurn(id, prompt: config.task, executable: executable)
+            prepareFolderSession(id, directory: workingDirectory, knownRoot: repoRoot, knownBranch: branch)
+        }
         if title.isEmpty { generateTitle(id) }
         return id
+    }
+
+    /// Creates the session's worktree off the main thread (serialized per repository via `FolderLease`), launches the
+    /// agent as soon as the checkout exists, and records the initial snapshot and setup scripts in the background.
+    func prepareWorktreeAndLaunch(_ id: UUID, root: String, path: String, branch: String, base: String,
+                                  prompt: String, executable: String) {
+        guard let git = gitService else { return }
+        let refreshBase = shouldRefreshRemoteBase(root: root, base: base)
+        let repoKey = FolderLease.key(root)
+        let ref = GitService.checkpointRef(session: id, index: claimCheckpointIndex(id))
+        prepareTasks[id]?.cancel()
+        prepareTasks[id] = Task { [weak self] in
+            do {
+                try await FolderLease.shared.run(repoKey, priority: .userInitiated) {
+                    try git.addWorktree(repo: root, path: path, branch: branch, base: base, refreshBase: refreshBase)
+                }
+            } catch {
+                guard let self, !Task.isCancelled, self.run(id) != nil else { return }
+                self.prepareTasks[id] = nil
+                self.update(id) {
+                    $0.worktreePath = nil
+                    $0.workingDirectory = root
+                    $0.move(to: .failed, detail: error.localizedDescription)
+                }
+                self.append(id, RunEvent(kind: .error, text: error.localizedDescription))
+                return
+            }
+            guard let self, !Task.isCancelled, self.run(id)?.status == .preparing else { return }
+            self.prepareTasks[id] = nil
+            self.update(id) {
+                $0.workingDirectory = path
+                $0.worktreePath = path
+                $0.branch = branch
+            }
+            self.launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
+            // The first snapshot, before the agent does anything: a new worktree is its branch's HEAD.
+            let worktreeKey = FolderLease.key(path)
+            let made = (try? await FolderLease.shared.run(worktreeKey, priority: .userInitiated) {
+                try git.checkpointHead(path, ref: ref)
+            }) != nil
+            if made {
+                self.recordInitialCheckpoint(id, RunCheckpoint(ref: ref, date: Date(), conversation: .empty))
+            }
+            // The project's setup (nook.json `runOnWorktreeCreate`), visible in a terminal next to the session.
+            let setup = await Task.detached(priority: .userInitiated) { ProjectScripts.load(folder: path) }.value
+            guard !Task.isCancelled, self.run(id) != nil else { return }
+            for script in setup where script.runOnWorktreeCreate {
+                self.runScript?(path, script.command, script.name)
+                self.append(id, RunEvent(kind: .system, text: tr("ws.event.setupScript", script.name)))
+            }
+        }
+    }
+
+    /// Resolves git metadata and captures the initial folder snapshot in the background without delaying the first turn.
+    func prepareFolderSession(_ id: UUID, directory: String, knownRoot: String?, knownBranch: String?,
+                              includeComparisonBase: Bool = false) {
+        guard let git = gitService else { return }
+        let ref = GitService.checkpointRef(session: id, index: claimCheckpointIndex(id))
+        let key = FolderLease.key(directory)
+        Task { [weak self] in
+            let resolved = await Task.detached(priority: .userInitiated) { () -> (root: String?, branch: String?, base: String?) in
+                guard let root = knownRoot ?? git.repositoryRoot(for: directory) else { return (nil, nil, nil) }
+                let branch = knownBranch ?? git.currentBranch(directory)
+                var base: String?
+                if includeComparisonBase, let current = branch {
+                    let remotes = git.remotes(directory)
+                    let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
+                    if let main = git.defaultBranch(directory, remote: remote), main != current {
+                        base = git.comparisonBase(directory, base: main, remote: remote)
+                    }
+                }
+                return (root, branch, base)
+            }.value
+            guard let self, self.run(id) != nil, let root = resolved.root else { return }
+            self.update(id) {
+                if $0.repoRoot == nil { $0.repoRoot = root }
+                if $0.branch == nil, let branch = resolved.branch { $0.branch = branch }
+                if $0.baseBranch == nil, let base = resolved.base { $0.baseBranch = base }
+            }
+            let made = (try? await FolderLease.shared.run(key, priority: .userInitiated) {
+                try git.checkpoint(directory, ref: ref)
+            }) != nil
+            if made {
+                self.recordInitialCheckpoint(id, RunCheckpoint(ref: ref, date: Date(), conversation: .empty))
+            }
+        }
+    }
+
+    func claimCheckpointIndex(_ id: UUID) -> Int {
+        let next = max(checkpointIndices[id] ?? 0, run(id)?.checkpoints?.count ?? 0)
+        checkpointIndices[id] = next + 1
+        return next
+    }
+
+    func recordInitialCheckpoint(_ id: UUID, _ checkpoint: RunCheckpoint) {
+        update(id) {
+            let existing = ($0.checkpoints ?? []).filter { $0.ref != checkpoint.ref }
+            $0.checkpoints = [checkpoint] + existing
+        }
     }
 
     /// Takes over an existing agent conversation (running in a terminal, or an earlier session) as a Nook session.
@@ -632,7 +747,8 @@ final class WorkspaceManager: ObservableObject {
     /// Already taken over? Returns that session instead of adding a second one.
     @discardableResult
     func adopt(provider: RunProvider, sessionID: String, profileID: String, directory: String, title: String,
-               history: [(kind: RunEvent.Kind, text: String)] = [], fork: Bool = false) async throws -> UUID {
+               history: [(kind: RunEvent.Kind, text: String)] = [], fork: Bool = false,
+               continuesConversation: Bool = true) async throws -> UUID {
         if !fork, let existing = runs.first(where: { $0.provider == provider && $0.isConversation(sessionID) }) {
             if existing.archived { setArchived(existing.id, false) }
             selectedRunID = existing.id
@@ -643,20 +759,20 @@ final class WorkspaceManager: ObservableObject {
         guard verdict == .ok else { throw StartError.workspace(verdict) }
         guard executable(provider) != nil else { throw StartError.noExecutable(provider) }
 
-        var repoRoot: String?
-        var branch: String?
-        if let git = gitService {
-            repoRoot = await Task.detached { git.repositoryRoot(for: projectPath) }.value
-            if repoRoot != nil { branch = await Task.detached { git.currentBranch(projectPath) }.value }
-        }
+        let cached = projectCache[projectPath]
+        let repoRoot = cached?.repoRoot
+        let branch = cached?.currentBranch
         let id = UUID()
         let now = Date()
         let clean = InjectedPrompt.title(title)
+        // A conversation without a title of its own is named after its first question until an agent writes a better one.
+        let opening = history.first { $0.kind == .user }.map { InjectedPrompt.title($0.text) } ?? ""
+        let task = clean.isEmpty ? opening : clean
         let permission = settings.sessionDefaults(for: repoRoot ?? projectPath).permission(for: provider)
         let run = WorkspaceRun(
             id: id,
-            title: clean.isEmpty ? URL(fileURLWithPath: projectPath).lastPathComponent : WorktreeNaming.title(from: clean),
-            task: clean,
+            title: task.isEmpty ? URL(fileURLWithPath: projectPath).lastPathComponent : WorktreeNaming.title(from: task),
+            task: task,
             provider: provider,
             profileID: profileID,
             model: "",
@@ -672,7 +788,8 @@ final class WorkspaceManager: ObservableObject {
             instructions: "",
             status: .completed,
             statusDetail: nil,
-            providerSessionID: sessionID,
+            // An agent that cannot load this conversation itself starts a new one from it (see carryOverConversation).
+            providerSessionID: continuesConversation ? sessionID : nil,
             createdAt: now,
             updatedAt: now,
             archived: false,
@@ -682,7 +799,9 @@ final class WorkspaceManager: ObservableObject {
             lastChangeAt: nil,
             changedFiles: nil
         )
-        runs.insert(run, at: 0)
+        var adopted = run
+        if !continuesConversation { adopted.carriedOverFrom = sessionID }
+        runs.insert(adopted, at: 0)
         events[id] = []
         if fork { forkNext.insert(id) }
         settings.rememberProject(repoRoot ?? projectPath)
@@ -692,8 +811,10 @@ final class WorkspaceManager: ObservableObject {
         }
         append(id, RunEvent(kind: .system, text: tr(fork ? "ws.event.adoptedFork" : "ws.event.adopted", provider.displayName)))
         scheduleSave()
-        // The starting point for what the next turns change.
-        captureCheckpoint(id)
+        // Resolve repository metadata and take the starting snapshot in the background without blocking an immediate reply.
+        prepareFolderSession(id, directory: projectPath, knownRoot: repoRoot, knownBranch: branch, includeComparisonBase: true)
+        if clean.isEmpty, !opening.isEmpty { generateTitle(id) }
+        if !continuesConversation { carryOverConversation(id, prompt: nil) }
         return id
     }
 
@@ -713,6 +834,23 @@ final class WorkspaceManager: ObservableObject {
         }
         if run.status.isActive, let updated = self.run(id) { applyLive(id, from: run, to: updated) }
         if let updated = self.run(id), updated.permission != run.permission || updated.mode != run.mode { allowCovered(id) }
+        if !run.status.isActive { refreshWarmSession(id) }
+    }
+
+    /// Keeps an idle session's warm connection in step when you change its model, mode, rights or effort before sending.
+    func refreshWarmSession(_ id: UUID) {
+        guard let run = run(id), !run.status.isActive, processes[id] == nil else { return }
+        switch run.provider {
+        case .claude:
+            guard let idle = claudeIdle[id], idle.key != claudeKey(run) else { return }
+            closeClaudeProcess(id)
+            prewarm(id)
+        case .codex:
+            break
+        case .gemini, .opencode, .cursor, .grok, .antigravity, .acp:
+            guard let client = acpClients[id], client.isRunning, client.sessionID != nil else { return }
+            applyAcpSettings(id, client) {}
+        }
     }
 
     /// Allows the waiting requests the session's current rights cover, as if you had pressed Allow on each.
@@ -756,25 +894,26 @@ final class WorkspaceManager: ObservableObject {
         return true
     }
 
+    /// Whether this turn goes to Codex over app-server (rather than `codex exec`, or another agent).
+    func usesCodexServer(_ run: WorkspaceRun, _ executable: String) -> Bool {
+        switch run.provider {
+        case .codex: return settings.codexAppServer && !codexExecOnly.contains(executable)
+        case .claude, .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return false
+        }
+    }
+
     /// False when the message could not be taken (empty, the session cannot continue, or a turn is running).
     @discardableResult
     private func send(_ id: UUID, text: String, shown: Bool) -> Bool {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, let run = run(id) else { return false }
         // You carry on yourself: whatever waited behind a failure or a stop goes on after this turn.
         if var held = queued[id], held.isHeld { held.resume(); queued[id] = held }
-        guard !clean.isEmpty, let run = run(id), run.canContinue, processes[id] == nil else { return false }
-        // The previous turn's snapshot is still being made (a moment): your message shows at once, and
-        // goes out right after it, so this turn's edits stay out of that snapshot.
-        if checkpointing.contains(id) {
-            if awaitingCheckpoint[id] != nil {
-                enqueue(id, text: clean)
-            } else {
-                loadTimeline(id)
-                if !shown { append(id, RunEvent(kind: .user, text: ContextRefs.visible(clean))) }
-                awaitingCheckpoint[id] = clean
-            }
+        if checkpointing.contains(id), awaitingCheckpoint[id] != nil {
+            enqueue(id, text: clean)
             return true
         }
+        guard run.canContinue || (shown && run.status == .preparing), processes[id] == nil else { return false }
         guard let executable = launchExecutable(run) else {
             update(id) { $0.statusDetail = StartError.noExecutable(run.provider).errorDescription }
             return false
@@ -784,13 +923,23 @@ final class WorkspaceManager: ObservableObject {
             append(id, RunEvent(kind: .error, text: tr("ws.error.folderGone", run.workingDirectory)))
             return false
         }
+        // The previous turn's snapshot is still being made (a moment): your message shows at once, the session enters
+        // its working state immediately, and the turn goes out right after the snapshot so its edits stay out of it.
+        if checkpointing.contains(id) {
+            loadTimeline(id)
+            if !shown { append(id, RunEvent(kind: .user, text: ContextRefs.visible(clean))) }
+            awaitingCheckpoint[id] = clean
+            update(id) { $0.move(to: .preparing) }
+            return true
+        }
         loadTimeline(id)
         // After a fork or a switch of agent the first turn starts with the summary; it stays until a turn ends well.
         // What the timeline shows: your words, without a handoff summary or the context envelope of references.
         let visible = ContextRefs.visible(clean)
         displayPrompt[id] = run.pendingHandoff == nil && visible == clean ? nil : visible
-        // What MCP apps told the agent goes with this turn: Codex takes it as context of its own, the others ahead of it.
-        let appContext = run.provider == .codex ? "" : McpApp.contextPreamble(takeMcpAppContexts(id))
+        // What MCP apps told the agent goes with this turn: Codex over app-server takes it as context of its own, every
+        // other agent (Codex over `codex exec` too) ahead of the message.
+        let appContext = usesCodexServer(run, executable) ? "" : McpApp.contextPreamble(takeMcpAppContexts(id))
         launchTurn(id, prompt: appContext + ContextHandoff.compose(handoff: run.pendingHandoff, message: clean), executable: executable,
                    showPrompt: !shown)
         return true
@@ -824,7 +973,7 @@ final class WorkspaceManager: ObservableObject {
     func captureCheckpoint(_ id: UUID) {
         guard let run = run(id), run.repoRoot != nil, let git = sessionGit(for: run), canSnapshot(run) else { return }
         let directory = run.workingDirectory
-        let ref = GitService.checkpointRef(session: id, index: run.checkpoints?.count ?? 0)
+        let ref = GitService.checkpointRef(session: id, index: claimCheckpointIndex(id))
         // Dated when the turn ended, before any later message: "before this message" then picks the right snapshot.
         let date = Date()
         // Where the agent's conversation stood: going back here rolls it back too.
@@ -844,6 +993,7 @@ final class WorkspaceManager: ObservableObject {
         if let waiting = awaitingCheckpoint.removeValue(forKey: id) {
             // Shown already: if it cannot go out now, it waits in the queue instead of getting lost.
             if !send(id, text: waiting, shown: true) {
+                if run(id)?.status == .preparing { update(id) { $0.move(to: .stopped) } }
                 queued[id, default: MessageQueue()].requeueFirst(waiting)
                 sendQueued(id)
             }
@@ -888,7 +1038,7 @@ final class WorkspaceManager: ObservableObject {
     /// A queued message can go out right away: into the running turn, or as a new turn when the agent is idle.
     func canSendQueuedNow(_ id: UUID) -> Bool {
         guard let run = run(id) else { return false }
-        if run.status.isActive { return true }
+        if run.status.isActive { return turns[id] != nil }
         return run.canContinue && processes[id] == nil && !checkpointing.contains(id)
     }
 
@@ -975,21 +1125,61 @@ final class WorkspaceManager: ObservableObject {
         guard let run = run(id), run.canContinue else { return }
         loadTimeline(id)
         let lastPrompt = timeline(id).last { $0.kind == .user }?.text ?? run.task
+        if run.isolation == .worktree, !worktreeExists(run), !run.isRemote,
+           let root = run.repoRoot, let branch = run.branch, let executable = launchExecutable(run) {
+            let prefix = settings.sessionDefaults(for: root).branchPrefix
+            let reserved = Set(runs.filter { $0.id != id }.compactMap(\.worktreePath))
+            let path = WorktreeNaming.worktreePath(
+                root: (settings.worktreeRoot as NSString).expandingTildeInPath,
+                repoName: URL(fileURLWithPath: root).lastPathComponent,
+                slug: WorktreeNaming.directorySlug(branch: branch, prefix: prefix),
+                exists: { reserved.contains($0) || FileManager.default.fileExists(atPath: $0) })
+            update(id) {
+                $0.workingDirectory = path
+                $0.worktreePath = path
+                $0.move(to: .preparing)
+            }
+            prepareWorktreeAndLaunch(id, root: root, path: path, branch: branch, base: run.baseBranch ?? "",
+                                     prompt: lastPrompt, executable: executable)
+            return
+        }
         send(id, text: lastPrompt)
     }
 
     /// Stops the active turn. Claude Code receives a polite interrupt request first, followed by SIGINT.
     func stop(_ id: UUID) {
         stopDelegatedChildren(of: id)
+        if let task = prepareTasks.removeValue(forKey: id) {
+            task.cancel()
+            awaitingCheckpoint[id] = nil
+            if let run = run(id), run.isolation == .worktree, !worktreeExists(run), let root = run.repoRoot {
+                update(id) {
+                    $0.worktreePath = nil
+                    $0.workingDirectory = root
+                }
+            }
+            update(id) { $0.move(to: .stopped) }
+            append(id, RunEvent(kind: .system, text: tr("ws.event.stopped")))
+            holdQueue(id)
+            sendPendingNow(id)
+            return
+        }
         beginStop(id)
         if stopCodexServerTurn(id) { return }
         if stopAcpTurn(id) { return }
         guard let process = processes[id] else {
             // No running process: update state only.
+            let wasWaitingCheckpoint = awaitingCheckpoint.removeValue(forKey: id) != nil
             update(id) { $0.move(to: .stopped) }
+            if wasWaitingCheckpoint {
+                append(id, RunEvent(kind: .system, text: tr("ws.event.stopped")))
+                holdQueue(id)
+            }
             sendPendingNow(id)
             return
         }
+        // Pressing Stop again changes nothing: the first one is still on its way.
+        if turns[id]?.stopping == true { return }
         turns[id]?.stopping = true
         if run(id)?.provider == .claude {
             process.send(ClaudeStreamParser.interruptRequest(id: "nook-stop-" + UUID().uuidString.prefix(8)))
@@ -1016,7 +1206,7 @@ final class WorkspaceManager: ObservableObject {
         if let tasks = self.run(id)?.tasks, RunTasks.isFinished(tasks) { update(id) { $0.tasks = nil } }
         guard var run = run(id) else { return }
         // Codex speaks app-server when it can: approvals, questions, steering and live reasoning.
-        if run.provider == .codex, settings.codexAppServer, !codexExecOnly.contains(executable) {
+        if usesCodexServer(run, executable) {
             launchCodexServerTurn(id, prompt: prompt, executable: executable, showPrompt: showPrompt)
             return
         }
@@ -1098,7 +1288,8 @@ final class WorkspaceManager: ObservableObject {
     /// ACP agent has its session loaded. Like a session parked after a turn, it closes when left alone.
     func prewarm(_ id: UUID) {
         guard let run = run(id), run.canContinue, !run.status.isActive, !run.archived, processes[id] == nil,
-              run.providerSessionID != nil, !forkNext.contains(id), let executable = launchExecutable(run),
+              (run.providerSessionID != nil || run.pendingHandoff != nil), !forkNext.contains(id),
+              let executable = launchExecutable(run),
               run.provider != .claude || run.pendingRollback == nil,
               run.isRemote || WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else { return }
         switch run.provider {
@@ -1164,42 +1355,19 @@ final class WorkspaceManager: ObservableObject {
                 if let model, !model.isEmpty { $0.resolvedModel = model }
             }
         case .text(let text, let delta):
-            if let live = turns[id]?.liveTextID {
-                mutateEvent(id, live) { $0.text = delta ? $0.text + text : text }
-            } else {
-                let event = RunEvent(kind: .assistant, text: text, state: .running)
-                turns[id]?.liveTextID = event.id
-                append(id, event)
-            }
-            if !delta { finishLiveText(id) }
+            feed(id, delta ? .textDelta(text) : .text(text))
         case .toolUse(let callID, let name, let input):
-            finishLiveText(id)
-            let event = RunEvent(kind: .tool, text: ToolSummary.describe(tool: name, input: input.dictionary), tool: name,
-                                 callID: callID, detail: ToolSummary.json(input.object), state: .running)
-            turns[id]?.toolEvents[callID] = event.id
-            turns[id]?.toolNames[callID] = name
-            turns[id]?.toolInputs[callID] = input
-            recap?.toolUse(name)
-            append(id, event)
+            feed(id, .toolStarted(AgentToolCall(id: callID, name: name, title: ToolSummary.describe(tool: name, input: input.dictionary),
+                                                detail: ToolSummary.json(input.object), input: input)))
         case .toolResult(let callID, let output, let isError):
-            if let eventID = turns[id]?.toolEvents[callID] {
-                mutateEvent(id, eventID) {
-                    $0.output = RunEvent.clip(output)
-                    $0.state = isError ? .failed : .done
-                }
-            }
-            if !isError, let name = turns[id]?.toolNames[callID], let input = turns[id]?.toolInputs[callID] {
-                for change in ToolSummary.fileChanges(tool: name, input: input.dictionary) {
-                    recordFileChange(id, path: change.path, kind: change.kind)
-                }
-            }
+            feed(id, .toolUpdated(id: callID, output: output, state: isError ? .failed : .done))
         case .warning(let message):
             append(id, RunEvent(kind: .system, text: message))
         case .failed(let message):
             turns[id]?.lastError = message
             append(id, RunEvent(kind: .error, text: message))
         case .result(let isError, let message, var usage):
-            finishLiveText(id)
+            pauseLive(id)
             if usage.durationSeconds == nil, let started = turns[id]?.started { usage.durationSeconds = Date().timeIntervalSince(started) }
             turns[id]?.finished = true
             let stopping = turns[id]?.stopping ?? false
@@ -1232,79 +1400,29 @@ final class WorkspaceManager: ObservableObject {
         case .chainEntry(let uuid):
             noteConversationHead(id, uuid)
         case .textDelta(let text):
-            if let live = turns[id]?.liveTextID {
-                mutateEvent(id, live) { $0.text += text }
-            } else {
-                let event = RunEvent(kind: .assistant, text: text, state: .running)
-                turns[id]?.liveTextID = event.id
-                append(id, event)
-            }
+            feed(id, .textDelta(text))
         case .text(let text):
-            if let live = turns[id]?.liveTextID {
-                mutateEvent(id, live) { $0.text = text; $0.state = .done }
-                turns[id]?.liveTextID = nil
-                turns[id]?.lastTextID = live
-            } else {
-                let event = RunEvent(kind: .assistant, text: text, state: .done)
-                turns[id]?.lastTextID = event.id
-                append(id, event)
-            }
+            feed(id, .text(text))
         case .thinkingDelta(let text, let starts):
-            if starts {
-                closeThinking(id)
-                turns[id]?.thinkingOpen = true
-            }
-            guard !text.isEmpty else { return }
-            if let live = turns[id]?.liveThinkingID {
-                mutateEvent(id, live) { $0.text += text }
-            } else {
-                let event = RunEvent(kind: .thinking, text: text, state: .running)
-                turns[id]?.liveThinkingID = event.id
-                append(id, event)
-            }
+            if starts { feed(id, .thinkingStarted) }
+            feed(id, .thinkingDelta(text))
         case .blockStopped:
-            closeThinking(id)
+            feed(id, .thinkingEnded)
         case .thinking(let text):
-            closeThinking(id)
-            // The complete copy of a block that streamed: keep the streamed text unless this one has more to say.
-            if let state = turns[id], !state.streamedThinking.isEmpty {
-                let streamed = turns[id]?.streamedThinking.removeFirst()
-                if let streamed = streamed ?? nil {
-                    if !text.isEmpty { mutateEvent(id, streamed) { $0.text = text } }
-                    return
-                }
-            }
-            if !text.isEmpty { append(id, RunEvent(kind: .thinking, text: text)) }
+            feed(id, .thinking(text))
         case .toolUse(let callID, let name, let input, let nested):
-            finishLiveText(id)
-            let summary = ToolSummary.describe(tool: name, input: input.dictionary)
-            let event = RunEvent(kind: .tool, text: nested ? "↳ " + summary : summary, tool: name, callID: callID,
-                                 detail: ToolSummary.json(input.object), state: .running)
-            turns[id]?.toolEvents[callID] = event.id
-            turns[id]?.toolNames[callID] = name
-            turns[id]?.toolInputs[callID] = input
-            recap?.toolUse(name)
-            append(id, event)
+            feed(id, .toolStarted(AgentToolCall(id: callID, name: name, title: ToolSummary.describe(tool: name, input: input.dictionary),
+                                                detail: ToolSummary.json(input.object), input: input, nested: nested)))
             // Claude Code's own task list (not a subagent's) becomes the Tasks strip above the composer.
             if name == "TodoWrite", !nested, let steps = RunTasks.claude(input.dictionary) { setTasks(id, steps) }
         case .toolResult(let callID, let output, let isError):
-            if let eventID = turns[id]?.toolEvents[callID] {
-                mutateEvent(id, eventID) {
-                    $0.output = RunEvent.clip(output)
-                    $0.state = isError ? .failed : .done
-                }
-            }
-            if !isError, let name = turns[id]?.toolNames[callID], let input = turns[id]?.toolInputs[callID] {
-                for change in ToolSummary.fileChanges(tool: name, input: input.dictionary) {
-                    recordFileChange(id, path: change.path, kind: change.kind)
-                }
-            }
+            feed(id, .toolUpdated(id: callID, output: output, state: isError ? .failed : .done))
         case .usage(let messageID, let tokens, let model):
             turns[id]?.messageUsage[messageID] = tokens
             turns[id]?.lastContext = tokens.context + tokens.output
             if let model, !model.isEmpty, run(id)?.resolvedModel == nil { update(id) { $0.resolvedModel = model } }
         case .permissionRequest(let requestID, let tool, let input, let suggestions, _):
-            finishLiveText(id)
+            pauseLive(id)
             // A question is answered, not approved: the answers go back as the tool's input.
             if tool == "AskUserQuestion" {
                 let items = ClaudeStreamParser.questions(from: input)
@@ -1341,17 +1459,15 @@ final class WorkspaceManager: ObservableObject {
             update(id) { $0.move(to: .waitingApproval) }
             if let run = run(id) { onApproval?(run, pending) }
         case .result(let result):
-            finishLiveText(id)
+            pauseLive(id)
             // A steering message cut this segment short: the turn goes on with the new message.
             if turns[id]?.steered == true, turns[id]?.stopping != true, result.endedBySteer {
                 turns[id]?.steeredUsage.append(result.usage)
                 // A thinking block the steer cut off gets no complete copy: start the pairing afresh.
-                closeThinking(id)
-                turns[id]?.streamedThinking.removeAll()
+                turns[id]?.timeline.forgetPendingCopies()
                 return
             }
             turns[id]?.steered = false
-            closeThinking(id)
             // Stopped by a usage limit: remember when it resets, for "Resume at reset".
             if turns[id]?.stopping != true {
                 let evidence = FailureEvidence(terminalReason: result.terminalReason, apiErrorStatus: result.apiErrorStatus,
@@ -1388,7 +1504,7 @@ final class WorkspaceManager: ObservableObject {
             if result.isError && !stopping {
                 // Claude Code writes an API error as an answer first, then again as the result: show it once, as the error.
                 let failure = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !failure.isEmpty, let echoed = state?.lastTextID,
+                if !failure.isEmpty, let echoed = state?.timeline.lastTextID,
                    events[id]?.last(where: { $0.id == echoed })?.text.trimmingCharacters(in: .whitespacesAndNewlines) == failure {
                     mutateEvent(id, echoed) { $0.kind = .error; $0.text = result.text; $0.state = nil }
                 } else {
@@ -1418,37 +1534,25 @@ final class WorkspaceManager: ObservableObject {
         case .threadStarted(let thread):
             update(id) { $0.providerSessionID = thread }
         case .message(let text):
-            append(id, RunEvent(kind: .assistant, text: text, state: .done))
+            feed(id, .text(text))
         case .reasoning(let text):
-            append(id, RunEvent(kind: .thinking, text: text))
+            feed(id, .thinking(text))
         case .commandStarted(let callID, let command):
-            let event = RunEvent(kind: .tool, text: "shell · " + ToolSummary.oneLine(command, 120), tool: "shell",
-                                 callID: callID, detail: command, state: .running)
-            turns[id]?.toolEvents[callID] = event.id
-            append(id, event)
+            feed(id, .toolStarted(Self.codexCommand(callID, command)))
         case .commandFinished(let callID, let command, let output, let exitCode):
-            let failed = (exitCode ?? 0) != 0
-            if let eventID = turns[id]?.toolEvents[callID] ?? timeline(id).last(where: { $0.callID == callID && $0.kind == .tool })?.id {
-                mutateEvent(id, eventID) {
-                    $0.output = RunEvent.clip(output)
-                    $0.state = failed ? .failed : .done
-                }
-            } else {
-                append(id, RunEvent(kind: .tool, text: "shell · " + ToolSummary.oneLine(command, 120), tool: "shell",
-                                    callID: callID, detail: command, output: RunEvent.clip(output), state: failed ? .failed : .done))
-            }
+            var call = Self.codexCommand(callID, command)
+            call.output = output
+            call.state = (exitCode ?? 0) != 0 ? .failed : .done
+            feed(id, .toolFinished(call))
         case .fileChanges(_, let changes):
             for change in changes { recordFileChange(id, path: change.path, kind: change.kind) }
-        case .toolCall(let callID, let name, let detail, let finished, let failed):
-            if let eventID = turns[id]?.toolEvents[callID] {
-                if finished { mutateEvent(id, eventID) { $0.state = failed ? .failed : .done } }
-            } else {
-                let event = RunEvent(kind: .tool, text: detail.isEmpty ? name : "\(name) · \(detail)", tool: name, callID: callID,
+        case .toolCall(let callID, let name, let detail, let finished, let failed, let input, let output):
+            let call = AgentToolCall(id: callID, name: name, title: detail.isEmpty ? name : "\(name) · \(detail)",
+                                     detail: input.map { ToolSummary.json($0.object) }, input: input, output: output,
                                      state: finished ? (failed ? .failed : .done) : .running)
-                turns[id]?.toolEvents[callID] = event.id
-                append(id, event)
-            }
+            feed(id, finished ? .toolFinished(call) : .toolStarted(call))
         case .turnCompleted(var usage):
+            pauseLive(id)
             if let started = turns[id]?.started { usage.durationSeconds = Date().timeIntervalSince(started) }
             turns[id]?.finished = true
             let stopping = turns[id]?.stopping ?? false
@@ -1480,9 +1584,9 @@ final class WorkspaceManager: ObservableObject {
         processes[id] = nil
         // A question can no longer be answered once the process is gone.
         questions[id] = nil
+        pauseLive(id)
         let state = turns[id]
         turns[id] = nil
-        finishLiveText(id)
         expireApprovals(id)
         // Whatever was still running is settled: nothing may stay open after the process is gone.
         settleOpenWork(id, reason: state?.stopping == true ? .stopped : .processExited)
@@ -1516,7 +1620,7 @@ final class WorkspaceManager: ObservableObject {
         } else {
             stripped = raw
         }
-        let lines = stripped.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        let lines = AgentLogLines.withoutLog(stripped.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
         let tail = lines.suffix(6).joined(separator: "\n")
         let lower = tail.lowercased()
         if lower.contains("not logged in") || lower.contains("please run /login") || lower.contains("authenticat") {
@@ -1539,20 +1643,9 @@ final class WorkspaceManager: ObservableObject {
         return parts.joined(separator: " · ")
     }
 
-    /// Ends the thinking block being streamed; it then waits for its complete copy (see `.thinking`).
-    func closeThinking(_ id: UUID) {
-        guard turns[id]?.thinkingOpen == true else { return }
-        turns[id]?.thinkingOpen = false
-        let live = turns[id]?.liveThinkingID
-        if let live { mutateEvent(id, live) { $0.state = .done } }
-        turns[id]?.liveThinkingID = nil
-        turns[id]?.streamedThinking.append(live)
-    }
-
-    func finishLiveText(_ id: UUID) {
-        guard let live = turns[id]?.liveTextID else { return }
-        mutateEvent(id, live) { $0.state = .done }
-        turns[id]?.liveTextID = nil
+    /// A Codex shell command as a tool call: "shell · npm test".
+    static func codexCommand(_ callID: String, _ command: String) -> AgentToolCall {
+        AgentToolCall(id: callID, name: "shell", title: "shell · " + ToolSummary.oneLine(command, 120), detail: command)
     }
 
     func recordFileChange(_ id: UUID, path: String, kind: String) {
@@ -1674,6 +1767,7 @@ final class WorkspaceManager: ObservableObject {
 
     private func pullRequestChanged(_ id: UUID, old: PullRequestWatch, new: PullRequestSnapshot) {
         let now = Date()
+        if let url = URL(string: old.url) { PullRequestStatusStore.shared.record(url: url, snapshot: new, at: now) }
         // The first look only sets what counts as seen.
         guard old.checkedAt != nil else {
             update(id) { $0.prWatch = PullRequestNews.updated(old, with: new, at: now) }
@@ -1722,6 +1816,8 @@ final class WorkspaceManager: ObservableObject {
         mcpAppContexts[id] = nil
         let appFolder = Self.mcpAppFolder(id)
         Task.detached(priority: .utility) { try? FileManager.default.removeItem(at: appFolder) }
+        prepareTasks.removeValue(forKey: id)?.cancel()
+        checkpointIndices[id] = nil
         stopCoordinators[id] = nil
         sessionApprovals[id] = nil
         backgroundRoster[id] = nil
@@ -1768,7 +1864,11 @@ final class WorkspaceManager: ObservableObject {
                 guard let self else { return }
                 self.git[id] = GitSnapshot(status: result.status, divergence: result.divergence, error: result.problem,
                                            updated: Date(), loading: false)
-                if let status = result.status { self.update(id, save: false) { $0.changedFiles = status.files.count } }
+                if let status = result.status {
+                    self.update(id, save: false) { $0.changedFiles = status.files.count }
+                    // A branch the agent (or you) switched to becomes the session's own.
+                    if !status.detached, let branch = status.branch { self.followBranch(id, to: branch) }
+                }
             }
         }
     }

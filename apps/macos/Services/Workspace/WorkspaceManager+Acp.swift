@@ -84,6 +84,7 @@ extension WorkspaceManager {
             (command: launch.script, args: ["--agent", run.provider.rawValue], env: ["NOOK_RUN_ID": id.uuidString])
         }
         let provider = run.provider
+        let profileID = run.profileID
         client.request("initialize", AcpRPC.initializeParams()) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
@@ -91,9 +92,9 @@ extension WorkspaceManager {
                 case .failure(let error):
                     self.acpFailed(id, client, error, prompt: prompt ?? self.warmPrompts[id], executable: executable)
                 case .success(let response):
-                    let capabilities = (response.dictionary["agentCapabilities"] as? [String: Any]) ?? [:]
-                    client.canLoadSessions = (capabilities["loadSession"] as? Bool) ?? false
-                    self.learnModels(provider, AgentModelCatalog.acp(response.dictionary))
+                    client.sessionCapabilities = AcpSessionCapabilities(initialize: response.dictionary)
+                    client.authMethods = AcpRPC.authMethodIDs(response.dictionary)
+                    self.learnModels(provider, AgentModelCatalog.acp(response.dictionary), profileID: profileID)
                     guard provider == .antigravity else {
                         return self.openAcpSession(id, client, bridge: bridge, prompt: prompt, executable: executable)
                     }
@@ -105,7 +106,7 @@ extension WorkspaceManager {
                                 return self.acpFailed(id, client, error, prompt: prompt ?? self.warmPrompts[id], executable: executable)
                             }
                             self.onAntigravitySignedIn?()
-                            self.openAcpSession(id, client, bridge: bridge, prompt: prompt, executable: executable)
+                            self.openAcpSession(id, client, bridge: bridge, prompt: prompt, executable: executable, signedIn: true)
                         }
                     }
                 }
@@ -113,22 +114,59 @@ extension WorkspaceManager {
         }
     }
 
-    /// A new session, or the earlier one loaded again (its replay is dropped: Nook keeps the timeline itself).
+    /// A new session, or the earlier one continued: resumed when the agent offers it, else loaded again (its replay is
+    /// dropped: Nook keeps the timeline itself).
+    /// A session the agent does not know any more starts anew (said in the timeline), and one that needs you to sign in
+    /// signs in through the agent's own method first; each once.
     private func openAcpSession(_ id: UUID, _ client: AcpClient, bridge: (command: String, args: [String], env: [String: String])?,
-                                prompt: String?, executable: String) {
+                                prompt: String?, executable: String, signedIn: Bool = false) {
         guard let run = run(id) else { return }
-        let loadID = client.canLoadSessions ? run.providerSessionID : nil
+        let capabilities = client.sessionCapabilities
+        let loadID = capabilities.continues ? run.providerSessionID : nil
         if run.providerSessionID != nil, loadID == nil {
             append(id, RunEvent(kind: .system, text: tr("ws.acp.noLoad", run.provider.displayName)))
         }
-        client.replaying = loadID != nil
-        client.request(loadID == nil ? "session/new" : "session/load",
+        // A session Nook has no conversation of yet (one the agent listed) is loaded with its replay, which fills the
+        // timeline; otherwise it is resumed without one when the agent can.
+        let fillsTimeline = loadID != nil && capabilities.load
+            && !timeline(id).contains { $0.kind == .user || $0.kind == .assistant }
+        let method = loadID == nil ? "session/new" : fillsTimeline ? "session/load" : capabilities.continueMethod
+        client.replaying = method == "session/load"
+        client.keepsReplay = fillsTimeline
+        acpReplays[id] = fillsTimeline ? AcpReplay() : nil
+        client.request(method,
                        AcpRPC.sessionParams(cwd: run.workingDirectory, bridge: bridge, loadID: loadID)) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 client.replaying = false
+                client.keepsReplay = false
+                self.finishAcpReplay(id)
                 switch result {
                 case .failure(let error):
+                    guard self.acpClients[id] === client, client.isRunning else {
+                        return self.acpFailed(id, client, error, prompt: prompt ?? self.warmPrompts[id], executable: executable)
+                    }
+                    let message = error.localizedDescription
+                    if loadID != nil, AgentErrorText.sessionGone(message) {
+                        self.append(id, RunEvent(kind: .system, text: tr("ws.acp.noLoad", run.provider.displayName)))
+                        self.update(id) { $0.providerSessionID = nil }
+                        // The new conversation starts from what happened so far, with the message waiting for it.
+                        let waiting = prompt ?? self.warmPrompts.removeValue(forKey: id)
+                        let carried = self.carryOverConversation(id, prompt: waiting)
+                        return self.openAcpSession(id, client, bridge: bridge, prompt: carried, executable: executable, signedIn: signedIn)
+                    }
+                    if !signedIn, AgentErrorText.needsSignIn(message), let method = client.authMethods.first {
+                        // The agent signs in its own way (a browser page, a key from the environment), then the session opens.
+                        return client.request("authenticate", ["methodId": method]) { [weak self] result in
+                            Task { @MainActor in
+                                guard let self else { return }
+                                if case .failure(let error) = result {
+                                    return self.acpFailed(id, client, error, prompt: prompt ?? self.warmPrompts[id], executable: executable)
+                                }
+                                self.openAcpSession(id, client, bridge: bridge, prompt: prompt, executable: executable, signedIn: true)
+                            }
+                        }
+                    }
                     self.acpFailed(id, client, error, prompt: prompt ?? self.warmPrompts[id], executable: executable)
                 case .success(let response):
                     let session = (response.dictionary["sessionId"] as? String) ?? loadID
@@ -140,46 +178,146 @@ extension WorkspaceManager {
                         self.sendAcpPrompt(id, client, prompt: next)
                     } else {
                         self.scheduleAcpIdleClose(id)
+                        self.applyAcpSettings(id, client) {}
                     }
                 }
             }
         }
     }
 
-    /// Plan mode and the model, when the agent offers them (`session/set_mode`, `session/set_model`).
-    private func configureAcpSession(_ id: UUID, _ client: AcpClient, _ response: [String: Any]) {
-        guard let run = run(id), let session = client.sessionID else { return }
-        let modes = ((response["modes"] as? [String: Any])?["availableModes"] as? [[String: Any]]) ?? []
-        if run.provider == .antigravity {
-            setAcpMode(client, session: session, response: response, modes: modes,
-                       to: AntigravityAcp.mode(run.mode, permission: run.permission))
-        } else if run.mode == .plan, let plan = modes.first(where: { (($0["id"] as? String) ?? "").lowercased().contains("plan") })?["id"] as? String {
-            client.request("session/set_mode", ["sessionId": session, "modeId": plan]) { _ in }
+    /// The replayed conversation becomes the timeline's first messages.
+    private func finishAcpReplay(_ id: UUID) {
+        guard let replay = acpReplays.removeValue(forKey: id) else { return }
+        for message in replay.finished {
+            append(id, RunEvent(kind: message.side == .user ? .user : .assistant, text: message.text, state: .done))
         }
-        learnModels(run.provider, AgentModelCatalog.acp(response))
-        if !run.model.isEmpty {
-            // A model config option is set as one; otherwise `session/set_model`.
-            if let option = AgentModelCatalog.acpModelOptionID(response) {
-                client.request("session/set_config_option", ["sessionId": session, "configId": option, "value": run.model]) { _ in }
-            } else {
-                client.request("session/set_model", ["sessionId": session, "modelId": run.model]) { _ in }
+    }
+
+    /// What the session offers and starts with. The run's model, effort and mode are set before each prompt (see
+    /// `applyAcpSettings`), so a model or level you pick while the session stays open counts from your next message.
+    private func configureAcpSession(_ id: UUID, _ client: AcpClient, _ response: [String: Any]) {
+        client.sessionInfo = response
+        client.appliedModel = AcpSessionSettings.currentModel(response)
+        client.appliedMode = AcpSessionSettings.currentMode(response)
+        client.appliedEffort = AcpSessionSettings.currentEffort(response)
+        client.startingEffort = client.appliedEffort
+        client.startingMode = client.appliedMode
+        learnSessionOptions(id, response)
+    }
+
+    /// The models and thinking levels a session offers, for the menus.
+    private func learnSessionOptions(_ id: UUID, _ info: [String: Any]) {
+        guard let run = run(id) else { return }
+        learnModels(run.provider, AgentModelCatalog.acp(info), profileID: run.profileID)
+        learnEfforts(run.provider, AcpSessionSettings.effortLevels(info), profileID: run.profileID)
+    }
+
+    /// The config options the agent sent (all of them): a new model can bring other thinking levels, and start at a
+    /// level of its own, which is then set again before the prompt.
+    private func updateAcpOptions(_ id: UUID, _ client: AcpClient, _ options: [[String: Any]]?) {
+        guard let options else { return }
+        client.sessionInfo = AcpSessionSettings.updating(client.sessionInfo, configOptions: options)
+        if let effort = AcpSessionSettings.currentEffort(client.sessionInfo) { client.appliedEffort = effort }
+        learnSessionOptions(id, client.sessionInfo)
+    }
+
+    /// The mode the run asks for: Antigravity's follows the session's rights, the others only know Plan mode.
+    private func wantedAcpMode(_ run: WorkspaceRun, _ client: AcpClient) -> String? {
+        if run.provider == .antigravity { return AntigravityAcp.mode(run.mode, permission: run.permission) }
+        return AcpSessionSettings.mode(plan: run.mode == .plan, info: client.sessionInfo, starting: client.startingMode)
+    }
+
+    /// Sets the run's model, effort and mode on the session, each answered before the next, then calls `done`. The next
+    /// step is worked out again after each answer: the options a reply brings (another model's levels) count.
+    func applyAcpSettings(_ id: UUID, _ client: AcpClient, then done: @escaping () -> Void) {
+        client.afterSettings.append(done)
+        guard !client.applyingSettings else { return }
+        client.applyingSettings = true
+        stepAcpSettings(id, client, round: 0)
+    }
+
+    private func finishAcpSettings(_ client: AcpClient) {
+        client.applyingSettings = false
+        let callbacks = client.afterSettings
+        client.afterSettings.removeAll()
+        for callback in callbacks { callback() }
+    }
+
+    private func stepAcpSettings(_ id: UUID, _ client: AcpClient, round: Int) {
+        // Each setting is asked for at most a few times, whatever the agent answers.
+        guard round < 6, let run = run(id), let session = client.sessionID else { return finishAcpSettings(client) }
+        let info = client.sessionInfo
+        // "Default" returns to the level the session started with.
+        let steps = AcpSessionSettings.steps(session: session, info: info, model: run.model, appliedModel: client.appliedModel,
+                                             effort: run.effort ?? client.startingEffort, appliedEffort: client.appliedEffort,
+                                             mode: wantedAcpMode(run, client), appliedMode: client.appliedMode)
+        guard let step = steps.first else { return finishAcpSettings(client) }
+        client.request(step.method, step.params) { [weak self] result in
+            Task { @MainActor in
+                guard let self, self.acpClients[id] === client, client.isRunning else {
+                    client.applyingSettings = false
+                    client.afterSettings.removeAll()
+                    return
+                }
+                switch (result, step.target) {
+                case (.success(let response), .model(let model)):
+                    client.appliedModel = model
+                    self.updateAcpOptions(id, client, response.dictionary["configOptions"] as? [[String: Any]])
+                case (.success(let response), .effort(let effort)):
+                    self.updateAcpOptions(id, client, response.dictionary["configOptions"] as? [[String: Any]])
+                    // Asked once: an agent that keeps its own level is not asked again and again.
+                    client.appliedEffort = effort
+                case (.success(let response), .mode(let mode)):
+                    client.appliedMode = mode
+                    self.updateAcpOptions(id, client, response.dictionary["configOptions"] as? [[String: Any]])
+                case (.failure, .effort(let effort)):
+                    // The session goes on at the level it has.
+                    client.appliedEffort = effort
+                case (.failure, .model(let model)):
+                    // Said once: the session goes on with the model it has.
+                    client.appliedModel = model
+                    let name = self.offeredModels(run.provider, profileID: run.profileID).first { $0.id == model }?.name ?? model
+                    self.append(id, RunEvent(kind: .system, text: tr("ws.acp.modelFailed", run.provider.displayName, name)))
+                case (.failure, .mode(let mode)):
+                    client.appliedMode = mode
+                }
+                self.stepAcpSettings(id, client, round: round + 1)
             }
         }
     }
 
     private func sendAcpPrompt(_ id: UUID, _ client: AcpClient, prompt: String) {
+        applyAcpSettings(id, client) { [weak self] in
+            guard let self, self.acpClients[id] === client else { return }
+            // Stopped while the model was being set: the prompt never went.
+            if self.turns[id]?.stopping == true { return self.acpStopped(id) }
+            self.promptAcp(id, client, prompt: prompt)
+        }
+    }
+
+    private func promptAcp(_ id: UUID, _ client: AcpClient, prompt: String) {
         guard let run = run(id), let session = client.sessionID else { return }
         var text = prompt
-        // Your instructions go with the first prompt of a newly created session; the plan line with every prompt in Plan mode.
-        let instructions = run.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Your instructions, and how to use Nook's tools when the bridge is attached (as Claude Code and Codex get them), go
+        // with the first prompt of a newly created session; the plan line with every prompt in Plan mode.
+        let instructions = [run.instructions.trimmingCharacters(in: .whitespacesAndNewlines),
+                            bridge(for: id) == nil ? "" : BridgeLaunch.instructions].filter { !$0.isEmpty }.joined(separator: "\n\n")
         if client.freshSession, !instructions.isEmpty { text = instructions + "\n\n" + text }
         client.freshSession = false
         if run.mode == .plan { text = "Create a plan only; do not make any changes.\n\n" + text }
-        client.request("session/prompt", AcpRPC.promptParams(sessionID: session, text: text)) { [weak self] result in
+        // Pictures you added (their paths end the message) also go as pictures, or links, the agent can open itself.
+        let pictures = ImageAttachment.splittingPaths(from: prompt).images
+        let attachments = AcpRPC.attachments(pictures, images: client.sessionCapabilities.images) { try? Data(contentsOf: $0) }
+        client.request("session/prompt", AcpRPC.promptParams(sessionID: session, text: text, attachments: attachments)) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 switch result {
                 case .failure(let error):
+                    // Closed by Stop (or by force after it): that is not an error of the agent.
+                    guard self.acpClients[id] === client, let state = self.turns[id] else { return }
+                    if state.stopping { return self.acpStopped(id) }
+                    // The process ended: `acpExited` says so with its exit status and what it wrote.
+                    if case .exited = error { return }
                     self.failAcpTurn(id, WorkspaceManager.cleanError(error.localizedDescription, status: 1))
                 case .success(let response):
                     let stop = AcpRPC.stop(response.dictionary)
@@ -198,8 +336,7 @@ extension WorkspaceManager {
               !state.acpReplied, !state.stopping, state.acpToolCalls == 0 else { return }
         let thought = state.acpThought.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !thought.isEmpty else { return }
-        finishLiveText(id)
-        finishAcpThought(id)
+        pauseLive(id)
         append(id, RunEvent(kind: .assistant, text: thought, state: .done))
         turns[id]?.acpReplied = true
     }
@@ -219,16 +356,33 @@ extension WorkspaceManager {
 
     func stopAcpTurn(_ id: UUID) -> Bool {
         guard let client = acpClients[id], run(id)?.status.isActive == true else { return false }
+        // Pressing Stop again changes nothing: the first one is still on its way.
+        if turns[id]?.stopping == true { return true }
         turns[id]?.stopping = true
+        // The agent waits for an answer to what it asked: it gets "cancelled", or it never ends its turn.
+        cancelAcpRequests(id, client)
         expireApprovals(id)
         append(id, RunEvent(kind: .system, text: tr("ws.event.stopping")))
         if let session = client.sessionID {
             // The prompt request then ends with stopReason "cancelled".
             client.notify("session/cancel", ["sessionId": session])
+            // A turn the agent started by itself has no prompt request to end it: it ends here.
+            if turns[id]?.unprompted == true {
+                acpWakeFinish.removeValue(forKey: id)?.cancel()
+                finishAcpTurn(id, reason: "cancelled", usage: TurnUsage())
+            }
         } else {
             client.stop()
         }
         return true
+    }
+
+    /// Answers the permission requests of this session that still wait, as cancelled.
+    private func cancelAcpRequests(_ id: UUID, _ client: AcpClient?) {
+        for pending in approvals[id] ?? [] {
+            guard let request = acpRequests.removeValue(forKey: pending.id) else { continue }
+            client?.respond(request.rpcID, AcpRPC.cancelledOutcome)
+        }
     }
 
     func closeAcpClient(_ id: UUID) {
@@ -236,6 +390,8 @@ extension WorkspaceManager {
         acpIdleClose[id] = nil
         acpWakeFinish.removeValue(forKey: id)?.cancel()
         acpWakeBuffer[id] = nil
+        acpReplays[id] = nil
+        cancelAcpRequests(id, acpClients[id])
         acpClients.removeValue(forKey: id)?.stop()
     }
 
@@ -255,17 +411,31 @@ extension WorkspaceManager {
 
     private func handleAcp(_ id: UUID, _ client: AcpClient, _ message: CodexRPCMessage, _ events: [AcpEvent]) {
         guard acpClients[id] === client, !events.isEmpty else { return }
+        // The conversation a loaded session replays into an empty timeline (see openAcpSession).
+        if acpReplays[id] != nil, client.replaying {
+            for event in events { acpReplays[id]?.add(event) }
+            for case .permission(let rpcID, _, _) in events { client.respond(rpcID, AcpRPC.cancelledOutcome) }
+            for case .unsupportedRequest(let rpcID) in events { client.respondError(rpcID, message: "Nook does not provide this to agents.") }
+            let settings = events.filter(\.isSessionState)
+            if !settings.isEmpty { applyAcp(id, client, settings) }
+            return
+        }
+        // What the session offers counts at once, in a turn or not.
+        let settings = events.filter(\.isSessionState)
+        if !settings.isEmpty { applyAcp(id, client, settings) }
+        let work = events.filter { !$0.isSessionState }
+        guard !work.isEmpty else { return }
         if turns[id] == nil, client.sessionID != nil, !client.replaying, run(id)?.status.isActive != true {
             // After its turn: kept until the agent shows it is really working again.
             // A request needs its answer now, turn or not.
-            for case .unsupportedRequest(let rpcID) in events { client.respondError(rpcID, message: "Nook does not provide this to agents.") }
-            acpWakeBuffer[id, default: []] += events.filter { if case .unsupportedRequest = $0 { return false } else { return true } }
-            guard events.contains(where: \.isWakeEvidence) else { return }
+            for case .unsupportedRequest(let rpcID) in work { client.respondError(rpcID, message: "Nook does not provide this to agents.") }
+            acpWakeBuffer[id, default: []] += work.filter { if case .unsupportedRequest = $0 { return false } else { return true } }
+            guard work.contains(where: \.isWakeEvidence) else { return }
             wakeAcp(id)
             let buffered = acpWakeBuffer.removeValue(forKey: id) ?? []
             applyAcp(id, client, buffered)
         } else {
-            applyAcp(id, client, events)
+            applyAcp(id, client, work)
         }
         if turns[id]?.unprompted == true { armAcpWakeFinish(id) }
     }
@@ -291,7 +461,7 @@ extension WorkspaceManager {
         acpWakeFinish[id] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard !Task.isCancelled, let self, let state = self.turns[id], state.unprompted, !state.finished else { return }
-            let running = state.toolEvents.values.contains { eventID in
+            let running = state.timeline.runningCalls.contains { eventID in
                 self.timeline(id).first { $0.id == eventID }?.state == .running
             }
             // Still a tool at work, or waiting on you: not over yet.
@@ -303,47 +473,25 @@ extension WorkspaceManager {
 
     private func applyAcp(_ id: UUID, _ client: AcpClient, _ events: [AcpEvent]) {
         for event in events {
+            for read in turns[id]?.acpOpenReads.settle(after: event) ?? [] {
+                feed(id, .toolUpdated(id: read, state: .done))
+            }
             switch event {
             case .messageChunk(let text):
-                finishAcpThought(id)
                 if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { turns[id]?.acpReplied = true }
-                if let live = turns[id]?.liveTextID {
-                    mutateEvent(id, live) { $0.text += text }
-                } else {
-                    let event = RunEvent(kind: .assistant, text: text, state: .running)
-                    turns[id]?.liveTextID = event.id
-                    append(id, event)
-                }
+                feed(id, .textDelta(text))
             case .thoughtChunk(let text):
                 turns[id]?.acpThought += text
-                if let live = turns[id]?.liveReasoningID {
-                    mutateEvent(id, live) { $0.text += text }
-                } else {
-                    finishLiveText(id)
-                    let event = RunEvent(kind: .thinking, text: text, state: .running)
-                    turns[id]?.liveReasoningID = event.id
-                    append(id, event)
-                }
+                feed(id, .thinkingDelta(text))
             case .toolCall(let call):
-                finishLiveText(id)
-                finishAcpThought(id)
-                let event = RunEvent(kind: .tool, text: call.title.isEmpty ? call.toolName : call.title, tool: call.toolName,
-                                     callID: call.id, detail: call.input.map { ToolSummary.json($0.object) },
-                                     output: call.output.isEmpty ? nil : RunEvent.clip(call.output), state: Self.state(call.status) ?? .running)
-                turns[id]?.toolEvents[call.id] = event.id
-                turns[id]?.acpToolCalls += 1
-                recap?.toolUse(call.toolName)
-                append(id, event)
-                if call.status == "completed" { for path in call.paths { recordFileChange(id, path: path, kind: "modified") } }
+                // An edit's changes go in as the input Nook's edit rows read (see AcpToolCall.editInput).
+                let input = call.editInput ?? call.input
+                feed(id, .toolStarted(AgentToolCall(id: call.id, name: call.toolName, title: call.title.isEmpty ? call.toolName : call.title,
+                                                    detail: input.map { ToolSummary.json($0.object) }, input: input,
+                                                    output: call.output, state: Self.state(call.status) ?? .running, paths: call.paths)))
             case .toolCallUpdate(let call):
-                // A call from an earlier turn (work it left running in the background) is found by its id.
-                guard let eventID = turns[id]?.toolEvents[call.id] ?? timeline(id).last(where: { $0.callID == call.id })?.id else { continue }
-                mutateEvent(id, eventID) { event in
-                    if !call.title.isEmpty { event.text = call.title }
-                    if !call.output.isEmpty { event.output = RunEvent.clip(call.output) }
-                    if let state = Self.state(call.status) { event.state = state }
-                }
-                if call.status == "completed" { for path in call.paths { recordFileChange(id, path: path, kind: "modified") } }
+                feed(id, .toolUpdated(id: call.id, title: call.title, output: call.output, state: Self.state(call.status), paths: call.paths,
+                                      input: call.editInput))
             case .plan(let steps):
                 setTasks(id, steps)
             case .usage(let used, let size, let cost):
@@ -359,6 +507,16 @@ extension WorkspaceManager {
                 }
             case .unsupportedRequest(let rpcID):
                 client.respondError(rpcID, message: "Nook does not provide this to agents.")
+            case .userChunk:
+                // Only a replay carries your own words back (see openAcpSession).
+                break
+            case .commands(let commands):
+                if acpCommands[id] != commands { acpCommands[id] = commands }
+            case .configOptions(let options):
+                updateAcpOptions(id, client, options.object as? [[String: Any]])
+            case .currentMode(let mode):
+                // The agent left a mode by itself (out of plan mode, say): the run's mode is set again before the next prompt.
+                client.appliedMode = mode
             }
         }
     }
@@ -389,15 +547,8 @@ extension WorkspaceManager {
         if let run = run(id) { onApproval?(run, pending) }
     }
 
-    private func finishAcpThought(_ id: UUID) {
-        guard let live = turns[id]?.liveReasoningID else { return }
-        mutateEvent(id, live) { $0.state = .done }
-        turns[id]?.liveReasoningID = nil
-    }
-
     private func finishAcpTurn(_ id: UUID, reason: String, usage reported: TurnUsage) {
-        finishLiveText(id)
-        finishAcpThought(id)
+        pauseLive(id)
         let state = turns[id]
         var usage = reported
         usage.contextTokens = state?.lastContext
@@ -426,9 +577,11 @@ extension WorkspaceManager {
         scheduleAcpIdleClose(id)
     }
 
-    /// An idle session closes after a while; the next message loads it again in a new process.
+    /// An idle session closes after a while; the next message loads it again in a new process. An agent that cannot load
+    /// a session stays open instead: closing it would lose the conversation.
     private func scheduleAcpIdleClose(_ id: UUID) {
         acpIdleClose[id]?.cancel()
+        if let client = acpClients[id], !client.sessionCapabilities.continues { return }
         let seconds = idleSeconds(id, Self.acpIdleSeconds)
         acpIdleClose[id] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
@@ -445,6 +598,7 @@ extension WorkspaceManager {
         acpClients[id] = nil
         client.stop()
         warmPrompts[id] = nil
+        if turns[id]?.stopping == true { return acpStopped(id) }
         // Warming up failed with no message waiting: remember a Gemini without ACP, and the next message starts it again.
         guard let prompt else {
             if run(id)?.provider == .gemini, client.sessionID == nil { acpFallback.insert(executable) }
@@ -457,9 +611,13 @@ extension WorkspaceManager {
             launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
             return
         }
-        let text = error.localizedDescription
-        let login = text.lowercased().contains("auth") ? " " + tr("ws.acp.login", run(id).map { $0.provider.kind.loginCommand } ?? "") : ""
-        failAcpTurn(id, WorkspaceManager.cleanError(text, status: 1) + login)
+        // The server's own log ("Authenticate called…") is not a sign-in error.
+        let raw = error.localizedDescription
+        let shown = AgentLogLines.withoutLog(raw.components(separatedBy: "\n")).joined(separator: "\n")
+        // A sign-in command to name only when the agent has one (an ACP agent you added signs in its own way).
+        let command = run(id)?.provider.kind.loginCommand ?? ""
+        let login = shown.lowercased().contains("auth") && !command.isEmpty ? " " + tr("ws.acp.login", command) : ""
+        failAcpTurn(id, WorkspaceManager.cleanError(raw, status: 1) + login)
     }
 
     private func acpExited(_ id: UUID, _ client: AcpClient, status: Int32, stderr: String, prompt: String, executable: String) {
@@ -476,24 +634,32 @@ extension WorkspaceManager {
             launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
             return
         }
-        finishLiveText(id)
-        finishAcpThought(id)
+        if state.stopping { return acpStopped(id) }
+        pauseLive(id)
+        cancelAcpRequests(id, nil)
         expireApprovals(id)
         turns[id] = nil
-        if state.stopping {
-            update(id) { $0.move(to: .stopped) }
-            append(id, RunEvent(kind: .system, text: tr("ws.event.stopped")))
-            sendPendingNow(id)
-        } else {
-            let detail = WorkspaceManager.cleanError(stderr, status: status)
-            update(id) { $0.move(to: .failed, detail: detail) }
-            append(id, RunEvent(kind: .error, text: detail))
-            turnDidFinish(id)
-        }
+        let detail = WorkspaceManager.cleanError(stderr, status: status)
+        update(id) { $0.move(to: .failed, detail: detail) }
+        append(id, RunEvent(kind: .error, text: detail))
+        turnDidFinish(id)
+    }
+
+    /// The turn you stopped is over, also when the agent closed instead of answering the cancel.
+    private func acpStopped(_ id: UUID) {
+        pauseLive(id)
+        expireApprovals(id)
+        turns[id] = nil
+        settleOpenWork(id, reason: .stopped)
+        update(id) { $0.move(to: .stopped) }
+        append(id, RunEvent(kind: .system, text: tr("ws.event.stopped")))
+        sendPendingNow(id)
     }
 
     private func failAcpTurn(_ id: UUID, _ message: String) {
-        finishLiveText(id)
+        pauseLive(id)
+        cancelAcpRequests(id, acpClients[id])
+        expireApprovals(id)
         turns[id] = nil
         update(id) { $0.move(to: .failed, detail: message) }
         append(id, RunEvent(kind: .error, text: message))

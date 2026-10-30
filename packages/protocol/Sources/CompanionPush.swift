@@ -13,6 +13,8 @@ enum PushCategory {
     static let info = "NOOK_INFO"
     static let actionAllow = "NOOK_ACTION_ALLOW"
     static let actionDeny = "NOOK_ACTION_DENY"
+    /// A message to the session, typed right in a finished, failed or limited session's notification.
+    static let actionReply = "NOOK_ACTION_REPLY"
 }
 
 struct PushEvent: Equatable, Sendable {

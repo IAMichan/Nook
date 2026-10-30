@@ -103,12 +103,20 @@ struct NewSessionComposer: View {
                     .foregroundStyle(NookTheme.paper)
                     .underline(true, pattern: .dot, color: NookTheme.textTertiary)
             } content: {
-                if !recentProjects.isEmpty {
-                    DropdownHeader(title: tr("ws.new.recent"))
-                    ForEach(recentProjects, id: \.self) { path in
-                        DropdownRow(symbol: "folder", title: URL(fileURLWithPath: path).lastPathComponent, detail: AgentPathFormat.tilde(path),
-                                    chosen: project?.path == path) { select(path) }
+                let menu = projectMenu
+                if !menu.favorites.isEmpty {
+                    DropdownHeader(title: tr("ws.new.favorites"))
+                    ForEach(menu.favorites, id: \.self) { path in
+                        projectRow(path)
                     }
+                }
+                if !menu.recent.isEmpty {
+                    DropdownHeader(title: tr("ws.new.recent"))
+                    ForEach(menu.recent, id: \.self) { path in
+                        projectRow(path)
+                    }
+                }
+                if !menu.favorites.isEmpty || !menu.recent.isEmpty {
                     DropdownDivider()
                 }
                 DropdownRow(symbol: "folder.badge.plus", title: tr("ws.new.chooseFolder")) { chooseFolder() }
@@ -131,6 +139,17 @@ struct NewSessionComposer: View {
             }
         }
         .font(NookTheme.TextStyle.display)
+    }
+
+    private func projectRow(_ path: String) -> some View {
+        let chosen = project.map { WorkspacePathPolicy.normalize($0.path) == path } ?? false
+        return DropdownRow(symbol: "folder", title: URL(fileURLWithPath: path).lastPathComponent, detail: AgentPathFormat.tilde(path),
+                           chosen: chosen, favorite: favoriteBinding(path)) { select(path) }
+    }
+
+    private func favoriteBinding(_ path: String) -> Binding<Bool> {
+        Binding(get: { settings.isFavoriteProject(path) },
+                set: { if $0 != settings.isFavoriteProject(path) { settings.toggleFavoriteProject(path) } })
     }
 
     private var cloneRow: some View {
@@ -224,14 +243,14 @@ struct NewSessionComposer: View {
     private var agentMenu: some View {
         let profile = app.profiles.profile(id: config.profileID)
         let name = profile.map { AccountLabel.name($0, app: app) }
-        return ComposerDropdown(width: app.connectedProviders.count > 1 ? 340 : 296, takesRoom: true) {
+        return ModelPickerDropdown {
             ComposerPill(agent: config.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
                          text: comparing.isEmpty
                             ? [config.provider.displayName, name].compactMap { $0 }.joined(separator: " · ")
-                                + (config.model.isEmpty ? "" : " · " + app.modelMenuName(config.model, for: config.provider))
+                                + (config.model.isEmpty ? "" : " · " + app.modelMenuName(config.model, for: config.provider, profileID: config.profileID))
                             : tr("compare.pill", comparing.count + 1),
                          short: !comparing.isEmpty ? tr("compare.pill", comparing.count + 1)
-                            : (config.model.isEmpty ? config.provider.displayName : app.modelMenuName(config.model, for: config.provider)))
+                            : (config.model.isEmpty ? config.provider.displayName : app.modelMenuName(config.model, for: config.provider, profileID: config.profileID)))
         } content: {
             if app.connectedProviders.isEmpty {
                 DropdownHeader(title: tr("agents.noneConnected"))
@@ -276,13 +295,15 @@ struct NewSessionComposer: View {
     /// How hard the agent thinks, only for agents that have it; "Default" leaves it to the agent.
     @ViewBuilder
     private var effortMenu: some View {
-        let levels = EffortLevels.levels(for: config.provider, model: config.model.isEmpty ? nil : config.model)
-        if let family = app.modelFamily(config.model, for: config.provider) {
+        let levels = workspace.effortLevels(for: config.provider, profileID: config.profileID,
+                                            model: config.model.isEmpty ? nil : config.model)
+        if let family = app.modelFamily(config.model, for: config.provider, profileID: config.profileID) {
             levelMenu(family)
         } else if !levels.isEmpty {
             ComposerDivider()
             ComposerDropdown(width: 220) {
-                ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(config.effort)))
+                ComposerPill(symbol: "gauge.with.dots.needle.33percent",
+                             text: workspace.effortTitle(config.effort, for: config.provider, profileID: config.profileID))
             } content: {
                 DropdownHeader(title: tr("compose.effort"))
                 DropdownRow(symbol: "circle.dashed", title: tr(EffortLevels.label(nil)), chosen: config.effort == nil) {
@@ -290,7 +311,8 @@ struct NewSessionComposer: View {
                     remember()
                 }
                 ForEach(levels, id: \.self) { level in
-                    DropdownRow(symbol: Self.effortSymbol(level, in: levels), title: tr(EffortLevels.label(level)),
+                    DropdownRow(symbol: Self.effortSymbol(level, in: levels),
+                                title: workspace.effortTitle(level, for: config.provider, profileID: config.profileID),
                                 chosen: config.effort == level) {
                         config.effort = level
                         remember()
@@ -442,16 +464,11 @@ struct NewSessionComposer: View {
 
     // MARK: State
 
-    private var recentProjects: [String] {
-        var seen = Set<String>()
-        var result: [String] = []
-        for path in settings.recentProjects + app.history.sessions.map(\.cwd) where !path.isEmpty {
-            let normalized = WorkspacePathPolicy.normalize(path)
-            guard seen.insert(normalized).inserted, FileManager.default.fileExists(atPath: normalized) else { continue }
-            result.append(normalized)
-            if result.count == 10 { break }
-        }
-        return result
+    private var projectMenu: (favorites: [String], recent: [String]) {
+        ProjectSettings.projectMenu(
+            favorites: settings.favoriteProjects,
+            recent: [config.projectPath, settings.lastProject] + settings.recentProjects + app.history.sessions.map(\.cwd)
+        )
     }
 
     private var worktreeAllowed: Bool {
@@ -584,7 +601,8 @@ struct NewSessionComposer: View {
         config.isolation = settings.defaultIsolation
         config.worktreeRoot = settings.worktreeRoot
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { focused = true }
-        let initial = settings.lastProject.isEmpty ? recentProjects.first : settings.lastProject
+        let menu = projectMenu
+        let initial = settings.lastProject.isEmpty ? (menu.favorites.first ?? menu.recent.first) : settings.lastProject
         if let initial, FileManager.default.fileExists(atPath: initial) { select(initial) }
     }
 
@@ -646,23 +664,36 @@ struct NewSessionComposer: View {
         // The next new session opens on the project you chose last, also when this one never started.
         settings.lastProject = path
         applyProjectDefaults(path)
-        inspecting = true
         error = nil
+        if let cached = workspace.cachedProject(path) {
+            applyInspectedProject(cached, for: path)
+            inspecting = false
+        } else {
+            inspecting = true
+        }
         Task {
             let info = await workspace.inspectProject(path)
-            project = info
+            guard config.projectPath == path, remoteMachine == nil else { return }
+            applyInspectedProject(info, for: path)
             inspecting = false
-            let canWorktree = info.repoRoot != nil && info.hasCommits && workspace.gitAvailable == true
-            if !canWorktree {
-                config.isolation = .folder
-            } else if config.isolation == .folder && settings.sessionDefaults(for: path).isolation == .worktree {
-                config.isolation = .worktree
-            }
-            if let base = info.defaultBase, info.branches.contains(base) {
-                config.baseBranch = base
-            } else {
-                config.baseBranch = info.currentBranch ?? info.branches.first ?? ""
-            }
+        }
+    }
+
+    private func applyInspectedProject(_ info: ProjectInfo, for path: String) {
+        project = info
+        let canWorktree = info.repoRoot != nil && info.hasCommits && workspace.gitAvailable == true
+        if !canWorktree {
+            config.isolation = .folder
+        } else if config.isolation == .folder && settings.sessionDefaults(for: path).isolation == .worktree {
+            config.isolation = .worktree
+        }
+        if !config.baseBranch.isEmpty, info.branches.contains(config.baseBranch) {
+            return
+        }
+        if let base = info.defaultBase, info.branches.contains(base) {
+            config.baseBranch = base
+        } else {
+            config.baseBranch = info.currentBranch ?? info.branches.first ?? ""
         }
     }
 
@@ -676,6 +707,7 @@ struct NewSessionComposer: View {
         panel.message = tr("ws.new.chooseMessage")
         if let current = project?.path { panel.directoryURL = URL(fileURLWithPath: current) }
         guard panel.runAboveNotch() == .OK, let url = panel.url else { return }
+        settings.rememberProject(url.path)
         select(url.path)
     }
 
@@ -725,6 +757,7 @@ struct NewSessionComposer: View {
                 NewSessionDraft.saved = nil
                 ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: "")
                 config.task = ""
+                images = []
                 pendingID = UUID()
                 starting = false
                 onStarted(id)
@@ -756,6 +789,7 @@ struct NewSessionComposer: View {
                 NewSessionDraft.saved = nil
                 ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: "")
                 config.task = ""
+                images = []
                 comparing = []
                 pendingID = UUID()
                 if let leader = outcome.leader { onStarted(leader) }
@@ -776,7 +810,7 @@ struct NewSessionComposer: View {
     /// "Claude Code · Opus": how a model of a comparison is named in its session's title and in an error.
     private func comparisonName(_ target: ComparisonTarget) -> String {
         target.model.isEmpty ? target.provider.displayName
-            : target.provider.displayName + " · " + app.modelMenuName(target.model, for: target.provider)
+            : target.provider.displayName + " · " + app.modelMenuName(target.model, for: target.provider, profileID: target.profileID)
     }
 }
 

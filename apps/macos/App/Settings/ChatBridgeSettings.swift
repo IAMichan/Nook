@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import Security
 
-/// Settings › Chats › Telegram: the app id and hash from my.telegram.org, then logging in as on a new device (your
+/// Settings › Connections › Telegram: the app id and hash from my.telegram.org, then logging in as on a new device (your
 /// number, the code Telegram sends, your password when you set one). Telegram's own library has to be in this build.
 struct TelegramSettingsRows: View {
     @ObservedObject var telegram: TelegramBridge
@@ -30,7 +30,7 @@ struct TelegramSettingsRows: View {
                 Spacer()
                 Button(tr("chats.telegram.connect")) { telegram.start() }
             }
-            keysButton
+            TelegramKeysButton(telegram: telegram)
         case .starting:
             HStack(spacing: NookTheme.Spacing.sm) {
                 ProgressView().controlSize(.small)
@@ -62,11 +62,9 @@ struct TelegramSettingsRows: View {
                 loginError
             }
         case .ready:
-            StatusRow(title: tr("chats.telegram.connected", telegram.account ?? "Telegram"),
-                      detail: tr("chats.telegram.connectedDetail"), state: .done) {
-                ConfirmedButton(tr("chats.telegram.logOut"), question: tr("confirm.logout", "Telegram")) { telegram.logOut() }
-            }
-            .onAppear(perform: onReady)
+            ChatLinkedAccountRow(app: telegram.app, title: telegram.account ?? "Telegram", detail: tr("chats.telegram.connectedDetail"),
+                                 signOut: { telegram.logOut() })
+                .onAppear(perform: onReady)
         case .loggingOut, .closed:
             Text(tr("chats.telegram.loggingOut")).foregroundStyle(NookTheme.textSecondary)
         case .parameters, .encryptionKey:
@@ -112,16 +110,6 @@ struct TelegramSettingsRows: View {
         }
     }
 
-    private var keysButton: some View {
-        Button(tr("chats.telegram.changeKeys")) {
-            Keychain.remove(TelegramBridge.apiIDAccount)
-            Keychain.remove(TelegramBridge.apiHashAccount)
-            telegram.stop()
-            telegram.resume()
-        }
-        .buttonStyle(.link)
-    }
-
     private func saveKeys() {
         let id = apiID.trimmingCharacters(in: .whitespaces)
         let hash = apiHash.trimmingCharacters(in: .whitespaces)
@@ -136,7 +124,23 @@ struct TelegramSettingsRows: View {
     }
 }
 
-/// Settings › Chats › Teams: every account you signed in with on teams.microsoft.com (or with a code on Microsoft's own
+/// Other keys from my.telegram.org: the ones Nook keeps go, and Telegram asks for new ones. In Telegram's sheet while it is
+/// not running, and under Advanced once it is.
+struct TelegramKeysButton: View {
+    @ObservedObject var telegram: TelegramBridge
+
+    var body: some View {
+        Button(tr("chats.telegram.changeKeys")) {
+            Keychain.remove(TelegramBridge.apiIDAccount)
+            Keychain.remove(TelegramBridge.apiHashAccount)
+            telegram.stop()
+            telegram.resume()
+        }
+        .buttonStyle(.link)
+    }
+}
+
+/// Settings › Connections › Teams: every account you signed in with on teams.microsoft.com (or with a code on Microsoft's own
 /// page), and a button to add one more. Signing in is all it takes.
 struct TeamsSettingsRows: View {
     @ObservedObject var teams: TeamsBridge
@@ -149,31 +153,17 @@ struct TeamsSettingsRows: View {
         ForEach(web.accounts) { account in
             let title = account.label.isEmpty ? "Teams" : account.label
             let detail = account.session.email.flatMap { $0 == title ? nil : $0 } ?? tr("chats.teams.web.connectedDetail")
-            if let why = teams.problems[TeamsBridge.webID(account.id)] {
-                StatusRow(title: tr("chats.teams.connected", title), detail: why, state: .error) {
-                    Button(tr("chats.teams.signInAgainButton")) { signInOnWeb(account.id) }
-                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { web.signOut(account.id) }
-                }
-            } else {
-                StatusRow(title: tr("chats.teams.connected", title), detail: detail, state: .done) {
-                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { web.signOut(account.id) }
-                }
-            }
+            let id = TeamsBridge.webID(account.id)
+            ChatLinkedAccountRow(app: teams.app, title: title, detail: detail, problem: teams.problems[id],
+                                 signedOut: teams.signedOutAccounts.contains(id),
+                                 signInAgain: { signInOnWeb(account.id) }, signOut: { web.signOut(account.id) })
         }
         ForEach(teams.accounts) { account in
             let title = account.name.isEmpty ? (account.email.isEmpty ? "Teams" : account.email) : account.name
-            if let why = teams.problems[account.id] {
-                StatusRow(title: tr("chats.teams.connected", title), detail: why, state: .error) {
-                    Button(tr("chats.teams.signInAgainButton")) { teams.signIn() }
-                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { teams.signOut(account.id) }
-                }
-            } else {
-                StatusRow(title: tr("chats.teams.connected", title),
-                          detail: account.email.isEmpty || account.email == title ? tr("chats.teams.connectedDetail") : account.email,
-                          state: .done) {
-                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { teams.signOut(account.id) }
-                }
-            }
+            let detail = account.email.isEmpty || account.email == title ? tr("chats.teams.connectedDetail") : account.email
+            ChatLinkedAccountRow(app: teams.app, title: title, detail: detail, problem: teams.problems[account.id],
+                                 signedOut: teams.signedOutAccounts.contains(account.id),
+                                 signInAgain: { teams.signIn() }, signOut: { teams.signOut(account.id) })
         }
         if let problem, teams.problems.isEmpty, !teams.accounts.isEmpty {
             StatusRow(title: tr("chats.teams.problem"), detail: problem, state: .error) { EmptyView() }
@@ -245,32 +235,25 @@ struct TeamsSettingsRows: View {
 }
 
 /// Slack with its history: signing in on slack.com, as with Teams, or a user token of an app of your own (kept in the
-/// Keychain), and whether reading works. In Slack's sheet on Settings › Chats.
+/// Keychain), and whether reading works. In Slack's sheet on Settings › Connections.
 struct SlackSettingsRows: View {
     let setCollecting: (Bool) -> Void
+    /// Whether the token of an app of your own is offered here (folded); a linked Slack's sheet has it under Advanced.
+    var showsToken = true
     @ObservedObject private var capture = ChatCaptureService.shared
     @ObservedObject private var web = SlackWebSession.shared
-    @State private var slackToken = ""
-    @State private var slackSet = SlackBridge.token != nil
     @State private var usesToken = SlackBridge.token != nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             if let auth = web.auth {
-                let title = auth.team.isEmpty ? "Slack" : auth.team
-                if let problem = capture.bridgeProblems[capture.slackBridge.app] {
-                    StatusRow(title: tr("chats.teams.connected", title), detail: problem, state: .error) {
-                        Button(tr("chats.teams.signInAgainButton")) { signIn() }
-                        ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { signOut() }
-                    }
-                } else {
-                    StatusRow(title: tr("chats.teams.connected", title),
-                              detail: capture.enabled ? tr("chats.slack.web.connectedDetail") : tr("chats.slack.collectOff"),
-                              state: capture.enabled ? .done : .todo) {
-                        ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { signOut() }
-                    }
-                }
-            } else if !slackSet {
+                ChatLinkedAccountRow(app: capture.slackBridge.app, title: auth.team.isEmpty ? "Slack" : auth.team,
+                                     detail: tr("chats.slack.web.connectedDetail"), signInAgain: { signIn() }, signOut: { signOut() })
+            } else if SlackBridge.token != nil, !showsToken {
+                // Linked with a token of your own: the token itself is under Advanced, where a new one mends a lost one.
+                ChatLinkedAccountRow(app: capture.slackBridge.app, title: tr("chats.slack.connected"),
+                                     detail: tr("chats.slack.connectedDetail"))
+            } else if SlackBridge.token == nil {
                 HStack {
                     SettingLabel(tr("chats.slack.web.signIn"), detail: tr("chats.slack.web.signInDetail"))
                     Spacer()
@@ -279,9 +262,9 @@ struct SlackSettingsRows: View {
                         .disabled(web.isSigningIn)
                 }
             }
-            if web.auth == nil {
+            if web.auth == nil, showsToken {
                 DisclosureGroup(isExpanded: $usesToken) {
-                    tokenRows
+                    SlackTokenRows(setCollecting: setCollecting)
                 } label: {
                     SettingLabel(tr("chats.slack.useToken"), detail: tr("chats.slack.useTokenDetail"))
                 }
@@ -289,8 +272,28 @@ struct SlackSettingsRows: View {
         }
     }
 
-    @ViewBuilder
-    private var tokenRows: some View {
+    private func signIn() {
+        web.signIn(title: tr("chats.link.browser.title", "Slack")) {
+            capture.setSource(capture.slackBridge.app, on: true)
+            if !capture.enabled { setCollecting(true) }
+            capture.slackTokenChanged()
+        }
+    }
+
+    private func signOut() {
+        web.signOut()
+        capture.slackTokenChanged()
+    }
+}
+
+/// Slack through a user token of an app of your own (kept in the Keychain), and whether reading with it works.
+struct SlackTokenRows: View {
+    let setCollecting: (Bool) -> Void
+    @ObservedObject private var capture = ChatCaptureService.shared
+    @State private var slackToken = ""
+    @State private var slackSet = SlackBridge.token != nil
+
+    var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             SettingLabel(tr("chats.slack.token"), detail: tr("chats.slack.tokenDetail"))
             HStack(spacing: NookTheme.Spacing.sm) {
@@ -322,15 +325,6 @@ struct SlackSettingsRows: View {
             SettingNote(tr("chats.slack.footer"))
         }
         .padding(.top, NookTheme.Spacing.xs)
-    }
-
-    private func signIn() {
-        web.signIn(title: tr("chats.link.browser.title", "Slack")) { linked() }
-    }
-
-    private func signOut() {
-        web.signOut()
-        capture.slackTokenChanged()
     }
 
     /// Slack is linked: its chats are switched on and read right away.

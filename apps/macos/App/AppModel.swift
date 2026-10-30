@@ -17,6 +17,10 @@ final class AppModel: ObservableObject {
     let calendar = CalendarService()
     let nowPlaying = NowPlayingService()
     let hub = AgentHub()
+    /// The merged session lists, kept until one of the lists they come from changes (see `AppModel+Sessions`).
+    var sessionListsCache: SessionListsCache?
+    /// `agentSessions` and the lists it was made from (see there).
+    var agentSessionsCache: (runs: [WorkspaceRun], sessions: [AgentSession], detected: [AgentSession], value: [AgentSession])?
     let voice = VoiceService()
     let screen = ScreenReader()
     let recap = RecapStore()
@@ -77,6 +81,8 @@ final class AppModel: ObservableObject {
     let workspace = WorkspaceManager()
     /// One notification per session and state: a turn that reports its end twice tells you once.
     var attentionLedger = AttentionLedger()
+    /// Keeps the notices Nook gives by himself apart, so a busy hour does not become a stream of pop-ups.
+    var noticePacer = NoticePacer()
     /// Every permission request from an agent, whether it arrives through hooks or from a session Nook runs.
     private(set) lazy var approvals = ApprovalCenter(hub: hub, workspace: workspace, bridge: .shared)
     /// The subscription limits of every agent account.
@@ -105,7 +111,11 @@ final class AppModel: ObservableObject {
     /// Charts and mail drafts: attached to the message currently being streamed.
     private(set) lazy var chatTools: [ToolSpec] = ChatTools.specs(
         onChart: { [weak self] chart in self?.attachToReply { $0.charts.append(chart) } },
-        onMail: { [weak self] mail in self?.attachToReply { $0.mails.append(mail) } }
+        onMail: { [weak self] mail in
+            self?.attachToReply { $0.mails.append(mail) }
+            // "Maak hem korter": the new version takes the place of the draft that was still open.
+            self?.chat.supersedeMails(by: mail)
+        }
     )
 
     /// What Nook learned about the user, stored next to the open loops (see `AppModel+Memory`).
@@ -284,8 +294,11 @@ final class AppModel: ObservableObject {
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &bag)
         // A chat that went on in the terminal after Nook last ran it: its new messages show up in the Nook session.
-        history.$sessions.receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.followTerminalContinuations() }
+        history.$sessions.removeDuplicates().receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.followTerminalContinuations()
+                self?.nameSessionsAfterAgents()
+            }
             .store(in: &bag)
         // When accounts are added or removed, history immediately reloads from the correct directories.
         profiles.$all.removeDuplicates().sink { [weak self] all in
@@ -358,9 +371,11 @@ final class AppModel: ObservableObject {
             }
         }
 
-        // Agent start/stop events update the idle notch indicator.
+        // Agent start/stop events update the idle notch indicator. In no particular order: the hub lists working sessions by
+        // their last event, so two agents at work swap places all the time, and each `show` redraws the notch and the main
+        // window with an animation.
         hub.$sessions
-            .map { sessions in sessions.map { "\($0.id)|\($0.status.label)|\($0.approvalID ?? "")" } }
+            .map { sessions in sessions.map { "\($0.id)|\($0.status.label)|\($0.approvalID ?? "")" }.sorted() }
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -377,6 +392,7 @@ final class AppModel: ObservableObject {
             self.viewModel.present(self.errorCard(message))
         }
         settings.$wakeWord
+            .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.updateWakeWord() }
             .store(in: &bag)
@@ -458,6 +474,7 @@ final class AppModel: ObservableObject {
         connectors.syncMCP(MCPServerStore.shared.servers)
         MCPServerStore.shared.$servers
             .dropFirst()
+            .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] servers in self?.connectors.syncMCP(servers) }
             .store(in: &bag)
@@ -483,6 +500,8 @@ final class AppModel: ObservableObject {
 
         // How much Nook does by himself right now: the battery, the heat, the load and your choice in Settings › General › Energy.
         EnergyMonitor.shared.start(settings: settings)
+        // The pull request list stays current with its panel closed: a quiet read now and then, slower when saving energy.
+        PullRequestStore.shared.followInBackground { [weak self] in !(self?.demoMode ?? true) }
 
         // Continuously index visible screen text locally so every query has immediate visual context.
         screenContext.enabled = { [weak self] in self?.settings.liveScreen ?? false }
@@ -527,6 +546,8 @@ final class AppModel: ObservableObject {
     @Published var onboardingStep = 0
     /// The Settings window (created on first use).
     var settingsWindow: NSWindow?
+    /// Whether the Settings window shows its content: not while it is closed or minimized.
+    let settingsPresence = WindowPresence()
     /// Tracks the message currently streaming per conversation, and its task. Multiple conversations can run concurrently.
     var replies: [UUID: UUID] = [:]
     var chatTasks: [UUID: Task<Void, Never>] = [:]

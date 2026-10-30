@@ -22,6 +22,33 @@ final class CILogTests: XCTestCase {
         XCTAssertTrue(CILogParser.steps(job: [:]).isEmpty)
     }
 
+    func testRunningJobKeepsItsClock() {
+        let job: [String: Any] = ["status": "in_progress", "started_at": "2026-10-28T12:00:00Z", "steps": [
+            ["number": 1, "name": "Set up job", "status": "completed", "conclusion": "success",
+             "started_at": "2026-10-28T12:00:00Z", "completed_at": "2026-10-28T12:00:05Z"],
+            ["number": 2, "name": "Build", "status": "in_progress", "started_at": "2026-10-28T12:00:05Z"],
+            ["number": 3, "name": "Test", "status": "queued"],
+        ]]
+        let log = CILogParser.log(job: job)
+        XCTAssertNotNil(log.started)
+        XCTAssertNil(log.finished, "a running job has no end yet")
+        XCTAssertEqual(log.runningStep?.name, "Build")
+        XCTAssertEqual(log.doneSteps, 1)
+        XCTAssertEqual(log.steps.map(\.running), [false, true, false], "a queued step waits, it does not run")
+        XCTAssertEqual(CILogParser.elapsed(started: log.steps[0].started, finished: log.steps[0].finished), 5)
+        let now = log.steps[1].started!.addingTimeInterval(72)
+        XCTAssertEqual(CILogParser.elapsed(started: log.steps[1].started, finished: nil, now: now), 72)
+        XCTAssertNil(CILogParser.elapsed(started: nil, finished: nil))
+    }
+
+    func testClock() {
+        XCTAssertEqual(CILogParser.clock(0), "0:00")
+        XCTAssertEqual(CILogParser.clock(42.9), "0:42")
+        XCTAssertEqual(CILogParser.clock(192), "3:12")
+        XCTAssertEqual(CILogParser.clock(3845), "1:04:05")
+        XCTAssertEqual(CILogParser.clock(-3), "0:00")
+    }
+
     func testCleanDropsTimestampsAndColours() {
         let raw = "\u{FEFF}2026-10-20T12:00:01.1234567Z ##[group]Run swift test\r\n"
             + "2026-10-20T12:00:02.0000000Z \u{1B}[31merror:\u{1B}[0m it broke\n"
@@ -50,5 +77,44 @@ final class CILogTests: XCTestCase {
         let lines = CILogParser.lines("##[group]A\nfine\n##[group]Build\nx: error: one\ny: error: two\n##[group]Post\nfine")
         XCTAssertEqual(CILogParser.problems(lines).map(\.text), ["Build", "x: error: one", "y: error: two"])
         XCTAssertTrue(CILogParser.problems(CILogParser.lines("all good")).isEmpty)
+    }
+
+    func testCheckRunReport() {
+        let run: [String: Any] = ["output": ["title": "2 issues", "summary": "2 issues\nfound in 1 file", "text": ""]]
+        let annotations: [[String: Any]] = [
+            ["path": "a.swift", "start_line": 3, "annotation_level": "failure", "message": "Nope", "title": "Lint"],
+            ["path": "b.swift", "annotation_level": "notice", "message": "FYI"],
+        ]
+        let report = CILogParser.report(run: run, annotations: annotations)
+        XCTAssertEqual(report.title, "", "a title that only repeats the summary is dropped")
+        XCTAssertEqual(report.annotations.map(\.level), [.error, .notice])
+        XCTAssertEqual(report.annotations.first?.line, 3)
+        XCTAssertNil(report.annotations.last?.line)
+        XCTAssertFalse(report.isEmpty)
+        XCTAssertTrue(CILogParser.report(run: [:], annotations: []).isEmpty)
+    }
+
+    func testNotesAreTheReportersNewestFirst() {
+        let comments: [[String: Any]] = [
+            ["user": ["login": "coderabbitai[bot]"], "body": "Summary", "updated_at": "2026-10-28T12:00:00Z"],
+            ["user": ["login": "someone"], "body": "Thanks", "updated_at": "2026-10-28T13:00:00Z"],
+            ["user": ["login": "coderabbitai[bot]"], "body": "  ", "updated_at": "2026-10-28T14:00:00Z"],
+        ]
+        let reviews: [[String: Any]] = [
+            ["user": ["login": "coderabbitai[bot]"], "body": "Review", "submitted_at": "2026-10-28T15:00:00Z"],
+        ]
+        let notes = CILogParser.notes(comments: comments, reviews: reviews, reporter: "coderabbitai")
+        XCTAssertEqual(notes.map(\.body), ["Review", "Summary"])
+        XCTAssertTrue(CILogParser.notes(comments: comments, reviews: reviews, reporter: "").isEmpty)
+    }
+
+    func testChecksKnowTheirRunAndReporter() {
+        let checks = PullRequestDetailParser.checks(
+            runs: [["id": 9, "name": "lint", "status": "completed", "conclusion": "success", "app": ["slug": "linter"]]],
+            statuses: [["context": "CodeRabbit", "state": "pending", "creator": ["login": "coderabbitai[bot]"]]])
+        XCTAssertEqual(checks.first { $0.name == "lint" }?.checkRunID, 9)
+        XCTAssertEqual(checks.first { $0.name == "lint" }?.reporter, "linter[bot]")
+        XCTAssertNil(checks.first { $0.name == "CodeRabbit" }?.checkRunID)
+        XCTAssertEqual(checks.first { $0.name == "CodeRabbit" }?.reporter, "coderabbitai[bot]")
     }
 }

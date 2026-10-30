@@ -76,6 +76,18 @@ extension WorkspaceManager {
                         guard let self else { return }
                         switch result {
                         case .failure(let error):
+                            // The thread to resume is gone (cleared, or from another machine): say so and start a new one.
+                            if method == "thread/resume", AgentErrorText.sessionGone(error.localizedDescription),
+                               self.codexServers[id] === client {
+                                self.codexServers[id] = nil
+                                client.stop()
+                                self.append(id, RunEvent(kind: .system, text: tr("ws.acp.noLoad", run.provider.displayName)))
+                                self.update(id) { $0.providerSessionID = nil }
+                                // The new thread starts from what happened so far.
+                                let waiting = prompt ?? self.warmPrompts.removeValue(forKey: id)
+                                return self.connectCodexServer(id, executable: executable,
+                                                               prompt: self.carryOverConversation(id, prompt: waiting))
+                            }
                             self.codexServerFailed(id, client, error, prompt: prompt ?? self.warmPrompts[id], executable: executable)
                         case .success(let response):
                             let threadID = (response.dictionary["thread"] as? [String: Any])?["id"] as? String ?? run.providerSessionID
@@ -171,7 +183,7 @@ extension WorkspaceManager {
         let nativeReady = run.provider == .claude
             ? processes[id]?.isRunning == true && questions[id] == nil
             : codexServers[id]?.turnID != nil
-        return SteerRoute.choose(run.provider.capabilities, nativeReady: nativeReady, active: run.status.isActive,
+        return SteerRoute.choose(run.provider.capabilities, nativeReady: nativeReady, active: run.status.isActive && turns[id] != nil,
                                  ending: turns[id]?.stopping == true || turns[id]?.finished == true,
                                  waitingOnYou: run.status == .waitingApproval || !(questions[id] ?? []).isEmpty)
     }
@@ -188,6 +200,8 @@ extension WorkspaceManager {
     /// Stops the running turn politely (`turn/interrupt`). False when this is not a Codex app-server session.
     func stopCodexServerTurn(_ id: UUID) -> Bool {
         guard let client = codexServers[id], run(id)?.status.isActive == true else { return false }
+        // Pressing Stop again changes nothing: the first one is still on its way.
+        if turns[id]?.stopping == true { return true }
         turns[id]?.stopping = true
         expireApprovals(id)
         questions[id] = nil
@@ -365,47 +379,15 @@ extension WorkspaceManager {
     func handleCodexServerEvent(_ event: CodexStreamEvent, id: UUID) {
         switch event {
         case .messageDelta(let item, let text):
-            finishLiveReasoning(id)
-            if let live = turns[id]?.liveTextID, turns[id]?.liveTextItem == item {
-                mutateEvent(id, live) { $0.text += text }
-            } else {
-                finishLiveText(id)
-                let event = RunEvent(kind: .assistant, text: text, state: .running)
-                turns[id]?.liveTextID = event.id
-                turns[id]?.liveTextItem = item
-                append(id, event)
-            }
+            feed(id, .textDelta(text, item: item))
         case .messageCompleted(let item, let text):
-            if let live = turns[id]?.liveTextID, turns[id]?.liveTextItem == item {
-                mutateEvent(id, live) { $0.text = text; $0.state = .done }
-                turns[id]?.liveTextID = nil
-                turns[id]?.liveTextItem = nil
-            } else {
-                finishLiveText(id)
-                append(id, RunEvent(kind: .assistant, text: text, state: .done))
-            }
+            feed(id, .text(text, item: item))
         case .reasoningDelta(let item, let text):
-            if let live = turns[id]?.liveReasoningID, turns[id]?.liveReasoningItem == item {
-                mutateEvent(id, live) { $0.text += text }
-            } else {
-                finishLiveReasoning(id)
-                let event = RunEvent(kind: .thinking, text: text, state: .running)
-                turns[id]?.liveReasoningID = event.id
-                turns[id]?.liveReasoningItem = item
-                append(id, event)
-            }
+            feed(id, .thinkingDelta(text, item: item))
         case .reasoningCompleted(let item, let text):
-            if let live = turns[id]?.liveReasoningID, turns[id]?.liveReasoningItem == item {
-                mutateEvent(id, live) { $0.text = text; $0.state = .done }
-                turns[id]?.liveReasoningID = nil
-                turns[id]?.liveReasoningItem = nil
-            } else {
-                append(id, RunEvent(kind: .thinking, text: text, state: .done))
-            }
+            feed(id, .thinking(text, item: item))
         case .commandOutput(let item, let delta):
-            if let eventID = turns[id]?.toolEvents[item] {
-                mutateEvent(id, eventID) { $0.output = RunEvent.clip(($0.output ?? "") + delta) }
-            }
+            feed(id, .toolUpdated(id: item, output: delta, appending: true))
         case .tokenUsage(let usage):
             codexTotals[id] = usage.total
             turns[id]?.lastContext = usage.last.context + usage.last.output
@@ -413,21 +395,19 @@ extension WorkspaceManager {
         case .turnFinished(let status, let error, let duration):
             finishCodexTurn(id, status: status, error: error, duration: duration)
         case .plan(let text):
-            finishLiveText(id)
+            pauseLive(id)
             append(id, RunEvent(kind: .assistant, text: text, tool: "plan", state: .done))
         case .tasks(let steps):
             setTasks(id, steps)
         case .subagentSpawned(let callID, let prompt, let model, let threads, let failed):
             // The same shape as Claude Code's Agent call, so the subagent bar shows Codex's subagents too.
-            guard turns[id]?.toolEvents[callID] == nil else { return }
-            finishLiveText(id)
+            guard turns[id]?.timeline.eventID(forCall: callID) == nil else { return }
             let input: [String: Any] = ["description": TimelinePresentation.headline(prompt, limit: 80), "prompt": prompt,
                                         "subagent_type": model ?? "codex"]
-            let event = RunEvent(kind: .tool, text: "Agent · " + TimelinePresentation.headline(prompt, limit: 80), tool: "Agent",
-                                 callID: callID, detail: ToolSummary.json(input), state: failed ? .failed : .running)
-            turns[id]?.toolEvents[callID] = event.id
-            for thread in threads { codexSubagents[id, default: [:]][thread] = event.id }
-            append(id, event)
+            feed(id, .toolStarted(AgentToolCall(id: callID, name: "Agent", title: "Agent · " + TimelinePresentation.headline(prompt, limit: 80),
+                                                detail: ToolSummary.json(input), input: JSONBox(input), state: failed ? .failed : .running)))
+            guard let eventID = turns[id]?.timeline.eventID(forCall: callID) else { return }
+            for thread in threads { codexSubagents[id, default: [:]][thread] = eventID }
         case .subagentStates(let states):
             for (thread, state) in states where state.isFinished {
                 guard let eventID = codexSubagents[id]?[thread] else { continue }
@@ -444,16 +424,8 @@ extension WorkspaceManager {
         }
     }
 
-    private func finishLiveReasoning(_ id: UUID) {
-        guard let live = turns[id]?.liveReasoningID else { return }
-        mutateEvent(id, live) { $0.state = .done }
-        turns[id]?.liveReasoningID = nil
-        turns[id]?.liveReasoningItem = nil
-    }
-
     private func finishCodexTurn(_ id: UUID, status: String, error: String?, duration: Double?) {
-        finishLiveText(id)
-        finishLiveReasoning(id)
+        pauseLive(id)
         let state = turns[id]
         // This turn's own tokens: the thread's total now minus the total when it started.
         var usage = TurnUsage()
@@ -547,8 +519,7 @@ extension WorkspaceManager {
             fallBackToExec(id, prompt: prompt, executable: executable)
             return
         }
-        finishLiveText(id)
-        finishLiveReasoning(id)
+        pauseLive(id)
         expireApprovals(id)
         questions[id] = nil
         turns[id] = nil
@@ -565,7 +536,7 @@ extension WorkspaceManager {
     }
 
     private func failCodexTurn(_ id: UUID, _ message: String) {
-        finishLiveText(id)
+        pauseLive(id)
         turns[id] = nil
         update(id) { $0.move(to: .failed, detail: message) }
         append(id, RunEvent(kind: .error, text: message))

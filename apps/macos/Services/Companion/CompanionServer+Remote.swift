@@ -10,8 +10,13 @@ extension CompanionServer {
     func launchOptions(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
         let workspace = app.workspace
         let settings = workspace.settings
-        let agents = launchableProviders(app).map {
-            LaunchOptions.Agent(id: $0.rawValue, name: $0.displayName, canPlan: $0.capabilities.planMode)
+        let agents = launchableProviders(app).map { provider in
+            // The models of the composer's menu ("" is the agent's own default), so the phone picks from the same list.
+            let models = app.models(for: provider).prefix(16).map {
+                LaunchOptions.Model(id: $0, name: CompanionPolicy.clip(app.modelName($0, for: provider), limit: 80))
+            }
+            return LaunchOptions.Agent(id: provider.rawValue, name: provider.displayName, canPlan: provider.capabilities.planMode,
+                                       models: Array(models), defaultModel: settings.model(for: provider))
         }
         let paths = recentProjects(settings)
         let infos = await withTaskGroup(of: ProjectInfo.self) { group in
@@ -42,9 +47,11 @@ extension CompanionServer {
         let settings = workspace.settings
         guard let launch = request.launch, let provider = RunProvider(rawValue: launch.agent),
               launchableProviders(app).contains(provider),
-              let task = CompanionPolicy.cleanMessage(launch.task) else {
+              let words = CompanionPolicy.cleanMessage(launch.task) else {
             return .failure(request.id, .badRequest)
         }
+        // Pictures from the phone go to the agent as paths below the words, as from the composer.
+        guard let task = CompanionImages.attach(request.images, to: words) else { return .failure(request.id, .badRequest) }
         // Only a folder the Mac already worked in: the phone cannot point an agent at an arbitrary path.
         let project = WorkspacePathPolicy.normalize(launch.project)
         guard recentProjects(settings).contains(where: { WorkspacePathPolicy.normalize($0) == project }) else {
@@ -62,7 +69,12 @@ extension CompanionServer {
         } else {
             config.profileID = connected.first?.id ?? app.profiles.preferredProfile(provider.kind).id
         }
-        config.model = settings.model(for: provider)
+        // A model from the phone only when it is one the composer offers this agent; else your default.
+        if let model = launch.model, app.models(for: provider).contains(model) {
+            config.model = model
+        } else {
+            config.model = settings.model(for: provider)
+        }
         config.effort = settings.effort(for: provider)
         config.mode = plan ? .plan : .agent
         config.permission = phonePermission(provider, preferred: settings.permission(for: provider), plan: plan)
@@ -98,7 +110,11 @@ extension CompanionServer {
     }
 
     private func recentProjects(_ settings: WorkspaceSettings) -> [String] {
-        settings.recentProjects.filter { FileManager.default.fileExists(atPath: $0) }
+        var seen = Set<String>()
+        return (settings.favoriteProjects + settings.recentProjects).filter { path in
+            let normalized = WorkspacePathPolicy.normalize(path)
+            return !normalized.isEmpty && seen.insert(normalized).inserted && FileManager.default.fileExists(atPath: normalized)
+        }
     }
 
     /// Your default for this agent, except "allow everything": a session started from a phone always keeps asking.
@@ -114,17 +130,67 @@ extension CompanionServer {
     /// A session's conversation: a Workspace session's timeline (read back from disk when it was released or never
     /// opened), or the transcript of an agent outside Nook (`CompanionAgents.timeline`).
     func timeline(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
-        if let session = request.session, CompanionAgents.handles(session) {
-            guard let entries = await CompanionAgents.timeline(app, session: session) else { return .failure(request.id, .unknownSession) }
-            return CompanionResponse(id: request.id, ok: true, timeline: CompanionPolicy.newestFitting(entries))
-        }
-        let workspace = app.workspace
-        guard let runID = request.session.flatMap(UUID.init(uuidString:)), workspace.run(runID) != nil else {
+        guard let session = request.session, let entries = await timelineEntries(session, app: app) else {
             return .failure(request.id, .unknownSession)
         }
+        return CompanionResponse(id: request.id, ok: true, timeline: entries, timelineSession: session)
+    }
+
+    /// The recent conversation of a session as the phone gets it, within one answer; nil for a session that is gone.
+    func timelineEntries(_ session: String, app: AppModel) async -> [TimelineEntry]? {
+        if CompanionAgents.handles(session) {
+            return await CompanionAgents.timeline(app, session: session).map { CompanionPolicy.newestFitting($0) }
+        }
+        let workspace = app.workspace
+        guard let runID = UUID(uuidString: session), workspace.run(runID) != nil else { return nil }
         workspace.loadTimeline(runID)
-        let entries = workspace.timeline(runID).suffix(160).compactMap(Self.entry)
-        return CompanionResponse(id: request.id, ok: true, timeline: CompanionPolicy.newestFitting(entries))
+        return CompanionPolicy.newestFitting(workspace.timeline(runID).suffix(160).compactMap(Self.entry))
+    }
+
+    // MARK: What a session changed
+
+    /// Every file a session changed in its folder, the most changed first, with its patch while they fit in one answer.
+    /// A session on another machine, or in a folder without Git, has none to show.
+    func diff(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
+        guard let session = request.session, let folder = sessionFolder(session, app: app) else {
+            return .failure(request.id, .unknownSession)
+        }
+        let git: GitService?
+        if let runID = UUID(uuidString: session), let run = app.workspace.run(runID) {
+            guard run.remote == nil else { return CompanionResponse(id: request.id, ok: true, diff: []) }
+            git = app.workspace.sessionGit(for: run)
+        } else {
+            git = app.workspace.gitService
+        }
+        guard let git, !folder.isEmpty else { return CompanionResponse(id: request.id, ok: true, diff: []) }
+        let files = await Task.detached(priority: .userInitiated) { () -> [DiffFileDigest] in
+            guard let status = try? git.status(folder) else { return [] }
+            let changed = status.files.sorted { ($0.added ?? 0) + ($0.removed ?? 0) > ($1.added ?? 0) + ($1.removed ?? 0) }
+            var total = 0
+            return changed.prefix(60).map { file in
+                var patch = try? git.diff(folder, file: file)
+                var truncated = false
+                if let text = patch {
+                    let room = min(DiffFileDigest.maxPatch, max(0, DiffFileDigest.maxTotal - total))
+                    if text.utf8.count > room {
+                        patch = room > 0 ? String(decoding: Data(text.utf8.prefix(room)), as: UTF8.self) : nil
+                        truncated = true
+                    }
+                    total += patch?.utf8.count ?? 0
+                }
+                return DiffFileDigest(path: file.path, kind: String(describing: file.kind), added: file.added, removed: file.removed,
+                                      patch: patch, truncated: truncated)
+            }
+        }.value
+        return CompanionResponse(id: request.id, ok: true, diff: files)
+    }
+
+    /// The folder a session works in: a session Nook runs, or an agent in a terminal (its working directory).
+    private func sessionFolder(_ session: String, app: AppModel) -> String? {
+        if let runID = UUID(uuidString: session), let run = app.workspace.run(runID) { return run.workingDirectory }
+        guard CompanionAgents.handles(session) else { return nil }
+        let key = String(session.dropFirst(CompanionAgents.terminalPrefix.count))
+        return app.hub.sessions.first { $0.id == key }?.cwd
     }
 
     /// What the phone shows of one event; thinking, approvals (shown as items) and turn results are left out.
@@ -135,7 +201,11 @@ extension CompanionServer {
         switch event.kind {
         case .user: kind = .user
         case .assistant: kind = .assistant
-        case .tool: kind = .tool
+        case .tool:
+            // What the step was about, as a terminal session's step says it ("npm test", not "Bash · npm test"), so the
+            // phone reads both alike.
+            kind = .tool
+            text = AgentToolStep(event: event).summary
         case .fileChange:
             kind = .change
             if text.isEmpty { text = event.detail ?? "" }
@@ -145,7 +215,8 @@ extension CompanionServer {
         case .thinking, .approval, .result: return nil
         }
         let clipped = CompanionPolicy.clip(text)
-        guard !clipped.isEmpty else { return nil }
+        // A step can be about nothing in particular (a task list): its tool alone says what it was.
+        guard !clipped.isEmpty || kind == .tool else { return nil }
         return TimelineEntry(id: event.id.uuidString, kind: kind, text: clipped, detail: detail.map { CompanionPolicy.clip($0, limit: 120) },
                              date: event.date.timeIntervalSince1970, failed: event.state == .failed)
     }

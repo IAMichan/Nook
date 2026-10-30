@@ -301,8 +301,8 @@ final class WorkspaceBridge: ObservableObject {
         lines.append("## Pull requests")
         if let remote = git.remote, let repo = GitHubRemote.repository(from: remote) {
             lines.append(GitHubPullRequests.isAvailable
-                ? "- \(repo): pull_request_create pushes the branch and opens the pull request with the user's GitHub connection, after their approval."
-                : "- \(repo): no GitHub connection in Nook; pull_request_create pushes the branch and opens GitHub's page for the user to finish, after their approval.")
+                ? "- \(repo): pull_request_create pushes the branch and opens the pull request with the user's GitHub connection, after their approval unless the session has full rights."
+                : "- \(repo): no GitHub connection in Nook; pull_request_create pushes the branch and opens GitHub's page for the user to finish, after their approval unless the session has full rights.")
         } else {
             lines.append("- this folder has no GitHub remote")
         }
@@ -318,7 +318,9 @@ final class WorkspaceBridge: ObservableObject {
             lines.append(caller.permission == .bypass
                 ? "- Commands run directly; dangerous ones are refused."
                 : "- Clearly harmless commands run directly; others wait for the user's approval; dangerous ones are refused.")
-            lines.append("- A pull request always waits for the user's approval.")
+            lines.append(caller.permission == .bypass
+                ? "- A pull request is pushed and opened directly."
+                : "- A pull request waits for the user's approval.")
         }
         return BridgeRPC.ToolResult(text: lines.joined(separator: "\n"))
     }
@@ -451,8 +453,8 @@ final class WorkspaceBridge: ObservableObject {
         }
         if case .refuse(let reason) = verdict(.browserOpen, caller) { return .error(Self.refusal(reason)) }
         let browser = BrowserStore.shared
-        // Seen as it opens: a small window to follow along when no browser page is in view.
-        BrowserPopup.shared.show()
+        // Seen as it opens, in the caller's own chat only: small in its bottom right corner (SessionBrowserCorner).
+        SessionBrowserOwner.shared.opened(by: caller)
         let failure = await browser.load(url, by: caller.agent)
         markUnseen(caller.directory, SessionTool.browser.rawValue)
         audit(.browserOpen, caller, url.absoluteString, failure ?? "geladen")
@@ -460,7 +462,7 @@ final class WorkspaceBridge: ObservableObject {
         let title = browser.webView.title ?? ""
         return BridgeRPC.ToolResult(text: "Opened \(browser.webView.url?.absoluteString ?? url.absoluteString) in Nook's browser"
                                     + (title.isEmpty ? "" : " · \(title)")
-                                    + ". The user can see it next to your session. Check it with browser_read or browser_screenshot.")
+                                    + ". The user sees it in the corner of your session's chat. Check it with browser_read or browser_screenshot.")
     }
 
     private func browserRead(_ caller: BridgeCaller) async throws -> BridgeRPC.ToolResult {
@@ -577,7 +579,8 @@ final class WorkspaceBridge: ObservableObject {
         guard base != branch else { throw NookError("You are on \(branch) itself. Work on a separate branch, then propose the pull request.") }
 
         let viaConnector = SourceForge.canCreate(forge)
-        var detail = "\(repo) · \(branch) → \(base)\(draft && viaConnector ? " · draft" : "")\n\n\(title)"
+        // Read as prose in the approval: the description is Markdown, the title above it in bold.
+        var detail = "\(repo) · `\(branch)` → `\(base)`\(draft && viaConnector ? " · draft" : "")\n\n**\(title)**"
         let clean = body.trimmingCharacters(in: .whitespacesAndNewlines)
         if !clean.isEmpty { detail += "\n\n" + clean }
         var notes = [tr("bridge.approval.prPush", branch, facts.remote)]

@@ -28,13 +28,42 @@ enum GitHubCILogs {
                 guard let job = try await get("/actions/jobs/\(jobID)") as? [String: Any] else {
                     throw NookError("GitHub returned an unexpected response.")
                 }
-                var log = CILog(steps: CILogParser.steps(job: job))
+                var log = CILogParser.log(job: job)
                 if let raw = await rawLog(repo: target.repo, jobID: jobID, token: token) {
                     let cleaned = CILogParser.clean(raw)
                     log.text = cleaned.text
                     log.omittedLines = cleaned.omitted
                 }
                 return log
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError
+    }
+
+    /// What a check that is not an Actions job has to say: a check run's own report and what the app behind the check
+    /// wrote on the pull request (all a commit status has). Read again by the view while the check still runs.
+    static func report(pullRequest url: URL, check: PullRequestCheck) async throws -> CICheckReport {
+        guard GitHubPullRequests.isAvailable, let target = GitHubPullRequests.parse(url) else { throw CloudHelp.notSetUp("GitHub") }
+        var lastError: Error = CloudHelp.notSetUp("GitHub")
+        for token in GitHubPullRequests.tokens {
+            let get = getter(repo: target.repo, token: token)
+            do {
+                var report = CICheckReport()
+                if let id = check.checkRunID {
+                    guard let run = try await get("/check-runs/\(id)") as? [String: Any] else {
+                        throw NookError("GitHub returned an unexpected response.")
+                    }
+                    let annotations = (try? await get("/check-runs/\(id)/annotations?per_page=100")) as? [[String: Any]]
+                    report = CILogParser.report(run: run, annotations: annotations ?? [])
+                }
+                if let reporter = check.reporter, reporter != "github-actions[bot]" {
+                    async let comments = (try? await get("/issues/\(target.number)/comments?per_page=100")) as? [[String: Any]]
+                    async let reviews = (try? await get("/pulls/\(target.number)/reviews?per_page=100")) as? [[String: Any]]
+                    report.notes = CILogParser.notes(comments: await comments ?? [], reviews: await reviews ?? [], reporter: reporter)
+                }
+                return report
             } catch {
                 lastError = error
             }

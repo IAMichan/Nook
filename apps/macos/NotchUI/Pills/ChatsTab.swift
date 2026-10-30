@@ -2,18 +2,11 @@ import SwiftUI
 import UniformTypeIdentifiers
 import Combine
 
-/// One chat in the Chats tab: a WhatsApp chat through the linked phone, or a chat collected from another app's
-/// notifications.
+/// One chat in the Chats tab, the same for every app: a chat in the shared inbox (`InboxThread`), whichever bridge or
+/// notification brought it (WhatsApp through the linked phone, Telegram, Slack, Messages, the chat helper's networks…).
 struct ChatsEntry: Identifiable, Equatable {
-    enum Origin: Equatable {
-        /// The chat's JID at the linked phone.
-        case whatsApp(String)
-        /// The `InboxThread` id.
-        case captured(String)
-    }
-
+    /// The `InboxThread` id.
     let id: String
-    let origin: Origin
     /// The app's source id ("telegram").
     let app: String
     let name: String
@@ -32,19 +25,18 @@ struct ChatsEntry: Identifiable, Equatable {
     var ticks: BubbleTicks? = nil
     /// A group's other people by name, when its app lists them: the chat's header says how many and lists them.
     var members: [String]? = nil
-    /// The phone number behind a private WhatsApp chat, to find its photo in Contacts. Nil for a group, a chat from the
-    /// chat helper and a chat collected from notifications, which are matched by name.
+    /// The phone number behind a private chat, to find its photo in Contacts, when its app gives one. Nil for a group
+    /// and for a chat matched by name.
     var handle: String? = nil
     /// The chat's own picture from its app (a group's, a channel's, a person's), which goes before Contacts.
     var avatar: String? = nil
+    /// The account the chat is in, by its name, while its app has more than one linked; nil otherwise.
+    var account: String? = nil
+    /// The chat's own id in its app, when its app gives one (`InboxThread.chatID`).
+    var chatID: String? = nil
 
     /// New messages here.
     var unread: Int { read.count }
-    /// The JID of a chat through the phone's WhatsApp link; nil for any other chat.
-    var whatsAppChat: String? {
-        if case .whatsApp(let jid) = origin { return jid }
-        return nil
-    }
     /// Read in Nook but still unread in the app itself: "Mark as read in <app>" can still pass it on.
     var waitsInApp: Bool { read == .readInNook }
     /// Whether the row shows where the chat stands: not while the newest message is yours and nothing waits.
@@ -61,89 +53,71 @@ struct ChatsFocus: Equatable {
 }
 
 extension ChatsEntry {
-    /// Every chat, newest first. Of WhatsApp every chat you did not hide, quiet groups included: they are all here.
-    /// The Chats tab and the iPhone companion read the same list.
+    /// Every chat that shows (`ChatCaptureService.isShown`), newest first, the same way for every app. The Chats tab and
+    /// the iPhone companion read the same list.
     @MainActor
-    static func all(whatsApp: WhatsAppLink, capture: ChatCaptureService) -> [ChatsEntry] {
-        var entries: [ChatsEntry] = []
-        // WhatsApp comes from one place only: the chat helper once it links it (as Beeper did), else the phone's link.
-        let helperWhatsApp = ChatHelper.linked("whatsapp")
-        let linkedWhatsApp = whatsApp.isConnected && !helperWhatsApp
-        if linkedWhatsApp {
-            for conversation in whatsApp.inbox.sorted where !whatsApp.filters.ignored.contains(conversation.id) {
-                // Who is who by your Contacts and the phone's: names instead of numbers.
-                var names = conversation.isGroup ? whatsApp.memberIndex(conversation) : nil
-                let preview = conversation.messages.last.map { line($0, sender: $0.fromMe ? "" : names?.name($0.sender) ?? "") } ?? ""
-                let newest = conversation.messages.last
-                let receipts = ChatReceipts.filled(conversation.messages.map { ($0.fromMe, $0.receipt) },
-                                                   private: !conversation.isGroup)
-                let ticks = receipts.last.flatMap { $0 }.map(BubbleTicks.init)
-                entries.append(ChatsEntry(id: "wa|" + conversation.id, origin: .whatsApp(conversation.id), app: "whatsapp",
-                                          name: conversation.name, preview: preview, last: conversation.lastActivity,
-                                          read: whatsApp.readState(conversation.id), lastIsMine: newest?.fromMe ?? false,
-                                          readKnown: whatsApp.readIsKnown(conversation.id),
-                                          ticks: ticks, members: conversation.members == nil ? nil : names?.all,
-                                          handle: handle(conversation.id), avatar: whatsApp.avatars[conversation.id]))
-            }
-            // Every other chat on the phone, also the ones that wrote nothing since Nook was linked: their messages load
-            // when one is opened.
-            var listed = Set(entries.map(\.id))
-            for chat in whatsApp.knownChats
-            where WAJID.kind(chat.jid) != .status && !whatsApp.filters.ignored.contains(chat.jid) {
-                let id = "wa|" + chat.jid
-                guard listed.insert(id).inserted else { continue }
-                entries.append(ChatsEntry(id: id, origin: .whatsApp(chat.jid), app: "whatsapp",
-                                          name: whatsApp.chatName(chat.jid, fallback: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name),
-                                          preview: "", last: chat.last, read: whatsApp.readState(chat.jid),
-                                          readKnown: whatsApp.readIsKnown(chat.jid), handle: handle(chat.jid),
-                                          avatar: whatsApp.avatars[chat.jid]))
-            }
-        }
-        // While the phone is linked every WhatsApp chat comes from the link, with its history: what notifications (or an
-        // import) collected before stays out of the list, or each chat would show twice.
-        // One chat, one card: an app that names the same chat twice (a chat without a topic is named after whoever wrote
-        // last) leaves two threads holding the same messages; the fuller one stays.
-        var newestSeen: [String: Int] = [:]
-        let threads = capture.inbox.sorted.filter { $0.app != "whatsapp" || !linkedWhatsApp }
+    static func all(capture: ChatCaptureService) -> [ChatsEntry] {
+        // A message you deleted for yourself is no chat's newest line either.
+        let hidden = ChatHiddenMessages.shared
+        // One chat, one row: an app that names the same chat twice (a chat without a topic is named after whoever wrote
+        // last) leaves two threads holding the same messages. The one a bridge reads stays (it keeps getting the new
+        // messages and the app's own name), else the fuller one. A chat its app knows by an id is never named twice, and
+        // two of them may share a message (one group in two linked WhatsApp accounts): they stay two rows.
+        var keeper: [String: InboxThread] = [:]
+        let threads = capture.inbox.sorted.filter(capture.isShown)
         for thread in threads {
-            guard let id = thread.messages.last?.id else { continue }
+            guard thread.chatID == nil, let id = thread.messages.last?.id else { continue }
             let key = thread.app + "|" + id
-            newestSeen[key] = max(newestSeen[key] ?? 0, thread.messages.count)
+            if let kept = keeper[key], !ChatsEntry.isBetter(thread, than: kept) { continue }
+            keeper[key] = thread
         }
-        var shownNewest = Set<String>()
-        for thread in threads where capture.sources.isOn(thread.app) {
-            if let id = thread.messages.last?.id {
-                let key = thread.app + "|" + id
-                guard thread.messages.count == newestSeen[key], shownNewest.insert(key).inserted else { continue }
-            }
-            let preview = thread.messages.last.map(line) ?? ""
-            let newest = thread.messages.last
-            let receipts = ChatReceipts.filled(thread.messages.map { ($0.isMine, $0.receipt) }, private: thread.isPrivate)
-            let ticks = receipts.last.flatMap { $0 }.map(BubbleTicks.init)
-            entries.append(ChatsEntry(id: thread.id, origin: .captured(thread.id), app: thread.app, name: thread.name,
-                                      preview: preview, last: thread.last, read: thread.readState,
-                                      lastIsMine: newest?.isMine ?? false, ticks: ticks,
-                                      members: thread.members, avatar: thread.avatar))
+        var entries: [ChatsEntry] = []
+        for thread in threads {
+            if thread.chatID == nil, let id = thread.messages.last?.id, keeper[thread.app + "|" + id]?.id != thread.id { continue }
+            entries.append(entry(thread, hidden: hidden))
         }
         return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
     }
 
-    /// A WhatsApp message as one line in the list, with who wrote it in a group ("Jan: dinner?"; `sender` is empty in a
-    /// private chat). A photo, video or
-    /// document says what came with it: its caption when it has one ("You: on the beach"), else its kind ("You: Photo").
+    /// One chat as a row.
     @MainActor
-    static func line(_ message: WAMessage, sender: String) -> String {
-        let caption = ChatFormat.plain(message.text)
-        let file = AppModel.whatsAppFileLabel(message.media)
-        let text = file.map { ChatFormat.isBlank(caption) ? $0 : caption } ?? ChatFormat.plain(AppModel.whatsAppText(message))
-        let who = message.fromMe ? tr("chat.you") : sender
-        return who.isEmpty ? text : "\(who): \(text)"
+    static func entry(_ thread: InboxThread, hidden: ChatHiddenMessages = .shared) -> ChatsEntry {
+        let newest = hidden.visible(thread.messages, in: thread.id) { $0.id }.last
+        // Someone's emoji on a message after the newest one says more than that message itself.
+        let reaction = thread.newestReaction
+        let preview = reaction.map { $0.line(who: thread.isGroup ? shortSender($0.person) : "") } ?? newest.map(line) ?? ""
+        let receipts = ChatReceipts.filled(thread.messages.map { ($0.isMine, $0.receipt) }, private: thread.isPrivate)
+        let ticks = reaction != nil ? nil
+            : ChatReceipts.newest(receipts, ids: thread.messages.map(\.id), shown: newest?.id).map(BubbleTicks.init)
+        // A chat that was read in Nook is known to stand where Nook says, whatever its app tells.
+        let readKnown = thread.readKnown != false || thread.readInNook != nil
+        return ChatsEntry(id: thread.id, app: thread.app, name: thread.name, preview: preview,
+                          last: max(thread.last, reaction?.date ?? .distantPast), read: thread.readState,
+                          lastIsMine: reaction == nil && newest?.isMine ?? false, readKnown: readKnown, ticks: ticks,
+                          members: thread.members, handle: thread.handle, avatar: thread.avatar, account: thread.account,
+                          chatID: thread.chatID)
     }
 
-    /// A message of any other app as one line in the list.
+    /// Of two threads holding the same newest message, the one to show: the one a bridge reads, else the fuller one.
+    static func isBetter(_ thread: InboxThread, than other: InboxThread) -> Bool {
+        let (bridged, otherBridged) = (thread.bridged == true, other.bridged == true)
+        if bridged != otherBridged { return bridged }
+        return thread.messages.count > other.messages.count
+    }
+
+    /// Who wrote in a group, as a chat list says it: the first name ("Henco" for "Henco Hendriksen"), so the message
+    /// itself keeps the room. A phone number or a one-word name stays whole.
+    static func shortSender(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.hasPrefix("+"), let first = trimmed.split(separator: " ").first, first.count >= 2,
+              first.count < trimmed.count, first.first?.isLetter == true else { return trimmed }
+        return String(first)
+    }
+
+    /// A message as one line in the list, with who wrote it in a group ("Jan: dinner?").
     @MainActor
     static func line(_ message: InboxMessage) -> String {
-        let who = message.isMine ? tr("chat.you") : message.sender
+        let who = message.isMine ? tr("chat.you") : shortSender(message.sender)
         return who.isEmpty ? message.summary : "\(who): \(message.summary)"
     }
 
@@ -151,59 +125,44 @@ extension ChatsEntry {
     /// messages that holds `needle`, which then shows as its line. Every message Nook has of it counts, not only the
     /// newest, so "dinner" finds the Instagram chat where it came up last week. Nil when nothing in it matches.
     @MainActor
-    func found(_ needle: String, whatsApp: WhatsAppLink, capture: ChatCaptureService) -> ChatsEntry? {
+    func found(_ needle: String, capture: ChatCaptureService) -> ChatsEntry? {
         if name.localizedCaseInsensitiveContains(needle) || preview.localizedCaseInsensitiveContains(needle)
             || (members ?? []).contains(where: { $0.localizedCaseInsensitiveContains(needle) }) {
             return self
         }
-        let match: String?
-        switch origin {
-        case .whatsApp(let jid):
-            guard let conversation = whatsApp.inbox.conversations[jid] else { return nil }
-            // Found by who wrote it as the chat shows them: a saved contact's name, also when they set another.
-            var names = conversation.isGroup ? whatsApp.memberIndex(conversation) : nil
-            match = conversation.messages.last { message in
-                AppModel.whatsAppText(message).localizedCaseInsensitiveContains(needle)
-                    || message.senderName.localizedCaseInsensitiveContains(needle)
-                    || (!message.fromMe && names?.name(message.sender).localizedCaseInsensitiveContains(needle) == true)
-            }.map { Self.line($0, sender: $0.fromMe ? "" : names?.name($0.sender) ?? "") }
-        case .captured(let id):
-            guard let thread = capture.inbox.threads[id] else { return nil }
-            match = thread.messages.last { message in
-                message.summary.localizedCaseInsensitiveContains(needle) || message.sender.localizedCaseInsensitiveContains(needle)
-            }.map(Self.line)
-        }
+        guard let thread = capture.inbox.threads[id] else { return nil }
+        let match = thread.messages.last { message in
+            message.summary.localizedCaseInsensitiveContains(needle) || message.sender.localizedCaseInsensitiveContains(needle)
+        }.map(Self.line)
         guard let match else { return nil }
         var entry = self
         entry.preview = match
         return entry
     }
-
-    /// A private WhatsApp chat's phone number; nil for groups and channels, which have none.
-    static func handle(_ jid: String) -> String? {
-        WAJID.kind(jid) == .person ? jid : nil
-    }
 }
 
 /// `ChatsEntry.all`, made once and asked many times: the tab asks for it a dozen times while it draws (the list, the
-/// filters, the counts, the open chat), and making it goes through every chat. Forgotten as soon as WhatsApp or the other
-/// chats change, and once the redraw is over, so it is never older than what it is made of.
+/// filters, the counts, the open chat), and making it goes through every chat. Kept across redraws and forgotten as soon
+/// as something it is made of changes (WhatsApp, the other chats, the chat helper's links, the language), so a redraw
+/// for anything else (the panel, contact photos, the app model) does not go through every chat again.
 @MainActor
 final class ChatsEntryMemo {
     private var entries: [ChatsEntry]?
     private var watching: [AnyCancellable] = []
 
-    func entries(whatsApp: WhatsAppLink, capture: ChatCaptureService) -> [ChatsEntry] {
+    func entries(capture: ChatCaptureService) -> [ChatsEntry] {
         if let entries { return entries }
         if watching.isEmpty {
-            watching = [
-                whatsApp.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.entries = nil } },
-                capture.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.entries = nil } },
+            // Which chats show also follows the linked WhatsApp accounts and the chats you hid.
+            let changes: [ObservableObjectPublisher] = [
+                WhatsAppAccounts.shared.objectWillChange, capture.objectWillChange, ChatHelper.shared.objectWillChange,
+                ChatLinker.shared.objectWillChange, I18n.shared.objectWillChange, ChatHiddenMessages.shared.objectWillChange,
+                ChatNoticeRulesStore.shared.objectWillChange,
             ]
+            watching = changes.map { $0.sink { [weak self] _ in MainActor.assumeIsolated { self?.entries = nil } } }
         }
-        let made = ChatsEntry.all(whatsApp: whatsApp, capture: capture)
+        let made = ChatsEntry.all(capture: capture)
         entries = made
-        DispatchQueue.main.async { [weak self] in self?.entries = nil }
         return made
     }
 }
@@ -222,8 +181,9 @@ final class ChatsUnreadDot: ObservableObject {
     private init() {
         lit = ChatsTab.unread > 0
         watching = [
-            WhatsAppLink.shared.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.recount() } },
+            WhatsAppAccounts.shared.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.recount() } },
             ChatCaptureService.shared.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.recount() } },
+            ChatNoticeRulesStore.shared.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.recount() } },
         ]
     }
 
@@ -246,20 +206,30 @@ final class ChatsUnreadDot: ObservableObject {
 @MainActor
 final class ChatBubblesMemo {
     private enum Source: Equatable {
-        case whatsApp(WAConversation?, previews: Int)
-        case captured(InboxThread?)
+        case thread(InboxThread?, thumbnails: Int)
     }
 
     private var source: Source?
     private var language: AppLanguage?
     private var bubbles: [ChatBubble] = []
 
-    func whatsApp(_ conversation: WAConversation?, previews: Int) -> [ChatBubble] {
-        remembered(.whatsApp(conversation, previews: previews)) { conversation.map { AppModel.whatsAppBubbles($0) } ?? [] }
+    /// The memos of the chats opened last, so going back to one shows it at once instead of making its bubbles again.
+    private static var recent: [(chat: String, memo: ChatBubblesMemo)] = []
+    private static let recentCount = 8
+
+    /// The memo of `chat`, the one it had when it was open lately.
+    static func kept(for chat: String) -> ChatBubblesMemo {
+        let memo = recent.first { $0.chat == chat }?.memo ?? ChatBubblesMemo()
+        recent.removeAll { $0.chat == chat }
+        recent.insert((chat, memo), at: 0)
+        if recent.count > recentCount { recent.removeLast() }
+        return memo
     }
 
-    func captured(_ thread: InboxThread?, make: (InboxThread?) -> [ChatBubble]) -> [ChatBubble] {
-        remembered(.captured(thread)) { make(thread) }
+    /// The chat's bubbles, made again when the chat, the pictures of its files (`ChatFileThumbnails`) or the language
+    /// changed.
+    func bubbles(_ thread: InboxThread?, thumbnails: Int, make: (InboxThread?) -> [ChatBubble]) -> [ChatBubble] {
+        remembered(.thread(thread, thumbnails: thumbnails)) { make(thread) }
     }
 
     private func remembered(_ source: Source, make: () -> [ChatBubble]) -> [ChatBubble] {
@@ -281,6 +251,7 @@ final class ChatsShownMemo {
         var needle: String
         var view: ChatsView
         var filter: String?
+        var account: String?
         var selection: String?
         /// The groups go by day ("Today", "Yesterday"), so a new day sorts again.
         var day: Date
@@ -288,14 +259,44 @@ final class ChatsShownMemo {
 
     private var key: Key?
     private var value: [ChatsEntry] = []
+    /// `value` per group, in order, made with it.
+    private(set) var sections: [ChatsSection] = []
 
-    func shown(all: [ChatsEntry], needle: String, view: ChatsView, filter: String?, selection: String?,
+    func shown(all: [ChatsEntry], needle: String, view: ChatsView, filter: String?, account: String?, selection: String?,
                make: () -> [ChatsEntry]) -> [ChatsEntry] {
-        let wanted = Key(all: all, needle: needle, view: view, filter: filter, selection: selection,
+        let wanted = Key(all: all, needle: needle, view: view, filter: filter, account: account, selection: selection,
                          day: Calendar.current.startOfDay(for: Date()))
         if key == wanted { return value }
         value = make()
         key = wanted
+        let now = Date()
+        sections = []
+        for entry in value {
+            let group = ChatsGroup.of(entry, now: now)
+            if sections.last?.group == group { sections[sections.count - 1].entries.append(entry) }
+            else { sections.append(ChatsSection(group: group, entries: [entry])) }
+        }
+        return value
+    }
+}
+
+/// The sidebar's counts (chats per view, new chats per app and per account), made again only when the chats or the
+/// chosen app or account changed: the tab redraws for much else (a photo that came in, the panel around it).
+@MainActor
+final class ChatsCountsMemo {
+    struct Counts {
+        var views: [ChatsView: Int]
+        var newByApp: [String: Int]
+        var newByAccount: [String: Int]
+    }
+
+    private var key: (all: [ChatsEntry], filter: String?, account: String?)?
+    private var value = Counts(views: [:], newByApp: [:], newByAccount: [:])
+
+    func counts(all: [ChatsEntry], filter: String?, account: String?, make: () -> Counts) -> Counts {
+        if let key, key.filter == filter, key.account == account, key.all == all { return value }
+        value = make()
+        key = (all, filter, account)
         return value
     }
 }
@@ -311,44 +312,66 @@ struct ChatsTab: View {
     /// Shows the panel footer at the foot of the leftmost column (under the sidebar's views and apps), where Agents has it
     /// under its sessions, so the refresh and update button sits in the same place on every tab. A footer page (pull requests, usage) opens on Agents through it.
     var openOnAgents: ((String) -> Void)?
+    /// In the main window rather than the notch: each has its own open chat, read only while that one is in sight.
+    var inWindow = false
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var capture = ChatCaptureService.shared
-    @ObservedObject private var whatsApp = WhatsAppLink.shared
+    @ObservedObject private var whatsApp = WhatsAppAccounts.shared
     @ObservedObject private var photos = ContactPhotos.shared
     /// The open chat: the one you opened last, also after the tab was closed or Nook restarted; nil shows none.
     @State private var selection: String? = ChatsTab.lastOpened
     /// One app's chats only (its source id), or all.
     @State private var filter: String?
+    /// Within the chosen app, one of its accounts only (by its name), while the app has chats in more than one.
+    @State private var account: String?
     /// Which chats the list shows by where they stand; the chat you opened stays while you read it.
     @AppStorage("nook.chats.view") private var view: ChatsView = .all
     @State private var query = ""
     /// The groups folded shut (a click on their header); a search shows every group open.
     @State private var collapsed: Set<ChatsGroup> = []
     @AppStorage("nook.chats.listWidth") private var listWidth = PanelLayout.chatsList
-    /// Settings › Chats: opening a chat reads it in Nook. On by default; the app itself hears it only from your click.
+    /// How wide the sidebar is after you dragged its line, like every other line between panels; 0 follows the panel
+    /// (a rail when it is narrow). A double-click on the line goes back to that. Remembered.
+    @AppStorage("nook.chats.sidebarWidth") private var sidebarChoice: Double = 0
+    @State private var sidebarDragStart: Double?
+    /// Settings › Connections: opening a chat reads it in Nook. On by default; the app itself hears it only from your click.
     @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
     @State private var totalWidth: Double = 0
     @State private var entriesMemo = ChatsEntryMemo()
     @State private var shownMemo = ChatsShownMemo()
+    @State private var countsMemo = ChatsCountsMemo()
 
     static let readOnOpenKey = "nook.chats.readOnOpen"
+    /// The apps Nook can link so that it writes in their chats: through its chat helper, or a bridge of its own.
+    static let linkableApps = ChatHelper.apps.union(["teams", "snapchat"])
 
     /// The chat you opened last, kept for the next time the tab opens.
     static var lastOpened: String? {
-        get { UserDefaults.standard.string(forKey: "nook.chats.lastOpened") }
+        get { UserDefaults.standard.string(forKey: "nook.chats.lastOpened").map(ChatIDMigration.current) }
         set { UserDefaults.standard.set(newValue, forKey: "nook.chats.lastOpened") }
     }
 
     /// Unread messages in every chat, for the dot on the tab.
     @MainActor
     static var unread: Int {
-        let link = WhatsAppLink.shared
-        return ChatCaptureService.shared.inbox.totalUnread + (link.isConnected ? link.visibleUnread : 0)
+        ChatCaptureService.shared.visibleUnread
     }
 
     /// The sidebar folds to a rail of icons when the panel is narrow, so the list and the chat keep their room.
-    private var compactSidebar: Bool { totalWidth > 0 && totalWidth < PanelLayout.chatsSidebarRoom }
-    private var sidebarWidth: Double { Double(compactSidebar ? PanelLayout.chatsRail : PanelLayout.chatsSidebar) }
+    /// Dragged narrower than `chatsSidebarFold`, it is the rail too.
+    private var compactSidebar: Bool {
+        if sidebarChoice > 0 { return sidebarChoice < PanelLayout.chatsSidebarFold }
+        return totalWidth > 0 && totalWidth < PanelLayout.chatsSidebarRoom
+    }
+    private var sidebarWidth: Double {
+        if compactSidebar { return Double(PanelLayout.chatsRail) }
+        guard sidebarChoice > 0 else { return Double(PanelLayout.chatsSidebar) }
+        // However wide you made it, the list keeps its narrowest width beside it.
+        let room = totalWidth > 0 ? totalWidth - PanelLayout.minimumList - PanelSplit.handle : PanelLayout.chatsSidebarMax
+        return max(PanelLayout.chatsSidebarFold, min(sidebarChoice, PanelLayout.chatsSidebarMax, room))
+    }
+    /// Too narrow for the list and a chat side by side: one of them at a time (`PanelLayout.stacks`).
+    private var stacked: Bool { PanelLayout.stacks(totalWidth - sidebarWidth) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
@@ -360,42 +383,48 @@ struct ChatsTab: View {
                 if showsFooter { footer.frame(width: min(listWidth, max(totalWidth, PanelLayout.minimumList))) }
             } else {
                 HStack(alignment: .top, spacing: 0) {
-                    sidebar
-                    NookDivider(vertical: true)
-                    // The same split as the Agents tab: a list you can widen, a line, and the open chat beside it.
-                    list
-                        .padding(.leading, NookTheme.Spacing.md)
-                        .padding(.trailing, NookTheme.Spacing.xs)
-                        .resizablePanel(width: $listWidth, defaultWidth: PanelLayout.chatsList, minimum: PanelLayout.minimumList,
-                                        available: max(totalWidth - sidebarWidth, 0),
-                                        rest: PanelLayout.minimumConversation + PanelSplit.handle,
-                                        edge: .trailing, divider: true)
-                    Group {
-                        if let current {
-                            ChatsDetail(entry: current, photo: photo(current), capture: capture, whatsApp: whatsApp,
-                                        onMarkUnread: { markUnread(current) }, onClose: closeChat)
-                                .id(current.id)
-                        } else {
-                            // No chat open (none picked yet, closed with Escape, or not in what the list shows).
-                            VStack(spacing: NookTheme.Spacing.sm) {
-                                Image(systemName: "bubble.left.and.bubble.right")
-                                    .font(NookTheme.font(26, .light))
-                                    .foregroundStyle(NookTheme.textMuted)
-                                    .accessibilityHidden(true)
-                                Text(tr("chats.placeholder"))
-                                    .font(NookTheme.TextStyle.body)
-                                    .foregroundStyle(NookTheme.textSecondary)
-                                Text(tr("chats.placeholderDetail"))
-                                    .font(NookTheme.TextStyle.detail)
-                                    .foregroundStyle(NookTheme.textTertiary)
-                                    .multilineTextAlignment(.center)
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        }
+                    // Too narrow for both (split view, a small window): the open chat over the whole width with a back
+                    // button, else the sidebar and the list.
+                    if !stacked || current == nil {
+                        sidebar
+                        sidebarHandle
+                        // The same split as the Agents tab: a list you can widen, a line, and the open chat beside it.
+                        list
+                            .padding(.leading, NookTheme.Spacing.md)
+                            .listPanel(stacked: stacked, width: $listWidth, defaultWidth: PanelLayout.chatsList,
+                                       available: max(totalWidth - sidebarWidth, 0),
+                                       rest: PanelLayout.minimumConversation + PanelSplit.handle)
                     }
-                    .padding(.leading, NookTheme.Spacing.lg)
-                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    if !stacked || current != nil {
+                        Group {
+                            if let current {
+                                ChatsDetail(entry: current, photo: photo(current), capture: capture,
+                                            onMarkUnread: { markUnread(current) }, onClose: closeChat,
+                                            onBack: stacked ? closeChat : nil)
+                                    .id(current.id)
+                            } else {
+                                // No chat open (none picked yet, closed with Escape, or not in what the list shows).
+                                VStack(spacing: NookTheme.Spacing.sm) {
+                                    Image(systemName: "bubble.left.and.bubble.right")
+                                        .font(NookTheme.font(26, .light))
+                                        .foregroundStyle(NookTheme.textMuted)
+                                        .accessibilityHidden(true)
+                                    Text(tr("chats.placeholder"))
+                                        .font(NookTheme.TextStyle.body)
+                                        .foregroundStyle(NookTheme.textSecondary)
+                                    Text(tr("chats.placeholderDetail"))
+                                        .font(NookTheme.TextStyle.detail)
+                                        .foregroundStyle(NookTheme.textTertiary)
+                                        .multilineTextAlignment(.center)
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
+                        }
+                        .padding(.leading, stacked ? 0 : NookTheme.Spacing.lg)
+                        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    }
                 }
+                .animation(NookTheme.reveal, value: stacked && current != nil)
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -404,25 +433,34 @@ struct ChatsTab: View {
             takeFocus()
             photos.refresh()
         }
-        // The pictures of the WhatsApp chats in the list, newest first, as their app shows them.
-        // Again once the list of chats on the phone (and its channels) came in.
-        .task(id: "\(whatsApp.isConnected) \(whatsApp.knownChats.count)") {
-            await whatsApp.loadAvatars(all.filter { $0.app == "whatsapp" }.prefix(60).compactMap { entry in
-                if case .whatsApp(let jid) = entry.origin { return jid }
-                return nil
-            })
+        // The pictures of the chats in the list whose app gives them on request, newest first, as their app shows them.
+        // Again once a linked account's list of chats came in. Only once the switch to this tab has settled, as on Agents.
+        .task(id: whatsApp.connected.map { "\($0.account) \($0.knownChats.count)" }.joined(separator: ",")) {
+            try? await Task.sleep(for: NookTheme.tabSettle)
+            guard !Task.isCancelled else { return }
+            await app.loadChatAvatars(all)
         }
+        // ⌘⇧[ and ⌘⇧] go to the chat above or below in the list, as they go through sessions on Agents.
+        .keyCommands(["session.previous": { step(-1) }, "session.next": { step(1) }], enabled: !all.isEmpty)
         .onChange(of: viewModel.chatsFocus) { _, _ in takeFocus() }
+        // Another app (or none) has accounts of its own: the account chosen before no longer applies.
+        .onChange(of: filter) { _, _ in account = nil }
         .onChange(of: selection) { _, id in
             ChatsTab.lastOpened = id
         }
         // With "Read in Nook when opened" on, a chat you open is read in Nook, and so is what comes in while it is open:
         // its badge goes and stays gone after a restart. The app itself (and whoever wrote) hears nothing until you
         // choose "Mark as read in <app>". The same for every app.
-        .onChange(of: current.map { "\($0.id) \($0.unread)" }, initial: true) { _, _ in
-            guard readOnOpen, let entry = current, entry.read.isUnread else { return }
-            app.markChatReadInNook(entry)
-        }
+        .onChange(of: current.map { "\($0.id) \($0.unread)" }, initial: true) { _, _ in readOpenChat() }
+        // The main window that opened behind the app you were in (at login) is read once you come to it.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in readOpenChat() }
+    }
+
+    /// Reads the open chat in Nook, only while you can be looking at this one: in the open notch, or in the main window
+    /// while that is in front. A window that opened behind the app you are in leaves it unread.
+    private func readOpenChat() {
+        guard readOnOpen, app.viewModel.isShowing(.inbox, inWindow: inWindow), let entry = current, entry.read.isUnread else { return }
+        app.markChatReadInNook(entry)
     }
 
     private var showsFooter: Bool { openOnAgents != nil && !app.demoMode }
@@ -433,6 +471,17 @@ struct ChatsTab: View {
             PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() }, history: app.history,
                         vertical: compactSidebar && !all.isEmpty)
         }
+    }
+
+    /// Opens the chat `offset` rows from the open one in the list (the first one when none is open). False at either end.
+    private func step(_ offset: Int) -> Bool {
+        let rows = shown.filter { searching || !collapsed.contains(ChatsGroup.of($0, now: Date())) }
+        guard !rows.isEmpty else { return false }
+        let index = selection.flatMap { id in rows.firstIndex { $0.id == id } }
+        let next = index.map { $0 + offset } ?? (offset > 0 ? 0 : rows.count - 1)
+        guard rows.indices.contains(next) else { return false }
+        selection = rows[next].id
+        return true
     }
 
     /// Escape (see `ChatsDetail`): the open chat closes; the list stays.
@@ -453,16 +502,17 @@ struct ChatsTab: View {
         guard let focus = viewModel.chatsFocus else { return }
         viewModel.chatsFocus = nil
         filter = focus.app
+        account = nil
         view = .all
         query = focus.query
-        selection = focus.chat
+        selection = focus.chat.map(ChatIDMigration.current)
         collapsed = []
     }
 
     // MARK: The chats
 
     /// Every chat, newest first, as `ChatsEntry.all` lists them: made once per redraw (see `ChatsEntryMemo`).
-    private var all: [ChatsEntry] { entriesMemo.entries(whatsApp: whatsApp, capture: capture) }
+    private var all: [ChatsEntry] { entriesMemo.entries(capture: capture) }
 
     private func photo(_ entry: ChatsEntry) -> NSImage? {
         // Straight to the image cache: a file check first cost a disk lookup per row on every redraw of the list. A
@@ -473,20 +523,51 @@ struct ChatsTab: View {
         return photos.photo(handle: entry.handle, name: entry.name)
     }
 
-    /// The chats of the chosen app (or every app), before the view and the search narrow them.
-    private var inApp: [ChatsEntry] { filter.map { app in all.filter { $0.app == app } } ?? all }
+    /// The chats of the chosen app (or every app), and of its chosen account, before the view and the search narrow them.
+    private var inApp: [ChatsEntry] {
+        guard let filter else { return all }
+        let chosen = shownAccount
+        return all.filter { $0.app == filter && (chosen == nil || $0.account == chosen) }
+    }
+
+    /// The accounts of the chosen app that have chats here, by name, while there is more than one; empty otherwise.
+    /// The same for every app whose chats say which account they are in (WhatsApp with several phones linked).
+    private var accounts: [String] {
+        guard let filter else { return [] }
+        let names = Set(all.lazy.filter { $0.app == filter }.compactMap(\.account))
+        return names.count > 1 ? names.sorted { $0.localizedStandardCompare($1) == .orderedAscending } : []
+    }
+
+    /// The account the list narrows to: the chosen one, as long as the chosen app still has chats in it.
+    private var shownAccount: String? { account.flatMap { accounts.contains($0) ? $0 : nil } }
+
+    /// Chats with something new per account of the chosen app.
+    private var newByAccount: [String: Int] { counts.newByAccount }
+
+    private var counts: ChatsCountsMemo.Counts {
+        countsMemo.counts(all: all, filter: filter, account: shownAccount) {
+            ChatsCountsMemo.Counts(views: makeViewCounts(), newByApp: makeNewByApp(), newByAccount: makeNewByAccount())
+        }
+    }
+
+    private func makeNewByAccount() -> [String: Int] {
+        guard let filter else { return [:] }
+        let fresh = all.filter { $0.app == filter && $0.read.isUnread }
+        return Dictionary(grouping: fresh.compactMap(\.account), by: { $0 }).mapValues(\.count)
+    }
 
     /// The chats that match the view, the app and the search (their names, their people and every message Nook has of
     /// them), in the list's order: group by group, newest first in each. A chat keeps its place when it is read, and the
     /// open one stays in the view while you read it, so nothing jumps.
     private var shown: [ChatsEntry] {
         let needle = query.trimmingCharacters(in: .whitespaces)
-        return shownMemo.shown(all: all, needle: needle, view: view, filter: filter, selection: selection) { makeShown(needle) }
+        return shownMemo.shown(all: all, needle: needle, view: view, filter: filter, account: shownAccount,
+                               selection: selection) { makeShown(needle) }
     }
 
     private func makeShown(_ needle: String) -> [ChatsEntry] {
         let now = Date()
-        let found = needle.isEmpty ? inApp : inApp.compactMap { $0.found(needle, whatsApp: whatsApp, capture: capture) }
+        let found = needle.isEmpty ? inApp : inApp.compactMap { $0.found(needle, capture: capture) }
         return found.filter { view.shows($0.read) || $0.id == selection }
             .map { (entry: $0, group: ChatsGroup.of($0, now: now)) }
             .sorted { a, b in
@@ -498,14 +579,8 @@ struct ChatsTab: View {
 
     /// The shown chats per group, in order; empty groups left out.
     private var sections: [ChatsSection] {
-        let now = Date()
-        var result: [ChatsSection] = []
-        for entry in shown {
-            let group = ChatsGroup.of(entry, now: now)
-            if result.last?.group == group { result[result.count - 1].entries.append(entry) }
-            else { result.append(ChatsSection(group: group, entries: [entry])) }
-        }
-        return result
+        _ = shown
+        return shownMemo.sections
     }
 
     private var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -517,14 +592,18 @@ struct ChatsTab: View {
     }
 
     /// How many chats each view holds, in the chosen app.
-    private var viewCounts: [ChatsView: Int] {
+    private var viewCounts: [ChatsView: Int] { counts.views }
+
+    private func makeViewCounts() -> [ChatsView: Int] {
         var counts: [ChatsView: Int] = [:]
         for item in ChatsView.allCases { counts[item] = inApp.filter { item.shows($0.read) }.count }
         return counts
     }
 
     /// Chats with something new, per app.
-    private var newByApp: [String: Int] {
+    private var newByApp: [String: Int] { counts.newByApp }
+
+    private func makeNewByApp() -> [String: Int] {
         Dictionary(grouping: all.filter { $0.read.isUnread }, by: \.app).mapValues(\.count)
     }
 
@@ -570,18 +649,39 @@ struct ChatsTab: View {
     /// as wide as the sidebar, or one icon under the other in the rail.
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            ChatsSidebar(compact: compactSidebar, view: $view, app: $filter, counts: viewCounts, apps: apps, newByApp: newByApp,
-                         addSource: { app.openSettings(section: .chats) })
+            ChatsSidebar(compact: compactSidebar, width: sidebarWidth, view: $view, app: $filter, account: $account, counts: viewCounts, apps: apps,
+                         newByApp: newByApp, accounts: accounts, newByAccount: newByAccount,
+                         addSource: { app.openConnections(.add(.chats)) })
             footer
-                .frame(width: compactSidebar ? PanelLayout.chatsRail : PanelLayout.chatsSidebar)
+                .frame(width: sidebarWidth)
         }
         .padding(.trailing, compactSidebar ? NookTheme.Spacing.xs : NookTheme.Spacing.sm)
     }
 
-    /// The list's title: the view, and the app when one is chosen ("New · Telegram"), with the one action that fits it.
+    /// The line between the sidebar and the list, a drag line like every other one between panels: drag it to make the
+    /// sidebar wider or narrower (narrow enough and it folds to the rail, wide enough and it opens again), double-click
+    /// it to let the panel's width decide again.
+    private var sidebarHandle: some View {
+        EmbeddedSplitHandle(
+            divider: true,
+            help: "panel.resize",
+            onDrag: { offset in
+                let start = sidebarDragStart ?? sidebarWidth
+                sidebarDragStart = start
+                let dragged = start + offset
+                sidebarChoice = dragged < PanelLayout.chatsSidebarFold
+                    ? Double(PanelLayout.chatsRail) : min(dragged, PanelLayout.chatsSidebarMax)
+            },
+            onEnd: { sidebarDragStart = nil },
+            onReset: { withAnimation(NookTheme.reveal) { sidebarChoice = 0 } }
+        )
+    }
+
+    /// The list's title: the view, and the app when one is chosen ("New · Telegram"), and its account when one is
+    /// ("New · WhatsApp · Business"), with the one action that fits it.
     private var listTitle: String {
         let appName = filter.map { MessagingApps.app(id: $0)?.name ?? $0 }
-        return appName.map { view.title + " · " + $0 } ?? view.title
+        return [view.title, appName, shownAccount].compactMap { $0 }.joined(separator: " · ")
     }
 
     private var listHeader: some View {
@@ -602,6 +702,7 @@ struct ChatsTab: View {
             listHeader
             searchField
 
+            ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: NookTheme.Spacing.xxs) {
                     let selected = current?.id
@@ -620,10 +721,17 @@ struct ChatsTab: View {
                                 ChatsRow(entry: entry, photo: photo(entry), selected: entry.id == selected,
                                          rowAction: rowAction(entry)) { selection = entry.id }
                                     .contextMenu { readMenu(entry) }
+                                    .id(entry.id)
                             }
                         }
                     }
                 }
+            }
+            // A chat opened from elsewhere (the keyboard, a card, search) is brought into view in the list.
+            .onChange(of: selection) { _, id in
+                guard let id else { return }
+                withAnimation(NookTheme.scroll) { proxy.scrollTo(id) }
+            }
             }
             if shown.isEmpty { emptyList }
             listHints
@@ -689,7 +797,7 @@ struct ChatsTab: View {
                     // Slack, Telegram, Teams and the chat helper's apps keep their history elsewhere: connected once, Nook reads it from
                     // there.
                     ListEmptyNote(tr("chats.\(bridge.app).connectHint"))
-                    SmallGhostButton(title: tr("chats.\(bridge.app).connect")) { app.openSettings(section: .chats) }
+                    SmallGhostButton(title: tr("chats.\(bridge.app).connect")) { app.openConnections(.chat(bridge.app)) }
                 } else {
                     ListEmptyNote(tr("chats.source.empty", name))
                 }
@@ -720,7 +828,7 @@ struct ChatsTab: View {
                 }
                 if !capture.enabled {
                     // Only WhatsApp so far: the other chat apps are one switch away.
-                    SmallGhostButton(title: tr("chats.addMore")) { app.openSettings(section: .chats) }
+                    SmallGhostButton(title: tr("chats.addMore")) { app.openConnections(.add(.chats)) }
                 }
                 if photos.canAsk {
                     // Photos come from Contacts on this Mac; macOS asks only after this click.
@@ -750,7 +858,7 @@ struct ChatsTab: View {
                 // Every chat app is on by default: one click starts collecting, Settings is for choosing.
                 HStack(spacing: NookTheme.Spacing.sm) {
                     NookPrimaryButton(title: tr("chats.empty.turnOn"), symbol: "tray.and.arrow.down") { turnOn() }
-                    NookGhostButton(title: tr("chats.empty.setup"), symbol: "gearshape") { app.openSettings(section: .chats) }
+                    NookGhostButton(title: tr("chats.empty.setup"), symbol: "gearshape") { app.openConnections(.add(.chats)) }
                 }
                 .fixedSize()
                 .padding(.top, NookTheme.Spacing.xs)
@@ -886,6 +994,8 @@ private struct ChatsRow: View {
     var rowAction: ChatsRowAction? = nil
     let action: () -> Void
     @State private var hovering = false
+    /// What the pointer resting here fetches. The row asks `AppModel.shared` without observing it, so it does not redraw
+    /// with every change of the app model.
     @State private var prefetch: Task<Void, Never>?
     /// Someone typing here shows in place of the newest message, as in WhatsApp's own list.
     @ObservedObject private var typing = ChatTypingCenter.shared
@@ -920,25 +1030,31 @@ private struct ChatsRow: View {
                     .accessibilityHidden(true)
             }
         }
-        .onAppear {
-            // A chat on the phone with no message here yet: its newest one is fetched for the line under its name.
-            if entry.preview.isEmpty, case .whatsApp(let jid) = entry.origin { WhatsAppLink.shared.loadLine(jid) }
-        }
+        // A row without a line under its name gets its newest message fetched.
+        .onAppear { AppModel.shared.loadChatLine(entry) }
         .onHover { inside in
             hovering = inside
-            // Fetch a WhatsApp chat's messages once the pointer rests on it, so the click opens it filled; passing over
-            // the list on the way elsewhere fetches nothing.
+            // What the click needs is fetched once the pointer rests on the chat, so it opens filled; passing over the
+            // list on the way elsewhere fetches nothing.
             prefetch?.cancel()
             prefetch = nil
-            if inside, case .whatsApp(let jid) = entry.origin {
+            if inside {
+                let entry = self.entry
                 prefetch = Task {
                     try? await Task.sleep(for: .milliseconds(120))
                     guard !Task.isCancelled else { return }
-                    _ = await WhatsAppLink.shared.loadHistory(jid)
+                    await AppModel.shared.prefetchChat(entry)
                 }
             }
         }
         .animation(NookTheme.hover, value: hovering)
+    }
+
+    /// The newest message as the row shows it: after your own message's ticks without "You:", which the ticks say.
+    private var previewText: String {
+        let mine = tr("chat.you") + ": "
+        guard entry.ticks != nil, entry.preview.hasPrefix(mine) else { return entry.preview }
+        return String(entry.preview.dropFirst(mine.count))
     }
 
     /// Where the chat stands, in words, for VoiceOver.
@@ -953,7 +1069,7 @@ private struct ChatsRow: View {
     private var row: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.md) {
-                ChatsAvatar(name: entry.name, app: entry.app, photo: photo, size: 34)
+                ChatsAvatar(name: entry.name, app: entry.app, photo: photo, size: 40)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     // One title line (who, when) and one line under it (the newest message); unread is said once, by
                     // the count at the end of the second line.
@@ -963,10 +1079,19 @@ private struct ChatsRow: View {
                             .foregroundStyle(entry.read.isUnread ? NookTheme.paper : NookTheme.textStrong)
                             .lineLimit(1)
                         Spacer(minLength: NookTheme.Spacing.xs)
+                        // The WhatsApp account, while more than one is linked.
+                        if let account = entry.account {
+                            Text(account)
+                                .font(NookTheme.TextStyle.caption)
+                                .foregroundStyle(NookTheme.textTertiary)
+                                .lineLimit(1)
+                                .opacity(hovering && rowAction != nil ? 0 : 1)
+                        }
+                        // Something new: its time in the color of what waits on you, as the count under it.
                         Text(when)
                             .font(NookTheme.TextStyle.caption)
                             .monospacedDigit()
-                            .foregroundStyle(NookTheme.textTertiary)
+                            .foregroundStyle(entry.read.isUnread ? NookTheme.amber : NookTheme.textTertiary)
                             .fixedSize()
                             .opacity(hovering && rowAction != nil ? 0 : 1)
                     }
@@ -979,7 +1104,7 @@ private struct ChatsRow: View {
                                 .lineLimit(1)
                         } else {
                             // A chat on the phone that wrote nothing since Nook was linked: its messages load when opened.
-                            Text(entry.preview.isEmpty ? tr("chats.row.load") : entry.preview)
+                            Text(entry.preview.isEmpty ? tr("chats.row.load") : previewText)
                                 .font(NookTheme.TextStyle.detail)
                                 .foregroundStyle(entry.preview.isEmpty ? NookTheme.textTertiary
                                                  : (entry.read.isUnread ? NookTheme.textStrong : NookTheme.textSecondary))
@@ -999,10 +1124,12 @@ private struct ChatsRow: View {
             .padding(.vertical, NookTheme.Spacing.md)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
                 .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+            .selectionMark(selected)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(MessagingApps.app(id: entry.app)?.name ?? entry.app), \(entry.name), \(stateLabel): \(entry.preview)")
+        .accessibilityLabel("\([MessagingApps.app(id: entry.app)?.name ?? entry.app, entry.account].compactMap { $0 }.joined(separator: " "))"
+                            + ", \(entry.name), \(stateLabel): \(entry.preview)")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -1055,11 +1182,16 @@ private struct ChatsDetail: View {
     let entry: ChatsEntry
     let photo: NSImage?
     @ObservedObject var capture: ChatCaptureService
-    @ObservedObject var whatsApp: WhatsAppLink
+    /// What a linked WhatsApp account can do now (edit, pin, vote…) is part of what this chat offers.
+    @ObservedObject private var whatsApp = WhatsAppAccounts.shared
+    /// The pictures of files (a video's first frame, a document's first page) as they come in.
+    @ObservedObject private var thumbnails = ChatFileThumbnails.shared
     /// "Mark as unread" in the header: the tab closes the chat and shows its badge again.
     var onMarkUnread: () -> Void = {}
     /// Escape: the tab closes the chat.
     var onClose: () -> Void = {}
+    /// Back to the list, while the tab shows one column at a time; nil while the list sits beside the chat.
+    var onBack: (() -> Void)? = nil
     @EnvironmentObject private var app: AppModel
     @State private var reply = ""
     @State private var notice: String?
@@ -1073,9 +1205,13 @@ private struct ChatsDetail: View {
     @State private var replyingTo: ChatBubble?
     /// Your message whose text the field changes, shown above it until the change goes or is let go.
     @State private var editing: ChatBubble?
-    /// Your message waiting for "Delete for everyone" to be confirmed.
+    /// The message whose deletion waits for your choice: for you, or for everyone.
     @State private var deleting: ChatBubble?
-    @State private var bubblesMemo = ChatBubblesMemo()
+    /// Messages you deleted for yourself, which this chat no longer shows.
+    @ObservedObject private var hiddenMessages = ChatHiddenMessages.shared
+    @State private var bubblesMemo: ChatBubblesMemo
+    /// What you sent that its app has not shown back yet: it is in the chat at once.
+    @ObservedObject private var outbox = ChatOutbox.shared
     /// Who is typing in this chat, under its last message.
     @ObservedObject private var typing = ChatTypingCenter.shared
     /// The collected chat whose removal waits for a yes.
@@ -1084,6 +1220,31 @@ private struct ChatsDetail: View {
     @ObservedObject private var linked = ChatCaptureService.shared.serviceBridge
     /// Files waiting to go, the poll, place, contact or sticker panel, and the voice recorder.
     @StateObject private var composer = ChatComposerModel()
+    /// How many messages were new when the chat opened (before opening read them), and the first of them once the chat
+    /// shows them: the transcript draws "New messages" above it.
+    @State private var unreadAtOpen: Int
+    @State private var newFrom: String?
+
+    init(entry: ChatsEntry, photo: NSImage?, capture: ChatCaptureService,
+         onMarkUnread: @escaping () -> Void = {}, onClose: @escaping () -> Void = {}, onBack: (() -> Void)? = nil) {
+        self.entry = entry
+        self.photo = photo
+        self.capture = capture
+        self.onMarkUnread = onMarkUnread
+        self.onClose = onClose
+        self.onBack = onBack
+        _unreadAtOpen = State(initialValue: entry.unread)
+        _bubblesMemo = State(initialValue: ChatBubblesMemo.kept(for: entry.id))
+    }
+
+    /// Places "New messages" above the first of what was new, once the chat shows it.
+    private func landNew() {
+        guard newFrom == nil, unreadAtOpen > 0 else { return }
+        let incoming = bubbles.filter { !$0.fromMe }
+        guard incoming.count >= unreadAtOpen else { return }
+        newFrom = incoming[incoming.count - unreadAtOpen].id
+        unreadAtOpen = 0
+    }
 
     private static let time: DateFormatter = {
         let formatter = DateFormatter()
@@ -1094,15 +1255,32 @@ private struct ChatsDetail: View {
     /// The key of a chat's unsent answer in `ComposerDraftStore`.
     private static func draftKey(_ chatID: String) -> String { "chat:" + chatID }
 
+    /// What you were typing to a chat, also under the id it had before WhatsApp joined the shared inbox.
+    private static func draft(_ chatID: String) -> String? {
+        ComposerDraftStore.shared.draft(for: draftKey(chatID))
+            ?? ChatIDMigration.previous(chatID).flatMap { ComposerDraftStore.shared.draft(for: draftKey($0)) }
+    }
+
     private var appName: String { MessagingApps.app(id: entry.app)?.name ?? entry.app }
 
-    private var whatsAppChat: String? {
-        if case .whatsApp(let jid) = entry.origin { return jid }
-        return nil
-    }
+    /// The app as the header names it, with the WhatsApp account while more than one is linked ("WhatsApp · Business").
+    private var appLine: String { entry.account.map { appName + " · " + $0 } ?? appName }
 
     /// Where what you send goes: WhatsApp, Telegram or Nook's chat helper; nil copies the text for the chat's own app.
     private var route: ChatRoute? { app.chatRoute(for: entry) }
+
+    /// The apps whose "Nook can only read this" line you put away, by id, comma-separated.
+    @AppStorage("nook.chats.limitsHidden") private var limitsHidden = ""
+
+    /// A chat Nook can only read says so above its field, with the step that lets Nook write in it; nil where Nook writes.
+    private func limitsLine(route: ChatRoute?) -> AnyView? {
+        guard route == nil, !limitsHidden.split(separator: ",").contains(Substring(entry.app)) else { return nil }
+        let id = entry.app
+        return AnyView(ChatLimitsLine(appName: appName, linkable: ChatsTab.linkableApps.contains(id),
+                                      link: { app.openConnections(.chat(id)) },
+                                      openApp: { app.openChatApp(id) },
+                                      dismiss: { withAnimation(NookTheme.reveal) { limitsHidden += (limitsHidden.isEmpty ? "" : ",") + id } }))
+    }
 
     /// What Nook can do in this chat, the same list for every app.
     private var abilities: ChatAbilities { app.chatAbilities(route) }
@@ -1119,14 +1297,21 @@ private struct ChatsDetail: View {
     }
 
     private var bubbles: [ChatBubble] {
-        switch entry.origin {
-        case .whatsApp(let jid):
-            return bubblesMemo.whatsApp(whatsApp.inbox.conversations[jid], previews: whatsApp.previewRevision)
-        case .captured(let id):
-            return bubblesMemo.captured(capture.inbox.threads[id]) { thread in
-                thread.map { ChatBubble.bubbles($0) { Self.time.string(from: $0) } } ?? []
-            }
+        let all = bubblesMemo.bubbles(capture.inbox.threads[entry.id], thumbnails: thumbnails.revision) { thread in
+            thread.map { ChatBubble.bubbles($0) { Self.time.string(from: $0) } } ?? []
         }
+        return outbox.bubbles(hiddenMessages.visible(all, in: entry.id) { $0.id }, chat: entry.id)
+    }
+
+    /// "For everyone" is offered for your own message in an app that takes it; "for me" for every message.
+    private func canDeleteForEveryone(_ bubble: ChatBubble) -> Bool { bubble.fromMe && abilities.delete && route != nil }
+
+    /// What the choice says each way does, in this chat's app.
+    private func deleteDetail(_ bubble: ChatBubble) -> String {
+        var forMe: String
+        forMe = abilities.deleteForMe ? tr("chat.delete.forMe.app", appName) : tr("chat.delete.forMe.local", appName)
+        if canDeleteForEveryone(bubble) { forMe += "\n\n" + tr("chat.delete.forEveryone.detail", appName) }
+        return forMe
     }
 
     var body: some View {
@@ -1134,44 +1319,71 @@ private struct ChatsDetail: View {
             header
                 .padding(.bottom, NookTheme.Spacing.md)
             NookDivider()
-            ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
-                           onOpen: { open($0) }, onZoom: { zoom($0) },
-                           onReply: abilities.reply ? quote : nil,
-                           onReact: abilities.react ? react : nil,
-                           onEdit: abilities.edit ? edit : nil,
-                           onDelete: abilities.delete ? { deleting = $0 } : nil,
-                           onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil,
-                           typing: typing.line(entry.id))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            footer
-                .padding(.top, NookTheme.Spacing.sm)
+            // The messages and the field take the whole width, as a chat app's do: theirs on the left edge, yours on the
+            // right. Each bubble stays narrow enough to read (`ChatBubbleView.maxWidth`), however wide the window is.
+            VStack(spacing: 0) {
+                if bubbles.isEmpty { emptyChat }
+                ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
+                               onOpen: { open($0) }, onZoom: { zoom($0) },
+                               onReply: abilities.reply ? quote : nil,
+                               onReact: abilities.react ? react : nil,
+                               onEdit: abilities.edit ? edit : nil,
+                               onDelete: { deleting = $0 },
+                               onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil,
+                               typing: typing.line(entry.id), newFrom: newFrom)
+                    .padding(.horizontal, NookTheme.Spacing.xs)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                footer
+                    .padding(.top, NookTheme.Spacing.sm)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .overlay {
-            if let zoomed, case .photo(let url) = zoomed.media, let image = zoomed.image {
+            if let zoomed, case .photo(let url) = zoomed.media, let image = zoomed.image ?? ChatMediaImages.image(url) {
                 ChatPhotoZoom(url: url, preview: image, name: zoomed.attachment ?? "",
                               onClose: { withAnimation(NookTheme.reveal) { self.zoomed = nil } },
                               onOpen: { self.zoomed = nil; open(zoomed) })
                     .transition(.opacity)
             }
         }
-        .confirmDelete($deleting, question: { _ in tr("chat.delete.question") }, detail: tr("chat.delete.detail", appName),
-                       confirmTitle: tr("chat.delete")) { delete($0) }
-        .task(id: entry.id) { await loadWhatsApp() }
-        // While a WhatsApp chat is open Nook is online there, as WhatsApp Web is: only then does WhatsApp say who types.
-        .onAppear { WhatsAppLink.shared.setOnline(entry.whatsAppChat) }
-        .onDisappear { WhatsAppLink.shared.setOnline(nil) }
+        // Deleting asks how: for you (every app; it leaves Nook on this Mac, and Telegram for you), or for everyone (your
+        // own message, in an app that takes it).
+        .confirmationDialog(tr("chat.delete.choose"),
+                            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible, presenting: deleting) { bubble in
+            if canDeleteForEveryone(bubble) {
+                Button(tr("chat.delete"), role: .destructive) { delete(bubble) }
+            }
+            Button(tr("chat.delete.forMe"), role: .destructive) {
+                withAnimation(NookTheme.reveal) {
+                    app.deleteInChatForMe(bubble, route: route, chat: entry.id, name: entry.name)
+                }
+            }
+            Button(tr("button.cancel"), role: .cancel) {}
+        } message: { bubble in
+            Text(deleteDetail(bubble))
+        }
+        .task(id: entry.id) {
+            // Every app the same: an opened chat is read from its app now, so it shows the newest messages at once.
+            landNew()
+            await app.openedChat(entry)
+            landNew()
+        }
+        // While a chat is open Nook is online in it where its app needs that to say who types (WhatsApp).
+        .onAppear { app.setChatOnline(entry) }
+        .onDisappear { app.setChatOnline(nil) }
         // Nothing waiting for one chat goes to the next.
         .onChange(of: entry.id) { _, id in
-            WhatsAppLink.shared.setOnline(entry.whatsAppChat)
+            app.setChatOnline(entry)
             composer.reset()
             editing = nil
-            reply = ComposerDraftStore.shared.draft(for: Self.draftKey(id)) ?? ""
+            reply = Self.draft(id) ?? ""
             replyFocused = true
         }
         // What you were typing to this chat stays when the notch closes, and comes back when you open the chat again.
         // An opened chat puts the cursor in the field, after a brief wait for the panel to take the keyboard.
         .onAppear {
-            if reply.isEmpty, let saved = ComposerDraftStore.shared.draft(for: Self.draftKey(entry.id)) { reply = saved }
+            if reply.isEmpty, let saved = Self.draft(entry.id) { reply = saved }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { replyFocused = true }
         }
         // The panel can take the keyboard after the chat appeared: the field asks again.
@@ -1211,25 +1423,19 @@ private struct ChatsDetail: View {
 
     /// A photo enlarges over the chat, inside Nook; a photo Nook does not have yet opens as any file does.
     private func zoom(_ bubble: ChatBubble) {
-        guard case .photo = bubble.media, bubble.image != nil else { return open(bubble) }
+        guard case .photo(let url) = bubble.media, bubble.image ?? ChatMediaImages.image(url) != nil else { return open(bubble) }
         withAnimation(NookTheme.reveal) { zoomed = bubble }
     }
 
-    /// Whether a poll in this chat can be voted on from here: WhatsApp through a gateway that can, Telegram once linked.
-    private var canVote: Bool {
-        if whatsAppChat != nil { return whatsApp.canVote }
-        return entry.app == capture.telegramBridge.app && capture.bridged.contains(entry.app)
-    }
+    /// Whether a poll in this chat can be voted on from here, as its app allows (`ChatAbilities.vote`).
+    private var canVote: Bool { abilities.vote }
 
     /// Your vote on a poll, after your own click; when it cannot go, the chat says so and the poll shows the old count.
     private func vote(_ bubble: ChatBubble, _ choice: [String]) {
-        guard let chat = whatsAppChat else {
-            capture.telegramBridge.vote(choice, message: bubble.id)
-            return
-        }
+        guard let route else { return }
         Task { @MainActor in
             do {
-                try await whatsApp.vote(choice, poll: bubble.id, chat: chat)
+                try await app.voteInChat(choice, on: bubble, route: route, name: entry.name)
             } catch {
                 notice = error.localizedDescription
             }
@@ -1245,8 +1451,7 @@ private struct ChatsDetail: View {
     /// Your emoji on a message, after your own click (the same one again takes it back); the chat shows it at once.
     private func react(_ bubble: ChatBubble, _ emoji: String) {
         guard let route else { return }
-        let thread: String?
-        if case .captured(let id) = entry.origin { thread = id } else { thread = nil }
+        let thread = app.chatThread(entry)
         Task { @MainActor in
             do {
                 try await app.reactInChat(emoji, to: bubble, route: route, thread: thread, name: entry.name)
@@ -1264,6 +1469,13 @@ private struct ChatsDetail: View {
         }
         reply = bubble.text
         replyFocused = true
+    }
+
+    /// ↑ in the empty field: your newest message with text goes into the field to change it.
+    private func editLastMessage() -> Bool {
+        guard let mine = bubbles.last(where: { $0.fromMe && !$0.local && !$0.text.isEmpty && $0.poll == nil && $0.call == nil }) else { return false }
+        edit(mine)
+        return true
     }
 
     /// The changed text goes to your message; when it fails the text stays in the field to try again.
@@ -1307,45 +1519,80 @@ private struct ChatsDetail: View {
         }
     }
 
+    /// A chat with no messages here yet (one its app lists, still loading): says so instead of an empty space.
+    private var emptyChat: some View {
+        VStack(spacing: NookTheme.Spacing.sm) {
+            ChatsAvatar(name: entry.name, app: entry.app, photo: photo, size: 56)
+            Text(entry.name)
+                .font(NookTheme.TextStyle.title)
+                .foregroundStyle(NookTheme.paper)
+            Text(tr("chats.detail.empty", appName))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, NookTheme.Spacing.xxxl)
+    }
+
+    /// Who and where on top: the picture, the name, and under it the app, the group's people, someone typing, and where
+    /// the chat stands; opening the app and the rest of the actions on the right. The same for every app.
     private var header: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            ChatsAvatar(name: entry.name, app: entry.app, photo: photo, size: 32)
+            if let onBack { PanelBackButton(action: onBack) }
+            ChatsAvatar(name: entry.name, app: entry.app, photo: photo, size: 36)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(entry.name)
                     .font(NookTheme.TextStyle.title)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                 HStack(spacing: NookTheme.Spacing.xs) {
-                    // A chat a bridge reads is the app's own; any other is what its notifications showed.
-                    Text(route == nil && !capture.bridged.contains(entry.app)
-                         ? tr("chats.fromNotifications", appName) : appName)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .lineLimit(1)
-                    // A group whose app lists its people: how many, and a click lists them.
-                    if let members = entry.members, !members.isEmpty {
-                        Text("·")
+                    if let typingLine = typing.line(entry.id) {
+                        // Someone typing says so where the chat's details are, as a chat app's header does.
+                        Text(typingLine)
                             .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .accessibilityHidden(true)
-                        ChatMembersButton(members: members)
-                    }
-                    // Read but not new: where it stands, small, instead of a strip above the answer field.
-                    if !entry.read.isUnread && !entry.lastIsMine && !bubbles.isEmpty {
-                        Text("·")
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .accessibilityHidden(true)
-                        ChatReadStatus(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
-                                       markReadInApp: { app.markChatReadInApp(entry) })
+                            .foregroundStyle(NookTheme.mint)
+                            .lineLimit(1)
+                            .transition(.opacity)
+                    } else {
+                        headerDetails
                     }
                 }
+                .animation(NookTheme.reveal, value: typing.line(entry.id))
             }
             Spacer(minLength: NookTheme.Spacing.sm)
             // Opening the app stays in sight; the rest waits in the "…" menu.
             ToolbarIconButton("arrow.up.forward.app", tr("chats.openApp", appName)) { app.openChatApp(entry.app) }
             moreMenu
         }
+    }
+
+    /// The app (and whether Nook reads it or only saw its notifications), the group's people, and where it stands.
+    @ViewBuilder
+    private var headerDetails: some View {
+        // A chat a bridge reads is the app's own; any other is what its notifications showed.
+        Text(route == nil && !capture.bridged.contains(entry.app) ? tr("chats.fromNotifications", appName) : appLine)
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.textTertiary)
+            .lineLimit(1)
+        // A group whose app lists its people: how many, and a click lists them.
+        if let members = entry.members, !members.isEmpty {
+            headerDot
+            ChatMembersButton(members: members)
+        }
+        // Read but not new: where it stands, small, instead of a strip above the answer field.
+        if !entry.read.isUnread && !entry.lastIsMine && !bubbles.isEmpty {
+            headerDot
+            ChatReadStatus(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
+                           markReadInApp: { app.markChatReadInApp(entry) })
+        }
+    }
+
+    private var headerDot: some View {
+        Text("·")
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.textTertiary)
+            .accessibilityHidden(true)
     }
 
     /// Read or unread by hand, the same for every chat (as its row's menu), what its app lets Nook do there, and removing
@@ -1377,17 +1624,15 @@ private struct ChatsDetail: View {
                 if abilities.archive {
                     Button(tr("chats.archiveInApp", appName)) {
                         change {
-                            let thread: String?
-                            if case .captured(let id) = entry.origin { thread = id } else { thread = nil }
-                            try await app.archiveChat(route: route, thread: thread, name: entry.name)
+                            try await app.archiveChat(route: route, thread: app.chatThread(entry), name: entry.name)
                             onClose()
                         }
                     }
                 }
             }
-            if case .captured(let id) = entry.origin {
+            if let thread = app.chatThread(entry) {
                 Divider()
-                Button(tr("chats.remove"), role: .destructive) { removing = id }
+                Button(tr("chats.remove"), role: .destructive) { removing = thread }
             }
         } label: {
             Image(systemName: "ellipsis")
@@ -1444,11 +1689,12 @@ private struct ChatsDetail: View {
                     copyForApp()
                 }
             })
+            .editsLastMessage(abilities.edit && route != nil ? editLastMessage : nil)
             .tray(entry.read.isUnread
-                ? ChatReadLine(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
-                               markReadInNook: { app.markChatReadInNook(entry) },
-                               markReadInApp: { app.markChatReadInApp(entry) })
-                : nil)
+                ? AnyView(ChatReadLine(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
+                                       markReadInNook: { app.markChatReadInNook(entry) },
+                                       markReadInApp: { app.markChatReadInApp(entry) }))
+                : limitsLine(route: route))
         if sends.isEmpty {
             field
         } else {
@@ -1473,7 +1719,8 @@ private struct ChatsDetail: View {
     /// What waits goes to the chat (to the quoted message, when one is), after your own Return or click: the files
     /// first, the typed text as the caption of the first one that takes a caption, else as a message after them. It
     /// leaves the field at once and shows in the chat when the app has it, with no panel in between; when it fails the
-    /// text is back in the field, the files that did not go wait again, and the quote stays.
+    /// text is back in the field, the files that did not go wait again, and the quote stays. Text alone is in the chat
+    /// the moment you send it (`ChatOutbox`), with a clock until its app took it.
     private func send(via route: ChatRoute) {
         let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         let files = composer.files
@@ -1484,6 +1731,11 @@ private struct ChatsDetail: View {
         withAnimation(NookTheme.reveal) { replyingTo = nil }
         for file in files { composer.sent(.file(file)) }
         replyFocused = true
+        let chat = entry.id
+        let shown = files.isEmpty
+            ? outbox.add(text, quote: quoted.flatMap { id in bubbles.first { $0.id == id } }?.quote(contact: entry.name),
+                         chat: chat, shown: bubbles)
+            : nil
         enqueue {
             // The text still to go: once it went as a caption, a failure later does not put it back to go twice.
             var caption = text
@@ -1498,10 +1750,15 @@ private struct ChatsDetail: View {
                     answers = nil
                     if captioned { caption = "" }
                 }
+                // Answering reads the chat, once for the whole send.
                 if !caption.isEmpty {
-                    try await app.sendChatText(caption, route: route, chat: entry.name, replyTo: answers)
+                    try await app.sendChatText(caption, route: route, chat: entry.name, replyTo: answers, thread: entry.id)
+                } else {
+                    await app.answeredInChat(route, name: entry.name, thread: entry.id)
                 }
+                if let shown { outbox.sent(shown, chat: chat) }
             } catch {
+                if let shown { outbox.failed(shown, chat: chat) }
                 if !caption.isEmpty, reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { reply = caption }
                 composer.restore(waiting)
                 if let quoted, replyingTo == nil { replyingTo = bubbles.first { $0.id == quoted } }
@@ -1521,7 +1778,7 @@ private struct ChatsDetail: View {
         if quoted != nil { withAnimation(NookTheme.reveal) { replyingTo = nil } }
         enqueue {
             do {
-                try await app.sendChatItem(item, route: route, chat: entry.name, replyTo: quoted)
+                try await app.sendChatItem(item, route: route, chat: entry.name, replyTo: quoted, thread: entry.id)
             } catch {
                 // A poll you wrote is not lost: its form comes back as it was.
                 if case .poll = item { composer.poll = poll; composer.panel = .poll }
@@ -1550,57 +1807,22 @@ private struct ChatsDetail: View {
         app.openChatApp(entry.app)
     }
 
-    /// A file opens in Quick Look: from this Mac when Nook has it, from the gateway for WhatsApp, else in its app.
+    /// A file opens in Quick Look, the same for every app (`AppModel.openChatFile`): from this Mac when Nook has it,
+    /// else fetched or opened in its app; the chat says so while it is fetched, and why when it cannot.
     private func open(_ bubble: ChatBubble) {
-        // A file Nook already has opens from this Mac, whichever app it came from.
-        if let file = bubble.file {
-            if !FilePreviewWindow.shared.show(file, title: bubble.attachment ?? file.lastPathComponent), !NSWorkspace.shared.open(file) {
-                notice = tr("whatsapp.file.noApp")
-            }
-            return
-        }
-        guard let chat = whatsAppChat else {
-            // Not fetched (yet): the chat's own app has it.
-            if bubble.attachment != nil { app.openChatApp(entry.app) }
-            return
-        }
-        guard bubble.attachment != nil else { return }
-        notice = tr("whatsapp.file.opening", bubble.attachment ?? "")
+        if bubble.file == nil, let name = bubble.attachment { notice = tr("whatsapp.file.opening", name) }
         Task { @MainActor in
             do {
-                try await app.openWhatsAppFile(bubble, chat: chat)
-                notice = nil
+                try await app.openChatFile(bubble, in: entry)
+                if bubble.file == nil, bubble.attachment != nil { notice = nil }
             } catch {
                 notice = error.localizedDescription
             }
         }
     }
 
-    /// A WhatsApp chat that is full and may have older messages at the gateway, or a chat the chat helper brings in,
-    /// which fetches older ones from the app as you scroll back (as Beeper does).
-    private var canLoadOlder: Bool {
-        switch entry.origin {
-        case .whatsApp(let chat): return whatsApp.inbox.conversations[chat]?.canLoadOlder ?? false
-        case .captured(let id): return capture.canLoadOlder(id)
-        }
-    }
+    /// Whether the chat may have older messages to scroll back to, as its app keeps them.
+    private var canLoadOlder: Bool { app.canLoadOlderChat(entry) }
 
-    private func loadOlder() async -> Bool {
-        switch entry.origin {
-        case .whatsApp(let chat): return await whatsApp.loadOlder(chat)
-        case .captured(let id): return await capture.loadOlder(id)
-        }
-    }
-
-    /// Older messages and the newest photos of a WhatsApp chat, as its card fetches them.
-    private func loadWhatsApp() async {
-        guard let chat = whatsAppChat else { return }
-        _ = await whatsApp.loadHistory(chat)
-        // A group's people: its header lists them, and your messages' info says who does not have them yet.
-        await whatsApp.loadMembers(chat)
-        guard let conversation = whatsApp.inbox.conversations[chat] else { return }
-        let wanted = conversation.messages.filter { AppModel.whatsAppPreviews($0.media) }.suffix(AppModel.whatsAppPreviewCount)
-            .filter { whatsApp.preview($0.id) == nil }.map(\.id)
-        if !wanted.isEmpty { _ = await whatsApp.loadPreviews(wanted, chat: chat) }
-    }
+    private func loadOlder() async -> Bool { await app.loadOlderChat(entry) }
 }

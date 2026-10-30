@@ -23,26 +23,32 @@ EXCLUDE_SOURCES=(
   "Brain/AIProvider.swift"
   "Brain/ModelDownload.swift"
   "Brain/BrainSelection.swift"
-  "Brain/ChatChart.swift"
-  "Brain/ChartRescue.swift"
-  "Brain/MarkdownBlock.swift"
   "Services/AntigravityClient.swift"
   "Services/Workspace/Antigravity.swift"
   "Services/Workspace/TextGeneration.swift"
   "App/ChatRecovery.swift"
   "Brain/ChatImage.swift"
   "Services/WhatsApp/WhatsAppGateway.swift"
+  "Services/WhatsApp/WhatsAppExport.swift"
+  "Services/WhatsApp/WhatsAppNames.swift"
   "Brain/Weather.swift"
   "Services/LocalAgentScanner.swift"
-  "Services/Updates/Ed25519Verifier.swift"
-  "../../packages/protocol/Sources/CompanionSeal.swift"
-  "../../packages/protocol/Sources/RelayPushSeal.swift"
 )
+if [ "$(uname)" != "Darwin" ]; then
+  EXCLUDE_SOURCES+=(
+    "Brain/ChatChart.swift"
+    "Brain/ChartRescue.swift"
+    "Brain/MarkdownBlock.swift"
+    "Services/Updates/Ed25519Verifier.swift"
+    "../../packages/protocol/Sources/CompanionSeal.swift"
+    "../../packages/protocol/Sources/RelayPushSeal.swift"
+  )
+fi
 # Tests that belong to those sources.
 EXCLUDE_TESTS=(
   "MCPOAuthTests" "MCPClientTests" "NetworkGuardTests" "ModelDownloadTests" "BrainSelectionTests" "AntigravityTests"
   "TextGenerationTests" "MarkdownBlockTests" "I18nCoverageTests" "ChatRecoveryTests" "AgentProcessTests" "FinishedSessionsTests"
-  "ExtrasTests" "WhatsAppTests" "WhatsAppActionsTests" "LocalAgentScannerTests"
+  "ExtrasTests" "WhatsAppTests" "WhatsAppActionsTests" "WhatsAppExportTests" "LocalAgentScannerTests"
 )
 
 python3 - "$ROOT" "$WORK" "${EXCLUDE_SOURCES[@]}" <<'PY'
@@ -94,7 +100,7 @@ SWIFT
 cat > "$WORK/Package.swift" <<'SWIFT'
 // swift-tools-version:5.9
 import PackageDescription
-let package = Package(name: "NookCore", targets: [
+let package = Package(name: "NookCore", platforms: [.macOS(.v14)], targets: [
     .target(name: "Core", dependencies: [.target(name: "SQLite3", condition: .when(platforms: [.linux]))], path: "Sources/Core"),
     // macOS has an SQLite3 module in its SDK; on Linux the system library (libsqlite3-dev) gets one here.
     .systemLibrary(name: "SQLite3", path: "Sources/SQLite3"),
@@ -119,6 +125,10 @@ for file in "$ROOT"/Tests/NookTests/*.swift; do
   for excluded in "${EXCLUDE_TESTS[@]}"; do [ "$name" = "$excluded" ] && skip=1; done
   [ "$skip" = 1 ] && continue
   { echo "@testable import Core"; cat "$file"; } > "$WORK/Tests/CoreTests/$name.swift"
+  # Linux's test discovery cannot call a synchronous test on the main actor (it aborts the whole run): there they are async.
+  if [ "$(uname)" != "Darwin" ] && grep -qE '^\s*@MainActor\s*$' "$file"; then
+    perl -pi -e 's/^(\s*(?:\@MainActor\s+)?func test\w*\(\))(\s+throws)?\s*\{/$1 async$2 {/' "$WORK/Tests/CoreTests/$name.swift"
+  fi
 done
 
 cd "$WORK"

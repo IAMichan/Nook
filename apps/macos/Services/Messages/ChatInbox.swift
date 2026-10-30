@@ -6,7 +6,7 @@ import Foundation
 // and this file decides which of them are chat messages and which chat they belong to. Foundation only, so it can be
 // tested anywhere.
 
-/// A chat app whose notifications Nook collects: one Nook knows, or one you added yourself in Settings › Chats.
+/// A chat app whose notifications Nook collects: one Nook knows, or one you added yourself in Settings › Connections.
 struct MessagingApp: Codable, Equatable, Sendable, Identifiable {
     /// The source id, as `SourceBrand` and `EmbeddedAppCatalog` use it ("telegram").
     let id: String
@@ -49,7 +49,7 @@ enum MessagingApps {
         MessagingApp(id: "x", name: "X", domains: ["x.com", "twitter.com"], site: "x.com")
     ]
 
-    /// Which apps feed the inbox, as chosen in Settings › Chats: kept in the user defaults, read once.
+    /// Which apps feed the inbox, as chosen in Settings › Connections: kept in the user defaults, read once.
     static var sources: ChatSources {
         get {
             lock.lock()
@@ -150,7 +150,7 @@ enum MessagingApps {
 }
 
 /// Which chat apps feed the inbox: every app Nook knows unless you switched it off, and the apps you added yourself (a
-/// website such as linkedin.com/messaging, or a Mac app). Settings › Chats changes it.
+/// website such as linkedin.com/messaging, or a Mac app). Settings › Connections changes it.
 struct ChatSources: Codable, Equatable, Sendable {
     /// The ids of the apps you switched off.
     var off: Set<String> = []
@@ -341,12 +341,20 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
     var reactions: [InboxReaction]? = nil
     /// The message this one answers, when its app says.
     var quote: InboxQuote? = nil
+    /// It names you (an @mention in a group): a group that stays quiet still tells you about it (`ChatNoticeRules`).
+    var mentionsMe: Bool? = nil
+    /// Who wrote it, by the app's own id for them, when the app gives one: two people with the same name stay two.
+    var senderID: String? = nil
 
     var isMine: Bool { fromMe == true }
+
+    /// A call its app noted in the chat ("Missed voice call"), read from its line the same way for every app.
+    var call: ChatCall? { media == nil && poll == nil ? ChatFormat.call(text) : nil }
 
     /// One line for lists and for Nook: the text, with what came with it ("Photo: on the beach", "Sticker").
     var summary: String {
         if let poll { return poll.line }
+        if let call { return call.summary(mine: isMine) }
         let plain = ChatFormat.plain(text)
         guard let media else { return plain }
         return plain.isEmpty ? media.label : "\(media.label): \(plain)"
@@ -371,6 +379,63 @@ struct BridgedChat: Equatable, Sendable {
     var listed: Bool = false
     /// Messages (by their id in Nook) the app says were deleted since: the chat drops them.
     var deleted: [String] = []
+    /// The chat's own id in its app (WhatsApp's chat key, its account included), when the bridge gives one: Nook then
+    /// knows the chat by it (`ChatInbox.key(app:id:)`), so a new name never splits it and two chats with one name stay
+    /// two. Nil knows the chat by its name, as before.
+    var chatID: String? = nil
+    /// The account the chat is in, by its name, while the app has more than one linked; nil otherwise.
+    var account: String? = nil
+    /// What kind of chat it is, when the app says (`ChatNoticeRules` treats each kind its own way).
+    var kind: ChatKind? = nil
+    /// The other person's phone number in a private chat, to find their picture in Contacts.
+    var handle: String? = nil
+    /// Whether the app says where the chat stands (read or not); false for one that counts nothing (WhatsApp's GOWA
+    /// gateway), whose row then shows no read mark. Nil keeps what Nook knew.
+    var readKnown: Bool? = nil
+    /// Whether the app has messages older than these, for scrolling back; nil keeps what Nook knew.
+    var hasOlder: Bool? = nil
+    /// These messages come from the chat's history (fetched on opening it, or after the Mac slept), not as they
+    /// arrived: none of them counts as new.
+    var history: Bool = false
+    /// When the app says the chat last had a message, for a chat Nook holds no (newer) messages of: it sorts there, and
+    /// a read in Nook since then holds against the app's count.
+    var activity: Date? = nil
+    /// Whether the chat is still unread in the app itself, when the bridge knows that apart from how many messages are
+    /// new in Nook (WhatsApp through the linked phone); nil leaves it to the app's count.
+    var waitsInApp: Bool? = nil
+    /// The app keeps this chat's messages and Nook only shows them: they stay in memory and are never written to disk
+    /// (WhatsApp through the linked phone). What Nook knows of the chat itself (read, unread, its kind) is kept.
+    var ephemeral: Bool = false
+}
+
+/// Chat ids kept from before WhatsApp's chats joined the shared inbox: a linked phone's chat was "wa|<chat key>", and is
+/// "whatsapp#<chat key>" (`ChatInbox.key(app:id:)`) since. Whatever kept such an id (a hidden message, a draft, the chat
+/// opened last) reads it through here.
+enum ChatIDMigration {
+    static func current(_ id: String) -> String {
+        id.hasPrefix("wa|") ? ChatInbox.key(app: "whatsapp", id: String(id.dropFirst(3))) : id
+    }
+
+    /// The id a linked phone's chat had before, to find what was kept under it; nil for any other chat.
+    static func previous(_ id: String) -> String? {
+        let prefix = ChatInbox.key(app: "whatsapp", id: "")
+        return id.hasPrefix(prefix) ? "wa|" + id.dropFirst(prefix.count) : nil
+    }
+
+    /// Kept things by chat id, with ids from before moved to the ones now (what was kept under both is joined).
+    static func current<Value>(_ kept: [String: Value], merging: (Value, Value) -> Value) -> [String: Value] {
+        var moved: [String: Value] = [:]
+        for (id, value) in kept {
+            let now = current(id)
+            moved[now] = moved[now].map { merging($0, value) } ?? value
+        }
+        return moved
+    }
+}
+
+/// The kinds of chat an app may have, the same names for every app.
+enum ChatKind: String, Codable, CaseIterable, Sendable {
+    case person, group, status, channel
 }
 
 /// The message another one answers: its id in Nook, so the chat shows it as it has it, and what the app quoted of it,
@@ -389,6 +454,50 @@ struct InboxReaction: Codable, Equatable, Sendable {
     var emoji: String
     var count: Int
     var mine: Bool
+    /// Who else put it there, by name, as far as the app says; nil when it does not (only the count is known). You are
+    /// never in it: `mine` says that.
+    var people: [String]? = nil
+}
+
+/// Someone else's emoji on a message in a chat, as it came in. While nothing newer was written there, the chat's line in
+/// the list says it ("Reacted with 👍 to “See you”") instead of the newest message, the same for every chat app.
+struct ChatReactionNote: Codable, Equatable, Sendable {
+    var emoji: String
+    /// Who put it there, as the app names them (WhatsApp: their id, named when shown); empty when the app does not say.
+    var person: String = ""
+    /// The message it is on, by its id in Nook.
+    var message: String
+    /// That message as one line (`InboxMessage.summary`).
+    var text: String
+    var date: Date
+
+    /// The longest bit of the message the line quotes: the list cuts the rest anyway, and the emoji must stay visible.
+    static let quoteLength = 40
+
+    /// The line in the chat list. In a group it says who (`who`, their name as the list shows it); in a private chat
+    /// the chat's name already does.
+    func line(who: String) -> String {
+        let plain = ChatFormat.plain(text).trimmingCharacters(in: .whitespacesAndNewlines)
+        let quote = plain.count > Self.quoteLength ? String(plain.prefix(Self.quoteLength)) + "…" : plain
+        return who.isEmpty ? tr("chats.row.reacted", emoji, quote) : tr("chats.row.reactedBy", who, emoji, quote)
+    }
+
+    /// The newest emoji someone else put on one of your messages between `old` and `new` (the same message, read
+    /// again), dated `date`: the one whose count went up, with who when the app names them. Nil when none came.
+    static func added(on new: InboxMessage, before old: [InboxReaction]?, at date: Date) -> ChatReactionNote? {
+        guard new.isMine, let chips = new.reactions else { return nil }
+        let earlier = old ?? []
+        for chip in chips.reversed() {
+            let was = earlier.first { $0.emoji == chip.emoji }
+            // Yours on it does not count: only someone else's emoji is news.
+            let others = chip.count - (chip.mine ? 1 : 0)
+            let othersBefore = was.map { $0.count - ($0.mine ? 1 : 0) } ?? 0
+            guard others > othersBefore else { continue }
+            let person = (chip.people ?? []).first { !(was?.people ?? []).contains($0) } ?? ""
+            return ChatReactionNote(emoji: chip.emoji, person: person, message: new.id, text: new.summary, date: date)
+        }
+        return nil
+    }
 }
 
 /// One chat in one app, with its newest messages.
@@ -421,23 +530,59 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     /// A bridge reads this chat from its app (`ChatInbox.merge`), which keeps its whole history: Nook keeps the newest
     /// and scrolls back there. A chat only notifications bring has nowhere else to come from, so it keeps every message.
     var bridged: Bool? = nil
+    /// The newest emoji someone else put on a message here: the chat's line while nothing newer was written.
+    var reaction: ChatReactionNote? = nil
+    /// The chat's own id in its app, when its bridge gives one (`BridgedChat.chatID`); its `id` is then made from it.
+    var chatID: String? = nil
+    /// The account it is in, while its app has more than one linked (`BridgedChat.account`).
+    var account: String? = nil
+    /// Person, group, status or channel, when its app says (`BridgedChat.kind`).
+    var kind: ChatKind? = nil
+    /// The other person's phone number, to find their picture in Contacts (`BridgedChat.handle`).
+    var handle: String? = nil
+    /// False when its app does not say where the chat stands (`BridgedChat.readKnown`); nil and true: it does.
+    var readKnown: Bool? = nil
+    /// False once its app has nothing older left to scroll back to (`BridgedChat.hasOlder`); nil: not known yet.
+    var hasOlder: Bool? = nil
+    /// When its app says it last had a message (`BridgedChat.activity`), for a chat Nook holds no newer messages of.
+    var activity: Date? = nil
+    /// Still unread in the app itself, as its bridge says apart from the count (`BridgedChat.waitsInApp`).
+    var waitsInApp: Bool? = nil
+    /// Its messages are never written to disk (`BridgedChat.ephemeral`).
+    var ephemeral: Bool? = nil
+
+    /// The emoji the chat's line shows instead of its newest message: one that came after it, on a message still here.
+    var newestReaction: ChatReactionNote? {
+        guard let reaction, reaction.date >= last, messages.contains(where: { $0.id == reaction.message }) else { return nil }
+        return reaction
+    }
 
     /// How many messages it keeps.
     var keeps: Int { bridged == true ? max(capacity ?? 0, ChatInbox.keep) : ChatInbox.notificationKeep }
 
-    var last: Date { messages.last?.date ?? .distantPast }
+    var last: Date { max(messages.last?.date ?? .distantPast, activity ?? .distantPast) }
     /// The newest message from someone else: what "read" is about.
     var newestIncoming: Date? { messages.last { !$0.isMine }?.date }
 
     /// Read here, read in Nook only, or read in the app too: the same three states for every chat app.
     var readState: ChatReadState {
         ChatReadState.of(unread: unread, appUnread: appUnread, newestIncoming: newestIncoming,
-                         readInNook: readInNook, readInApp: readInApp)
+                         readInNook: readInNook, readInApp: readInApp, waitsInApp: waitsInApp)
     }
-    /// Someone else than the chat itself wrote in it, or more than one other person is in it: a group.
-    var isGroup: Bool { (members?.count ?? 0) > 1 || messages.contains { !$0.sender.isEmpty } }
-    /// A private chat: someone else wrote in it without a sender of their own, and it has no list of people.
-    var isPrivate: Bool { (members?.count ?? 0) <= 1 && !isGroup && messages.contains { !$0.isMine } }
+    /// Someone else than the chat itself wrote in it, or more than one other person is in it: a group. What its app
+    /// says comes first.
+    var isGroup: Bool {
+        if let kind { return kind == .group }
+        return (members?.count ?? 0) > 1 || messages.contains { !$0.sender.isEmpty }
+    }
+    /// The kind the notice rules go by: what its app says, else a group when it looks like one, else a person's chat.
+    var noticeKind: ChatKind { kind ?? (isGroup ? .group : .person) }
+    /// A private chat: someone else wrote in it without a sender of their own, and it has no list of people. What its
+    /// app says comes first.
+    var isPrivate: Bool {
+        if let kind { return kind == .person }
+        return (members?.count ?? 0) <= 1 && !isGroup && messages.contains { !$0.isMine }
+    }
 }
 
 /// Where a chat stands, the same for every chat app: something new, read in Nook while the app itself still shows it
@@ -455,8 +600,11 @@ enum ChatReadState: Equatable, Sendable {
 
     /// The state from what Nook knows of a chat. `appUnread` is the app's own count when it gives one; without it, a chat
     /// read in Nook after its newest message waits for the app until you tell the app (`readInApp`).
-    static func of(unread: Int, appUnread: Int?, newestIncoming: Date?, readInNook: Date?, readInApp: Date?) -> ChatReadState {
+    /// `waitsInApp`, when the bridge says it, decides on its own whether the app still holds the chat unread.
+    static func of(unread: Int, appUnread: Int?, newestIncoming: Date?, readInNook: Date?, readInApp: Date?,
+                   waitsInApp: Bool? = nil) -> ChatReadState {
         if unread > 0 { return .unread(unread) }
+        if let waitsInApp { return waitsInApp ? .readInNook : .read }
         guard let newest = newestIncoming else { return .read }
         if let readInApp, readInApp >= newest { return .read }
         if let appUnread { return appUnread > 0 ? .readInNook : .read }
@@ -502,9 +650,9 @@ enum ChatCapture {
         }
         guard let app else { return nil }
 
-        var title = notification.title
+        var title = unmarked(notification.title)
         // A browser puts the site in the subtitle; it says which app, not who.
-        var subtitle = fromBrowser && looksLikeSite(notification.subtitle) ? "" : notification.subtitle
+        var subtitle = fromBrowser && looksLikeSite(notification.subtitle) ? "" : unmarked(notification.subtitle)
         var text = notification.body
         if fromBrowser, title.lowercased().hasSuffix(" - " + app.name.lowercased()) {
             title = String(title.dropLast(app.name.count + 3))
@@ -564,6 +712,46 @@ enum ChatCapture {
         return (name, rest)
     }
 
+    /// A name without the invisible marks an app puts around it for right-to-left text (WhatsApp starts some with
+    /// U+200E): the same chat by any app's spelling of it.
+    static func unmarked(_ text: String) -> String {
+        guard text.unicodeScalars.contains(where: { $0.properties.generalCategory == .format && !$0.properties.isEmojiPresentation
+            && $0.value != 0x200D }) else { return text }
+        var scalars = String.UnicodeScalarView()
+        scalars.append(contentsOf: text.unicodeScalars.filter { $0.properties.generalCategory != .format || $0.value == 0x200D })
+        return String(scalars).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Someone's emoji on a message, as a notification says it ("Reacted 👍 to: “See you”", "Reageerde met 👍🏼 op
+    /// Komt goed", "Hat mit 👍 auf „Bis dann“ reagiert"): the emoji, and the message's text when it quotes it (nil for
+    /// "your message"). Nil for anything else.
+    static func reaction(_ text: String) -> (emoji: String, target: String?)? {
+        let plain = unmarked(text)
+        let lower = plain.lowercased()
+        guard plain.count <= 400,
+              ["reacted", "reageerde", "heeft gereageerd", "gereageerd", "a réagi", "reaccionó", "reacciono", "reagierte"]
+                .contains(where: lower.hasPrefix) || (lower.hasPrefix("hat ") && lower.contains("reagiert")),
+              let emojiIndex = plain.firstIndex(where: isEmoji) else { return nil }
+        let emoji = String(plain[emojiIndex])
+        var rest = plain[plain.index(after: emojiIndex)...].trimmingCharacters(in: .whitespaces)
+        for word in ["to", "op", "auf", "à", "a"] {
+            let prefix = word + " "
+            if rest.lowercased().hasPrefix(prefix) { rest = String(rest.dropFirst(prefix.count)); break }
+            if rest.lowercased().hasPrefix(word + ":") { rest = String(rest.dropFirst(word.count + 1)); break }
+        }
+        if rest.lowercased().hasSuffix(" reagiert") { rest = String(rest.dropLast(" reagiert".count)) }
+        let target = rest.trimmingCharacters(in: CharacterSet(charactersIn: " :\"'“”„«»‘’‚"))
+        let generic = ["your message", "a message", "je bericht", "jouw bericht", "een bericht", "deine nachricht",
+                       "votre message", "ton message", "tu mensaje", "your story", "je verhaal"]
+        return (emoji, target.isEmpty || generic.contains(target.lowercased()) ? nil : target)
+    }
+
+    private static func isEmoji(_ character: Character) -> Bool {
+        guard let first = character.unicodeScalars.first else { return false }
+        return first.properties.isEmojiPresentation || (first.properties.isEmoji && first.value > 0x238C)
+            || character.unicodeScalars.contains { $0.value == 0xFE0F }
+    }
+
     private static func looksLikeSite(_ text: String) -> Bool {
         !text.isEmpty && !text.contains(" ") && text.contains(".")
     }
@@ -606,8 +794,17 @@ struct ChatInbox: Codable, Equatable, Sendable {
         .map(\.0)
     }
 
+    /// The key of a chat its app knows by an id of its own (`BridgedChat.chatID`): "whatsapp#31612345678@s.whatsapp.net".
+    /// A name's key always has "|", so the two never meet.
+    static func key(app: String, id: String) -> String { app + "#" + id }
+
+    /// The key of a chat as a bridge brings it: by its id when it has one, else by its name.
+    static func key(of chat: BridgedChat) -> String {
+        chat.chatID.map { key(app: chat.app, id: $0) } ?? key(app: chat.app, chat: chat.name)
+    }
+
     static func key(app: String, chat: String) -> String {
-        app + "|" + chat.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+        app + "|" + ChatCapture.unmarked(chat).folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
             .split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
@@ -619,6 +816,12 @@ struct ChatInbox: Codable, Equatable, Sendable {
         let key = Self.key(app: notice.app, chat: notice.chat)
         // A chat you removed comes back with what is newer, not with the notifications it already had.
         if let gone = removed?[key], notice.date <= gone { return false }
+        // Someone's emoji on a message goes on that message, not into the chat as a message of its own.
+        // Who: the group member the notification names, else the person of the private chat.
+        if let reaction = ChatCapture.reaction(notice.text) {
+            return react(reaction, in: key, by: ChatCapture.unmarked(notice.sender.isEmpty ? notice.chat : notice.sender),
+                         at: notice.date)
+        }
         var thread = threads[key] ?? InboxThread(id: key, app: notice.app, name: notice.chat)
         if thread.messages.contains(where: {
             $0.id == id || (!$0.isMine && $0.text == notice.text && abs($0.date.timeIntervalSince(notice.date)) < Self.sameMessageWindow)
@@ -633,6 +836,29 @@ struct ChatInbox: Codable, Equatable, Sendable {
         threads[key] = thread
         regroup()
         dropQuietest()
+        return true
+    }
+
+    /// Puts someone's emoji from a notification on the message it is on: the one whose text it quotes, else your newest
+    /// (what people react to). False when the chat has no such message or already shows that emoji there.
+    mutating func react(_ reaction: (emoji: String, target: String?), in key: String, by person: String = "",
+                        at date: Date = Date()) -> Bool {
+        guard let messages = threads[key]?.messages else { return false }
+        let target = reaction.target.map { ChatFormat.plain($0).trimmingCharacters(in: CharacterSet(charactersIn: "…. ")) }
+        let index = target.flatMap { target in
+            messages.lastIndex { message in
+                let text = ChatFormat.plain(message.summary)
+                return !target.isEmpty && (text.hasPrefix(target) || target.hasPrefix(text) && !text.isEmpty)
+            }
+        } ?? messages.lastIndex { $0.isMine } ?? messages.indices.last
+        guard let index else { return false }
+        var chips = messages[index].reactions ?? []
+        guard !chips.contains(where: { $0.emoji == reaction.emoji }) else { return false }
+        chips.append(InboxReaction(emoji: reaction.emoji, count: 1, mine: false, people: person.isEmpty ? nil : [person]))
+        threads[key]?.messages[index].reactions = chips
+        // A notification only ever says what someone else did, so it is news whichever message it is on.
+        threads[key]?.reaction = ChatReactionNote(emoji: reaction.emoji, person: person, message: messages[index].id,
+                                                  text: messages[index].summary, date: date)
         return true
     }
 
@@ -675,7 +901,9 @@ struct ChatInbox: Codable, Equatable, Sendable {
     mutating func regroup() {
         let groups = Set(threads.values.filter(Self.isClearlyGroup).map(\.id))
         guard !groups.isEmpty else { return }
-        for (key, thread) in threads where thread.members == nil && (!groups.contains(key) || Self.holdsOnlyGroups(thread, groups)) {
+        // A chat its app knows by an id (`chatID`) is never a notification's guess: its messages stay where its app put them.
+        for (key, thread) in threads where thread.chatID == nil && thread.members == nil
+            && (!groups.contains(key) || Self.holdsOnlyGroups(thread, groups)) {
             var moved: [String: [InboxMessage]] = [:]
             for message in thread.messages where !message.isMine && !message.sender.isEmpty {
                 let groupKey = Self.key(app: thread.app, chat: message.sender)
@@ -715,17 +943,38 @@ struct ChatInbox: Codable, Equatable, Sendable {
     /// changed.
     @discardableResult
     mutating func merge(_ chat: BridgedChat, now: Date = Date()) -> Bool {
-        let key = Self.key(app: chat.app, chat: chat.name)
+        merge(chat, now: now, trimming: true)
+    }
+
+    /// Brings in everything one read of a bridge brought, at once: the quietest chats beyond `maxThreads` go once at
+    /// the end, not after each chat (a linked phone lists thousands). True when anything changed.
+    @discardableResult
+    mutating func merge(_ chats: [BridgedChat], now: Date = Date()) -> Bool {
+        var changed = false
+        for chat in chats where merge(chat, now: now, trimming: false) { changed = true }
+        if changed { dropQuietest(now: now) }
+        return changed
+    }
+
+    private mutating func merge(_ chat: BridgedChat, now: Date, trimming: Bool) -> Bool {
+        let key = Self.key(of: chat)
         let known = threads[key]
         let gone = removed?[key]
         let messages = gone.map { gone in chat.messages.filter { $0.date > gone } } ?? chat.messages
-        // Without new messages a bridge can still bring the app's unread count (or the group's people) for a chat Nook
-        // shows, or a chat its app lists that you did not remove.
+        // Without new messages a bridge can still bring the app's unread count (or the group's people, or what it knows
+        // of the chat) for a chat Nook shows, or a chat its app lists that you did not remove.
+        let described = known.map { known in
+            (chat.account != nil && chat.account != known.account) || (chat.kind != nil && chat.kind != known.kind)
+                || (chat.handle != nil && chat.handle != known.handle) || (chat.readKnown != nil && chat.readKnown != known.readKnown)
+                || (chat.hasOlder != nil && chat.hasOlder != known.hasOlder) || (chat.chatID != nil && chat.name != known.name)
+                || (chat.activity != nil && chat.activity != known.activity) || (chat.waitsInApp != nil && chat.waitsInApp != known.waitsInApp)
+        } ?? false
         guard !messages.isEmpty || (known != nil && (chat.unread != nil || chat.members != nil || chat.listed || !chat.deleted.isEmpty
-                                                     || (chat.avatar != nil && chat.avatar != known?.avatar)))
+                                                     || (chat.avatar != nil && chat.avatar != known?.avatar) || described))
                 || (known == nil && gone == nil && chat.listed)
         else { return false }
         var thread = known ?? InboxThread(id: key, app: chat.app, name: chat.name)
+        thread.chatID = chat.chatID
         let before = thread
         thread.bridged = true
         let newestBefore = known?.last
@@ -738,6 +987,10 @@ struct ChatInbox: Codable, Equatable, Sendable {
             guard let index = indexByID[message.id] else { continue }
             // An edited message, or one first known from a chat list's preview, now read in full.
             if !message.text.isEmpty, thread.messages[index].text != message.text { thread.messages[index].text = message.text }
+            // Who wrote it, by a better name than before (the app learned it since: WhatsApp's names from Contacts and
+            // the phone come after its first messages).
+            if !message.sender.isEmpty, thread.messages[index].sender != message.sender { thread.messages[index].sender = message.sender }
+            if let sender = message.senderID, thread.messages[index].senderID != sender { thread.messages[index].senderID = sender }
             if message.media != nil, thread.messages[index].media != message.media { thread.messages[index].media = message.media }
             if message.poll != nil, thread.messages[index].poll != message.poll { thread.messages[index].poll = message.poll }
             if message.quote != nil, thread.messages[index].quote != message.quote { thread.messages[index].quote = message.quote }
@@ -747,28 +1000,45 @@ struct ChatInbox: Codable, Equatable, Sendable {
                 if next != kept { thread.messages[index].receipt = next }
             }
             if let readers = message.readers, thread.messages[index].readers != readers { thread.messages[index].readers = readers }
+            if let mentions = message.mentionsMe, thread.messages[index].mentionsMe != mentions { thread.messages[index].mentionsMe = mentions }
             if let reactions = message.reactions, thread.messages[index].reactions != reactions {
+                let old = thread.messages[index].reactions
                 thread.messages[index].reactions = reactions
+                if let note = ChatReactionNote.added(on: thread.messages[index], before: old, at: now) {
+                    thread.reaction = note
+                } else if thread.reaction?.message == message.id,
+                          !(reactions.contains { $0.emoji == thread.reaction?.emoji && $0.count > ($0.mine ? 1 : 0) }) {
+                    // The emoji the line shows was taken back.
+                    thread.reaction = nil
+                }
             }
         }
         if !chat.deleted.isEmpty { thread.messages.removeAll { chat.deleted.contains($0.id) } }
         var ids = Set(thread.messages.map(\.id))
-        for message in messages where !ids.contains(message.id) && !thread.messages.contains(where: {
+        // A chat its app knows by an id (`chatID`) gets every message under the app's own id, never also as a
+        // notification: two messages with the same words in a row ("ok", "ok") are two. Elsewhere the same words from the
+        // same side within a minute are one message a bridge and a notification each brought.
+        let byIDOnly = chat.chatID != nil
+        for message in messages where !ids.contains(message.id) && (byIDOnly || !thread.messages.contains(where: {
             // Two photos sent in a row are two messages, even without a caption.
             message.media == nil && $0.media == nil && message.poll == nil && $0.isMine == message.isMine && $0.text == message.text
                 && abs($0.date.timeIntervalSince(message.date)) < Self.sameMessageWindow
-        }) {
+        })) {
             let index = thread.messages.lastIndex { $0.date <= message.date }.map { $0 + 1 } ?? 0
             thread.messages.insert(message, at: index)
             ids.insert(message.id)
-            if chat.unread == nil, let newestBefore, !message.isMine, message.date > newestBefore { thread.unread += 1 }
+            // History (fetched on opening the chat, or after the Mac slept) is never new.
+            if chat.unread == nil, !chat.history, let newestBefore, !message.isMine, message.date > newestBefore { thread.unread += 1 }
         }
         if thread.messages.count > thread.keeps { thread.messages.removeFirst(thread.messages.count - thread.keeps) }
+        // Before the count: a read in Nook holds against it by when the chat last had a message.
+        if let activity = chat.activity, thread.activity.map({ activity > $0 }) ?? true { thread.activity = activity }
         if let unread = chat.unread {
             if let read = thread.readInNook {
-                // Read in Nook: only what came in after that is new here, never more than the app itself counts.
+                // Read in Nook: only what came in after that is new here, never more than the app itself counts. A chat
+                // Nook holds no messages of goes by when its app says it last had one.
                 let fresh = thread.messages.filter { !$0.isMine && $0.date > read }.count
-                thread.unread = min(unread, fresh)
+                thread.unread = thread.messages.isEmpty ? ((thread.activity ?? .distantPast) > read ? unread : 0) : min(unread, fresh)
             } else if unread != thread.appUnread {
                 thread.unread = unread
             }
@@ -777,12 +1047,20 @@ struct ChatInbox: Codable, Equatable, Sendable {
         thread.name = chat.name
         if let avatar = chat.avatar { thread.avatar = avatar }
         if let members = chat.members { thread.members = members }
+        if let account = chat.account { thread.account = account }
+        if let kind = chat.kind { thread.kind = kind }
+        if let handle = chat.handle { thread.handle = handle }
+        if let readKnown = chat.readKnown { thread.readKnown = readKnown }
+        if let hasOlder = chat.hasOlder { thread.hasOlder = hasOlder }
+        if let waitsInApp = chat.waitsInApp { thread.waitsInApp = waitsInApp }
+        if chat.ephemeral { thread.ephemeral = true }
         if chat.listed, thread.listed.map({ now.timeIntervalSince($0) >= Self.listedRenewal }) ?? true { thread.listed = now }
         guard thread != before else { return false }
         threads[key] = thread
-        // A group that is new here takes back its messages that its notifications put in someone's chat.
-        if known == nil, Self.isClearlyGroup(thread) { regroup() }
-        dropQuietest()
+        // A group that is new here takes back its messages that its notifications put in someone's chat. A chat its app
+        // knows by an id is no notification's guess, and needs none of that.
+        if known == nil, thread.chatID == nil, Self.isClearlyGroup(thread) { regroup() }
+        if trimming { dropQuietest(now: now) }
         return true
     }
 
@@ -852,6 +1130,37 @@ struct ChatInbox: Codable, Equatable, Sendable {
     /// Drops chats with nothing new for `maxAge`, then the quietest beyond `maxThreads`. A chat its app still lists
     /// stays either way.
     mutating func trim(now: Date = Date()) {
+        // A chat an earlier version split in two, by invisible marks in its name: one chat again, with the messages of both,
+        // so its newest message is the one its row and card show.
+        for (key, thread) in threads where thread.chatID == nil {
+            let home = Self.key(app: thread.app, chat: thread.name)
+            guard home != key, ChatCapture.unmarked(key) == home else { continue }
+            threads[key] = nil
+            guard var target = threads[home] else {
+                var moved = thread
+                moved.id = home
+                moved.name = ChatCapture.unmarked(thread.name)
+                threads[home] = moved
+                continue
+            }
+            for message in thread.messages where !target.messages.contains(where: {
+                $0.id == message.id || ($0.isMine == message.isMine && $0.text == message.text
+                                        && abs($0.date.timeIntervalSince(message.date)) < Self.sameMessageWindow)
+            }) {
+                let index = target.messages.lastIndex { $0.date <= message.date }.map { $0 + 1 } ?? 0
+                target.messages.insert(message, at: index)
+            }
+            threads[home] = target
+        }
+        // A reaction an earlier version kept as a message goes on the message it is on, in the chat it belongs to (its
+        // name without the marks that kept it apart).
+        for (key, thread) in threads {
+            let reactions = thread.messages.filter { !$0.isMine && ChatCapture.reaction($0.text) != nil }
+            guard !reactions.isEmpty else { continue }
+            threads[key]?.messages.removeAll { message in reactions.contains { $0.id == message.id } }
+            let home = thread.chatID == nil ? Self.key(app: thread.app, chat: thread.name) : key
+            for message in reactions { if let reaction = ChatCapture.reaction(message.text) { _ = react(reaction, in: home) } }
+        }
         // Messages with nothing to show (a reaction an earlier version kept as one) go; then the chats they leave empty.
         for (key, thread) in threads {
             let shown = thread.messages.filter { !ChatFormat.isBlank($0.text) || $0.media != nil || $0.poll != nil }
@@ -875,6 +1184,28 @@ struct ChatInbox: Codable, Equatable, Sendable {
         guard droppable.count > Self.maxThreads else { return }
         let quietest = droppable.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }.dropFirst(Self.maxThreads)
         for thread in quietest { threads[thread.id] = nil }
+    }
+
+    /// The inbox as it is written to disk: a chat whose messages its app keeps (`ephemeral`, WhatsApp through the linked
+    /// phone) goes without them and without the emoji note that quotes one, so no message of it ever reaches the disk.
+    /// What Nook knows of the chat itself stays (read, unread, its kind), with when it last had a message, so it still
+    /// sorts in its place before its bridge brings the messages again.
+    var forDisk: ChatInbox {
+        var copy = self
+        copy.forgetMessages(of: Set(threads.values.filter { $0.ephemeral == true }.map(\.id)))
+        return copy
+    }
+
+    /// Lets go of the messages of these chats in memory too (their app was turned off): only what Nook knows of each
+    /// chat itself stays, as on disk.
+    mutating func forgetMessages(of ids: Set<String>) {
+        for id in ids {
+            guard var thread = threads[id] else { continue }
+            if thread.last > .distantPast { thread.activity = thread.last }
+            thread.messages = []
+            thread.reaction = nil
+            threads[id] = thread
+        }
     }
 
     /// Newest first.
@@ -1014,10 +1345,10 @@ enum ChatTimeline {
 
 extension ChatInbox {
     /// The chat best matching a name (exactly, else the one starting with it, else containing it), in one app or any.
-    func thread(named name: String, app: String? = nil) -> InboxThread? {
+    func thread(named name: String, app: String? = nil, among shown: (InboxThread) -> Bool = { _ in true }) -> InboxThread? {
         let wanted = Self.key(app: "", chat: name).dropFirst()
         guard !wanted.isEmpty else { return nil }
-        let candidates = sorted.filter { app == nil || $0.app == app }
+        let candidates = sorted.filter { (app == nil || $0.app == app) && shown($0) }
         let folded = { (thread: InboxThread) in Self.key(app: "", chat: thread.name).dropFirst() }
         return candidates.first { folded($0) == wanted }
             ?? candidates.first { folded($0).hasPrefix(wanted) }
@@ -1039,9 +1370,32 @@ extension ChatInbox {
         thread.messages.suffix(limit).map { "[\(stamp($0.date))] " + line($0, in: thread) }.joined(separator: "\n")
     }
 
+    /// The messages that hold every word of `query` (ignoring case and accents), yours as well as theirs, newest first,
+    /// each with its app and chat: "- Telegram · Anna · 2026-10-20 12:04 · You: see you at eight". Empty when none does.
+    static func search(_ threads: [InboxThread], query: String, limit: Int = 30) -> String {
+        let words = fold(query).split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !words.isEmpty else { return "" }
+        var found: [(thread: InboxThread, message: InboxMessage)] = []
+        for thread in threads {
+            for message in thread.messages {
+                let haystack = fold(message.summary + " " + message.sender)
+                if words.allSatisfy(haystack.contains) { found.append((thread, message)) }
+            }
+        }
+        return found.sorted { $0.message.date > $1.message.date }.prefix(limit).map { hit in
+            let app = MessagingApps.app(id: hit.thread.app)?.name ?? hit.thread.app
+            return "- \(app) · \(hit.thread.name) · \(stamp(hit.message.date)) · " + line(hit.message, in: hit.thread)
+        }.joined(separator: "\n")
+    }
+
+    private static func fold(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+    }
+
     private static func line(_ message: InboxMessage, in thread: InboxThread) -> String {
         let text = message.summary.count > 300 ? String(message.summary.prefix(300)) + "…" : message.summary
-        return "\(message.sender.isEmpty ? thread.name : message.sender): \(text)"
+        let who = message.isMine ? "You" : (message.sender.isEmpty ? thread.name : message.sender)
+        return "\(who): \(text)"
     }
 
     private static func stamp(_ date: Date) -> String {

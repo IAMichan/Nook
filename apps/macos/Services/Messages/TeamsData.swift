@@ -92,6 +92,14 @@ enum TeamsData {
         }
     }
 
+    /// Whether a refused refresh means the sign-in itself is gone (revoked, expired, or a new consent needed), so only
+    /// signing in again helps. Anything else (Microsoft busy, a server error, no answer) is passing: the refresh token
+    /// is kept and asked with again at the next read, instead of signing you out for one bad answer.
+    static func signInGone(_ json: [String: Any]) -> Bool {
+        ["invalid_grant", "interaction_required", "consent_required", "login_required", "unauthorized_client", "invalid_client"]
+            .contains((json["error"] as? String) ?? "")
+    }
+
     /// Your own id, name and sign-in address, from /me.
     static func me(_ json: [String: Any]) -> (id: String, name: String, email: String)? {
         guard let id = json["id"] as? String else { return nil }
@@ -179,9 +187,10 @@ enum TeamsData {
             // Graph shares no one's read receipts but your own: your message is on Teams, and that is all it says.
             if mine { inbox.receipt = .sent }
             inbox.quote = attachments.lazy.compactMap { quote($0, me: me) }.first
-            inbox.reactions = reactions((message["reactions"] as? [[String: Any]] ?? []).map { reaction -> (key: String, mine: Bool) in
+            inbox.reactions = reactions((message["reactions"] as? [[String: Any]] ?? []).map { reaction -> (key: String, mine: Bool, name: String?) in
                 let user = (reaction["user"] as? [String: Any])?["user"] as? [String: Any]
-                return (key: (reaction["reactionType"] as? String) ?? "", mine: me != nil && user?["id"] as? String == me)
+                return (key: (reaction["reactionType"] as? String) ?? "", mine: me != nil && user?["id"] as? String == me,
+                        name: user?["displayName"] as? String)
             })
             return inbox
         }
@@ -204,14 +213,11 @@ enum TeamsData {
     // MARK: Reactions
 
     /// Teams' own reactions by their key, each as the emoji the reaction buttons of every chat in Nook use.
-    static let emotions: [(key: String, emoji: String)] = [
-        ("like", "👍"), ("heart", "❤️"), ("laugh", "😂"), ("surprised", "😮"), ("sad", "😢"), ("angry", "😡"),
-    ]
-
-    /// The emoji of a Teams reaction key: one of its own ("like"), an emoji itself (as Graph writes the newer ones),
-    /// or the newer keys' code points before "_" ("1f64f_foldedhands", "2764-fe0f_heart"). Nil when it says none.
+    /// The emoji of a Teams reaction key: one from Teams' own list ("like", "cwl", "1f64f_foldedhands", see
+    /// `TeamsEmoji`), an emoji itself (as Graph writes the newer ones), or for a key the list does not have yet, its
+    /// code points before "_". Nil when it says none.
     static func emoji(key: String) -> String? {
-        if let known = emotions.first(where: { $0.key == key.lowercased() }) { return known.emoji }
+        if let known = TeamsEmoji.byKey[key.lowercased()] { return known }
         if key.unicodeScalars.contains(where: { $0.properties.isEmojiPresentation || $0.properties.isEmoji && $0.value > 0xFF }) {
             return key
         }
@@ -222,26 +228,25 @@ enum TeamsData {
         return String(String.UnicodeScalarView(scalars))
     }
 
-    /// The key Teams keeps an emoji under: its own for the six it always had, else the emoji's code points
-    /// ("1f64f"), as the newer keys start.
-    static func key(emoji: String) -> String {
-        // "❤" and "❤️" are the same heart.
-        let bare = { (emoji: String) in emoji.unicodeScalars.filter { $0.value != 0xFE0F } }
-        if let known = emotions.first(where: { Array(bare($0.emoji)) == Array(bare(emoji)) }) { return known.key }
-        return bare(emoji).map { String($0.value, radix: 16) }.joined(separator: "-")
+    /// The key Teams keeps an emoji under, from its own list; nil for an emoji Teams does not offer, which it would
+    /// show as a placeholder.
+    static func key(emoji: String) -> String? {
+        TeamsEmoji.byEmoji[TeamsEmoji.bare(emoji)]
     }
 
     /// Reactions as (key, yours) pairs, one per person, as chips: one per emoji with how many, the most used first
     /// (then in the order they came). An empty list too, so the last one taken back leaves none.
-    static func reactions(_ pairs: [(key: String, mine: Bool)]) -> [InboxReaction] {
+    static func reactions(_ pairs: [(key: String, mine: Bool, name: String?)]) -> [InboxReaction] {
         var chips: [InboxReaction] = []
         for pair in pairs {
             guard let emoji = emoji(key: pair.key) else { continue }
+            let names = !pair.mine && !(pair.name ?? "").isEmpty ? [pair.name!] : []
             if let index = chips.firstIndex(where: { $0.emoji == emoji }) {
                 chips[index].count += 1
                 chips[index].mine = chips[index].mine || pair.mine
+                if !names.isEmpty { chips[index].people = (chips[index].people ?? []) + names }
             } else {
-                chips.append(InboxReaction(emoji: emoji, count: 1, mine: pair.mine))
+                chips.append(InboxReaction(emoji: emoji, count: 1, mine: pair.mine, people: names.isEmpty ? nil : names))
             }
         }
         return chips.enumerated().sorted { $0.element.count != $1.element.count ? $0.element.count > $1.element.count : $0.offset < $1.offset }

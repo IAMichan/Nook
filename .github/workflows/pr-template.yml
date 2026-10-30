@@ -1,0 +1,33 @@
+name: PR template
+
+# Checks that the pull request description follows .github/pull_request_template.md (scripts/pr-body-check.py):
+# every section present and filled in, issues linked or "None", and at least one Testing box ticked or a
+# line that says what was run or not run. It reads only
+# the description, never the pull request's code, and runs again whenever the description is edited.
+# Bot pull requests (Dependabot) and drafts are skipped. Runs on ubuntu and takes seconds.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  description:
+    name: Description follows template
+    if: "!github.event.pull_request.draft && github.event.pull_request.user.type != 'Bot'"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/pr-body-check.py
+          sparse-checkout-cone-mode: false
+      - name: Check description
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python3 scripts/pr-body-check.py

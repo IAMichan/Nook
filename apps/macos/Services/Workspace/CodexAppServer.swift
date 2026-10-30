@@ -314,8 +314,10 @@ enum CodexAppServerMapper {
                 name = tool.label
                 detail = ((item["arguments"] as? [String: Any]).flatMap(BridgeTool.detail)).map { ToolSummary.oneLine($0, 120) } ?? ""
             }
-            var events: [CodexStreamEvent] = [.toolCall(id: id, name: name, detail: detail, finished: finished && (item["status"] as? String) != "inProgress",
-                                                        failed: (item["status"] as? String) == "failed")]
+            let done = finished && (item["status"] as? String) != "inProgress"
+            var events: [CodexStreamEvent] = [.toolCall(id: id, name: name, detail: detail, finished: done,
+                                                        failed: (item["status"] as? String) == "failed",
+                                                        input: CodexToolResult.arguments(item), output: done ? CodexToolResult.text(item) : nil)]
             // A finished call with an app: Nook fetches its page (only for a call that completed without error).
             if finished, (item["status"] as? String) == "completed", item["error"] == nil || item["error"] is NSNull,
                let result = item["result"], !(result is NSNull), let uri = McpApp.resourceUri(codexItem: item),
@@ -326,7 +328,8 @@ enum CodexAppServerMapper {
             return events
         case "dynamicToolCall":
             return [.toolCall(id: id, name: (item["tool"] as? String) ?? "tool", detail: "",
-                              finished: finished, failed: (item["success"] as? Bool) == false)]
+                              finished: finished, failed: (item["success"] as? Bool) == false,
+                              input: CodexToolResult.arguments(item), output: finished ? CodexToolResult.text(item) : nil)]
         case "webSearch":
             return [.toolCall(id: id, name: "web_search", detail: (item["query"] as? String) ?? "", finished: finished, failed: false)]
         case "collabAgentToolCall":

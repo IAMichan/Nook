@@ -40,10 +40,9 @@ struct CommandConsolePanel: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
+                    .padding(.bottom, 10)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .cardBackground(NookTheme.notch, stroke: NookTheme.line2, radius: NookTheme.Radius.card, style: .continuous)
                 .onAppear { proxy.scrollTo("end", anchor: .bottom) }
                 .onChange(of: event.output?.count ?? 0) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
                 .onChange(of: event.id) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
@@ -52,20 +51,18 @@ struct CommandConsolePanel: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
+    /// The side panel's own header (`SidePanelHeader`), on the left of the conversation.
     private var header: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "terminal").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
-            Text(tr("ws.console.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
+        SidePanelHeader(closeHelp: tr("ws.console.close"), close: close) {
+            SidePanelTitle(symbol: "terminal", title: tr("ws.console.title"))
             status
-            Spacer(minLength: 4)
+        } actions: {
             ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", tr("ws.console.copy")) {
                 Pasteboard.copy("$ " + command + (output.isEmpty ? "" : "\n" + output))
                 copied = true
                 Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
             }
-            ToolbarIconButton("xmark", tr("ws.console.close"), close)
         }
-        .frame(height: 30)
     }
 
     @ViewBuilder

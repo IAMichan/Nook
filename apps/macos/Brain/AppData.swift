@@ -401,7 +401,7 @@ extension AppData {
         /// tapback on a message at most, a newer one replaces theirs and taking it back clears it. The most used emoji
         /// come first. Every message a tapback points at is in the answer, with no emoji when all were taken back, so a
         /// chat that showed one drops it.
-        static func reactions(_ tapbacks: [Tapback]) -> [String: [InboxReaction]] {
+        static func reactions(_ tapbacks: [Tapback], name: (String) -> String? = { _ in nil }) -> [String: [InboxReaction]] {
             var current: [String: [String: Tapback]] = [:]
             var order: [String: [String]] = [:]
             for tapback in tapbacks {
@@ -421,7 +421,9 @@ extension AppData {
                 for emoji in order[target] ?? [] {
                     let on = people.values.filter { $0.emoji == emoji }
                     guard !on.isEmpty else { continue }
-                    chips.append(InboxReaction(emoji: emoji, count: on.count, mine: on.contains { $0.mine }))
+                    let names = on.filter { !$0.mine }.compactMap { name($0.sender) }.sorted()
+                    chips.append(InboxReaction(emoji: emoji, count: on.count, mine: on.contains { $0.mine },
+                                               people: names.isEmpty ? nil : names))
                 }
                 // A stable sort: emoji used as often keep the order they were first put there in.
                 reactions[target] = chips.enumerated()

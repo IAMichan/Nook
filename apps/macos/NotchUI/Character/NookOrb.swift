@@ -55,7 +55,7 @@ struct NookOrb: View {
             .overlay {
                 // In a graph of its own (`SeparateGraph`), so his frames do not update the window he is in.
                 SeparateGraph {
-                    TimelineView(.nookFrames(fps: animated ? awakeRate : Self.dozingFrameRate,
+                    TimelineView(.nookFrames(fps: animated ? awakeRate : energy.plan.frameRate(Self.dozingFrameRate, attended: attended),
                                             paused: (dozing && energy.plan.pace == .paused) || !(animated || dozing))) { context in
                         let p = pose(at: context.date)
                         orb(p).onChange(of: p.offset) { _, offset in motion?.follow(offset) }

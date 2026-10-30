@@ -193,6 +193,79 @@ final class PullRequestDetailTests: XCTestCase {
         XCTAssertEqual(detail.lineCommentCount, 0)
     }
 
+    func testParsesAssigneesMilestoneForkAndAutoMerge() throws {
+        let plain = try XCTUnwrap(PullRequestDetailParser.detail(pull: try json(pull)))
+        XCTAssertEqual(plain.assignees, [])
+        XCTAssertNil(plain.milestone)
+        XCTAssertNil(plain.headOwner)
+        XCTAssertNil(plain.autoMerge)
+
+        var object = try json(pull)
+        object["requested_reviewers"] = [["login": "bob"]]
+        object["requested_teams"] = [["name": "core"]]
+        object["assignees"] = [["login": "ada"], ["login": "zoe"]]
+        object["milestone"] = ["title": "v2.0"]
+        object["head"] = ["ref": "feature/merge", "sha": "abc1234def",
+                          "repo": ["full_name": "zoe/app", "owner": ["login": "zoe"]] as [String: Any]] as [String: Any]
+        object["auto_merge"] = ["merge_method": "squash", "enabled_by": ["login": "bob"]] as [String: Any]
+        let detail = try XCTUnwrap(PullRequestDetailParser.detail(pull: object))
+        XCTAssertEqual(detail.requestedTeams, ["core"])
+        XCTAssertEqual(detail.assignees, ["ada", "zoe"])
+        XCTAssertEqual(detail.milestone, "v2.0")
+        XCTAssertEqual(detail.headOwner, "zoe")
+        XCTAssertEqual(detail.autoMerge, PullRequestAutoMerge(method: .squash, enabledBy: "bob"))
+
+        // The same repository (in another case) is no fork.
+        object["head"] = ["ref": "feature/merge", "sha": "abc1234def", "repo": ["full_name": "ACME/app"]] as [String: Any]
+        XCTAssertNil(try XCTUnwrap(PullRequestDetailParser.detail(pull: object)).headOwner)
+    }
+
+    func testParsesALockedConversation() throws {
+        XCTAssertFalse(try XCTUnwrap(PullRequestDetailParser.detail(pull: try json(pull))).locked)
+        var object = try json(pull)
+        object["locked"] = true
+        object["active_lock_reason"] = "too heated"
+        let detail = try XCTUnwrap(PullRequestDetailParser.detail(pull: object))
+        XCTAssertTrue(detail.locked)
+        XCTAssertEqual(detail.lockReason, "too heated")
+    }
+
+    func testParsesLinkedIssues() {
+        let answer: [String: Any] = ["data": ["repository": ["pullRequest": ["closingIssuesReferences": ["nodes": [
+            ["number": 7, "title": "Crash on launch", "state": "OPEN", "url": "https://github.com/acme/app/issues/7",
+             "repository": ["nameWithOwner": "acme/app"]] as [String: Any],
+            ["number": 3, "title": "Docs", "state": "CLOSED", "repository": ["nameWithOwner": "acme/docs"]] as [String: Any],
+            ["title": "No number"] as [String: Any],
+        ]]]]]]
+        let issues = PullRequestDetailParser.linkedIssues(answer)
+        XCTAssertEqual(issues.map(\.id), ["acme/app#7", "acme/docs#3"])
+        XCTAssertEqual(issues.map(\.open), [true, false])
+        XCTAssertEqual(issues.first?.url?.absoluteString, "https://github.com/acme/app/issues/7")
+        XCTAssertEqual(PullRequestDetailParser.linkedIssues(nil), [])
+        XCTAssertNotNil(PullRequestDetailParser.linkedIssuesBody(repo: "acme/app", number: 12))
+        XCTAssertNil(PullRequestDetailParser.linkedIssuesBody(repo: "nope", number: 12))
+    }
+
+    func testLinkedIssuesStayUntilTheNextActivity() {
+        var old = PullRequestDetail(repo: "acme/app", number: 1, title: "T", body: "", url: nil, author: "ada", state: .open,
+                                    baseBranch: "main", headBranch: "f", headSHA: "a", additions: 0, deletions: 0,
+                                    changedFiles: 0, created: nil, updated: nil, mergeable: true, mergeState: "clean")
+        let issue = PullRequestLinkedIssue(repo: "acme/app", number: 7, title: "Crash", open: true, url: nil)
+        old.apply(PullRequestActivity(issues: [issue]))
+        var fresh = old
+        fresh.activityLoaded = false
+        fresh.linkedIssues = []
+        XCTAssertEqual(fresh.keepingActivity(of: old).linkedIssues, [issue])
+    }
+
+    func testACommitsDetailsAreItsMessageUnderTheSubject() {
+        let commit = PullRequestCommit(sha: "abc", message: "Fix the crash\n\nThe list was read twice.\nNow once.\n",
+                                       author: "ada", date: nil)
+        XCTAssertEqual(commit.subject, "Fix the crash")
+        XCTAssertEqual(commit.details, "The list was read twice.\nNow once.")
+        XCTAssertEqual(PullRequestCommit(sha: "b", message: "One line", author: "ada", date: nil).details, "")
+    }
+
     func testReviewerCandidatesLeaveOutAuthorBotsAndThoseAsked() throws {
         var object = try json(pull)
         object["requested_reviewers"] = [["login": "Bob"]]
@@ -247,6 +320,42 @@ final class PullRequestDetailTests: XCTestCase {
         arrived.apply(PullRequestActivity(events: [], commits: [], files: []))
         XCTAssertTrue(arrived.activityLoaded)
         XCTAssertEqual(arrived.keepingActivity(of: old).files, [])
+    }
+
+    func testAConflictStaysWhileGitHubWorksMergeabilityOutAgain() throws {
+        var object = try json(pull)
+        object["mergeable"] = false
+        object["mergeable_state"] = "dirty"
+        let conflicted = try XCTUnwrap(PullRequestDetailParser.detail(pull: object))
+
+        // Another pull request merged into the base: GitHub forgets for a moment.
+        object["mergeable"] = NSNull()
+        object["mergeable_state"] = "unknown"
+        let computing = try XCTUnwrap(PullRequestDetailParser.detail(pull: object))
+        XCTAssertFalse(computing.conflicted)
+        let kept = computing.keepingConflict(of: conflicted)
+        XCTAssertTrue(kept.conflicted)
+        XCTAssertFalse(kept.canMerge)
+        XCTAssertEqual(kept.mergeNote, "agents.pr.note.conflict")
+        XCTAssertEqual(PullRequestReadiness(kept)?.verdict, .blocked)
+        XCTAssertNil(kept.mergeable, "still asks GitHub again soon")
+
+        let clean = try XCTUnwrap(PullRequestDetailParser.detail(pull: try json(pull)))
+        XCTAssertFalse(computing.keepingConflict(of: clean).conflicted, "nothing to keep from a clean read")
+        XCTAssertFalse(computing.keepingConflict(of: nil).conflicted)
+        object["head"] = ["ref": "feature/merge", "sha": "fff0000"]
+        let pushed = try XCTUnwrap(PullRequestDetailParser.detail(pull: object))
+        XCTAssertFalse(pushed.keepingConflict(of: conflicted).conflicted, "a new head may have resolved it")
+        object["mergeable"] = true
+        object["mergeable_state"] = "clean"
+        let resolved = try XCTUnwrap(PullRequestDetailParser.detail(pull: object))
+        XCTAssertFalse(resolved.keepingConflict(of: conflicted).conflicted, "GitHub's own answer wins")
+
+        // The row keeps its conflict mark too while the page cannot say.
+        var row = PullRequestItem(repo: "acme/app", number: 12, title: "", url: nil, draft: false, updated: nil, author: "ada")
+        row.conflict = true
+        XCTAssertTrue(row.updated(from: computing).conflict)
+        XCTAssertFalse(row.updated(from: clean).conflict)
     }
 
     func testTimelineGroupsCommitsInRuns() {

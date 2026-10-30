@@ -300,6 +300,11 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
             }
         case "messageViewers", "users":
             if let extra = object["@extra"] as? String, extra.hasPrefix("viewers:") { viewed(TelegramData.viewers(object), extra: extra) }
+        case "messageReadDateRead":
+            if let extra = object["@extra"] as? String, extra.hasPrefix("readdate:"), let seconds = TelegramData.int64(object["read_date"]),
+               seconds > 0 {
+                viewed([(user: 0, date: Date(timeIntervalSince1970: Double(seconds)))], extra: "viewers:" + extra.dropFirst("readdate:".count))
+            }
         case "updateChatAction":
             // Telegram repeats an action every few seconds while it lasts, and lets it go after six without a word.
             if let action = TelegramData.chatAction(object), action.user != meID, let chat = chats[action.chat], !chat.title.isEmpty {
@@ -337,7 +342,7 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
             // Someone put an emoji on a message, or took theirs back: the chat shows it.
             if let chat = TelegramData.int64(object["chat_id"]), let id = TelegramData.int64(object["message_id"]),
                let index = messages[chat]?.firstIndex(where: { $0.id == "telegram-\(chat)-\(id)" }) {
-                let reactions = TelegramData.reactions(object["interaction_info"])
+                let reactions = TelegramData.reactions(object["interaction_info"], users: users, me: meID)
                 if messages[chat]?[index].reactions != reactions {
                     messages[chat]?[index].reactions = reactions
                     changed.insert(chat)
@@ -413,7 +418,8 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
             } else if let extra = object["@extra"] as? String, extra.hasPrefix("send:") {
                 refused(extra, message)
             } else if let extra = object["@extra"] as? String, extra.hasPrefix("action:") {
-                // A pin, mute, archive, edit or delete Telegram refused: the chat is asked again, so it shows as it is.
+                // A pin, mute, archive, edit, delete, emoji, vote or read mark Telegram refused: the chat is asked again,
+                // so it shows as it is.
                 ToastCenter.shared.error(tr("chat.action.failed"), detail: Self.explain(message))
                 if let chat = extra.split(separator: ":").last.flatMap({ Int64($0) }) {
                     send(["@type": "getChat", "chat_id": chat, "@extra": "refresh"])
@@ -500,16 +506,22 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
         }
     }
 
-    /// Who read your newest messages in a group: asked of Telegram for those it says were read since the last ask.
-    /// Telegram answers only for the last week, and in groups of up to 100 people; elsewhere the message keeps its ticks.
+    /// Who read your newest messages in a group, or when the other person read them in a private chat: asked of
+    /// Telegram for those it says were read since the last ask. Telegram answers only for the last week (a group of up
+    /// to 100 people), or when neither of you hides when you read (`getMessageReadDate`); elsewhere the message keeps its
+    /// ticks.
     private func askViewers(in chat: Int64) {
-        guard let group = chats[chat], group.isGroup, group.readOutbox > 0 else { return }
+        guard let group = chats[chat], group.readOutbox > 0 else { return }
         let week = Date().addingTimeInterval(-7 * 86_400)
         for message in (messages[chat] ?? []).filter({ $0.isMine && $0.date > week }).suffix(Self.viewed) {
             guard let ids = TelegramData.ids(message.id), ids.message <= group.readOutbox,
                   viewersAsked[message.id] != group.readOutbox else { continue }
             viewersAsked[message.id] = group.readOutbox
-            send(["@type": "getMessageViewers", "chat_id": chat, "message_id": ids.message, "@extra": "viewers:\(message.id)"])
+            if group.isGroup {
+                send(["@type": "getMessageViewers", "chat_id": chat, "message_id": ids.message, "@extra": "viewers:\(message.id)"])
+            } else {
+                send(["@type": "getMessageReadDate", "chat_id": chat, "message_id": ids.message, "@extra": "readdate:\(message.id)"])
+            }
         }
         if viewersAsked.count > 500 { viewersAsked.removeAll() }
     }
@@ -518,8 +530,10 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
     private func viewed(_ viewers: [(user: Int64, date: Date?)], extra: String) {
         let id = String(extra.dropFirst("viewers:".count))
         guard let ids = TelegramData.ids(id), let index = messages[ids.chat]?.firstIndex(where: { $0.id == id }) else { return }
+        // In a private chat (user 0) the reader is the chat itself, unnamed, as every app's private chat shows it.
         let readers = viewers.filter { $0.user != meID }.map { viewer in
-            ChatReader(name: users[viewer.user] ?? String(viewer.user), receipt: .read, date: viewer.date, key: String(viewer.user))
+            viewer.user == 0 ? ChatReader(name: "", receipt: .read, date: viewer.date)
+                : ChatReader(name: users[viewer.user] ?? String(viewer.user), receipt: .read, date: viewer.date, key: String(viewer.user))
         }
         guard messages[ids.chat]?[index].readers != readers else { return }
         messages[ids.chat]?[index].readers = readers
@@ -527,28 +541,29 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
     }
 
     /// Tells Telegram you read the chat, after your own click: its newest messages count as viewed, so the chat is read
-    /// on your phone too and the people who wrote see it. Telegram's own unread count follows by itself.
-    func markRead(chat: Int64) {
+    /// on your phone too and the people who wrote see it. Telegram's own unread count follows by itself; a refusal
+    /// shows as a toast, as every other chat action's does.
+    func markRead(chat: Int64) throws {
         let ids = (messages[chat] ?? []).filter { !$0.isMine }.suffix(100).compactMap { TelegramData.ids($0.id)?.message }
         guard !ids.isEmpty else { return }
-        send(["@type": "viewMessages", "chat_id": chat, "message_ids": ids, "force_read": true])
+        try act(["@type": "viewMessages", "chat_id": chat, "message_ids": ids, "force_read": true], chat: chat)
     }
 
     /// Your vote on a poll, after your own click (an empty choice takes it back); the poll shows it at once.
-    func vote(_ choice: [String], message id: String) {
+    func vote(_ choice: [String], message id: String) throws {
         guard let ids = TelegramData.ids(id), let index = messages[ids.chat]?.firstIndex(where: { $0.id == id }),
-              let poll = messages[ids.chat]?[index].poll else { return }
+              let poll = messages[ids.chat]?[index].poll else { throw NookError(tr("chat.poll.failed")) }
         let options = poll.options.indices.filter { choice.contains(poll.options[$0].text) }
-        send(["@type": "setPollAnswer", "chat_id": ids.chat, "message_id": ids.message, "option_ids": options])
+        try act(["@type": "setPollAnswer", "chat_id": ids.chat, "message_id": ids.message, "option_ids": options], chat: ids.chat)
         messages[ids.chat]?[index].poll = poll.voting(choice)
         changed.insert(ids.chat)
     }
 
     /// Your emoji on a message (its id in Nook), after your own click; the same one again takes it back. The chat
-    /// shows it once Telegram has it.
+    /// shows it once Telegram has it; a refusal (an emoji the chat does not allow) shows as a toast.
     func react(_ emoji: String, to id: String, mine: Bool) throws {
         guard isReady, let ids = TelegramData.ids(id) else { throw NookError(tr("chat.compose.telegramOff")) }
-        send(TelegramData.reaction(emoji, chat: ids.chat, message: ids.message, add: !mine))
+        try act(TelegramData.reaction(emoji, chat: ids.chat, message: ids.message, add: !mine), chat: ids.chat)
     }
 
     // MARK: Chat actions
@@ -587,9 +602,9 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
     }
 
     /// Deletes your message (its id in Nook) for everyone; the chat drops it once Telegram did (`updateDeleteMessages`).
-    func delete(_ id: String) throws {
+    func delete(_ id: String, forEveryone: Bool = true) throws {
         guard let ids = TelegramData.ids(id) else { throw NookError(tr("chat.compose.telegramOff")) }
-        try act(TelegramData.deleteMessages(chat: ids.chat, messages: [ids.message]), chat: ids.chat)
+        try act(TelegramData.deleteMessages(chat: ids.chat, messages: [ids.message], revoke: forEveryone), chat: ids.chat)
     }
 
     /// Sends a chat action to TDLib, with an `@extra` so a refusal shows as a toast.

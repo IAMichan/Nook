@@ -37,6 +37,9 @@ extension RunProvider {
 final class WorkspaceWindowController {
     static let shared = WorkspaceWindowController()
     private var window: NSWindow?
+    /// Whether the window's content is there. A closed window is kept to open again where it was, and its SwiftUI graph
+    /// went on updating with every change to a session (the whole Agents tab, laid out at full size) while nothing showed.
+    private let presence = WindowPresence()
     /// Quitting does not close the window: it is still open when Nook starts again.
     private var quitting = false
 
@@ -55,7 +58,9 @@ final class WorkspaceWindowController {
     /// `screen`: the window moves there first when it is on another one (the screen an update was started from).
     func show(app: AppModel, activate: Bool = true, on screen: NSScreen? = nil) {
         if window == nil {
-            let root = WorkspaceView()
+            let root = WindowContent(presence: presence, background: NookTheme.notch, minSize: CGSize(width: 900, height: 580)) {
+                WorkspaceView()
+            }
                 .nookAttention()
                 .environmentObject(app)
                 .environmentObject(app.workspace)
@@ -84,16 +89,19 @@ final class WorkspaceWindowController {
             if window.frame.origin == .zero { window.center() }
             NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
-                    guard self?.quitting == false else { return }
+                    guard let self, !self.quitting else { return }
                     UserDefaults.standard.set(false, forKey: Self.openKey)
+                    self.presence.shown = false
                 }
             }
+            presence.follow(window)
             NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.quitting = true }
             }
             self.window = window
         }
         if let window { DockPresence.shared.track(window) }
+        presence.shown = true
         if let screen { move(to: screen) }
         UserDefaults.standard.set(true, forKey: Self.openKey)
         guard activate else {
@@ -111,6 +119,41 @@ final class WorkspaceWindowController {
         let width = min(window.frame.width, visible.width)
         let height = min(window.frame.height, visible.height)
         window.setFrame(NSRect(x: visible.midX - width / 2, y: visible.midY - height / 2, width: width, height: height), display: true)
+    }
+}
+
+/// Whether a window that is kept after closing (to open again where it was) shows its content. Its SwiftUI graph would
+/// otherwise go on updating with every change in the app while nothing shows.
+@MainActor
+final class WindowPresence: ObservableObject {
+    @Published var shown = true
+
+    /// Minimized, the window shows nothing either: its content goes until it comes back out of the Dock. Closing is up to
+    /// the window's owner.
+    func follow(_ window: NSWindow) {
+        NotificationCenter.default.addObserver(forName: NSWindow.didMiniaturizeNotification, object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.shown = false }
+        }
+        NotificationCenter.default.addObserver(forName: NSWindow.didDeminiaturizeNotification, object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.shown = true }
+        }
+    }
+}
+
+/// A kept window's root: `content` while the window is open, its background alone while it is closed or minimized.
+/// Where you were lives outside the content (the view model, `settingsSection`), so the window opens again on it.
+struct WindowContent<Content: View>: View {
+    @ObservedObject var presence: WindowPresence
+    let background: Color
+    let minSize: CGSize
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if presence.shown {
+            content()
+        } else {
+            background.frame(minWidth: minSize.width, minHeight: minSize.height)
+        }
     }
 }
 
@@ -159,9 +202,12 @@ extension AppModel {
             if GitHubPullRequests.parse(url) != nil { return await GitHubPullRequests.snapshot(url: url) }
             return await GitLabMergeRequests.snapshot(url: url)
         }
+        // The tray above the composer reads its pull request with the same accounts, into the one shared status.
+        PullRequestStatusStore.shared.fetch = workspace.pullRequestSnapshot
         workspace.pullRequestLookup = { repo, branch in
-            guard let found = await SourceForge.requests(repo: repo, branch: branch) else { return nil }
-            return found.first { $0.state.isOpen }.flatMap { URL(string: $0.url) }
+            guard let found = await SourceForge.requests(repo: repo, branch: branch) else { return (nil, false) }
+            let open = found.first { $0.state.isOpen }.flatMap { URL(string: $0.url) }
+            return (open, open == nil && found.contains { !$0.state.isOpen })
         }
         workspace.pullRequestCreate = { repo, title, body, head, base in
             guard SourceForge.canCreate(repo) else { return nil }
@@ -267,8 +313,8 @@ extension AppModel {
         let show: () -> Void = { [weak self] in
             self?.viewModel.notify(message, button: tr("ws.notice.open")) { [weak self] in self?.openWorkspace(run: runID) }
         }
-        deliverNotice(.agents, app: run.provider.rawValue, id: "wsquestion-" + runID.uuidString, title: message,
-                      sound: .attention, card: show, strip: show, open: { [weak self] in self?.openWorkspace(run: runID) })
+        deliverNotice(.agents, app: run.provider.rawValue, id: "wsquestion-" + runID.uuidString, urgent: true, title: message,
+                      sound: .attention, kind: .warning, card: show, strip: show, open: { [weak self] in self?.openWorkspace(run: runID) })
     }
 
     private func workspaceTurnFinished(_ run: WorkspaceRun) {
@@ -277,67 +323,36 @@ extension AppModel {
         // An agent may have pushed or opened a pull request: the list refreshes when you look next.
         PullRequestStore.shared.markStale()
         // The turn used part of the plan: show the limits as they are now.
-        if run.provider == .claude { claudeUsage.refreshNow() }
+        switch run.provider {
+        case .claude: claudeUsage.refreshNow()
+        case .codex: codex.refreshNow()
+        case .antigravity: antigravityUsage.refreshNow()
+        // These agents report no subscription limits (see QuotaService).
+        case .gemini, .opencode, .cursor, .grok, .acp: break
+        }
         let state: AgentAttention = run.status == .failed ? (run.limitedAt != nil ? .limited : .failed) : .ready
         guard attentionLedger.shouldNotify(id: run.id.uuidString, state: state, turn: Int(run.updatedAt.timeIntervalSince1970)) else { return }
         // Only notify if the user is not already looking at the workspace window.
         guard !WorkspaceWindowController.shared.isKey else { return }
         let failed = run.status == .failed
-        let title = failed ? tr("ws.notice.failed", run.title) : tr("ws.notice.done", run.title)
-        let context = [run.provider.displayName, (run.projectPath as NSString).lastPathComponent].filter { !$0.isEmpty }
-            .joined(separator: " · ")
-        logNotice(failed ? .failed : .done, title: title, detail: failed ? (run.statusDetail ?? "") : "", context: context,
-                  target: .run(run.id), source: .agents, app: run.provider.rawValue)
         let runID = run.id
-        deliverNotice(.agents, app: run.provider.rawValue, id: "agentstatus-ws-" + UUID().uuidString, title: title,
-                      subtitle: context, body: failed ? (run.statusDetail ?? "") : "", sound: failed ? .error : .done,
-                      card: { [weak self] in self?.showTurnNotice(run, compact: false) },
-                      strip: { [weak self] in self?.showTurnNotice(run, compact: true) },
-                      open: { [weak self] in self?.openWorkspace(run: runID) })
-    }
-
-    /// The notch notice for a finished or failed turn: a card, or one slim line (`compact`).
-    private func showTurnNotice(_ run: WorkspaceRun, compact: Bool) {
-        guard notchFreeForNotice else { return }
-        let failed = run.status == .failed
-        let runID = run.id
-        guard !compact else {
-            let message = failed ? tr("ws.notice.failed", run.title) : tr("ws.notice.done", run.title)
-            viewModel.finish(message, button: tr("ws.notice.open"), tone: failed ? .failed : .done, inline: true) { [weak self] in
-                self?.openWorkspace(run: runID)
-            }
-            return
-        }
-        // Detailed: a card like a terminal agent's, with the run's provider and project, and OK to close it at once.
-        let token = "agentstatus-ws-" + UUID().uuidString
-        viewModel.register("\(token)#open") { [weak self] in self?.openWorkspace(run: runID) }
-        viewModel.register("\(token)#ok") { [weak self] in self?.viewModel.dismissCard(id: token) }
-        let project = (run.projectPath as NSString).lastPathComponent
-        let detail = failed ? (run.statusDetail ?? "") : ""
-        let title = detail.isEmpty ? run.title : run.title + "\n" + detail
-        let lines = max(1, min(4, Int(ceil(Double(title.count) / 46.0))))
-        let ok = CardAction(label: tr("button.ok"), outcome: .callback("\(token)#ok", ""))
-        viewModel.show(.card(NookCard(
-            id: token,
-            mood: failed ? .worry : .done,
-            context: [run.provider.displayName, project].filter { !$0.isEmpty }.joined(separator: " · "),
-            title: title,
-            detail: .none,
-            primary: CardAction(label: tr("ws.notice.open"), outcome: .callback("\(token)#open", ""), symbol: "eye"),
-            secondary: CardAction(label: "", outcome: .dismiss),
-            contentHeight: 100 + CGFloat(lines) * 24,
-            acknowledge: ok,
-            countdown: Self.agentNoticeSeconds,
-            escape: ok,
-            status: CardStatus(text: tr(failed ? "card.status.failed" : "card.status.done"), tone: failed ? .failed : .done)
-        )))
-        dismissAgentCardLater(token)
+        // A session Nook runs says what it replied last in its timeline; the lines it changed are not counted per turn.
+        let reply = workspace.timeline(runID).last { $0.kind == .assistant }?.text ?? ""
+        let notice = AgentStatusNotice(agent: run.provider.displayName, project: (run.projectPath as NSString).lastPathComponent,
+                                 topic: run.title,
+                                 summary: failed ? (run.statusDetail ?? "") : AgentHub.oneLine(reply),
+                                 state: failed ? .failed : .done,
+                                 session: "run:" + runID.uuidString)
+        deliverAgentNotice(notice, app: run.provider.rawValue, target: .run(runID),
+                           open: { [weak self] in self?.openWorkspace(run: runID) })
     }
 
     // MARK: - Accounts
 
-    /// Reauthenticates this account in its own Terminal window. Other accounts and active sessions remain unaffected.
-    func reauthenticate(_ profile: AgentProfile) {
+    /// Reauthenticates this account: in your browser where the agent's login allows it (then Nook comes back and runs
+    /// `then`), else in its own Terminal window. Other accounts and active sessions remain unaffected.
+    func reauthenticate(_ profile: AgentProfile, then: (() -> Void)? = nil) {
+        if signInInBrowser(profile, then: then) { return }
         let command: String
         switch profile.kind {
         case .claude: command = profile.environmentPrefixOnly + "claude /login"
@@ -476,7 +491,7 @@ extension AgentProfile {
     /// Only the account directory prefix (no key), used for login and logout commands.
     var environmentPrefixOnly: String {
         guard let home, let variable = kind.homeVariable else { return "" }
-        return "\(variable)=\(AgentProfile.shellPath(home)) "
+        return "\(variable)=\(AgentProfile.shellPath(kind.homeValue(home))) "
     }
 }
 

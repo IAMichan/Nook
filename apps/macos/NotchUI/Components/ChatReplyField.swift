@@ -32,7 +32,7 @@ struct ChatReplyField: View {
     /// "@nook …": what was asked ("" for a fitting answer), returning the message Nook wrote. Throws with a sentence
     /// you can act on.
     let draft: (String) async throws -> String
-    /// Cmd+Return or the button with ordinary text: the host sends it (the text is still in `text`).
+    /// Return, Cmd+Return or the button with ordinary text: the host sends it (the text is still in `text`).
     let send: () -> Void
 
     @State private var drafting = false
@@ -47,6 +47,11 @@ struct ChatReplyField: View {
     /// A change typed for Nook under its draft ("say I'll bring wine").
     @State private var steer = ""
     @FocusState private var steerFocused: Bool
+    /// Every message Nook wrote for this request, oldest first (the first draft, then each rewrite), and the one in
+    /// the field: you can go back to an earlier one when a rewrite came out worse.
+    @State private var versions: [String] = []
+    @State private var version = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The menu "@" opens above the field, as in Nook's own chat.
     @StateObject private var menu = ComposerModel()
     @State private var pasteMonitor = PasteMonitor()
@@ -59,6 +64,7 @@ struct ChatReplyField: View {
     private var trayContent: AnyView?
     private var hasExtra = false
     private var pasted: (() -> Bool)?
+    private var editLast: (() -> Bool)?
 
     init(text: Binding<String>, notice: Binding<String?>, focus: FocusState<Bool>.Binding, placeholder: String,
          sendSymbol: String, sendLabel: String, readyNotice: String, outgoing: ChatSending? = nil, recipient: String? = nil,
@@ -105,6 +111,14 @@ struct ChatReplyField: View {
         return copy
     }
 
+    /// ↑ in the empty field changes your last message, as in Slack and Telegram: `edit` puts it in the field (false
+    /// when there is none to change).
+    func editsLastMessage(_ edit: (() -> Bool)?) -> Self {
+        var copy = self
+        copy.editLast = edit
+        return copy
+    }
+
     /// Nothing to send: no text, nothing else waiting, and no "@nook …".
     private var empty: Bool { !asksNook && !hasExtra && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -122,6 +136,9 @@ struct ChatReplyField: View {
             if outgoing == nil, showsDraft {
                 DraftPanel(writing: drafting, rewriting: drafting && beforeWriting != nil,
                            edited: drafted.map { $0 != text } ?? false, readyNotice: readyNotice,
+                           request: request.flatMap { ChatDraft.instruction(in: $0) },
+                           version: version, versions: versions.count, showVersion: showVersion,
+                           sendSymbol: sendSymbol, sendLabel: sendLabel, canSend: !empty && !busy, send: submit,
                            steer: $steer, steerFocused: $steerFocused,
                            undo: backToRequest, tweak: { rewrite($0.request) },
                            rewrite: { rewrite(steer) })
@@ -185,20 +202,27 @@ struct ChatReplyField: View {
     }
 
     private var field: some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
-            if let leadingAccessory { leadingAccessory }
+        // The buttons sit at the foot of the field, by the line you type on, as the field grows with a long message.
+        HStack(alignment: .bottom, spacing: NookTheme.Spacing.sm) {
+            if let leadingAccessory {
+                HStack(spacing: NookTheme.Spacing.xxs) { leadingAccessory }
+                    .frame(minHeight: Self.buttonSide)
+            }
             TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(NookTheme.textTertiary), axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1...6)
                 .focused(focus)
-                // Return adds a line; with the `@` menu open Return chooses a line there, and on "@nook …" Return lets
-                // Nook write. ⌘Return (send) and ⇧Return are keybinding commands, run by the panel's key monitor while
-                // this field has the keyboard.
-                .onKeyPress(.return, phases: .down) { (_: KeyPress) -> KeyPress.Result in returnKey() }
+                // Return sends, as in every chat app; with the `@` menu open Return chooses a line there, and on
+                // "@nook …" Return lets Nook write. ⌥Return adds a line; ⌘Return (send) and ⇧Return (a line) are
+                // keybinding commands, run by the panel's key monitor while this field has the keyboard.
+                .onKeyPress(.return, phases: .down) { (press: KeyPress) -> KeyPress.Result in returnKey(press) }
                 .keyCommands(keyHandlers, context: ["composerFocus": true, "composerDraft": !empty], enabled: focus.wrappedValue)
-                .onKeyPress(.upArrow) { () -> KeyPress.Result in moveInMenu(-1) }
+                .onKeyPress(.upArrow) { () -> KeyPress.Result in
+                    if !menu.isOpen, text.isEmpty, quote == nil, let editLast, editLast() { return .handled }
+                    return moveInMenu(-1)
+                }
                 .onKeyPress(.downArrow) { () -> KeyPress.Result in moveInMenu(1) }
                 .onKeyPress(.tab) { () -> KeyPress.Result in
                     guard menu.isOpen else { return .ignored }
@@ -224,6 +248,8 @@ struct ChatReplyField: View {
                     if !drafting, drafted != nil,
                        new.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || ChatDraft.instruction(in: new) != nil {
                         drafted = nil
+                        versions = []
+                        version = 0
                     }
                     NookPresence.shared.typed(count: new.count)
                 }
@@ -236,23 +262,32 @@ struct ChatReplyField: View {
                 }
                 .disabled(busy || drafting)
                 .opacity(drafting || busy ? 0.55 : 1)
+                .padding(.vertical, NookTheme.Spacing.sm)
+                .frame(minHeight: Self.buttonSide, alignment: .center)
             if drafting {
-                NookIconButton(systemName: "stop.fill", label: tr("chats.draft.stop"), filled: true, size: 28) { stopWriting() }
+                ChatSendButton(symbol: "stop.fill", label: tr("chats.draft.stop"), tint: NookTheme.iris, ready: true) { stopWriting() }
             } else if empty, !busy, let idleAccessory {
                 idleAccessory
             } else {
-                NookIconButton(systemName: asksNook ? "sparkles" : sendSymbol, label: buttonLabel, filled: true, size: 28) { submit() }
-                    .disabled(busy || empty)
-                    .help(buttonLabel + (asksNook ? " (↩)" : " (⌘↩)"))
+                ChatSendButton(symbol: asksNook ? "sparkles" : sendSymbol, label: buttonLabel + " (↩)",
+                               tint: asksNook ? NookTheme.iris : NookTheme.paper, ready: !busy && !empty) { submit() }
             }
         }
-        .padding(.leading, leadingAccessory == nil ? NookTheme.Spacing.md : NookTheme.Spacing.xs)
-        .padding(.trailing, NookTheme.Spacing.xs)
-        .padding(.vertical, NookTheme.Spacing.xs)
-        // Nook's draft in the field: the field takes Nook's color, so it is clear whose words are about to go out.
-        .cardBackground(NookTheme.field, stroke: showsDraft && outgoing == nil ? NookTheme.iris.opacity(0.45) : NookTheme.fieldStroke,
-                        radius: NookTheme.Radius.sheet)
+        .padding(.leading, leadingAccessory == nil ? NookTheme.Spacing.lg : NookTheme.Spacing.sm)
+        .padding(.trailing, NookTheme.Spacing.sm)
+        .padding(.vertical, NookTheme.Spacing.sm)
+        // A soft, round field that stands out a little from the panel, and a little more while you type in it; Nook's
+        // draft gives it Nook's color, so it is clear whose words are about to go out.
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.composer, style: .continuous)
+            .fill(focus.wrappedValue ? NookTheme.surface : NookTheme.field))
+        .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.composer, style: .continuous)
+            .strokeBorder(showsDraft && outgoing == nil ? NookTheme.iris.opacity(0.45)
+                          : (focus.wrappedValue ? NookTheme.separator : NookTheme.fieldStroke), lineWidth: 1))
+        .animation(NookTheme.hover, value: focus.wrappedValue)
     }
+
+    /// The side of the round buttons in and beside the field.
+    static let buttonSide: CGFloat = 32
 
     private var buttonLabel: String { asksNook ? tr("chats.draft.button") : sendLabel }
 
@@ -279,15 +314,15 @@ struct ChatReplyField: View {
         choose(menu.suggestions[menu.selection])
     }
 
-    /// Return: takes the menu's line, lets Nook write for "@nook …", else adds a line. Sending Nook's message (or your
-    /// own) stays ⌘Return, so Return never sends.
-    private func returnKey() -> KeyPress.Result {
-        if menu.isOpen {
-            chooseSelected()
-        } else if ChatDraft.instruction(in: text) != nil {
-            submit()
-        } else {
+    /// Return: takes the menu's line, lets Nook write for "@nook …", else sends what is typed, as a chat app does.
+    /// With ⌥ or ⇧ it adds a line instead.
+    private func returnKey(_ press: KeyPress) -> KeyPress.Result {
+        if press.modifiers.contains(.option) || press.modifiers.contains(.shift) {
             newline()
+        } else if menu.isOpen {
+            chooseSelected()
+        } else {
+            submit()
         }
         return .handled
     }
@@ -334,7 +369,37 @@ struct ChatReplyField: View {
     private func write(_ instruction: String) {
         request = text
         beforeWriting = nil
+        versions = []
+        version = 0
         run(instruction)
+    }
+
+    /// Back or forward to another of Nook's versions of this message.
+    private func showVersion(_ index: Int) {
+        guard versions.indices.contains(index), !drafting else { return }
+        version = index
+        text = versions[index]
+        drafted = versions[index]
+        focus.wrappedValue = true
+    }
+
+    /// Nook's message comes into the field a few words at a time, as if written there, unless motion is reduced: what
+    /// it wrote is easier to follow than a block of text that appears at once.
+    private func reveal(_ message: String) async {
+        let words = message.split(separator: " ", omittingEmptySubsequences: false)
+        guard !reduceMotion, words.count > 3 else {
+            text = message
+            return
+        }
+        let step = max(1, words.count / 40)
+        var shown = 0
+        while shown < words.count {
+            shown = min(words.count, shown + step)
+            text = words.prefix(shown).joined(separator: " ")
+            try? await Task.sleep(for: .milliseconds(18))
+            if Task.isCancelled { return }
+        }
+        text = message
     }
 
     /// Steers the message in the field (Nook's draft, with your own changes): Nook rewrites it as asked.
@@ -360,8 +425,12 @@ struct ChatReplyField: View {
             do {
                 let message = try await draft(instruction)
                 guard !Task.isCancelled else { return }
+                await reveal(message)
+                guard !Task.isCancelled else { return }
                 text = message
                 drafted = message
+                versions.append(message)
+                version = versions.count - 1
                 steer = ""
                 notice = nil
                 beforeWriting = nil
@@ -380,7 +449,12 @@ struct ChatReplyField: View {
         writing?.cancel()
         writing = nil
         drafting = false
-        if let before = beforeWriting { text = before }
+        if let before = beforeWriting {
+            text = before
+        } else if drafted == nil, let request {
+            // Stopped while the first draft came in: your request is back, not half a message.
+            text = request
+        }
         beforeWriting = nil
         notice = nil
         focus.wrappedValue = true
@@ -391,19 +465,32 @@ struct ChatReplyField: View {
         stopWriting()
         text = request ?? ""
         drafted = nil
+        versions = []
+        version = 0
         steer = ""
         request = nil
     }
 }
 
-/// Above the field while Nook writes or its message is in the field: Nook's own panel, with what it is doing and the
-/// ways to steer the draft before you send it.
+/// Above the field while Nook writes or its message is in the field: Nook's own panel. It says what you asked, what Nook
+/// is doing, lets you go back and forth between its versions, steer the draft (one click, or in your own words), and
+/// send it with one click once it reads right.
 private struct DraftPanel: View {
     let writing: Bool
     let rewriting: Bool
     /// You changed Nook's message in the field.
     let edited: Bool
     let readyNotice: String
+    /// What you asked after "@nook" ("" for a fitting answer); nil when not known.
+    let request: String?
+    /// Which of Nook's versions of this message is in the field, of how many.
+    let version: Int
+    let versions: Int
+    let showVersion: (Int) -> Void
+    let sendSymbol: String
+    let sendLabel: String
+    let canSend: Bool
+    let send: () -> Void
     @Binding var steer: String
     var steerFocused: FocusState<Bool>.Binding
     let undo: () -> Void
@@ -411,8 +498,11 @@ private struct DraftPanel: View {
     let rewrite: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             header
+            if let request {
+                requestLine(request)
+            }
             if writing {
                 WritingDots()
                     .padding(.vertical, NookTheme.Spacing.xxs)
@@ -424,10 +514,13 @@ private struct DraftPanel: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             tweaks
-            steerField
+            HStack(spacing: NookTheme.Spacing.sm) {
+                steerField
+                sendButton
+            }
         }
-        .padding(NookTheme.Spacing.md)
-        .cardBackground(NookTheme.iris.opacity(0.07), stroke: NookTheme.iris.opacity(0.2), radius: NookTheme.Radius.panel,
+        .padding(NookTheme.Spacing.lg)
+        .cardBackground(NookTheme.iris.opacity(0.07), stroke: NookTheme.iris.opacity(0.22), radius: NookTheme.Radius.panel,
                         style: .continuous)
         .accessibilityElement(children: .contain)
     }
@@ -455,8 +548,40 @@ private struct DraftPanel: View {
                 }
             }
             Spacer(minLength: NookTheme.Spacing.sm)
+            if versions > 1 { versionStepper }
             ToolbarIconButton("arrow.uturn.backward", tr("chats.draft.undo"), undo)
         }
+    }
+
+    /// "‹ 2 of 3 ›": back to an earlier version of the message, or on to a later one.
+    private var versionStepper: some View {
+        HStack(spacing: NookTheme.Spacing.xxs) {
+            ToolbarIconButton("chevron.left", tr("chats.draft.previous")) { showVersion(version - 1) }
+                .disabled(version == 0 || writing)
+            Text(tr("chats.draft.version", version + 1, versions))
+                .font(NookTheme.TextStyle.caption)
+                .monospacedDigit()
+                .foregroundStyle(NookTheme.textSecondary)
+                .fixedSize()
+            ToolbarIconButton("chevron.right", tr("chats.draft.next")) { showVersion(version + 1) }
+                .disabled(version >= versions - 1 || writing)
+        }
+    }
+
+    /// What you asked Nook, quoted, so the draft can be read against it.
+    private func requestLine(_ request: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
+            Capsule()
+                .fill(NookTheme.iris.opacity(0.5))
+                .frame(width: 3, height: 14)
+                .accessibilityHidden(true)
+            Text(request.isEmpty ? tr("chats.draft.request.fitting") : request)
+                .font(NookTheme.TextStyle.detail)
+                .italic(!request.isEmpty)
+                .foregroundStyle(NookTheme.textSecondary)
+                .lineLimit(2)
+        }
+        .accessibilityLabel(tr("chats.draft.request") + ": " + (request.isEmpty ? tr("chats.draft.request.fitting") : request))
     }
 
     /// One click steers the draft; the ones that do not fit wrap to a second line.
@@ -477,6 +602,14 @@ private struct DraftPanel: View {
 
     private func chip(_ tweak: ChatDraft.Tweak) -> some View {
         DraftChip(title: tr(tweak.titleKey), symbol: tweak.symbol) { self.tweak(tweak) }
+    }
+
+    /// The draft goes as it is in the field, as Return does: one click once it reads right.
+    private var sendButton: some View {
+        NookPrimaryButton(title: sendLabel, symbol: sendSymbol, action: send)
+            .disabled(writing || !canSend)
+            .fixedSize()
+            .help(sendLabel + " (↩)")
     }
 
     /// Any other change, in your own words: Return lets Nook rewrite the draft with it.
@@ -517,10 +650,41 @@ private struct DraftPanel: View {
     }
 }
 
+/// The round button at the end of the answer field: lit in its color once there is something to send (Nook's color
+/// for "@nook …"), a quiet circle while there is not.
+private struct ChatSendButton: View {
+    let symbol: String
+    let label: String
+    let tint: Color
+    let ready: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(NookTheme.font(13, .bold))
+                .foregroundStyle(ready ? NookTheme.ink : NookTheme.textTertiary)
+                .frame(width: ChatReplyField.buttonSide, height: ChatReplyField.buttonSide)
+                .background(Circle().fill(ready ? tint : NookTheme.smoke))
+                .hoverLift(hovering && ready, scale: 1.05)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!ready)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: ready)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+}
+
 /// A one-click change under Nook's draft: a small capsule with a symbol, lit under the pointer.
 private struct DraftChip: View {
     let title: String
-    let symbol: String
+    let symbol: String?
+    /// Nook's own color for the chip that asks Nook something open; nil for the plain ones.
+    var tint: Color? = nil
     let action: () -> Void
     @State private var hovering = false
     @Environment(\.isEnabled) private var isEnabled
@@ -528,9 +692,12 @@ private struct DraftChip: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.xs) {
-                Image(systemName: symbol)
-                    .font(NookTheme.font(9.5, .semibold))
-                    .accessibilityHidden(true)
+                if let symbol {
+                    Image(systemName: symbol)
+                        .font(NookTheme.font(9.5, .semibold))
+                        .foregroundStyle(tint ?? (hovering ? NookTheme.paper : NookTheme.textStrong))
+                        .accessibilityHidden(true)
+                }
                 Text(title)
                     .font(NookTheme.TextStyle.caption)
                     .lineLimit(1)
@@ -538,8 +705,8 @@ private struct DraftChip: View {
             .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: 24)
-            .background(Capsule().fill(hovering ? NookTheme.smoke : NookTheme.graphite))
-            .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
+            .background(Capsule().fill(tint.map { $0.opacity(hovering ? 0.2 : 0.12) } ?? (hovering ? NookTheme.smoke : NookTheme.graphite)))
+            .overlay(Capsule().stroke(tint.map { $0.opacity(0.3) } ?? NookTheme.line2, lineWidth: 1))
             .hoverLift(hovering, scale: 1.02)
             .contentShape(Capsule())
         }
@@ -623,6 +790,7 @@ private struct GlidingPlane: View {
 
     var body: some View {
         let rate = energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended)
+        // perf: flies only for the second or two a message takes to send.
         TimelineView(.nookFrames(fps: rate, paused: reduceMotion || energy.plan.pace == .paused)) { context in
             let phase = reduceMotion ? 0.35 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4
             // Out to the top right while it fades, then in again from the bottom left.
@@ -647,6 +815,7 @@ private struct SendingSweep: View {
     var body: some View {
         let rate = energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended)
         GeometryReader { proxy in
+            // perf: runs only for the second or two a message takes to send.
             TimelineView(.nookFrames(fps: rate, paused: reduceMotion || energy.plan.pace == .paused)) { context in
                 let phase = reduceMotion ? 0.5 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
                 let width = proxy.size.width * 0.3
@@ -671,19 +840,23 @@ private struct WritingDots: View {
 
     var body: some View {
         let rate = energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended)
-        TimelineView(.nookFrames(fps: rate, paused: reduceMotion || energy.plan.pace == .paused)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            HStack(spacing: NookTheme.Spacing.xs) {
-                ForEach(0..<3) { index in
-                    let wave = reduceMotion ? 0 : (sin(t * 5 - Double(index) * 0.7) + 1) / 2
-                    Circle()
-                        .fill(NookTheme.iris.opacity(0.35 + 0.55 * wave))
-                        .frame(width: 6, height: 6)
-                        .offset(y: -2.5 * wave)
+        // In a graph of its own (`SeparateGraph`), so its frames do not update the conversation around it for as long as
+        // Nook writes.
+        SeparateGraph {
+            TimelineView(.nookFrames(fps: rate, paused: reduceMotion || energy.plan.pace == .paused)) { context in
+                let t = context.date.timeIntervalSinceReferenceDate
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    ForEach(0..<3) { index in
+                        let wave = reduceMotion ? 0 : (sin(t * 5 - Double(index) * 0.7) + 1) / 2
+                        Circle()
+                            .fill(NookTheme.iris.opacity(0.35 + 0.55 * wave))
+                            .frame(width: 6, height: 6)
+                            .offset(y: -2.5 * wave)
+                    }
                 }
             }
         }
-        .frame(height: 10)
+        .frame(width: 3 * 6 + 2 * NookTheme.Spacing.xs, height: 10)
         .accessibilityHidden(true)
     }
 }

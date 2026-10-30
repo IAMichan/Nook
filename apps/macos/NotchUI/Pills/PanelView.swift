@@ -22,6 +22,10 @@ struct PanelView: View {
     /// The header's rarer button (the window) shows while the pointer is on the header, so the toolbar keeps to what you
     /// use most. Search and talk always show.
     @State private var headerHover = false
+    /// Split view: the tab beside this one (`PanelSplitChoice`), and how wide it is.
+    @AppStorage(PanelSplitChoice.key) private var split = ""
+    @AppStorage(PanelSplitChoice.widthKey) private var splitWidth = PanelLayout.split
+    @State private var contentWidth: Double = 0
 
     /// The height of the header row (the floating capsule with the tabs, or a task's title), so Nook can be centered
     /// on it: a 30 pt button with the capsule's 4 pt padding above and below.
@@ -44,11 +48,27 @@ struct PanelView: View {
                     DoubleTapRunBar(doubleTap: DoubleTap.shared)
                         .padding(.leading, headerInset)
                 }
-                content
-                    .id(tab)
-                    .transition(.opacity.combined(with: .offset(y: 6)))
-                    .padding(.top, headerInset > 0 ? PanelOrb.belowHeader : NookTheme.Spacing.xl)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                HStack(alignment: .top, spacing: 0) {
+                    // Switching tabs: the old tab goes at once and the new one fades in on its own, outside the spring that
+                    // moves the tab capsule and resizes the panel. In that spring the old and the new tab were both on
+                    // screen and laid out on every frame, and every change the new tab made as it appeared (its width, its
+                    // lists) was animated too: that was the lag between Nook, Agents, Chats and Music.
+                    content
+                        .id(tab)
+                        .transition(.asymmetric(insertion: .opacity.animation(NookTheme.tabFade), removal: .identity))
+                        .transaction(value: tab) { $0.animation = nil }
+                        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    if let side = splitTab {
+                        PanelSplitPane(viewModel: viewModel, tab: side, inWindow: inWindow, swap: { swapSplit(side) })
+                            .id(side)
+                            .sidePanel(.trailing, width: $splitWidth, defaultWidth: PanelLayout.split,
+                                       available: contentWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle)
+                    }
+                }
+                .animation(NookTheme.reveal, value: splitTab)
+                .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { contentWidth = $0 }
+                .padding(.top, headerInset > 0 ? PanelOrb.belowHeader : NookTheme.Spacing.xl)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Agents, the chat and Chats keep the footer under their list. A tab without one (Music) shows it at the
                 // bottom as wide as the Agents list, so the refresh and update button stays where it is on Agents.
                 if !footerUnderList && !app.demoMode {
@@ -95,6 +115,16 @@ struct PanelView: View {
         }
     }
 
+    /// The tab split view shows beside this one, if any.
+    private var splitTab: PanelTab? { app.demoMode ? nil : PanelSplitChoice.side(split, current: tab) }
+
+    /// Makes the tab beside this one the main tab, and puts this one beside it.
+    private func swapSplit(_ side: PanelTab) {
+        let main = PanelSplitChoice.choices.first { PanelSplitChoice.same($0, tab) }
+        withAnimation(NookTheme.reveal) { split = main?.rawValue ?? "" }
+        select(side)
+    }
+
     /// The task open over the tab: the notch's, or the main window's.
     private var sheet: NotchSheet? { inWindow ? viewModel.windowSheet : viewModel.sheet }
 
@@ -122,7 +152,10 @@ struct PanelView: View {
     private var tabItems: [NookTabBar<PanelTab>.Item] {
         let tabs = PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || tab == .music)
         let waiting = app.activeAgents.filter { $0.status == .waiting || $0.approvalID != nil }.count
-        let unread = tab != .chat && app.chat.list(query: "", showArchived: false).contains { $0.status == .unread }
+        // The conversations the Nook list shows, without sorting them only to ask whether one is unread.
+        let unread = tab != .chat && app.chat.conversations.contains {
+            !$0.archived && (!$0.isEmpty || $0.busy) && $0.status == .unread
+        }
         let chatsUnread = tab != .inbox && chatsDot.lit
         return tabs.enumerated().map { index, value in
             NookTabBar<PanelTab>.Item(value: value, title: value.title,
@@ -132,19 +165,18 @@ struct PanelView: View {
         }
     }
 
-    /// The tabs, search, talk and the bell in one floating capsule centered over the content, so the header is not a
+    /// The tabs, search, talk, the bell and split view in one floating capsule centered over the content, so the header is not a
     /// bar of its own and needs no line under it. The rarer buttons (the window, close, the gear in demo mode) stay
     /// outside it at the trailing edge.
     private var header: some View {
         HStack(spacing: 0) {
             if inWindow {
                 // Empty header space moves the window, as a title bar does. Its height is fixed: a clear color takes all
-                // the height it is offered, and left free it stretched the header to half the window.
-                Color.clear
+                // the height it is offered, and left free it stretched the header to half the window. A double-click
+                // zooms the window to fill the screen, as a title bar does in every Mac app.
+                WindowTitleBarArea()
                     .frame(minWidth: 8, maxWidth: .infinity)
                     .frame(height: Self.headerHeight)
-                    .contentShape(Rectangle())
-                    .gesture(WindowDragGesture())
             } else {
                 Spacer()
             }
@@ -171,10 +203,14 @@ struct PanelView: View {
         // Centered on the header (after Nook's room on the left); the empty space around it still moves the window.
         .overlay { headerCapsule }
         .padding(.leading, headerInset)
-        .onHover { hovering in withAnimation(NookTheme.hover) { headerHover = hovering } }
+        // Only the notch shows something on hover (the window button); in the window it would redraw the panel for nothing.
+        .onHover { hovering in
+            guard !inWindow else { return }
+            withAnimation(NookTheme.hover) { headerHover = hovering }
+        }
     }
 
-    /// The tabs, a thin line, then search, talk and the bell: one `graphite` capsule with a hairline edge and a soft
+    /// The tabs, a thin line, then search, talk, the bell and split view: one `graphite` capsule with a hairline edge and a soft
     /// shadow, lifted off the content. The selected tab is on the accent.
     private var headerCapsule: some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
@@ -190,6 +226,8 @@ struct PanelView: View {
                 .help(tr("button.talk"))
             // What Nook told you lately, for a notice that closed before you looked.
             if !app.demoMode { NoticeBellButton() }
+            // A second tab beside this one: the chats, the music or the Nook chat while you work here.
+            if !app.demoMode { PanelSplitButton(current: tab) }
         }
         .padding(NookTheme.Spacing.xs)
         .background(
@@ -210,7 +248,7 @@ struct PanelView: View {
                 NookChatTab(viewModel: viewModel, openOnAgents: openOnAgents)
             }
         case .agents: AgentsTab(viewModel: viewModel)
-        case .inbox: ChatsTab(viewModel: viewModel, openOnAgents: openOnAgents)
+        case .inbox: ChatsTab(viewModel: viewModel, openOnAgents: openOnAgents, inWindow: inWindow)
         case .music: MusicTab()
         }
     }
@@ -225,7 +263,9 @@ struct PanelApprovalBar: View {
     /// The task open over the tab, if any: the session behind it is not on screen.
     let sheet: NotchSheet?
     @ObservedObject var hub: AgentHub
-    @ObservedObject var workspace: WorkspaceManager
+    /// Not observed: it changes with every streamed token, and `AppModel` already redraws when a session it runs asks
+    /// for an approval or has a question.
+    let workspace: WorkspaceManager
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @EnvironmentObject private var app: AppModel
 

@@ -38,6 +38,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         return true
     }
 
+    /// The window's scene gets a delegate of its own, for the quick actions on the app's icon (`AppShortcut`).
+    func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession,
+                     options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        let configuration = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        configuration.delegateClass = ShortcutSceneDelegate.self
+        return configuration
+    }
+
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         Task { @MainActor in await CompanionClient.shared.registerPush(token: deviceToken) }
     }
@@ -65,6 +73,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         case PushCategory.actionAllow, PushCategory.actionDeny:
             guard let session, let item else { return }
             await CompanionClient.shared.decide(sessionID: session, itemID: item, allow: response.actionIdentifier == PushCategory.actionAllow)
+        case PushCategory.actionReply:
+            // Your words to the agent, typed in the notification; nothing goes out empty.
+            let text = (response as? UNTextInputNotificationResponse)?.userText.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard let session, !text.isEmpty else { return }
+            await CompanionClient.shared.send(sessionID: session, text: text)
         default:
             if let session { await MainActor.run { CompanionClient.shared.openSession = session } }
         }

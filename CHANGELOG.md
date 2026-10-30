@@ -11,6 +11,9 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- The session list on the left of the Agents tab can be put away beside a session, with the cross at the end of its
+  title row or the new left toggle in the session's header (list, bottom panel, side panel); it is remembered.
+
 - Downloaded builds (the release .dmg/.zip) update themselves from GitHub Releases through the footer's Update
   button: Nook downloads the release's .zip, checks its Ed25519 signature against the key it carries, and installs it
   (`docs/UPDATES.md`, "Release builds"). The release workflow signs the .zip when `NOOK_UPDATE_SIGNING_KEY` is set.
@@ -42,6 +45,12 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 - A coding agent that `cd`s into a subfolder no longer shows up as two chats in Agents (one under the subfolder,
   one for its process): the session stays in the folder it started in, and the process scan matches it by process
   and parent folder (macOS and Tauri).
+- Sending a mail draft from the chat no longer fails with "error -1712" when Mail was not running: Nook starts Mail
+  first and gives it time to send. Mail errors are now shown in your language, and a draft can send from the account
+  you named ("vanuit mijn gmail").
+- A mail draft (or a chat message) is the only step to approve: Nook no longer adds a second "takes over" proposal
+  for the same message, and asking for a change replaces the open draft instead of stacking a new one under it. The
+  "only on this Mac" notice for Contacts no longer shows when the request already gave the address.
 - The pull request list loads much faster and no longer looks like it is always loading: the quick refresh reads only
   the open pull requests, the closed ones and watched organizations follow in the background every few minutes, and
   only a refresh you ask for shows a spinner.
@@ -50,6 +59,14 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Changed
 
+- Every side panel is one shared panel: the lists of the Nook, Agents and Chats tabs, a command's terminal, the tool
+  panel, a turn's diff or a file, a pull request beside its list, an artifact beside its app and the docked session
+  panel get the same line, gap, 32 pt header and cross to close. A diff or file and the tool panel take turns instead
+  of stacking, and the docked session panel moved to the far right so the panel toggles above it keep their place.
+- What the side panel's tabs show lines up: each starts with the same 34 pt bar (browser, terminal, changes, local
+  servers, file), a tab with nothing in it (plans, file, artifact) says what to do instead of staying blank, a pull
+  request goes back to the list from its own top bar instead of an extra row, and a session's changes can be read
+  again like a folder's.
 - A pull request opens beside the list opens one: half the page, its edge dragged wider or
   narrower (remembered), and a button on its tab line that makes it fill the page.
 - A pull request's page looks: a one-line title, segmented tabs, its tabs as `#number` whose mark turns

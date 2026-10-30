@@ -117,7 +117,7 @@ final class NookTerminalView: LocalProcessTerminalView {
             // The terminal's own match can carry sentence punctuation; read it the way the link parser does.
             let path = TerminalLinks.extract(text).first { $0.kind == .path }?.text ?? text
             guard let target = FileLink.parse(path), let resolved = FileLink.resolve(target, base: base) else { return }
-            AppModel.shared.workspace.openFile(resolved)
+            AppModel.shared.openFileInNook(resolved, beside: false)
         }
     }
 }
@@ -312,20 +312,19 @@ struct SessionTerminalsView: View {
         let shown = mine.first { $0.id == store.selected } ?? mine.last
         VStack(spacing: 0) {
             if mine.count > 1 {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: NookTheme.Spacing.xs) {
-                        ForEach(mine) { session in
-                            TerminalTab(session: session, selected: shown?.id == session.id) {
-                                store.selected = session.id
-                            } close: {
-                                store.close(session.id)
+                SidePanelToolbar {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: NookTheme.Spacing.xs) {
+                            ForEach(mine) { session in
+                                TerminalTab(session: session, selected: shown?.id == session.id) {
+                                    store.selected = session.id
+                                } close: {
+                                    store.close(session.id)
+                                }
                             }
                         }
                     }
-                    .padding(.horizontal, NookTheme.Spacing.md)
                 }
-                .padding(.vertical, NookTheme.Spacing.xs)
-                Divider()
             }
             if let shown {
                 TerminalHost(session: shown)

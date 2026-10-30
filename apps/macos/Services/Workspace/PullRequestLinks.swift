@@ -142,6 +142,15 @@ struct PullRequestLink: Codable, Equatable, Sendable, Identifiable {
     var hasConflict: Bool { state.isOpen && conflicted }
 
     var id: String { "\(host.key)/\(repository.lowercased())#\(number)" }
+
+    /// The pull request the tray above a session's composer shows from a branch's list: an open one first, else the
+    /// newest one that merged or closed, so its state stays in view after it lands. GitHub and GitLab only.
+    static func shown(in links: [PullRequestLink]) -> URL? {
+        let usable = links.filter { $0.host == .github || $0.host == .gitlab }
+        let pick = usable.first(where: { $0.state.isOpen })
+            ?? usable.max { ($0.updatedAt ?? .distantPast, $0.number) < ($1.updatedAt ?? .distantPast, $1.number) }
+        return pick.flatMap { URL(string: $0.url) }
+    }
 }
 
 enum PullRequestStack {
@@ -228,6 +237,15 @@ struct PullRequestBadge: Equatable, Sendable {
     }
 }
 
+extension PullRequestBadge {
+    /// The badge of one pull request a chat knows only by its link (the watched one, the one Nook opened, one the agent
+    /// printed) while the branch sync has not found it; open until a read says otherwise. Nil for a link to no request.
+    static func link(_ url: URL, glyph: Glyph?) -> PullRequestBadge? {
+        guard let number = PullRequestRef.parse(url.absoluteString)?.number else { return nil }
+        return PullRequestBadge(glyph: glyph ?? .open, label: .number(number))
+    }
+}
+
 /// The `#` list in the composer.
 enum PullRequestMatch {
     static let limit = 6
@@ -268,6 +286,93 @@ enum PullRequestSettlement {
         guard let lastChecked else { return true }
         let elapsed = now.timeIntervalSince(lastChecked)
         return elapsed < 0 || elapsed >= interval
+    }
+}
+
+/// When the pull request list is read again while its panel is closed, so it is current the moment you open it (and for
+/// the pickers and links that read it). Only the one quick request for the open ones per account; the slow searches for
+/// the closed and watched ones wait far longer. Nothing at all while nobody is at the Mac or its displays sleep.
+enum PullRequestBackgroundRefresh {
+    /// Between two quiet reads at full speed; the energy plan stretches it (twice as long when light, six times paused).
+    static let interval: TimeInterval = 600
+    /// The closed, merged and watched rows, read along with a quiet refresh at most this often.
+    static let slowInterval: TimeInterval = 1800
+
+    static func wait(plan: EnergyPlan) -> TimeInterval { interval * plan.slowdown }
+
+    /// Whether a quiet read is due: someone is at the Mac, and the list was not read (by the panel or a quiet read)
+    /// within the stretched interval. A clock that went backwards counts as due.
+    static func isDue(lastRead: Date, now: Date, plan: EnergyPlan, signals: EnergySignals) -> Bool {
+        guard !signals.away, !signals.displayAsleep else { return false }
+        let elapsed = now.timeIntervalSince(lastRead)
+        return elapsed < 0 || elapsed >= wait(plan: plan)
+    }
+}
+
+/// The branches one session worked on, for the list above its composer: a branch the chat moved away from keeps its row
+/// with its pull request, so a chat that made several branches and pull requests shows the state of each.
+enum SessionBranches {
+    /// The session left `old` for `current`: `old` joins the earlier branches (oldest first) unless it is the default
+    /// branch, and `current` leaves them when the session goes back to it. Nil when there are none.
+    static func leaving(_ old: String?, for current: String, earlier: [String]?, base: String?) -> [String]? {
+        var list = (earlier ?? []).filter { $0 != current }
+        if let old, !old.isEmpty, old != current, !BranchPolicy.isDefaultBranch(old, detectedDefault: base) {
+            list.removeAll { $0 == old }
+            list.append(old)
+        }
+        return list.isEmpty ? nil : list
+    }
+
+    /// The pull requests of a branch the session left, added to the ones it left before (a newer read of the same
+    /// request replaces the older one).
+    static func keeping(_ left: [PullRequestLink], in earlier: [PullRequestLink]) -> [PullRequestLink] {
+        var list = earlier
+        for link in left where !link.url.isEmpty {
+            if let index = list.firstIndex(where: { $0.url == link.url }) { list[index] = link } else { list.append(link) }
+        }
+        return list
+    }
+
+    struct Row: Equatable, Sendable, Identifiable {
+        var branch: String?
+        var pullRequest: URL?
+        var isCurrent: Bool
+        var id: String { (branch ?? "") + "\n" + (pullRequest?.absoluteString ?? "") }
+    }
+
+    /// One row per branch, oldest first and the current one last, each with its newest pull request; a pull request of an
+    /// earlier branch whose name is not known gets a row of its own. Empty while the session has had one branch only:
+    /// its pull request then shows as before.
+    static func rows(earlier: [String], earlierLinks: [PullRequestLink], current: String?, currentPullRequest: URL?) -> [Row] {
+        func newest(_ branch: String) -> URL? {
+            earlierLinks.filter { $0.headBranch == branch }
+                .max { ($0.updatedAt ?? .distantPast, $0.number) < ($1.updatedAt ?? .distantPast, $1.number) }
+                .flatMap { URL(string: $0.url) }
+        }
+        let names = earlier.filter { $0 != current }
+        var rows = names.map { Row(branch: $0, pullRequest: newest($0), isCurrent: false) }
+        for link in earlierLinks where link.headBranch.map({ !names.contains($0) && $0 != current }) ?? true {
+            guard !link.url.isEmpty, let url = URL(string: link.url), url != currentPullRequest,
+                  !rows.contains(where: { $0.pullRequest == url }) else { continue }
+            rows.append(Row(branch: link.headBranch, pullRequest: url, isCurrent: false))
+        }
+        guard !rows.isEmpty else { return [] }
+        // A pull request an earlier row already shows (one still watched after the switch) is not the current one.
+        let taken = Set(rows.compactMap(\.pullRequest))
+        let mine = [currentPullRequest, current.flatMap(newest)].compactMap { $0 }.first { !taken.contains($0) }
+        rows.append(Row(branch: current, pullRequest: mine, isCurrent: true))
+        return rows
+    }
+
+    /// How many rows stay open when the list is folded: the newest earlier branch and the current one.
+    static let shownWhenFolded = 3
+
+    /// The rows the tray shows: all while `open` or while there are few, otherwise the newest `shownWhenFolded`, with the
+    /// count of the folded ones and of their pull requests.
+    static func folded(_ rows: [Row], open: Bool) -> (shown: [Row], hidden: Int, hiddenPullRequests: Int) {
+        guard !open, rows.count > shownWhenFolded + 1 else { return (rows, 0, 0) }
+        let hidden = rows.dropLast(shownWhenFolded)
+        return (Array(rows.suffix(shownWhenFolded)), hidden.count, hidden.filter { $0.pullRequest != nil }.count)
     }
 }
 

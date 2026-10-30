@@ -55,7 +55,11 @@ struct ApprovalView: View {
     @ViewBuilder
     private var content: some View {
         ScrollView(showsIndicators: true) {
-            if approval.diff.isEmpty {
+            if approval.prose {
+                // A pull request, a brief or a message: read as the text it is, headings and lists included.
+                MarkdownView(text: approval.command, size: 12.5)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if approval.diff.isEmpty {
                 // The whole command: scrolled, never cut off.
                 Text(approval.command)
                     .font(NookTheme.mono(11.5))
