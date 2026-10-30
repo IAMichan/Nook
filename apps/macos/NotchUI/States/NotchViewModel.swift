@@ -426,11 +426,20 @@ final class NotchViewModel: ObservableObject {
             if tab == .chat { app?.warmUp() }
             // Tasks belong to Agents; another tab means you moved on.
             if tab != .agents { windowSheet = nil }
-            windowTab = tab
+            // A tab split view already shows beside the window's tab opens there.
+            windowTab = PanelSplitChoice.landing(tab, current: windowTab)
             // The strip's View opened it there: the strip has done its job, as it would have in the notch.
             if case .done = state { show(.idle) }
             revealWindow()
             return
+        }
+        // A tab split view already shows beside the notch's tab (or the tab it opens on) opens there.
+        var asked: PanelTab?
+        if case .panel(let tab) = target {
+            asked = tab
+            let current: PanelTab
+            if case .panel(let open) = state { current = open } else { current = lastTab }
+            target = .panel(PanelSplitChoice.landing(tab, current: current))
         }
         if case .idle = new {
             if !pending.isEmpty, !holdsCards {
@@ -442,7 +451,7 @@ final class NotchViewModel: ObservableObject {
         // Only where you can ask something: with the brain on this Mac, warming up loads a model of several gigabytes, and
         // opening the panel for the agents or the music is no reason for that.
         // After the open spring: loading it in the same moment competed with the panel's first frames.
-        if case .panel(let tab) = target, state.kind != "panel", tab == .chat || tab == .nook {
+        if let tab = asked, state.kind != "panel", tab == .chat || tab == .nook {
             Task { @MainActor [weak app = self.app] in
                 try? await Task.sleep(for: NookTheme.tabSettle)
                 app?.warmUp()
@@ -453,8 +462,8 @@ final class NotchViewModel: ObservableObject {
             case .chat, .agents, .inbox, .music: lastTab = tab
             default: break
             }
-            // Tasks belong to Agents; another tab means you moved on.
-            if tab != .agents, sheet != nil { sheet = nil }
+            // Tasks belong to Agents; another tab means you moved on, also when it opens beside the tab you are on.
+            if asked != .agents, sheet != nil { sheet = nil }
         } else if sheet != nil {
             sheet = nil
         }

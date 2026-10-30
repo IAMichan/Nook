@@ -17,6 +17,15 @@ enum PanelSplitChoice {
         return tab
     }
 
+    /// The tab to show for a request to open `tab` while `current` is the main tab: `current` itself when `tab` already
+    /// shows beside it, so a chat (or session, or conversation) opened from search or a notice opens in that pane
+    /// instead of taking the whole panel and closing split view.
+    static func landing(_ tab: PanelTab, current: PanelTab, stored: String? = nil) -> PanelTab {
+        let stored = stored ?? UserDefaults.standard.string(forKey: key) ?? ""
+        guard let side = side(stored, current: current), same(side, tab) else { return tab }
+        return current
+    }
+
     /// Nook and its chat are one tab.
     static func same(_ a: PanelTab, _ b: PanelTab) -> Bool {
         let nook: Set<PanelTab> = [.nook, .chat, .connect, .shelf]

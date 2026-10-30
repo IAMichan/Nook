@@ -176,6 +176,7 @@ struct SearchPanel: View {
         guard !typed.isEmpty else { return }
         if center.searched != text {
             openWhenReady = true
+            center.searchNow()
         } else {
             open(rows)
         }
@@ -449,12 +450,15 @@ struct SearchPanel: View {
     private func open(_ list: [Row]) {
         guard list.indices.contains(index) else { return }
         center.remember(text)
+        // Gone at once: fading out two hundred rows in the same frames that build the tab it opens was the lag after
+        // Return.
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) { close() }
         switch list[index] {
         case .hit(let hit, _):
-            close()
             if let tab = app.openSearchHit(hit) { select(tab) }
         case .ask(let typed):
-            close()
             app.askFromSearch(typed)
             select(.chat)
         }

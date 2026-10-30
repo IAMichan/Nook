@@ -184,12 +184,13 @@ struct PanelView: View {
         if inWindow { viewModel.windowSheet = nil } else { viewModel.sheet = nil }
     }
 
+    /// Shows `tab`: in the pane beside this tab when it is the one split view shows there (`PanelSplitChoice.landing`).
     private func select(_ tab: PanelTab) {
         if inWindow {
             viewModel.windowSheet = nil
-            viewModel.windowTab = tab
+            viewModel.windowTab = PanelSplitChoice.landing(tab, current: self.tab)
         } else {
-            viewModel.show(.panel(tab), inNotch: true)
+            viewModel.show(.panel(PanelSplitChoice.landing(tab, current: self.tab)), inNotch: true)
         }
     }
 
