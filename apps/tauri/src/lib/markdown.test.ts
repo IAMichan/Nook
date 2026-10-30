@@ -23,9 +23,4 @@ describe("renderMarkdown", () => {
     expect(renderMarkdown("[x](javascript:alert(1))")).not.toContain("<a");
     expect(renderMarkdown("[site](https://nook.app)")).toContain('<a href="https://nook.app" data-external>site</a>');
   });
-
-  it("renders http and https images", () => {
-    expect(renderMarkdown("![plot](javascript:alert(1))")).not.toContain("<img");
-    expect(renderMarkdown("![plot](https://nook.app/a.png)")).toBe('<p><img src="https://nook.app/a.png" alt="plot"></p>');
-  });
 });

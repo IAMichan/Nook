@@ -25,11 +25,6 @@
   }
 
   function click(e: MouseEvent) {
-    const img = (e.target as HTMLElement).closest("img") as HTMLImageElement | null;
-    if (img) {
-      img.classList.toggle("enlarged");
-      return;
-    }
     const a = (e.target as HTMLElement).closest("a[data-external]") as HTMLAnchorElement | null;
     if (a) {
       e.preventDefault();
@@ -126,8 +121,6 @@
   .pic-btn { background: none; border: none; padding: 0; margin: 0 0 4px; display: inline-flex; max-width: 100%; border-radius: 10px; }
   .pic { display: block; max-width: 180px; max-height: 140px; border-radius: 10px; cursor: zoom-in; transition: max-width 0.2s ease, max-height 0.2s ease; }
   .pic.enlarged { width: auto; height: auto; min-width: min(100%, 240px); max-width: min(100%, 520px); max-height: 420px; object-fit: contain; cursor: zoom-out; }
-  .markdown :global(img) { max-width: 240px; max-height: 180px; border-radius: 10px; cursor: zoom-in; transition: max-width 0.2s ease, max-height 0.2s ease; }
-  .markdown :global(img.enlarged) { width: auto; height: auto; min-width: min(100%, 240px); max-width: min(100%, 520px); max-height: 420px; object-fit: contain; cursor: zoom-out; }
   .file { font-size: 12px; color: var(--text2); margin-bottom: 4px; }
   .error .markdown { color: var(--coral); }
   .status { color: var(--text2); display: flex; gap: 8px; align-items: center; }

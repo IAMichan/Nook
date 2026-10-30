@@ -15,8 +15,6 @@ function inline(text: string): string {
   out = out
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>")
-    .replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, (_m, alt: string, url: string) =>
-      `<img src="${url}" alt="${alt}">`)
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_m, label: string, url: string) =>
       `<a href="${url}" data-external>${label}</a>`)
     .replace(/\[(\d{1,2})\]/g, '<sup class="cite" data-cite="$1">$1</sup>');
