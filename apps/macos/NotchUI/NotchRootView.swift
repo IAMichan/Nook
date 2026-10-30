@@ -46,7 +46,7 @@ struct NotchRootView: View {
             // by everything in the panel: a shadow on the content blurs all of it again on every frame of an animation.
             // Docked in the notch, or bare, there is no shadow at all (an invisible shadow is still blurred).
             .background {
-                let shadow = floating && !bare
+                let shadow = floating && !bare && !surface.resizing
                 shape.fill(NookTheme.notch.opacity(bare ? 0 : 1))
                     .shadow(color: Color.black.opacity(shadow ? (isExpanded ? 0.45 : 0.3) : 0),
                             radius: shadow ? (isExpanded ? 18 : 8) : 0, x: 0, y: shadow ? (isExpanded ? 8 : 3) : 0)
@@ -686,11 +686,12 @@ private struct NotchResizeHandles: View {
                 if inside { hovered = edge } else if hovered == edge, !viewModel.resizing { hovered = nil }
             }
             .gesture(
-                // Global coordinates: the edge itself moves while you drag it.
+                // The view model follows the pointer on the screen: the edge itself, and a floating window, move while
+                // you drag it.
                 DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { value in
+                    .onChanged { _ in
                         if hovered != edge { hovered = edge }
-                        viewModel.resize(edge, translation: value.translation)
+                        viewModel.resize(edge)
                     }
                     .onEnded { _ in viewModel.endResize(); hovered = nil }
             )

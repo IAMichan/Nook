@@ -38,6 +38,9 @@ final class NotchController {
     private var shownCard: String?
 
     private var dragStart: (mouse: NSPoint, centerX: CGFloat, top: CGFloat)?
+    /// Where the floating notch is while you drag it: right under the pointer, not held inside a screen, so it can be
+    /// halfway onto the next one. Saved and fitted into its screen when you let go (`dragEnded`).
+    private var dragAnchor: (centerX: CGFloat, top: CGFloat)?
 
     /// Notch on every screen: the other screens show an idle copy. When idle, the real Nook moves
     /// to the screen with the mouse, so you can open it there.
@@ -56,10 +59,10 @@ final class NotchController {
     private var showsOnAllScreens: Bool { !isFloating && settings.notchOnAllScreens }
 
     private func makeGeometry() -> NotchGeometry {
-        NotchGeometry.make(
-            for: NotchGeometry.preferredScreen(choice: showsOnAllScreens ? "mouse" : settings.screenChoice),
-            floating: isFloating
-        )
+        let choice = showsOnAllScreens ? "mouse" : settings.screenChoice
+        // Two displays of the same model share a name: the one the notch is on already stays, rather than the first.
+        let current = NSScreen.screens.first { $0.frame == geometry.screenFrame && $0.localizedName == choice }
+        return NotchGeometry.make(for: current ?? NotchGeometry.preferredScreen(choice: choice), floating: isFloating)
     }
 
     /// The screen corresponding to current geometry (for visible area below menu bar).
@@ -72,6 +75,7 @@ final class NotchController {
     private func anchor(size: CGSize) -> (centerX: CGFloat, top: CGFloat) {
         let s = geometry.screenFrame
         guard geometry.isFloating else { return (s.midX, s.maxY) }
+        if let dragAnchor { return dragAnchor }
         let v = visibleFrame
         let halfW = size.width / 2
         let centerX = min(max(s.midX + settings.floatOffsetX, s.minX + halfW), s.maxX - halfW)
@@ -91,7 +95,7 @@ final class NotchController {
         viewModel.geometry = geometry
         viewModel.canvas = Self.canvas(for: geometry.screenFrame)
         viewModel.onDragMoved = { [weak self] in self?.dragMoved() }
-        viewModel.onDragEnded = { [weak self] in self?.dragStart = nil }
+        viewModel.onDragEnded = { [weak self] in self?.dragEnded() }
         viewModel.onAnnounce = { [weak self] info in self?.announce(info) }
         // With no panel or window open, a toast shows in the notch's confirmation strip.
         ToastCenter.shared.notchFallback = { [weak model = viewModel] toast in model?.showToast(toast) ?? false }
@@ -333,8 +337,9 @@ final class NotchController {
         reassertPanels()
     }
 
-    /// Floating: shape tracks mouse while dragging, also onto another connected screen.
-    /// Position and screen are saved immediately.
+    /// Floating: the shape stays under the pointer while you drag it, also across the edge onto another connected
+    /// screen. Held inside its screen at every step, it stopped at the edge while the pointer went on, and started on
+    /// the next screen a whole width away from the pointer.
     private func dragMoved() {
         guard geometry.isFloating else { return }
         let mouse = NSEvent.mouseLocation
@@ -343,20 +348,29 @@ final class NotchController {
             dragStart = (mouse: mouse, centerX: a.centerX, top: a.top)
         }
         guard let start = dragStart else { return }
-        let centerX = start.centerX + mouse.x - start.mouse.x
-        let top = start.top + mouse.y - start.mouse.y
+        dragAnchor = (centerX: start.centerX + mouse.x - start.mouse.x, top: start.top + mouse.y - start.mouse.y)
 
-        // Dragged across the edge onto another screen: Nook moves along and remembers that screen.
+        // Dragged onto another screen: the window takes that screen's size.
         if let target = NotchGeometry.screenWithMouse(), target.frame != geometry.screenFrame {
             geometry = NotchGeometry.make(for: target, floating: true)
             viewModel.geometry = geometry
             updateCanvas()
-            if settings.screenChoice != target.localizedName { settings.screenChoice = target.localizedName }
         }
+        positionPanel()
+    }
 
-        settings.floatOffsetX = Double(centerX - geometry.screenFrame.midX)
+    /// Let go: the position and the screen are saved, and the shape is fitted inside that screen.
+    private func dragEnded() {
+        dragStart = nil
+        guard let dropped = dragAnchor else { return }
+        dragAnchor = nil
+        settings.floatOffsetX = Double(dropped.centerX - geometry.screenFrame.midX)
         // Y axis runs downward: dragging downward increases distance below menu bar.
-        settings.floatOffsetY = max(0, Double(visibleFrame.maxY - top))
+        settings.floatOffsetY = max(0, Double(visibleFrame.maxY - dropped.top))
+        if let screen = NSScreen.screens.first(where: { $0.frame == geometry.screenFrame }),
+           settings.screenChoice != screen.localizedName {
+            settings.screenChoice = screen.localizedName
+        }
         positionPanel()
     }
 
@@ -569,6 +583,8 @@ final class NotchController {
         // Hidden for a share or meeting: hovering the notch area opens nothing.
         guard let panel, panel.isVisible else { return }
         let mouse = NSEvent.mouseLocation
+        // A drag whose gesture never ended (its view went away under the pointer) ends once the button is up.
+        if dragStart != nil, NSEvent.pressedMouseButtons & 1 == 0 { dragEnded() }
         if !force, dragStart == nil {
             let dx = mouse.x - lastCheckedMouseLocation.x
             let dy = mouse.y - lastCheckedMouseLocation.y
