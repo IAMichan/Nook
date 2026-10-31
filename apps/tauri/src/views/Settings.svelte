@@ -16,6 +16,7 @@
   import Companion from "./settings/Companion.svelte";
   import AgentsSettings from "./settings/Agents.svelte";
   import AutocompleteSettings from "./settings/Autocomplete.svelte";
+  import GamesSettings from "./settings/Games.svelte";
 
   interface Section {
     id: string;
@@ -34,6 +35,7 @@
     { id: "voice", title: "Stem en geluid", component: Voice },
     { id: "autocomplete", title: "Aanvullen", component: AutocompleteSettings, when: () => !!nook.info?.capabilities.desktop },
     { id: "agents", title: "Agents", component: AgentsSettings },
+    { id: "games", title: "Gamer Mode", component: GamesSettings },
     { id: "privacy", title: "Privacy & beveiliging", component: Privacy },
     { id: "companion", title: "Companion", component: Companion, when: () => !!nook.info?.capabilities.desktop },
     { id: "about", title: "Over Nook", component: About },
