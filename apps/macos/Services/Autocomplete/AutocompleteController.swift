@@ -91,18 +91,12 @@ final class AutocompleteController: ObservableObject {
     /// Accessibility answers can take tens of milliseconds: reading happens here, not on the main thread.
     private let readQueue = DispatchQueue(label: "nl.imdigital.nook.autocomplete.read", qos: .userInteractive)
     /// Goes up with everything the user does; results of older reads are dropped.
-    private var readToken = 0 { didSet { publishTapState() } }
+    private var readToken = 0
 
-    /// What is on screen. A change to this or to the other state the key tap decides by (see `tapGate`) goes to the tap at once.
+    /// What is on screen. A change to this or to the other state the hot keys follow (see `tapGate`) registers them at once.
     private var proposal: Proposal? { didSet { publishTapState() } }
     /// The model request for the text in the field now (`token` is `readToken` when it started).
-    private var asking: (token: Int, done: Bool, eager: Bool)? { didSet { publishTapState() } }
-    /// An accept key pressed while a suggestion was on its way: held until it shows, and passed on to the app when none
-    /// comes (see `holdAcceptKey`).
-    private var heldKey: (token: Int, key: Key)? { didSet { publishTapState() } }
-    private var holdWork: DispatchWorkItem?
-    /// The longest an accept key waits for a suggestion before it goes to the app after all.
-    private let holdSeconds: TimeInterval = 1.5
+    private var asking: (token: Int, done: Bool, eager: Bool)?
     /// How the text goes on once the suggestion on screen is taken, written while it is on screen: taking the last word then
     /// shows the next suggestion at once, without waiting for the model.
     private var upcoming: Upcoming?
@@ -139,7 +133,7 @@ final class AutocompleteController: ObservableObject {
     private var clipboardSeen: (count: Int, date: Date)?
     private let windowQueue = DispatchQueue(label: "nl.imdigital.nook.autocomplete.window", qos: .utility)
     private var alternatives: [String]? { didSet { publishTapState() } }
-    private var refreshWork: DispatchWorkItem? { didSet { publishTapState() } }
+    private var refreshWork: DispatchWorkItem?
     private var warmWork: DispatchWorkItem?
     private var selectionWork: DispatchWorkItem?
     private var pendingSample: (app: String, text: String)?
@@ -167,6 +161,7 @@ final class AutocompleteController: ObservableObject {
     private var forcedApp: pid_t? { didSet { publishTapState() } }
 
     private var keyTap: AutocompleteKeyTap?
+    private var hotKeys: AutocompleteHotKeys?
     /// Key window changes (whether keys typed in Nook are its own) and settings or pauses, for the key tap's state.
     private var tapStateObservers: [NSObjectProtocol] = []
     private var storeObserver: AnyCancellable?
@@ -297,14 +292,18 @@ final class AutocompleteController: ObservableObject {
         }
     }
 
-    /// The key tap runs on a thread of its own (see `AutocompleteKeyTap`): it decides from `tapGate` and hands the events here.
+    /// As Cotypist: a key tap that only listens (see `AutocompleteKeyTap`), and the keys autocomplete takes as hot keys
+    /// registered from `tapGate` (see `AutocompleteHotKeys`). No key the user types ever waits for Nook.
     private func start() -> Bool {
         guard keyTap == nil else { return true }
-        let newTap = AutocompleteKeyTap { [weak self] tap, event in
-            MainActor.assumeIsolated { self?.tapped(event, from: tap) }
+        let newTap = AutocompleteKeyTap { [weak self] event in
+            MainActor.assumeIsolated { self?.tapped(event) }
         }
         guard newTap.start() else { return false }
         keyTap = newTap
+        hotKeys = AutocompleteHotKeys { [weak self] press, flags in
+            self?.hotKeyPressed(Key(code: press.code, flags: flags, characters: press.characters))
+        }
         publishTapState()
         let center = NotificationCenter.default
         tapStateObservers = [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification].map { name in
@@ -361,6 +360,8 @@ final class AutocompleteController: ObservableObject {
         dismiss()
         commitSample()
         keyTap?.stop()
+        hotKeys?.stop()
+        hotKeys = nil
         tapStateObservers.forEach { NotificationCenter.default.removeObserver($0) }
         tapStateObservers = []
         storeObserver = nil
@@ -469,8 +470,8 @@ final class AutocompleteController: ObservableObject {
         func matches(_ shortcut: CompletionShortcut?) -> Bool { press.matches(shortcut) }
     }
 
-    /// What the key tap needs to decide on its own thread whether a key or click must not reach the app: the state `handle(_:)`
-    /// decides by. Kept up to date in the tap with every change (see `publishTapState`).
+    /// The state `handle(_:)` decides by, for the hot keys to register (`CompletionKeyGate.hotKeys`). Applied with every
+    /// change (see `publishTapState`).
     private func tapGate() -> CompletionKeyGate {
         let app = frontApp
         let bundleID = app?.bundleIdentifier
@@ -486,8 +487,6 @@ final class AutocompleteController: ObservableObject {
         gate.alternatives = prefs.wordAlternatives ? prefs.alternatives : nil
         gate.suggestNow = prefs.suggestNow
         gate.canForce = !gate.active && canForce(in: app)
-        gate.canHold = canHoldAcceptKey
-        gate.holding = heldKey != nil
         if let alternatives {
             gate.showing = .alternatives(count: alternatives.count)
         } else {
@@ -502,17 +501,27 @@ final class AutocompleteController: ObservableObject {
     }
 
     private func publishTapState() {
-        keyTap?.publish(tapGate())
+        hotKeys?.set(tapGate().hotKeys())
     }
 
-    /// An event from the key tap, on the main thread, after the tap already let it through or kept it from the app.
-    private func tapped(_ event: AutocompleteKeyTap.Event, from tap: AutocompleteKeyTap) {
+    /// A key or click the key tap saw, on the main thread. It is in the app already: the tap only listens.
+    private func tapped(_ event: AutocompleteKeyTap.Event) {
         switch event {
-        case .key(let press, let flags, let swallowed, let copy):
-            tappedKey(Key(code: press.code, flags: flags, characters: press.characters), swallowed: swallowed, copy: copy)
-            tap.resolved(swallowed: swallowed, gate: tapGate())
-        case .mouseDown(let emoji):
-            if let emoji, case .emoji(let picker) = proposal, picker.choices.indices.contains(emoji) {
+        case .key(let press, let flags):
+            // A key a hot key took comes in there (`hotKeyPressed`), should the tap see it as well.
+            if hotKeys?.keys.contains(CompletionKeyGate.HotKey(code: press.code, modifiers: press.modifiers)) == true { return }
+            let key = Key(code: press.code, flags: flags, characters: press.characters)
+            if tapGate().swallows(key.press) {
+                // Something here was waiting for this key, but no hot key held it (it showed in the same moment, or macOS
+                // refused the key as a hot key): it is in the app, too late to take it.
+                dismiss()
+                if let app = frontApp, isActive(in: app) { scheduleRefresh() }
+            } else {
+                _ = handle(key)
+            }
+        case .mouseDown(let location):
+            // The picker takes its own clicks (it is a panel that takes the mouse while it shows); the tap sees them too.
+            if let emoji = tapGate().emojiCell(at: location), case .emoji(let picker) = proposal, picker.choices.indices.contains(emoji) {
                 take(emoji, from: picker)
                 return
             }
@@ -528,28 +537,15 @@ final class AutocompleteController: ObservableObject {
         }
     }
 
-    /// A key the tap let through (`swallowed` false) or kept from the app. The tap decided from the state of a moment ago;
-    /// when this one says otherwise (keys typed faster than the main thread handled them), a key kept back goes on to the app
-    /// now (`copy`), and a key let through is taken as typed.
-    private func tappedKey(_ key: Key, swallowed: Bool, copy: CGEvent?) {
-        // Another key while an accept key waits: the user went on, so the held key goes first, then this one.
-        if heldKey != nil {
-            releaseHeldKey(force: true)
-            if swallowed { copy?.post(tap: .cgSessionEventTap) }
+    /// A key a hot key kept from the app. When it is not autocomplete's after all (the state changed on the way, a number key
+    /// that types no number on this layout), it goes on to the app as pressed, and on as typed here too.
+    private func hotKeyPressed(_ key: Key) {
+        if tapGate().swallows(key.press) {
+            if !handle(key) { hotKeys?.pass(key.press, flags: key.flags) }
             return
         }
-        let wanted = tapGate().swallows(key.press)
-        if swallowed, !wanted {
-            copy?.post(tap: .cgSessionEventTap)
-            _ = handle(key)
-        } else if !swallowed, wanted {
-            // In the app already, while something here was waiting for it (a suggestion that just showed): too late to take it.
-            dismiss()
-            if let app = frontApp, isActive(in: app) { scheduleRefresh() }
-        } else if !handle(key), swallowed {
-            // Not expected: `CompletionKeyGate.swallows` mirrors `handle(_:)`. The key must not get lost.
-            copy?.post(tap: .cgSessionEventTap)
-        }
+        hotKeys?.pass(key.press, flags: key.flags)
+        _ = handle(key)
     }
 
     private func handle(_ key: Key) -> Bool {
@@ -570,7 +566,7 @@ final class AutocompleteController: ObservableObject {
         }
 
         guard isActive(in: app) else { dismiss(); return false }
-        // Asked for: a suggestion for the text as it is, with the lower bar of a request (see `holdAcceptKey`).
+        // Asked for: a suggestion for the text as it is, with the lower bar of a request.
         if key.matches(prefs.suggestNow) {
             dismiss()
             refreshProposal(eager: true)
@@ -592,11 +588,6 @@ final class AutocompleteController: ObservableObject {
             dismiss()
             if plainEscape { return true }
         }
-
-        // An accept key with nothing on screen yet: wait for the suggestion on its way, or ask again more eagerly, instead of
-        // letting the key go to the app while the user expects a word.
-        if proposal == nil, !commandLike, key.matches(prefs.acceptWord) || key.matches(prefs.acceptAll),
-           !(prefs.app(bundleID).leaveTab && key.code == kVK_Tab), holdAcceptKey(key) { return true }
 
         if let proposal {
             let tabLeftToApp = prefs.app(bundleID).leaveTab && key.code == kVK_Tab
@@ -757,62 +748,8 @@ final class AutocompleteController: ObservableObject {
         return CompletionSpelling.apply(habit, to: text, before: before)
     }
 
-    /// Holds an accept key pressed with no suggestion on screen when one is coming: the pause after the last key is still
-    /// running, or the model is writing. When the model answered nothing for this text, asks once more with a lower bar (the
-    /// user asked for a word). False when nothing is coming: the key then does what it always does in the app.
-    private func holdAcceptKey(_ key: Key) -> Bool {
-        guard canHoldAcceptKey else { return false }
-        let token = readToken
-        if let work = refreshWork, !work.isCancelled {
-            hold(key, token: token)
-            work.cancel()
-            refreshProposal()
-            return true
-        }
-        guard let asking, asking.token == token else { return false }
-        if !asking.done {
-            hold(key, token: token)
-            return true
-        }
-        guard !asking.eager else { return false }
-        hold(key, token: token)
-        refreshProposal(eager: true)
-        return true
-    }
-
-    /// An accept key pressed now would be held (see `holdAcceptKey`): what the key tap needs to know beforehand.
-    private var canHoldAcceptKey: Bool {
-        guard heldKey == nil else { return false }
-        if let work = refreshWork, !work.isCancelled { return true }
-        guard let asking, asking.token == readToken else { return false }
-        return !asking.done || !asking.eager
-    }
-
-    private func hold(_ key: Key, token: Int) {
-        heldKey = (token, key)
-        holdWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.releaseHeldKey(force: true) } }
-        holdWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + holdSeconds, execute: work)
-    }
-
-    /// Passes a held accept key on to the app once no suggestion is coming for it. Dropped when a suggestion is on screen (it
-    /// was waited for) or the text changed since. `force`: pass it on now, the wait is over.
-    private func releaseHeldKey(force: Bool = false) {
-        guard let held = heldKey else { return }
-        if !force, let asking, asking.token == held.token, !asking.done, proposal == nil { return }
-        heldKey = nil
-        holdWork?.cancel()
-        holdWork = nil
-        guard held.token == readToken || force, proposal == nil else { return }
-        AutocompleteTyper.press(keyCode: held.key.code, flags: held.key.flags)
-    }
-
     private func dismiss() {
         readToken += 1
-        // A click or another app: a held accept key no longer belongs to this text.
-        heldKey = nil
-        holdWork?.cancel()
         refreshWork?.cancel()
         expected = nil
         selectionWork?.cancel()
@@ -1003,10 +940,10 @@ final class AutocompleteController: ObservableObject {
         }
     }
 
-    /// - Parameter eager: asked for with an accept key after the model answered nothing (see `holdAcceptKey`).
+    /// - Parameter eager: asked for with the `suggestNow` key: the lower bar of a request.
     private func refreshProposal(eager: Bool = false, attempt: Int = 0) {
         refreshWork = nil
-        guard let app = frontApp, isActive(in: app) else { return releaseHeldKey() }
+        guard let app = frontApp, isActive(in: app) else { return }
         let expected = self.expected
         read(in: app) { [weak self] snapshot in
             guard let self else { return }
@@ -1018,8 +955,6 @@ final class AutocompleteController: ObservableObject {
                 return
             }
             if let snapshot { self.propose(for: snapshot, in: app, continuing: eager) }
-            // No model request came of it (a selection, an emoji name, too little text): a held key goes on to the app.
-            self.releaseHeldKey()
         }
     }
 
@@ -1223,7 +1158,6 @@ final class AutocompleteController: ObservableObject {
     private func finishAsking(_ token: Int) {
         guard asking?.token == token else { return }
         asking?.done = true
-        releaseHeldKey()
     }
 
     /// Shows a suggestion for the text of `snapshot`, unless the user has done something since (`token`) or something else is
