@@ -1,8 +1,8 @@
 import AppKit
 import NaturalLanguage
 
-/// Draws suggestions over whatever app has the focus, in a panel that takes no clicks and never becomes key, so typing goes
-/// on in the app underneath.
+/// Draws suggestions over whatever app has the focus, in a panel that never becomes key, so typing goes on in the app
+/// underneath. It takes no clicks, except while it shows the emoji picker: a click on an emoji then stays out of the app.
 ///
 /// The ghost text is drawn, not put in a label: in the app's own font and size (read through Accessibility), centred on the
 /// cursor's line, starting exactly where the typed text ends, so it reads as the rest of the line instead of a box on top of
@@ -152,8 +152,8 @@ final class GhostOverlay {
     }
 
     /// Where each emoji of the picker is on screen, while the picker is shown: in global display coordinates (top left origin,
-    /// like `CGEvent.location`). The panel itself takes no clicks; the key tap checks a mouse down against these on its own
-    /// thread (see `CompletionKeyGate.emojiCell`).
+    /// like `CGEvent.location`). The panel takes the click, so it stays out of the app; the key tap sees it too, and the
+    /// controller checks it against these (see `CompletionKeyGate.emojiCell`).
     func emojiCells() -> [CGRect] {
         guard panel.isVisible, panel.contentView === emojiBackground else { return [] }
         let frame = panel.frame
@@ -180,6 +180,9 @@ final class GhostOverlay {
     }
 
     private func present(_ frame: CGRect) {
+        // Only the picker is clicked on; the ghost and the cards let every click through to the app.
+        let picker = panel.contentView === emojiBackground
+        if panel.ignoresMouseEvents == picker { panel.ignoresMouseEvents = !picker }
         panel.setFrame(frame, display: true)
         if !panel.isVisible { panel.orderFrontRegardless() }
     }
