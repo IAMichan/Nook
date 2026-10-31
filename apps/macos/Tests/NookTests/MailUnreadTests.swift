@@ -101,4 +101,23 @@ final class MailUnreadTests: XCTestCase {
                        + " (" + tr("connect.mail.code", -10000) + ")")
         XCTAssertEqual(MailStats.failure(errorNumber: nil, message: nil, timeout: 15), tr("connect.mail.noAnswer"))
     }
+
+    /// Mail is read in full only when its counts changed, when the last full read is old, or when it was never read.
+    func testFullReadOnlyWhenMailChanged() {
+        let now = date("2026-10-31T12:00:00")
+        let minuteAgo = now.addingTimeInterval(-60)
+        XCTAssertTrue(MailStats.needsFullRead(mark: "10|2|5", lastMark: nil, lastRead: nil, now: now, maxAge: 600))
+        XCTAssertTrue(MailStats.needsFullRead(mark: nil, lastMark: nil, lastRead: nil, now: now, maxAge: 600))
+        XCTAssertFalse(MailStats.needsFullRead(mark: "10|2|5", lastMark: "10|2|5", lastRead: minuteAgo, now: now, maxAge: 600))
+        XCTAssertTrue(MailStats.needsFullRead(mark: "11|3|5", lastMark: "10|2|5", lastRead: minuteAgo, now: now, maxAge: 600))
+        // Mail too busy to answer the quick question: no full read on top of it.
+        XCTAssertFalse(MailStats.needsFullRead(mark: nil, lastMark: "10|2|5", lastRead: minuteAgo, now: now, maxAge: 600))
+        XCTAssertTrue(MailStats.needsFullRead(mark: "10|2|5", lastMark: "10|2|5", lastRead: now.addingTimeInterval(-600),
+                                              now: now, maxAge: 600))
+        // Working in Mail: a change waits for the gap.
+        XCTAssertFalse(MailStats.needsFullRead(mark: "10|1|5", lastMark: "10|2|5", lastRead: minuteAgo, now: now, maxAge: 600,
+                                               minGap: 120))
+        XCTAssertTrue(MailStats.needsFullRead(mark: "10|1|5", lastMark: "10|2|5", lastRead: now.addingTimeInterval(-120),
+                                              now: now, maxAge: 600, minGap: 120))
+    }
 }

@@ -1,6 +1,7 @@
 import XCTest
 
-/// The key tap's decision on its own thread (`CompletionKeyGate`) must match what the controller does with a key.
+/// Which keys autocomplete takes (`CompletionKeyGate`) must match what the controller does with a key, and the hot keys it
+/// registers must be exactly those keys.
 final class CompletionKeyGateTests: XCTestCase {
     private let tab = 48, escape = 53, returnKey = 36, leftArrow = 123, aKey = 0, digitOne = 18
 
@@ -32,19 +33,51 @@ final class CompletionKeyGateTests: XCTestCase {
         XCTAssertTrue(gate.swallows(key(escape, 0, "\u{1b}")))
     }
 
-    func testNothingShowingHoldsAcceptKeyOnlyWhenASuggestionIsComing() {
-        var gate = makeGate(.nothing)
+    /// As Cotypist: with nothing on screen Tab is the app's, and no hot key is registered for it.
+    func testNothingShowingLeavesEveryKeyToTheApp() {
+        let gate = makeGate(.nothing)
         XCTAssertFalse(gate.swallows(key(tab, 0, "\t")))
-        XCTAssertTrue(gate.mayHold(key(tab, 0, "\t")))
-        gate.canHold = true
-        XCTAssertTrue(gate.swallows(key(tab, 0, "\t")))
         XCTAssertFalse(gate.swallows(key(escape, 0, "\u{1b}")))
         XCTAssertFalse(gate.swallows(key(aKey, 0, "a")))
+        XCTAssertEqual(gate.hotKeys(), [])
+    }
+
+    func testHotKeysAreTheKeysTakenWhileASuggestionShows() {
+        let hot = makeGate(.completion).hotKeys()
+        XCTAssertEqual(hot, [.init(code: tab, modifiers: 0), .init(code: tab, modifiers: CompletionShortcut.shift),
+                             .init(code: escape, modifiers: 0)])
+        var leaving = makeGate(.completion)
+        leaving.leaveTab = true
+        XCTAssertEqual(leaving.hotKeys(), [.init(code: escape, modifiers: 0)])
+        XCTAssertEqual(makeGate(.completion, active: false).hotKeys(), [])
+    }
+
+    /// Every hot key, pressed as it types on a US layout, is a key the controller takes in that state.
+    func testEveryHotKeyIsSwallowed() {
+        let digits = Dictionary(uniqueKeysWithValues: CompletionKeyGate.digitKeys.enumerated().map { ($1, "\($0 + 1)") })
+        let characters: [Int: String] = [tab: "\t", escape: "\u{1b}", returnKey: "\r"].merging(digits) { a, _ in a }
+        let cells = [CGRect(x: 0, y: 0, width: 36, height: 36)]
+        for showing in [CompletionKeyGate.Showing.completion, .replacement, .alternatives(count: 3), .emoji(nameLength: 2, cells: cells)] {
+            let gate = makeGate(showing)
+            XCTAssertFalse(gate.hotKeys().isEmpty)
+            for hot in gate.hotKeys() {
+                XCTAssertTrue(gate.swallows(key(hot.code, hot.modifiers, characters[hot.code] ?? "")), "\(showing) \(hot)")
+            }
+        }
+        XCTAssertEqual(makeGate(.alternatives(count: 2)).hotKeys().filter { digits[$0.code] != nil }.count, 4)
+    }
+
+    func testShortcutsAreHotKeysWhileInactive() {
+        var gate = makeGate(.nothing, active: false)
+        let shortcut = CompletionShortcut(keyCode: aKey, modifiers: CompletionShortcut.command | CompletionShortcut.option, label: "⌘⌥A")
+        gate.toggleAll = shortcut
+        XCTAssertEqual(gate.hotKeys(), [.init(code: aKey, modifiers: shortcut.modifiers)])
+        gate.keysStayWithNook = true
+        XCTAssertEqual(gate.hotKeys(), [])
     }
 
     func testInactiveOrNooksOwnKeysAreNeverSwallowed() {
         XCTAssertFalse(makeGate(.completion, active: false).swallows(key(tab, 0, "\t")))
-        XCTAssertFalse(makeGate(.nothing, active: false).mayHold(key(tab, 0, "\t")))
         var gate = makeGate(.completion)
         gate.toggleAll = CompletionShortcut(keyCode: aKey, modifiers: CompletionShortcut.command | CompletionShortcut.option, label: "⌘⌥A")
         gate.keysStayWithNook = true

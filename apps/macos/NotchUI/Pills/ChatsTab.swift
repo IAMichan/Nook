@@ -182,6 +182,7 @@ final class ChatsEntryMemo {
             // The chats themselves: only the list is made again, from the rows of the chats that did not change. Not the
             // rest of the service (its status, each bridge's last problem): those change with every bridge read and
             // would make the whole list again while you scroll it.
+            // perf: only forgets the list (no state is written back), and every change to the chats must reach it.
             let inbox = capture.$inbox.sink { [weak self] _ in MainActor.assumeIsolated { self?.entries = nil } }
             // Which chats show also follows which apps are on, the chats you hid and the notice rules; the rows follow
             // the language and the messages you hid.
