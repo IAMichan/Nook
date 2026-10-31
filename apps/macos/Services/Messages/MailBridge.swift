@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 /// Mail in the Chats tab, read from the Mail app on this Mac: every account in it (iCloud, Gmail, Outlook and Exchange,
 /// Yahoo, any IMAP or POP account), so every kind of mail you have lands in one place, each account's chats side by
@@ -10,8 +10,17 @@ import Foundation
 @MainActor
 final class MailBridge: ChatBridge, ObservableObject {
     let app = MailChatData.app
-    /// Mail keeps itself up to date; reading it more often only keeps it busy.
+    /// Mail keeps itself up to date; reading it more often only keeps it busy. Each round first asks for `MailChangeMark`
+    /// and reads every account only when it changed (`MailStats.needsFullRead`).
     let interval: TimeInterval = 60
+    /// The mark at the last full read, and when that was. Cleared after Nook itself changed something in Mail (an
+    /// answer sent, mail marked read), so the next round reads it whatever the mark says.
+    private var lastMark: String?
+    private var lastFullRead: Date?
+    /// A round that reads nothing returns no chats: the inbox keeps what the last full read brought.
+    private static let fullReadMaxAge: TimeInterval = 10 * 60
+    /// While you work in Mail itself, its unread count changes with every mail you open: a full read then waits this long.
+    private static let frontGap: TimeInterval = 2 * 60
     private(set) var isWorking = false
     /// The enabled accounts at the last read.
     @Published private(set) var accounts: [MailChatData.Account] = []
@@ -59,6 +68,10 @@ final class MailBridge: ChatBridge, ObservableObject {
     }
 
     func read() async throws -> [BridgedChat] {
+        let mark = await MailChangeMark.current()
+        guard MailStats.needsFullRead(mark: mark, lastMark: lastMark, lastRead: lastFullRead, now: Date(),
+                                      maxAge: Self.fullReadMaxAge, minGap: MailChangeMark.mailIsFront ? Self.frontGap : 0)
+        else { return [] }
         do {
             let list = await ScriptText.run(MailChatData.accountsScript, timeout: 10)
             guard let text = list.text else { throw problem(list.errorNumber, list.errorMessage, timeout: 10) }
@@ -80,6 +93,11 @@ final class MailBridge: ChatBridge, ObservableObject {
             await readBodies(of: rows)
             let chats = MailChatData.chats(rows, accounts: found, bodies: bodies, named: found.count > 1)
             remember(chats, rows: rows, accounts: found)
+            // An account that could not be read is tried again next round, not only once the mark changes.
+            if failure == nil {
+                lastMark = mark
+                lastFullRead = Date()
+            }
             isWorking = true
             return chats
         } catch {
@@ -194,6 +212,13 @@ final class MailBridge: ChatBridge, ObservableObject {
         let draft = MailDraft(to: target.address, cc: "", subject: MailChatData.replySubject(target.subject), body: body,
                               from: target.from)
         try await MailSender.deliver(draft, send: true)
+        changedInMail()
+    }
+
+    /// Nook changed something in Mail: the next round reads it in full, so it shows at once.
+    private func changedInMail() {
+        lastFullRead = nil
+        MailChangeMark.invalidate()
     }
 
     /// Marks the chat's unread mail read in Mail, which tells the server, so it is read on your other devices too.
@@ -203,6 +228,7 @@ final class MailBridge: ChatBridge, ObservableObject {
         let result = await ScriptText.run(MailChatData.markReadScript(target.unread), timeout: 15)
         if result.errorNumber != nil { throw problem(result.errorNumber, result.errorMessage, timeout: 15) }
         targets[chatID]?.unread = []
+        changedInMail()
     }
 
     /// Forgets what was read, after you unlinked Mail.
@@ -213,5 +239,29 @@ final class MailBridge: ChatBridge, ObservableObject {
         opened = [:]
         accounts = []
         isWorking = false
+        lastMark = nil
+        lastFullRead = nil
     }
+}
+
+/// `MailStats.changeScript`, asked once for both readers of Mail (the Chats tab and the Mail connector) when they come
+/// close together, so the quick question is not asked twice either.
+@MainActor
+enum MailChangeMark {
+    private static var last: (mark: String, at: Date)?
+    private static let reuse: TimeInterval = 10
+
+    /// The mark, or nil when Mail did not answer in time.
+    static func current() async -> String? {
+        if let last, Date().timeIntervalSince(last.at) < reuse { return last.mark }
+        let mark = await ScriptText.run(MailStats.changeScript, timeout: 5).text
+        last = mark.map { ($0, Date()) }
+        return mark
+    }
+
+    /// Nook changed something in Mail itself: the next question goes to Mail.
+    static func invalidate() { last = nil }
+
+    /// You are working in Mail now.
+    static var mailIsFront: Bool { NSWorkspace.shared.frontmostApplication?.bundleIdentifier == MailSender.mailBundleID }
 }

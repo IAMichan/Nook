@@ -3,6 +3,35 @@ import Foundation
 /// Counts unread mail for the mail_unread tool: per account, per day and per sender, so the model can chart it right away.
 /// Foundation only, so it can be tested on its own; the AppleScript runs in MailConnector.
 enum MailStats {
+    /// Three numbers from Mail in one quick Apple Event: the messages in its inboxes, how many are unread, and the
+    /// messages in its Sent mailboxes. Mail answers Apple Events one at a time on its main thread, so a full read (every
+    /// account, inbox and Sent) is a moment in which a mail you click in Mail waits; while these numbers stay the same,
+    /// nothing is read again. Sent is left empty when Mail cannot count it, so the mark still works on the inbox alone.
+    static let changeScript = """
+    tell application "Mail"
+        set sentCount to ""
+        try
+            set sentCount to (count of messages of sent mailbox) as text
+        end try
+        return ((count of messages of inbox) as text) & "|" & ((unread count of inbox) as text) & "|" & sentCount
+    end tell
+    """
+
+    /// Whether to read Mail in full again, from the `changeScript` mark now and at the last full read.
+    /// - Never read yet: read, so a missing permission shows as such.
+    /// - Mail gave no mark (busy, syncing): leave it alone; asking for more would only keep it busier.
+    /// - The last full read is `maxAge` old: read, which catches what the mark cannot see (one mail gone, one come).
+    /// - The mark changed: read, once the last full read is `minGap` old (a gap while you work in Mail, where every
+    ///   mail you open changes the unread count).
+    static func needsFullRead(mark: String?, lastMark: String?, lastRead: Date?, now: Date, maxAge: TimeInterval,
+                              minGap: TimeInterval = 0) -> Bool {
+        guard let lastRead else { return true }
+        guard let mark else { return false }
+        let age = now.timeIntervalSince(lastRead)
+        if age >= maxAge { return true }
+        return mark != lastMark && age >= minGap
+    }
+
     /// Unread inbox mail: first per account "ACC|||name|||count", then per message "MSG|||sender|||date" (at most 400).
     static let unreadScript = """
     tell application "Mail"

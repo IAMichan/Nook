@@ -13,11 +13,17 @@ struct CompletionKeyPress: Equatable {
     var commandLike: Bool { modifiers & (CompletionShortcut.command | CompletionShortcut.control) != 0 }
 }
 
-/// What the autocomplete key tap needs to know to decide, on its own thread and without asking the main thread, whether a
-/// key or a click must not reach the app: what is on screen, the accept keys, the shortcuts. The controller keeps a copy of
-/// it up to date (see `AutocompleteController.publishTapState`); `swallows` gives the same answer as the controller's own key
-/// handling for the same state.
+/// Which keys autocomplete takes from the app in the state it is in: what is on screen, the accept keys, the shortcuts.
+/// `hotKeys` are the keys the controller registers as system hot keys for that state (see `AutocompleteHotKeys`), so macOS
+/// keeps them from the app without any key waiting for Nook; `swallows` gives the same answer for one key press as the
+/// controller's own key handling (`AutocompleteController.handle`).
 struct CompletionKeyGate: Equatable {
+    /// A key code with `CompletionShortcut` modifier bits, as a hot key is registered.
+    struct HotKey: Hashable {
+        var code: Int
+        var modifiers: Int
+    }
+
     enum Showing: Equatable {
         case nothing
         /// Other words to pick by number.
@@ -49,16 +55,14 @@ struct CompletionKeyGate: Equatable {
     /// `AutocompleteController.forcedApp`).
     var canForce = false
     var showing = Showing.nothing
-    /// An accept key pressed now would be held until the suggestion on its way shows (see `holdAcceptKey`).
-    var canHold = false
-    /// An accept key is held: the next key goes to the app after it, in order.
-    var holding = false
 
     /// Emoji per row in the picker.
     static let emojiColumns = 9
 
     private static let tab = 48, returnKey = 36, escape = 53
     private static let arrows: Set<Int> = [123, 124, 125, 126]
+    /// The keys 1 to 9 on the row above the letters, by position (ANSI): the number they type is checked when one is pressed.
+    static let digitKeys = [18, 19, 20, 21, 23, 22, 26, 28, 25]
 
     /// True when `key` must not reach the app. Mirrors `AutocompleteController.handle(_:)`.
     func swallows(_ key: CompletionKeyPress) -> Bool {
@@ -77,7 +81,7 @@ struct CompletionKeyGate: Equatable {
             if !key.commandLike, let number = Int(key.characters), number >= 1, number <= count { return true }
             return plainEscape
         case .nothing:
-            return !key.commandLike && accept && canHold
+            return false
         case .completion, .replacement:
             return accept || plainEscape
         case .emoji(let nameLength, _):
@@ -90,13 +94,50 @@ struct CompletionKeyGate: Equatable {
         }
     }
 
-    /// An accept key while a key the main thread has not handled yet may have changed what is on screen: when nothing shows
-    /// and the key could start a wait for a suggestion, the tap holds it and leaves the choice to the main thread, which
-    /// passes it on to the app when nothing is coming. Keys are never let through and then taken back.
-    func mayHold(_ key: CompletionKeyPress) -> Bool {
-        guard !keysStayWithNook, active, showing == .nothing, !key.commandLike else { return false }
-        let tabLeftToApp = leaveTab && key.code == Self.tab
-        return (key.matches(acceptWord) || key.matches(acceptAll)) && !tabLeftToApp
+    /// The keys to register as hot keys now: the shortcuts that are set, and while something shows the keys that act on it
+    /// (as Cotypist does: Tab is the app's again as soon as no suggestion is on screen). A number key is registered with and
+    /// without Shift, since some layouts need Shift for digits; whether it typed a number is checked when it is pressed.
+    func hotKeys() -> Set<HotKey> {
+        guard !keysStayWithNook else { return [] }
+        var keys = Set<HotKey>()
+        func add(_ shortcut: CompletionShortcut?) {
+            if let shortcut { keys.insert(HotKey(code: shortcut.keyCode, modifiers: shortcut.modifiers)) }
+        }
+        func addDigits(_ count: Int) {
+            for code in Self.digitKeys.prefix(count) {
+                keys.insert(HotKey(code: code, modifiers: 0))
+                keys.insert(HotKey(code: code, modifiers: CompletionShortcut.shift))
+            }
+        }
+        add(toggleAll)
+        if appKnown { add(toggleApp) }
+        add(alternatives)
+        if active || canForce { add(suggestNow) }
+        guard active else { return keys }
+
+        let escape = HotKey(code: Self.escape, modifiers: 0)
+        func addAccept() {
+            for shortcut in [acceptWord, acceptAll] where !(leaveTab && shortcut.keyCode == Self.tab) {
+                add(shortcut)
+            }
+        }
+        switch showing {
+        case .nothing:
+            break
+        case .alternatives(let count):
+            addDigits(count)
+            keys.insert(escape)
+        case .completion, .replacement:
+            addAccept()
+            keys.insert(escape)
+        case .emoji(let nameLength, _):
+            addAccept()
+            keys.insert(escape)
+            for code in Self.arrows { keys.insert(HotKey(code: code, modifiers: 0)) }
+            if nameLength >= 2 { keys.insert(HotKey(code: Self.returnKey, modifiers: 0)) }
+            addDigits(Self.emojiColumns)
+        }
+        return keys
     }
 
     /// The emoji under `point` (global display coordinates), when the picker shows.
