@@ -7,6 +7,7 @@ pub mod cli;
 mod commands;
 mod companion;
 mod connectors;
+mod games;
 mod platform;
 mod services;
 mod state;
@@ -51,7 +52,10 @@ pub fn run() {
             brain::setup(app.handle());
             agents::setup(app.handle());
             workspace::setup(app.handle());
+            games::setup(app.handle());
             services::start(app.handle());
+            #[cfg(desktop)]
+            games::start(app.handle());
             #[cfg(desktop)]
             {
                 platform::desktop::setup(app.handle())?;
@@ -184,6 +188,17 @@ pub fn run() {
             commands::connectors::chat_accounts,
             commands::connectors::chat_accounts_set,
             commands::connectors::service_icon,
+            commands::games::games_list,
+            commands::games::valorant_catalog,
+            commands::games::valorant_view,
+            commands::games::valorant_save_prefs,
+            commands::games::valorant_start_match,
+            commands::games::valorant_end_match,
+            commands::games::valorant_set_match,
+            commands::games::valorant_next_round,
+            commands::games::valorant_record,
+            commands::games::valorant_remove,
+            commands::games::valorant_look,
             commands::services::services_prefs,
             commands::services::save_services_prefs,
             commands::services::voice_info,
