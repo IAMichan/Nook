@@ -188,6 +188,7 @@ pub fn run() {
             commands::connectors::chat_accounts,
             commands::connectors::chat_accounts_set,
             commands::connectors::service_icon,
+            commands::connectors::agenda_upcoming,
             commands::games::games_list,
             commands::games::valorant_catalog,
             commands::games::valorant_view,

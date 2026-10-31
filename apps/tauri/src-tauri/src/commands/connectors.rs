@@ -839,3 +839,40 @@ pub async fn chat_accounts_set(c: State<'_, Connectors>, nook_id: String, exclud
 pub async fn service_icon(domain: String) -> Option<String> {
     nook_core::connectors::brand::icon(&domain).await
 }
+
+/// One upcoming event for Home's inbox, from the calendars' cache (no network).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpcomingEvent {
+    title: String,
+    start: chrono::DateTime<chrono::Utc>,
+    end: chrono::DateTime<chrono::Utc>,
+    all_day: bool,
+    location: String,
+    calendar: String,
+}
+
+/// The events that start within `hours` from now, soonest first, from every active calendar's cache.
+#[tauri::command]
+pub fn agenda_upcoming(c: State<'_, Connectors>, hours: i64) -> Vec<UpcomingEvent> {
+    let now = chrono::Utc::now();
+    let until = now + chrono::Duration::hours(hours.clamp(1, 24 * 7));
+    let mut events: Vec<UpcomingEvent> = c
+        .hub
+        .active()
+        .iter()
+        .flat_map(|calendar| calendar.cached_agenda())
+        .filter(|e| e.start >= now && e.start <= until)
+        .map(|e| UpcomingEvent {
+            title: e.title,
+            start: e.start,
+            end: e.end,
+            all_day: e.all_day,
+            location: e.location,
+            calendar: e.calendar,
+        })
+        .collect();
+    events.sort_by_key(|e| e.start);
+    events.dedup_by(|a, b| a.title == b.title && a.start == b.start);
+    events
+}

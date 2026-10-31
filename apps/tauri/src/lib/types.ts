@@ -57,6 +57,12 @@ export interface Settings {
   energyMode: EnergyMode;
   /// Autocomplete Anywhere (Settings › Aanvullen). Off by default.
   autocomplete: AutocompleteSettings;
+  /** What Home's greeting calls you; empty greets without a name. */
+  userName: string;
+  /** Feature ids pinned to Home, in order; `null` shows the default set. */
+  homeEssentials: string[] | null;
+  /** Dismissed inbox item ids, with when they were dismissed (ISO). */
+  inboxDismissed: Record<string, string>;
 }
 
 /// What Nook does while you share your screen or sit in a meeting.

@@ -6,6 +6,8 @@
   --row-hover: #25252d;
   --radius-control: 8px;
   --radius-card: 12px;
+  /* Home's cards and the sheets. */
+  --radius-panel: 18px;
   --shadow-control: 0 1px 3px #0002;
   --shadow-popover: 0 12px 36px #0005;
   --graphite: #16161b;
