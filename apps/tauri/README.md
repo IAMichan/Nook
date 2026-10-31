@@ -91,6 +91,11 @@ Launch options: `nook --window` opens the main window right away, `nook --settin
   (*Werkruimte*). Prefer it floating? **Settings › General › Position** (*Instellingen › Algemeen › Plek*); drag it
   wherever you like and the position is remembered.
 - **The main window** (**Alt+Ctrl+W** or the tray): all your Nooks on the left, the chat on the right, and settings.
+- **Home**, where the main window opens: a greeting, the **Inbox** (the few things that need you or that you missed,
+  from agents, conversations, open items, calendars, WhatsApp, pull requests, Think Along, and Gamer Mode), and **Your
+  essentials**, the features you pinned (**Customize** picks them, their order, and the name Nook greets you with). A
+  feature adds to the inbox with a provider in `src/lib/inbox-sources.ts`; a new shortcut is one entry in
+  `src/lib/features.ts`.
 - **Settings › Brain** (*Instellingen › Brein*): choose the brain. By default Nook thinks locally (Ollama, with model
   advice based on your memory and one-click install); an external AI or Claude Code is your own choice.
 - **Settings › Accounts & connections** (*Accounts & koppelingen*): what is connected at the top, below it **Connect**
