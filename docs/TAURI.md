@@ -77,6 +77,22 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 | Meetings and screen sharing (`QuietPolicy`, `QuietWatch`): quiet, hide from viewers, hide completely, Nook in screenshots | ◐ Windows (window list, microphone via the privacy registry, `WDA_EXCLUDEFROMCAPTURE`; only compiled) · ◐ Linux (X11 and `pactl`; keeping out of a share isn't possible, then only quiet; not tested in the app) · — Android | `core/src/services/quiet.rs`, `services/quiet.rs`, `platform/{windows,linux}/quiet.rs`, Settings › Voice & sound |
 | Energy plan (`EnergyPolicy`, `EnergyMonitor`): Automatic, Saver, Full power; screen reading and Think Along follow it, the orb rests | ◐ (Windows: battery, power saving, CPU load; Linux: `/sys`, load average, screensaver; not tested in the app) · — Android | `core/src/services/energy.rs`, `services/energy.rs`, Settings › General |
 
+## Gamer Mode (Tauri first, not on the Mac yet)
+
+A coach for games, opened from **Gamer Mode** in the main navigation. The first game is Valorant. While Gamer Mode is
+on and Valorant is the app in front, Nook takes a screenshot of the user's own screen every few seconds (Settings ›
+Gamer Mode) and lets the chosen brain read it into structured events. It never reads game memory or sends input to the
+game. Events can also be logged by hand.
+
+| Part | Tauri | Where |
+|---|---|---|
+| Supported games (one entry per game, its coach view in `GamerMode.svelte`) | ✓ | `core/src/games/mod.rs`, `src/views/games/GamerMode.svelte` |
+| Valorant knowledge: agents, abilities (with aliases such as "tripwire"), ability kinds, maps, callouts as one key | ✓ | `core/src/games/valorant/catalog.rs` |
+| Match memory: rounds with events (agent, ability, place, round time, effect, confidence, source), kept apart from earlier matches | ✓ | `core/src/games/valorant/memory.rs` (`games/valorant.json`) |
+| Coach: enemy patterns over rounds, a changed or stale setup (only rounds Nook watched count), good adaptation, my habits, general tips | ✓ | `core/src/games/valorant/coach.rs` |
+| Reading a screenshot (prompt, strict JSON parsing, only known agents and abilities) | ◐ (Windows and Linux; not run against a live match yet) · — Android (logging by hand works) | `core/src/games/valorant/observe.rs`, `src-tauri/src/games.rs` |
+| Valorant Coach page, logging by hand, coaching as a toast, Settings › Gamer Mode | ✓ | `src/views/games/`, `src/lib/games.ts`, `src/lib/gamer.svelte.ts`, `src/views/settings/Games.svelte` |
+
 ## Agents and workspace
 
 | Part (Mac) | Tauri | Where |

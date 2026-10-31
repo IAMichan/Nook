@@ -14,6 +14,7 @@
   import { shellShortcut } from "../lib/shell-shortcuts";
   import { companion } from "../lib/companion";
   import { onBack, setupMobile } from "../lib/mobile";
+  import { gamer } from "../lib/gamer.svelte";
 
   let route = $state<Route>(resumeRoute());
   let showList = $state(true);
@@ -23,6 +24,9 @@
   // De telefoonindeling: op Android, en in een smal venster op de computer.
   const mobile = $derived(android || width <= 640);
   let companionClient = $state(false);
+
+  // Gamer Mode's coaching shows up as a toast on any page.
+  $effect(() => gamer.start());
 
   $effect(() => {
     companion.info().then((i) => (companionClient = i.client)).catch(() => {});
@@ -118,6 +122,7 @@
     {#if nook.info?.capabilities.terminals}
       <button class:on={route === "workspace"} aria-current={route === "workspace" ? "page" : undefined} onclick={() => (route = "workspace")} title="Workspace"><Icon name="workspace" /><span>Workspace</span></button>
     {/if}
+    <button class:on={route === "games"} aria-current={route === "games" ? "page" : undefined} onclick={() => (route = "games")} title="Gamer Mode"><Icon name="gamepad" /><span>Gamer Mode</span></button>
     {#if companionClient}
       <button class:on={route === "companion"} aria-current={route === "companion" ? "page" : undefined} onclick={() => (route = "companion")} title="Companion"><Icon name="phone" /><span>Companion</span></button>
     {/if}
@@ -148,7 +153,7 @@
         </div>
       </div>
     {:else}
-      <header class="title page-title"><span class="name">{routeTitle}</span><span class="page-caption">{route === "settings" ? "Make Nook yours" : route === "agents" ? "Your coding sessions, together" : route === "workspace" ? "Tools for your next idea" : "Stay connected"}</span></header>
+      <header class="title page-title"><span class="name">{routeTitle}</span><span class="page-caption">{route === "settings" ? "Make Nook yours" : route === "agents" ? "Your coding sessions, together" : route === "workspace" ? "Tools for your next idea" : route === "games" ? "Your personal game coach" : "Stay connected"}</span></header>
       <div class="route-body">
         {#key route}<LazyView load={routeViews[route]} label={routeTitle} onretry={() => reloadRoute(route)} />{/key}
       </div>

@@ -7,7 +7,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("shell route loading", () => {
   it("falls back to chat for unknown external routes", () => {
     for (const route of [null, "", "__proto__", "constructor", "missing"]) expect(parseRoute(route)).toBe("chat");
-    for (const route of ["chat", "agents", "workspace", "settings", "companion"]) expect(parseRoute(route)).toBe(route);
+    for (const route of ["chat", "agents", "workspace", "games", "settings", "companion"]) expect(parseRoute(route)).toBe(route);
   });
 
   it("shares a pending import and reuses a successful download", async () => {

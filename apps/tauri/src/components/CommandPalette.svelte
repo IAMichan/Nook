@@ -40,6 +40,7 @@
     { id: "chat", title: "Open chat", icon: "chat", run: () => onnavigate("chat") },
     { id: "agents", title: "Open agents", icon: "agents", run: () => onnavigate("agents") },
     ...(nook.info?.capabilities.terminals ? [{ id: "workspace", title: "Open workspace", icon: "workspace", run: () => onnavigate("workspace") } satisfies Command] : []),
+    { id: "games", title: "Open Gamer Mode", icon: "gamepad", run: () => onnavigate("games") },
     ...(companionEnabled ? [{ id: "companion", title: "Open companion", icon: "phone", run: () => onnavigate("companion") } satisfies Command] : []),
     { id: "settings", title: "Open settings", icon: "settings", run: () => onnavigate("settings") },
   ]);

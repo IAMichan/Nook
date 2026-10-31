@@ -1,13 +1,13 @@
 import type { Component } from "svelte";
 
 export const routeTitles = {
-  chat: "Chat", agents: "Agents", workspace: "Workspace", companion: "Companion", settings: "Settings",
+  chat: "Chat", agents: "Agents", workspace: "Workspace", games: "Gamer Mode", companion: "Companion", settings: "Settings",
 };
 export type Route = keyof typeof routeTitles;
 
 export function parseRoute(value: string | null): Route {
   switch (value) {
-    case "agents": case "workspace": case "companion": case "settings": return value;
+    case "agents": case "workspace": case "games": case "companion": case "settings": return value;
     default: return "chat";
   }
 }
@@ -43,6 +43,7 @@ export function retryableView(load: () => Promise<ViewModule>): () => Promise<Vi
 export const routeViews = {
   agents: retryableView(() => import("../views/Agents.svelte")),
   workspace: retryableView(() => import("../views/Workspace.svelte")),
+  games: retryableView(() => import("../views/games/GamerMode.svelte")),
   companion: retryableView(() => import("../views/companion/Companion.svelte")),
   settings: retryableView(() => import("../views/Settings.svelte")),
 };
