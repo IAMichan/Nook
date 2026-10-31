@@ -5,8 +5,8 @@ import AppKit
 // and what you need to know if something could not be read. Plus the source picker and summary of included context.
 
 /// One quiet line under an answer ("Used 3 sources"). Opens to show where Nook looked and what came out of it, with the
-/// numbered references the answer cites. It stays closed until you open it; a source that could not be read shows as a
-/// badge on the line.
+/// numbered references the answer cites. It is closed after every answer and stays closed until you open it; a source
+/// that could not be read shows as a badge on the line.
 struct SourcesDisclosure: View {
     let message: ChatMessage
     /// Retry the answer; only given for the latest answer.
@@ -126,6 +126,12 @@ struct SourcesDisclosure: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
+            // Closed by default after every answer: if it was opened while Nook was still searching, or the row kept
+            // its state from an earlier answer, it folds away as soon as the answer is done.
+            .onChange(of: message.streaming) { _, streaming in
+                if !streaming && expanded { withAnimation(NookTheme.reveal) { expanded = false } }
+            }
+            .onChange(of: message.id) { _, _ in expanded = false }
         }
     }
 
