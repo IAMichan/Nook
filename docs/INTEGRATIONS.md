@@ -86,6 +86,7 @@ needs a column in that matrix.
 | An action the app refused says why (under the field or as a toast), never a silent success | ✓ | ✓ | ✓ | ✓ (every request is tagged, `act`) | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Nook answers in the chat when you ask it to (`chat_send`, through `chatRoute` and `runInChat`; you approve the text first) | ✓ (also `whatsapp_send`) | ✓ (also `whatsapp_send`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (`chat_send`, as a reply through Mail) |
 | A lost sign-in is told apart from a passing failure (reading waits, Settings asks to sign in again) | ✓ (the gateway's status) | ✓ (the gateway's status) | – (no sign-in; Full Disk Access) | ✓ (TDLib's state) | ✓ (the helper's status) | ✓ (`SlackData.signedOut`) | ✓ (`TeamsData.signInGone`, a passing refusal keeps the sign-in) | ✓ | – (no sign-in: Mail's own accounts; a refused Automation permission says how to give it) |
+| Search everything (⌘K) finds a message in the whole history, not only the newest ones the inbox keeps (`ChatSearchBridge`) | ✓ (every message the linked accounts hold, plus WhatsApp on this Mac's database when it is installed) | ✓ (same) | ✓ (the whole database, as `search_messages`) | ✓ (`searchMessages` on Telegram's servers) | – (the helper has no search call yet: the newest messages Nook keeps) | ✓ (`search.messages`; a pasted token needs search:read) | – (no search Nook can reach without a Graph search scope: the newest messages Nook keeps) | – (the website has no search) | – (not yet: the newest messages Nook keeps; `search_mail` searches Mail for Nook) |
 
 ### One inbox for every app
 
@@ -316,5 +317,11 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
 - **Mentions outside WhatsApp.** "Groups quiet unless they mention you" knows a mention only where the app says it:
   WhatsApp's gateways do (`mentionsMe`). Telegram (`contains_unread_mention`), Slack (`<@you>` in the text) and Teams
   (a message's mentions) say it too, but their bridges do not read it yet, so a quiet group of theirs stays quiet.
+
+- **Searching the whole chat history from Search everything** (`ChatSearchBridge`) reaches Messages, WhatsApp (this
+  Mac's database and what the linked phone brought), Telegram and Slack. The chat helper's networks, Teams, Snapchat and
+  Mail are searched in the newest messages Nook keeps of each chat (`ChatInbox.keep`) only: the helper has no search call
+  yet, Teams' search needs a Graph scope Nook does not ask for, Snapchat's website has none, and Mail's search goes
+  through AppleScript, too slow for every keystroke.
 
 Add an item here when a change cannot reach every member yet.

@@ -7,7 +7,7 @@ import Combine
 /// they keep into the shared inbox's chats (`WhatsAppExport`), each time one of them changes. Their messages stay in
 /// memory only (`BridgedChat.ephemeral`), as they always did.
 @MainActor
-final class WhatsAppGatewayBridge: ChatKeyedHistoryBridge, ChatNewsBridge {
+final class WhatsAppGatewayBridge: ChatKeyedHistoryBridge, ChatNewsBridge, ChatSearchBridge {
     let app = "whatsapp"
     /// WhatsApp on this Mac (`WhatsAppDesktopBridge`) reads the same app while no phone is linked: each keeps its own turns.
     let bridgeID = "whatsapp-link"
@@ -166,6 +166,27 @@ final class WhatsAppGatewayBridge: ChatKeyedHistoryBridge, ChatNewsBridge {
             thread.app == app && thread.chatID.map { WAChatKey.split($0).account == account } == true
         }.map(\.id))
         if remove { capture.drop(ids) } else { capture.forgetMessages(of: ids) }
+    }
+
+    // MARK: Search everything
+
+    var searchesHistory: Bool { holdsChats }
+
+    /// Every message the linked accounts hold of each chat (also the ones scrolled back to), past the newest ones the
+    /// shared inbox keeps (`ChatInbox.keep`). The gateway has no search of its own: what it never brought is not here,
+    /// and WhatsApp on this Mac (`WhatsAppDesktopBridge`) is searched beside it.
+    func searchHistory(_ words: [String], limit: Int) async throws -> [BridgedChat] {
+        guard holdsChats, !words.isEmpty else { return [] }
+        var found: [(chat: BridgedChat, messages: [InboxMessage])] = []
+        for word in words {
+            var hits: [(chat: BridgedChat, message: InboxMessage)] = []
+            for chat in exported.values {
+                for message in chat.messages where ChatHistorySearch.matches(message, [word]) { hits.append((chat, message)) }
+            }
+            hits.sort { $0.message.date > $1.message.date }
+            found += hits.prefix(limit).map { (chat: $0.chat, messages: [$0.message]) }
+        }
+        return ChatHistorySearch.chats(found)
     }
 
     // MARK: Older messages
