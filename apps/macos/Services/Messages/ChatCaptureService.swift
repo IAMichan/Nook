@@ -99,6 +99,34 @@ final class ChatCaptureService: ObservableObject {
         return sources.isOn(thread.app)
     }
 
+    // MARK: Search everything
+
+    /// The bridges that search their app's whole history now (`ChatSearchBridge`): ready, and their app switched on.
+    var historySearchers: [any ChatSearchBridge] {
+        bridges.compactMap { $0 as? any ChatSearchBridge }.filter { bridge in
+            bridge.searchesHistory && (bridge.alwaysOn || sources.isOn(bridge.app))
+        }
+    }
+
+    /// The chat Nook shows for one a history search found, the same rule for every app: the chat with its key, else
+    /// the shown chat of its app with the same name (WhatsApp on this Mac while a linked phone brings WhatsApp), else
+    /// the chat as found, for one older than what the inbox keeps. Nil for a chat you hid or whose app is off.
+    func shownThread(for chat: BridgedChat) -> InboxThread? {
+        let threads = loadedInbox.threads
+        let key = ChatInbox.key(of: chat)
+        if let thread = threads[key] { return isShown(thread) ? thread : nil }
+        let named = ChatInbox.key(app: chat.app, chat: chat.name)
+        if let thread = threads.values.first(where: { $0.app == chat.app && ChatInbox.key(app: $0.app, chat: $0.name) == named && isShown($0) }) {
+            return thread
+        }
+        var thread = InboxThread(id: key, app: chat.app, name: chat.name)
+        thread.chatID = chat.chatID
+        thread.account = chat.account
+        thread.avatar = chat.avatar
+        thread.members = chat.members
+        return isShown(thread) ? thread : nil
+    }
+
     /// You logged in to an app from its row in Settings › Connections: it is switched on, collecting with it, and read now.
     func loggedIn(_ app: String) {
         setSource(app, on: true)

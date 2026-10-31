@@ -9,7 +9,7 @@ import Combine
 /// The app id and hash are your own, from my.telegram.org. A build with Nook's own chat helper (`ChatHelper`) links
 /// Telegram through it instead, and this stays off.
 @MainActor
-final class TelegramBridge: ObservableObject, ChatHistoryBridge {
+final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridge {
     let app = "telegram"
     let interval: TimeInterval = 3
 
@@ -69,6 +69,9 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
     private var sendCount = 0
     /// Scrolling back: TDLib's answer awaited per chat ("older:<id>").
     private var olderWaiting: [Int64: CheckedContinuation<[[String: Any]], Never>] = [:]
+    /// Search everything: TDLib's answer awaited per search ("search:<n>").
+    private var searchWaiting: [String: CheckedContinuation<[[String: Any]], Never>] = [:]
+    private var searchCount = 0
 
     var isReady: Bool { state == .login(.ready) }
     var isWorking: Bool { isReady }
@@ -134,6 +137,8 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
         // A scroll back still waiting gets no answer any more.
         for waiting in olderWaiting.values { waiting.resume(returning: []) }
         olderWaiting = [:]
+        for waiting in searchWaiting.values { waiting.resume(returning: []) }
+        searchWaiting = [:]
         if case .login = state { state = .stopped }
         if state == .starting { state = .stopped }
     }
@@ -221,6 +226,38 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
                                 members: people.isEmpty ? nil : people), true)
         }
         return (nil, true)
+    }
+
+    // MARK: Search everything
+
+    var searchesHistory: Bool { isReady && client != nil }
+
+    /// Telegram's own search through every chat in the main list (`searchMessages`), on its servers: as far back as each
+    /// chat goes. Only the chats Nook knows by name are kept, so a hit opens a chat it shows.
+    func searchHistory(_ words: [String], limit: Int) async throws -> [BridgedChat] {
+        guard isReady, client != nil, !words.isEmpty else { return [] }
+        var found: [(chat: BridgedChat, messages: [InboxMessage])] = []
+        for word in words {
+            searchCount += 1
+            let extra = "search:\(searchCount)"
+            let list = await withCheckedContinuation { continuation in
+                searchWaiting[extra] = continuation
+                send(["@type": "searchMessages", "chat_list": ["@type": "chatListMain"], "query": word, "offset": "",
+                      "limit": min(limit, 100), "min_date": 0, "max_date": 0, "@extra": extra])
+            }
+            for object in list {
+                guard let id = TelegramData.int64(object["chat_id"]), let chat = chats[id], !chat.title.isEmpty,
+                      let message = TelegramData.message(object, chat: chat, users: users),
+                      ChatHistorySearch.matches(message, [word]) else { continue }
+                found.append((BridgedChat(app: app, name: chat.title, messages: [], unread: nil, avatar: chat.avatar), [message]))
+            }
+        }
+        return ChatHistorySearch.chats(found)
+    }
+
+    /// TDLib's answer to a search (nothing, when it refused).
+    private func answerSearch(_ extra: String, _ list: [[String: Any]]) {
+        searchWaiting.removeValue(forKey: extra)?.resume(returning: list)
     }
 
     /// TDLib's answer to a scroll back (nothing, when it refused).
@@ -381,11 +418,21 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
                 send(["@type": "getChatHistory", "chat_id": id, "from_message_id": 0, "offset": 0,
                       "limit": Self.history, "only_local": false, "@extra": "history:\(id)"])
             }
+        case "foundMessages":
+            // Search everything's search through every chat.
+            if let extra = object["@extra"] as? String, extra.hasPrefix("search:") {
+                answerSearch(extra, object["messages"] as? [[String: Any]] ?? [])
+            }
         case "messages":
             // A chat's history: "history:<id>" the first ask, "history2:<id>" the one before it.
             guard let extra = object["@extra"] as? String else { return }
             if extra.hasPrefix("older:") {
                 answerOlder(extra, object["messages"] as? [[String: Any]] ?? [])
+                return
+            }
+            // A TDLib from before `foundMessages` answers a search with plain messages.
+            if extra.hasPrefix("search:") {
+                answerSearch(extra, object["messages"] as? [[String: Any]] ?? [])
                 return
             }
             let first = extra.hasPrefix("history:")
@@ -415,6 +462,8 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
             let message = (object["message"] as? String) ?? "error"
             if let extra = object["@extra"] as? String, extra.hasPrefix("older:") {
                 answerOlder(extra, [])
+            } else if let extra = object["@extra"] as? String, extra.hasPrefix("search:") {
+                answerSearch(extra, [])
             } else if let extra = object["@extra"] as? String, extra.hasPrefix("send:") {
                 refused(extra, message)
             } else if let extra = object["@extra"] as? String, extra.hasPrefix("action:") {

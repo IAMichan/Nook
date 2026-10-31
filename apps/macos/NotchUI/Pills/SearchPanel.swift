@@ -189,7 +189,8 @@ struct SearchPanel: View {
 
     @ViewBuilder
     private func results(_ list: [Row]) -> some View {
-        if list.allSatisfy({ if case .ask = $0 { return true } else { return false } }), center.searched == text, !center.indexing {
+        if list.allSatisfy({ if case .ask = $0 { return true } else { return false } }), center.searched == text, !center.indexing,
+           !center.searchingHistory {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 ListEmptyNote(tr("search.none"))
                 Text(tr("search.noneDetail")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
@@ -440,6 +441,9 @@ struct SearchPanel: View {
             if center.indexing {
                 ProgressView().controlSize(.small)
                 Text(tr("search.indexing")).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary)
+            } else if center.searchingHistory, !text.isEmpty {
+                ProgressView().controlSize(.small)
+                Text(tr("search.history")).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary)
             } else if !text.isEmpty {
                 Text(tr("search.results", visible.count)).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary)
             }

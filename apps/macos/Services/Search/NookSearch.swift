@@ -445,6 +445,8 @@ struct SearchIndex: Sendable {
     let vocabulary: [String]
     /// In how many documents each word is.
     let frequency: [String: Int]
+    /// Each document's entry by its id.
+    private let positions: [String: Int]
 
     init(_ documents: [SearchDocument]) {
         var postings: [String: [Posting]] = [:]
@@ -483,9 +485,15 @@ struct SearchIndex: Sendable {
         self.postings = postings
         self.frequency = frequency
         vocabulary = frequency.keys.sorted()
+        positions = Dictionary(entries.enumerated().map { ($0.element.document.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
     }
 
     var isEmpty: Bool { entries.isEmpty }
+
+    /// The document with this id, as it was indexed.
+    func document(_ id: String) -> SearchDocument? {
+        positions[id].map { entries[$0].document }
+    }
 
     // MARK: Words
 
@@ -875,5 +883,60 @@ enum SearchHighlight {
         }
         if cursor < ns.length { pieces.append((ns.substring(from: cursor), false)) }
         return pieces.map { (text: $0.0, marked: $0.1) }
+    }
+}
+
+// MARK: - More than the index holds
+
+/// What a search through an app's own history found (every chat app's whole history, `ChatSearchBridge`), put together
+/// with the index: a document the index has gets the passages it lacks, so it is still one hit, scored over all of its
+/// text; one it does not have is a hit of its own.
+enum SearchMerge {
+    /// The found documents, each with the passages of the index's document of the same id it does not repeat, in
+    /// time order.
+    static func documents(_ found: [SearchDocument], in index: SearchIndex) -> [SearchDocument] {
+        found.map { extra in
+            guard var document = index.document(extra.id) else { return extra }
+            let before = document.passages.count
+            document.passages = passages(document.passages, adding: extra.passages)
+            guard document.passages.count != before else { return document }
+            if let date = extra.date, date > (document.date ?? .distantPast) { document.date = date }
+            return document
+        }
+    }
+
+    /// `passages` with those of `added` it does not have yet, in time order. One message is one passage, also when two
+    /// apps bring it with their own ids (WhatsApp on this Mac and through the linked phone): by its anchor, else by its
+    /// text in the same minute.
+    static func passages(_ passages: [SearchPassage], adding added: [SearchPassage]) -> [SearchPassage] {
+        func same(_ passage: SearchPassage) -> String {
+            "\(passage.text)|\(Int((passage.date?.timeIntervalSince1970 ?? 0) / 60))"
+        }
+        var anchors = Set(passages.compactMap(\.anchor))
+        var texts = Set(passages.map(same))
+        let new = added.filter { passage in
+            let fresh = passage.anchor.map { !anchors.contains($0) } ?? true
+            guard fresh, texts.insert(same(passage)).inserted else { return false }
+            if let anchor = passage.anchor { anchors.insert(anchor) }
+            return true
+        }
+        guard !new.isEmpty else { return passages }
+        return (passages + new).sorted { ($0.date ?? .distantPast) < ($1.date ?? .distantPast) }
+    }
+
+    /// The index's hits with those of the found documents: one of the same id takes the found one's place (it holds
+    /// more), at the better of the two scores; best first, at most `limit`.
+    static func hits(_ hits: [SearchHit], adding found: [SearchHit], limit: Int) -> [SearchHit] {
+        var merged: [String: SearchHit] = [:]
+        for hit in hits { merged[hit.id] = hit }
+        for hit in found {
+            var better = hit
+            if let known = merged[hit.id] { better.score = max(known.score, hit.score) }
+            merged[hit.id] = better
+        }
+        return Array(merged.values.sorted { a, b in
+            if a.score != b.score { return a.score > b.score }
+            return a.id < b.id
+        }.prefix(limit))
     }
 }
