@@ -10,7 +10,7 @@ copying it again.
 | --- | --- |
 | `NookTheme.paper`, `textStrong`, `textSecondary`, `textTertiary`, `textMuted`, `ink` | Text colors, from brightest to most muted |
 | `NookTheme.canvas`, `surface`, `field`, `well`, `smoke`, `graphite` | Surfaces: the window canvas, a lifted sidebar or menu, a text field, a sunken code well, and the two card fills |
-| `NookTheme.line`, `line2`, `hairline`, `fieldStroke`, `separator` | Hairlines and strokes; `separator` is the clearer line between the items of a list |
+| `NookTheme.line`, `line2`, `hairline`, `border`, `fieldStroke`, `separator` | Hairlines and strokes; `border` is the line between a window's columns and panels (`NookDivider`), `separator` the clearer line between the items of a list |
 | `NookTheme.blue` | Links, renamed files, and diff hunk headers |
 | `NookTheme.mint`, `amber`, `coral`, `violet`, `iris` | State: done, waiting on you, error, merged, Nook itself |
 | `NookTheme.Syntax.keyword`, `string`, `comment`, `number`, `type`, `property`, `tag`, `attribute` | Syntax colors of code in a diff (`DiffText`, via `DiffSyntaxStyle`) and in the file viewer (`FileViewer`), muted under the diff's own tints; each has a dark and a light value. Only for code, never for state |
@@ -37,8 +37,8 @@ informs without shouting; motion settles without overshoot. When you add a view:
   action is filled.
 - Words before chrome: a title, one line under it, and nothing in uppercase or tracked.
 
-The dark theme reads calm because it uses so little: a pure grey ramp (canvas `#0A0A0A`, raised surfaces about 4–8 % lighter, no blue cast), separation by tonal steps
-and faint white fills instead of grey panels or lines, and color only where it carries meaning. Calm never costs
+The dark theme reads calm because it uses so little: a pure grey ramp (a pure black canvas `#000000`, raised surfaces about 4–8 % lighter, no blue cast), separation by tonal steps,
+faint white fills and one light grey `border` between columns instead of grey panels, and color only where it carries meaning. Calm never costs
 clarity: every text color, `textTertiary` included, reads at WCAG AA (4.5:1 or more) on every surface up to `smoke`,
 and a selected row stands a full step above a hovered one with a `selectionMark` at its edge. In practice:
 
@@ -182,6 +182,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `NookRowSeparator` | `PanelBlocks.swift` | The clearer line between the items of a list (the Chats tab), in `NookTheme.separator`; placed before every item but the first |
 | `PanelNoticeBar` | `PanelBlocks.swift` | A `NookNotice` under the tabs (a permission request, an agent's question, a short note): symbol, title, a line, and its `NookNoticeActions`; `tone` tints a risky one, `countdown` adds the OK for a note that closes by itself |
 | `AdaptiveActionRow` | `PanelBlocks.swift` | Text beside its buttons (a confirmation, a recovery card, a banner, a sheet's footer): the buttons on the right while the text keeps a readable width, on a line of their own under it in a narrow tab or split view. Use it for every such row instead of an `HStack` with a `Spacer` and buttons, which squeezes the text to a word per line |
+| `ResetCreditRow` | `ResetCreditRow.swift` | An account's banked reset credits and "Use a reset" (after a confirmation), in the Limits tab, Settings › Coding agents and a limited session's banner. Shows nothing for an account without credits |
 | `.panelCard()` | `PanelBlocks.swift` | The quiet card that groups rows: field fill, panel corners, no stroke |
 | `NookIconButton` | `NookButtons.swift` | Round symbol button (mic, close, play) |
 | `ToolbarIconButton` | `NookButtons.swift` | Small borderless symbol button in a panel header, a row, or under a message, with hover feedback; `width`/`height` for a tighter row and `enabled` for a dimmed one. Never hand-roll a `.plain` button around a lone `Image` |

@@ -133,8 +133,13 @@ final class WorkspaceManager: ObservableObject {
     var wakeSubagent: [UUID: String] = [:]
     /// What MCP apps want the agent to know on its next turn, per session and app (see McpApp).
     var mcpAppContexts: [UUID: [String: String]] = [:]
-    /// Codex reported new limits during a session: AppModel refreshes the usage shown.
+    /// Claude Code reported a change in its limits during a session: AppModel refreshes the usage shown.
     var onRateLimits: (() -> Void)?
+    /// Codex reported new limits during a session (the `account/rateLimits/updated` params), for the account
+    /// (`AgentProfile.id`) the session runs with: they show right away.
+    var onCodexRateLimits: ((JSONBox, String) -> Void)?
+    /// A turn stopped on a usage limit: the limits shown are read again now, so they say why.
+    var onLimitReached: (() -> Void)?
     /// Claude Code reported how full a subscription window is, for the account (`AgentProfile.id`) the session runs with.
     var onPlanWindow: ((UsageLimits.PlanReading, String) -> Void)?
     @Published private(set) var git: [UUID: GitSnapshot] = [:]
