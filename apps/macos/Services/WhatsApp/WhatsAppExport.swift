@@ -65,14 +65,16 @@ enum WhatsAppExport {
     static func message(_ message: WAMessage, in conversation: WAConversation, kind: ChatKind, names: inout WAMemberIndex,
                         files: [String: String]) -> InboxMessage {
         let group = kind == .group
-        var inbox = InboxMessage(id: message.id, sender: group && !message.fromMe ? names.name(message.sender) : "",
+        // A group's messages and the status updates of your contacts (one chat for everyone) say who wrote them.
+        let named = group || kind == .status
+        var inbox = InboxMessage(id: message.id, sender: named && !message.fromMe ? names.name(message.sender) : "",
                                  text: names.namingMentions(in: text(message)), date: message.date, fromMe: message.fromMe)
         inbox.media = media(message, path: files[message.id])
-        // Who voted or put an emoji there: in a group by name, in a private chat the chat itself.
-        inbox.poll = message.poll?.chatPoll { id in group ? names.name(id) : conversation.name }
+        // Who voted or put an emoji there: in a group or a status by name, in a private chat the chat itself.
+        inbox.poll = message.poll?.chatPoll { id in named ? names.name(id) : conversation.name }
         inbox.receipt = message.fromMe ? message.receipt : nil
         inbox.readers = readers(message, kind: kind, hasMembers: conversation.members != nil, names: &names)
-        inbox.reactions = reactions(message.reactions) { id in group ? names.name(id) : conversation.name }
+        inbox.reactions = reactions(message.reactions) { id in named ? names.name(id) : conversation.name }
         if let replyTo = message.replyTo {
             inbox.quote = InboxQuote(id: replyTo, text: names.namingMentions(in: message.quotedText ?? ""))
         }

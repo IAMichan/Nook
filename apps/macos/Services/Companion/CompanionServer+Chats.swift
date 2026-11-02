@@ -13,7 +13,9 @@ extension CompanionServer {
         // Asked right after launch, the inbox may still be read in the background: the phone gets the chats, not none.
         _ = capture.loadedInbox
         let whatsApp = WhatsAppAccounts.shared
-        let chats = ChatsEntry.all(capture: capture).prefix(Self.inboxLimit).map {
+        // Chats only, as the Mac's list of every app: status updates show under an app's Status tab on the Mac, which
+        // the phone does not have yet.
+        let chats = ChatsEntry.all(capture: capture).filter { !$0.isStatus }.prefix(Self.inboxLimit).map {
             Self.digest($0, canSend: app.chatRoute(for: $0) != nil)
         }
         // Why the list may be empty: nothing is collected, or macOS does not let Nook read the notifications.

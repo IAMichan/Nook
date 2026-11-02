@@ -57,6 +57,18 @@ final class WhatsAppExportTests: XCTestCase {
         XCTAssertEqual(chat.messages[1].text, "mail anna@31622222222.nl", "an address is no tag")
     }
 
+    func testAStatusUpdateSaysWhoPostedIt() {
+        let status = "status@broadcast"
+        let posts = [message("1", chat: status, from: anna, text: "Beach", name: "Anna"),
+                     message("2", chat: status, from: bob, text: "Snow", at: 1, name: "Bobby"),
+                     message("3", chat: status, text: "Mine", at: 2, fromMe: true)]
+        let chat = export(WAConversation(id: status, name: "Status", isGroup: false, messages: posts,
+                                         lastActivity: posts.last!.date))
+        XCTAssertEqual(chat.kind, .status, "the Chats tab shows it under WhatsApp's Status tab, not between the chats")
+        XCTAssertEqual(chat.messages.map(\.sender), ["Anna", "Bobby", ""], "one chat for everyone: each post by its poster")
+        XCTAssertNil(chat.handle)
+    }
+
     func testAPersonsChatIsCalledAfterThem() {
         let person = WAConversation(id: anna, name: "Anna", isGroup: false, messages: [message("1", chat: anna, name: "Anna")],
                                     lastActivity: Date(timeIntervalSince1970: 1_800_000_000))
