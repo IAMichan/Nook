@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Music tab: lyrics, Up Next, playlists or recently played tracks over the full width, with the playing track in Spotify
+/// Music tab: lyrics, Up Next, playlists, recently played tracks or a search over the full width, with the playing track in Spotify
 /// or Music as a transport bar along the bottom that unfolds into the full player.
 struct MusicTab: View {
     @EnvironmentObject private var app: AppModel
@@ -63,7 +63,7 @@ struct MusicTab: View {
 
 /// What the stage above the player bar shows.
 enum MusicSection: String, CaseIterable, Identifiable {
-    case lyrics, upNext, playlists, recent
+    case lyrics, upNext, playlists, recent, search
     var id: String { rawValue }
 
     var title: String {
@@ -72,12 +72,14 @@ enum MusicSection: String, CaseIterable, Identifiable {
         case .upNext: return tr("music.section.upNext")
         case .playlists: return tr("music.section.playlists")
         case .recent: return tr("music.section.recent")
+        case .search: return tr("music.section.search")
         }
     }
 
-    /// Spotify's AppleScript has no playlists. Its queue comes from the Web API once Spotify is connected in Settings.
+    /// Spotify's AppleScript has no playlists. Its queue and search come from the Web API once Spotify is connected in
+    /// Settings.
     static func available(for app: String) -> [MusicSection] {
-        app == "Music" ? allCases : [.lyrics, .upNext, .recent]
+        app == "Music" ? allCases : [.lyrics, .upNext, .recent, .search]
     }
 }
 
@@ -143,7 +145,7 @@ private struct MusicPlayerView: View {
         case .lyrics: lyrics.load(for: info)
         case .upNext: service.refreshUpNext()
         case .playlists: service.refreshPlaylists()
-        case .recent: break
+        case .recent, .search: break
         }
     }
 
@@ -166,6 +168,7 @@ private struct MusicPlayerView: View {
         case .upNext: MusicUpNextView(info: info, service: service)
         case .playlists: MusicPlaylistsView(service: service)
         case .recent: MusicRecentView(info: info, service: service)
+        case .search: MusicSearchView(info: info, service: service)
         }
     }
 
