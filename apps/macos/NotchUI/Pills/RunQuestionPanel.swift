@@ -43,16 +43,7 @@ struct RunQuestionPanel: View {
                             .monospacedDigit()
                     }
                     if let onStop {
-                        Button(action: onStop) {
-                            Label(tr("ws.question.stop"), systemImage: "stop.fill").labelStyle(.iconOnly)
-                                .font(NookTheme.TextStyle.caption)
-                                .foregroundStyle(NookTheme.textSecondary)
-                                .frame(width: 22, height: 22)
-                                .background(Circle().fill(NookTheme.smoke))
-                        }
-                        .buttonStyle(.plain)
-                        .help(tr("ws.question.stop"))
-                        .accessibilityLabel(tr("ws.question.stop"))
+                        ToolbarIconButton("xmark", tr("ws.question.stop")) { onStop() }
                     }
                 }
                 Text(item.question)
