@@ -88,8 +88,27 @@ final class TurnDiffTests: XCTestCase {
         XCTAssertEqual(turns[0].files.map(\.path), ["/p/A.swift", "/p/B.swift"])
         XCTAssertEqual(turns[0].files[1].patches, [])
         XCTAssertEqual(turns[0].start, t0)
-        XCTAssertEqual(turns[0].counted(["B.swift": EditLines(added: 3, removed: 1)], relativeTo: "/p").files[1].lines,
+        XCTAssertEqual(turns[0].counted(TurnLines(counts: ["B.swift": EditLines(added: 3, removed: 1)]), relativeTo: "/p").files[1].lines,
                        EditLines(added: 3, removed: 1))
         XCTAssertEqual(TurnDiff.session(turns).end, t0.addingTimeInterval(4))
+        let all = TurnDiff.collect(events: events, keepEmpty: true)
+        XCTAssertEqual(all.count, 2, "kept: the finished turn without an edit, not the one still running")
+        XCTAssertTrue(all[1].isEmpty)
+    }
+
+    func testGitAddsTheFilesATurnChangedWithoutAnEditTool() {
+        let turn = TurnDiff(id: "t", number: 1, files: [TurnDiff.File(path: "/p/A.swift", lines: EditLines(added: 1, removed: 1)),
+                                                         TurnDiff.File(path: "/elsewhere/settings.json")])
+        let counts = ["A.swift": EditLines(added: 2, removed: 2), "Sub/B.swift": EditLines(added: 40, removed: 30)]
+
+        let partial = turn.counted(TurnLines(counts: counts, complete: false), relativeTo: "/p")
+        XCTAssertEqual(partial.files.map(\.path), ["/p/A.swift", "/elsewhere/settings.json"],
+                       "without both snapshots git only counts the files the edits name")
+
+        let complete = turn.counted(TurnLines(counts: counts, complete: true), relativeTo: "/p")
+        XCTAssertEqual(complete.files.map(\.path), ["/p/A.swift", "/elsewhere/settings.json", "/p/Sub/B.swift"])
+        XCTAssertEqual(complete.lines, EditLines(added: 42, removed: 32))
+        XCTAssertFalse(TurnDiff(id: "e", number: 2).counted(TurnLines(counts: counts, complete: true), relativeTo: "/p").isEmpty,
+                       "a turn that only ran commands gets its files from git")
     }
 }
