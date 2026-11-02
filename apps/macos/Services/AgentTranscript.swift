@@ -140,7 +140,9 @@ enum AgentTranscript {
     private static let cacheLock = NSLock()
     private static var cache: [String: CacheEntry] = [:]
 
-    static func recent(path: String, limit: Int = fullLimit) -> [AgentChatMessage] {
+    /// `remember: false` reads without keeping the result (search reads every earlier session once, which would push the
+    /// sessions on screen out of the cache).
+    static func recent(path: String, limit: Int = fullLimit, remember: Bool = true) -> [AgentChatMessage] {
         // Gemini CLI writes one JSON file per chat, or (0.33 and newer) a JSONL log of changes to it.
         let isGemini = path.hasSuffix(".json") || GeminiChatLog.isLog(path: path)
         guard path.hasSuffix(".jsonl") || isGemini else { return [] }
@@ -211,7 +213,7 @@ enum AgentTranscript {
            let first = firstPrompt(path: path), !result.contains(where: { $0.id == first.id }) {
             result.insert(first, at: 0)
         }
-        if let attrMod {
+        if remember, let attrMod {
             var entry = CacheEntry(size: attrSize ?? size, modified: attrMod, limit: limit, messages: result)
             if let progress {
                 entry.parsed = progress.parsed

@@ -3,7 +3,8 @@ import Combine
 
 /// Runs Search everything for the panel: builds the index off the main thread from what `AppModel+Search` collects,
 /// then scores each query there too, so typing never waits on it. Session transcripts that are not in memory are read
-/// from disk once and kept (by when the session last changed), so opening search again is instant. The index holds the
+/// from disk once and kept (by when the session last changed), so opening search again is instant. The same goes for
+/// every coding agent's own transcript files: the sessions Nook follows and every earlier (settled) one. The index holds the
 /// newest messages of each chat; after each query every chat app's whole history is searched too (`ChatSearchBridge`,
 /// the same for every app), and what it finds joins the hits as it comes in.
 @MainActor
@@ -37,6 +38,10 @@ final class SearchCenter: ObservableObject {
 
     /// Session passages read from disk, by session, with the `updatedAt` they were read at.
     private static var transcripts: [UUID: (updated: Date, passages: [SearchPassage])] = [:]
+    /// Passages of the agents' own transcript files, by path, with the file's modification date they were read at.
+    private static var agentTranscripts: [String: (modified: Date, passages: [SearchPassage])] = [:]
+    /// How many transcript files are read before the index is built again with them: results fill in as they are read.
+    private static let transcriptBatch = 40
     private static let recentKey = "nook.search.recent"
     private static let recentLimit = 8
     /// Most hits shown; the kind filter picks from these.
@@ -52,8 +57,9 @@ final class SearchCenter: ObservableObject {
             indexing = true
         }
         let transcripts = Self.transcripts.mapValues { $0.passages }
+        let agentTranscripts = Self.agentTranscripts.mapValues { $0.passages }
         indexTask = Task { [weak self] in
-            let documents = app.searchDocuments(transcripts: transcripts)
+            let documents = app.searchDocuments(transcripts: transcripts, agentTranscripts: agentTranscripts)
             guard !Task.isCancelled else { return }
             let first = await Task.detached(priority: .userInitiated) { SearchIndex(documents) }.value
             guard let self, !Task.isCancelled else { return }
@@ -71,15 +77,48 @@ final class SearchCenter: ObservableObject {
                 let passages = await Task.detached(priority: .utility) { AppModel.searchPassages(events, run: run) }.value
                 Self.transcripts[run.id] = (run.updatedAt, passages)
             }
-            guard !missing.isEmpty, !Task.isCancelled else { self.indexing = false; return }
-            let full = app.searchDocuments(transcripts: Self.transcripts.mapValues { $0.passages })
             guard !Task.isCancelled else { return }
-            let complete = await Task.detached(priority: .utility) { SearchIndex(full) }.value
-            guard !Task.isCancelled else { return }
-            self.index = complete
-            self.loadedAt = Date()
+            if !missing.isEmpty { guard await self.rebuild(app) else { return } }
+
+            // Every coding agent's own transcripts (earlier and settled sessions, and the ones Nook follows), newest
+            // first; a file that did not change since it was read is not read again.
+            let files = app.searchTranscriptFiles()
+            let paths = Set(files.map(\.path))
+            Self.agentTranscripts = Self.agentTranscripts.filter { paths.contains($0.key) }
+            let read = Self.agentTranscripts.mapValues(\.modified)
+            for start in stride(from: 0, to: files.count, by: Self.transcriptBatch) {
+                let batch = Array(files[start..<min(start + Self.transcriptBatch, files.count)])
+                let found = await Task.detached(priority: .utility) { Self.readTranscripts(batch, known: read) }.value
+                guard !Task.isCancelled else { return }
+                for file in found { Self.agentTranscripts[file.path] = (file.modified, file.passages) }
+                if !found.isEmpty { guard await self.rebuild(app) else { return } }
+            }
             self.indexing = false
-            if !self.text.isEmpty { self.rerun() }
+        }
+    }
+
+    /// The index again with every transcript read so far; false when the load was cancelled meanwhile.
+    private func rebuild(_ app: AppModel) async -> Bool {
+        let full = app.searchDocuments(transcripts: Self.transcripts.mapValues { $0.passages },
+                                       agentTranscripts: Self.agentTranscripts.mapValues { $0.passages })
+        guard !Task.isCancelled else { return false }
+        let complete = await Task.detached(priority: .utility) { SearchIndex(full) }.value
+        guard !Task.isCancelled else { return false }
+        index = complete
+        loadedAt = Date()
+        if !text.isEmpty { rerun() }
+        return true
+    }
+
+    /// The transcript files that changed since they were read (`known`), read without filling the transcript cache the
+    /// views use.
+    private nonisolated static func readTranscripts(_ files: [(path: String, agent: String)], known: [String: Date])
+        -> [(path: String, modified: Date, passages: [SearchPassage])] {
+        files.compactMap { file in
+            let attributes = try? FileManager.default.attributesOfItem(atPath: file.path)
+            guard let modified = attributes?[.modificationDate] as? Date, known[file.path] != modified else { return nil }
+            let messages = AgentTranscript.recent(path: file.path, remember: false)
+            return (file.path, modified, AppModel.searchPassages(messages, agent: file.agent))
         }
     }
 
