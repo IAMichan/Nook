@@ -73,13 +73,17 @@ extension View {
     /// the system's own menu (Copy, Look Up, Services) before SwiftUI's `.contextMenu` hears it, so a chat message
     /// whose text can be selected never showed its own menu. Watches the mouse only while `enabled` (the view is in
     /// sight), so a long chat does not hold a watcher per message.
-    func onRightClickMenu(enabled: Bool, _ menu: @escaping () -> [NookMenuEntry]) -> some View {
-        background(RightClickReader(enabled: enabled, menu: menu))
+    /// With `copiesSelection`, words selected in the view (its selectable text) come first in the menu as Copy, which
+    /// copies only them: the system's own menu that offered that never shows here.
+    func onRightClickMenu(enabled: Bool, copiesSelection: Bool = false,
+                          _ menu: @escaping () -> [NookMenuEntry]) -> some View {
+        background(RightClickReader(enabled: enabled, copiesSelection: copiesSelection, menu: menu))
     }
 }
 
 private struct RightClickReader: NSViewRepresentable {
     let enabled: Bool
+    var copiesSelection = false
     let menu: () -> [NookMenuEntry]
 
     func makeNSView(context: Context) -> RightClickView {
@@ -90,6 +94,7 @@ private struct RightClickReader: NSViewRepresentable {
 
     func updateNSView(_ nsView: RightClickView, context: Context) {
         nsView.entries = menu
+        nsView.copiesSelection = copiesSelection
         nsView.enabled = enabled
     }
 
@@ -99,6 +104,7 @@ private struct RightClickReader: NSViewRepresentable {
 
     final class RightClickView: NSView {
         var entries: (() -> [NookMenuEntry])?
+        var copiesSelection = false
         private var monitor: Any?
         var enabled = false {
             didSet { if enabled != oldValue { watch() } }
@@ -118,10 +124,38 @@ private struct RightClickReader: NSViewRepresentable {
             guard enabled, window != nil else { return }
             // A right-click, or a click with Control held, as everywhere on the Mac.
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .leftMouseDown]) { [weak self] event in
-                guard let self, self.claims(event), let entries = self.entries?(), !entries.isEmpty else { return event }
+                guard let self, self.claims(event), var entries = self.entries?() else { return event }
+                if self.copiesSelection, let copy = self.selectionCopy() {
+                    if var first = entries.first {
+                        first.separated = true
+                        entries[0] = first
+                    }
+                    entries.insert(copy, at: 0)
+                }
+                guard !entries.isEmpty else { return event }
                 NSMenu.popUpContextMenu(NSMenu(entries: entries), with: event, for: self)
                 return nil
             }
+        }
+
+        /// Copy for the words selected in this view's text: the responder that would copy them, as long as it lies
+        /// inside this view and has something selected (it answers Copy as enabled). Nil otherwise, also when the
+        /// selection is somewhere else in the window (the reply field, another message).
+        private func selectionCopy() -> NookMenuEntry? {
+            let copy = #selector(NSText.copy(_:))
+            guard let window, let target = NSApp.target(forAction: copy, to: nil, from: self) as? NSView,
+                  target.window === window else { return nil }
+            let mine = convert(bounds, to: nil).insetBy(dx: -4, dy: -4)
+            guard mine.contains(target.convert(target.bounds, to: nil)) else { return nil }
+            let probe = NSMenuItem(title: "", action: copy, keyEquivalent: "")
+            if let validator = target as? NSMenuItemValidation {
+                guard validator.validateMenuItem(probe) else { return nil }
+            } else if let validator = target as? NSUserInterfaceValidations {
+                guard validator.validateUserInterfaceItem(probe) else { return nil }
+            }
+            if let text = target as? NSTextView, text.selectedRange().length == 0 { return nil }
+            return NookMenuEntry(title: tr("chat.copySelection"), symbol: "doc.on.doc",
+                                 action: { [weak target] in _ = NSApp.sendAction(copy, to: target, from: nil) })
         }
 
         private func claims(_ event: NSEvent) -> Bool {

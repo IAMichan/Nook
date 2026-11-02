@@ -365,6 +365,18 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(listed.first?.canVote, true)
     }
 
+    func testAMessagesAddressesCanBeCopiedOneByOne() {
+        let text = "Mail jan@example.nl or info@x.org, see www.example.com/a and [docs](https://d.io/p)\n`https://code.example`"
+        XCTAssertEqual(ChatFormat.addresses(text), [
+            ChatFormat.Address(kind: .email, text: "jan@example.nl"),
+            ChatFormat.Address(kind: .email, text: "info@x.org"),
+            ChatFormat.Address(kind: .link, text: "www.example.com/a"),
+            ChatFormat.Address(kind: .link, text: "https://d.io/p"),
+        ], "each as written, a mail address without mailto:, nothing from code")
+        XCTAssertEqual(ChatFormat.addresses("https://a.com and https://a.com again").count, 1, "each once")
+        XCTAssertEqual(ChatFormat.addresses("no address here"), [])
+    }
+
     func testLinksInAMessageShowWhatTheyLeadTo() {
         XCTAssertEqual(ChatFormat.firstLink("look at https://example.com/a, nice!"), URL(string: "https://example.com/a"),
                        "the sentence's comma is no part of the address")

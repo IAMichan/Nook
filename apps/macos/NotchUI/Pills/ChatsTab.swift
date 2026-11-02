@@ -35,6 +35,8 @@ struct ChatsEntry: Identifiable, Equatable {
     var account: String? = nil
     /// The chat's own id in its app, when its app gives one (`InboxThread.chatID`).
     var chatID: String? = nil
+    /// Person, group, status or channel, when its app says (`InboxThread.kind`).
+    var kind: ChatKind? = nil
 
     /// New messages here.
     var unread: Int { read.count }
@@ -42,6 +44,20 @@ struct ChatsEntry: Identifiable, Equatable {
     var waitsInApp: Bool { read == .readInNook }
     /// Whether the row shows where the chat stands: not while the newest message is yours and nothing waits.
     var showsReadMark: Bool { read.isUnread || (readKnown && !lastIsMine) }
+    /// The status updates of an app's contacts (WhatsApp's status@broadcast): they show under the app's Status tab,
+    /// never between its chats.
+    var isStatus: Bool { kind == .status }
+}
+
+/// Which of the chosen app's lists shows: its chats, or the status updates of its contacts. Every app whose bridge says a
+/// chat is a status (`ChatKind.status`) gets the Status tab; the list of every app together shows chats only.
+enum ChatsListKind: String, CaseIterable, Hashable {
+    case chats
+    case status
+
+    var title: String { tr("chats.kind." + rawValue) }
+
+    func shows(_ entry: ChatsEntry) -> Bool { entry.isStatus == (self == .status) }
 }
 
 /// What the Chats tab opens on when another place sends you there: one app's chats, one chat, or a search.
@@ -98,7 +114,7 @@ extension ChatsEntry {
                           lastIsMine: reaction == nil && newest?.isMine ?? false, readKnown: readKnown, ticks: ticks,
                           members: thread.members, handle: thread.handle, avatar: thread.avatar,
                           account: thread.account ?? ChatLinker.shared.accountName(for: thread.app),
-                          chatID: thread.chatID)
+                          chatID: thread.chatID, kind: thread.kind)
     }
 
     /// Of two threads holding the same newest message, the one to show: the one a bridge reads, else the fuller one.
@@ -266,6 +282,7 @@ final class ChatsShownMemo {
         var view: ChatsView
         var filter: String?
         var account: String?
+        var listKind: ChatsListKind
         var selection: String?
         var kept: Set<String>
         /// The groups go by day ("Today", "Yesterday"), so a new day sorts again.
@@ -277,10 +294,11 @@ final class ChatsShownMemo {
     /// `value` per group, in order, made with it.
     private(set) var sections: [ChatsSection] = []
 
-    func shown(all: [ChatsEntry], needle: String, view: ChatsView, filter: String?, account: String?, selection: String?,
-               kept: Set<String> = [], day: Date = ChatsDay.now(), make: () -> [ChatsEntry]) -> [ChatsEntry] {
-        let wanted = Key(all: all, needle: needle, view: view, filter: filter, account: account, selection: selection,
-                         kept: kept, day: day)
+    func shown(all: [ChatsEntry], needle: String, view: ChatsView, filter: String?, account: String?,
+               listKind: ChatsListKind = .chats, selection: String?, kept: Set<String> = [],
+               day: Date = ChatsDay.now(), make: () -> [ChatsEntry]) -> [ChatsEntry] {
+        let wanted = Key(all: all, needle: needle, view: view, filter: filter, account: account, listKind: listKind,
+                         selection: selection, kept: kept, day: day)
         if key == wanted { return value }
         value = make()
         key = wanted
@@ -303,15 +321,18 @@ final class ChatsCountsMemo {
         var views: [ChatsView: Int]
         var newByApp: [String: Int]
         var newByAccount: [String: Int]
+        /// Status updates with something new in the chosen app (and account), for the dot on its Status tab.
+        var newStatus = 0
     }
 
-    private var key: (all: [ChatsEntry], filter: String?, account: String?)?
+    private var key: (all: [ChatsEntry], filter: String?, account: String?, listKind: ChatsListKind)?
     private var value = Counts(views: [:], newByApp: [:], newByAccount: [:])
 
-    func counts(all: [ChatsEntry], filter: String?, account: String?, make: () -> Counts) -> Counts {
-        if let key, key.filter == filter, key.account == account, key.all == all { return value }
+    func counts(all: [ChatsEntry], filter: String?, account: String?, listKind: ChatsListKind = .chats,
+                make: () -> Counts) -> Counts {
+        if let key, key.filter == filter, key.account == account, key.listKind == listKind, key.all == all { return value }
         value = make()
-        key = (all, filter, account)
+        key = (all, filter, account, listKind)
         return value
     }
 
@@ -385,6 +406,8 @@ struct ChatsTab: View {
     @State private var filter: String?
     /// Within the chosen app, one of its accounts only (by its name), while the app has chats in more than one.
     @State private var account: String?
+    /// Within the chosen app, its chats or the status updates of its contacts (`ChatsListKind`).
+    @State private var listKind: ChatsListKind = .chats
     /// Which chats the list shows by where they stand; the chat you opened stays while you read it.
     @AppStorage("nook.chats.view") private var view: ChatsView = .all
     @State private var query = ""
@@ -526,6 +549,7 @@ struct ChatsTab: View {
             if now != day { day = now }
         }
         .onChange(of: account) { _, _ in keptInView = [] }
+        .onChange(of: listKind) { _, _ in keptInView = [] }
         .onChange(of: selection) { old, id in
             // Opening a chat puts a mail being written aside; New mail brings it back.
             if id != nil, let draft = composing {
@@ -652,6 +676,13 @@ struct ChatsTab: View {
         view = .all
         query = focus.query
         let chat = focus.chat.map(ChatIDMigration.current)
+        // A status update opens under its app's Status tab: the list of every app shows chats only.
+        if let chat, let status = all.first(where: { $0.id == chat && $0.isStatus }) {
+            filter = status.app
+            listKind = .status
+        } else {
+            listKind = .chats
+        }
         revealSelection = true
         // Already open: the selection does not change, so the list is asked to bring it into view itself.
         if chat != nil, chat == selection { revealAgain += 1 }
@@ -666,10 +697,29 @@ struct ChatsTab: View {
     private var all: [ChatsEntry] { entriesMemo.entries(capture: capture) }
 
     /// The chats of the chosen app (or every app), and of its chosen account, before the view and the search narrow them.
+    /// Status updates only under the chosen app's Status tab, never in a list of chats.
     private var inApp: [ChatsEntry] {
-        guard let filter else { return all }
+        let kind = shownListKind
+        guard let filter else { return all.filter { kind.shows($0) } }
         let chosen = shownAccount
-        return all.filter { $0.app == filter && (chosen == nil || $0.account == chosen) }
+        return all.filter { $0.app == filter && (chosen == nil || $0.account == chosen) && kind.shows($0) }
+    }
+
+    /// Whether the chosen app has status updates here: only then its list gets the Chats and Status tabs.
+    private var hasStatus: Bool {
+        guard let filter else { return false }
+        return all.contains { $0.app == filter && $0.isStatus }
+    }
+
+    /// The list the chosen app shows: Status only while it has status updates, else its chats.
+    private var shownListKind: ChatsListKind { hasStatus ? listKind : .chats }
+
+    /// The sidebar's app choice: picking another app (or all) opens on its chats again.
+    private var appChoice: Binding<String?> {
+        Binding(get: { filter }, set: { value in
+            if value != filter { listKind = .chats }
+            filter = value
+        })
     }
 
     /// The accounts of the chosen app that have chats here, by name, while there is more than one; empty otherwise.
@@ -690,15 +740,24 @@ struct ChatsTab: View {
     private var newByAccount: [String: Int] { counts.newByAccount }
 
     private var counts: ChatsCountsMemo.Counts {
-        countsMemo.counts(all: all, filter: filter, account: shownAccount) {
-            ChatsCountsMemo.Counts(views: makeViewCounts(), newByApp: makeNewByApp(), newByAccount: makeNewByAccount())
+        countsMemo.counts(all: all, filter: filter, account: shownAccount, listKind: shownListKind) {
+            ChatsCountsMemo.Counts(views: makeViewCounts(), newByApp: makeNewByApp(), newByAccount: makeNewByAccount(),
+                                   newStatus: makeNewStatus())
         }
     }
 
+    /// Chats with something new per account of the chosen app; status updates count on the Status tab only.
     private func makeNewByAccount() -> [String: Int] {
         guard let filter else { return [:] }
-        let fresh = all.filter { $0.app == filter && $0.read.isUnread }
+        let fresh = all.filter { $0.app == filter && $0.read.isUnread && !$0.isStatus }
         return Dictionary(grouping: fresh.compactMap(\.account), by: { $0 }).mapValues(\.count)
+    }
+
+    private func makeNewStatus() -> Int {
+        guard let filter else { return 0 }
+        let chosen = shownAccount
+        return all.filter { $0.app == filter && $0.isStatus && $0.read.isUnread && (chosen == nil || $0.account == chosen) }
+            .count
     }
 
     /// The chats that match the view, the app and the search (their names, their people and every message Nook has of
@@ -707,7 +766,7 @@ struct ChatsTab: View {
     private var shown: [ChatsEntry] {
         let needle = query.trimmingCharacters(in: .whitespaces)
         return shownMemo.shown(all: all, needle: needle, view: view, filter: filter, account: shownAccount,
-                               selection: selection, kept: keptInView, day: day) { makeShown(needle) }
+                               listKind: shownListKind, selection: selection, kept: keptInView, day: day) { makeShown(needle) }
     }
 
     private func makeShown(_ needle: String) -> [ChatsEntry] {
@@ -745,11 +804,11 @@ struct ChatsTab: View {
         return counts
     }
 
-    /// Chats with something new, per app.
+    /// Chats with something new, per app; status updates count on the app's Status tab only.
     private var newByApp: [String: Int] { counts.newByApp }
 
     private func makeNewByApp() -> [String: Int] {
-        Dictionary(grouping: all.filter { $0.read.isUnread }, by: \.app).mapValues(\.count)
+        Dictionary(grouping: all.filter { $0.read.isUnread && !$0.isStatus }, by: \.app).mapValues(\.count)
     }
 
     /// The apps that have chats here: the ones with something new first, then the busiest, and the one filtered on
@@ -790,7 +849,7 @@ struct ChatsTab: View {
     /// as wide as the sidebar, or one icon under the other in the rail.
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            ChatsSidebar(compact: compactSidebar, width: sidebarWidth, view: $view, app: $filter, account: $account, counts: viewCounts, apps: apps,
+            ChatsSidebar(compact: compactSidebar, width: sidebarWidth, view: $view, app: appChoice, account: $account, counts: viewCounts, apps: apps,
                          newByApp: newByApp, accounts: accounts, newByAccount: newByAccount,
                          addSource: { app.openConnections(.add(.chats)) })
             footer
@@ -822,16 +881,19 @@ struct ChatsTab: View {
     }
 
     /// The list's title: the view, and the app when one is chosen ("New · Telegram"), and its account when one is
-    /// ("New · WhatsApp · Business"), with the one action that fits it.
+    /// ("New · WhatsApp · Business"), and Status under its tab, with the one action that fits it.
     private var listTitle: String {
         let appName = filter.map { MessagingApps.app(id: $0)?.name ?? $0 }
-        return [view.title, appName, shownAccount].compactMap { $0 }.joined(separator: " · ")
+        let kind = shownListKind == .status ? ChatsListKind.status.title : nil
+        return [view.title, appName, shownAccount, kind].compactMap { $0 }.joined(separator: " · ")
     }
 
     private var listHeader: some View {
         // Whether anything is new from the memoized counts; the chats themselves only once the button is clicked.
         let hasNew: Bool
-        if let filter {
+        if shownListKind == .status {
+            hasNew = counts.newStatus > 0
+        } else if let filter {
             hasNew = (shownAccount.map { newByAccount[$0] ?? 0 } ?? newByApp[filter] ?? 0) > 0
         } else {
             hasNew = newByApp.values.contains { $0 > 0 }
@@ -849,6 +911,18 @@ struct ChatsTab: View {
         }
     }
 
+    /// The chosen app's chats and the status updates of its contacts, as two tabs: statuses never mix with the chats.
+    private var kindTabs: some View {
+        let newChats = shownAccount.map { newByAccount[$0] ?? 0 } ?? filter.flatMap { newByApp[$0] } ?? 0
+        let items = ChatsListKind.allCases.map { kind in
+            NookTabBar<ChatsListKind>.Item(value: kind, title: kind.title,
+                                           fresh: kind == .status ? counts.newStatus > 0 : newChats > 0)
+        }
+        return NookTabBar(items: items, selected: shownListKind, onSelect: { kind in
+            withAnimation(NookTheme.swap) { listKind = kind }
+        }, segmented: true)
+    }
+
     private var searchField: some View {
         NookSearchField(prompt: tr("chats.search"), text: $query)
     }
@@ -856,6 +930,7 @@ struct ChatsTab: View {
     private var list: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             listHeader
+            if hasStatus { kindTabs }
             searchField
 
             ScrollViewReader { proxy in
