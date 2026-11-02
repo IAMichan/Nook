@@ -464,11 +464,8 @@ struct NookChatView: View {
             // Opening the chat or another conversation: start at its end and follow again.
             .onAppear { settleAtEnd(proxy) }
             .onChange(of: chat.activeID) { _, _ in settleAtEnd(proxy) }
-            // You asked something: it is the newest thing and the answer is followed again.
-            .onChange(of: chat.messages.last(where: { $0.role == .user })?.id) { _, _ in
-                scroll.jumpedToEnd()
-                withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
+            // You asked something: it is the newest thing and the answer is followed again, also when you had scrolled up.
+            .onChange(of: chat.messages.last(where: { $0.role == .user })?.id) { _, _ in settleAtEnd(proxy) }
             .onChange(of: scrollKey) { _, _ in
                 if scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
             }
