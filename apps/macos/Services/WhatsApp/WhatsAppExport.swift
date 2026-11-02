@@ -66,7 +66,7 @@ enum WhatsAppExport {
                         files: [String: String]) -> InboxMessage {
         let group = kind == .group
         var inbox = InboxMessage(id: message.id, sender: group && !message.fromMe ? names.name(message.sender) : "",
-                                 text: text(message), date: message.date, fromMe: message.fromMe)
+                                 text: names.namingMentions(in: text(message)), date: message.date, fromMe: message.fromMe)
         inbox.media = media(message, path: files[message.id])
         // Who voted or put an emoji there: in a group by name, in a private chat the chat itself.
         inbox.poll = message.poll?.chatPoll { id in group ? names.name(id) : conversation.name }
@@ -74,7 +74,7 @@ enum WhatsAppExport {
         inbox.readers = readers(message, kind: kind, hasMembers: conversation.members != nil, names: &names)
         inbox.reactions = reactions(message.reactions) { id in group ? names.name(id) : conversation.name }
         if let replyTo = message.replyTo {
-            inbox.quote = InboxQuote(id: replyTo, text: message.quotedText ?? "")
+            inbox.quote = InboxQuote(id: replyTo, text: names.namingMentions(in: message.quotedText ?? ""))
         }
         inbox.mentionsMe = message.mentionsMe
         inbox.senderID = message.fromMe ? nil : WAJID.normalized(message.sender)
