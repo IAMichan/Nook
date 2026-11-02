@@ -128,6 +128,16 @@ struct PlanUsage: Equatable, Codable {
         return PlanUsage(fiveHour: five, sevenDay: week, updated: Date())
     }
 
+    /// `known` with one window as a session reported it (`rate_limit_event`). Only one window came in, so this is no full
+    /// reading: `updated` stays, or `ClaudeUsage` would skip reading the other window for as long as a session keeps
+    /// reporting this one.
+    static func merging(_ reading: UsageLimits.PlanReading, into known: PlanUsage?) -> PlanUsage {
+        var usage = known ?? PlanUsage(fiveHour: nil, sevenDay: nil, updated: .distantPast)
+        let window = PlanWindow(usedPercent: reading.usedPercent, resetsAt: reading.resetsAt)
+        if reading.window == "seven_day" { usage.sevenDay = window } else { usage.fiveHour = window }
+        return usage
+    }
+
     /// Whether this reading shows other windows than `known`, or `known` is old enough to be refreshed.
     func differs(from known: PlanUsage, refreshAfter interval: TimeInterval = 60) -> Bool {
         fiveHour != known.fiveHour || sevenDay != known.sevenDay || updated.timeIntervalSince(known.updated) >= interval
