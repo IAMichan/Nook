@@ -619,7 +619,8 @@ private struct ChatBubbleView: View, Equatable {
                         // A right-click anywhere on the bubble (not the empty room beside it) opens the chevron's own
                         // menu, also on its selectable text, whose system menu would win from a `.contextMenu`.
                         // Watched while the bubble is in view, so a right-click without moving the mouse first works.
-                        .onRightClickMenu(enabled: near) { menuItems.entries }
+                        // Words selected in the bubble come first in it, as Copy.
+                        .onRightClickMenu(enabled: near, copiesSelection: true) { menuItems.entries }
                         .overlay(alignment: .topTrailing) {
                             MessageMenuButton(bubble: bubble, items: menuItems, onPicture: bare)
                                 .padding(NookTheme.Spacing.xs)
@@ -773,6 +774,32 @@ private struct ChatStampSlot: PreferenceKey {
     static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = nextValue() ?? value }
 }
 
+/// "Copy link" and "Copy email address" for each web and mail address in a message, so only that address is copied.
+/// With more than one of a kind, each item says which one it copies. Every chat's message menu has them (the bubbles'
+/// `MessageMenuItems` and a mail's menu in `MailThreadView`).
+enum ChatAddressMenu {
+    /// The most addresses a message's menu offers to copy one by one.
+    static let limit = 5
+
+    static func entries(for text: String) -> [NookMenuEntry] {
+        let addresses = ChatFormat.addresses(text).prefix(limit)
+        let links = addresses.filter { $0.kind == .link }.count
+        let mails = addresses.count - links
+        return addresses.map { address in
+            let text = address.text
+            let shown = text.count > 40 ? String(text.prefix(39)) + "…" : text
+            switch address.kind {
+            case .link:
+                return NookMenuEntry(title: links > 1 ? tr("chat.copyLinkOf", shown) : tr("link.copy"), symbol: "link",
+                                     action: { Pasteboard.copy(text) })
+            case .email:
+                return NookMenuEntry(title: mails > 1 ? tr("chat.copyEmailOf", shown) : tr("chat.copyEmail"),
+                                     symbol: "envelope", action: { Pasteboard.copy(text) })
+            }
+        }
+    }
+}
+
 /// What can be done with one message, as far as the chat's app lets Nook: answer, react, forward, copy, change, see
 /// its info, copy the chat, delete. The same for every app, and the same in the chevron's menu and on a right-click.
 private struct MessageMenuItems: View {
@@ -814,6 +841,7 @@ private struct MessageMenuItems: View {
             entries.append(NookMenuEntry(title: tr("whatsapp.copy.message"), symbol: "doc.on.doc",
                                          action: { Pasteboard.copy(text) }))
         }
+        entries += ChatAddressMenu.entries(for: bubble.text)
         if let picture {
             let image = bubble.image
             entries.append(NookMenuEntry(title: tr("chat.copyImage"), symbol: "photo.on.rectangle",

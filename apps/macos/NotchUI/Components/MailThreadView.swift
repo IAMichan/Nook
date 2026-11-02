@@ -284,6 +284,7 @@ struct MailMessageCard: View {
         Button(tr("chats.mail.forward")) { onAction(.forward) }
         Divider()
         Button(tr("button.copy")) { Pasteboard.copy(whole?.body ?? MailChatData.parts(message.text).body) }
+        NookMenuItems(entries: ChatAddressMenu.entries(for: text.own))
         Button(tr("button.openInMail")) { onAction(.openInMail) }
     }
 
