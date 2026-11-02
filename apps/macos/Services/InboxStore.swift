@@ -14,6 +14,10 @@ final class InboxStore: ObservableObject {
     /// Sessions that work and need nothing from you fold into their own shelf; one that needs you jumps back up.
     @Published var showWorking: Bool { didSet { save() } }
     @Published var autoSettle: AutoSettlePolicy.Settings { didSet { save() } }
+    /// The sessions that work or wait sit in a dropdown per project, as in Claude's own sidebar.
+    @Published var groupByProject: Bool { didSet { save() } }
+    /// The projects you folded in that view.
+    @Published var collapsedProjects: Set<String> { didSet { save() } }
 
     /// Undo of what only the workspace can reverse: a snooze, an archive. They get the ids that were recorded.
     var undoSnooze: (([String]) -> Void)?
@@ -28,6 +32,8 @@ final class InboxStore: ObservableObject {
         var state: InboxState?
         var showWorking: Bool?
         var autoSettle: AutoSettlePolicy.Settings?
+        var groupByProject: Bool?
+        var collapsedProjects: Set<String>?
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -36,10 +42,13 @@ final class InboxStore: ObservableObject {
         state = stored?.state ?? InboxState()
         showWorking = stored?.showWorking ?? true
         autoSettle = stored?.autoSettle ?? AutoSettlePolicy.Settings()
+        groupByProject = stored?.groupByProject ?? true
+        collapsedProjects = stored?.collapsedProjects ?? []
     }
 
     private func save() {
-        let stored = Stored(state: state, showWorking: showWorking, autoSettle: autoSettle)
+        let stored = Stored(state: state, showWorking: showWorking, autoSettle: autoSettle,
+                            groupByProject: groupByProject, collapsedProjects: collapsedProjects)
         if let data = try? JSONEncoder().encode(stored) { defaults.set(data, forKey: Self.key) }
     }
 

@@ -661,7 +661,9 @@ struct WorkspaceSettingsSection: View {
         }
         // The list and the worktrees keep themselves tidy; one in use or with uncommitted changes always stays.
         Section {
+            Toggle(tr("settings.ws.inboxProjects"), isOn: $inbox.groupByProject)
             Toggle(tr("settings.ws.inboxWorking"), isOn: $inbox.showWorking)
+                .disabled(inbox.groupByProject)
             Toggle(tr("settings.ws.autoSettle"), isOn: $inbox.autoSettle.enabled)
             if inbox.autoSettle.enabled {
                 Toggle(tr("settings.ws.autoSettleMerged"), isOn: $inbox.autoSettle.settleOnMergedPullRequest)

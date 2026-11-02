@@ -137,6 +137,27 @@ final class InboxLayoutTests: XCTestCase {
         XCTAssertEqual(s.flatMap { $0.rows.map(\.id) }.sorted(), ["a", "p", "sn", "w", "z"])
     }
 
+    // MARK: Projects
+
+    func testProjectGroupsHoldWorkingAndActiveRowsPerProject() {
+        let rows = [row("n1", project: "Nook"), row("w1", .working, age: 50, project: "WhoBench"),
+                    row("n2", .working, age: 10, project: "Nook"), row("p", project: "Nook"), row("z", project: "Nook")]
+        let groups = InboxLayout.projectGroups(sections(rows, InboxState(pinned: ["p"], settled: ["z"])))
+        XCTAssertEqual(groups.map(\.project), ["Nook", "WhoBench"])
+        // Running first, as the Working shelf sits above Active; pinned and settled keep their own sections.
+        XCTAssertEqual(groups[0].rows.map(\.entry.id), ["n2", "n1"])
+        XCTAssertEqual(groups[0].rows.map(\.kind), [.working, .active])
+        XCTAssertEqual(groups[1].rows.map(\.entry.id), ["w1"])
+    }
+
+    func testProjectThatNeedsYouComesFirst() {
+        let rows = [row("a", age: 10, project: "A"), row("b", .approval, age: 500, project: "B")]
+        let groups = InboxLayout.projectGroups(sections(rows))
+        XCTAssertEqual(groups.map(\.project), ["B", "A"])
+        XCTAssertTrue(groups[0].needsYou)
+        XCTAssertFalse(groups[1].needsYou)
+    }
+
     // MARK: Receding
 
     func testRecedingRule() {
