@@ -60,15 +60,10 @@ struct AgentRunPanel: View {
     /// The outputs tab of the side panel around this session (`SessionWorkbench`), which shows what the agent produced.
     @Environment(\.sessionOutputs) private var outputsLink
     @Environment(\.sessionSide) private var sideLink
-    /// How wide the terminal is: drag the line beside it, double-click it to reset. Remembered.
-    @AppStorage("nook.agents.consoleWidth") private var consoleWidth = PanelLayout.console
-    @State private var totalWidth: Double = 0
     /// The outputs (by signature) you have seen, for the dot on the outputs tab; nil until the session shows.
     @State private var seenOutputs: Set<String>?
     /// The subagents (`Subagents.signature`) you have seen, for the dot on the Subagents tab; nil until the session shows.
     @State private var seenSubagents: String?
-    /// The terminal on the left: the command it shows; nil while it is closed.
-    @State private var consoleEventID: UUID?
     /// The lines git counted per turn (by the turn's id), in place of those read from the agent's edits.
     @State private var countedLines: [String: TurnLines] = [:]
     /// The timeline's blocks, turns and outputs, made again only when the events change (not on every keystroke).
@@ -97,24 +92,11 @@ struct AgentRunPanel: View {
             let outputs = derived.outputs
             let signatures = derived.outputSignatures
             let runningCommand = derived.runningCommand
-            let consoleOpen = consoleEventID != nil
-            HStack(alignment: .top, spacing: 0) {
-                if let consoleEventID, let event = workspace.timeline(runID).first(where: { $0.id == consoleEventID }) {
-                    CommandConsolePanel(event: event) {
-                        withAnimation(NookTheme.reveal) { self.consoleEventID = nil }
-                    }
-                    .sidePanel(.leading, width: $consoleWidth, defaultWidth: PanelLayout.console,
-                               available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle)
-                }
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-                    header(run)
-                    timeline(run)
-                }
-                .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                header(run)
+                timeline(run)
             }
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .onLayoutWidthChange { totalWidth = $0 }
-            .preference(key: SessionBesideWidth.self, value: consoleOpen ? SidePanelRoom.of(consoleWidth) : 0)
             // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
             .environment(\.fileLinkBase, run.isRemote ? nil : run.workingDirectory)
             // Selected words of an answer go with the reply as a chip above the composer (right-click › Quote in your
@@ -124,7 +106,7 @@ struct AgentRunPanel: View {
             .keyCommands(["selection.quote": { quoteSelected(ask: false) }, "selection.ask": { quoteSelected(ask: true) }])
             // An open terminal follows the agent to the next command it runs.
             .onChange(of: runningCommand) { _, next in
-                if consoleEventID != nil, let next { consoleEventID = next }
+                if sideLink.shownConsole != nil, let next { sideLink.showConsole(next) }
             }
             // What the agent produced goes to the outputs tab of the side panel, with a dot while something is new.
             .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(
@@ -190,7 +172,6 @@ struct AgentRunPanel: View {
                 quotes.removeAll()
                 seenOutputs = nil
                 seenSubagents = nil
-                consoleEventID = nil
                 // Folds you had open in this session last time come back (the timeline lands on its own, below).
                 visit = TimelineVisitStore.shared.visit(for: Self.visitKey(runID))
                 openBlocks = visit?.open ?? []
@@ -635,7 +616,7 @@ struct AgentRunPanel: View {
                                            waiting: run.status == .waitingApproval || workspace.questions[runID] != nil,
                                            asking: workspace.questions[runID] != nil,
                                            openConsole: CommandConsole.running(turn).map { command -> () -> Void in
-                                               { withAnimation(NookTheme.reveal) { consoleEventID = consoleEventID == command.id ? nil : command.id } }
+                                               { sideLink.toggleConsole(command.id) }
                                            },
                                            help: TimelinePresentation.live(turn).tool)
                     }

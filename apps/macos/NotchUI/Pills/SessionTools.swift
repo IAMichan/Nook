@@ -261,8 +261,9 @@ struct SessionWorkbench<Conversation: View>: View {
     /// A file the agent read or wrote that you clicked, or a turn's diff (`SessionSideLink`).
     @State private var filePreview: String?
     @State private var diffSelection: TurnDiffSelection?
-    /// The room the conversation's own panels take (a command's terminal on the left: `SessionBesideWidth`).
-    @State private var besideConversation: Double = 0
+    /// The command the agent runs that the Terminal tab shows (its event's id), opened from the conversation's live
+    /// line; nil while the tab shows your own shells.
+    @State private var consoleEventID: UUID?
     /// Whether the session panel was docked: it docks again only with some room to spare (`PanelLayout.dockHysteresis`),
     /// so dragging a panel near the edge of the room does not make the column come and go.
     @State private var wasDocked = true
@@ -306,7 +307,7 @@ struct SessionWorkbench<Conversation: View>: View {
                                                     rest: conversationRoom))
                 : 0
         let needed = PanelLayout.sessionPanelRoom + (wasDocked ? 0 : PanelLayout.dockHysteresis)
-        let docked = dockSessionPanel && !directory.isEmpty && totalWidth - rightRoom - besideConversation >= needed
+        let docked = dockSessionPanel && !directory.isEmpty && totalWidth - rightRoom >= needed
         HStack(alignment: .top, spacing: 0) {
             VStack(spacing: 0) {
                 // Docked, the switch sits above the session panel instead of in the conversation's header.
@@ -319,9 +320,10 @@ struct SessionWorkbench<Conversation: View>: View {
                                                                       subagentsShown: subagentsShown, openSubagents: openSubagents))
                     .environment(\.sessionPanelDocked, docked)
                     // A diff or file the conversation opens takes the right side from the tool panel.
-                    .environment(\.sessionSide, SessionSideLink(shownFile: filePreview, showFile: showFile, openDiff: openDiff))
+                    .environment(\.sessionSide, SessionSideLink(shownFile: filePreview, showFile: showFile, openDiff: openDiff,
+                                                                 shownConsole: consoleShown ? consoleEventID : nil,
+                                                                 showConsole: { consoleEventID = $0 }, toggleConsole: toggleConsole))
                     .onPreferenceChange(SessionOutputsReport.self) { outputs = $0 }
-                    .onPreferenceChange(SessionBesideWidth.self) { besideConversation = $0 }
                     .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     // A page this session's agent opened: small in the chat's bottom right corner, above the composer,
                     // and in no other chat.
@@ -430,6 +432,7 @@ struct SessionWorkbench<Conversation: View>: View {
         .onChange(of: runID) { _, _ in
             diffSelection = nil
             filePreview = nil
+            consoleEventID = nil
         }
         .animation(NookTheme.reveal, value: bottom == .conversation)
         .onChange(of: side) { _, next in
@@ -437,6 +440,10 @@ struct SessionWorkbench<Conversation: View>: View {
         }
         .onChange(of: bottom) { _, next in
             if SessionTool.panelTools.contains(next) { lastBottomTool = next.rawValue }
+        }
+        // The Terminal tab put away: the next time it opens it shows your own shells again.
+        .onChange(of: consoleShown) { _, shown in
+            if !shown { consoleEventID = nil }
         }
         // ⌘D: the latest turn's diff; again to close it.
         .keyCommand("diff.toggle", enabled: !outputs.turns.isEmpty) {
@@ -450,6 +457,34 @@ struct SessionWorkbench<Conversation: View>: View {
         }
         // ⇧⌘T: the tab closed last comes back, in the panel it was in; the key goes on when there is none.
         .keyCommands(["panel.reopenClosed": reopenClosed])
+    }
+
+    /// Whether a panel shows the Terminal tab, where a command the agent runs opens.
+    private var consoleShown: Bool {
+        shown(.side) == .terminal || shown(.bottom) == .terminal
+    }
+
+    /// The command the Terminal tab shows, while the session still has it.
+    private var consoleEvent: RunEvent? {
+        guard let consoleEventID, let runID else { return nil }
+        return workspace.timeline(runID).first { $0.id == consoleEventID }
+    }
+
+    /// Opens a command the agent runs in the Terminal tab: in the bottom panel when the tab is open there, otherwise in
+    /// the side panel on the right. The command the tab shows already goes away again, back to your own shells.
+    private func toggleConsole(_ id: UUID) {
+        withAnimation(NookTheme.reveal) {
+            if consoleShown && consoleEventID == id {
+                consoleEventID = nil
+                return
+            }
+            consoleEventID = id
+            if viewModel.bottomTool != .terminal {
+                filePreview = nil
+                diffSelection = nil
+                viewModel.sessionTool = .terminal
+            }
+        }
     }
 
     /// Opens a file in the side panel; the file that is open already closes again.
@@ -541,7 +576,9 @@ struct SessionWorkbench<Conversation: View>: View {
                          updatePullRequest: { viewModel.updateSidePullRequest($0) },
                          showPullRequestList: { withAnimation(NookTheme.swap) { viewModel.showSidePullRequestList() } },
                          closeTab: { closeSessionTab($0, in: slot) },
-                         close: { viewModel[keyPath: slot.tool] = .conversation })
+                         close: { viewModel[keyPath: slot.tool] = .conversation },
+                         console: consoleEvent,
+                         closeConsole: { withAnimation(NookTheme.reveal) { consoleEventID = nil } })
     }
 
     /// Closes a tab. One of several Pull request tabs goes by itself, and the one next to it comes into view.
@@ -667,6 +704,9 @@ private struct SessionToolPanel: View {
     let showPullRequestList: () -> Void
     let closeTab: (SessionTab) -> Void
     let close: () -> Void
+    /// A command the agent runs, opened from the conversation: the Terminal tab shows it in place of your shells.
+    var console: RunEvent? = nil
+    var closeConsole: () -> Void = {}
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @ObservedObject private var files = FileViewerStore.shared
     /// The open page's title for the browser's tab, once the browser was started (it is not started for it).
@@ -675,13 +715,18 @@ private struct SessionToolPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            if tool == .terminal { SidePanelToolbar { SessionTerminalBar(directory: directory) } }
+            if tool == .terminal, console == nil { SidePanelToolbar { SessionTerminalBar(directory: directory) } }
             if tool == .browser, !directory.isEmpty { DevServerStrip(directory: directory) }
             Group {
                 switch tool {
                 case .picker:
                     SessionToolPicker(directory: directory) { launch($0) }
-                case .terminal: SessionTerminalsView(directory: directory).id(directory)
+                case .terminal:
+                    if let console {
+                        CommandConsolePanel(event: console, close: closeConsole)
+                    } else {
+                        SessionTerminalsView(directory: directory).id(directory)
+                    }
                 case .outputs: SessionOutputsPanel(outputs: outputs, selection: $outputSelection)
                 case .subagents: SessionSubagentsPanel(agents: subagents)
                 case .changes:
