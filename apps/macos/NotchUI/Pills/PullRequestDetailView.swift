@@ -120,7 +120,7 @@ struct PullRequestDetailView: View {
             if let detail {
                 ZStack(alignment: .bottomTrailing) {
                     // The relative times in the timeline and the commits tick along, once a minute.
-                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                    TimelineView(.nookTicks(every: 60)) { context in
                         content(detail, now: context.date)
                     }
                     // The new tab is simply there: in the spring that slides the tab bar's mark, the old and the new

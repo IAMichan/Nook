@@ -128,7 +128,11 @@ extension AppModel {
 
     nonisolated static func searchPassages(_ events: [RunEvent], run: WorkspaceRun) -> [SearchPassage] {
         events.compactMap { event in
-            let text = event.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if event.kind == .thinking || event.kind == .approval || event.kind == .system { return nil }
+            // A tool's output is cut before it is trimmed: trimming walked all of it, hundreds of KB, for its first 1,000.
+            let tool = event.kind == .tool || event.kind == .fileChange
+            let text = (tool ? String(event.text.prefix(Self.toolPassageLimit + 64)) : event.text)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { return nil }
             switch event.kind {
             case .user: return SearchPassage(text: text, author: "me", date: event.date, anchor: event.id.uuidString)

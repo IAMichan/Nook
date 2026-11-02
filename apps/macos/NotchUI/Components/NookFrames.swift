@@ -54,6 +54,50 @@ extension TimelineSchedule where Self == NookFrames {
     }
 }
 
+/// One clock for content that changes every few seconds or minutes (elapsed time, "5 min ago", a blinking caret): ticks
+/// every `interval`, counted from a fixed moment.
+///
+/// `.periodic(from: .now, by:)` starts again at every redraw of the view around it: each redraw makes a new schedule
+/// from a new `now`, so `context.date` changed on every update of the parent (many times a second while an agent works)
+/// and so did everything keyed on it (rows that compare `now`, `onChange(of: now)`). This schedule holds only its
+/// interval, so a redraw leaves it as it was and the date stays the same until the next tick. Ticks after the first
+/// fall on a grid counted from a fixed moment: views with the same interval tick together in one update of their window.
+struct NookTicks: TimelineSchedule {
+    let interval: TimeInterval
+
+    init(every interval: TimeInterval) {
+        self.interval = max(0.05, interval)
+    }
+
+    struct Entries: Sequence, IteratorProtocol {
+        fileprivate var first: Date?
+        fileprivate var upcoming: Double
+        fileprivate let interval: Double
+
+        mutating func next() -> Date? {
+            if let first {
+                self.first = nil
+                return first
+            }
+            defer { upcoming += interval }
+            return Date(timeIntervalSinceReferenceDate: upcoming)
+        }
+    }
+
+    func entries(from startDate: Date, mode: TimelineScheduleMode) -> Entries {
+        // The content as it is now at once, then on every step of the grid after it.
+        let start = startDate.timeIntervalSinceReferenceDate
+        return Entries(first: startDate, upcoming: ((start / interval).rounded(.down) + 1) * interval, interval: interval)
+    }
+}
+
+extension TimelineSchedule where Self == NookTicks {
+    /// A tick every `interval` seconds on Nook's fixed grid (`NookTicks`), steady across redraws.
+    static func nookTicks(every interval: TimeInterval) -> NookTicks {
+        NookTicks(every: interval)
+    }
+}
+
 /// Draws `content` in a hosting view of its own: its frames update only this small SwiftUI graph and layer tree, not the
 /// window it sits in. Without it, each frame of Nook or his ring laid out and committed the whole window (the open panel,
 /// the main window with a long transcript or chat), many times a second. It takes no clicks or hover: those stay with

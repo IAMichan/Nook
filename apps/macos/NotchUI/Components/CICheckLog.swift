@@ -105,7 +105,7 @@ struct CICheckLogView: View {
     private func timeline(_ log: CILog) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
+                TimelineView(.nookTicks(every: 1)) { context in
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         ForEach(log.steps, id: \.number) { step in
                             stepRow(step, now: context.date).id(step.number)
@@ -450,7 +450,7 @@ struct CICheckStatusText: View {
         let finished = finished ?? check.finished
         Group {
             if outcome == .pending && running {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
+                TimelineView(.nookTicks(every: 1)) { context in
                     Text(line(outcome: outcome, running: true, started: started, finished: nil, now: context.date))
                 }
             } else {

@@ -288,14 +288,6 @@ final class AppModel: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &bag)
-        // The task ring also shows a Nook with news: reading it, or marking it unread, redraws the ring at once. Cheap
-        // enough for streamed tokens: only the flags are compared, never the messages.
-        chat.$conversations
-            .map { $0.map { "\($0.id)|\($0.unread)|\($0.archived)" } }
-            .removeDuplicates()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &bag)
         // A chat that went on in the terminal after Nook last ran it: its new messages show up in the Nook session.
         history.$sessions.removeDuplicates().receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -322,11 +314,11 @@ final class AppModel: ObservableObject {
                 if self.viewModel.state.isResting { self.viewModel.show(self.viewModel.state) }
             }
             .store(in: &bag)
-        // The ring around Nook shows each conversation's status: redraw when one stops waiting for you or is read, not
-        // only when it starts or stops working.
+        // The ring around Nook shows each conversation's status, and a Nook with news: redraw when one stops waiting for
+        // you, is read or marked unread, not only when it starts or stops working.
         // Throttled first: `conversations` publishes for every streamed chunk, and the key walks every conversation.
         chat.$conversations.throttle(for: .milliseconds(100), scheduler: RunLoop.main, latest: true)
-            .map { $0.map { "\($0.id)\($0.status)\($0.archived)" } }.removeDuplicates()
+            .map { $0.map { "\($0.id)|\($0.status)|\($0.unread)|\($0.archived)" } }.removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &bag)

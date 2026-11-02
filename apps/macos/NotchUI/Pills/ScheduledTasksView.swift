@@ -50,7 +50,6 @@ struct ScheduledTasksView: View {
         .padding(NookTheme.Spacing.xxl)
         .frame(minWidth: 560, idealWidth: 620, minHeight: 420, idealHeight: 520)
         .background(NookTheme.canvas)
-        .preferredColorScheme(.dark)
         .sheet(item: $editing) { target in
             ScheduledTaskEditor(existing: target.existing) { editing = nil }
                 .environmentObject(app)
@@ -361,7 +360,6 @@ private struct ScheduledTaskEditor: View {
         .padding(20)
         .frame(width: 540, height: 640)
         .background(NookTheme.graphite)
-        .preferredColorScheme(.dark)
         .onChange(of: provider) {
             if !provider.capabilities.policies.contains(permission) { permission = .ask }
         }

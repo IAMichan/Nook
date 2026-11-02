@@ -195,7 +195,7 @@ struct UpdatePanel: View {
             }
             HStack {
                 if let started = updater.installStarted {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                    TimelineView(.nookTicks(every: 1)) { context in
                         Text(tr("update.elapsed", Self.duration(context.date.timeIntervalSince(started))))
                             .font(NookTheme.TextStyle.detail)
                             .monospacedDigit()

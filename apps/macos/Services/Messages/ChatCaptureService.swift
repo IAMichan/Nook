@@ -339,6 +339,10 @@ final class ChatCaptureService: ObservableObject {
                 guard started == generation else { return }
                 let rows = read.rows
                 if !read.complete { complete = false }
+                // The page goes into a copy, published once if anything in it changed: a change to the published inbox
+                // (even an `add` that turned out a repeat) redrew the chats for every row, up to 200 a page.
+                var next = inbox
+                var pageChanged = false
                 for row in rows {
                     guard let record = NotificationRecord.integer(row["id"]) else { continue }
                     lastRecord = max(lastRecord ?? record, record)
@@ -349,22 +353,26 @@ final class ChatCaptureService: ObservableObject {
                         if !replaying { nudge(notice.app) }
                         // An app whose bridge reads no emoji (WhatsApp on this Mac) still says them in its notification:
                         // they go on the message. A bridge that reads them puts what the app says over it at its next read.
-                        let placed = inbox.placed(notice)
+                        let placed = next.placed(notice)
                         if let reaction = ChatCapture.reaction(notice.text),
-                           inbox.react(reaction, in: ChatInbox.key(app: notice.app, chat: placed.chat),
-                                       by: ChatCapture.unmarked(placed.sender.isEmpty ? placed.chat : placed.sender),
-                                       at: notice.date) {
-                            changed = true
+                           next.react(reaction, in: ChatInbox.key(app: notice.app, chat: placed.chat),
+                                      by: ChatCapture.unmarked(placed.sender.isEmpty ? placed.chat : placed.sender),
+                                      at: notice.date) {
+                            pageChanged = true
                         }
                         continue
                     }
-                    guard inbox.add(notice, id: "n\(notification.record)") else { continue }
-                    changed = true
+                    guard next.add(notice, id: "n\(notification.record)") else { continue }
+                    pageChanged = true
                     // Looking back: what came in before `freshness` was likely seen on the Mac already.
                     let key = ChatInbox.key(app: notice.app, chat: notice.chat)
-                    if replaying, notice.date < seen, let unread = inbox.threads[key]?.unread, unread > 0 {
-                        inbox.threads[key]?.unread = unread - 1
+                    if replaying, notice.date < seen, let unread = next.threads[key]?.unread, unread > 0 {
+                        next.threads[key]?.unread = unread - 1
                     }
+                }
+                if pageChanged {
+                    inbox = next
+                    changed = true
                 }
                 if lastRecord == nil {
                     // Nothing in the last day: start after the newest notification there is.

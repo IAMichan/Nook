@@ -103,7 +103,7 @@ struct AgentsTab: View {
                             let run = app.workspace.run(id)
                             SessionWorkbench(viewModel: viewModel, directory: run?.workingDirectory ?? "", runID: id,
                                          dockSessionPanel: run?.remote == nil, agentWorking: run?.status.isActive ?? false) { tools in
-                                AgentRunPanel(workspace: app.workspace, runID: id, headerAccessory: tools)
+                                AgentRunPanel(workspace: app.workspace, timelines: app.workspace.timelines, runID: id, headerAccessory: tools)
                             }
                             // Each session gets its own panel state: nothing (a pending "restore files" above all) carries over.
                             .id("run:" + id.uuidString)
@@ -146,7 +146,6 @@ struct AgentsTab: View {
         .onAppear {
             finishedMarks.reconcile(busy: entries.busyKeys)
             if let openLive { viewModel.lastOpenLiveSession = openLive }
-            visits.visit(selectedID(selection))
         }
         .onChange(of: openLive) { _, session in
             if let session { viewModel.lastOpenLiveSession = session }
@@ -179,6 +178,8 @@ struct AgentsTab: View {
             // and in the middle of the switch that made it stutter.
             try? await Task.sleep(for: NookTheme.tabSettle)
             guard !Task.isCancelled else { return }
+            // Also the visit to the open session: Nook and his ring redraw for it.
+            visits.visit(selectedID(selection))
             app.hub.refreshDetected()
             app.adoptAccounts()
             app.history.refresh()
@@ -323,7 +324,7 @@ struct AgentsTab: View {
     private func sessionList(_ entries: ListEntries, selection: Selection) -> some View {
         let current = selectedID(selection)
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            TimelineView(.periodic(from: .now, by: 30)) { context in
+            TimelineView(.nookTicks(every: 30)) { context in
                 AgentInboxList(items: entries.running, past: entries.earlier,
                                current: current, now: context.date) { open($0) }
             }

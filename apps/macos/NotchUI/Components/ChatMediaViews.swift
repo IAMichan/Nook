@@ -185,12 +185,16 @@ enum ChatMediaImages {
     }
 
     private static let pixelSizes = NSCache<NSString, NSValue>()
+    /// Files that could not be read yet, and when to try again: a chat redraws often, and each try opened the file up to
+    /// three times on the main thread.
+    private static let unreadable = NSCache<NSString, NSDate>()
 
     /// The photo's own size in pixels, upright (EXIF orientation applied), read from its header only, once per file.
     /// Nil for a file that is no picture (a GIF that came as a video): remembered too, so a redraw does not ask again.
     static func pixelSize(_ url: URL) -> CGSize? {
         let key = url.path as NSString
         if let known = pixelSizes.object(forKey: key) { return known.sizeValue == .zero ? nil : known.sizeValue }
+        if let retry = unreadable.object(forKey: key), retry.timeIntervalSinceNow > 0 { return nil }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
@@ -198,6 +202,8 @@ enum ChatMediaImages {
             // Not readable yet (still being written) is asked again later; only a file that is there and no picture is kept.
             if FileManager.default.fileExists(atPath: url.path), CGImageSourceCreateWithURL(url as CFURL, nil) == nil {
                 pixelSizes.setObject(NSValue(size: .zero), forKey: key)
+            } else {
+                unreadable.setObject(NSDate(timeIntervalSinceNow: 2), forKey: key)
             }
             return nil
         }

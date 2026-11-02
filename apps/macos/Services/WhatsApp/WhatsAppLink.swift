@@ -855,14 +855,26 @@ final class WhatsAppLink: ObservableObject {
     func loadAvatars(_ chats: [String]) async {
         guard let provider, isConnected else { return }
         let gen = generation
+        // Found pictures are published together, a few at a time: each change of `avatars` reads every chat again for
+        // the Chats tab, and one per picture did that up to 60 times while the tab opened.
+        var found: [String: String] = [:]
+        var lastFlush = Date()
+        func flush() {
+            guard !found.isEmpty else { return }
+            if gen == generation { avatars.merge(found) { _, new in new } }
+            found = [:]
+            lastFlush = Date()
+        }
+        defer { flush() }
         for chat in chats.map(WAJID.normalized) where WAJID.kind(chat) != .status {
+            if found.count >= 8 || (!found.isEmpty && Date().timeIntervalSince(lastFlush) > 0.5) { flush() }
             // The Chats tab starts this again (and cancels the run before) when the chat list comes in: a cancelled run
             // stops here, before it marks the chats it did not get to as asked for six hours.
             if Task.isCancelled { return }
-            if avatars[chat] != nil { continue }
+            if avatars[chat] != nil || found[chat] != nil { continue }
             let target = ChatMedia.destination(key: "wa-avatar-" + chat, name: "avatar.jpg")
             if FileManager.default.fileExists(atPath: target.path) {
-                avatars[chat] = target.path
+                found[chat] = target.path
                 continue
             }
             let address: URL?
@@ -889,7 +901,7 @@ final class WhatsAppLink: ObservableObject {
                   Self.thumbnail(answer.0, side: 8) != nil else { continue }
             try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
             guard (try? answer.0.write(to: target, options: .atomic)) != nil else { continue }
-            avatars[chat] = target.path
+            found[chat] = target.path
         }
     }
 
