@@ -68,6 +68,8 @@ struct ChatMessage: Identifiable {
     var notices: [String] = []
     var charts: [ChatChart] = []
     var mails: [MailDraft] = []
+    /// The step-by-step plan Nook keeps while it works through a request (`update_plan`), shown as a checklist.
+    var tasks: [RunTaskStep] = []
     /// Actions proposed by Nook; only executed after user approval.
     var actions: [PlannedAction] = []
     var planState: PlanState = .pending
@@ -94,6 +96,10 @@ struct ChatMessage: Identifiable {
     var historyText: String {
         var parts: [String] = []
         if !text.isEmpty { parts.append(text) }
+        if !tasks.isEmpty {
+            let steps = tasks.map { "\($0.text) (\($0.status == .done ? "done" : "not done"))" }
+            parts.append("[plan: \(steps.joined(separator: "; "))]")
+        }
         for chart in charts { parts.append("[chart displayed: \(chart.title)]") }
         for mail in mails {
             let state: String
@@ -737,6 +743,7 @@ private struct StoredMessage: Codable {
     var scopeLabel: String?
     var notices: [String]?
     var plan: StoredPlan?
+    var tasks: [RunTaskStep]?
 
     @MainActor
     init?(_ message: ChatMessage) {
@@ -756,6 +763,7 @@ private struct StoredMessage: Codable {
         contextSources = message.contextSources.isEmpty ? nil : message.contextSources
         scopeLabel = message.scopeLabel.isEmpty ? nil : message.scopeLabel
         notices = message.notices.isEmpty ? nil : message.notices
+        tasks = message.tasks.isEmpty ? nil : message.tasks
     }
 
     func restored() -> ChatMessage {
@@ -771,6 +779,7 @@ private struct StoredMessage: Codable {
         message.contextSources = contextSources ?? []
         message.scopeLabel = scopeLabel ?? ""
         message.notices = notices ?? []
+        message.tasks = tasks ?? []
         if let plan {
             plan.restore(into: &message)
         } else if let legacy = StoredPlan.legacy(in: text) {

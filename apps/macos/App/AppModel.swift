@@ -114,13 +114,18 @@ final class AppModel: ObservableObject {
         return tools
     }()
 
-    /// Charts and mail drafts: attached to the message currently being streamed.
+    /// Charts, mail drafts and the step-by-step plan: attached to the message currently being streamed.
     private(set) lazy var chatTools: [ToolSpec] = ChatTools.specs(
         onChart: { [weak self] chart in self?.attachToReply { $0.charts.append(chart) } },
         onMail: { [weak self] mail in
             self?.attachToReply { $0.mails.append(mail) }
             // "Maak hem korter": the new version takes the place of the draft that was still open.
             self?.chat.supersedeMails(by: mail)
+        },
+        // Only an answer in the chat holds a plan: a notch card or thinking along has no message for it.
+        onPlan: { [weak self] steps in
+            guard let self, let id = self.replyTarget else { return }
+            self.chat.update(id) { $0.tasks = steps }
         }
     )
 
