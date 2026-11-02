@@ -1,5 +1,5 @@
 <script lang="ts">
-  // De balk bovenaan het scherm: in rust een pil met Nook, open een paneel met de tabs Nook, Agents en Werkruimte.
+  // De balk bovenaan het scherm: in rust een pil met Nook, open een paneel met de tabs Home, Nook, Agents en Werkruimte.
   import { untrack } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
@@ -30,10 +30,25 @@
   import { compactNotice, Countdown, noticeTone } from "../lib/notice";
   import WhatsAppCard from "./connectors/WhatsAppCard.svelte";
   import { whatsapp } from "../lib/whatsapp.svelte";
+  import Home from "./home/Home.svelte";
+  import type { Target } from "../lib/inbox";
 
-  type Tab = "nook" | "chats" | "agents" | "workspace" | "music" | "commands";
+  type Tab = "home" | "nook" | "chats" | "agents" | "workspace" | "music" | "commands";
   let expanded = $state(false);
-  let tab = $state<Tab>((localStorage.getItem("bar.tab") as Tab) || "nook");
+  let tab = $state<Tab>(firstTab());
+
+  /// The remembered tab; Home the first time, also for someone who used the bar before Home existed.
+  function firstTab(): Tab {
+    try {
+      if (!localStorage.getItem("bar.homeShown")) {
+        localStorage.setItem("bar.homeShown", "1");
+        localStorage.setItem("bar.tab", "home");
+      }
+      return (localStorage.getItem("bar.tab") as Tab) || "home";
+    } catch {
+      return "home";
+    }
+  }
   let pinnedOpen = $state(false);
   let locked = $state(false);
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -214,6 +229,39 @@
   function select(t: Tab) {
     tab = t;
     localStorage.setItem("bar.tab", t);
+  }
+
+  /// Opens what Home points at: a tab of the bar when it has one, otherwise the page in the main window.
+  async function go(target: Target) {
+    pinnedOpen = true;
+    try {
+      switch (target.kind) {
+        case "route":
+          if (target.route === "chat") return select("nook");
+          if (target.route === "agents") return select("agents");
+          if (target.route === "workspace" && nook.info?.capabilities.terminals) return select("workspace");
+          return await api.showMain(target.route);
+        case "settings":
+          localStorage.setItem("settings.section", target.section);
+          return await api.showMain("settings");
+        case "workspace":
+          localStorage.setItem("ws.page", target.page);
+          return select("workspace");
+        case "agents":
+          agents.select(target.select);
+          return select("agents");
+        case "nook":
+          select("nook");
+          return await nook.select(target.id);
+        case "newNook":
+          select("nook");
+          await nook.newNook();
+          if (target.ask) await nook.ask(target.ask);
+          return;
+      }
+    } catch (e) {
+      nook.error = String(e);
+    }
   }
 
   // The window has no frame, so its own resize border is a hairline: the open panel carries its own grips on the edges
@@ -402,6 +450,7 @@
       <header onmousedown={drag}>
         <Orb size={20} {mood} {ring} onpiece={(id) => { select("nook"); nook.select(id); }} />
         <nav>
+          <button class:on={shown === "home"} onclick={() => select("home")}>Home</button>
           <button class:on={shown === "nook"} onclick={() => select("nook")}>Nook {#if nook.waiting}<span class="dot waiting"></span>{/if}</button>
           <button class:on={shown === "chats"} onclick={() => select("chats")}>{tr("Chats", "Chats")}</button>
           <button class:on={shown === "agents"} onclick={() => select("agents")}>Agents {#if agents.pending}<span class="dot waiting"></span>{/if}</button>
@@ -430,7 +479,9 @@
         <WhatsAppCard onnook={openNookFromCard} />
       {/if}
       <div class="body">
-        {#if shown === "nook"}
+        {#if shown === "home"}
+          <Home compact onopen={go} />
+        {:else if shown === "nook"}
           <div class="nooktab">
             <div class="chatcol"><Chat compact autofocus={pinnedOpen} /></div>
             <div class="side">

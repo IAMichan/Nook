@@ -106,6 +106,13 @@ pub struct Settings {
     pub energy_mode: EnergyMode,
     /// Autocomplete Anywhere (Settings › Autocomplete). Off by default.
     pub autocomplete: AutocompleteSettings,
+    /// What the Home greeting calls you ("Good morning, Noah"); empty greets without a name.
+    pub user_name: String,
+    /// The features pinned to Home, in order (ids from `src/lib/features.ts`). `None` until you change them, so Home
+    /// shows the default set and picks up new defaults.
+    pub home_essentials: Option<Vec<String>>,
+    /// Home's inbox items you dismissed, by id, with when (RFC 3339); the interface forgets them after two weeks.
+    pub inbox_dismissed: BTreeMap<String, String>,
 }
 
 impl Default for Settings {
@@ -153,6 +160,9 @@ impl Default for Settings {
             show_in_screenshots: false,
             energy_mode: EnergyMode::Automatic,
             autocomplete: AutocompleteSettings::default(),
+            user_name: String::new(),
+            home_essentials: None,
+            inbox_dismissed: BTreeMap::new(),
         }
     }
 }
