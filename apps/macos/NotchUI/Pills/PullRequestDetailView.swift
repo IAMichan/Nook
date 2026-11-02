@@ -32,7 +32,7 @@ struct PullRequestDetailView: View {
 
     /// The widest the page reads: beside the list it takes the room it has, but filling a wide window its top, tabs and
     /// content stay one centered column, so lines stay readable and everything lines up under the title.
-    static let pageWidth: CGFloat = 960
+    static let pageWidth: CGFloat = PanelLayout.pageColumn
 
     @StateObject var model: PullRequestDetailModel
     @State var tab: Tab = .summary

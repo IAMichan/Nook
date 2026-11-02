@@ -46,26 +46,29 @@ final class AppModel: ObservableObject {
         executable: { [weak self] in self?.history.executables[.claude] }
     )
 
-    /// Reads the limits of all linked accounts right away (Claude, Codex and Antigravity).
-    func refreshQuotas() {
+    /// Reads the limits of all linked accounts right away (Claude, Codex and Antigravity). `maxAge` asks Codex's app-server
+    /// again once its last answer is that old (see `CodexUsage.refreshNow`).
+    func refreshQuotas(maxAge: TimeInterval? = nil) {
         claudeUsage.refreshNow()
-        codex.refreshNow()
+        codex.refreshNow(maxAge: maxAge)
         antigravityUsage.refreshNow()
     }
 
-    /// The refresh button of a usage view: reads every account now and returns when Claude's readings are in.
+    /// The refresh button of a usage view: reads every account now and returns when Claude's and Codex's readings are in.
     func refreshQuotasManually() async {
-        codex.refreshNow()
         antigravityUsage.refreshNow(force: true)
+        async let codexDone: Void = codex.refreshManually()
         await claudeUsage.refreshManually()
+        await codexDone
     }
 
     /// While a usage view is on screen: reads the limits when it opens and every two minutes after (slower when the energy
     /// plan takes it easy), so what you look at is current. Ends when the view goes away (its task is cancelled).
     func watchQuotas() async {
         while !Task.isCancelled {
-            refreshQuotas()
-            try? await Task.sleep(nanoseconds: UInt64(120 * EnergyMonitor.shared.plan.slowdown * 1_000_000_000))
+            let interval = 120 * EnergyMonitor.shared.plan.slowdown
+            refreshQuotas(maxAge: interval)
+            try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
         }
     }
     /// Past sessions and token usage for Claude Code and Codex, for the Agents tab.

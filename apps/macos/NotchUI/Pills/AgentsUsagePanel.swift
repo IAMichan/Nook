@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// The usage of every connected account at once, grouped per AI: one section for all Claude accounts, one for
-/// Antigravity, and so on. Each account shows the limits its agent reports (5 hours and the week), and what was used in
-/// tokens today and this week with a small chart of the last seven days. Agents that report a limit per model
+/// The usage of every connected account at once, grouped per AI: one card for all Claude accounts (with their pool on
+/// top when there are several), one for Antigravity, and so on. Each account shows the limits its agent reports (5 hours
+/// and the week), and beside its name what it used in tokens today and this week with a small chart of the last seven days. Agents that report a limit per model
 /// (Antigravity) get a compact table with only the busiest models; the rest folds away. That is the Limits tab; Cost and
 /// Tokens show every agent's usage on this Mac, as Settings › Coding agents does.
 struct AgentsUsagePanel: View {
@@ -50,15 +50,24 @@ struct AgentsUsagePanel: View {
                 Spacer(minLength: 0)
                 if tab != .limits { UsageWindowPicker(windowRaw: $windowRaw) }
             }
+            // The tabs line up with the page under them.
+            .pageColumn()
 
             ScrollView(showsIndicators: false) {
-                if tab == .limits {
-                    limits
-                } else {
-                    UsageInsightsPanel(history: app.history, metric: tab == .cost ? .cost : .tokens,
-                                       window: UsageWindow(rawValue: windowRaw) ?? .week)
-                        .padding(.bottom, NookTheme.Spacing.md)
+                Group {
+                    if tab == .limits {
+                        // Once a minute the reset times count down and a window that has reset reads as idle, also
+                        // while no new reading comes in.
+                        TimelineView(.nookTicks(every: 60)) { context in
+                            limits(now: context.date)
+                        }
+                    } else {
+                        UsageInsightsPanel(history: app.history, metric: tab == .cost ? .cost : .tokens,
+                                           window: UsageWindow(rawValue: windowRaw) ?? .week)
+                    }
                 }
+                .padding(.bottom, NookTheme.Spacing.xl)
+                .pageColumn()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -66,44 +75,38 @@ struct AgentsUsagePanel: View {
         .task { await app.watchQuotas() }
     }
 
-    /// Every account's limits, with the pool of an agent that has several accounts first.
-    private var limits: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxl) {
-            ForEach(UsagePools.entries(app)) { entry in
-                UsageLimitPoolView(kind: entry.kind, pool: entry.pool)
-                    .padding(NookTheme.Spacing.lg)
-                    .panelCard()
-            }
+    /// Every AI with its accounts, each AI on one card, then how to read the bars.
+    private func limits(now: Date) -> some View {
+        let pools = Dictionary(UsagePools.entries(app).map { ($0.kind, $0.pool) }, uniquingKeysWith: { first, _ in first })
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxl) {
             if profiles.isEmpty {
                 ListEmptyNote(tr("agents.noneConnected"))
             }
             ForEach(groups, id: \.kind) { group in
-                section(group.kind, group.profiles)
+                section(group.kind, group.profiles, pool: pools[group.kind], now: now)
             }
-            if profiles.contains(where: { profile in app.quota.limits(for: profile).contains { $0.group == nil && $0.elapsed() != nil } }) {
-                HStack(spacing: 7) {
-                    Capsule().fill(NookTheme.paper).frame(width: 2, height: 11)
-                    Text(tr("agents.usage.paceLegend"))
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                if profiles.contains(where: { profile in app.quota.limits(for: profile).contains { $0.group == nil && $0.elapsed(at: now) != nil } }) {
+                    HStack(spacing: NookTheme.Spacing.sm) {
+                        Capsule().fill(NookTheme.paper).frame(width: 2, height: 11)
+                        Text(tr("agents.usage.paceLegend"))
+                    }
                 }
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textTertiary)
+                Text(tr("agents.usage.note"))
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text(tr("agents.usage.note"))
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.textTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, NookTheme.Spacing.md)
     }
 
-    /// One AI: its logo and name, then all its accounts on one surface, divided by hairlines. With several accounts the
-    /// header also counts them and shows the highest limit in use; with one, the account itself already says it all.
-    private func section(_ kind: AgentKind, _ profiles: [AgentProfile]) -> some View {
-        let peak = profiles.count > 1 ? profiles.flatMap { app.quota.limits(for: $0) }.map(\.percent).max() : nil
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+    /// One AI: its logo and name over one card that holds the pool of its accounts (with two or more) and then each
+    /// account, divided by hairlines.
+    private func section(_ kind: AgentKind, _ profiles: [AgentProfile], pool: LimitPool?, now: Date) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             HStack(spacing: NookTheme.Spacing.md) {
-                AgentLogo(agent: kind.name, size: 16)
+                AgentLogo(kind, size: 18)
                 Text(kind.name)
                     .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
@@ -113,36 +116,37 @@ struct AgentsUsagePanel: View {
                         .foregroundStyle(NookTheme.textTertiary)
                 }
                 Spacer(minLength: 0)
-                if let peak {
-                    peakPill(peak, accent: kind.color)
-                }
             }
             .padding(.horizontal, NookTheme.Spacing.xs)
 
             VStack(spacing: 0) {
+                if let pool {
+                    UsageLimitPoolView(kind: kind, pool: pool)
+                        .padding(NookTheme.Spacing.lg)
+                    NookDivider()
+                }
                 ForEach(Array(profiles.enumerated()), id: \.element.id) { index, profile in
                     if index > 0 {
                         NookDivider()
                     }
-                    account(profile)
+                    account(profile, now: now)
                 }
             }
-            // The same quiet card every page groups its rows on.
             .panelCard()
         }
     }
 
-    private func account(_ profile: AgentProfile) -> some View {
+    private func account(_ profile: AgentProfile, now: Date) -> some View {
         let limits = app.quota.limits(for: profile)
         let usage = app.history.profileUsage[profile.id]
         let account = app.history.profileAccounts[profile.id]
         let accent = profile.kind.color
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            HStack(spacing: 9) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 AccountBadge(kind: AccountKind.of(profile, app: app), size: 20, ring: NookTheme.field)
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(AccountLabel.name(profile, app: app))
-                        .font(NookTheme.TextStyle.body)
+                        .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
                     Text(account.map { $0.plan.isEmpty ? $0.name : "\($0.name) · \($0.plan)" } ?? tr("agents.notLoggedIn"))
@@ -151,9 +155,18 @@ struct AgentsUsagePanel: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                Spacer(minLength: 0)
-                if limits.count > 2, let peak = limits.map(\.percent).max() {
-                    peakPill(peak, accent: accent)
+                .layoutPriority(1)
+                Spacer(minLength: NookTheme.Spacing.md)
+                // This account's tokens of the week at a glance, as much as fits beside its name; Tokens has the whole story.
+                if let usage {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: NookTheme.Spacing.lg) {
+                            stat(tr("agents.usage.today"), TokenTally.format(usage.today.total))
+                            stat(tr("agents.usage.week"), TokenTally.format(usage.week.total))
+                            WeekBars(days: usage.perDay, color: NookTheme.textSecondary)
+                        }
+                        WeekBars(days: usage.perDay, color: NookTheme.textSecondary)
+                    }
                 }
             }
 
@@ -174,7 +187,7 @@ struct AgentsUsagePanel: View {
                 let models = named.filter { $0.limits.contains { $0.duration == nil } }
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                     ForEach(plain) { limit in
-                        limitRow(limit, title: limit.label, accent: accent)
+                        limitRow(limit, title: limit.label, accent: accent, now: now)
                     }
                     ForEach(windowed, id: \.name) { group in
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
@@ -183,7 +196,7 @@ struct AgentsUsagePanel: View {
                                 .foregroundStyle(NookTheme.textTertiary)
                                 .lineLimit(1)
                             ForEach(group.limits) { limit in
-                                limitRow(limit, title: limit.window, accent: accent)
+                                limitRow(limit, title: limit.window, accent: accent, now: now)
                             }
                         }
                     }
@@ -192,65 +205,36 @@ struct AgentsUsagePanel: View {
                     }
                 }
             }
-
-            NookDivider()
-
-            if let usage {
-                HStack(alignment: .bottom, spacing: 14) {
-                    stat(tr("agents.usage.today"), TokenTally.format(usage.today.total))
-                    stat(tr("agents.usage.week"), TokenTally.format(usage.week.total))
-                    Spacer(minLength: 0)
-                    WeekBars(days: usage.perDay, color: accent)
-                }
-            } else {
-                ListEmptyNote(tr("agents.usage.none"))
-            }
         }
-        .padding(14)
+        .padding(NookTheme.Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// A limit as its name, reset time and percentage above a solid bar: the bar takes the AI's own color while there
     /// is room, and only turns amber or coral once the limit comes close. A tick on the bar marks where an even pace
-    /// would be by now, so a fill past it is running ahead of the window; it moves along every minute.
-    private func limitRow(_ limit: QuotaLimit, title: String, accent: Color) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
+    /// would be by now, so a fill past it is running ahead of the window.
+    private func limitRow(_ limit: QuotaLimit, title: String, accent: Color, now: Date) -> some View {
+        let pace = limit.elapsed(at: now)
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
                 Text(title)
-                    .font(NookTheme.TextStyle.strong)
+                    .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
-                Group {
-                    if let note = limit.note {
-                        Text(note)
-                    } else if let reset = AgentFormat.reset(limit.resetsAt) {
-                        Text(reset)
-                    }
+                if let note = limit.note ?? AgentFormat.reset(limit.resetsAt) {
+                    Text(note)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
                 }
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textTertiary)
-                .lineLimit(1)
-                Spacer(minLength: 6)
+                Spacer(minLength: NookTheme.Spacing.sm)
                 Text("\(Int(limit.percent.rounded()))%")
-                    .font(NookTheme.font(16, .bold).monospacedDigit())
+                    .font(NookTheme.TextStyle.strong.monospacedDigit())
                     .foregroundStyle(UsageTone.text(limit.percent))
             }
-            TimelineView(.nookTicks(every: 60)) { context in
-                let pace = limit.elapsed(at: context.date)
-                UsageBar(fraction: limit.percent / 100, color: UsageTone.fill(limit.percent, accent: accent), pace: pace)
-                    .help(pace.map { tr("agents.usage.pace", Int(($0 * 100).rounded())) } ?? "")
-            }
+            UsageBar(fraction: limit.percent / 100, color: UsageTone.fill(limit.percent, accent: accent), pace: pace)
+                .help(pace.map { tr("agents.usage.pace", Int(($0 * 100).rounded())) } ?? "")
         }
-    }
-
-    /// "peak 82%", tinted like the limit it names.
-    private func peakPill(_ peak: Double, accent: Color) -> some View {
-        Text(tr("agents.usage.peak", Int(peak.rounded())))
-            .font(NookTheme.font(11, .semibold).monospacedDigit())
-            .foregroundStyle(UsageTone.text(peak))
-            .padding(.horizontal, 7)
-            .padding(.vertical, NookTheme.Spacing.xxs)
-            .background(Capsule().fill(UsageTone.fill(peak, accent: accent).opacity(0.14)))
     }
 
     /// Limits per model as one table: a row per model, a column per window ("5 hours", "Week"), each cell a slim bar
@@ -349,9 +333,9 @@ struct AgentsUsagePanel: View {
 
     /// "Today 1.2M": the label quiet, the number plain, on one line.
     private func stat(_ title: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 5) {
+        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.xs) {
             Text(title).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
-            Text(value).font(NookTheme.font(12.5, .semibold).monospacedDigit()).foregroundStyle(NookTheme.paper)
+            Text(value).font(NookTheme.TextStyle.label.monospacedDigit()).foregroundStyle(NookTheme.paper)
         }
         .lineLimit(1)
     }
