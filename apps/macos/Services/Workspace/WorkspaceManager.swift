@@ -99,6 +99,8 @@ final class WorkspaceManager: ObservableObject {
     @Published private(set) var queued: [UUID: MessageQueue] = [:]
     /// Questions an agent asked in a session and that wait for your answer.
     @Published var questions: [UUID: [PendingQuestion]] = [:]
+    /// Connectors (MCP servers) each session's agent has but cannot use until you sign in (see ConnectorSignIn).
+    @Published var connectorSignIns: [UUID: [ConnectorSignIn]] = [:]
 
     /// Codex sessions over `codex app-server` (see WorkspaceManager+CodexServer), kept alive between turns.
     var codexServers: [UUID: CodexAppServerClient] = [:]
@@ -133,6 +135,10 @@ final class WorkspaceManager: ObservableObject {
     var wakeSubagent: [UUID: String] = [:]
     /// What MCP apps want the agent to know on its next turn, per session and app (see McpApp).
     var mcpAppContexts: [UUID: [String: String]] = [:]
+    /// Control requests sent to Claude Code that wait for its answer, by request id.
+    var claudeControlReplies: [String: (JSONBox?, String?) -> Void] = [:]
+    /// Checks back on connectors whose sign-in page is open, per session and connector.
+    var connectorSignInChecks: [UUID: [String: Task<Void, Never>]] = [:]
     /// Claude Code reported a change in its limits during a session: AppModel refreshes the usage shown.
     var onRateLimits: (() -> Void)?
     /// Codex reported new limits during a session (the `account/rateLimits/updated` params), for the account
@@ -1351,8 +1357,10 @@ final class WorkspaceManager: ObservableObject {
             let process = AgentProcess(spec: spec)
             process.onLines = { [weak self, weak process] lines in
                 Task { @MainActor in
-                    // While it only waits, nothing it prints is a turn (a failed resume must not fail the session).
-                    guard let self, let process, self.processes[id] === process else { return }
+                    // While it only waits, nothing it prints is a turn (a failed resume must not fail the session), apart
+                    // from the answers to Nook's own requests (a connector's sign-in page).
+                    guard let self, let process else { return }
+                    guard self.processes[id] === process else { return self.handleClaudeReplies(lines, for: id) }
                     for line in lines { self.handle(line: line, for: id) }
                 }
             }
@@ -1445,6 +1453,10 @@ final class WorkspaceManager: ObservableObject {
             noteConversationSession(id, session, keepsHistory: true)
         case .chainEntry(let uuid):
             noteConversationHead(id, uuid)
+        case .connectorsNeedingSignIn(let names):
+            noteConnectorsNeedingSignIn(id, names)
+        case .controlReply(let requestID, let response, let error):
+            claudeControlReplies.removeValue(forKey: requestID)?(response, error)
         case .textDelta(let text):
             feed(id, .textDelta(text))
         case .text(let text):
@@ -1858,6 +1870,7 @@ final class WorkspaceManager: ObservableObject {
         approvals[id] = nil
         queued[id] = nil
         questions[id] = nil
+        forgetConnectorSignIns(id)
         closeCodexServer(id)
         closeClaudeProcess(id)
         closeAcpClient(id)

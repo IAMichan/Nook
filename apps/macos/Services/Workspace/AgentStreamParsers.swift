@@ -69,6 +69,10 @@ enum ClaudeStreamEvent: Equatable, Sendable {
     /// An entry of the main conversation chain (an assistant or user message's `uuid`): where `--resume-session-at` can
     /// pick the conversation up again.
     case chainEntry(String)
+    /// The connectors (MCP servers) that wait for you to sign in, by name, as system/init lists them.
+    case connectorsNeedingSignIn([String])
+    /// Claude Code's answer to a control request Nook sent: its response, or the error it gave.
+    case controlReply(requestID: String, response: JSONBox?, error: String?)
 }
 
 extension ClaudeStreamEvent {
@@ -138,7 +142,9 @@ enum ClaudeStreamParser {
         case "system":
             let subtype = (object["subtype"] as? String) ?? ""
             if subtype == "init", let session = object["session_id"] as? String {
-                return [.initialized(sessionID: session, model: object["model"] as? String)]
+                var events: [ClaudeStreamEvent] = [.initialized(sessionID: session, model: object["model"] as? String)]
+                if object["mcp_servers"] != nil { events.append(.connectorsNeedingSignIn(ConnectorSignIns.claude(object["mcp_servers"]))) }
+                return events
             }
             if subtype == "compact_boundary" { return [.notice("compact")] }
             if subtype == "task_started" || subtype == "task_notification" {
@@ -240,6 +246,13 @@ enum ClaudeStreamParser {
                 suggestions: request["permission_suggestions"].flatMap { $0 is NSNull ? nil : JSONBox($0) },
                 toolUseID: request["tool_use_id"] as? String
             )]
+
+        case "control_response":
+            guard let response = object["response"] as? [String: Any], let requestID = response["request_id"] as? String else { return [] }
+            if (response["subtype"] as? String) == "error" {
+                return [.controlReply(requestID: requestID, response: nil, error: (response["error"] as? String) ?? "error")]
+            }
+            return [.controlReply(requestID: requestID, response: JSONBox(response["response"] ?? [String: Any]()), error: nil)]
 
         case "rate_limit_event":
             let info = object["rate_limit_info"] as? [String: Any]
@@ -379,6 +392,22 @@ enum ClaudeStreamParser {
         var request: [String: Any] = ["subtype": "set_model"]
         if !model.isEmpty { request["model"] = model }
         return line(["type": "control_request", "request_id": id, "request": request])
+    }
+
+    /// Asks for a connector's sign-in page (`authUrl`). For a claude.ai connector it is claude.ai's own page; for an
+    /// OAuth server Claude Code also waits for the page's answer itself (`callbackExpected`).
+    static func mcpAuthenticateRequest(id: String, server: String) -> String {
+        line(["type": "control_request", "request_id": id, "request": ["subtype": "mcp_authenticate", "serverName": server]])
+    }
+
+    /// Asks how each connector is doing (`mcpServers`, rows with `name` and `status`).
+    static func mcpStatusRequest(id: String) -> String {
+        line(["type": "control_request", "request_id": id, "request": ["subtype": "mcp_status"]])
+    }
+
+    /// Connects a connector again, as after signing in to it on claude.ai.
+    static func mcpReconnectRequest(id: String, server: String) -> String {
+        line(["type": "control_request", "request_id": id, "request": ["subtype": "mcp_reconnect", "serverName": server]])
     }
 
     private static func line(_ object: [String: Any]) -> String {
