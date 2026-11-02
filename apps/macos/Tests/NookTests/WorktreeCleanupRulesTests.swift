@@ -109,3 +109,24 @@ private final class Log: @unchecked Sendable {
     func add(_ entry: String) { lock.withLock { list.append(entry) } }
     var entries: [String] { lock.withLock { list } }
 }
+
+/// How a session whose worktree is gone gets one back when you write to it again.
+final class WorktreeReopenTests: XCTestCase {
+    private func plan(branch: String? = "nook/feature", exists: Bool = true, merged: Bool = false, base: String? = "origin/main") -> WorktreeCleanup.Reopen {
+        WorktreeCleanup.reopen(branch: branch, branchExists: exists, merged: merged, base: base, newBranch: "nook/next")
+    }
+
+    func testUnfinishedWorkComesBackOnItsOwnBranch() {
+        XCTAssertEqual(plan(), .branch("nook/feature"))
+    }
+
+    func testMergedWorkStartsANewBranchFromTheBase() {
+        XCTAssertEqual(plan(merged: true), .newBranch("nook/next", base: "origin/main"))
+        XCTAssertEqual(plan(exists: false), .newBranch("nook/next", base: "origin/main"), "a deleted branch starts over too")
+    }
+
+    func testWithoutBaseTheOldBranchIsTheOnlyWayBack() {
+        XCTAssertEqual(plan(merged: true, base: nil), .branch("nook/feature"))
+        XCTAssertEqual(plan(exists: false, base: nil), .impossible)
+    }
+}
