@@ -680,9 +680,10 @@ private final class HistoryScanner: @unchecked Sendable {
             claudeProgress = claudeProgress.filter { fresh[$0.key] != nil }
             codexProgress = codexProgress.filter { fresh[$0.key] != nil }
 
-            // Sessions for the list: excluding conversations Nook itself runs via Claude Code (its own directory).
+            // Sessions for the list: excluding conversations Nook itself runs via Claude Code (its own directory, and the
+            // scratch folders of titles, commit messages and pull requests).
             let listed = parsedAll.compactMap { entry in entry.parsed.session.map { (session: $0, links: entry.parsed.links) } }
-                .filter { $0.session.prompts > 0 && $0.session.cwd != ownFolder }
+                .filter { $0.session.prompts > 0 && !Self.isOwn($0.session.cwd, ownFolder: ownFolder) }
                 .sorted { $0.session.ended > $1.session.ended }
             // One conversation per resumed chat, for the Usage page's session counts (90 days); the list keeps to 30 days.
             let conversations = Self.joinResumed(listed)
@@ -930,6 +931,11 @@ private final class HistoryScanner: @unchecked Sendable {
 
     // MARK: Usage
 
+    /// A conversation Nook ran itself rather than the user.
+    static func isOwn(_ cwd: String, ownFolder: String) -> Bool {
+        cwd == ownFolder || TextGenerationRunner.isScratchFolder(cwd)
+    }
+
     private func summarize(_ parsed: [Parsed], excludingFolder ownFolder: String) -> AgentUsageSummary {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .current
@@ -947,7 +953,7 @@ private final class HistoryScanner: @unchecked Sendable {
                 summary.week += entry.tokens
                 if day == today { summary.today += entry.tokens }
             }
-            if let session = file.session, session.prompts > 0, session.cwd != ownFolder {
+            if let session = file.session, session.prompts > 0, !Self.isOwn(session.cwd, ownFolder: ownFolder) {
                 if session.ended >= weekStart { summary.sessionsWeek += 1 }
                 if session.ended >= today { summary.sessionsToday += 1 }
             }
