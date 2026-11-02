@@ -15,6 +15,7 @@
   import { companion } from "../lib/companion";
   import { onBack, setupMobile } from "../lib/mobile";
   import { gamer } from "../lib/gamer.svelte";
+  import { pullRequests } from "../lib/pulls.svelte";
 
   let route = $state<Route>(resumeRoute());
   let showList = $state(true);
@@ -27,6 +28,9 @@
 
   // Gamer Mode's coaching shows up as a toast on any page.
   $effect(() => gamer.start());
+
+  // The pull request list (and the pages you are likely to open) stay current while its page is closed.
+  $effect(() => pullRequests.followInBackground());
 
   $effect(() => {
     companion.info().then((i) => (companionClient = i.client)).catch(() => {});

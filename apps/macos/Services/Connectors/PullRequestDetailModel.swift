@@ -5,7 +5,9 @@ import Foundation
 /// Opening is quick because the page never waits for everything: the summary (the pull request, its repository and the
 /// checks of its head) shows as soon as it is in, the timeline, commits and files follow. Every pull request read while
 /// Nook runs is kept, so opening it again shows it at once and refreshes underneath; one under the pointer in the list
-/// is read ahead (`prefetch`), and a click while that read runs shows its summary as soon as it is in. While open, the
+/// is read ahead (`prefetch`), and a click while that read runs shows its summary as soon as it is in. After every read of
+/// the list, the few you are most likely to open are read ahead too (`warm`, see `PullRequestDetailWarmup`), also while
+/// the panel is closed, so most pages are there before you ask. While open, the
 /// summary is read again every 15 seconds while checks run or GitHub is still working out mergeability, else every 30;
 /// the activity only when the summary says something changed.
 @MainActor
@@ -184,7 +186,7 @@ final class PullRequestDetailModel: ObservableObject {
     /// Enough for a morning of reviews; the oldest go first.
     private static let cacheLimit = 40
 
-    private static func key(_ account: String, _ id: String) -> String { account + " " + id }
+    nonisolated private static func key(_ account: String, _ id: String) -> String { account + " " + id }
 
     /// What changes when the timeline, the commits or the files may have: the last update, the head, the state.
     private static func activityKey(_ detail: PullRequestDetail) -> String {
@@ -206,18 +208,18 @@ final class PullRequestDetailModel: ObservableObject {
 
     /// Reads a pull request ahead, while the pointer rests on its row, so a click shows it at once. Nothing happens
     /// when it was read in the last minute or is being read already.
-    static func prefetch(accountID: String, item: PullRequestItem) {
+    static func prefetch(accountID: String, item: PullRequestItem, priority: TaskPriority = .userInitiated) {
         let entry = Self.key(accountID, item.id)
         if prefetching[entry] != nil { return }
         if let cached = cache[entry], Date().timeIntervalSince(cached.at) < 60 { return }
         guard let token = GitHubPullRequestDetail.token(accountID: accountID) else { return }
         let repo = item.repo, number = item.number, started = Date()
         // Both at once, as on a page; the summary is kept the moment it lands, so a click meanwhile shows it.
-        let activity = Task.detached(priority: .userInitiated) {
+        let activity = Task.detached(priority: priority) {
             await GitHubPullRequestDetail.loadActivity(repo: repo, number: number, token: token, counts: nil)
         }
         let summary = Task { () -> (detail: PullRequestDetail, at: Date)? in
-            let read = await Task.detached(priority: .userInitiated) {
+            let read = await Task.detached(priority: priority) {
                 try? await GitHubPullRequestDetail.summary(repo: repo, number: number, token: token)
             }.value
             // An open page may have read it meanwhile; its read is newer.
@@ -242,6 +244,30 @@ final class PullRequestDetailModel: ObservableObject {
             prefetching[entry] = nil
         }
         prefetching[entry] = Prefetch(summary: Task { _ = await summary.value }, done: done)
+    }
+}
+
+extension PullRequestDetailModel {
+    /// The read-ahead after a list read, one pull request at a time so it never competes with what you are doing.
+    private static var warming: Task<Void, Never>?
+
+    /// Reads ahead the pull requests `PullRequestDetailWarmup` picks from the list; returns at once while a pass runs.
+    static func warm(accounts: [AccountPullRequests]) {
+        guard warming == nil else { return }
+        let kept = cache.mapValues { PullRequestDetailWarmup.Seen(updated: $0.detail.updated, at: $0.at) }
+        let picks = PullRequestDetailWarmup.picks(accounts: accounts, seen: { account, id in kept[key(account, id)] },
+                                                  now: Date(), plan: EnergyMonitor.shared.plan)
+        guard !picks.isEmpty else { return }
+        warming = Task {
+            for pick in picks {
+                if Task.isCancelled { break }
+                let signals = EnergyMonitor.shared.signals
+                if signals.away || signals.displayAsleep { break }
+                prefetch(accountID: pick.accountID, item: pick.item, priority: .utility)
+                await prefetching[key(pick.accountID, pick.item.id)]?.done.value
+            }
+            warming = nil
+        }
     }
 }
 

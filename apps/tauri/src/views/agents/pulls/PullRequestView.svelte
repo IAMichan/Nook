@@ -1,7 +1,8 @@
 <script lang="ts">
   // One pull request, read in full inside Nook (`PullRequestDetailView` on the Mac): the description, checks and
   // timeline, the commits, and every changed file with its diff. The bar at the bottom merges it with the account it
-  // was listed under, only after you confirmed it in that same bar; the merge is written to the action log.
+  // was listed under, only after you confirmed it in that same bar; the merge is written to the action log. A page read
+  // before (or ahead, see `pullDetails`) shows at once and refreshes underneath.
   import { untrack } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import type { PullRequestItem } from "../../../lib/connectors";
@@ -10,7 +11,7 @@
     activitySentence, chosenMethod, ciStatusLine, detailStateNames, diffLines, eventLabel, itemId, jobId, methodNames, noteText, pullsApi,
     type MergeMethod, type PullRequestCheck, type PullRequestDetail, type PullRequestEvent, type PullRequestFile, type ReviewEvent,
   } from "../../../lib/pulls";
-  import { pullRequests } from "../../../lib/pulls.svelte";
+  import { pullDetails, pullRequests } from "../../../lib/pulls.svelte";
   import { ago } from "../time";
   import CheckLog from "./CheckLog.svelte";
   import PullGlyph from "./PullGlyph.svelte";
@@ -61,11 +62,14 @@
     }
   }
 
-  async function load() {
+  const load = () => read(false);
+
+  /// `share`: the first look waits for a read ahead that is already running instead of starting another.
+  async function read(share: boolean) {
     if (loading) return;
     loading = true;
     try {
-      const fresh = await pullsApi.detail(accountId, item.repo, item.number);
+      const fresh = await pullDetails.read(accountId, item.repo, item.number, share);
       detail = fresh;
       error = null;
       if (openFile && !fresh.files.some((f) => f.path === openFile)) openFile = null;
@@ -83,7 +87,14 @@
     let recheck: ReturnType<typeof setTimeout> | undefined;
     // Only a different pull request loads again; `load` reads `loading`, which must not re-run this effect.
     void [accountId, item.repo, item.number];
-    untrack(load).then(() => {
+    const cached = untrack(() => pullDetails.get(accountId, item.repo, item.number));
+    untrack(() => {
+      detail = cached?.detail ?? null;
+      error = null;
+    });
+    // Read in the last ten seconds: shown as it is, the next look is never far away.
+    const first = cached && Date.now() - cached.at < 10_000 ? Promise.resolve() : untrack(() => read(true));
+    first.then(() => {
       // GitHub works out mergeability after the first ask: look again once it has.
       if (!cancelled && detail?.isOpen && detail.mergeable === null) recheck = setTimeout(() => !cancelled && load(), 3000);
     });

@@ -4,6 +4,7 @@ import { renderMarkdown } from "./markdown";
 import {
   activeCount, activitySentence, apply, authors, chosenMethod, defaultFilter, diffLines, eventLabel, isActive, matches,
   ciLines, ciProblems, jobId, laneCounts, laneOfMine, matchesQuery, noteText, triage, unreadable,
+  listDue, warmDue, warmPicks, BACKGROUND_EVERY, WARM_FRESH_FOR, WARM_MIN_GAP,
 } from "./pulls";
 
 const item = (number: number, extra: Partial<PullRequestItem> = {}): PullRequestItem => ({
@@ -170,5 +171,54 @@ describe("github dashboard", () => {
     expect(matchesQuery("parser @ada", parts)).toBe(true);
     expect(matchesQuery("#12", parts)).toBe(true);
     expect(matchesQuery("#13", parts)).toBe(false);
+  });
+});
+
+describe("reading ahead", () => {
+  const now = 10_000_000_000;
+  const at = (ms: number) => new Date(now + ms).toISOString();
+  const none = () => undefined;
+
+  it("reads the list again once the stretched wait passed", () => {
+    expect(listDue(now - BACKGROUND_EVERY + 1, now, "full")).toBe(false);
+    expect(listDue(now - BACKGROUND_EVERY, now, "full")).toBe(true);
+    expect(listDue(now - BACKGROUND_EVERY, now, "light")).toBe(false);
+    expect(listDue(0, now, "paused")).toBe(true);
+    expect(listDue(now + 60_000, now, "full")).toBe(true);
+  });
+
+  it("reads reviews first, then your own, newest first", () => {
+    const list = [account({ mine: [item(1, { updated: at(-500) }), item(2, { updated: at(-10) })], reviews: [item(3, { updated: at(-900) }), item(4, { updated: at(-20) })] })];
+    expect(warmPicks(list, none, now, "full").map((p) => p.item.number)).toEqual([4, 3, 2, 1]);
+  });
+
+  it("skips closed pull requests and accounts that failed", () => {
+    const list = [
+      account({ mine: [item(1, { state: "merged" }), item(2)] }),
+      account({ id: "github.work", mine: [item(3)], error: "offline" }),
+    ];
+    expect(warmPicks(list, none, now, "full").map((p) => p.item.number)).toEqual([2]);
+  });
+
+  it("stays within its limit and the energy plan", () => {
+    const list = [account({ mine: Array.from({ length: 10 }, (_, i) => item(i + 1)) })];
+    expect(warmPicks(list, none, now, "full")).toHaveLength(6);
+    expect(warmPicks(list, none, now, "light")).toHaveLength(3);
+    expect(warmPicks(list, none, now, "paused")).toHaveLength(0);
+  });
+
+  it("leaves a recent unchanged read alone and reads a changed one after a short wait", () => {
+    const pr = item(1, { updated: at(-3000) });
+    expect(warmDue({ updated: pr.updated, at: now - 600_000 }, pr, now)).toBe(false);
+    expect(warmDue({ updated: pr.updated, at: now - WARM_FRESH_FOR }, pr, now)).toBe(true);
+    expect(warmDue({ updated: at(-9000), at: now - 60_000 }, pr, now)).toBe(false);
+    expect(warmDue({ updated: at(-9000), at: now - WARM_MIN_GAP }, pr, now)).toBe(true);
+    expect(warmDue({ updated: pr.updated, at: now + 60_000 }, pr, now)).toBe(true);
+  });
+
+  it("passes over what it need not read to the next one", () => {
+    const list = [account({ mine: [item(1, { updated: at(-10) }), item(2, { updated: at(-20) })] })];
+    const seen = (key: string) => (key === "github acme/web#1" ? { updated: at(-10), at: now } : undefined);
+    expect(warmPicks(list, seen, now, "full").map((p) => p.item.number)).toEqual([2]);
   });
 });
