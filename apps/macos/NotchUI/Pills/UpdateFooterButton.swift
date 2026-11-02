@@ -120,13 +120,6 @@ struct UpdateFooterButton<Idle: View>: View {
         .frame(minWidth: iconOnly ? 26 : nil, minHeight: 26, maxHeight: 26)
         .cardBackground(look.tint.opacity(hovering || open ? 0.22 : 0.13), stroke: look.tint.opacity(0.32), radius: NookTheme.Radius.panel,
                         style: .continuous)
-        .overlay(alignment: .topTrailing) {
-            // A new update pulses once in a while until you have looked at it.
-            if look.id == "available", !updater.seen {
-                // Inside the pill's corner, so a list that clips at its edge does not cut it off.
-                PulseDot(color: look.tint, animated: true)
-            }
-        }
         .contentShape(Capsule())
         .hoverLift(hovering)
         .fixedSize()
