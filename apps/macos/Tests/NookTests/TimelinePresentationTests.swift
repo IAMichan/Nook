@@ -72,6 +72,38 @@ final class TimelinePresentationTests: XCTestCase {
         XCTAssertFalse(tally.failed)
     }
 
+    /// Files the agent handed you (SendUserFile) stay in sight next to the answer instead of folding into the work.
+    func testSharedFilesStayOutOfTheFold() throws {
+        var turn = finishedTurn()
+        let shared = event(.tool, "SendUserFile", tool: "SendUserFile",
+                           detail: #"{"files":[".scratch/reel/reel.mp4",".scratch/reel/cover.jpg"],"caption":"The reel"}"#,
+                           state: .done, at: 100)
+        turn.insert(shared, at: 5)
+        let blocks = TimelinePresentation.blocks(turn + [event(.user, "Nog iets", at: 200)], active: false)
+        guard case .fold(_, _, let inner, _) = blocks[1], case .event(let files) = blocks[2], case .event(let answer) = blocks[3] else {
+            return XCTFail("\(blocks)")
+        }
+        XCTAssertEqual(files.id, shared.id)
+        XCTAssertEqual(answer.text, "Opgelost.")
+        XCTAssertFalse(TimelinePresentation.events(inner).contains { $0.id == shared.id })
+        // In an open turn they are a row of their own, never counted away in a group of tool calls.
+        let open = TimelinePresentation.group(Array(turn[1...5]))
+        XCTAssertTrue(open.contains(.event(shared)))
+        // The outputs panel keeps them, the video as a video.
+        let outputs = SessionOutputs.collect([shared], tasks: nil, directory: "/p")
+        XCTAssertEqual(outputs.map(\.path), ["/p/.scratch/reel/reel.mp4", "/p/.scratch/reel/cover.jpg"])
+        XCTAssertEqual(outputs.first?.kind, .video)
+        XCTAssertEqual(SharedFiles.caption(AgentActivity.input(shared.detail) ?? [:]), "The reel")
+    }
+
+    func testFailedOrEmptySharesAreOrdinarySteps() {
+        let failed = event(.tool, "SendUserFile", tool: "SendUserFile", detail: #"{"files":["a.mp4"]}"#, state: .failed)
+        let empty = event(.tool, "SendUserFile", tool: "SendUserFile", detail: #"{"files":[]}"#, state: .done)
+        XCTAssertFalse(SharedFiles.isShare(failed))
+        XCTAssertFalse(SharedFiles.isShare(empty))
+        XCTAssertTrue(SharedFiles.isTool("mcp__files__SendUserFile"))
+    }
+
     func testLastTurnFoldsOnceFinished() {
         let blocks = TimelinePresentation.blocks(finishedTurn(), active: false)
         XCTAssertTrue(blocks.contains { if case .fold = $0 { true } else { false } },

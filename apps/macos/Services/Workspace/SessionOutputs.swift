@@ -18,6 +18,8 @@ struct SessionOutput: Identifiable, Equatable, Sendable {
         /// A Markdown document.
         case document
         case image
+        /// A video, played in place.
+        case video
     }
 
     var id: String
@@ -37,6 +39,7 @@ enum SessionOutputs {
         case "html", "htm", "svg": return .design
         case "md", "markdown", "mdx": return .document
         case "png", "jpg", "jpeg", "gif", "webp", "heic", "tiff", "bmp": return .image
+        case "mp4", "mov", "m4v": return .video
         default: return nil
         }
     }
@@ -67,6 +70,8 @@ enum SessionOutputs {
                 let title = PlanPreview.title(from: event.text) ?? ""
                 outputs.append(SessionOutput(id: "plan:" + event.id.uuidString, kind: .plan(event.text), title: title, path: nil,
                                              date: event.date))
+            case .tool where SharedFiles.isShare(event):
+                for path in SharedFiles.paths(AgentActivity.input(event.detail) ?? [:]) { add(path, at: event.date) }
             case .tool:
                 let input = AgentActivity.input(event.detail) ?? [:]
                 if let steps = taskList(tool: event.tool ?? "", input: input) {
@@ -109,5 +114,34 @@ enum SessionOutputs {
         case .tasks(let steps): return "tasks:" + steps.map { $0.status.rawValue }.joined(separator: ",")
         default: return output.id + "@" + String(output.date.timeIntervalSince1970)
         }
+    }
+}
+
+/// Files the agent handed to you on purpose (Claude Code's SendUserFile): a video, a picture or a document it made for
+/// you to look at, not a step of its work. The conversation shows them in a row of their own, never folded away, and the
+/// outputs panel keeps them.
+enum SharedFiles {
+    /// The tools that hand files over, by name (an MCP tool by its own name).
+    static let tools: Set<String> = ["SendUserFile"]
+
+    static func isTool(_ tool: String) -> Bool {
+        tools.contains(tool.hasPrefix("mcp__") ? (tool.components(separatedBy: "__").last ?? tool) : tool)
+    }
+
+    /// A call that handed files over (and did not fail).
+    static func isShare(_ event: RunEvent) -> Bool {
+        event.kind == .tool && event.state != .failed && isTool(event.tool ?? "")
+            && !paths(AgentActivity.input(event.detail) ?? [:]).isEmpty
+    }
+
+    /// The files of the call, as the agent named them (`files`, or one `file` or `path`).
+    static func paths(_ input: [String: Any]) -> [String] {
+        let listed = (input["files"] as? [String]) ?? [input["file"], input["path"]].compactMap { $0 as? String }
+        return listed.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    }
+
+    /// What the agent said with them.
+    static func caption(_ input: [String: Any]) -> String? {
+        (input["caption"] as? String).flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
     }
 }

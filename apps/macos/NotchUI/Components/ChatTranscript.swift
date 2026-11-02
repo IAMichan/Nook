@@ -1415,6 +1415,8 @@ struct VideoTile: View {
     let url: URL
     let poster: NSImage?
     let name: String
+    /// How tall it may be: a chat bubble's height, or taller where a video stands on its own (a file the agent made).
+    var maxHeight = PhotoButton.maxHeight
     @State private var player: AVPlayer?
     @State private var hovering = false
     /// A frame of the video itself, when its app sent no picture of it: never a black box.
@@ -1427,7 +1429,7 @@ struct VideoTile: View {
         guard let poster = picture, poster.size.width > 0, poster.size.height > 0 else {
             return CGSize(width: PhotoButton.maxWidth, height: PhotoButton.maxWidth * 9 / 16)
         }
-        let height = min(PhotoButton.maxHeight, PhotoButton.maxWidth * poster.size.height / poster.size.width)
+        let height = min(maxHeight, PhotoButton.maxWidth * poster.size.height / poster.size.width)
         return CGSize(width: height * poster.size.width / poster.size.height, height: height)
     }
 
@@ -1512,16 +1514,17 @@ struct VideoTile: View {
     }
 }
 
-/// The system's video player in a bubble: the picture whole, never cropped, and stopped when the bubble goes away.
-private struct InlinePlayer: NSViewRepresentable {
+/// The system's video player in a bubble or a panel: the picture whole, never cropped, and stopped when it goes away.
+struct InlinePlayer: NSViewRepresentable {
     let player: AVPlayer
+    /// Its own full-screen button; in a bubble full screen happens in the video's own window instead.
+    var fullScreen = false
 
     func makeNSView(context: Context) -> AVPlayerView {
         let view = AVPlayerView()
         view.controlsStyle = .inline
         view.videoGravity = .resizeAspect
-        // Full screen happens in the video's own window: the notch cannot go full screen.
-        view.showsFullScreenToggleButton = false
+        view.showsFullScreenToggleButton = fullScreen
         view.player = player
         return view
     }

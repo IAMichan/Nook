@@ -162,15 +162,27 @@ enum TranscriptPresentation {
             if let steer = segment.steer { rows.append(.user(steer)) }
             let work = segment.messages.filter { $0.id != answer.id && !$0.isNotice }
             if let firstWork = work.first {
-                let inner = group(work, finalID: nil)
-                rows.append(index == 0 ? .fold(id: firstWork.id, seconds: seconds(turn), rows: inner)
-                                       : .continued(id: firstWork.id, seconds: seconds(from: segment.steer?.date, segment.messages), rows: inner))
+                // Files it handed you stay in view next to its answer: they are what the work made, not part of it.
+                let grouped = group(work, finalID: nil)
+                let shared = grouped.filter(isShare)
+                let inner = grouped.filter { !isShare($0) }
+                if !inner.isEmpty {
+                    rows.append(index == 0 ? .fold(id: firstWork.id, seconds: seconds(turn), rows: inner)
+                                           : .continued(id: firstWork.id, seconds: seconds(from: segment.steer?.date, segment.messages),
+                                                        rows: inner))
+                }
+                rows += shared
             }
             for message in segment.messages where message.id == answer.id || message.isNotice {
                 rows.append(message.isNotice ? .notice(message) : .assistant(message, isFinal: true))
             }
         }
         return rows
+    }
+
+    private static func isShare(_ row: TranscriptRow) -> Bool {
+        if case .step(let step) = row { return SharedFiles.isShare(step) }
+        return false
     }
 
     /// The turn that runs: how long it has been going right under your message, the work so far, and at the end the step
@@ -222,10 +234,19 @@ enum TranscriptPresentation {
         for message in messages {
             switch message.kind {
             case .tools:
-                if steps.isEmpty { groupID = message.id }
-                if let first = message.steps.first, !pending.isEmpty { thoughts[first.id, default: []] += pending }
-                pending = []
-                steps += message.steps
+                // Files the agent handed you are a row of their own, never counted away in a group.
+                let work = message.steps.filter { !SharedFiles.isShare($0) }
+                let shared = message.steps.filter(SharedFiles.isShare)
+                if !work.isEmpty {
+                    if steps.isEmpty { groupID = message.id }
+                    if let first = work.first, !pending.isEmpty { thoughts[first.id, default: []] += pending }
+                    pending = []
+                    steps += work
+                }
+                if !shared.isEmpty {
+                    flush()
+                    rows += shared.map { TranscriptRow.step($0) }
+                }
             case .user:
                 flush()
                 rows.append(.user(message))
@@ -416,6 +437,15 @@ extension SessionOutputs {
                     outputs.append(SessionOutput(id: "plan:" + step.id, kind: .plan(plan), title: PlanPreview.title(from: plan) ?? "",
                                                  path: nil, date: date))
                 }
+                if SharedFiles.isShare(step) {
+                    for raw in SharedFiles.paths(AgentActivity.input(step.input) ?? [:]) {
+                        let path = resolve(raw, in: directory)
+                        guard let kind = kind(path: path) else { continue }
+                        let output = SessionOutput(id: "file:" + path, kind: kind, title: URL(fileURLWithPath: path).lastPathComponent,
+                                                   path: path, date: date)
+                        if let at = files[path] { outputs[at] = output } else { files[path] = outputs.count; outputs.append(output) }
+                    }
+                }
                 guard let raw = step.path, step.state != .failed else { continue }
                 let path = resolve(raw, in: directory)
                 guard let kind = kind(path: path) else { continue }
@@ -429,5 +459,12 @@ extension SessionOutputs {
             outputs.append(SessionOutput(id: "tasks", kind: .tasks(tasks), title: "", path: nil, date: date))
         }
         return outputs.sorted { $0.date > $1.date }
+    }
+}
+
+extension SharedFiles {
+    /// A transcript step that handed files over (and did not fail).
+    static func isShare(_ step: AgentToolStep) -> Bool {
+        step.state != .failed && isTool(step.name) && !paths(AgentActivity.input(step.input) ?? [:]).isEmpty
     }
 }

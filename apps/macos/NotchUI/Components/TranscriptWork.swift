@@ -328,6 +328,7 @@ enum TranscriptStepText {
         case "WebSearch", "web_search", "google_web_search": return (tr("agents.step.searchedWeb"), summary, false)
         case "WebFetch", "web_fetch": return (tr("agents.step.fetched"), summary, true)
         case "Skill": return (tr("agents.step.skill"), summary, true)
+        case "SendUserFile": return (tr("ws.shared.title"), summary, true)
         default: break
         }
         let name = step.name.lowercased()
@@ -362,6 +363,7 @@ enum TranscriptSymbols {
         case "TodoWrite", "Plan", "update_plan", "ExitPlanMode": return "checklist"
         case "WebSearch", "WebFetch", "web_search", "web_fetch", "google_web_search": return "globe"
         case "Skill": return "sparkles"
+        case "SendUserFile": return "paperclip"
         default:
             switch ToolCategory.of(tool: tool) {
             case .command: return "terminal"
