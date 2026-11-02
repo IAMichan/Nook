@@ -18,9 +18,12 @@ struct LiveCommandConsole: View {
     var body: some View {
         if let event = workspace.timeline(console.run).first(where: { $0.id == console.event }) {
             CommandConsolePanel(event: event, close: close)
-        } else {
+        } else if workspace.isTimelineLoaded(console.run) {
             // The session no longer has the command: back to your own shells.
             Color.clear.onAppear(perform: close)
+        } else {
+            // Its timeline is still being read back from disk: the command shows once it is here.
+            Color.clear
         }
     }
 }
