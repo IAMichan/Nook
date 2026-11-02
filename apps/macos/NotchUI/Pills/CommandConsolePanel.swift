@@ -9,15 +9,19 @@ struct CommandConsoleRef: Equatable {
 
 /// The command a `CommandConsoleRef` points to, read again as the agent streams its output: the timeline changes only
 /// through `WorkspaceManager.timelines`, so this view observes it and the workbench around it does not redraw.
+/// It stays on that command when the agent starts the next one, so you can read its output; the bar offers the newer one.
 struct LiveCommandConsole: View {
     @ObservedObject var timelines: TimelineChanges
     let workspace: WorkspaceManager
     let console: CommandConsoleRef
+    let show: (UUID) -> Void
     let close: () -> Void
 
     var body: some View {
-        if let event = workspace.timeline(console.run).first(where: { $0.id == console.event }) {
-            CommandConsolePanel(event: event, close: close)
+        let timeline = workspace.timeline(console.run)
+        if let event = timeline.first(where: { $0.id == console.event }) {
+            let newer = CommandConsole.running(timeline).flatMap { $0.id == console.event ? nil : $0.id }
+            CommandConsolePanel(event: event, showNewer: newer.map { id in { show(id) } }, close: close)
         } else {
             // The session no longer has the command: back to your own shells.
             Color.clear.onAppear(perform: close)
@@ -27,8 +31,11 @@ struct LiveCommandConsole: View {
 
 /// A command the agent runs, in the Terminal tab of the session's side panel: the command and its output as it comes
 /// in, as you would see it in a shell. Opens from the live "Running a command" line; closing it shows your own shells.
+/// A newer command does not replace it by itself: the bar offers it (`showNewer`).
 struct CommandConsolePanel: View {
     let event: RunEvent
+    /// Goes to the command the agent runs now, when that is another one than this.
+    var showNewer: (() -> Void)? = nil
     let close: () -> Void
     @State private var copied = false
 
@@ -82,6 +89,10 @@ struct CommandConsolePanel: View {
         SidePanelToolbar {
             status
             Spacer(minLength: NookTheme.Spacing.md)
+            if let showNewer {
+                SmallGhostButton(title: tr("ws.console.newer"), action: showNewer)
+                    .help(tr("ws.console.newer.help"))
+            }
             ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", tr("ws.console.copy")) {
                 Pasteboard.copy("$ " + command + (output.isEmpty ? "" : "\n" + output))
                 copied = true

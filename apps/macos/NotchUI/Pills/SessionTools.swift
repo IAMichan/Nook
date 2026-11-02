@@ -320,8 +320,7 @@ struct SessionWorkbench<Conversation: View>: View {
                     .environment(\.sessionPanelDocked, docked)
                     // A diff or file the conversation opens takes the right side from the tool panel.
                     .environment(\.sessionSide, SessionSideLink(shownFile: filePreview, showFile: showFile, openDiff: openDiff,
-                                                                 shownConsole: consoleShown ? consoleEventID : nil,
-                                                                 showConsole: { consoleEventID = $0 }, toggleConsole: toggleConsole))
+                                                                 toggleConsole: toggleConsole))
                     .onPreferenceChange(SessionOutputsReport.self) { outputs = $0 }
                     .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     // A page this session's agent opened: small in the chat's bottom right corner, above the composer,
@@ -572,6 +571,7 @@ struct SessionWorkbench<Conversation: View>: View {
                              if slot.tool == \NotchViewModel.sessionTool { viewModel.closeSidePanel() } else { viewModel.bottomTool = .conversation }
                          },
                          console: runID.flatMap { run in consoleEventID.map { CommandConsoleRef(run: run, event: $0) } },
+                         showConsole: { id in withAnimation(NookTheme.reveal) { consoleEventID = id } },
                          closeConsole: { withAnimation(NookTheme.reveal) { consoleEventID = nil } })
             .environment(\.sidePanelTakesFocus, panelTakesFocus)
     }
@@ -709,6 +709,8 @@ private struct SessionToolPanel: View {
     let close: () -> Void
     /// A command the agent runs, opened from the conversation: the Terminal tab shows it in place of your shells.
     var console: CommandConsoleRef? = nil
+    /// Shows another command of the agent in the Terminal tab: the one it runs now, when you ask for it.
+    var showConsole: (UUID) -> Void = { _ in }
     var closeConsole: () -> Void = {}
     @EnvironmentObject private var workspace: WorkspaceManager
     @ObservedObject private var bridge = WorkspaceBridge.shared
@@ -729,7 +731,7 @@ private struct SessionToolPanel: View {
                 case .terminal:
                     if let console {
                         LiveCommandConsole(timelines: workspace.timelines, workspace: workspace, console: console,
-                                           close: closeConsole)
+                                           show: showConsole, close: closeConsole)
                     } else {
                         SessionTerminalsView(directory: directory).id(directory)
                     }
