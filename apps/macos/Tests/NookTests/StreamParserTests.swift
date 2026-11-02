@@ -188,3 +188,44 @@ final class CodexStreamParserTests: XCTestCase {
         XCTAssertEqual(CodexStreamParser.parse(#"{"type":"error","message":"stream error"}"#), [.failed("stream error")])
     }
 }
+
+final class ConnectorSignInTests: XCTestCase {
+    func testClaudeInitListsConnectorsThatNeedSignIn() {
+        let line = #"{"type":"system","subtype":"init","session_id":"abc","model":"m","mcp_servers":[{"name":"claude.ai Supabase","status":"needs-auth"},{"name":"nook","status":"connected"},{"name":"plugin:design:linear","status":"needs-auth"}]}"#
+        XCTAssertEqual(ClaudeStreamParser.parse(line), [.initialized(sessionID: "abc", model: "m"),
+                                                       .connectorsNeedingSignIn(["claude.ai Supabase", "plugin:design:linear"])])
+    }
+
+    func testClaudeControlReplies() {
+        let success = #"{"type":"control_response","response":{"subtype":"success","request_id":"nook-mcp-1","response":{"authUrl":"https://claude.ai/x","callbackExpected":false}}}"#
+        XCTAssertEqual(ClaudeStreamParser.parse(success),
+                       [.controlReply(requestID: "nook-mcp-1", response: JSONBox(["authUrl": "https://claude.ai/x", "callbackExpected": false]), error: nil)])
+        let failure = #"{"type":"control_response","response":{"subtype":"error","request_id":"nook-mcp-2","error":"Server not found: x"}}"#
+        XCTAssertEqual(ClaudeStreamParser.parse(failure), [.controlReply(requestID: "nook-mcp-2", response: nil, error: "Server not found: x")])
+    }
+
+    func testClaudeRequests() {
+        XCTAssertEqual(ClaudeStreamParser.mcpAuthenticateRequest(id: "r", server: "claude.ai Supabase"),
+                       #"{"request":{"serverName":"claude.ai Supabase","subtype":"mcp_authenticate"},"request_id":"r","type":"control_request"}"# + "\n")
+        XCTAssertTrue(ClaudeStreamParser.mcpStatusRequest(id: "s").contains(#""subtype":"mcp_status""#))
+        XCTAssertTrue(ClaudeStreamParser.mcpReconnectRequest(id: "t", server: "x").contains(#""subtype":"mcp_reconnect""#))
+    }
+
+    func testCodexStatusList() {
+        let response: [String: Any] = ["data": [["name": "linear", "authStatus": "notLoggedIn"], ["name": "github", "authStatus": "oAuth"],
+                                                ["name": "local", "authStatus": "unsupported"]]]
+        XCTAssertEqual(ConnectorSignIns.codex(response), ["linear"])
+    }
+
+    func testMergeKeepsWaitingAndSortsByTitle() {
+        let current = [ConnectorSignIn(name: "claude.ai Supabase", waiting: true)]
+        let merged = ConnectorSignIns.merged(["plugin:design:linear", "claude.ai Supabase", "claude.ai Asana", "plugin:design:linear"], into: current)
+        XCTAssertEqual(merged.map(\.title), ["Asana", "linear", "Supabase"])
+        XCTAssertEqual(merged.filter(\.waiting).map(\.name), ["claude.ai Supabase"])
+    }
+
+    func testDismissedOnesHideUnlessWaiting() {
+        let all = [ConnectorSignIn(name: "a"), ConnectorSignIn(name: "b", waiting: true), ConnectorSignIn(name: "c")]
+        XCTAssertEqual(ConnectorSignIns.shown(all, dismissed: ["a", "b"]).map(\.name), ["b", "c"])
+    }
+}

@@ -322,6 +322,17 @@ struct AgentRunPanel: View {
                 Button(tr("ws.prwatch.start")) { workspace.watchPullRequest(runID, url: watchable) }
                     .disabled(watchable == nil)
             }
+            // Connectors the agent cannot use until you sign in, also the ones you hid above the composer.
+            if let connectors = workspace.connectorSignIns[runID], !connectors.isEmpty {
+                Menu(tr("ws.connector.menu")) {
+                    ForEach(connectors) { connector in
+                        Button(connector.waiting ? tr("ws.connector.waiting", connector.title) : tr("ws.connector.signInTo", connector.title)) {
+                            workspace.signInConnector(runID, name: connector.name)
+                        }
+                        .disabled(connector.waiting)
+                    }
+                }
+            }
             // Kept local: copy it, or save it where you want.
             Button(tr("ws.export.copy")) {
                 Pasteboard.copy(SessionExport.markdown(run, events: workspace.timeline(runID)))
@@ -1119,6 +1130,7 @@ struct AgentRunPanel: View {
         let steers = primary == .steer
         return VStack(alignment: .leading, spacing: 5) {
             UsageLimitBanner(run: run)
+            ConnectorSignInBanner(runID: runID)
             // The subagents the agent started since your message (also those still at work in the background after its
             // turn), and its task list.
             let subagents = derived.subagents
