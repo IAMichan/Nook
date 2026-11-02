@@ -126,4 +126,11 @@ final class SlackActionsTests: XCTestCase {
         XCTAssertEqual(SlackData.unread(messages, lastRead: "1700000010.000100"), 1, "the read one and yours are not unread")
         XCTAssertEqual(SlackData.unread(messages, lastRead: "1700000030.000000"), 0)
     }
+
+    /// A pasted token reads where you stand from `conversations.info`.
+    func testReadMarkFromConversationInfo() {
+        XCTAssertEqual(SlackData.readMark(info: ["ok": true, "channel": ["id": "D1", "last_read": "1700000010.000100"]]), "1700000010.000100")
+        XCTAssertNil(SlackData.readMark(info: ["ok": true, "channel": ["id": "D1"]]))
+        XCTAssertNil(SlackData.readMark(info: ["ok": false, "error": "missing_scope"]))
+    }
 }

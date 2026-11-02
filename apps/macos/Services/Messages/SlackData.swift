@@ -192,6 +192,12 @@ enum SlackData {
         return marks
     }
 
+    /// The newest message you read in one conversation (`last_read`), from `conversations.info`; nil without it.
+    static func readMark(info json: [String: Any]) -> String? {
+        guard let read = (json["channel"] as? [String: Any])?["last_read"] as? String, Double(read) != nil else { return nil }
+        return read
+    }
+
     /// How many messages of others came after `lastRead` (a `ts`) among `messages` (`ts`, whether yours).
     static func unread(_ messages: [(ts: Double, mine: Bool)], lastRead: String) -> Int {
         // Half a microsecond of slack: a `ts` that went through `Date` comes back a hair off.

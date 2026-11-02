@@ -1394,7 +1394,7 @@ enum WAWebhook {
     /// `{"event":"message","device_id":"<own JID>","payload":{id, chat_id, from, from_name,
     /// sender_display_name, timestamp (RFC3339), is_from_me, body, image|video|audio|document|…}}`
     private static func parseGOWA(_ json: [String: Any], me: String?) -> WAWebhookEvent {
-        if json["event"] as? String == "message.ack" { return parseGOWAReceipt(json) }
+        if json["event"] as? String == "message.ack" { return parseGOWAReceipt(json, me: me ?? (json["device_id"] as? String)) }
         if json["event"] as? String == "message.reaction" { return parseGOWAReaction(json) }
         if json["event"] as? String == "chat_presence" { return parseGOWAPresence(json) }
         guard json["event"] as? String == "message",
@@ -1462,20 +1462,24 @@ enum WAWebhook {
 
     /// `{"event":"message.ack","payload":{ids, chat_id, from, sender_id, receipt_type: "delivered"|"read"|"played"|…}}`.
     /// A group sends one per member (`sender_id`, or `from` as "<member> in <group>"), while WhatsApp's own ticks wait
-    /// for every member: each one moves that member only. The `-self` receipts are your own phone reading incoming
-    /// messages, which have no ticks: the chat is read.
-    private static func parseGOWAReceipt(_ json: [String: Any]) -> WAWebhookEvent {
+    /// for every member: each one moves that member only. Your own reads of incoming messages on another device (the
+    /// phone, WhatsApp on this Mac, WhatsApp Web) have no ticks: the chat is read. They come as `read-self` while your
+    /// read receipts are off, and as a `read` from yourself (`from` is your own number) while they are on.
+    private static func parseGOWAReceipt(_ json: [String: Any], me: String?) -> WAWebhookEvent {
         guard let p = json["payload"] as? [String: Any],
               let chat = p["chat_id"] as? String, !chat.isEmpty,
               let type = p["receipt_type"] as? String else { return .ignored }
         if type == "read-self" || type == "played-self" { return .readElsewhere(chat: chat) }
+        let from = nonEmpty(p["from"]).map { from in
+            from.range(of: " in ").map { String(from[..<$0.lowerBound]) } ?? from
+        }
+        if type == "read" || type == "played", let me, let from, WAJID.sameUser(from, me), !WAJID.sameUser(chat, me) {
+            return .readElsewhere(chat: chat)
+        }
         guard !type.hasSuffix("-self"),
               let ids = (p["ids"] as? [String])?.filter({ !$0.isEmpty }), !ids.isEmpty,
               let status = WAReceipt(status: type), status >= .delivered else { return .ignored }
         guard WAJID.isGroup(chat) else { return .receipt(ids: ids, chat: chat, status: status) }
-        let from = nonEmpty(p["from"]).map { from in
-            from.range(of: " in ").map { String(from[..<$0.lowerBound]) } ?? from
-        }
         guard let member = nonEmpty(p["sender_id"]) ?? from, member != chat, !WAJID.isGroup(member) else { return .ignored }
         return .memberReceipt(ids: ids, chat: chat, member: member, status: status)
     }
