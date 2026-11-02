@@ -49,10 +49,17 @@ struct UsageView: View {
         }
     }
 
-    /// One account: logo, agent and account name, then each limit it reports, lined up under the name.
+    /// One account: logo, agent and account name, then each limit it reports, lined up under the name. Read again every
+    /// minute, so reset times count down and a window that has reset reads as idle.
     private func accountRow(_ profile: AgentProfile) -> some View {
+        TimelineView(.nookTicks(every: 60)) { context in
+            accountRow(profile, now: context.date)
+        }
+    }
+
+    private func accountRow(_ profile: AgentProfile, now: Date) -> some View {
         let limits = app.quota.limits(for: profile)
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             HStack(spacing: NookTheme.Spacing.lg) {
                 AgentLogo(profile.kind, size: 22)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -71,7 +78,7 @@ struct UsageView: View {
                         .foregroundStyle(NookTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                         ForEach(QuotaLimit.grouped(limits), id: \.name) { group in
                             // Antigravity's groups ("Gemini", "Claude & GPT") each read like Claude's windows, under their name.
                             if !group.name.isEmpty, group.limits.allSatisfy({ $0.duration != nil }) {
@@ -80,11 +87,11 @@ struct UsageView: View {
                                     .foregroundStyle(NookTheme.textSecondary)
                                     .lineLimit(1)
                                 ForEach(group.limits) { limit in
-                                    limitRow(limit, title: limit.window, accent: profile.kind.color)
+                                    limitRow(limit, title: limit.window, accent: profile.kind.color, now: now)
                                 }
                             } else {
                                 ForEach(group.limits) { limit in
-                                    limitRow(limit, title: limit.label, accent: profile.kind.color)
+                                    limitRow(limit, title: limit.label, accent: profile.kind.color, now: now)
                                 }
                             }
                         }
@@ -97,8 +104,9 @@ struct UsageView: View {
     }
 
 
-    private func limitRow(_ limit: QuotaLimit, title: String, accent: Color) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+    private func limitRow(_ limit: QuotaLimit, title: String, accent: Color, now: Date) -> some View {
+        let pace = limit.elapsed(at: now)
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
                 Text(title)
                     .font(NookTheme.TextStyle.body)
@@ -109,16 +117,13 @@ struct UsageView: View {
                         .foregroundStyle(NookTheme.textSecondary)
                         .lineLimit(1)
                 }
-                Spacer(minLength: 6)
+                Spacer(minLength: NookTheme.Spacing.sm)
                 Text("\(Int(limit.percent.rounded()))%")
                     .font(NookTheme.TextStyle.strong.monospacedDigit())
                     .foregroundStyle(UsageTone.text(limit.percent))
             }
-            TimelineView(.nookTicks(every: 60)) { context in
-                let pace = limit.elapsed(at: context.date)
-                UsageBar(fraction: limit.percent / 100, color: UsageTone.fill(limit.percent, accent: accent), pace: pace)
-                    .help(pace.map { tr("agents.usage.pace", Int(($0 * 100).rounded())) } ?? "")
-            }
+            UsageBar(fraction: limit.percent / 100, color: UsageTone.fill(limit.percent, accent: accent), pace: pace)
+                .help(pace.map { tr("agents.usage.pace", Int(($0 * 100).rounded())) } ?? "")
         }
     }
 

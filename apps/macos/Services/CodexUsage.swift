@@ -130,20 +130,31 @@ final class CodexUsage: ObservableObject {
     }
 
     /// Reads every account right away, instead of waiting for the next minute tick: after adding, logging in or changing an account.
-    func refreshNow() {
-        refresh()
+    /// With `maxAge`, the app-server is asked again once its last answer is older than that (a usage view on screen, the
+    /// refresh button), instead of only every ten minutes: without a running session nothing else would change the numbers.
+    func refreshNow(maxAge: TimeInterval? = nil) {
+        refresh(maxAge: maxAge)
     }
 
-    private func refresh() {
+    /// The refresh button: asks every account now (unless it answered seconds ago) and returns once the answers are in.
+    func refreshManually() async {
+        refresh(maxAge: Self.manualInterval)
+        while states.values.contains(where: \.busy) { try? await Task.sleep(nanoseconds: 200_000_000) }
+    }
+
+    /// The refresh button asks again at most this often per account, however often it is clicked.
+    private nonisolated static let manualInterval: TimeInterval = 10
+
+    private func refresh(maxAge: TimeInterval? = nil) {
         var wanted: [URL] = []
         var seen = Set<String>()
         for home in homes() + [Self.codexHome] where seen.insert(home.path).inserted { wanted.append(home) }
         // Accounts that are gone no longer show limits.
         for key in snapshots.keys where !seen.contains(key) { snapshots[key] = nil }
-        for home in wanted { refresh(home) }
+        for home in wanted { refresh(home, maxAge: maxAge) }
     }
 
-    private func refresh(_ home: URL) {
+    private func refresh(_ home: URL, maxAge: TimeInterval?) {
         let key = home.path
         var state = states[key] ?? HomeState()
         guard !state.busy else { return }
@@ -164,7 +175,8 @@ final class CodexUsage: ObservableObject {
                 previousSessionDate: previousSessionDate,
                 lastAppServerFetch: lastFetch,
                 hasSnapshot: hasSnapshot,
-                slowdown: slowdown
+                slowdown: slowdown,
+                maxAge: maxAge
             )
             Task { @MainActor in
                 guard let self else { return }
@@ -202,7 +214,8 @@ final class CodexUsage: ObservableObject {
         previousSessionDate: Date?,
         lastAppServerFetch: Date?,
         hasSnapshot: Bool,
-        slowdown: Double
+        slowdown: Double,
+        maxAge: TimeInterval? = nil
     ) -> WorkResult {
         let sessions = recentSessionFiles(home: home)
         let newest = sessions.first?.date
@@ -210,7 +223,8 @@ final class CodexUsage: ObservableObject {
         var result = WorkResult(snapshot: nil, newestSessionDate: newest, askedAppServer: false)
 
         // On battery or away, `codex app-server` (a Node process each time) is started less often (`EnergyPlan.slowdown`).
-        let due = lastAppServerFetch.map { Date().timeIntervalSince($0) >= appServerInterval * slowdown } ?? true
+        // Someone looking at the limits (`maxAge`) makes it due sooner.
+        let due = lastAppServerFetch.map { Date().timeIntervalSince($0) >= maxAge ?? appServerInterval * slowdown } ?? true
         // A running session rewrites its log every minute, and each response in it carries the same limits the app-server
         // reports. Read those instead of starting a whole `codex app-server` each minute; it still runs when due.
         if hasSnapshot, sessionChanged, !due, let latest = sessions.first,
@@ -220,7 +234,7 @@ final class CodexUsage: ObservableObject {
         }
         // Without any limits yet (Codex installed but not signed in, or an app-server that does not answer) a new try every
         // ten minutes, not on every one-minute tick: each one starts `codex app-server` and can wait 15 seconds for it.
-        let retryDue = lastAppServerFetch.map { Date().timeIntervalSince($0) >= appServerRetryInterval * slowdown } ?? true
+        let retryDue = lastAppServerFetch.map { Date().timeIntervalSince($0) >= maxAge ?? appServerRetryInterval * slowdown } ?? true
         if let codex = codexExecutable() {
             if hasSnapshot ? (sessionChanged || due) : retryDue {
                 result.askedAppServer = true
