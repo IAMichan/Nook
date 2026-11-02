@@ -16,13 +16,13 @@ In **Settings › Agents**, you can connect these agents with one click. Nook pr
 | Gemini CLI | `~/.gemini/settings.json` | hooks, `--agent gemini` | progress |
 | Antigravity (`agy`) | `~/.gemini/config/hooks.json` | dedicated `nook` group, `--agent antigravity`, space-free path via `~/.nook/nook-hook`, no `PreToolUse` | progress |
 | Cursor | `~/.cursor/hooks.json` | hooks, `--agent cursor` | progress |
-| Copilot CLI | `~/.copilot/hooks/nook.json` | dedicated file, `--agent copilot` | progress |
-| Muse Code | `~/.config/muse/settings.json` | hooks, `--agent muse` | progress |
-| OpenCode | `~/.config/opencode/plugins/nook.js` | plugin | progress |
+| Copilot CLI | `~/.copilot/hooks/nook.json` | dedicated file, `--agent copilot`, `preToolUse` waits (`--wait`) | progress, approvals (where Copilot would ask) |
+| Muse Code | `~/.config/muse/settings.json` | hooks, `--agent muse`, `PermissionRequest` waits | progress, approvals |
+| OpenCode | `~/.config/opencode/plugins/nook.js` | plugin | progress, approvals (`permission.asked`) |
 | Amp | `~/.config/amp/plugins/nook.ts` | plugin | progress |
-| Hermes | `~/.hermes/plugins/nook/` | plugin, then `hermes plugins enable nook` | progress, "waiting for approval" |
+| Hermes | `~/.hermes/plugins/nook/` | plugin, then `hermes plugins enable nook`; for approvals `security.approval.transport: nook` (and `transport_fallback: builtin`) in `~/.hermes/config.yaml` | progress, approvals |
 
-Restart the agent after connecting. Inline tool approvals from the notch are supported for Claude Code and Codex; for other hook-based agents, Nook never blocks execution and the agent prompts you in its own UI as usual.
+Restart the agent after connecting. Approvals from the notch work for Claude Code, Codex, Copilot CLI, Muse Code, OpenCode and Hermes, and for the Claude app's own computer-use prompt (Nook presses its button). Gemini CLI, Antigravity, Cursor and Amp give a hook no way to allow a call, so for those Nook never blocks and the agent asks you in its own UI; in sessions Nook runs itself every agent asks in Nook. Without an answer in Nook, every agent falls back to its own prompt. An agent connected with an older Nook shows **Update** in Settings › Agents.
 
 ## Supervising & Controlling Agents
 

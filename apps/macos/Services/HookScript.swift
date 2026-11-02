@@ -6,11 +6,11 @@ import AppKit
 /// If Nook is not running or takes too long, it exits cleanly and the agent continues uninterrupted.
 enum HookScript {
     /// Incremented when the script changes; Nook rewrites it on launch when needed.
-    static let version = 4
+    static let version = 5
 
     static let contents = #"""
     #!/usr/bin/perl
-    # Nook hook (version 4): delivers an agent event to Nook locally via Unix domain socket.
+    # Nook hook (version 5): delivers an agent event to Nook locally via Unix domain socket.
     # If Nook is not running or times out, this script exits cleanly: the agent proceeds normally.
     #   --agent <name>   identifies sender (claude-code, codex, gemini, cursor, copilot, …)
     #                    Without --agent, "nook_agent" JSON field is used (a-z, 0-9, - and _, max 32 chars).
@@ -120,19 +120,25 @@ enum HookScript {
         exit 0;
     }
 
-    # Copilot CLI requires valid JSON for decisions. If unanswered from notch, defaults to interactive prompt ("ask").
+    # Copilot CLI's preToolUse reads {"permissionDecision": ...}. Without an answer from Nook it gets {}: Copilot goes on
+    # as it would without Nook (its own rules, its own prompt), never a forced prompt for a call it would have allowed.
     sub copilot_decision {
         my ($out) = @_;
+        my $behavior = nook_behavior($out);
+        return '{"permissionDecision":"allow","permissionDecisionReason":"Approved via Nook"}' if $behavior eq 'allow';
+        return '{"permissionDecision":"deny","permissionDecisionReason":"Denied via Nook"}' if $behavior eq 'deny';
+        return '{}';
+    }
+
+    # Nook's answer, whichever shape it has (PermissionRequest or PreToolUse): "allow", "deny", or "" for no answer.
+    sub nook_behavior {
+        my ($out) = @_;
         my $answer = eval { decode_json($out) };
-        my $behavior = '';
-        if (ref($answer) eq 'HASH' && ref($answer->{hookSpecificOutput}) eq 'HASH'
-            && ref($answer->{hookSpecificOutput}{decision}) eq 'HASH') {
-            my $value = first_text($answer->{hookSpecificOutput}{decision}{behavior});
-            $behavior = $value if defined $value;
-        }
-        return '{"permissionDecision":"allow"}' if $behavior eq 'allow';
-        return '{"permissionDecision":"deny"}' if $behavior eq 'deny';
-        return '{"permissionDecision":"ask"}';
+        return '' unless ref($answer) eq 'HASH' && ref($answer->{hookSpecificOutput}) eq 'HASH';
+        my $specific = $answer->{hookSpecificOutput};
+        my $value = ref($specific->{decision}) eq 'HASH' ? first_text($specific->{decision}{behavior})
+                                                         : first_text($specific->{permissionDecision});
+        return defined $value && ($value eq 'allow' || $value eq 'deny') ? $value : '';
     }
 
     # Normalize fields from other agents (Copilot, Cursor, Antigravity, Gemini) into Nook's canonical schema
