@@ -40,4 +40,25 @@ final class WorktreeOriginTests: XCTestCase {
 
         XCTAssertEqual(WorktreeOrigin.checkoutPath(of: worktree.path), worktree.path)
     }
+
+    func testNewSessionFolderIsAlwaysOneThatExists() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("worktree-origin-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let main = root.appendingPathComponent("shop")
+        let other = root.appendingPathComponent("elsewhere/shop")
+        try FileManager.default.createDirectory(at: main.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        let removedClaude = main.appendingPathComponent(".claude/worktrees/fix-cart").path
+        let removedNook = root.appendingPathComponent("worktrees/shop/fix-cart").path
+
+        // A folder that still exists wins, also after a removed worktree.
+        XCTAssertEqual(WorktreeOrigin.newSessionFolder(project: "shop", paths: [removedNook, main.path], known: []), main.path)
+        // A removed agent worktree inside the repository leads back to it.
+        XCTAssertEqual(WorktreeOrigin.newSessionFolder(project: "shop", paths: [removedClaude], known: []),
+                       main.standardizedFileURL.path)
+        // A removed worktree elsewhere falls back to a folder you opened before with the project's name.
+        XCTAssertEqual(WorktreeOrigin.newSessionFolder(project: "shop", paths: [removedNook], known: ["/nope/shop", other.path]),
+                       other.path)
+        XCTAssertNil(WorktreeOrigin.newSessionFolder(project: "shop", paths: [removedNook], known: ["/nope/shop"]))
+    }
 }
