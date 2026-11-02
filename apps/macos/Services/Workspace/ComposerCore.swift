@@ -327,6 +327,64 @@ enum ContextRefs {
     }
 }
 
+// MARK: Attached files
+
+/// Files at the end of a draft are shown as tiles above the box (like pictures) instead of as links in the text. The draft
+/// keeps them as links, so sending, saving and restoring a draft work as before; the box only shows and edits `body`.
+enum ComposerAttachments {
+    struct Split: Equatable {
+        /// What the box shows: the draft up to the first attached file, whitespace before it included.
+        var body: String
+        /// The attached files, in order.
+        var files: [ContextRefs.Found]
+        /// The rest of the draft: the links and the whitespace between them. `body + tail` is the draft.
+        var tail: String
+    }
+
+    static func isAttachable(_ kind: ContextRef.Kind) -> Bool { kind == .file || kind == .paste }
+
+    /// The draft split into the words you typed and the run of file links that ends it.
+    static func split(_ text: String) -> Split {
+        var start = text.endIndex
+        var files: [ContextRefs.Found] = []
+        for item in ContextRefs.find(in: text).reversed() {
+            var end = start
+            while end > text.startIndex, text[text.index(before: end)].isWhitespace { end = text.index(before: end) }
+            guard isAttachable(item.kind), item.range.upperBound == end else { break }
+            start = item.range.lowerBound
+            files.insert(item, at: 0)
+        }
+        guard !files.isEmpty else { return Split(body: text, files: [], tail: "") }
+        return Split(body: String(text[..<start]), files: files, tail: String(text[start...]))
+    }
+
+    /// The draft after the box changed its words: the attached files stay at the end.
+    static func replacingBody(of text: String, with body: String) -> String {
+        body + split(text).tail
+    }
+
+    /// The draft with one more file at the end.
+    static func appending(_ ref: ContextRef, to text: String) -> String {
+        text + (text.isEmpty || text.last?.isWhitespace == true ? "" : " ") + ContextRefs.link(ref) + " "
+    }
+
+    /// The draft without the attached file at `index`.
+    static func removing(at index: Int, from text: String) -> String {
+        let parts = split(text)
+        guard parts.files.indices.contains(index) else { return text }
+        let kept = parts.files.enumerated().filter { $0.offset != index }.map { String(text[$0.element.range]) }
+        return parts.body + kept.map { $0 + " " }.joined()
+    }
+
+    /// What goes out: the attached files on their own line under the words, so their markers never stick to a word.
+    static func spaced(_ text: String) -> String {
+        let parts = split(text)
+        let body = parts.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !parts.files.isEmpty, !body.isEmpty else { return text }
+        return body + "\n\n" + parts.tail.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 // MARK: File search
 
 /// Files under a folder for the `@` list: a path match, best first, without build output and hidden folders.

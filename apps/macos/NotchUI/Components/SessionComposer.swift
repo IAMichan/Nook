@@ -194,10 +194,18 @@ struct SessionComposer<Controls: View>: View {
         text = value
     }
 
+    /// The words in the box; files attached at the end of the draft show as tiles above it (see `ComposerAttachments`).
+    private var typedText: String { ComposerAttachments.split(text).body }
+
+    private var bodyBinding: Binding<String> {
+        Binding(get: { ComposerAttachments.split(text).body },
+                set: { text = ComposerAttachments.replacingBody(of: text, with: $0) })
+    }
+
     private func choose(_ suggestion: ComposerSuggestion) {
         guard let extras else { return }
-        let value = extras.model.accept(suggestion, in: text, extras.config)
-        assign(value)
+        let value = extras.model.accept(suggestion, in: typedText, extras.config)
+        assign(ComposerAttachments.replacingBody(of: text, with: value))
         // A line that fills the box can lead to a list of its own ("@chat " lists the chats): show it straight away.
         if case .command(let command) = suggestion.payload, command.action == .insert {
             extras.model.update(for: value, extras.config)
@@ -205,9 +213,11 @@ struct SessionComposer<Controls: View>: View {
         (focus ?? $ownFocus).wrappedValue = true
     }
 
-    private func textChanged(_ old: String, _ new: String) {
-        NookPresence.shared.typed(count: new.count)
+    private func textChanged(_ oldText: String, _ newText: String) {
+        NookPresence.shared.typed(count: newText.count)
         guard let extras else { return }
+        // The list, list items and big pastes look at the words in the box, not at the files attached after them.
+        let old = ComposerAttachments.split(oldText).body, new = ComposerAttachments.split(newText).body
         if extras.model.applying {
             extras.model.applying = false
             return
@@ -215,11 +225,11 @@ struct SessionComposer<Controls: View>: View {
         extras.model.history.stopWalking()
         // A line break after a list item starts the next item (or ends the list after an empty one).
         if let continued = ComposerLists.continued(old: old, new: new) {
-            assign(continued)
+            assign(ComposerAttachments.replacingBody(of: newText, with: continued))
             return
         }
         if extras.config.keepsBigPastes, let kept = extras.model.keepPaste(old: old, new: new) {
-            assign(kept)
+            assign(ComposerAttachments.replacingBody(of: newText, with: kept))
             extras.model.close()
             return
         }
@@ -235,7 +245,7 @@ struct SessionComposer<Controls: View>: View {
             return .handled
         }
         if delta < 0 {
-            guard walkAnywhere || ComposerKeys.arrowWalksHistory(text: text, walking: extras.model.history.isWalking),
+            guard walkAnywhere || ComposerKeys.arrowWalksHistory(text: typedText, walking: extras.model.history.isWalking),
                   let previous = extras.model.history.previous(current: text) else { return .ignored }
             assign(previous)
             return .handled
@@ -323,13 +333,13 @@ struct SessionComposer<Controls: View>: View {
     // a narrow column and under the tab beside it in split view. Drawn behind the field it wraps within the box instead
     // (as `ChatReplyField` does).
     private func field(focused: FocusState<Bool>.Binding) -> some View {
-        TextField("", text: $text, axis: .vertical)
+        TextField("", text: bodyBinding, axis: .vertical)
             .textFieldStyle(.plain)
             .font(NookTheme.TextStyle.body)
             .foregroundStyle(NookTheme.paper)
             .lineLimit(lines)
             .background(alignment: .topLeading) {
-                if text.isEmpty {
+                if typedText.isEmpty {
                     Text(prompt)
                         .font(NookTheme.TextStyle.body)
                         .foregroundStyle(NookTheme.textTertiary)
@@ -365,9 +375,13 @@ struct SessionComposer<Controls: View>: View {
     private var box: some View {
         let focused = focus ?? $ownFocus
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            if let imagesBinding, !imagesBinding.wrappedValue.isEmpty {
-                ImageAttachmentStrip(images: imagesBinding.wrappedValue) { gone in
-                    imagesBinding.wrappedValue.removeAll { $0.id == gone.id }
+            let images = imagesBinding?.wrappedValue ?? []
+            let files = ComposerAttachments.split(text).files
+            if !images.isEmpty || !files.isEmpty {
+                ImageAttachmentStrip(images: images, files: files, fileRoot: extras?.config.fileRoot) { gone in
+                    imagesBinding?.wrappedValue.removeAll { $0.id == gone.id }
+                } removeFile: { index in
+                    text = ComposerAttachments.removing(at: index, from: text)
                 }
             }
             if choicesBelow {
@@ -411,7 +425,7 @@ struct SessionComposer<Controls: View>: View {
         .onDrop(of: imagesBinding == nil ? [] : [UTType.fileURL, UTType.image], isTargeted: $dropTargeted) { providers in
             guard let imagesBinding else { return false }
             return ImageAttachment.receive(providers, images: { imagesBinding.wrappedValue += $0 }, file: { url in
-                if let fileDropped { fileDropped(url) } else { insertPath(url) }
+                if let fileDropped { fileDropped(url) } else if extras != nil { attach(url) } else { insertPath(url) }
             })
         }
         .onAppear { startPasteMonitor(focused: focused) }
@@ -488,6 +502,14 @@ struct SessionComposer<Controls: View>: View {
             text = typed
             imagesBinding.wrappedValue = pictures
         }
+    }
+
+    /// A file dropped on a composer for an agent: a tile above the box, a reference the agent reads itself.
+    private func attach(_ url: URL) {
+        let path = url.standardizedFileURL.path
+        let base = extras?.config.fileRoot.map { URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL.path }
+        let id = base.flatMap { path.hasPrefix($0 + "/") ? String(path.dropFirst($0.count + 1)) : nil } ?? path
+        text = ComposerAttachments.appending(ContextRef(kind: .file, id: id, label: url.lastPathComponent), to: text)
     }
 
     private func insertPath(_ url: URL) {
