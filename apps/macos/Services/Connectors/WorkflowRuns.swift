@@ -31,6 +31,8 @@ struct WorkflowRun: Identifiable, Equatable, Sendable {
     var started: Date? = nil
     var updated: Date? = nil
     let url: URL?
+    /// The workflow file it ran from (".github/workflows/ci.yml"); empty when GitHub gave none.
+    var path = ""
 
     var isCompleted: Bool { status == "completed" }
     var running: Bool { status == "in_progress" }
@@ -81,6 +83,24 @@ struct WorkflowJob: Identifiable, Equatable, Sendable {
                                 isCheckRun: true, running: status == "in_progress", started: started,
                                 finished: status == "completed" ? completed : nil)
     }
+}
+
+/// Why a finished run has no jobs. GitHub keeps no log and no annotation for a run that never started a job (its log
+/// archive is empty), so the run view says what it can read from the run and its neighbours instead.
+enum WorkflowRunNoJobs: Equatable, Sendable {
+    /// Cancelled before a job started because a newer run of the same workflow on the same branch took its place (the
+    /// workflow's `concurrency` group).
+    case replaced(id: Int, number: Int, url: URL?)
+    /// Cancelled before a job started, by someone or by another workflow.
+    case cancelled
+    /// GitHub could not start the workflow, nearly always an error in its file.
+    case workflowError(path: String, file: URL?)
+    /// Every job was skipped by its condition.
+    case skipped
+    /// It waits for someone to approve it.
+    case approval
+    /// Finished without jobs and without a reason GitHub gives.
+    case empty
 }
 
 /// What the Actions page can do to a run, each one GitHub call after your click.
@@ -180,7 +200,55 @@ enum WorkflowRunParser {
                                created: PullRequestDetailParser.date(item["created_at"]),
                                started: PullRequestDetailParser.date(item["run_started_at"]),
                                updated: PullRequestDetailParser.date(item["updated_at"]),
-                               url: (item["html_url"] as? String).flatMap(URL.init(string:)))
+                               url: (item["html_url"] as? String).flatMap(URL.init(string:)),
+                               path: (item["path"] as? String) ?? "")
+        }
+    }
+
+    /// The latest runs of one workflow on one branch: the neighbours of a run cancelled before its first job.
+    static func branchRunsPath(workflowID: Int, branch: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~/"))
+        let encoded = branch.addingPercentEncoding(withAllowedCharacters: allowed) ?? branch
+        return "/actions/workflows/\(workflowID)/runs?branch=\(encoded)&per_page=30"
+    }
+
+    /// How long after a run was cancelled its replacement may have been created: GitHub cancels the older run within a
+    /// few seconds of queueing the newer one.
+    static let replacementWindow: TimeInterval = 10
+
+    /// The run that took `run`'s place: the first newer run of the same workflow on the same branch created before (or
+    /// just after) `run` was cancelled.
+    static func replacement(of run: WorkflowRun, in others: [WorkflowRun]) -> WorkflowRun? {
+        guard let cancelled = run.finished else { return nil }
+        let latest = cancelled.addingTimeInterval(replacementWindow)
+        return others
+            .filter { $0.id != run.id && $0.workflowID == run.workflowID && $0.branch == run.branch && $0.number > run.number }
+            .filter { ($0.created ?? .distantFuture) <= latest }
+            .min { $0.number < $1.number }
+    }
+
+    /// The workflow file at the run's commit on github.com, for a run that could not start.
+    static func workflowFile(repo: String, sha: String, path: String) -> URL? {
+        guard path.hasPrefix(".github/"), !sha.isEmpty, isRepository(repo) else { return nil }
+        // A reusable workflow's run path reads ".github/workflows/x.yml@refs/heads/main"; the file is the part before the @.
+        let file = path.split(separator: "@", maxSplits: 1).first.map(String.init) ?? path
+        return URL(string: "https://github.com/\(repo)/blob/\(sha)/\(file)")
+    }
+
+    /// Why `run` has no jobs, or nil while it still runs or when it has jobs. `others` are the latest runs of its
+    /// workflow on its branch, to find the run that replaced a cancelled one.
+    static func noJobs(repo: String, run: WorkflowRun, jobs: [WorkflowJob], others: [WorkflowRun]) -> WorkflowRunNoJobs? {
+        guard run.isCompleted, jobs.isEmpty else { return nil }
+        switch run.conclusion {
+        case "cancelled":
+            guard let newer = replacement(of: run, in: others) else { return .cancelled }
+            return .replaced(id: newer.id, number: newer.number, url: newer.url)
+        // A run fails without a single job only when GitHub could not start the workflow.
+        case "startup_failure", "failure":
+            return .workflowError(path: run.path, file: workflowFile(repo: repo, sha: run.sha, path: run.path))
+        case "skipped": return .skipped
+        case "action_required": return .approval
+        default: return .empty
         }
     }
 
