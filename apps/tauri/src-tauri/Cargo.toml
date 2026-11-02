@@ -35,7 +35,7 @@ base64 = "0.23"
 percent-encoding = "2"
 dirs.workspace = true
 reqwest.workspace = true
-fancy-regex = "0.19"
+fancy-regex = "0.20"
 url = "2"
 iana-time-zone = "0.1"
 
@@ -56,7 +56,7 @@ tauri-plugin-barcode-scanner = "2"
 keyring = { version = "3", features = ["windows-native"] }
 # Must share windows-core with the `windows` crate below: windows-collections 0.3 pairs with `windows` 0.62, while 0.100
 # is built on windows-core 0.100 and mixes up HSTRING. Move both together, not just one (cpal also pins `windows` 0.62).
-windows-collections = "0.3"
+windows-collections = "0.100"
 windows = { version = "0.62", features = [
   "Foundation",
   "Foundation_Collections",

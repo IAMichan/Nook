@@ -33,12 +33,12 @@ rand = "0.10"
 url = "2"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 percent-encoding = "2"
-fancy-regex = "0.19"
+fancy-regex = "0.20"
 unicode-normalization = "0.1"
 quick-xml = "0.42"
 pdf-extract = "0.12"
 iana-time-zone = "0.1"
-sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+sysinfo = { version = "0.40", default-features = false, features = ["system"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
