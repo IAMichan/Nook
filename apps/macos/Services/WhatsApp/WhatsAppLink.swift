@@ -514,6 +514,8 @@ final class WhatsAppLink: ObservableObject {
                     if link != .connected {
                         qrPNG = nil
                         link = .connected
+                        // Rows that came into view while the gateway was not linked yet get their line now.
+                        loadWaitingLines()
                     }
                     if webhook == .listening { await register(provider, gen: gen) }
                     if !backfilled, gen == generation { await backfill(provider, gen: gen) }
@@ -969,19 +971,33 @@ final class WhatsAppLink: ObservableObject {
     }
 
     /// A chat on the phone that wrote nothing since Nook was linked has no messages here, so its row in the Chats tab
-    /// has no line: its newest few are asked of the gateway once, when the row comes into view, one chat at a time.
+    /// has no line: its newest few are asked of the gateway when the row comes into view, one chat at a time. A row that
+    /// appears before the gateway is linked waits for it; a fetch that failed is asked again the next time the row shows.
     func loadLine(_ chat: String) {
         let key = WAJID.normalized(chat)
-        guard isConnected, inbox.conversations[key] == nil, linesAsked.insert(key).inserted else { return }
+        guard inbox.conversations[key] == nil, linesAsked.insert(key).inserted else { return }
         linesWaiting.append(key)
-        guard !linesLoading else { return }
+        loadWaitingLines()
+    }
+
+    /// Fetches the lines that wait, once the gateway is linked. The newest few can all be votes or blanks that show
+    /// nothing: then a longer stretch is asked once, so the row says what happened last.
+    private func loadWaitingLines() {
+        guard isConnected, !linesLoading, !linesWaiting.isEmpty else { return }
         linesLoading = true
         let gen = generation
         Task {
-            while gen == generation, !linesWaiting.isEmpty {
+            while gen == generation, isConnected, !linesWaiting.isEmpty {
                 let next = linesWaiting.removeFirst()
                 guard inbox.conversations[next] == nil else { continue }
-                _ = try? await fetchHistory(next, limit: Self.lineFetch)
+                for limit in [Self.lineFetch, Self.lineFetchLonger] {
+                    guard let fetched = try? await fetchHistory(next, limit: limit) else {
+                        // Asked again when its row next comes into view.
+                        linesAsked.remove(next)
+                        break
+                    }
+                    if inbox.conversations[next] != nil || fetched.gateway < limit { break }
+                }
             }
             linesLoading = false
         }
@@ -989,6 +1005,8 @@ final class WhatsAppLink: ObservableObject {
 
     /// How many messages a row's line is looked for in: a few, as the newest can be a reaction or a vote that shows nothing.
     static let lineFetch = 5
+    /// How far back a row's line is looked for when the newest few showed nothing.
+    static let lineFetchLonger = 30
 
     /// A group's members, asked of the gateway when the chat opens (again after ten minutes, for who joined or left),
     /// so its info lists them and your messages' ticks wait for all of them. True when the conversation changed.
