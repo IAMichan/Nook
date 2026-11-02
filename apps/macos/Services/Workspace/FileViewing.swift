@@ -74,3 +74,82 @@ enum FileViewing {
         return min(max(line, 1), count)
     }
 }
+
+/// A text file opened to edit in Nook's file viewer: its text with `\n` breaks, and how to write it back the way it was
+/// (its encoding, a byte order mark, Windows line breaks), so saving one changed line leaves the rest of the file alone.
+struct FileEditText: Equatable, Sendable {
+    var text: String
+    var encoding: String.Encoding = .utf8
+    var byteOrderMark = false
+    var windowsBreaks = false
+    /// When the file was last written, to notice a change on disk (an agent, another editor) before saving over it.
+    var modified: Date?
+}
+
+enum FileSaveResult: Equatable, Sendable {
+    /// Written; the file's new modification date.
+    case saved(Date?)
+    /// Someone else wrote the file after it was opened: saving would overwrite that.
+    case changedOnDisk
+    case failed(String)
+}
+
+extension FileViewing {
+    /// The text of a file to edit; nil for a file that is not text, too large, or not readable.
+    static func editable(path: String) -> FileEditText? {
+        let url = URL(fileURLWithPath: path)
+        guard let data = try? Data(contentsOf: url), data.count <= largestText else { return nil }
+        return editable(data, modified: modificationDate(path))
+    }
+
+    static func editable(_ data: Data, modified: Date? = nil) -> FileEditText? {
+        var file = FileEditText(text: "", modified: modified)
+        let text: String
+        if data.starts(with: [0xFF, 0xFE]) || data.starts(with: [0xFE, 0xFF]) {
+            guard let decoded = String(data: data, encoding: .utf16) else { return nil }
+            file.encoding = .utf16
+            text = decoded.hasPrefix("\u{FEFF}") ? String(decoded.dropFirst()) : decoded
+        } else {
+            if data.prefix(8192).contains(0) { return nil }
+            if let decoded = String(data: data, encoding: .utf8) {
+                // Foundation may drop the mark while decoding: look at the bytes.
+                file.byteOrderMark = data.starts(with: [0xEF, 0xBB, 0xBF])
+                text = decoded.hasPrefix("\u{FEFF}") ? String(decoded.dropFirst()) : decoded
+            } else if let decoded = String(data: data, encoding: .isoLatin1) {
+                file.encoding = .isoLatin1
+                text = decoded
+            } else {
+                return nil
+            }
+        }
+        file.windowsBreaks = text.contains("\r\n")
+        file.text = text.replacingOccurrences(of: "\r\n", with: "\n")
+        return file
+    }
+
+    /// The bytes of `text` written the way `file` was: its line breaks, mark and encoding. Text that no longer fits a
+    /// Latin-1 file is written as UTF-8 rather than lost.
+    static func encode(_ text: String, as file: FileEditText) -> Data {
+        var out = text.replacingOccurrences(of: "\r\n", with: "\n")
+        if file.windowsBreaks { out = out.replacingOccurrences(of: "\n", with: "\r\n") }
+        if file.byteOrderMark { out = "\u{FEFF}" + out }
+        return out.data(using: file.encoding) ?? Data(out.utf8)
+    }
+
+    /// Writes the edited text over the file. In place, not through a temporary file, so the file keeps its permissions
+    /// (a `.env` readable only by you), its links and its extended attributes. Unless `overwrite`, a file written by
+    /// someone else since it was opened is left alone (`changedOnDisk`).
+    static func save(_ text: String, as file: FileEditText, to path: String, overwrite: Bool = false) -> FileSaveResult {
+        if !overwrite, let opened = file.modified, let now = modificationDate(path), now != opened { return .changedOnDisk }
+        do {
+            try encode(text, as: file).write(to: URL(fileURLWithPath: path))
+            return .saved(modificationDate(path))
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    static func modificationDate(_ path: String) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+    }
+}
