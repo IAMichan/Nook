@@ -1478,7 +1478,8 @@ final class RunPullRequestLinks {
         case .assistant:
             return MarkdownBlock.lastGitHubPullRequest(in: event.text)
         case .tool:
-            guard let output = event.output, showsPullRequest([event.tool, event.text, event.detail]) else { return nil }
+            guard let output = event.output,
+                  PullRequestToolCall.showsPullRequest(tool: event.tool, command: [event.text, event.detail]) else { return nil }
             return MarkdownBlock.lastGitHubPullRequest(in: output)
         default:
             return nil
@@ -1493,7 +1494,8 @@ final class RunPullRequestLinks {
                 if let url = MarkdownBlock.lastGitHubPullRequest(in: message.text) { return url }
             case .tools:
                 for step in message.steps.reversed() {
-                    guard let output = step.output, showsPullRequest([step.name, step.summary, step.command]) else { continue }
+                    guard let output = step.output,
+                          PullRequestToolCall.showsPullRequest(tool: step.name, command: [step.summary, step.command]) else { continue }
                     if let url = MarkdownBlock.lastGitHubPullRequest(in: output) { return url }
                 }
             default:
@@ -1501,11 +1503,5 @@ final class RunPullRequestLinks {
             }
         }
         return nil
-    }
-
-    /// A tool call that makes or shows a pull request, so the link in its output is that pull request's.
-    private nonisolated static func showsPullRequest(_ parts: [String?]) -> Bool {
-        let call = parts.compactMap { $0 }.joined(separator: " ").lowercased()
-        return call.contains("pr create") || call.contains("pr view") || call.contains("pull_request") || call.contains("pullrequest")
     }
 }
