@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// The terminal on the left of a session's conversation: the command the agent runs and its output as it comes in,
-/// as you would see it in a shell. Opens from the live "Running a command" line.
+/// A command the agent runs, in the Terminal tab of the session's side panel: the command and its output as it comes
+/// in, as you would see it in a shell. Opens from the live "Running a command" line; closing it shows your own shells.
 struct CommandConsolePanel: View {
     let event: RunEvent
     let close: () -> Void
@@ -13,7 +13,7 @@ struct CommandConsolePanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            header
+            toolbar
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: true) {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -40,6 +40,7 @@ struct CommandConsolePanel: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, NookTheme.Spacing.sm)
                     .padding(.bottom, 10)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -51,17 +52,18 @@ struct CommandConsolePanel: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// The side panel's own header (`SidePanelHeader`), on the left of the conversation.
-    private var header: some View {
-        SidePanelHeader(closeHelp: tr("ws.console.close"), close: close) {
-            SidePanelTitle(symbol: "terminal", title: tr("ws.console.title"))
+    /// The bar under the Terminal tab (`SidePanelToolbar`), where your shells have their folder bar: how the command
+    /// is doing, copy, and back to your shells.
+    private var toolbar: some View {
+        SidePanelToolbar {
             status
-        } actions: {
+            Spacer(minLength: NookTheme.Spacing.md)
             ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", tr("ws.console.copy")) {
                 Pasteboard.copy("$ " + command + (output.isEmpty ? "" : "\n" + output))
                 copied = true
                 Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
             }
+            SidePanelCloseButton(help: tr("ws.console.close"), action: close)
         }
     }
 
