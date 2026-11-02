@@ -108,8 +108,32 @@ final class AgentWorkTests: XCTestCase {
         let blocks = TimelinePresentation.group([RunEvent(kind: .tool, text: "Bash · ls", tool: "Bash", state: .done), agent,
                                                  RunEvent(kind: .tool, text: "Bash · pwd", tool: "Bash", state: .done)])
         XCTAssertTrue(blocks.contains(.event(agent)))
-        let outputs = SessionOutputs.collect([agent], tasks: nil, directory: "")
-        XCTAssertEqual(outputs.first?.id, SessionOutputs.subagentsID)
+        // Subagents have their own side panel tab, not a place among the plans.
+        XCTAssertTrue(SessionOutputs.collect([agent], tasks: nil, directory: "").isEmpty)
+    }
+
+    func testSubagentKeepsItsOwnSteps() {
+        var agent = RunEvent(kind: .tool, text: "Agent · Audit", tool: "Agent", callID: "toolu_1",
+                             detail: #"{"description":"Audit","prompt":"Look"}"#, state: .running)
+        XCTAssertEqual(Subagents.list([agent]).first?.steps, [])
+        let before = Subagents.signature(Subagents.list([agent]))
+        agent.subagentSteps = SubagentStep.appending(SubagentStep(kind: .thinking, text: " Where to start? "), to: agent.subagentSteps)
+        agent.subagentSteps = SubagentStep.appending(SubagentStep(kind: .text, text: "  "), to: agent.subagentSteps)
+        agent.subagentSteps = SubagentStep.appending(SubagentStep(kind: .tool, text: "Read · a.swift"), to: agent.subagentSteps)
+        let info = Subagents.list([agent]).first
+        XCTAssertEqual(info?.steps, [SubagentStep(kind: .thinking, text: "Where to start?"), SubagentStep(kind: .tool, text: "Read · a.swift")],
+                       "steps are trimmed and empty ones dropped")
+        XCTAssertNotEqual(Subagents.signature(Subagents.list([agent])), before, "a new step is news for the Subagents tab")
+
+        var many: [SubagentStep]?
+        for index in 0..<(SubagentStep.limit + 5) { many = SubagentStep.appending(SubagentStep(kind: .text, text: "\(index)"), to: many) }
+        XCTAssertEqual(many?.count, SubagentStep.limit)
+        XCTAssertEqual(many?.first?.text, "5", "the oldest steps give way")
+
+        let data = try? JSONEncoder().encode(agent)
+        XCTAssertEqual(data.flatMap { try? JSONDecoder().decode(RunEvent.self, from: $0) }?.subagentSteps, agent.subagentSteps)
+        let old = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","date":0,"kind":"tool","text":"Agent"}"#
+        XCTAssertNil((try? JSONDecoder().decode(RunEvent.self, from: Data(old.utf8)))?.subagentSteps, "older timelines still load")
     }
 
     // MARK: Pull request watch
