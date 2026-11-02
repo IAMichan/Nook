@@ -164,6 +164,17 @@ struct EnergyPlan: Equatable {
         }
     }
 
+    /// Frames per second of an animation that says work is under way (the shimmer on the step that runs, a working dot or
+    /// spinner, the dots while Nook writes): the ambient rate where you point, at most `unattendedFrameRate` elsewhere or
+    /// while the plan pauses, and 0 (hold still) only where nobody can see it. A Mac that is busy, hot or low on battery
+    /// still shows them moving, slowly: held still halfway, they read as stuck, and a build or a test run (exactly when an
+    /// agent works) keeps every core busy.
+    func progressFrameRate(attended: ViewAttention) -> Double {
+        if reasons.contains(.displayAsleep) || reasons.contains(.away) { return 0 }
+        let fps = pace == .paused ? min(ambientFrameRate, unattendedFrameRate) : ambientFrameRate
+        return frameRate(fps, attended: attended)
+    }
+
     /// The first reason, for a short status line; nil at full speed.
     var mainReason: EnergyReason? { reasons.first }
 
