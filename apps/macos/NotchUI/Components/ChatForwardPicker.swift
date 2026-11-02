@@ -103,7 +103,7 @@ private struct ChatForwardRow: View {
     private var appName: String { MessagingApps.app(id: entry.app)?.name ?? entry.app }
 
     private var photo: NSImage? {
-        if let avatar = entry.avatar, let image = ChatAvatarImages.shared.image(avatar) { return image }
+        if let avatar = entry.avatar, let image = ChatAvatarImages.shared.image(avatar, chat: entry.id) { return image }
         return ContactPhotos.shared.photo(handle: entry.handle, name: entry.name)
     }
 
