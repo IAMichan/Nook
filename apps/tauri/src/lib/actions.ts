@@ -108,6 +108,57 @@ export function candidateRepos(pushed: ActionsRepo[], pulls: AccountPullRequests
   return result;
 }
 
+/// The repositories on the page's tab bar after opening `name` (`ActionsRepoBar` on the Mac): a tab that is there keeps
+/// its place, as tabs do; a new one goes first, and the last one falls off past `limit`.
+export function openTab(name: string, tabs: string[], limit = 8): string[] {
+  if (tabs.some((t) => t.toLowerCase() === name.toLowerCase())) return tabs;
+  return [name, ...tabs].slice(0, limit);
+}
+
+/// The tab next to the open one (`offset` -1 or 1), going round; null with fewer than two tabs.
+export function neighborTab(tabs: string[], current: string | null, offset: number): string | null {
+  const index = tabs.findIndex((t) => t.toLowerCase() === (current ?? "").toLowerCase());
+  if (tabs.length < 2 || index < 0) return null;
+  return tabs[(index + offset + tabs.length) % tabs.length];
+}
+
+/// The repositories that match what you type in the picker: those whose owner or name starts with it first, then
+/// those that contain it anywhere, each keeping its place. All of them for an empty search.
+export function matchRepos<T extends { name: string }>(query: string, repos: T[]): T[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return repos;
+  const hits = repos.filter((r) => r.name.toLowerCase().includes(q));
+  const named = hits.filter((r) => r.name.toLowerCase().split("/").some((part) => part.startsWith(q)));
+  return [...named, ...hits.filter((r) => !named.includes(r))];
+}
+
+/// How a repository's Actions stand at a glance, for its tab: how many runs still run or wait, how many workflows'
+/// newest finished run failed, and the mark that sums it up.
+export interface RepoStatus {
+  outcome: RunOutcome;
+  running: boolean;
+  active: number;
+  failing: number;
+}
+
+/// Null for a repository without runs: its tab shows no mark. `runs` are newest first, as GitHub gives them.
+export function repoStatus(runs: WorkflowRun[]): RepoStatus | null {
+  if (!runs.length) return null;
+  const active = runs.filter(isLive).length;
+  const newest = new Map<number, WorkflowRun>();
+  for (const run of runs) if (!isLive(run) && !newest.has(run.workflowId)) newest.set(run.workflowId, run);
+  const failing = [...newest.values()].filter((r) => r.outcome === "failing").length;
+  const outcome: RunOutcome = active ? "pending" : failing ? "failing" : runs[0].outcome;
+  return { outcome, running: runs.some((r) => r.running), active, failing };
+}
+
+/// The newest run of each workflow, by workflow id, for the mark on its chip.
+export function latestPerWorkflow(runs: WorkflowRun[]): Map<number, WorkflowRun> {
+  const result = new Map<number, WorkflowRun>();
+  for (const run of runs) if (!result.has(run.workflowId)) result.set(run.workflowId, run);
+  return result;
+}
+
 /// Whether a run still changes: queued, waiting or running.
 export const isLive = (run: { status: string }) => run.status !== "completed";
 

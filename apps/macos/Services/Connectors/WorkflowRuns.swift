@@ -119,6 +119,28 @@ enum WorkflowRunFilter: String, CaseIterable, Sendable {
     }
 }
 
+/// How a repository's Actions stand at a glance, for its tab on the Actions page: something still runs, a workflow's
+/// newest run failed, or how the newest run went.
+struct WorkflowRepoStatus: Equatable, Sendable {
+    let outcome: PullRequestCheck.Outcome
+    let running: Bool
+    /// Runs that still run or wait.
+    let active: Int
+    /// Workflows whose newest finished run failed.
+    let failing: Int
+
+    /// Nil for a repository without runs: its tab shows no mark.
+    init?(runs: [WorkflowRun]) {
+        guard let newest = runs.first else { return nil }
+        active = runs.filter { !$0.isCompleted }.count
+        failing = WorkflowRunParser.latestPerWorkflow(runs.filter(\.isCompleted)).values.filter { $0.outcome == .failing }.count
+        running = runs.contains(where: \.running)
+        if active > 0 { outcome = .pending }
+        else if failing > 0 { outcome = .failing }
+        else { outcome = newest.outcome }
+    }
+}
+
 enum WorkflowRunParser {
     /// Conclusions that count as a failure: what a run or a job ends with when something is wrong.
     static let failed: Set<String> = ["failure", "timed_out", "cancelled", "action_required", "startup_failure", "stale"]
@@ -193,6 +215,33 @@ enum WorkflowRunParser {
             if seen.insert(repo.lowercased()).inserted { result.append(repo) }
         }
         return result
+    }
+
+    /// The newest run of each workflow in a list that is newest first, by workflow id.
+    static func latestPerWorkflow(_ runs: [WorkflowRun]) -> [Int: WorkflowRun] {
+        var result: [Int: WorkflowRun] = [:]
+        for run in runs where result[run.workflowID] == nil { result[run.workflowID] = run }
+        return result
+    }
+
+    /// The repositories on the page's tab bar after opening `repo`: a tab that is there keeps its place, as tabs do;
+    /// a new one goes first, and the last one falls off past `limit`.
+    static func recent(opening repo: String, in list: [String], limit: Int = 8) -> [String] {
+        if list.contains(where: { $0.caseInsensitiveCompare(repo) == .orderedSame }) { return list }
+        return Array(([repo] + list).prefix(limit))
+    }
+
+    /// The repositories that match what you type in the picker: those whose name starts with it first, then those
+    /// that contain it anywhere, each keeping its place. All of them for an empty search.
+    static func matching(_ query: String, in repos: [String]) -> [String] {
+        let text = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !text.isEmpty else { return repos }
+        let hits = repos.filter { $0.lowercased().contains(text) }
+        let named = hits.filter { repo in
+            let lower = repo.lowercased()
+            return lower.hasPrefix(text) || lower.split(separator: "/").last.map { $0.hasPrefix(text) } == true
+        }
+        return named + hits.filter { !named.contains($0) }
     }
 
     /// "owner/repo", as typed or pasted: also a github.com link to it or to a page in it. Nil for anything else.

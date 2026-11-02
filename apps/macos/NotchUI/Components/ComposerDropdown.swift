@@ -179,10 +179,12 @@ struct DropdownRow: View {
 struct DropdownSearch: View {
     let placeholder: String
     @Binding var text: String
+    /// Return in the field: picks the first match.
+    var onSubmit: (() -> Void)? = nil
     @FocusState private var focused: Bool
 
     var body: some View {
-        NookSearchField(prompt: placeholder, text: $text, style: .inline, focus: $focused)
+        NookSearchField(prompt: placeholder, text: $text, style: .inline, focus: $focused, onSubmit: onSubmit)
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.sm)
             .overlay(alignment: .bottom) { NookDivider() }

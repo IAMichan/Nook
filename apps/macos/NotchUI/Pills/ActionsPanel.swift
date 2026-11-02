@@ -2,9 +2,10 @@ import SwiftUI
 import AppKit
 
 /// A repository's GitHub Actions, next to the pull requests under the Agents list: every run of every workflow (CI,
-/// Promote, Release…), newest first under a heading per day. On top the repository (the one you pushed to last until you
-/// pick another, remembered), the state filter (all, running, failed) and a chip per workflow, so "did the promote go
-/// through" is one click. A run opens beside the list when the page is wide enough, else in its place
+/// Promote, Release…), newest first under a heading per day. On top the repositories as tabs (`ActionsRepoBar`: the one
+/// you pushed to last until you pick others, remembered, each tab marked when something runs or fails, and a "+" that
+/// searches the rest), then the state filter (all, running, failed) and a chip per workflow with the mark of its newest
+/// run, so "did the promote go through" is one click. A run opens beside the list when the page is wide enough, else in its place
 /// (`WorkflowRunDetail`): its jobs, each job's steps and log, and re-run or cancel. While a run in sight still runs, the
 /// list is read again every few seconds; otherwise every minute.
 struct ActionsPanel: View {
@@ -15,10 +16,6 @@ struct ActionsPanel: View {
     @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
     @State private var filter: WorkflowRunFilter = .all
     @State private var openRun: WorkflowRun?
-    /// The field to type another repository in, in place of the picker.
-    @State private var addingRepo = false
-    @State private var repoText = ""
-    @FocusState private var repoFieldFocused: Bool
 
     /// The side panel, as on the pull requests page: half the page at first, as wide as you drag it after.
     @AppStorage("nook.actions.panelWidth") private var panelWidth: Double = 0
@@ -106,9 +103,15 @@ struct ActionsPanel: View {
             await store.refreshRepositories()
             while !Task.isCancelled {
                 await store.refresh()
+                // The other tabs after the open one, so each says how it stands and opens at once.
+                Task { await store.peekRecent() }
                 try? await Task.sleep(nanoseconds: store.hasActiveRuns ? 8_000_000_000 : 60_000_000_000)
             }
         }
+        // ⇧⌘[ and ⇧⌘] go to the repository tab on the left or right, as they go through the chats on Chats.
+        .keyCommands(["session.previous": { store.selectNeighbor(-1); return true },
+                      "session.next": { store.selectNeighbor(1); return true }],
+                     enabled: store.recent.count > 1)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await store.refresh() }
         }
@@ -117,35 +120,34 @@ struct ActionsPanel: View {
         }
     }
 
-    /// The repository, and the filters: the state on the same line, the workflows under it.
+    /// The repositories as tabs, and under them the filters: the state, then a chip per workflow.
     private var toolbar: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            if addingRepo {
-                repoField
-            } else {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    repoPicker
-                    Spacer(minLength: NookTheme.Spacing.sm)
-                    if store.repo != nil {
+            ActionsRepoBar(store: store, candidates: candidates)
+            if store.repo != nil {
+                NookDivider()
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: NookTheme.Spacing.xs) {
                         ForEach(WorkflowRunFilter.allCases, id: \.self) { kind in
                             NookFilterChip(title: title(kind), count: kind == .all ? nil : count(kind), selected: filter == kind) {
                                 filter = kind
                             }
                         }
-                    }
-                }
-            }
-            if store.repo != nil, !store.workflows.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: NookTheme.Spacing.xs) {
-                        NookFilterChip(title: tr("actions.workflows.all"), selected: store.workflowID == nil) {
-                            store.select(workflow: nil)
-                        }
-                        ForEach(store.workflows) { workflow in
-                            NookFilterChip(title: workflow.name, selected: store.workflowID == workflow.id) {
-                                store.select(workflow: workflow.id)
+                        if !store.workflows.isEmpty {
+                            NookDivider(vertical: true)
+                                .frame(height: 16)
+                                .padding(.horizontal, NookTheme.Spacing.xs)
+                            NookFilterChip(title: tr("actions.workflows.all"), selected: store.workflowID == nil) {
+                                store.select(workflow: nil)
                             }
-                            .help(workflow.path)
+                            let latest = WorkflowRunParser.latestPerWorkflow(store.runs)
+                            ForEach(store.workflows) { workflow in
+                                NookFilterChip(title: workflow.name, selected: store.workflowID == workflow.id,
+                                               mark: latest[workflow.id].map { (outcome: $0.outcome, running: $0.running) }) {
+                                    store.select(workflow: workflow.id)
+                                }
+                                .help(workflow.path)
+                            }
                         }
                     }
                 }
@@ -153,70 +155,11 @@ struct ActionsPanel: View {
         }
     }
 
+    /// What the repository picker offers besides the tabs: those you pushed to, typed in, of your pull requests, watched.
     private var candidates: [String] {
         let fromPullRequests = pullRequests.accounts.flatMap { $0.mine + $0.reviews + $0.watched }.map(\.repo)
-        return WorkflowRunParser.candidates(selected: store.repo, pushed: store.added + store.pushed,
+        return WorkflowRunParser.candidates(selected: nil, pushed: store.added + store.pushed,
                                             pullRequests: fromPullRequests, watched: watching.entries)
-    }
-
-    private var repoPicker: some View {
-        Menu {
-            ForEach(candidates.prefix(30), id: \.self) { repo in
-                Button {
-                    store.select(repo)
-                } label: {
-                    if repo == store.repo { Label(repo, systemImage: "checkmark") } else { Text(repo) }
-                }
-            }
-            if !candidates.isEmpty { Divider() }
-            Button(tr("actions.repo.other")) {
-                repoText = ""
-                addingRepo = true
-            }
-        } label: {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: "shippingbox")
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textTertiary)
-                Text(store.repo ?? tr("actions.repo.pick"))
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(store.repo == nil ? NookTheme.textSecondary : NookTheme.paper)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    // A long "owner/repository" leaves the filters beside it their room.
-                    .frame(maxWidth: 200, alignment: .leading)
-                Image(systemName: "chevron.down")
-                    .font(NookTheme.font(9, .semibold))
-                    .foregroundStyle(NookTheme.textTertiary)
-            }
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help(tr("actions.repo.help"))
-    }
-
-    /// "owner/repo" or a github.com link, typed in place of the picker.
-    private var repoField: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            TextField(tr("actions.repo.placeholder"), text: $repoText)
-                .textFieldStyle(.plain)
-                .font(NookTheme.TextStyle.code)
-                .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-                .frame(height: 30)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
-                .focused($repoFieldFocused)
-                .onSubmit(addRepo)
-                .onAppear { repoFieldFocused = true }
-                .onExitCommand { addingRepo = false }
-            SmallGhostButton(title: tr("actions.repo.open"), action: addRepo)
-                .disabled(WorkflowRunParser.repository(from: repoText) == nil)
-            NookIconButton(systemName: "xmark", label: tr("button.cancel"), size: 26) { addingRepo = false }
-        }
-    }
-
-    private func addRepo() {
-        if store.add(repoText) { addingRepo = false }
     }
 
     private func title(_ kind: WorkflowRunFilter) -> String {
