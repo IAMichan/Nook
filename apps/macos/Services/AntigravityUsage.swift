@@ -216,7 +216,7 @@ final class AntigravityUsage: ObservableObject {
         }
 
         // The quota summary is what Antigravity's own Model Quota screen shows: per group of models a 5-hour and a weekly
-        // window. The endpoints can report different groups (the daily one has returned Claude & GPT without Gemini):
+        // window. Only Gemini models that Antigravity can use are kept (third-party Claude & GPT buckets are dropped):
         // every endpoint's windows count, the most used reading of a window wins.
         var summary: [Window] = []
         for answer in ask("retrieveUserQuotaSummary") { merge(summaryWindows(answer), into: &summary) }
@@ -315,9 +315,11 @@ final class AntigravityUsage: ObservableObject {
             : [("", (root["buckets"] as? [[String: Any]]) ?? [])]
         var result: [Window] = []
         for source in sources {
+            if isThirdParty(source.name) { continue }
             var group: [(order: Int, window: Window)] = []
             for bucket in source.buckets {
                 guard let id = (bucket["bucketId"] ?? bucket["id"]) as? String else { continue }
+                if isThirdParty(id) { continue }
                 let name = ((bucket["displayName"] ?? bucket["name"]) as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
                 let span = windowSpan(window: bucket["window"] as? String, id: id, name: name)
                 let family = familyName(bucket: id, group: source.name)
@@ -345,10 +347,14 @@ final class AntigravityUsage: ObservableObject {
         return nil
     }
 
-    /// "Gemini" for the Gemini group, "Claude & GPT" for the third-party one, else the group's own name.
+    /// Whether a model or bucket is a third-party model (Claude, GPT, etc.) not supported by Antigravity.
+    nonisolated static func isThirdParty(_ text: String) -> Bool {
+        AntigravityAcp.isThirdPartyModel(text)
+    }
+
+    /// "Gemini" for the Gemini group, else the group's own name.
     private nonisolated static func familyName(bucket id: String, group: String) -> String {
         let lowered = (id + " " + group).lowercased()
-        if id.hasPrefix("3p-") || lowered.contains("claude") || lowered.contains("gpt") { return "Claude & GPT" }
         if id.hasPrefix("gemini-") || lowered.contains("gemini") { return "Gemini" }
         let trimmed = group.trimmingCharacters(in: .whitespaces)
         return trimmed.isEmpty ? id : trimmed
@@ -370,12 +376,10 @@ final class AntigravityUsage: ObservableObject {
             .flatMap { ($0["modelIds"] as? [String]) ?? [] })
         var result: [Window] = []
         for (id, model) in models.sorted(by: { $0.key < $1.key }) {
-            guard (model["disabled"] as? Bool) != true, !isHelperModel(id), picker.isEmpty || picker.contains(id) else { continue }
+            guard (model["disabled"] as? Bool) != true, !isHelperModel(id), !isThirdParty(id), picker.isEmpty || picker.contains(id) else { continue }
             let provider = model["modelProvider"] as? String
-            let family = provider == "MODEL_PROVIDER_GOOGLE" || id.hasPrefix("gemini-") ? "Gemini"
-                : provider == "MODEL_PROVIDER_ANTHROPIC" || id.hasPrefix("claude-") ? "Claude"
-                : provider == "MODEL_PROVIDER_OPENAI" || id.hasPrefix("gpt-") ? "GPT" : nil
-            guard let family else { continue }
+            guard provider == "MODEL_PROVIDER_GOOGLE" || id.hasPrefix("gemini-") else { continue }
+            let family = "Gemini"
             let display = ((model["displayName"] as? String) ?? "")
                 .replacingOccurrences(of: "\\s*\\([^)]*\\)", with: "", options: .regularExpression)
                 .trimmingCharacters(in: .whitespaces)
