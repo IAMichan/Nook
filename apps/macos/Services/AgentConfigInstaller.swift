@@ -29,10 +29,14 @@ enum AgentConfigInstaller {
             switch self {
             case .claudeHooks: return "Progress, permissions, and prompts in the notch"
             case .claudeStatusLine: return "Your 5-hour and weekly limits (Pro/Max), via the status line"
-            case .codex: return "Progress and permissions in the notch"
-            case .gemini, .antigravity, .cursor, .copilot, .muse: return "Progress in the notch"
-            case .openCode, .amp: return "Progress in the notch, via a small plugin"
-            case .hermes: return "Progress in the notch, via a plugin. Enable it afterwards with: hermes plugins enable nook"
+            case .codex, .copilot, .muse: return "Progress and permissions in the notch"
+            case .gemini, .antigravity, .cursor: return "Progress in the notch"
+            case .openCode: return "Progress and permissions in the notch, via a small plugin"
+            case .amp: return "Progress in the notch, via a small plugin"
+            case .hermes:
+                return "Progress and approvals in the notch, via a plugin. Enable it afterwards with: hermes plugins enable nook. "
+                    + "To answer Hermes' approvals in Nook, also set security.approval.transport: nook and "
+                    + "security.approval.transport_fallback: builtin in ~/.hermes/config.yaml"
             }
         }
 
@@ -186,6 +190,14 @@ enum AgentConfigInstaller {
                 } ?? false
                 return current && asks ? .installed : .outdated
             }
+            // Connected before Nook answered their permissions: reconnect to get the waiting hook.
+            if target == .copilot {
+                let waits = "\(hooks["preToolUse"] ?? "")".contains("--wait")
+                return waits ? .installed : .outdated
+            }
+            if target == .muse {
+                return hooks["PermissionRequest"].map(containsMarker) == true ? .installed : .outdated
+            }
             return .installed
         case .openCode, .amp, .hermes:
             return pluginState(target)
@@ -195,15 +207,21 @@ enum AgentConfigInstaller {
     /// A plugin is installed when all its files exist and originate from Nook.
     private static func pluginState(_ target: Target) -> State {
         var present = 0
+        var current = true
         let files = target.pluginFiles
         for file in files {
             do {
-                if try readPlugin(file.url) != nil { present += 1 }
+                if let data = try readPlugin(file.url) {
+                    present += 1
+                    if data != Data(file.contents.utf8) { current = false }
+                }
             } catch {
                 return .unreadable(error.localizedDescription)
             }
         }
-        return present == files.count && present > 0 ? .installed : .notInstalled
+        guard present == files.count && present > 0 else { return .notInstalled }
+        // Written by an older Nook (before it answered the agent's permissions): reconnecting writes the new plugin.
+        return current ? .installed : .outdated
     }
 
     // MARK: Preparing Changes
@@ -307,13 +325,18 @@ enum AgentConfigInstaller {
             var hooks = try hooksObject(root)
             hooks = try withoutNook(hooks)
             if install {
-                for (event, timeout) in [("sessionStart", 10), ("userPromptSubmitted", 10), ("preToolUse", 10),
-                                         ("postToolUse", 10), ("agentStop", 10), ("sessionEnd", 3), ("notification", 10)] {
+                for (event, timeout) in [("sessionStart", 10), ("userPromptSubmitted", 10), ("postToolUse", 10),
+                                         ("agentStop", 10), ("sessionEnd", 3), ("notification", 10)] {
                     let entry: [String: Any] = ["type": "command",
                                                 "bash": HookScript.command("--agent copilot \(event)"),
                                                 "timeoutSec": timeout]
                     try append(&hooks, event: event, group: entry)
                 }
+                // preToolUse waits for your answer in the notch where Copilot would ask (`PreToolGate`); its allow skips
+                // Copilot's prompt (Copilot CLI 1.0.18). Without an answer Copilot goes on as it would without Nook.
+                try append(&hooks, event: "preToolUse", group: ["type": "command",
+                                                                 "bash": HookScript.command("--agent copilot --wait preToolUse"),
+                                                                 "timeoutSec": 130])
                 root["version"] = 1
             }
             set(&root, "hooks", hooks)
@@ -330,6 +353,9 @@ enum AgentConfigInstaller {
                     try append(&hooks, event: event,
                                group: group(HookScript.command("--agent muse \(event)"), matcher: "*", timeout: seconds * 1_000))
                 }
+                // Like Claude Code's: fires only when Muse would ask you, and takes the same allow / deny answer.
+                try append(&hooks, event: "PermissionRequest",
+                           group: group(HookScript.command("--agent muse --wait PermissionRequest"), matcher: "*", timeout: 120_000))
                 if snapshot.original == nil { root["schema_version"] = 1 }
             }
             set(&root, "hooks", hooks)
