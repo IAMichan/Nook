@@ -62,31 +62,46 @@ struct ShimmerText: View {
     /// Published only when the plan changes: sets how often the shimmer redraws.
     @ObservedObject private var energy = EnergyMonitor.shared
     @Environment(\.nookAttended) private var attended
+    // The light's graph is a hosting view of its own and does not inherit these: passed on, so its text is laid out just
+    // like the one beneath it.
+    @Environment(\.font) private var font
+    @Environment(\.lineLimit) private var lineLimit
+    @Environment(\.truncationMode) private var truncationMode
+    @Environment(\.multilineTextAlignment) private var alignment
 
     var body: some View {
-        // The text itself stands still; only the light moves, in a graph of its own (`SeparateGraph`) cut to the text's
-        // shape. A timeline around the text laid out the whole window again on every frame, for as long as an agent works.
+        // The text itself stands still; only the light moves, in a graph of its own (`SeparateGraph`). A timeline around
+        // the text laid out the whole window again on every frame, for as long as an agent works. The light is cut to the
+        // text's shape inside that graph: a `.mask` around a hosting view draws it once and keeps that picture, so the
+        // light stood still on one word.
         Text(text)
             .foregroundStyle(NookTheme.textMuted)
             .overlay {
                 SeparateGraph {
                     TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended), paused: energy.plan.pace == .paused)) { context in
                         let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.2) / 2.2
-                        LinearGradient(
-                            stops: [
-                                .init(color: NookTheme.paper.opacity(0), location: 0),
-                                .init(color: NookTheme.paper.opacity(0), location: max(0, phase - 0.15)),
-                                .init(color: NookTheme.paper, location: phase),
-                                .init(color: NookTheme.paper.opacity(0), location: min(1, phase + 0.15)),
-                                .init(color: NookTheme.paper.opacity(0), location: 1)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
+                        Text(text)
+                            .font(font)
+                            .lineLimit(lineLimit)
+                            .truncationMode(truncationMode)
+                            .multilineTextAlignment(alignment)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    stops: [
+                                        .init(color: NookTheme.paper.opacity(0), location: 0),
+                                        .init(color: NookTheme.paper.opacity(0), location: max(0, phase - 0.15)),
+                                        .init(color: NookTheme.paper, location: phase),
+                                        .init(color: NookTheme.paper.opacity(0), location: min(1, phase + 0.15)),
+                                        .init(color: NookTheme.paper.opacity(0), location: 1)
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     }
                 }
                 .allowsHitTesting(false)
-                .mask { Text(text) }
             }
     }
 }
