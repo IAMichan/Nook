@@ -877,6 +877,11 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: own), .readElsewhere(chat: "31600000001@s.whatsapp.net"))
         let ownGroup = Data(#"{"event":"message.ack","payload":{"ids":["A1"],"chat_id":"1203630@g.us","receipt_type":"read-self"}}"#.utf8)
         XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: ownGroup), .readElsewhere(chat: "1203630@g.us"))
+        // With your read receipts on, your own read on another device (WhatsApp on this Mac) is a `read` from yourself.
+        let ownRead = Data(#"{"event":"message.ack","device_id":"31699999999@s.whatsapp.net","payload":{"ids":["A1"],"chat_id":"31600000001@s.whatsapp.net","from":"31699999999@s.whatsapp.net","receipt_type":"read"}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: ownRead), .readElsewhere(chat: "31600000001@s.whatsapp.net"))
+        let ownGroupRead = Data(#"{"event":"message.ack","payload":{"ids":["A1"],"chat_id":"1203630@g.us","from":"31699999999@s.whatsapp.net","receipt_type":"read"}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: ownGroupRead, me: "31699999999:3@s.whatsapp.net"), .readElsewhere(chat: "1203630@g.us"))
         // A group's receipt without a member says nothing; one with a member moves that member only.
         let group = Data(#"{"event":"message.ack","payload":{"ids":["A1"],"chat_id":"1203630@g.us","receipt_type":"delivered"}}"#.utf8)
         XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: group), .ignored)
