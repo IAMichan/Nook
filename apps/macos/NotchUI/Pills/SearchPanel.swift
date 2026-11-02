@@ -436,7 +436,7 @@ struct SearchPanel: View {
         Tip("in:agents  in:chats", "search.tip.in", "in:"),
         Tip("from:me  from:anna", "search.tip.from", "from:"),
         Tip("after:2026-10-01  before:7d", "search.tip.date", "after:"),
-        Tip("is:unread  is:running", "search.tip.is", "is:"),
+        Tip("is:unread  is:settled", "search.tip.is", "is:"),
         Tip("app:  project:  branch:", "search.tip.facet", "project:"),
         Tip("/regex/", "search.tip.regex", "/"),
     ]
