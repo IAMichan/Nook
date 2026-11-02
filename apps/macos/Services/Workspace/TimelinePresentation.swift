@@ -516,9 +516,13 @@ enum TurnChanges {
     }
 
     /// The snapshots around a turn that started at `start` and ended at `end`: the last one made before it, and the first
-    /// one made after it (nil: compare with the files as they are now).
+    /// one made after it (nil: compare with the files as they are now). The session's first snapshot is made in the
+    /// background while the first turn already runs, so it is dated just after that turn started: it still counts as
+    /// the turn's "before". Without it the first turn compared against HEAD, and once the agent committed its work
+    /// the card said "+0 −0".
     static func checkpoints(_ checkpoints: [RunCheckpoint], start: Date, end: Date) -> (before: RunCheckpoint, after: RunCheckpoint?)? {
-        guard let before = checkpoints.last(where: { $0.date <= start }) else { return nil }
+        let initial = checkpoints.first.flatMap { $0.date < end ? $0 : nil }
+        guard let before = checkpoints.last(where: { $0.date <= start }) ?? initial else { return nil }
         return (before, checkpoints.first { $0.date >= end && $0.date > before.date })
     }
 }
