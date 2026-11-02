@@ -120,7 +120,8 @@ struct AgentsTab: View {
                             } else {
                                 SessionWorkbench(viewModel: viewModel, directory: newDirectory) { tools in
                                     NewSessionComposer(headerAccessory: tools, onDirectory: { newDirectory = $0 }) { id in
-                                        viewModel.selectedAgentID = "run:" + id.uuidString
+                                        // A browser or terminal opened beside the new session stays open.
+                                        viewModel.continueSession(as: "run:" + id.uuidString, from: "new")
                                     }
                                 }
                             }
