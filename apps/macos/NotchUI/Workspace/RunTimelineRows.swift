@@ -47,6 +47,9 @@ struct EventRow: View {
             // it a click away.
             TranscriptThought(text: event.text, open: expanded, live: event.state == .running, toggle: toggle)
 
+        case .tool where Subagents.isLaunch(event):
+            SubagentRow(event: event, expanded: expanded, toggle: toggle)
+
         case .tool:
             if let showFile, let file = ToolRow.file(event, in: directory) {
                 ToolRow(event: event, expanded: false, toggle: { showFile(file) }, file: file, reveals: file == shownFile)
@@ -84,6 +87,12 @@ struct EventRow: View {
                 }
             }
 
+        case .system where event.tool == "wake":
+            // The agent picks up what it left running in the background: a turn of its own starts here.
+            TranscriptWorkLine(symbol: "arrow.turn.down.right", label: event.text)
+                .padding(.top, NookTheme.Spacing.sm)
+                .help(event.text)
+
         case .system:
             TranscriptWorkLine(symbol: event.tool == "launch" ? "terminal" : "info.circle", label: event.text,
                                mono: event.tool == "launch")
@@ -98,6 +107,54 @@ struct EventRow: View {
                                    failed: true)
             }
         }
+    }
+}
+
+/// A subagent the agent started, as its own row: "Subagent running · Audit the chats" shimmering while it works (also in
+/// the background after the turn), with its kind and time; it opens to its task and its answer.
+struct SubagentRow: View {
+    let event: RunEvent
+    let expanded: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        if let agent = Subagents.list([event]).first {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    // A live line shimmers its label only, so the title goes into it while the subagent works.
+                    TranscriptWorkLine(symbol: "person.2", label: agent.isRunning ? label(agent) + " · " + agent.title : label(agent),
+                                       detail: agent.isRunning ? nil : agent.title, failed: agent.failed,
+                                       live: agent.isRunning, open: expanded, quietChevron: !agent.isRunning, action: toggle)
+                    SubagentElapsed(agent: agent)
+                }
+                if expanded {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                        Text(agent.kind + (agent.background ? " · " + tr("ws.subagent.background") : ""))
+                            .font(NookTheme.mono(10.5, .medium))
+                            .foregroundStyle(NookTheme.textTertiary)
+                        if !agent.prompt.isEmpty {
+                            Text(agent.prompt)
+                                .font(NookTheme.TextStyle.detail)
+                                .foregroundStyle(NookTheme.textSecondary)
+                                .lineLimit(12)
+                        }
+                        if let answer = agent.answer {
+                            MarkdownView(text: answer, size: 12.5)
+                        }
+                    }
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, TranscriptStyle.workIndent)
+                    .padding(.bottom, NookTheme.Spacing.xs)
+                }
+            }
+        }
+    }
+
+    private func label(_ agent: SubagentInfo) -> String {
+        if agent.isRunning { return tr(agent.background ? "ws.subagent.runningBackground" : "ws.subagent.running") }
+        return tr(agent.failed ? "ws.subagent.failed" : "ws.subagent.done")
     }
 }
 
