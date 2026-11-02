@@ -252,18 +252,28 @@ struct NookToastView: View {
             }
         }
         .textSelection(.enabled)
-        .padding(.leading, NookTheme.Spacing.lg)
-        .padding(.trailing, NookTheme.Spacing.md)
-        .padding(.vertical, NookTheme.Spacing.md)
-        .frame(maxWidth: 480, alignment: .leading)
-        // Lifted a step above the panel it floats over; its kind shows in the symbol and a faint edge, not a loud frame.
-        .cardBackground(NookTheme.graphite, stroke: toast.kind.color.opacity(0.22), radius: NookTheme.Radius.panel, style: .continuous)
-        .shadow(color: NookTheme.notch.opacity(0.45), radius: 14, y: 6)
+        .toastBubble(tone: toast.kind.color)
     }
 }
 
-/// Shows `ToastCenter`'s current toast over the bottom edge of this view, when this is the surface it belongs to.
-private struct NookToastHost: ViewModifier {
+extension View {
+    /// The toast's bubble: lifted a step above the panel it floats over, its tone in the symbol and a faint edge, not a
+    /// loud frame. Also worn by what waits for you over the panel's bottom edge (`PanelNoticeBar(floating:)`), so a
+    /// request and a result read as the same kind of thing in the same place.
+    func toastBubble(tone: Color, maxWidth: CGFloat = 480) -> some View {
+        padding(.leading, NookTheme.Spacing.lg)
+            .padding(.trailing, NookTheme.Spacing.md)
+            .padding(.vertical, NookTheme.Spacing.md)
+            .frame(maxWidth: maxWidth, alignment: .leading)
+            .cardBackground(NookTheme.graphite, stroke: tone.opacity(0.22), radius: NookTheme.Radius.panel, style: .continuous)
+            .shadow(color: NookTheme.notch.opacity(0.45), radius: 14, y: 6)
+    }
+}
+
+/// Shows `ToastCenter`'s current toast over the bottom edge of this view, when this is the surface it belongs to, under
+/// `above`: what waits for you on this surface (a permission request), stacked with the toast instead of covered by it.
+private struct NookToastHost<Above: View>: ViewModifier {
+    let above: Above
     @ObservedObject private var center = ToastCenter.shared
     @State private var id = UUID()
     @State private var window: NSWindow?
@@ -272,16 +282,19 @@ private struct NookToastHost: ViewModifier {
     func body(content: Content) -> some View {
         content
             .overlay(alignment: .bottom) {
-                if let toast = center.current, center.activeHost == id {
-                    NookToastView(toast: toast, paused: center.paused, restart: center.stamp, perform: { center.performAction() },
-                                  close: { center.dismiss() })
-                        .onHover { center.setPaused($0) }
-                        .padding(.horizontal, NookTheme.Spacing.xl)
-                        .padding(.bottom, NookTheme.Spacing.xl)
-                        .id(toast.id)
-                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
-                        .onAppear { announce(toast) }
+                VStack(spacing: NookTheme.Spacing.sm) {
+                    above
+                    if let toast = center.current, center.activeHost == id {
+                        NookToastView(toast: toast, paused: center.paused, restart: center.stamp,
+                                      perform: { center.performAction() }, close: { center.dismiss() })
+                            .onHover { center.setPaused($0) }
+                            .id(toast.id)
+                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
+                            .onAppear { announce(toast) }
+                    }
                 }
+                .padding(.horizontal, NookTheme.Spacing.xl)
+                .padding(.bottom, NookTheme.Spacing.xl)
             }
             .background(ToastWindowReader { window = $0 })
             .onChange(of: window) { _, window in
@@ -327,6 +340,11 @@ private struct ToastWindowReader: NSViewRepresentable {
 extension View {
     /// Lets this surface show Nook's toasts (see `ToastCenter`). Add it once, at the root of a window or panel.
     func nookToastHost() -> some View {
-        modifier(NookToastHost())
+        modifier(NookToastHost(above: EmptyView()))
+    }
+
+    /// The same, with `above` (what waits for you on this surface) floating over the toast at the bottom edge.
+    func nookToastHost<Above: View>(@ViewBuilder above: () -> Above) -> some View {
+        modifier(NookToastHost(above: above()))
     }
 }
