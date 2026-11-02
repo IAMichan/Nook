@@ -412,6 +412,7 @@ struct AgentsTab: View {
             accountName: accountName(app.profile(for: run)),
             // A session Nook delegated to or forked from another one, or a later model of a comparison.
             parentID: (run.delegation?.parentID ?? run.lineage?.parentID).map { "run:" + $0.uuidString },
+            firstPrompt: run.task,
             comparison: app.workspace.runs.filter { $0.lineage?.kind == .comparison && $0.lineage?.parentID == run.id }.count,
             forked: run.lineage?.kind == .fork
         )
@@ -813,6 +814,18 @@ struct AgentHoverCard: View {
             }
             .font(NookTheme.TextStyle.body)
             .foregroundStyle(NookTheme.textTertiary)
+            if !item.firstPrompt.isEmpty && item.firstPrompt != item.title {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tr("agents.card.task"))
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                    Text(item.firstPrompt)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
     }
 
