@@ -311,7 +311,8 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
   `CheckLog.svelte` in `apps/tauri`). A watched GitLab merge request still opens its pipelines page in the browser:
   Nook does not read GitLab job traces yet.
 - **The Actions page for GitLab.** A GitHub repository's workflow runs (CI, a promote, a release), their jobs and logs,
-  re-run and cancel are on the Actions page (`ActionsPanel` on the Mac, `views/agents/actions` in `apps/tauri`). A
+  re-run and cancel are on the Actions page (`ActionsPanel` on the Mac, `views/agents/actions` in `apps/tauri`); a run
+  that has no jobs, and so no log, says why. A
   GitLab project's pipelines are not listed there yet: Nook reads no GitLab pipelines API.
 
 - **The GitHub dashboard in Chats (Tauri).** Pull requests and reviews sorted by what needs you, issues assigned to you,
