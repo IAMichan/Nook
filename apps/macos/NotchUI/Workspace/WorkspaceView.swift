@@ -7,6 +7,8 @@ import SwiftUI
 struct WorkspaceView: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var viewModel = AppModel.shared.viewModel
+    /// A chat's video shown over the whole window.
+    @StateObject private var videoStage = ChatVideoStage()
 
     var body: some View {
         let orb = PanelOrb.panelSize
@@ -32,6 +34,7 @@ struct WorkspaceView: View {
             .ignoresSafeArea(edges: .top)
         }
         .background(NookTheme.notch.ignoresSafeArea())
+        .chatVideoStage(videoStage)
         .background {
             // ⌘1, ⌘2, ⌘3 switch tabs.
             Group {
