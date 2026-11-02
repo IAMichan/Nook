@@ -135,6 +135,12 @@ enum LocalAgentScanner {
         return Array(pids.prefix(min(Int(filled), pids.count)))
     }
 
+    /// The arguments a process was started with, its executable first; nil when the kernel does not say.
+    static func commandLine(_ pid: pid_t) -> [String]? {
+        var buffer = [UInt8](repeating: 0, count: argumentsMax)
+        return arguments(pid, buffer: &buffer)?.arguments
+    }
+
     /// The command line and environment of a process (`kern.procargs2`).
     private static func arguments(_ pid: pid_t, buffer: inout [UInt8]) -> (arguments: [String], environment: [String])? {
         var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
