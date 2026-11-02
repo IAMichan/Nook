@@ -17,7 +17,7 @@ final class ThinkAlong: ObservableObject {
         let date: Date
         let text: String
         var declined: Bool
-        /// Only kept under the bell (the notch had just told you something else): not counted as one of the day's offers.
+        /// Only kept in the notice history (the notch had just told you something else): not counted as one of the day's offers.
         var held = false
     }
 
@@ -126,7 +126,7 @@ final class ThinkAlong: ObservableObject {
         saveOffered()
     }
 
-    /// An offer that only went under the bell (the notch had just told you something else): kept so it is not offered
+    /// An offer that only went into the notice history (the notch had just told you something else): kept so it is not offered
     /// again, without counting as an offer or moving the gap.
     func held(_ text: String) {
         offered.append(Offer(date: Date(), text: NudgeFilter.normalize(text), declined: false, held: true))

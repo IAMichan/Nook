@@ -1,7 +1,7 @@
 import Foundation
 
 /// Keeps the notices Nook gives by himself from piling up on the notch, the same for every source: agents, chats, Nook
-/// and Think Along. A notice it holds back still is in the history under the bell (`logNotice` runs first), it only does
+/// and Think Along. A notice it holds back still is in the notice history (`logNotice` runs first), it only does
 /// not pop up or sound. What waits on you (an agent's question or permission request) always gets through.
 /// Pure, so the pacing can be tested without a Mac; `AppModel.deliverNotice` asks it before showing anything.
 struct NoticePacer: Sendable {

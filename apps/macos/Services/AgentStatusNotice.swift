@@ -66,7 +66,7 @@ struct AgentStatusNotice: Equatable, Sendable {
         return which.isEmpty ? headline : headline + " · " + which
     }
 
-    /// The line under the headline in the history under the bell: which session, and what the agent said last.
+    /// The line under the headline in the notice history: which session, and what the agent said last.
     var historyDetail: String {
         [Self.short(topic), summary].filter { !$0.isEmpty }.joined(separator: " · ")
     }
