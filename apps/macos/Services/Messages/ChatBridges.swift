@@ -62,6 +62,20 @@ protocol ChatNewsBridge: ChatBridge {
     func takeNews() -> [String]
 }
 
+/// A bridge that searches its app's whole history, not only the newest messages the shared inbox keeps per chat
+/// (`ChatInbox.keep`): Search everything (⌘K) asks every one of them, so a message from last month in a busy group is
+/// found there as Nook's own `search_*` tools find it. One family, one shape: each app only translates its own search
+/// into chats with their matching messages (`ChatHistorySearch`).
+@MainActor
+protocol ChatSearchBridge: ChatBridge, Sendable {
+    /// Whether its app can be searched right now (signed in, its database there).
+    var searchesHistory: Bool { get }
+    /// The chats with messages that hold any of `words` (folded: lowercase, no accents), the newest `limit` per word,
+    /// each chat as the bridge reads it (`BridgedChat`), so the inbox key and the message ids are the ones the Chats tab
+    /// shows. Search everything decides which of them hold every word, over the whole chat.
+    func searchHistory(_ words: [String], limit: Int) async throws -> [BridgedChat]
+}
+
 /// How many older messages one scroll back brings, for every bridge.
 enum ChatHistory {
     static let step = 50
@@ -75,7 +89,7 @@ enum ChatHistory {
 /// keeps it. Sending goes through the Messages app itself (AppleScript, with your permission under Automation): text,
 /// files, and a place or a contact as text. Messages lets no other app answer, react, edit or delete.
 @MainActor
-final class MessagesBridge: ChatHistoryBridge {
+final class MessagesBridge: ChatHistoryBridge, ChatSearchBridge {
     let app = "messages"
     /// Often: a read first looks only at when the database changed, which costs nothing while it did not.
     let interval: TimeInterval = 2
@@ -175,6 +189,36 @@ final class MessagesBridge: ChatHistoryBridge {
         }
         let chat = messages.isEmpty ? nil : BridgedChat(app: app, name: name, messages: messages.sorted { $0.date < $1.date }, unread: nil)
         return (chat, more)
+    }
+
+    // MARK: Search everything
+
+    var searchesHistory: Bool { isReady }
+
+    /// The whole database, past the window the live reads look at: the text, and the body newer Messages keeps it in,
+    /// as `search_messages` reads it. Read on the side: nothing the live reads keep changes.
+    func searchHistory(_ words: [String], limit: Int) async throws -> [BridgedChat] {
+        guard isReady, !words.isEmpty else { return [] }
+        let contacts = await ContactDirectory.names()
+        var found: [(chat: BridgedChat, messages: [InboxMessage])] = []
+        for word in words {
+            let rows = try await AppDatabase.read(path, Self.select + """
+             WHERE COALESCE(m.associated_message_type, 0) = 0
+                AND \(AppData.anyLike(["m.text", "CAST(m.attributedBody AS TEXT)"], [word]))
+             ORDER BY m.date DESC LIMIT \(limit)
+            """, app: "Messages").rows
+            guard !rows.isEmpty else { continue }
+            let unnamed = try await groupNames(rows, contacts: contacts)
+            let extra = try await extras(rows, contacts: contacts)
+            for row in rows {
+                guard let built = build(row, media: nil, extras: extra, contacts: contacts),
+                      ChatHistorySearch.matches(built.inbox, [word]) else { continue }
+                let chat = built.message.chat
+                let name = names[chat] ?? unnamed[chat] ?? built.message.chatName
+                found.append((BridgedChat(app: app, name: name, messages: [], unread: nil), [built.inbox]))
+            }
+        }
+        return ChatHistorySearch.chats(found)
     }
 
     func read() async throws -> [BridgedChat] {
@@ -718,7 +762,7 @@ final class MessagesBridge: ChatHistoryBridge {
 /// Full Disk Access. The first read brings the newest chats with their history, after that only what is new, with
 /// WhatsApp's own unread counts.
 @MainActor
-final class WhatsAppDesktopBridge: ChatHistoryBridge {
+final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
     let app = "whatsapp"
     /// Often: a read first looks only at when the database changed, which costs nothing while it did not.
     let interval: TimeInterval = 2
@@ -899,6 +943,33 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge {
         let chat = messages.isEmpty ? nil : BridgedChat(app: app, name: name, messages: messages.sorted { $0.date < $1.date },
                                                         unread: nil, members: people.isEmpty ? nil : people)
         return (chat, more)
+    }
+
+    // MARK: Search everything
+
+    /// The app's database is searched also while a linked phone brings WhatsApp live: it keeps what the phone synced to
+    /// it, and `ChatCaptureService.shownThread` finds the linked phone's chat of the same name for it.
+    var searchesHistory: Bool { isReady }
+
+    /// Everything the phone synced to this Mac, as `search_whatsapp` reads it, private chats and groups.
+    func searchHistory(_ words: [String], limit: Int) async throws -> [BridgedChat] {
+        guard isReady, !words.isEmpty else { return [] }
+        let contacts = await ContactDirectory.names()
+        var found: [(chat: BridgedChat, messages: [InboxMessage])] = []
+        for word in words {
+            let rows = try await select("""
+            WHERE s.ZSESSIONTYPE IN (0, 1) AND m.ZTEXT IS NOT NULL AND \(AppData.anyLike(["m.ZTEXT"], [word]))
+            ORDER BY m.ZMESSAGEDATE DESC LIMIT \(limit)
+            """)
+            for row in rows {
+                guard let message = Self.message(row, contacts: contacts), ChatHistorySearch.matches(message, [word]) else { continue }
+                let chat = AppData.string(row["chat"])
+                var name = names[chat] ?? AppData.string(row["chatname"])
+                if name.isEmpty { name = contacts[AppData.key(AppData.string(row["jid"]))] ?? WAJID.displayNumber(AppData.string(row["jid"])) }
+                found.append((BridgedChat(app: app, name: name, messages: [], unread: nil), [message]))
+            }
+        }
+        return ChatHistorySearch.chats(found)
     }
 
     /// The people of the group chats not asked yet (`ZWAGROUPMEMBER`, the ones still in it), by their name in WhatsApp,
@@ -1417,7 +1488,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
 /// conversation read. A pasted token needs chat:write, reactions:write, files:write, im:write and mpim:write for that;
 /// without one, Slack's refusal names the scope it misses.
 @MainActor
-final class SlackBridge: ChatHistoryBridge {
+final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
     let app = "slack"
     let interval: TimeInterval = 60
     private(set) var isWorking = false
@@ -1631,6 +1702,33 @@ final class SlackBridge: ChatHistoryBridge {
         let chat = messages.isEmpty ? nil : BridgedChat(app: app, name: name, messages: messages, unread: nil,
                                                         members: members.isEmpty ? nil : members)
         return (chat, more)
+    }
+
+    // MARK: Search everything
+
+    /// Slack's own search (`search.messages`), as far back as the workspace keeps: with the website's sign-in, or a
+    /// pasted token with search:read. Only the conversations Nook reads are kept, so a hit opens a chat it shows.
+    var searchesHistory: Bool { isReady && !conversations.isEmpty }
+
+    func searchHistory(_ words: [String], limit: Int) async throws -> [BridgedChat] {
+        guard let auth = Self.auth, !words.isEmpty else { return [] }
+        let known = Dictionary(conversations.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var found: [(chat: BridgedChat, messages: [InboxMessage])] = []
+        for word in words {
+            let json = try await call("search.messages", [
+                "query": word, "count": String(min(limit, 100)), "sort": "timestamp", "sort_dir": "desc",
+            ], auth: auth)
+            let matches = ((json["messages"] as? [String: Any])?["matches"] as? [[String: Any]]) ?? []
+            for match in matches {
+                guard let id = (match["channel"] as? [String: Any])?["id"] as? String, let conversation = known[id] else { continue }
+                let messages = SlackData.messages(["messages": [match]], conversation: conversation, users: users, me: me)
+                    .filter { ChatHistorySearch.matches($0, [word]) }
+                guard !messages.isEmpty else { continue }
+                let name = SlackData.chatName(conversation, users: users, me: me)
+                found.append((BridgedChat(app: app, name: name, messages: [], unread: nil), messages))
+            }
+        }
+        return ChatHistorySearch.chats(found)
     }
 
     /// A direct message's picture: the other person's profile photo, fetched once (a public address, no token sent).

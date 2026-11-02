@@ -3,7 +3,9 @@ import Combine
 
 /// Runs Search everything for the panel: builds the index off the main thread from what `AppModel+Search` collects,
 /// then scores each query there too, so typing never waits on it. Session transcripts that are not in memory are read
-/// from disk once and kept (by when the session last changed), so opening search again is instant.
+/// from disk once and kept (by when the session last changed), so opening search again is instant. The index holds the
+/// newest messages of each chat; after each query every chat app's whole history is searched too (`ChatSearchBridge`,
+/// the same for every app), and what it finds joins the hits as it comes in.
 @MainActor
 final class SearchCenter: ObservableObject {
     static let shared = SearchCenter()
@@ -14,6 +16,8 @@ final class SearchCenter: ObservableObject {
     @Published private(set) var searched = ""
     /// The first index is being built, or transcripts from disk are being added to it.
     @Published private(set) var indexing = false
+    /// The chat apps' history is being searched for the words in the field.
+    @Published private(set) var searchingHistory = false
     @Published private(set) var recent: [String] = SearchCenter.loadRecent()
 
     private var index = SearchIndex([])
@@ -21,6 +25,15 @@ final class SearchCenter: ObservableObject {
     private var searchTask: Task<Void, Never>?
     private var indexTask: Task<Void, Never>?
     private var loadedAt: Date?
+    /// The index's own hits for the text in the field, before what the chat apps' history found is added.
+    private var indexHits: [SearchHit] = []
+    /// What the chat apps' history found for `historyWords`, by document id.
+    private var history: [String: SearchDocument] = [:]
+    private var historyWords: [String] = []
+    private var historyTask: Task<Void, Never>?
+    private var mergeTask: Task<Void, Never>?
+    /// The extra pause before the apps are asked: each search is a query to a database or a service.
+    private static let historyPause: UInt64 = 250_000_000
 
     /// Session passages read from disk, by session, with the `updatedAt` they were read at.
     private static var transcripts: [UUID: (updated: Date, passages: [SearchPassage])] = [:]
@@ -81,6 +94,8 @@ final class SearchCenter: ObservableObject {
         query = SearchQuery()
         hits = []
         searched = ""
+        indexHits = []
+        forgetHistory()
     }
 
     /// Cancels search typing debounce without interrupting indexing.
@@ -120,14 +135,99 @@ final class SearchCenter: ObservableObject {
             let found = await Task.detached(priority: .userInitiated) { index.search(parsed, limit: limit) }.value
             guard let self, !Task.isCancelled, self.text == text else { return }
             self.query = parsed
-            self.hits = found
+            self.indexHits = found
             self.searched = text
+            self.searchHistory(parsed)
         }
+    }
+
+    // MARK: Every chat app's history
+
+    /// Asks every chat app that can search its whole history (`ChatCaptureService.historySearchers`) for the query's
+    /// words, all at once; each answer joins the hits when it comes. The same words again (a filter added, a typo
+    /// fixed in another word) reuse what was found.
+    private func searchHistory(_ parsed: SearchQuery) {
+        let words = ChatHistorySearch.words(parsed)
+        if words == historyWords {
+            remerge()
+            return
+        }
+        forgetHistory()
+        hits = indexHits
+        historyWords = words
+        let searchers = words.isEmpty ? [] : ChatCaptureService.shared.historySearchers
+        guard !searchers.isEmpty else { return }
+        searchingHistory = true
+        historyTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.historyPause)
+            guard !Task.isCancelled else { return }
+            await withTaskGroup(of: [BridgedChat].self) { group in
+                for bridge in searchers {
+                    group.addTask { @MainActor in
+                        (try? await bridge.searchHistory(words, limit: ChatHistorySearch.limit)) ?? []
+                    }
+                }
+                for await chats in group {
+                    guard let self, !Task.isCancelled, self.historyWords == words else {
+                        group.cancelAll()
+                        return
+                    }
+                    self.addHistory(chats)
+                }
+            }
+            guard let self, !Task.isCancelled, self.historyWords == words else { return }
+            self.searchingHistory = false
+        }
+    }
+
+    private func addHistory(_ chats: [BridgedChat]) {
+        let found = AppModel.searchHistoryDocuments(chats)
+        guard !found.isEmpty else { return }
+        for document in found {
+            guard var known = history[document.id] else {
+                history[document.id] = document
+                continue
+            }
+            known.passages = SearchMerge.passages(known.passages, adding: document.passages)
+            history[document.id] = known
+        }
+        remerge()
+    }
+
+    /// The index's hits with what the history found, scored off the main thread.
+    private func remerge() {
+        mergeTask?.cancel()
+        guard !history.isEmpty else {
+            hits = indexHits
+            return
+        }
+        let found = Array(history.values)
+        let index = index
+        let query = query
+        let base = indexHits
+        let limit = Self.limit
+        mergeTask = Task { [weak self] in
+            let merged = await Task.detached(priority: .userInitiated) {
+                let documents = SearchMerge.documents(found, in: index)
+                return SearchMerge.hits(base, adding: SearchIndex(documents).search(query, limit: limit), limit: limit)
+            }.value
+            guard let self, !Task.isCancelled, self.query == query else { return }
+            self.hits = merged
+        }
+    }
+
+    private func forgetHistory() {
+        historyTask?.cancel()
+        mergeTask?.cancel()
+        history = [:]
+        historyWords = []
+        searchingHistory = false
     }
 
     func cancel() {
         searchTask?.cancel()
         indexTask?.cancel()
+        forgetHistory()
     }
 
     // MARK: Recent searches

@@ -148,25 +148,44 @@ extension AppModel {
     /// Every chat in the Chats tab, the same way for every app (WhatsApp's of every linked account, Instagram,
     /// Telegram, Messenger, Messages, Slack…), each with every message Nook has of it and a group's people.
     private func searchChats() -> [SearchDocument] {
-        var documents: [SearchDocument] = []
         let capture = ChatCaptureService.shared
-        for thread in capture.loadedInbox.sorted where capture.isShown(thread) {
-            let app = MessagingApps.app(id: thread.app)?.name ?? thread.app
-            // The account too, while the app has more than one linked ("WhatsApp · Business").
-            let subtitle = thread.account.map { app + " · " + $0 } ?? app
-            var flags: Set<String> = thread.isGroup ? ["group"] : []
-            if thread.unread > 0 { flags.insert("unread") }
-            let passages = thread.messages.map { message in
-                SearchPassage(text: message.summary, author: message.isMine ? "me" : (message.sender.isEmpty ? thread.name : message.sender),
-                              date: message.date, anchor: message.id)
-            }
-            var facets = ["app": app]
-            if let members = thread.members, !members.isEmpty { facets["people"] = members.joined(separator: " ") }
-            documents.append(SearchDocument(id: "chat:" + thread.id, kind: .chat, title: thread.name, subtitle: subtitle, date: thread.last,
-                                            facets: facets, flags: flags, passages: passages, boost: thread.unread > 0 ? 0.3 : 0,
-                                            icon: .chat(app: thread.app, name: thread.name, avatar: thread.avatar, handle: thread.handle)))
+        return capture.loadedInbox.sorted.filter(capture.isShown).map { Self.searchDocument($0, messages: $0.messages) }
+    }
+
+    /// A chat as search finds it, the same for every app: its messages (the ones the inbox keeps, or the ones a search
+    /// through its app's history found), its people and its app.
+    static func searchDocument(_ thread: InboxThread, messages: [InboxMessage]) -> SearchDocument {
+        let app = MessagingApps.app(id: thread.app)?.name ?? thread.app
+        // The account too, while the app has more than one linked ("WhatsApp · Business").
+        let subtitle = thread.account.map { app + " · " + $0 } ?? app
+        var flags: Set<String> = thread.isGroup ? ["group"] : []
+        if thread.unread > 0 { flags.insert("unread") }
+        let passages = messages.map { message in
+            SearchPassage(text: message.summary, author: message.isMine ? "me" : (message.sender.isEmpty ? thread.name : message.sender),
+                          date: message.date, anchor: message.id)
         }
-        return documents
+        var facets = ["app": app]
+        if let members = thread.members, !members.isEmpty { facets["people"] = members.joined(separator: " ") }
+        return SearchDocument(id: "chat:" + thread.id, kind: .chat, title: thread.name, subtitle: subtitle,
+                              date: max(thread.last, messages.last?.date ?? .distantPast),
+                              facets: facets, flags: flags, passages: passages, boost: thread.unread > 0 ? 0.3 : 0,
+                              icon: .chat(app: thread.app, name: thread.name, avatar: thread.avatar, handle: thread.handle))
+    }
+
+    /// What a search through every chat app's whole history found (`ChatSearchBridge`), as the chats Nook shows: one
+    /// document per chat with the messages that matched, which `SearchMerge` puts together with the chat's own.
+    static func searchHistoryDocuments(_ found: [BridgedChat]) -> [SearchDocument] {
+        let capture = ChatCaptureService.shared
+        var messages: [String: [InboxMessage]] = [:]
+        var threads: [String: InboxThread] = [:]
+        for chat in found {
+            guard let thread = capture.shownThread(for: chat) else { continue }
+            threads[thread.id] = thread
+            messages[thread.id, default: []] += chat.messages
+        }
+        return threads.values.map { thread in
+            searchDocument(thread, messages: (messages[thread.id] ?? []).sorted { $0.date < $1.date })
+        }
     }
 
     /// Recorded calls: the summary, key points, to-dos and every line, by who said it.
