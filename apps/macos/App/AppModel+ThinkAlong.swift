@@ -165,8 +165,8 @@ extension AppModel {
             && !noticePacer.permits(key: Self.suggestionPace, calm: ThinkAlong.calmBeforeOffer)
         logNotice(.info, title: line, detail: body == line ? "" : body, context: appName, source: .suggestions, app: bundleID)
         missedNudge = (line, card, appName, Date())
-        // A suggestion is the first to give way: while another notice popped up a few minutes ago it only goes under
-        // the bell, and is not offered again (it does not count as an offer left unanswered).
+        // A suggestion is the first to give way: while another notice popped up a few minutes ago it only goes into
+        // the notice history, and is not offered again (it does not count as an offer left unanswered).
         if paced {
             thinkAlong.held(line)
             return
