@@ -198,7 +198,7 @@ private struct TypingIndicator: View {
             .lineLimit(1)
             .truncationMode(.tail)
             if let since {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
+                TimelineView(.nookTicks(every: 1)) { context in
                     let elapsed = context.date.timeIntervalSince(since)
                     // Only once it takes a moment: a quick answer should not flash a timer.
                     if elapsed >= 3 {

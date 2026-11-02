@@ -38,7 +38,7 @@ struct NookList: View {
                     }
                 }
             }
-            TimelineView(.periodic(from: .now, by: 30)) { context in
+            TimelineView(.nookTicks(every: 30)) { context in
                 VStack(alignment: .leading, spacing: 2) {
                     // No open Nooks yet: the panel says so and offers the first one, instead of a lone line in a list.
                     // Archived ones still wait in the shelf below.

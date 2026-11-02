@@ -84,11 +84,20 @@ struct SearchPanel: View {
         .frame(maxWidth: .infinity)
         .frame(maxWidth: 640)
         .cardBackground(NookTheme.graphite, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet, style: .continuous)
-        .shadow(color: .black.opacity(0.5), radius: 24, y: 8)
+        // The shadow of the card's shape only: on the whole panel it was drawn again from its content on every keystroke
+        // and every frame of the reveal.
+        .background(
+            RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous)
+                .fill(NookTheme.graphite)
+                .shadow(color: .black.opacity(0.5), radius: 24, y: 8)
+        )
         .padding(.horizontal, NookTheme.Spacing.lg)
         .focusOnAppear($focused)
-        .onAppear {
-            center.prepareOpen(app)
+        .onAppear { center.reset() }
+        // Gathering everything to search runs once the panel is in: in the same frames it held up the reveal.
+        .task {
+            try? await Task.sleep(for: NookTheme.tabSettle)
+            center.load(app)
         }
         .onDisappear { center.cancelSearch() }
         .onChange(of: text) { _, value in

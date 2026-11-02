@@ -263,7 +263,7 @@ struct TranscriptWorkingLine: View {
     var body: some View {
         Group {
             if let since {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
+                TimelineView(.nookTicks(every: 1)) { context in
                     Text(tr("agents.timeline.workingFor", AgentPathFormat.duration(max(0, context.date.timeIntervalSince(since)))))
                         .monospacedDigit()
                 }

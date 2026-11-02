@@ -364,7 +364,9 @@ private struct AddAccountSheet: View {
     @State private var saving = false
     @State private var error: String?
 
-    private var found: [(kind: AgentKind, url: URL)] { app.profiles.discover().filter { $0.kind == kind } }
+    /// Folders with a login on this Mac not added yet; looked up once as the sheet opens, not on every redraw (it lists
+    /// the home folder).
+    @State private var found: [(kind: AgentKind, url: URL)] = []
     private var canAdd: Bool { method == .cli || !key.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
@@ -425,6 +427,7 @@ private struct AddAccountSheet: View {
                         .foregroundStyle(NookTheme.coral)
                 }
             }
+            .onAppear { found = app.profiles.discover().filter { $0.kind == kind } }
         } footer: {
             Button(tr("button.cancel")) { dismiss() }
                 .keyboardShortcut(.cancelAction)

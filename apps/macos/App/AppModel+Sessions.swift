@@ -190,7 +190,21 @@ extension AppModel {
     /// agent still works on it. Without it the Nook session stopped at your message, or the continuation appeared as a
     /// second chat and Nook's next turn resumed the older conversation.
     func followTerminalContinuations() {
-        for run in workspace.runs where !run.archived && !run.status.isActive && !run.isRemote {
+        let candidates = workspace.runs.filter { !$0.archived && !$0.status.isActive && !$0.isRemote }
+        guard !candidates.isEmpty else { return }
+        // Each transcript by "family|session id", and by "family|earlier id" for one that resumed another, the first in
+        // history's order as before: this runs every two seconds while an agent works, and looking each session up in
+        // the whole history went through every earlier session for every session Nook runs.
+        var ownTranscripts: [String: PastSession] = [:]
+        var resumedTranscripts: [String: PastSession] = [:]
+        for past in history.sessions where !past.path.isEmpty {
+            let family = AgentSessionRecord.family(past.agent.name)
+            if ownTranscripts["\(family)|\(past.sessionID)"] == nil { ownTranscripts["\(family)|\(past.sessionID)"] = past }
+            for earlier in past.earlierIDs where earlier != past.sessionID && resumedTranscripts["\(family)|\(earlier)"] == nil {
+                resumedTranscripts["\(family)|\(earlier)"] = past
+            }
+        }
+        for run in candidates {
             guard let current = run.providerSessionID, !current.isEmpty else { continue }
             let agent = run.provider.displayName
             let family = AgentSessionRecord.family(agent)
@@ -199,13 +213,8 @@ extension AppModel {
                 AgentSessionRecord.family($0.name) == family && $0.ownConversationID == current && !$0.transcriptPath.isEmpty
             }
             // A transcript that resumed this one under a new id, else this conversation's own.
-            let resumed = history.sessions.first {
-                AgentSessionRecord.family($0.agent.name) == family && $0.sessionID != current && !$0.path.isEmpty
-                    && $0.earlierIDs.contains(current)
-            }
-            let own = history.sessions.first {
-                AgentSessionRecord.family($0.agent.name) == family && $0.sessionID == current && !$0.path.isEmpty
-            }
+            let resumed = resumedTranscripts["\(family)|\(current)"]
+            let own = ownTranscripts["\(family)|\(current)"]
             let newSession = resumed?.sessionID ?? current
             guard let path = resumed?.path ?? live?.transcriptPath ?? own?.path else { continue }
             // Only when something was written there after Nook last ran it, and once for each change.
@@ -250,8 +259,10 @@ struct SessionListsCache {
         }
 
         static func run(_ r: WorkspaceRun) -> String {
+            // The time to the minute: a streaming run moves it on every 2 s, and each change merged every list again
+            // while rendering. Its status (a turn starting or ending) is part of the key on its own.
             "\(r.id)|\(r.archived)|\(r.status)|\(r.provider.displayName)|\(r.profileID)|\(r.providerSessionID ?? "")|"
-                + "\(r.workingDirectory)|\(r.title)|\(r.updatedAt.timeIntervalSinceReferenceDate)|"
+                + "\(r.workingDirectory)|\(r.title)|\(Int(r.updatedAt.timeIntervalSinceReferenceDate / 60))|"
                 + r.earlierConversations.joined(separator: ",")
         }
     }

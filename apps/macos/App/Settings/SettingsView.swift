@@ -108,7 +108,6 @@ struct SettingsView: View {
             .id("\(app.settingsSection.rawValue)-\(settings.appLanguage.rawValue)")
         }
         .tint(NookTheme.iris)
-        .preferredColorScheme(.dark)
         .frame(minWidth: 760, minHeight: 520)
         .onAppear {
             refreshTick += 1

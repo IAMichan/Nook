@@ -50,7 +50,6 @@ struct OnboardingView: View {
         // The sheet can be resized: the step plan folds to symbols and every step scrolls when it gets small.
         .frame(minWidth: 520, idealWidth: 680, maxWidth: 960, minHeight: 460, idealHeight: 640, maxHeight: 960)
         .background(NookTheme.canvas)
-        .preferredColorScheme(.dark)
         .tint(NookTheme.iris)
         .onAppear { step = min(max(app.onboardingStep, 0), steps - 1) }
         .task { recommendations = await app.brainRecommendations() }

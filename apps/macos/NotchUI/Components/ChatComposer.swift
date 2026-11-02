@@ -42,8 +42,13 @@ final class ChatComposerModel: ObservableObject {
     private var bag = Set<AnyCancellable>()
 
     init() {
-        // The field turns into the recording bar and back as the recorder starts and stops.
-        recorder.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
+        // The field turns into the recording bar and back as the recorder starts and stops. Only that: its level changes
+        // ten times a second while you record, and the bar that shows it observes the recorder itself; passed on, it
+        // redrew the whole open chat each time.
+        recorder.$recording.removeDuplicates().map { _ in () }
+            .merge(with: recorder.$started.removeDuplicates().map { _ in () })
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &bag)
     }
 
     /// At most this many files wait at once, as in WhatsApp's own picker.
@@ -398,7 +403,7 @@ final class ChatVoiceRecorder: ObservableObject {
     }
 
     /// Stops and hands over the recording as a voice message; nil when it was too short to send.
-    func finish() -> ChatAttachment? {
+    func finish() async -> ChatAttachment? {
         guard let recorder else { return nil }
         let seconds = recorder.currentTime
         recorder.stop()
@@ -408,7 +413,11 @@ final class ChatVoiceRecorder: ObservableObject {
             return nil
         }
         // The .m4a still goes when the Opus encoder is not there: a gateway with ffmpeg can turn it into a voice note.
-        guard let ogg = ChatVoiceOpus.convert(recorder.url) else { return ChatAttachment(url: recorder.url, as: .voice, seconds: seconds) }
+        // Encoded off the main thread: a long note took long enough to freeze the chat.
+        let source = recorder.url
+        guard let ogg = await Task.detached(priority: .userInitiated, operation: { ChatVoiceOpus.convert(source) }).value else {
+            return ChatAttachment(url: recorder.url, as: .voice, seconds: seconds)
+        }
         try? FileManager.default.removeItem(at: recorder.url)
         return ChatAttachment(url: ogg, as: .voice, seconds: seconds)
     }
@@ -603,7 +612,7 @@ struct ChatRecordingBar: View {
     var body: some View {
         HStack(spacing: NookTheme.Spacing.md) {
             ToolbarIconButton("trash", tr("chat.compose.voice.discard"), height: 28, width: 28) { recorder.cancel() }
-            TimelineView(.periodic(from: .now, by: 0.5)) { context in
+            TimelineView(.nookTicks(every: 0.5)) { context in
                 HStack(spacing: NookTheme.Spacing.sm) {
                     Circle()
                         .fill(NookTheme.coral)
@@ -617,7 +626,7 @@ struct ChatRecordingBar: View {
             LevelBars(level: recorder.level)
                 .frame(maxWidth: .infinity, alignment: .leading)
             NookIconButton(systemName: "arrow.up", label: tr("chats.send"), filled: true, size: ChatReplyField.buttonSide) {
-                if let voice = recorder.finish() { send(voice) }
+                Task { if let voice = await recorder.finish() { send(voice) } }
             }
         }
         .padding(.leading, NookTheme.Spacing.xs)

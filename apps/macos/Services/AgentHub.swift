@@ -43,10 +43,14 @@ final class AgentHub: ObservableObject {
     /// One window as a session in Nook reported it (`rate_limit_event`); the other window keeps what it showed. Empty
     /// home is the default account.
     func applyPlanReading(_ reading: UsageLimits.PlanReading, home: String) {
-        var usage = (home.isEmpty ? planUsage : profilePlanUsage[home]) ?? PlanUsage(fiveHour: nil, sevenDay: nil, updated: Date())
+        let known = home.isEmpty ? planUsage : profilePlanUsage[home]
+        var usage = known ?? PlanUsage(fiveHour: nil, sevenDay: nil, updated: Date())
         let window = PlanWindow(usedPercent: reading.usedPercent, resetsAt: reading.resetsAt)
         if reading.window == "seven_day" { usage.sevenDay = window } else { usage.fiveHour = window }
         usage.updated = Date()
+        // A session reports this with many of its turns, mostly unchanged: as for the status line, an unchanged reading is
+        // stored once a minute, not redrawn and written to UserDefaults each time.
+        if let known, !usage.differs(from: known) { return }
         if home.isEmpty { planUsage = usage } else { profilePlanUsage[home] = usage }
     }
 
@@ -58,6 +62,7 @@ final class AgentHub: ObservableObject {
             let window = PlanWindow(usedPercent: reading.usedPercent, resetsAt: reading.resetsAt)
             if reading.window == "seven_day" { usage.sevenDay = window } else { usage.fiveHour = window }
         }
+        if let known = home.isEmpty ? planUsage : profilePlanUsage[home], !usage.differs(from: known) { return }
         if home.isEmpty { planUsage = usage } else { profilePlanUsage[home] = usage }
     }
 

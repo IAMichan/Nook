@@ -30,17 +30,24 @@ enum EmojiCatalog {
 
     static let all: [Emoji] = groups.flatMap(\.emoji)
 
+    /// The words `search` matches for each emoji in `all`, in the same order: the words of its name and its shortcodes.
+    /// Made once: the picker searches on every keystroke, and building these took longer than the search itself.
+    private static let searchNames: [[String]] = {
+        let shortcodes = Dictionary(CompletionEmojiCatalog.all.map { ($0.character, $0.shortcodes) },
+                                    uniquingKeysWith: { first, _ in first })
+        return all.map { emoji in
+            emoji.name.split(whereSeparator: { $0 == " " || $0 == "-" }).map(String.init)
+                + (shortcodes[emoji.character] ?? shortcodes[emoji.character.replacingOccurrences(of: "\u{FE0F}", with: "")] ?? [])
+        }
+    }()
+
     /// The emoji whose name (or one of Nook's own names for it, Dutch ones too: "lachen", "hart") holds every word of
     /// `query`; words that start a name's word count first. Empty for an empty query.
     static func search(_ query: String, limit: Int = 200) -> [Emoji] {
         let words = query.lowercased().split(whereSeparator: { $0 == " " }).map(String.init)
         guard !words.isEmpty else { return [] }
-        let shortcodes = Dictionary(CompletionEmojiCatalog.all.map { ($0.character, $0.shortcodes) },
-                                    uniquingKeysWith: { first, _ in first })
         var starts: [Emoji] = [], contains: [Emoji] = []
-        for emoji in all {
-            let names = emoji.name.split(whereSeparator: { $0 == " " || $0 == "-" }).map(String.init)
-                + (shortcodes[emoji.character] ?? shortcodes[emoji.character.replacingOccurrences(of: "\u{FE0F}", with: "")] ?? [])
+        for (emoji, names) in zip(all, searchNames) {
             if words.allSatisfy({ word in names.contains { $0.hasPrefix(word) } }) {
                 starts.append(emoji)
             } else if words.allSatisfy({ word in names.contains { $0.contains(word) } }) {

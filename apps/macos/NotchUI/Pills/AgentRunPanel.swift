@@ -9,6 +9,8 @@ import Combine
 struct AgentRunPanel: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject var workspace: WorkspaceManager
+    /// The timeline changes as the agent streams (`WorkspaceManager.timelines`); only this panel redraws for it.
+    @ObservedObject var timelines: TimelineChanges
     let runID: UUID
     /// The terminal and browser icons, next to the branch button.
     var headerAccessory: AnyView? = nil
@@ -91,6 +93,7 @@ struct AgentRunPanel: View {
         if let run = workspace.run(runID) {
             let _ = derived.update(workspace.timeline(runID), run: run)
             let outputs = derived.outputs
+            let signatures = derived.outputSignatures
             let runningCommand = derived.runningCommand
             let consoleOpen = consoleEventID != nil
             HStack(alignment: .top, spacing: 0) {
@@ -126,12 +129,12 @@ struct AgentRunPanel: View {
                 outputs: outputs,
                 turns: turnDiffs(run),
                 pullRequest: derived.createdPullRequest,
-                fresh:!outputsLink.shown && seenOutputs.map { SessionOutputs.hasNew(outputs, seen: $0) } == true))
+                fresh: !outputsLink.shown && seenOutputs.map { seen in signatures.contains { !seen.contains($0) } } == true))
             // What the outputs tab shows is seen.
             .onChange(of: outputsLink.shown) { _, isShown in
-                if isShown { seenOutputs = Set(outputs.map(SessionOutputs.signature)) }
+                if isShown { seenOutputs = Set(signatures) }
             }
-            .onChange(of: outputs.map(SessionOutputs.signature)) { _, _ in 
+            .onChange(of: signatures) { _, _ in
                 noticeOutputs(outputs, working: run.status.isActive, turnStart: run.turnStartedAt)
             }
             .onAppear {
@@ -143,7 +146,7 @@ struct AgentRunPanel: View {
                 workspace.prewarm(runID)
                 focused = true
                 // What was there before you opened the session is not news.
-                seenOutputs = Set(outputs.map(SessionOutputs.signature))
+                seenOutputs = Set(signatures)
                 Task { repository = await workspace.githubRepository(runID) }
                 loadComposerState(run)
             }
@@ -617,6 +620,9 @@ struct AgentRunPanel: View {
                 .chatColumn()
             }
             .scrollPosition($position)
+            // Following the end while the answer streams: the scroll view keeps its bottom in place as the content grows,
+            // instead of a `scrollTo` (a layout down to the end and a scroll) for every streamed update.
+            .defaultScrollAnchor(run.status.isActive && scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
             .scrollIndicators(.never)
             // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
             .composerInset {
@@ -699,9 +705,6 @@ struct AgentRunPanel: View {
             }
             .onChange(of: events.count) { _, _ in
                 if scroll.shouldFollowEnd { withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) } }
-            }
-            .onChange(of: events.last?.text.utf8.count ?? 0) { _, _ in
-                if run.status.isActive, scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             // You sent something: it is the newest thing and follows again.
             .onChange(of: events.last(where: { $0.kind == .user })?.id) { _, _ in
@@ -1319,6 +1322,8 @@ private final class RunTimelineDerived {
     /// The newest final answer while the agent waits: a question at its end can be answered with a click.
     private(set) var answerable: UUID?
     private(set) var outputs: [SessionOutput] = []
+    /// `SessionOutputs.signature` of each output: the panel compares them on every redraw, also for every streamed token.
+    private(set) var outputSignatures: [String] = []
     private(set) var runningCommand: UUID?
     /// The subagents started in the last turn, for the bar above the composer (which redraws on every keystroke).
     private(set) var subagents: [SubagentInfo] = []
@@ -1381,6 +1386,7 @@ private final class RunTimelineDerived {
         }
         answerable = active ? nil : events.last(where: { $0.kind == .assistant }).flatMap { finalAnswers.contains($0.id) ? $0.id : nil }
         outputs = SessionOutputs.collect(all, tasks: run.tasks, directory: run.workingDirectory)
+        outputSignatures = outputs.map(SessionOutputs.signature)
         let lastTurn = TimelinePresentation.lastTurn(all)
         runningCommand = CommandConsole.running(lastTurn)?.id
         subagents = active ? Subagents.latest(lastTurn) : []

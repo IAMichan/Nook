@@ -235,7 +235,7 @@ struct AgentsUsagePanel: View {
                     .font(NookTheme.font(16, .bold).monospacedDigit())
                     .foregroundStyle(UsageTone.text(limit.percent))
             }
-            TimelineView(.periodic(from: .now, by: 60)) { context in
+            TimelineView(.nookTicks(every: 60)) { context in
                 let pace = limit.elapsed(at: context.date)
                 UsageBar(fraction: limit.percent / 100, color: UsageTone.fill(limit.percent, accent: accent), pace: pace)
                     .help(pace.map { tr("agents.usage.pace", Int(($0 * 100).rounded())) } ?? "")

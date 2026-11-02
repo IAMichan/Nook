@@ -634,15 +634,22 @@ enum CompanionPolicy {
     }
 
     static func excerpt(_ text: String) -> String {
-        let flat = text.replacingOccurrences(of: "\r", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard flat.count > CompanionConstants.excerptLimit else { return flat }
-        return String(flat.prefix(CompanionConstants.excerptLimit)) + "…"
+        cut(text, limit: CompanionConstants.excerptLimit)
     }
 
     /// A line of a conversation, cut at `limit` characters.
     static func clip(_ text: String, limit: Int = CompanionConstants.lineLimit) -> String {
-        let flat = text.replacingOccurrences(of: "\r", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard flat.count > limit else { return flat }
+        cut(text, limit: limit)
+    }
+
+    /// `text` without carriage returns and surrounding white space, cut at `limit` characters. Only its start is read: an
+    /// agent's answer can run to hundreds of kilobytes, and the session list makes an excerpt of 25 of them every second.
+    private static func cut(_ text: String, limit: Int) -> String {
+        let start = text.drop(while: \.isWhitespace)
+        let head = start.prefix(limit * 2 + 16)
+        let more = head.endIndex < start.endIndex
+        let flat = String(head).replacingOccurrences(of: "\r", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard more || flat.count > limit else { return flat }
         return String(flat.prefix(limit)) + "…"
     }
 

@@ -1807,6 +1807,15 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertFalse(state.stopped("anna", in: "g"))
         XCTAssertNil(state.nextExpiry, "no one types anywhere")
 
+        // What the chats show leaves out when a word runs out: an app repeating it does not change what is shown.
+        var repeated = ChatTypingState()
+        repeated.typing(ChatTypist(id: "jan", name: "Jan", kind: .text, until: soon), in: "g")
+        let shown = repeated.shown
+        repeated.typing(ChatTypist(id: "jan", name: "Jan", kind: .text, until: now.addingTimeInterval(15)), in: "g")
+        XCTAssertEqual(repeated.shown, shown, "the same person typing again shows the same")
+        repeated.typing(ChatTypist(id: "jan", name: "Jan", kind: .recording, until: soon), in: "g")
+        XCTAssertNotEqual(repeated.shown, shown, "recording instead of typing shows otherwise")
+
         XCTAssertNil(ChatTypingLine.text([]))
         XCTAssertEqual(ChatTypingLine.text([ChatTypist(id: "p", name: "", kind: .text, until: soon)]), tr("chat.typing"))
         XCTAssertEqual(ChatTypingLine.text([ChatTypist(id: "j", name: "Jan", kind: .recording, until: soon)]),
