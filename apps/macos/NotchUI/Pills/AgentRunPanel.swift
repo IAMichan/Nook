@@ -35,6 +35,8 @@ struct AgentRunPanel: View {
     @State private var skills: [Skill] = []
     @State private var scroll = ScrollModel()
     @State private var atEnd = true
+    /// Read only by the handlers: as state, each start and stop of a scroll drew every block of the run again.
+    @State private var scrollPhase = Unobserved(ScrollPhase.idle)
     /// Counts the messages you sent from the composer (also those that steer or wait in line): each brings the
     /// conversation down to its end, wherever you had scrolled.
     @State private var sentCount = 0
@@ -671,14 +673,16 @@ struct AgentRunPanel: View {
                 if nowAtEnd { scroll.reachedEnd() }
             }
             .onScrollPhaseChange { _, phase in
+                scrollPhase.value = phase
                 if (phase == .interacting || phase == .decelerating) && !atEnd { scroll.userScrolled() }
             }
             .onScrollGeometryChange(for: ScrollFrame.self) { geometry in
                 ScrollFrame(offset: geometry.contentOffset.y, content: geometry.contentSize.height,
                             container: geometry.containerSize.height,
                             insetTop: geometry.contentInsets.top, insetBottom: geometry.contentInsets.bottom)
-            } action: { _, frame in
+            } action: { old, frame in
                 viewport.frame = frame
+                keepEnd(old, frame, proxy)
             }
             .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
                 overflows = now
@@ -782,7 +786,24 @@ struct AgentRunPanel: View {
             guard let block = UUID(uuidString: id) else { return }
             scroll.userScrolled()
             proxy.scrollTo(block, anchor: .top)
+            // Once the lazy blocks are laid out: the first scroll used their estimated heights.
+            DispatchQueue.main.async { proxy.scrollTo(block, anchor: .top) }
         }
+    }
+
+    /// Keeps the run at its end while it is there, as `TranscriptConversation.keepEnd` does: the lazy blocks below
+    /// measure taller after the first scroll and the composer under it grows (a card, a draft), which let the run slip
+    /// up from its end as it opens. A landing on what is new that fits on screen ends at the end too, and follows from
+    /// there. Only moving while the sizes stay the same is you scrolling away.
+    private func keepEnd(_ old: ScrollFrame, _ new: ScrollFrame, _ proxy: ScrollViewProxy) {
+        let resized = new.content != old.content || new.container != old.container || new.insetBottom != old.insetBottom
+        guard resized, !finding else { return }
+        let wasAtEnd = old.maxOffset - old.offset <= 1
+        guard scroll.shouldFollowEnd || wasAtEnd, scrollPhase.value == .idle, new.maxOffset - new.offset > 0.5 else { return }
+        scroll.reachedEnd()
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
     }
 
     /// Where you leave a session: the block at the top, what you opened, and whether you were at the end.
