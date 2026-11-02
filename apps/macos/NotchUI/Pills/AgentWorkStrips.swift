@@ -97,39 +97,62 @@ struct TasksStrip: View {
     }
 }
 
-/// "Subagents 1 of 3 done" with a row per subagent: its kind, what it does, and whether it still runs; a row opens
-/// to its task and its answer.
+/// "Subagents  Auditing the chats  1 of 3 done" with a row per subagent: whether it still runs, its kind, what it does
+/// and how long it has been at it; a row opens to its task and its answer. It stays while any of them still works in the
+/// background, also after the turn that started them. The arrow shows them all in the side panel (`openPanel`).
 struct SubagentBar: View {
     let agents: [SubagentInfo]
+    /// Shows the subagents in the side panel's outputs; false when the panel is busy with something else.
+    var openPanel: (() -> Bool)? = nil
     @State private var open = false
     @State private var shown: UUID?
 
     var body: some View {
         let done = agents.filter { !$0.isRunning }.count
+        let running = agents.count - done
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            Button {
-                withAnimation(NookTheme.reveal) { open.toggle() }
-            } label: {
-                HStack(spacing: NookTheme.Spacing.md) {
-                    Image(systemName: "person.2").font(NookTheme.font(11, .semibold))
-                    Text(tr("ws.subagents.title")).foregroundStyle(NookTheme.textTertiary)
-                    Text(agents.first(where: \.isRunning)?.title ?? agents.last?.title ?? "")
-                        .foregroundStyle(NookTheme.paper.opacity(0.85))
-                        .lineLimit(1)
-                    Spacer(minLength: 6)
-                    Text(tr("ws.subagents.progress", done, agents.count))
-                        .font(NookTheme.mono(11, .medium))
-                        .foregroundStyle(NookTheme.textSecondary)
-                    Image(systemName: "chevron.up")
-                        .font(NookTheme.font(8.5, .bold))
-                        .rotationEffect(.degrees(open ? 180 : 0))
-                        .foregroundStyle(NookTheme.textTertiary)
+            HStack(spacing: NookTheme.Spacing.md) {
+                Button {
+                    withAnimation(NookTheme.reveal) { open.toggle() }
+                } label: {
+                    HStack(spacing: NookTheme.Spacing.md) {
+                        if running > 0 {
+                            ProgressView().controlSize(.mini).frame(width: 12)
+                        } else {
+                            Image(systemName: "person.2").font(NookTheme.font(11, .semibold))
+                        }
+                        Text(tr("ws.subagents.title")).foregroundStyle(NookTheme.textTertiary)
+                        Text(agents.first(where: \.isRunning)?.title ?? agents.last?.title ?? "")
+                            .foregroundStyle(NookTheme.paper.opacity(0.85))
+                            .lineLimit(1)
+                        Spacer(minLength: 6)
+                        if running > 0 {
+                            Text(tr("ws.subagents.running", running))
+                                .font(NookTheme.TextStyle.caption)
+                                .foregroundStyle(NookTheme.iris)
+                        }
+                        Text(tr("ws.subagents.progress", done, agents.count))
+                            .font(NookTheme.mono(11, .medium))
+                            .foregroundStyle(NookTheme.textSecondary)
+                        if agents.count > 1 && agents.count <= 10 { segments }
+                        Image(systemName: "chevron.up")
+                            .font(NookTheme.font(8.5, .bold))
+                            .rotationEffect(.degrees(open ? 180 : 0))
+                            .foregroundStyle(NookTheme.textTertiary)
+                    }
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .contentShape(Rectangle())
                 }
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .accessibilityLabel(tr("ws.subagents.title") + ", " + tr("ws.subagents.progress", done, agents.count))
+                if let openPanel {
+                    ToolbarIconButton("sidebar.right", tr("ws.subagents.openPanel"), height: 20, width: 20) {
+                        if !openPanel() { withAnimation(NookTheme.reveal) { open = true } }
+                    }
+                    .help(tr("ws.subagents.openPanel"))
+                }
             }
-            .buttonStyle(.plain)
             if open {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     ForEach(agents) { agent in row(agent) }
@@ -141,25 +164,30 @@ struct SubagentBar: View {
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
     }
 
+    /// One short bar per subagent: lit while it runs, mint once done, coral when it failed.
+    private var segments: some View {
+        HStack(spacing: NookTheme.Spacing.xxs) {
+            ForEach(agents) { agent in
+                Capsule().fill(agent.isRunning ? NookTheme.iris : (agent.failed ? NookTheme.coralSoft : NookTheme.mint))
+                    .frame(height: 3)
+            }
+        }
+        .frame(width: 44)
+    }
+
     private func row(_ agent: SubagentInfo) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
             Button {
                 shown = shown == agent.id ? nil : agent.id
             } label: {
                 HStack(spacing: NookTheme.Spacing.md) {
-                    if agent.isRunning {
-                        ProgressView().controlSize(.mini).frame(width: 12)
-                    } else {
-                        Image(systemName: agent.state == .failed ? "xmark.circle.fill" : "checkmark.circle.fill")
-                            .font(NookTheme.font(10, .semibold))
-                            .foregroundStyle(agent.state == .failed ? NookTheme.coralSoft : NookTheme.mint)
-                            .frame(width: 12)
-                    }
+                    SubagentStatusMark(agent: agent)
                     Text(agent.kind)
                         .font(NookTheme.mono(10.5, .medium))
                         .foregroundStyle(NookTheme.textTertiary)
                     Text(agent.title).lineLimit(1)
                     Spacer(minLength: 0)
+                    SubagentElapsed(agent: agent)
                 }
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)
@@ -172,8 +200,8 @@ struct SubagentBar: View {
                         Text(ToolSummary.oneLine(agent.prompt, 400))
                             .foregroundStyle(NookTheme.textTertiary)
                     }
-                    if let output = agent.output, !output.isEmpty {
-                        Text(ToolSummary.oneLine(output, 600))
+                    if let answer = agent.answer {
+                        Text(ToolSummary.oneLine(answer, 600))
                             .foregroundStyle(NookTheme.textSecondary)
                     }
                 }
@@ -181,6 +209,145 @@ struct SubagentBar: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .padding(.leading, 20)
+            }
+        }
+    }
+}
+
+/// Whether a subagent still runs (a small spinner), finished (a mint check) or failed (a coral cross).
+struct SubagentStatusMark: View {
+    let agent: SubagentInfo
+    var size: CGFloat = 10
+
+    var body: some View {
+        Group {
+            if agent.isRunning {
+                ProgressView().controlSize(.mini)
+            } else {
+                Image(systemName: agent.failed ? "xmark.circle.fill" : "checkmark.circle.fill")
+                    .font(NookTheme.font(size, .semibold))
+                    .foregroundStyle(agent.failed ? NookTheme.coralSoft : NookTheme.mint)
+            }
+        }
+        .frame(width: 12)
+    }
+}
+
+/// How long a running subagent has been at it, counting up; nothing once it is done (its row only keeps its outcome).
+struct SubagentElapsed: View {
+    let agent: SubagentInfo
+
+    var body: some View {
+        if agent.isRunning, agent.started > .distantPast {
+            Text(timerInterval: agent.started...Date.distantFuture, countsDown: false)
+                .font(NookTheme.mono(10.5))
+                .foregroundStyle(NookTheme.textTertiary)
+                .monospacedDigit()
+                .fixedSize()
+        }
+    }
+}
+
+/// Every subagent of a session, as the Subagents output in the side panel shows them: a card each with its state, what
+/// it was asked and what it answered, the running ones counting their time.
+struct SubagentList: View {
+    let agents: [SubagentInfo]
+
+    var body: some View {
+        let running = agents.filter(\.isRunning).count
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Text(tr("ws.subagents.progress", agents.count - running, agents.count))
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(NookTheme.textSecondary)
+                if running > 0 {
+                    Text(tr("ws.subagents.running", running))
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.iris)
+                }
+            }
+            // Those still at work first, then the rest, newest first.
+            ForEach(agents.filter(\.isRunning) + agents.filter { !$0.isRunning }.reversed()) { agent in
+                SubagentCard(agent: agent)
+            }
+        }
+    }
+}
+
+/// One subagent in `SubagentList`: its state, title, kind and time; its task folded to a few lines, and its answer.
+private struct SubagentCard: View {
+    let agent: SubagentInfo
+    @State private var open = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            HStack(spacing: NookTheme.Spacing.md) {
+                SubagentStatusMark(agent: agent, size: 11)
+                Text(agent.title)
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(NookTheme.textStrong)
+                    .lineLimit(2)
+                Spacer(minLength: NookTheme.Spacing.sm)
+                SubagentElapsed(agent: agent)
+            }
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Text(agent.kind).font(NookTheme.mono(10.5, .medium))
+                if agent.background { Text("·"); Text(tr("ws.subagent.background")) }
+                Text("·")
+                Text(agent.started, style: .time)
+                if !agent.isRunning {
+                    Text("·")
+                    Text(tr(agent.failed ? "ws.subagent.failed" : "ws.subagent.done"))
+                        .foregroundStyle(agent.failed ? NookTheme.coralSoft : NookTheme.textTertiary)
+                }
+            }
+            .font(NookTheme.TextStyle.caption)
+            .foregroundStyle(NookTheme.textTertiary)
+            .padding(.leading, 20)
+            if !agent.prompt.isEmpty {
+                Button {
+                    withAnimation(NookTheme.reveal) { open.toggle() }
+                } label: {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                        HStack(spacing: NookTheme.Spacing.xs) {
+                            Text(tr("ws.subagent.task"))
+                            Image(systemName: "chevron.right")
+                                .font(NookTheme.font(8, .bold))
+                                .rotationEffect(.degrees(open ? 90 : 0))
+                        }
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        Text(open ? agent.prompt : ToolSummary.oneLine(agent.prompt, 240))
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .lineLimit(open ? nil : 3)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 20)
+            }
+            if let answer = agent.answer {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(tr("ws.subagent.answer"))
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                    MarkdownView(text: answer, size: 12.5)
+                        .textSelection(.enabled)
+                }
+                .padding(.leading, 20)
+            }
+        }
+        .padding(NookTheme.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
+        .overlay {
+            if agent.isRunning {
+                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                    .strokeBorder(NookTheme.iris.opacity(0.35), lineWidth: 1)
             }
         }
     }

@@ -1058,9 +1058,12 @@ struct AgentRunPanel: View {
         let steers = primary == .steer
         return VStack(alignment: .leading, spacing: 5) {
             UsageLimitBanner(run: run)
-            // The subagents the agent started this turn, and its task list.
-            let subagents = active ? derived.subagents : []
-            if !subagents.isEmpty { SubagentBar(agents: subagents) }
+            // The subagents the agent started since your message (also those still at work in the background after its
+            // turn), and its task list.
+            let subagents = derived.subagents
+            if !subagents.isEmpty {
+                SubagentBar(agents: subagents) { outputsLink.open(SessionOutputs.subagentsID) }
+            }
             // While the agent works its list shows in the timeline; one it left unfinished waits here.
             if let tasks = run.tasks, !tasks.isEmpty, !TaskChecklist.showsInline(tasks, active: run.status.isActive) {
                 TasksStrip(steps: tasks)
@@ -1325,7 +1328,8 @@ private final class RunTimelineDerived {
     /// `SessionOutputs.signature` of each output: the panel compares them on every redraw, also for every streamed token.
     private(set) var outputSignatures: [String] = []
     private(set) var runningCommand: UUID?
-    /// The subagents started in the last turn, for the bar above the composer (which redraws on every keystroke).
+    /// The subagents since your last message while the agent works or any of them still runs, for the bar above the
+    /// composer (which redraws on every keystroke).
     private(set) var subagents: [SubagentInfo] = []
     /// The last pull request the agent reported with `<pr-created>`, for the tray above the composer.
     private(set) var createdPullRequest: URL?
@@ -1389,7 +1393,8 @@ private final class RunTimelineDerived {
         outputSignatures = outputs.map(SessionOutputs.signature)
         let lastTurn = TimelinePresentation.lastTurn(all)
         runningCommand = CommandConsole.running(lastTurn)?.id
-        subagents = active ? Subagents.latest(lastTurn) : []
+        let current = Subagents.current(all)
+        subagents = active || current.contains(where: \.isRunning) ? current : []
         marks = TranscriptPresentation.promptMarks(events: events)
         pullRequestBeforeLast = RunPullRequestLinks.last(in: Array(all.dropLast()))
         createdPullRequest = all.last.flatMap(RunPullRequestLinks.pullRequest(in:)) ?? pullRequestBeforeLast

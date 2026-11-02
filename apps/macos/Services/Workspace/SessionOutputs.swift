@@ -17,6 +17,8 @@ struct SessionOutput: Identifiable, Equatable, Sendable {
         /// A Markdown document.
         case document
         case image
+        /// The subagents it started, in the order they started.
+        case subagents([SubagentInfo])
     }
 
     var id: String
@@ -83,8 +85,15 @@ enum SessionOutputs {
             let date = latestTasks?.date ?? events.last?.date ?? Date()
             outputs.append(SessionOutput(id: "tasks", kind: .tasks(steps), title: "", path: nil, date: date))
         }
+        let subagents = Subagents.list(events)
+        if let latest = subagents.last {
+            outputs.append(SessionOutput(id: subagentsID, kind: .subagents(subagents), title: "", path: nil, date: latest.started))
+        }
         return outputs.sorted { $0.date > $1.date }
     }
+
+    /// The id of the Subagents output.
+    static let subagentsID = "subagents"
 
     /// Tools that set the agent's task list, by name (an MCP tool by its own name).
     static let taskTools: Set<String> = ["TodoWrite", "update_plan", "Plan", "todo_write", "write_todos"]
@@ -106,6 +115,7 @@ enum SessionOutputs {
     static func signature(_ output: SessionOutput) -> String {
         switch output.kind {
         case .tasks(let steps): return "tasks:" + steps.map { $0.status.rawValue }.joined(separator: ",")
+        case .subagents(let agents): return "subagents:" + agents.map { $0.id.uuidString + ($0.isRunning ? "+" : "-") }.joined(separator: ",")
         default: return output.id + "@" + String(output.date.timeIntervalSince1970)
         }
     }

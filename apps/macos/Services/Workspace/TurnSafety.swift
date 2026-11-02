@@ -19,6 +19,9 @@ enum OpenWork {
         events.compactMap { event in
             guard let state = event.state else { return nil }
             switch (event.kind, state) {
+            case (.tool, .running) where Subagents.isBackground(event) && (reason == .completed || reason == .failed):
+                // A subagent in the background outlives the turn that started it; it ends with its own notification.
+                return nil
             case (.tool, .running), (.fileChange, .running):
                 return EventSettlement(eventID: event.id, state: reason == .completed ? .done : .failed)
             case (.assistant, .running), (.thinking, .running):

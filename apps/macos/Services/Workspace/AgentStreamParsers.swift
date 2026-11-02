@@ -60,6 +60,10 @@ enum ClaudeStreamEvent: Equatable, Sendable {
     case rateLimits(UsageLimits.ClaudeEvent?)
     /// How full a subscription window is, as Claude Code reports it in the same `rate_limit_event`.
     case planWindow(UsageLimits.PlanReading)
+    /// Work Claude Code runs in the background (a subagent started with `run_in_background`) started or ended, from its
+    /// `task_started` and `task_notification` messages or the `<task-notification>` it hands the model. `toolUseID` is
+    /// the call that started it, `taskID` the id its launch output names; `status` is nil while it runs.
+    case backgroundTask(BackgroundTaskUpdate)
     /// An entry of the main conversation chain (an assistant or user message's `uuid`): where `--resume-session-at` can
     /// pick the conversation up again.
     case chainEntry(String)
@@ -72,6 +76,35 @@ extension ClaudeStreamEvent {
         case .textDelta, .text, .thinking, .thinkingDelta, .toolUse, .permissionRequest: return true
         default: return false
         }
+    }
+}
+
+/// News about a task Claude Code runs in the background.
+struct BackgroundTaskUpdate: Equatable, Sendable {
+    enum Status: String, Sendable { case completed, failed, stopped }
+
+    var taskID: String?
+    var toolUseID: String?
+    /// nil: it started (or still runs).
+    var status: Status?
+    /// "Agent \"Audit the chats\" completed".
+    var summary: String?
+    /// What the subagent answered, when Claude Code passes it on.
+    var result: String?
+
+    /// Claude Code's `<task-notification>` block, as it hands it to the model when background work ended.
+    static func notification(_ text: String) -> BackgroundTaskUpdate? {
+        guard text.contains("<task-notification>") else { return nil }
+        func tag(_ name: String) -> String? {
+            guard let start = text.range(of: "<\(name)>"),
+                  let end = text.range(of: "</\(name)>", range: start.upperBound..<text.endIndex) else { return nil }
+            let value = text[start.upperBound..<end.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
+        }
+        let update = BackgroundTaskUpdate(taskID: tag("task-id"), toolUseID: tag("tool-use-id"),
+                                          status: tag("status").flatMap(Status.init(rawValue:)) ?? .completed,
+                                          summary: tag("summary"), result: tag("result"))
+        return update.taskID == nil && update.toolUseID == nil ? nil : update
     }
 }
 
@@ -105,6 +138,14 @@ enum ClaudeStreamParser {
                 return [.initialized(sessionID: session, model: object["model"] as? String)]
             }
             if subtype == "compact_boundary" { return [.notice("compact")] }
+            if subtype == "task_started" || subtype == "task_notification" {
+                let update = BackgroundTaskUpdate(
+                    taskID: object["task_id"] as? String, toolUseID: object["tool_use_id"] as? String,
+                    status: subtype == "task_started" ? nil
+                        : ((object["status"] as? String).flatMap(BackgroundTaskUpdate.Status.init(rawValue:)) ?? .completed),
+                    summary: (object["summary"] as? String) ?? (object["description"] as? String), result: nil)
+                return update.taskID == nil && update.toolUseID == nil ? [] : [.backgroundTask(update)]
+            }
             return []
 
         case "stream_event":
@@ -161,9 +202,17 @@ enum ClaudeStreamParser {
 
         case "user":
             let entry: [ClaudeStreamEvent] = !nested ? ((object["uuid"] as? String).flatMap { $0.isEmpty ? nil : [.chainEntry($0)] } ?? []) : []
-            guard let message = object["message"] as? [String: Any],
-                  let content = message["content"] as? [[String: Any]] else { return entry }
-            return content.compactMap { block in
+            guard let message = object["message"] as? [String: Any] else { return entry }
+            // The note Claude Code hands the model when background work ended.
+            if !nested, let text = message["content"] as? String {
+                return (BackgroundTaskUpdate.notification(text).map { [.backgroundTask($0)] } ?? []) + entry
+            }
+            guard let content = message["content"] as? [[String: Any]] else { return entry }
+            let notices: [ClaudeStreamEvent] = nested ? [] : content.compactMap { block in
+                guard (block["type"] as? String) == "text", let text = block["text"] as? String else { return nil }
+                return BackgroundTaskUpdate.notification(text).map { .backgroundTask($0) }
+            }
+            return notices + content.compactMap { block in
                 guard (block["type"] as? String) == "tool_result", let id = block["tool_use_id"] as? String else { return nil }
                 return .toolResult(id: id, output: resultText(block["content"]), isError: (block["is_error"] as? Bool) ?? false)
             } + entry

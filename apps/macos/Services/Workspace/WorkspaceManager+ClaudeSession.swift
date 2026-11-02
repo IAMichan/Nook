@@ -63,6 +63,7 @@ extension WorkspaceManager {
         claudeIdle[id] = nil
         processes[id] = idle.process
         turns[id] = TurnState()
+        wakeSubagent[id] = nil
         if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
         if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
         run.move(to: .running)
@@ -83,11 +84,37 @@ extension WorkspaceManager {
         claudeIdle[id] = nil
         processes[id] = idle.process
         turns[id] = TurnState()
-        append(id, RunEvent(kind: .system, text: tr("ws.wake.background"), tool: "wake"))
+        let finished = wakeSubagent.removeValue(forKey: id)
+        append(id, RunEvent(kind: .system, text: finished.map { tr("ws.wake.subagent", $0) } ?? tr("ws.wake.background"), tool: "wake"))
         if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
         run.move(to: .running)
         run.turnStartedAt = Date()
         replace(run)
+    }
+
+    /// Claude Code says a subagent it runs in the background started or ended (see `BackgroundTaskUpdate`): its row
+    /// keeps running until then, and then settles with what it answered. The line where the agent picks up its result
+    /// names it.
+    func noteBackgroundSubagent(_ id: UUID, _ update: BackgroundTaskUpdate) {
+        guard let event = Subagents.event(for: update, in: timeline(id)) else { return }
+        let title = Subagents.list([event]).first?.title ?? event.text
+        guard let status = update.status else {
+            if event.state != .running { mutateEvent(id, event.id) { $0.state = .running } }
+            return
+        }
+        guard event.state == .running || event.state == nil else { return }
+        mutateEvent(id, event.id) { event in
+            event.state = status == .completed ? .done : .failed
+            if let answer = update.result ?? update.summary, !answer.isEmpty { event.output = RunEvent.clip(answer) }
+        }
+        // The agent woke up for it already: its line says which one; otherwise the wake to come does.
+        if let wake = TimelinePresentation.lastTurn(timeline(id)).first, wake.kind == .system, wake.tool == "wake",
+           wake.text == tr("ws.wake.background"), Date().timeIntervalSince(wake.date) < 30 {
+            mutateEvent(id, wake.id) { $0.text = tr("ws.wake.subagent", title) }
+        } else if processes[id] == nil {
+            wakeSubagent[id] = title
+        }
+        if !BackgroundWork.pending(after: timeline(id), before: false) { backgroundWork.remove(id) }
     }
 
     /// How long a waiting session stays open: ten minutes (each one is a process of a few hundred MB), or four hours while it has background work running
