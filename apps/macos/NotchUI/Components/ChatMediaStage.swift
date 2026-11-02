@@ -70,32 +70,29 @@ private struct ChatMediaStageOverlay: View {
     @ObservedObject var stage: ChatMediaStage
 
     var body: some View {
-        if let video = stage.video {
-            ChatVideoStageView(video: video, onClose: stage.close)
-                .id(video.id)
-                .transition(.opacity)
-        } else if let photo = stage.photo {
-            ChatPhotoZoom(url: photo.url, preview: photo.preview, name: photo.name, fills: true,
-                          onClose: stage.close,
-                          onOpen: { stage.close(); photo.open() })
-                .ignoresSafeArea()
-                .id(photo.id)
-                .transition(.opacity)
+        ZStack {
+            if let video = stage.video {
+                ChatVideoStageView(video: video, onClose: stage.close)
+                    .id(video.id)
+                    .transition(.opacity)
+            } else if let photo = stage.photo {
+                ChatPhotoZoom(url: photo.url, preview: photo.preview, name: photo.name, fills: true,
+                              onClose: stage.close,
+                              onOpen: { stage.close(); photo.open() })
+                    .id(photo.id)
+                    .transition(.opacity)
+            }
         }
+        .clipped()
     }
 }
 
-/// The video itself over the window: the system's player with its controls, and buttons for full screen and to close
+/// The video itself over the window or panel: the system's player with its controls, and buttons to exit full screen and to close
 /// (Escape closes too).
 private struct ChatVideoStageView: View {
     let video: ChatMediaStage.Video
     let onClose: () -> Void
     @State private var player: AVPlayer
-    @State private var window: NSWindow?
-    /// The window fills its screen or its part of a split screen.
-    @State private var fullScreen = false
-    /// The window went full screen for this video, so it comes back out when the video closes.
-    @State private var enteredFullScreen = false
 
     init(video: ChatMediaStage.Video, onClose: @escaping () -> Void) {
         self.video = video
@@ -105,31 +102,17 @@ private struct ChatVideoStageView: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            Color.black.ignoresSafeArea()
+            Color.black
             StagePlayer(player: player)
-                .ignoresSafeArea()
                 .accessibilityLabel(video.name)
             HStack(spacing: NookTheme.Spacing.xs) {
-                // Split with another app the window is already full screen, in its own part: it stays that way.
-                if !fullScreen || enteredFullScreen {
-                    stageButton(fullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                                label: tr(fullScreen ? "card.video.exitFullScreen" : "card.video.fullScreen"),
-                                action: toggleFullScreen)
-                }
+                stageButton("arrow.down.right.and.arrow.up.left",
+                            label: tr("card.video.exitFullScreen"),
+                            action: onClose)
                 stageButton("xmark", label: tr("button.close"), action: onClose)
                     .keyboardShortcut(.cancelAction)
             }
             .padding(NookTheme.Spacing.md)
-        }
-        .background(StageWindowReader { window = $0 })
-        .onChange(of: window) { _, window in fullScreen = window?.styleMask.contains(.fullScreen) ?? false }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
-            if (note.object as? NSWindow) === window { fullScreen = true }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
-            guard (note.object as? NSWindow) === window else { return }
-            fullScreen = false
-            enteredFullScreen = false
         }
         .onAppear {
             if video.time.isValid, video.time.seconds > 0 {
@@ -139,14 +122,7 @@ private struct ChatVideoStageView: View {
         }
         .onDisappear {
             player.pause()
-            if enteredFullScreen, let window, window.styleMask.contains(.fullScreen) { window.toggleFullScreen(nil) }
         }
-    }
-
-    private func toggleFullScreen() {
-        guard let window else { return }
-        enteredFullScreen = !fullScreen
-        window.toggleFullScreen(nil)
     }
 
     private func stageButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
@@ -185,31 +161,5 @@ private struct StagePlayer: NSViewRepresentable {
     static func dismantleNSView(_ view: AVPlayerView, coordinator: ()) {
         view.player?.pause()
         view.player = nil
-    }
-}
-
-/// Reports the window the stage is in.
-private struct StageWindowReader: NSViewRepresentable {
-    let changed: (NSWindow?) -> Void
-
-    func makeNSView(context: Context) -> NSView {
-        let view = WindowView()
-        view.changed = changed
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        (nsView as? WindowView)?.changed = changed
-    }
-
-    private final class WindowView: NSView {
-        var changed: ((NSWindow?) -> Void)?
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            let window = self.window
-            // Not while SwiftUI is still updating the view that holds this one.
-            DispatchQueue.main.async { [weak self] in self?.changed?(window) }
-        }
     }
 }
