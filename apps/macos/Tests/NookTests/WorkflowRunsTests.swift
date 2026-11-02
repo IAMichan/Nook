@@ -157,4 +157,52 @@ final class WorkflowRunsTests: XCTestCase {
         XCTAssertEqual(WorkflowRunParser.matching("ook", in: repos), ["ada/nook", "acme/nook-site"], "anywhere, after the names")
         XCTAssertEqual(WorkflowRunParser.matching("t", in: repos), ["x/tool", "acme/nook-site"], "a name that starts with it first")
     }
+
+    // MARK: A run without jobs
+
+    private func neighbour(_ id: Int, number: Int, branch: String = "main", conclusion: String, created: String,
+                           updated: String) -> [String: Any] {
+        runJSON(id, status: "completed", conclusion: conclusion,
+                extra: ["run_number": number, "head_branch": branch, "created_at": created, "updated_at": updated,
+                        "path": ".github/workflows/build.yml"])
+    }
+
+    func testARunCancelledBeforeItsJobsNamesTheRunThatReplacedIt() {
+        // As on GitHub: #2520 was cancelled a second after it was queued, because #2523 queued behind it.
+        let runs = WorkflowRunParser.runs(["workflow_runs": [
+            neighbour(4, number: 2531, conclusion: "success", created: "2026-11-02T08:14:39Z", updated: "2026-11-02T08:30:58Z"),
+            neighbour(3, number: 2524, conclusion: "success", created: "2026-11-02T08:08:23Z", updated: "2026-11-02T08:18:57Z"),
+            neighbour(2, number: 2523, conclusion: "cancelled", created: "2026-11-02T08:08:23Z", updated: "2026-11-02T08:08:24Z"),
+            neighbour(5, number: 2522, branch: "feature", conclusion: "success", created: "2026-11-02T08:08:20Z",
+                      updated: "2026-11-02T08:09:00Z"),
+            neighbour(1, number: 2520, conclusion: "cancelled", created: "2026-11-02T08:08:19Z", updated: "2026-11-02T08:08:24Z"),
+        ]])
+        let cancelled = runs[4]
+        XCTAssertEqual(WorkflowRunParser.noJobs(repo: "o/r", run: cancelled, jobs: [], others: runs),
+                       .replaced(id: 2, number: 2523, url: URL(string: "https://github.com/o/r/actions/runs/2")))
+        XCTAssertEqual(WorkflowRunParser.noJobs(repo: "o/r", run: cancelled, jobs: [], others: [runs[0]]), .cancelled,
+                       "nothing newer was queued in time: someone or a workflow cancelled it")
+    }
+
+    func testWhyARunHasNoJobs() {
+        let failed = WorkflowRunParser.runs(["workflow_runs": [
+            runJSON(1, status: "completed", conclusion: "startup_failure", extra: ["path": ".github/workflows/ci.yml"]),
+        ]])[0]
+        XCTAssertEqual(WorkflowRunParser.noJobs(repo: "o/r", run: failed, jobs: [], others: []),
+                       .workflowError(path: ".github/workflows/ci.yml",
+                                      file: URL(string: "https://github.com/o/r/blob/1a2b3c4d5e6f/.github/workflows/ci.yml")))
+        let skipped = WorkflowRunParser.runs(["workflow_runs": [runJSON(1, status: "completed", conclusion: "skipped")]])[0]
+        XCTAssertEqual(WorkflowRunParser.noJobs(repo: "o/r", run: skipped, jobs: [], others: []), .skipped)
+        let done = WorkflowRunParser.runs(["workflow_runs": [runJSON(1, status: "completed", conclusion: "success")]])[0]
+        XCTAssertEqual(WorkflowRunParser.noJobs(repo: "o/r", run: done, jobs: [], others: []), .empty)
+        let job = WorkflowRunParser.jobs(["jobs": [["id": 1, "name": "test", "status": "completed", "conclusion": "success"]]])
+        XCTAssertNil(WorkflowRunParser.noJobs(repo: "o/r", run: failed, jobs: job, others: []), "a run with jobs has their logs")
+        let queued = WorkflowRunParser.runs(["workflow_runs": [runJSON(1, status: "queued")]])[0]
+        XCTAssertNil(WorkflowRunParser.noJobs(repo: "o/r", run: queued, jobs: [], others: []), "its jobs are still to come")
+        XCTAssertEqual(WorkflowRunParser.workflowFile(repo: "o/r", sha: "abc", path: ".github/workflows/ci.yml@refs/heads/main"),
+                       URL(string: "https://github.com/o/r/blob/abc/.github/workflows/ci.yml"))
+        XCTAssertNil(WorkflowRunParser.workflowFile(repo: "o/r", sha: "abc", path: "dynamic/pages/pages-build-deployment"))
+        XCTAssertEqual(WorkflowRunParser.branchRunsPath(workflowID: 7, branch: "fix/a&b"),
+                       "/actions/workflows/7/runs?branch=fix/a%26b&per_page=30")
+    }
 }

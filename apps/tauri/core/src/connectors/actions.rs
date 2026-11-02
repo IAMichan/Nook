@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use super::github::{api, headers};
 use super::hub::Env;
-use super::{date, int, link, list, CResult, ConnectorError, ErrorKind};
+use super::{date, int, link, list, with_query, CResult, ConnectorError, ErrorKind};
 
 /// How a run or a job ended, or that it has not yet. Cancelled is its own mark: nothing broke, someone stopped it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -92,6 +92,8 @@ pub struct WorkflowRun {
     /// When it finished (GitHub's last update of a completed run); None while it runs.
     pub finished: Option<DateTime<Utc>>,
     pub url: Option<String>,
+    /// The workflow file it ran from (".github/workflows/ci.yml"); empty when GitHub gave none.
+    pub path: String,
 }
 
 /// One job of a run.
@@ -124,6 +126,73 @@ pub struct RunDetail {
     pub account: String,
     pub run: WorkflowRun,
     pub jobs: Vec<RunJob>,
+    /// Why a finished run has no jobs. GitHub keeps no log for such a run, so this is all there is to read.
+    pub no_jobs: Option<NoJobs>,
+}
+
+/// Why a finished run has no jobs, worked out from the run itself: GitHub keeps no log and no annotation for a run that
+/// never started a job (its log archive is empty), so the page says what it can read from the run and its neighbours.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum NoJobs {
+    /// Cancelled before a job started because a newer run of the same workflow on the same branch took its place
+    /// (the workflow's `concurrency` group).
+    Replaced { id: i64, number: i64, url: Option<String> },
+    /// Cancelled before a job started, by someone or by another workflow.
+    Cancelled,
+    /// GitHub could not start the workflow, nearly always an error in its file.
+    WorkflowError { path: String, file: Option<String> },
+    /// Every job was skipped by its condition.
+    Skipped,
+    /// It waits for someone to approve it.
+    Approval,
+    /// Finished without jobs and without a reason GitHub gives.
+    Empty,
+}
+
+/// How long after a run was cancelled its replacement may have been created: GitHub cancels the older run within a
+/// few seconds of queueing the newer one.
+const REPLACEMENT_WINDOW_SECONDS: i64 = 10;
+
+/// The run that took `run`'s place: the first newer run of the same workflow on the same branch created before (or
+/// just after) `run` was cancelled.
+pub fn replacement<'a>(run: &WorkflowRun, others: &'a [WorkflowRun]) -> Option<&'a WorkflowRun> {
+    let cancelled = run.finished?;
+    let latest = cancelled + chrono::Duration::seconds(REPLACEMENT_WINDOW_SECONDS);
+    others
+        .iter()
+        .filter(|o| o.id != run.id && o.workflow_id == run.workflow_id && o.branch == run.branch && o.number > run.number)
+        .filter(|o| o.created.is_some_and(|c| c <= latest))
+        .min_by_key(|o| o.number)
+}
+
+/// The workflow file at the run's commit on github.com, for a run that could not start.
+pub fn workflow_file(repo: &str, sha: &str, path: &str) -> Option<String> {
+    if !path.starts_with(".github/") || sha.is_empty() || !super::github::is_repository(repo) {
+        return None;
+    }
+    // A reusable workflow's run path reads ".github/workflows/x.yml@refs/heads/main"; the file is the part before the @.
+    let file = path.split('@').next().unwrap_or(path);
+    Some(format!("https://github.com/{repo}/blob/{sha}/{file}"))
+}
+
+/// Why `run` has no jobs, or None while it still runs or when it has jobs. `others` are the latest runs of its workflow
+/// on its branch, to find the run that replaced a cancelled one.
+pub fn no_jobs(repo: &str, run: &WorkflowRun, jobs: &[RunJob], others: &[WorkflowRun]) -> Option<NoJobs> {
+    if run.status != "completed" || !jobs.is_empty() {
+        return None;
+    }
+    Some(match run.conclusion.as_deref().unwrap_or("") {
+        "cancelled" => match replacement(run, others) {
+            Some(newer) => NoJobs::Replaced { id: newer.id, number: newer.number, url: newer.url.clone() },
+            None => NoJobs::Cancelled,
+        },
+        // A run fails without a single job only when GitHub could not start the workflow.
+        "startup_failure" | "failure" => NoJobs::WorkflowError { path: run.path.clone(), file: workflow_file(repo, &run.sha, &run.path) },
+        "skipped" => NoJobs::Skipped,
+        "action_required" => NoJobs::Approval,
+        _ => NoJobs::Empty,
+    })
 }
 
 /// The status filter of the run list.
@@ -206,6 +275,7 @@ pub fn parse_run(run: &Value) -> Option<WorkflowRun> {
         started: if status == "in_progress" || completed { date(&run["run_started_at"]).or(date(&run["created_at"])) } else { None },
         finished: if completed { date(&run["updated_at"]) } else { None },
         url: link(run["html_url"].as_str()),
+        path: text(&run["path"]),
     })
 }
 
@@ -319,7 +389,23 @@ pub async fn load_run(env: &Env, tokens: &[(String, String)], repo: &str, run: i
     })
     .await?;
     let run = parse_run(&run).ok_or_else(|| ConnectorError::new("GitHub gaf een onverwacht antwoord."))?;
-    Ok(RunDetail { account, run, jobs: parse_jobs(&jobs) })
+    let jobs = parse_jobs(&jobs);
+    // Only a run cancelled before its first job needs its neighbours: the newer run that took its place. Reading them
+    // is a best effort; without them the page still says the run was cancelled before it started.
+    let mut others = vec![];
+    if run.status == "completed" && jobs.is_empty() && run.conclusion.as_deref() == Some("cancelled") {
+        if let (Some(branch), Some((_, token))) = (&run.branch, tokens.iter().find(|(a, _)| *a == account)) {
+            let url = with_query(
+                &format!("{}/repos/{repo}/actions/workflows/{}/runs", api(), run.workflow_id),
+                &[("branch", branch.clone()), ("per_page", "30".into())],
+            );
+            if let Ok(root) = env.http.get(&url, &headers(token), "GitHub").await {
+                others = parse_runs(&root);
+            }
+        }
+    }
+    let no_jobs = no_jobs(repo, &run, &jobs, &others);
+    Ok(RunDetail { account, run, jobs, no_jobs })
 }
 
 /// The error of a refused run action, in GitHub's own words when it gave some ("Cannot cancel a workflow run that is
@@ -432,6 +518,59 @@ mod tests {
         let merged = merge_repos(vec![work, home]);
         assert_eq!(merged.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), vec!["ada/site", "acme/web"]);
         assert_eq!(merged[1].account, "work");
+    }
+
+    fn run(id: i64, number: i64, branch: &str, conclusion: &str, created: &str, updated: &str) -> WorkflowRun {
+        parse_run(&json!({
+            "id": id, "workflow_id": 3, "name": "Build", "run_number": number, "head_branch": branch, "head_sha": "abc1234",
+            "status": "completed", "conclusion": conclusion, "created_at": created, "updated_at": updated,
+            "path": ".github/workflows/build.yml", "html_url": format!("https://github.com/acme/web/actions/runs/{id}")
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_run_cancelled_before_its_jobs_names_the_run_that_replaced_it() {
+        // As on GitHub: #2520 was cancelled a second after it was queued, because #2523 queued behind it.
+        let cancelled = run(1, 2520, "main", "cancelled", "2026-11-02T08:08:19Z", "2026-11-02T08:08:24Z");
+        let others = vec![
+            run(4, 2531, "main", "success", "2026-11-02T08:14:39Z", "2026-11-02T08:30:58Z"),
+            run(3, 2524, "main", "success", "2026-11-02T08:08:23Z", "2026-11-02T08:18:57Z"),
+            run(2, 2523, "main", "cancelled", "2026-11-02T08:08:23Z", "2026-11-02T08:08:24Z"),
+            run(5, 2522, "feature", "success", "2026-11-02T08:08:20Z", "2026-11-02T08:09:00Z"),
+            cancelled.clone(),
+        ];
+        assert_eq!(
+            no_jobs("acme/web", &cancelled, &[], &others),
+            Some(NoJobs::Replaced { id: 2, number: 2523, url: Some("https://github.com/acme/web/actions/runs/2".into()) })
+        );
+        // Nothing newer was queued in time: someone (or a workflow) cancelled it.
+        assert_eq!(no_jobs("acme/web", &cancelled, &[], &others[..1]), Some(NoJobs::Cancelled));
+    }
+
+    #[test]
+    fn why_a_run_has_no_jobs() {
+        let failed = run(1, 9, "main", "startup_failure", "2026-11-02T08:00:00Z", "2026-11-02T08:00:01Z");
+        assert_eq!(
+            no_jobs("acme/web", &failed, &[], &[]),
+            Some(NoJobs::WorkflowError {
+                path: ".github/workflows/build.yml".into(),
+                file: Some("https://github.com/acme/web/blob/abc1234/.github/workflows/build.yml".into())
+            })
+        );
+        let skipped = run(1, 9, "main", "skipped", "2026-11-02T08:00:00Z", "2026-11-02T08:00:01Z");
+        assert_eq!(no_jobs("acme/web", &skipped, &[], &[]), Some(NoJobs::Skipped));
+        let done = run(1, 9, "main", "success", "2026-11-02T08:00:00Z", "2026-11-02T08:00:01Z");
+        assert_eq!(no_jobs("acme/web", &done, &[], &[]), Some(NoJobs::Empty));
+        let job = parse_jobs(&json!({"jobs": [{"id": 1, "name": "test", "status": "completed", "conclusion": "success"}]}));
+        assert_eq!(no_jobs("acme/web", &failed, &job, &[]), None, "a run with jobs has their logs");
+        let queued = parse_run(&json!({"id": 1, "status": "queued"})).unwrap();
+        assert_eq!(no_jobs("acme/web", &queued, &[], &[]), None, "its jobs are still to come");
+        assert_eq!(
+            workflow_file("acme/web", "abc", ".github/workflows/ci.yml@refs/heads/main").as_deref(),
+            Some("https://github.com/acme/web/blob/abc/.github/workflows/ci.yml")
+        );
+        assert_eq!(workflow_file("acme/web", "abc", "dynamic/pages/pages-build-deployment"), None);
     }
 
     #[test]

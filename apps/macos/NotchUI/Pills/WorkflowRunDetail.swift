@@ -4,7 +4,9 @@ import AppKit
 /// One run of a workflow, opened from the Actions page: how it went with its clock, what it ran on (branch, commit,
 /// what started it and who), and its jobs. A job opens in place with its steps and log (`CICheckLogView`, the same view
 /// a check on a pull request opens in). Re-run (all jobs, or only the failed ones) and cancel ask first and are one
-/// GitHub call each. While the run is not done, it is read again every few seconds.
+/// GitHub call each. While the run is not done, it is read again every few seconds. A finished run without jobs has
+/// no log on GitHub, so it says why instead (`WorkflowRunNoJobs`): the newer run that replaced it, or the workflow file
+/// that kept it from starting.
 struct WorkflowRunDetail: View {
     @EnvironmentObject private var app: AppModel
     let repo: String
@@ -14,6 +16,8 @@ struct WorkflowRunDetail: View {
     @State private var jobs: [WorkflowJob] = []
     @State private var loaded = false
     @State private var failure: String?
+    /// Why the finished run has no jobs; nil while it runs or when it has jobs.
+    @State private var noJobs: WorkflowRunNoJobs?
     @State private var openJob: WorkflowJob?
     /// The action sent right now, for its spinner.
     @State private var sending: WorkflowRunAction?
@@ -179,6 +183,7 @@ struct WorkflowRunDetail: View {
                 // GitHub takes a moment before the run reads as queued again (or cancelled).
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
                 sending = nil
+                noJobs = nil
                 generation += 1
                 await ActionsStore.shared.refresh()
             } catch {
@@ -215,6 +220,8 @@ struct WorkflowRunDetail: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(tr("actions.loading"))
+        } else if jobs.isEmpty, let noJobs {
+            WorkflowRunNoJobsNote(run: current, reason: noJobs)
         } else if jobs.isEmpty {
             ListEmptyNote(tr(current.isCompleted ? "actions.jobs.none" : "actions.jobs.waiting"), padding: NookTheme.Spacing.xs)
         } else {
@@ -240,10 +247,16 @@ struct WorkflowRunDetail: View {
                 async let latest = GitHubActions.run(repo: repo, id: run.id, token: token)
                 let list = try await GitHubActions.jobs(repo: repo, runID: run.id, token: token)
                 let updated = try? await latest
+                // Read once, when the run is done and turned out to have no jobs.
+                var reason = noJobs
+                if reason == nil, let updated {
+                    reason = await GitHubActions.noJobs(repo: repo, run: updated, jobs: list, token: token)
+                }
                 guard !Task.isCancelled else { return }
                 withAnimation(NookTheme.swap) {
                     jobs = list
                     if let updated { fresh = updated }
+                    noJobs = list.isEmpty && current.isCompleted ? reason : nil
                 }
                 failure = nil
             } catch {
@@ -253,6 +266,57 @@ struct WorkflowRunDetail: View {
             loaded = true
             if current.isCompleted && jobs.allSatisfy({ $0.status == "completed" }) { return }
             try? await Task.sleep(nanoseconds: Self.followInterval)
+        }
+    }
+}
+
+/// Why a finished run has no jobs, in place of its job list: a sentence and the pages that say more (the run that
+/// replaced it, or its workflow file, and the run on GitHub).
+private struct WorkflowRunNoJobsNote: View {
+    let run: WorkflowRun
+    let reason: WorkflowRunNoJobs
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            Text(text)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            HStack(spacing: NookTheme.Spacing.sm) {
+                if let link {
+                    SmallGhostButton(title: link.title) { NSWorkspace.shared.open(link.url) }
+                }
+                if let url = run.url {
+                    SmallGhostButton(title: tr("actions.noJobs.openRun")) { NSWorkspace.shared.open(url) }
+                }
+            }
+        }
+        .padding(NookTheme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panelCard()
+    }
+
+    private var text: String {
+        let noLog = tr("actions.noJobs.noLog")
+        switch reason {
+        case .replaced(_, let number, _):
+            let key = run.branch.isEmpty ? "actions.noJobs.replaced" : "actions.noJobs.replacedOnBranch"
+            let sentence = run.branch.isEmpty ? tr(key, run.name, number) : tr(key, run.name, run.branch, number)
+            return sentence + " " + noLog
+        case .cancelled: return tr("actions.noJobs.cancelled") + " " + noLog
+        case .workflowError(let path, _): return tr("actions.noJobs.workflowError", path.isEmpty ? tr("actions.noJobs.workflowFile") : path)
+        case .skipped: return tr("actions.noJobs.skipped")
+        case .approval: return tr("actions.noJobs.approval")
+        case .empty: return tr("actions.jobs.none") + " " + noLog
+        }
+    }
+
+    private var link: (title: String, url: URL)? {
+        switch reason {
+        case .replaced(_, let number, let url?): return (tr("actions.noJobs.openReplacement", number), url)
+        case .workflowError(_, let file?): return (tr("actions.noJobs.openWorkflowFile"), file)
+        default: return nil
         }
     }
 }

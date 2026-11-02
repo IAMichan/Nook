@@ -46,6 +46,23 @@ enum GitHubActions {
         return run
     }
 
+    /// The latest runs of one workflow on one branch, to find the run that replaced one cancelled before its first job.
+    static func runs(repo: String, workflowID: Int, branch: String, token: String) async throws -> [WorkflowRun] {
+        WorkflowRunParser.runs(try await get("/repos/\(repo)" + WorkflowRunParser.branchRunsPath(workflowID: workflowID, branch: branch),
+                                             token: token))
+    }
+
+    /// Why a finished run has no jobs. Reading its neighbours is a best effort: without them the run still reads as
+    /// cancelled before it started.
+    static func noJobs(repo: String, run: WorkflowRun, jobs: [WorkflowJob], token: String) async -> WorkflowRunNoJobs? {
+        guard run.isCompleted, jobs.isEmpty else { return nil }
+        var others: [WorkflowRun] = []
+        if run.conclusion == "cancelled", !run.branch.isEmpty {
+            others = (try? await runs(repo: repo, workflowID: run.workflowID, branch: run.branch, token: token)) ?? []
+        }
+        return WorkflowRunParser.noJobs(repo: repo, run: run, jobs: jobs, others: others)
+    }
+
     /// The jobs of the run's latest attempt.
     static func jobs(repo: String, runID: Int, token: String) async throws -> [WorkflowJob] {
         WorkflowRunParser.jobs(try await get("/repos/\(repo)/actions/runs/\(runID)/jobs?per_page=100", token: token))

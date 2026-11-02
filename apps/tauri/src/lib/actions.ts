@@ -49,6 +49,8 @@ export interface WorkflowRun {
   started: string | null;
   finished: string | null;
   url: string | null;
+  /// The workflow file it ran from (".github/workflows/ci.yml"); empty when GitHub gave none.
+  path: string;
 }
 
 export interface RunJob {
@@ -68,10 +70,21 @@ export interface ActionRuns {
   runs: WorkflowRun[];
 }
 
+/// Why a finished run has no jobs (`NoJobs` in the core). GitHub keeps no log for such a run, so this is what the run
+/// view shows in place of its jobs.
+export type NoJobs =
+  | { kind: "replaced"; id: number; number: number; url: string | null }
+  | { kind: "cancelled" }
+  | { kind: "workflowError"; path: string; file: string | null }
+  | { kind: "skipped" }
+  | { kind: "approval" }
+  | { kind: "empty" };
+
 export interface RunDetail {
   account: string;
   run: WorkflowRun;
   jobs: RunJob[];
+  noJobs: NoJobs | null;
 }
 
 export const actionsApi = {
@@ -197,6 +210,48 @@ export function outcomeName(run: { outcome: RunOutcome; running: boolean; status
     default:
       if (run.running) return tr("Bezig", "Running");
       return run.status === "waiting" ? tr("Wacht op goedkeuring", "Waiting for approval") : tr("In de wachtrij", "Queued");
+  }
+}
+
+/// Why a run has no jobs, in a sentence, with the page that says more: the run that replaced it, or the workflow file
+/// that kept it from starting.
+export function noJobsReason(reason: NoJobs, run: Pick<WorkflowRun, "workflow" | "branch">): { text: string; link: { label: string; url: string } | null } {
+  const noLog = tr("GitHub bewaart geen log voor een run zonder jobs.", "GitHub keeps no log for a run without jobs.");
+  switch (reason.kind) {
+    case "replaced": {
+      const on = run.branch ? tr(` op ${run.branch}`, ` on ${run.branch}`) : "";
+      return {
+        text: tr(
+          `Geannuleerd voordat er een job begon: een nieuwere run van ${run.workflow}${on} (#${reason.number}) nam zijn plaats in. ${noLog}`,
+          `Cancelled before any job started: a newer run of ${run.workflow}${on} (#${reason.number}) took its place. ${noLog}`,
+        ),
+        link: reason.url ? { label: tr(`Open #${reason.number}`, `Open #${reason.number}`), url: reason.url } : null,
+      };
+    }
+    case "cancelled":
+      return {
+        text: tr(
+          `Geannuleerd voordat er een job begon, door iemand of door een andere workflow. ${noLog}`,
+          `Cancelled before any job started, by someone or by another workflow. ${noLog}`,
+        ),
+        link: null,
+      };
+    case "workflowError": {
+      const file = reason.path || tr("het workflowbestand", "the workflow file");
+      return {
+        text: tr(
+          `GitHub kon de workflow niet starten, bijna altijd door een fout in ${file}. De precieze fout staat alleen op de pagina van de run op GitHub.`,
+          `GitHub could not start the workflow, nearly always because of an error in ${file}. The exact error is only on the run's page on GitHub.`,
+        ),
+        link: reason.file ? { label: tr("Workflowbestand", "Workflow file"), url: reason.file } : null,
+      };
+    }
+    case "skipped":
+      return { text: tr("Elke job werd overgeslagen door zijn voorwaarde.", "Every job was skipped by its condition."), link: null };
+    case "approval":
+      return { text: tr("De run wacht op goedkeuring voordat er een job begint.", "The run waits for approval before any job starts."), link: null };
+    default:
+      return { text: tr(`Deze run heeft geen jobs. ${noLog}`, `This run has no jobs. ${noLog}`), link: null };
   }
 }
 
