@@ -1,10 +1,10 @@
 import Foundation
 
-/// The notice history under the bell in the panel (`NoticeCenter`): what Nook told you, kept so a card that closed
-/// before you looked can still be read, and opened where it came from.
+/// The notice history: what Nook told you, kept so a card that closed before you looked can still be found with
+/// search, and opened where it came from.
 extension AppModel {
     /// Keeps a notice in the history. Called where Nook decides to tell you something by himself, before the card,
-    /// strip or banner is shown, so a notice held back (quiet during a meeting, a busy notch, "only in the list") is kept
+    /// strip or banner is shown, so a notice held back (quiet during a meeting, a busy notch, "don't show") is kept
     /// as well. `source` and `app` name where it comes from: an app switched off in Settings › Notifications is silent
     /// here too (its own tab still has it). Without them (a permission request) it is always kept.
     func logNotice(_ kind: NoticeEntry.Kind, title: String, detail: String = "", context: String = "",
@@ -17,7 +17,7 @@ extension AppModel {
     /// Shows a notice the way Settings › Notifications says, the same for every source: as a card, one slim line, a
     /// macOS notification, or not at all (only in the history). `card` and `strip` draw it on the notch; `open` is what
     /// a click on its macOS notification brings up (the card when nil). Nothing pops up, and nothing sounds, for an app
-    /// switched off, a source set to "only in the list", or while you are in a meeting or share your screen and chose
+    /// switched off, a source set to "don't show", or while you are in a meeting or share your screen and chose
     /// quiet for it. Log the notice with `logNotice` first: the history keeps it whatever happens here.
     ///
     /// While the main window is open, a card or a strip is not drawn on the notch: the notice is a toast in the window,
