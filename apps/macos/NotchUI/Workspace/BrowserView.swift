@@ -524,6 +524,7 @@ struct BrowserView: View {
 final class BrowserPopup: NSObject, NSWindowDelegate {
     static let shared = BrowserPopup()
     private var panel: NSPanel?
+    private var frameMemory: WindowFrameMemory?
 
     var isVisible: Bool { panel?.isVisible == true }
 
@@ -548,10 +549,11 @@ final class BrowserPopup: NSObject, NSWindowDelegate {
         panel.minSize = NSSize(width: 320, height: 220)
         panel.setContentSize(NSSize(width: 440, height: 320))
         panel.delegate = self
-        if !panel.setFrameUsingName("NookBrowserPopup"), let screen = NSScreen.main?.visibleFrame {
+        let frameMemory = WindowFrameMemory(window: panel, name: "NookBrowserPopup")
+        if !frameMemory.restore(), let screen = NSScreen.main?.visibleFrame {
             panel.setFrameOrigin(NSPoint(x: screen.maxX - panel.frame.width - 16, y: screen.maxY - panel.frame.height - 16))
         }
-        panel.setFrameAutosaveName("NookBrowserPopup")
+        self.frameMemory = frameMemory
         self.panel = panel
         panel.orderFrontRegardless()
     }
