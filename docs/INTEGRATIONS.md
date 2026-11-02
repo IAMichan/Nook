@@ -340,4 +340,11 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
   yet, Teams' search needs a Graph scope Nook does not ask for, Snapchat's website has none, and Mail's search goes
   through AppleScript, too slow for every keystroke.
 
+- **Music players: queue and Up next.** "Add to queue" in the Music tab goes to the playing player's own queue: Spotify
+  through its Web API (`SpotifyWebAPI`, after connecting Spotify in Settings › Connections with the user's own client ID;
+  Spotify allows this only with Premium), Music through its own Song › Add to Queue menu item (`MusicAppQueue`, needs
+  the Accessibility permission and the track in Music's library or current playlist). When the player cannot take it,
+  Nook keeps the track in its own queue and starts it itself. Up next reads Spotify's real queue once connected; for
+  Music it still shows the playlist order, because Music's own queue cannot be read by another app.
+
 Add an item here when a change cannot reach every member yet.
