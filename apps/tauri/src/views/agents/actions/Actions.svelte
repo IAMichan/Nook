@@ -1,14 +1,15 @@
 <script lang="ts">
   // Agents › Actions (`ActionsPanel` on the Mac): the GitHub Actions runs of one repository, so a CI run or a promote
-  // can be followed without a pull request in between. Pick the repository at the top, narrow the runs to a workflow
+  // can be followed without a pull request in between. The repositories sit on top as tabs (each marked while something
+  // runs or a workflow fails, ⇧⌘[ / ⇧⌘] to step through them, "+" to open another), narrow the runs to a workflow
   // or to the running or failed ones, and open a run beside the list (in its place when the window is narrow) to see
   // its jobs, re-run or cancel it, and read a job's log. The list is read again every ten seconds while something in
   // it runs, and every minute otherwise.
   import { untrack } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import {
-    actionsApi, candidateRepos, eventName, isLive, parseRepo, runClock, statusFilterName,
-    type ActionsRepo, type RunStatusFilter, type Workflow, type WorkflowRun,
+    actionsApi, candidateRepos, eventName, isLive, latestPerWorkflow, neighborTab, openTab, parseRepo, repoStatus, runClock,
+    statusFilterName, type ActionsRepo, type RepoStatus, type RunStatusFilter, type Workflow, type WorkflowRun,
   } from "../../../lib/actions";
   import { api } from "../../../lib/api";
   import { tr } from "../../../lib/i18n.svelte";
@@ -16,12 +17,16 @@
   import { pullRequests } from "../../../lib/pulls.svelte";
   import { ago } from "../time";
   import RepoPicker from "./RepoPicker.svelte";
+  import RepoTabs from "./RepoTabs.svelte";
   import RunMark from "./RunMark.svelte";
   import RunView from "./RunView.svelte";
 
   const REPO_KEY = "agents.actions.repo";
   const TYPED_KEY = "agents.actions.typed";
   const TYPED_LIMIT = 10;
+  const TABS_KEY = "agents.actions.tabs";
+  /// The other tabs are read in the background at most this often, so each shows how it stands.
+  const PEEK_MS = 120_000;
   const STATUSES: RunStatusFilter[] = ["all", "running", "failed"];
 
   let pushed = $state<ActionsRepo[]>([]);
@@ -29,6 +34,9 @@
   let reposLoaded = $state(false);
   let typed = $state<string[]>(readTyped());
   let repo = $state<string | null>(read(REPO_KEY));
+  let tabs = $state<string[]>(readTabs());
+  /// How each repository read so far stands, by its lowercased name, for its tab.
+  let statuses = $state<Record<string, RepoStatus | null>>({});
   let workflows = $state<Workflow[]>([]);
   let workflow = $state<number | null>(null);
   let status = $state<RunStatusFilter>("all");
@@ -49,6 +57,8 @@
   const anyLive = $derived(runs.some(isLive));
   // The run beside the list keeps up with the list's copy, so its row and its header agree.
   const openedRun = $derived(opened ? (runs.find((r) => r.id === opened!.id) ?? opened) : null);
+  // The mark on each workflow's chip: its newest run, from the list of all workflows.
+  const newest = $derived(workflow === null && status === "all" ? latestPerWorkflow(runs) : new Map<number, WorkflowRun>());
 
   function read(key: string): string | null {
     try {
@@ -67,6 +77,17 @@
     }
   }
 
+  // Before there were tabs: the repository you had open and the ones you typed in.
+  function readTabs(): string[] {
+    try {
+      const list = JSON.parse(localStorage.getItem(TABS_KEY) ?? "null");
+      if (Array.isArray(list)) return list.filter((x): x is string => typeof x === "string" && parseRepo(x) === x);
+    } catch {
+      // Falls back to what was remembered before.
+    }
+    return [read(REPO_KEY), ...readTyped()].filter((x): x is string => !!x).reduceRight<string[]>((list, name) => openTab(name, list), []);
+  }
+
   function write(key: string, value: string) {
     try {
       localStorage.setItem(key, value);
@@ -80,9 +101,33 @@
       typed = [name, ...typed.filter((t) => t !== name)].slice(0, TYPED_LIMIT);
       write(TYPED_KEY, JSON.stringify(typed));
     }
+    setTabs(openTab(name, tabs));
     if (name === repo) return;
     repo = name;
     write(REPO_KEY, name);
+  }
+
+  function setTabs(list: string[]) {
+    tabs = list;
+    write(TABS_KEY, JSON.stringify(list));
+  }
+
+  /// Takes a repository off the tab bar; closing the open one opens the tab next to it.
+  function closeTab(name: string) {
+    const index = tabs.findIndex((t) => t.toLowerCase() === name.toLowerCase());
+    if (index < 0) return;
+    const rest = tabs.filter((_, i) => i !== index);
+    setTabs(rest);
+    if (name.toLowerCase() === (repo ?? "").toLowerCase() && rest.length) pick(rest[Math.min(index, rest.length - 1)]);
+  }
+
+  // ⇧⌘[ and ⇧⌘] (⇧Ctrl on Windows and Linux) go to the tab on the left or right, as on the Mac.
+  function keys(e: KeyboardEvent) {
+    if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || (e.code !== "BracketLeft" && e.code !== "BracketRight")) return;
+    const next = neighborTab(tabs, repo, e.code === "BracketLeft" ? -1 : 1);
+    if (!next) return;
+    e.preventDefault();
+    pick(next);
   }
 
   // The picker's lists: your recently pushed repositories, and the pull requests Nook already knows.
@@ -102,7 +147,7 @@
 
   // Without a remembered choice, the repository you pushed to last.
   $effect(() => {
-    if (!repo && repos.length) repo = repos[0].name;
+    if (!repo && repos.length) pick(repos[0].name);
   });
 
   // Another repository: its own workflows, the filters back to all, the run closed.
@@ -146,6 +191,7 @@
           if (cancelled) return;
           runs = fresh.runs;
           account = fresh.account;
+          if (flow === null && filter === "all") statuses[name.toLowerCase()] = repoStatus(fresh.runs);
           error = null;
           failures = 0;
         } catch (e) {
@@ -168,6 +214,36 @@
     };
   });
 
+  // The other tabs, read in the background one after the other, so each says how it stands. A failure only leaves that
+  // tab without a mark.
+  const peekedAt = new Map<string, number>();
+  $effect(() => {
+    const others = tabs.filter((t) => t.toLowerCase() !== (repo ?? "").toLowerCase());
+    if (!others.length || notConnected) return;
+    let cancelled = false;
+    const peek = async () => {
+      for (const name of others) {
+        if (cancelled || document.hidden) break;
+        const key = name.toLowerCase();
+        if (Date.now() - (peekedAt.get(key) ?? 0) < PEEK_MS) continue;
+        peekedAt.set(key, Date.now());
+        const known = untrack(() => repos.find((r) => r.name.toLowerCase() === key)?.account ?? null);
+        try {
+          const fresh = await actionsApi.runs(known, name, null, "all");
+          if (!cancelled) statuses[key] = repoStatus(fresh.runs);
+        } catch {
+          // Only the tab's mark; opening the tab says what went wrong.
+        }
+      }
+    };
+    peek();
+    const timer = setInterval(peek, PEEK_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  });
+
   // The clocks of running runs count up each second; the relative times move on once a minute.
   $effect(() => {
     const tick = setInterval(() => (now = Date.now()), anyLive ? 1000 : 60_000);
@@ -186,6 +262,8 @@
   const notConnected = $derived(reposLoaded && !available && !pullRequests.accounts.length);
 </script>
 
+<svelte:window onkeydown={keys} />
+
 <div class="actions" bind:clientWidth={width}>
   {#if openedRun && !wide}
     {#key openedRun.id}
@@ -194,13 +272,20 @@
   {:else}
     <div class="head">
       <strong>Actions</strong>
-      <RepoPicker {repos} value={repo} onpick={pick} />
+      {#if !tabs.length}<RepoPicker {repos} value={repo} onpick={pick} />{/if}
       <span class="spacer"></span>
       <!-- A first read has the list's skeleton; this only marks a refresh. -->
       {#if loading && loaded}<span class="faint small">{tr("Bezig…", "Loading…")}</span>{/if}
       <button class="ghost" title={tr("Vernieuwen", "Refresh")} disabled={!repo || loading} onclick={() => reload++}>{tr("Vernieuwen", "Refresh")}</button>
       {#if repo}<button class="ghost" title={tr("Open de Actions van deze repository op GitHub", "Open this repository's Actions on GitHub")} onclick={() => open(`https://github.com/${repo}/actions`)}>{tr("Open op GitHub", "Open on GitHub")} ↗</button>{/if}
     </div>
+
+    {#if tabs.length && !notConnected}
+      <div class="repos">
+        <RepoTabs {tabs} value={repo} {statuses} onpick={pick} onclose={closeTab} />
+        <RepoPicker {repos} value={repo} onpick={pick} compact />
+      </div>
+    {/if}
 
     {#if notConnected}
       {@render empty(
@@ -219,7 +304,10 @@
         <div class="chips">
           <button class="chip" class:on={workflow === null} onclick={() => (workflow = null)}>{tr("Alle", "All")}</button>
           {#each workflows as w (w.id)}
-            <button class="chip" class:on={workflow === w.id} title={w.path} onclick={() => (workflow = w.id)}>{w.name}</button>
+            {@const last = newest.get(w.id)}
+            <button class="chip" class:on={workflow === w.id} title={w.path} onclick={() => (workflow = w.id)}>
+              {#if last && (last.outcome === "failing" || last.outcome === "pending")}<RunMark outcome={last.outcome} running={last.running} />{/if}{w.name}
+            </button>
           {/each}
         </div>
         <div class="segment" role="radiogroup" aria-label={tr("Status", "Status")}>
@@ -291,7 +379,8 @@
   .err { color: var(--coral); font-size: 12px; margin: 0; user-select: text; }
   .filters { display: flex; gap: 8px; align-items: center; min-width: 0; }
   .chips { display: flex; gap: 6px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-  .chip { border-radius: 999px; padding: 3px 10px; font-size: 11.5px; background: var(--smoke); white-space: nowrap; flex: none; }
+  .repos { display: flex; align-items: center; gap: 4px; min-width: 0; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  .chip { display: inline-flex; align-items: center; gap: 2px; border-radius: 999px; padding: 3px 10px; font-size: 11.5px; background: var(--smoke); white-space: nowrap; flex: none; }
   .chip.on { background: var(--iris); color: var(--on-iris); }
   .segment { display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--field); flex: none; }
   .segment button { background: none; border: none; color: var(--text3); padding: 3px 10px; border-radius: 7px; font-size: 11.5px; }

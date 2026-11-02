@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { candidateRepos, isLive, jobCheck, parseRepo, runClock, type RunJob } from "./actions";
+import {
+  candidateRepos, isLive, jobCheck, latestPerWorkflow, matchRepos, neighborTab, openTab, parseRepo, repoStatus, runClock,
+  type RunJob, type WorkflowRun,
+} from "./actions";
 import type { AccountPullRequests, PullRequestItem } from "./connectors";
 import { jobId } from "./pulls";
 
@@ -51,5 +54,42 @@ describe("runs and jobs", () => {
     expect(check.outcome).toBe("failing");
     expect(check.checkRun).toBe(true);
     expect(jobId(check.url)).toBe(9);
+  });
+});
+
+const run = (id: number, workflowId: number, status: string, outcome: WorkflowRun["outcome"]): WorkflowRun => ({
+  id, workflowId, workflow: "CI", title: "t", number: id, attempt: 1, branch: "main", sha: "abc", event: "push", actor: "ada",
+  status, conclusion: null, outcome, running: status === "in_progress", created: null, started: null, finished: null, url: null,
+});
+
+describe("repository tabs", () => {
+  it("keeps the tabs in their order and puts a new one first", () => {
+    expect(openTab("o/b", ["o/a", "o/b", "o/c"])).toEqual(["o/a", "o/b", "o/c"]);
+    expect(openTab("O/B", ["o/a", "o/b"])).toEqual(["o/a", "o/b"]);
+    expect(openTab("o/d", ["o/a", "o/b", "o/c"], 3)).toEqual(["o/d", "o/a", "o/b"]);
+  });
+
+  it("steps to the tab next to the open one, going round", () => {
+    expect(neighborTab(["o/a", "o/b", "o/c"], "o/c", 1)).toBe("o/a");
+    expect(neighborTab(["o/a", "o/b", "o/c"], "o/a", -1)).toBe("o/c");
+    expect(neighborTab(["o/a"], "o/a", 1)).toBeNull();
+  });
+
+  it("finds repositories by owner or name first, then anywhere", () => {
+    const repos = ["acme/web", "ada/nook", "acme/nook-site", "x/tool"].map((name) => ({ name }));
+    const names = (q: string) => matchRepos(q, repos).map((r) => r.name);
+    expect(names("")).toEqual(["acme/web", "ada/nook", "acme/nook-site", "x/tool"]);
+    expect(names("nook")).toEqual(["ada/nook", "acme/nook-site"]);
+    expect(names("t")).toEqual(["x/tool", "acme/nook-site"]);
+  });
+
+  it("marks a tab while something runs or a workflow's newest run failed", () => {
+    expect(repoStatus([])).toBeNull();
+    expect(repoStatus([run(3, 1, "completed", "passing"), run(2, 1, "completed", "failing")])?.outcome).toBe("passing");
+    const broken = repoStatus([run(4, 1, "completed", "passing"), run(3, 2, "completed", "failing")]);
+    expect(broken).toMatchObject({ outcome: "failing", failing: 1, active: 0 });
+    const busy = repoStatus([run(5, 1, "in_progress", "pending"), run(4, 2, "completed", "failing")]);
+    expect(busy).toMatchObject({ outcome: "pending", running: true, active: 1, failing: 1 });
+    expect(latestPerWorkflow([run(5, 1, "in_progress", "pending"), run(4, 1, "completed", "failing")]).get(1)?.id).toBe(5);
   });
 });
