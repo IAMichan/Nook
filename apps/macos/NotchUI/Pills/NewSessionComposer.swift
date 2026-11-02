@@ -25,6 +25,8 @@ struct NewSessionComposer: View {
     @State private var error: String?
     @State private var allowShared = false
     @State private var showClone = false
+    /// The last project request from the Agents list this composer applied (`PromptLinkInbox.requestProject`).
+    @State private var appliedProjectRequest: UUID?
     @State private var cloneURL = ""
     @State private var cloning = false
     @State private var pendingID = UUID()
@@ -584,9 +586,10 @@ struct NewSessionComposer: View {
 
     /// A project's "+" in the Agents list opens the composer on that folder.
     private func applyRequestedProject() {
-        guard let path = promptLinks.pendingProject else { return }
-        promptLinks.pendingProject = nil
-        if FileManager.default.fileExists(atPath: path) { select(path) }
+        guard let request = promptLinks.pendingProject, request.id != appliedProjectRequest else { return }
+        appliedProjectRequest = request.id
+        showClone = false
+        if FileManager.default.fileExists(atPath: request.path) { select(request.path) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { focused = true }
     }
 
