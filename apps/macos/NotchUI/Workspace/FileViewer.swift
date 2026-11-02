@@ -304,7 +304,9 @@ private struct FileTextEditor: NSViewRepresentable {
         textView.delegate = context.coordinator
         textView.onSave = onSave
         scroll.documentView = textView
-        DispatchQueue.main.async { textView.window?.makeFirstResponder(textView) }
+        if context.environment.sidePanelTakesFocus {
+            DispatchQueue.main.async { textView.window?.makeFirstResponder(textView) }
+        }
         return scroll
     }
 
