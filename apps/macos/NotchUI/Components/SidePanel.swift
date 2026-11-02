@@ -35,15 +35,19 @@ enum SidePanelMetrics {
     static let toolbar: CGFloat = 34
     /// Room between a panel and the drag line on the conversation's side.
     static let gap: CGFloat = NookTheme.Spacing.sm
+    /// Room between a tab's list and the line beside it: with half the line's own room, the list sits as far from the
+    /// line as from the panel's outer edge (28 pt in the notch and the window), centered in its column.
+    static let listGap: CGFloat = 28 - CGFloat(PanelSplit.handle) / 2
 }
 
 extension View {
     /// Makes this a side panel on `edge` of the conversation: `SidePanelMetrics.gap` from the drag line on the
     /// conversation's side, as wide as `width` (see `resizablePanel`), sliding in from its own edge.
     func sidePanel(_ edge: HorizontalEdge, width: Binding<Double>, defaultWidth: Double,
-                   minimum: Double = PanelLayout.minimumPanel, available: Double, rest: Double) -> some View {
+                   minimum: Double = PanelLayout.minimumPanel, available: Double, rest: Double,
+                   gap: CGFloat = SidePanelMetrics.gap) -> some View {
         let leading = edge == .leading
-        return padding(leading ? Edge.Set.trailing : Edge.Set.leading, SidePanelMetrics.gap)
+        return padding(leading ? Edge.Set.trailing : Edge.Set.leading, gap)
             .resizablePanel(width: width, defaultWidth: defaultWidth, minimum: minimum, available: available, rest: rest,
                             edge: leading ? HorizontalEdge.trailing : HorizontalEdge.leading, divider: true)
             .transition(.move(edge: leading ? Edge.leading : Edge.trailing).combined(with: .opacity))
@@ -56,8 +60,11 @@ extension View {
         if stacked {
             frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
-            sidePanel(.leading, width: width, defaultWidth: defaultWidth, minimum: PanelLayout.minimumList,
-                      available: available, rest: rest)
+            // Leading: a row wider than the list (the footer in a narrow list) runs out on the right, instead of the
+            // whole list being centered on it and pushed against the left edge.
+            frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .sidePanel(.leading, width: width, defaultWidth: defaultWidth, minimum: PanelLayout.minimumList,
+                           available: available, rest: rest, gap: SidePanelMetrics.listGap)
         }
     }
 
