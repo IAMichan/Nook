@@ -301,6 +301,38 @@ enum MarkdownBlock: Equatable {
         default: return false
         }
     }
+
+    /// The web address a code span holds and nothing else (`http://localhost:8080/`, `localhost:3000`), so it opens like
+    /// a link. A local address without a scheme is read as `http`.
+    static func codeLink(_ code: String) -> URL? {
+        let text = code.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty, !text.contains(where: \.isWhitespace) else { return nil }
+        let lower = text.lowercased()
+        let local = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]"].contains { lower == $0 || lower.hasPrefix($0 + ":") || lower.hasPrefix($0 + "/") }
+        guard lower.hasPrefix("http://") || lower.hasPrefix("https://") || local,
+              let url = URL(string: local ? "http://" + text : text), isSafeLink(url) else { return nil }
+        return url
+    }
+
+    /// Web addresses written out in running text (`see https://example.com.`), with the punctuation after them left out.
+    static func bareLinks(_ text: String) -> [(range: Range<String.Index>, url: URL)] {
+        guard text.contains("://") else { return [] }
+        var links: [(range: Range<String.Index>, url: URL)] = []
+        var searchStart = text.startIndex
+        while let match = text.range(of: #"https?://[^\s<>"'`]+"#, options: [.regularExpression, .caseInsensitive], range: searchStart..<text.endIndex) {
+            searchStart = match.upperBound
+            var end = match.upperBound
+            // Trailing punctuation ends the sentence, not the address; a closing bracket stays when the address opened one.
+            while end > match.lowerBound, let last = text[..<end].last, ".,;:!?)]}*_".contains(last) {
+                let inside = text[match.lowerBound..<text.index(before: end)]
+                if last == ")", inside.filter({ $0 == "(" }).count > inside.filter({ $0 == ")" }).count { break }
+                end = text.index(before: end)
+            }
+            let range = match.lowerBound..<end
+            if let url = URL(string: String(text[range])), isSafeLink(url) { links.append((range, url)) }
+        }
+        return links
+    }
 }
 
 // MARK: - List
