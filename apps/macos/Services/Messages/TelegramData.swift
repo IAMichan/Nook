@@ -415,8 +415,21 @@ enum TelegramData {
     }
 
     /// Typed text as a message.
-    static func textContent(_ text: String) -> [String: Any] {
-        ["@type": "inputMessageText", "text": formatted(text), "clear_draft": true]
+    static func textContent(_ text: String, tags: [ChatTagPerson] = []) -> [String: Any] {
+        ["@type": "inputMessageText", "text": formatted(text, tags: tags), "clear_draft": true]
+    }
+
+    /// Text as TDLib takes it, with every "@Name" of someone in `tags` (their Telegram user id as `id`) as a mention
+    /// of them: Telegram shows it as a link to them and tells them, also when they have no username. Offsets count UTF-16.
+    static func formatted(_ text: String, tags: [ChatTagPerson]) -> [String: Any] {
+        let entities: [[String: Any]] = ChatTags.found(in: text, people: tags).compactMap { tag in
+            guard let user = Int64(tag.person.id) else { return nil }
+            let offset = text.utf16.distance(from: text.startIndex, to: tag.range.lowerBound)
+            let length = text.utf16.distance(from: tag.range.lowerBound, to: tag.range.upperBound)
+            return ["@type": "textEntity", "offset": offset, "length": length,
+                    "type": ["@type": "textEntityTypeMentionName", "user_id": user]]
+        }
+        return ["@type": "formattedText", "text": text, "entities": entities]
     }
 
     /// What is sent besides text, as TDLib takes it. `legacy`: the shape of TDLib before files came wrapped in their own

@@ -2048,6 +2048,7 @@ private struct ChatsDetail: View, Equatable {
                 }
             })
             .editsLastMessage(abilities.edit && route != nil ? editLastMessage : nil)
+            .tags { app.chatTagPeople(route, name: entry.name) }
             .tray(entry.read.isUnread
                 ? AnyView(ChatReadLine(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
                                        markReadInNook: { app.markChatReadInNook(entry) },

@@ -233,6 +233,7 @@ struct CardView: View {
                        quote: replyingTo?.quote(contact: card.title),
                        cancelQuote: { withAnimation(NookTheme.reveal) { replyingTo = nil } },
                        draft: onDraft, send: submitReply)
+            .tags { card.chatReply ? AppModel.shared.chatTagPeople(card: card) : [] }
     }
 
     /// The compact card's one field (the Double Tap field): the same composer as the Nook chat, with the model and what

@@ -922,6 +922,43 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertNil(ChatServiceData.picture(["type": "group", "participants": ["items": [["imgURL": "file:///anna.jpg"]]]]))
     }
 
+    func testTaggingSomeoneFromNookIsTheSameInEveryApp() {
+        let people = [ChatTagPerson(name: "Anna", id: "31611111111@s.whatsapp.net"),
+                      ChatTagPerson(name: "Anna Bakker", id: "31622222222@s.whatsapp.net"),
+                      ChatTagPerson(name: "Élodie", id: "U3")]
+        // Typing a tag: what follows "@" at a word's start, until a new line.
+        XCTAssertEqual(ChatTags.typing(in: "hoi @"), "")
+        XCTAssertEqual(ChatTags.typing(in: "hoi @An"), "An")
+        XCTAssertEqual(ChatTags.typing(in: "@Anna B"), "Anna B")
+        XCTAssertNil(ChatTags.typing(in: "mail anna@x"), "a mail address is no tag")
+        XCTAssertNil(ChatTags.typing(in: "hoi @An\nmorgen"))
+        XCTAssertNil(ChatTags.typing(in: "hoi"))
+        XCTAssertEqual(ChatTags.matches("an", in: people).map(\.name), ["Anna", "Anna Bakker"])
+        XCTAssertEqual(ChatTags.matches("bak", in: people).map(\.name), ["Anna Bakker"], "a later word of the name")
+        XCTAssertEqual(ChatTags.matches("elo", in: people).map(\.name), ["Élodie"], "any accents")
+        XCTAssertEqual(ChatTags.matches("", in: people).count, 3)
+        XCTAssertEqual(ChatTags.inserting(people[1], in: "ja @an"), "ja @Anna Bakker ")
+
+        // On its way out each app writes its own tag; the longest name that fits wins.
+        let text = "@Anna Bakker en @anna, kijk even. @Annabel? mail anna@x.nl @Élodie"
+        XCTAssertEqual(ChatTags.replacing(in: text, people: people) { "@" + $0.id.filter(\.isNumber) },
+                       "@31622222222 en @31611111111, kijk even. @Annabel? mail anna@x.nl @3")
+        XCTAssertEqual(ChatTags.replacing(in: text, people: people) { "<@" + $0.id + ">" },
+                       "<@31622222222@s.whatsapp.net> en <@31611111111@s.whatsapp.net>, kijk even. @Annabel? mail anna@x.nl <@U3>")
+        XCTAssertEqual(ChatTags.found(in: "no tags here", people: people).count, 0)
+    }
+
+    func testTelegramTagsAreMentionEntities() {
+        let text = "😀 hoi @Anna en @Bob"
+        let formatted = TelegramData.formatted(text, tags: [ChatTagPerson(name: "Anna", id: "42"), ChatTagPerson(name: "Bob", id: "x")])
+        let entities = formatted["entities"] as? [[String: Any]] ?? []
+        XCTAssertEqual(entities.count, 1, "a person without a Telegram id is no mention")
+        XCTAssertEqual(entities.first?["offset"] as? Int, 7, "offsets count UTF-16: the emoji is two")
+        XCTAssertEqual(entities.first?["length"] as? Int, 5)
+        XCTAssertEqual((entities.first?["type"] as? [String: Any])?["user_id"] as? Int64, 42)
+        XCTAssertEqual(formatted["text"] as? String, text)
+    }
+
     func testTagsInLinkedChatsShowTheNameInsteadOfTheNumber() {
         let listed = ChatServiceData.chats(["items": [[
             "id": "!g", "title": "Club", "network": "WhatsApp", "accountID": "whatsapp", "type": "group",
