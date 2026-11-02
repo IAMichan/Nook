@@ -862,15 +862,20 @@ struct AgentConversation: View {
     }
 }
 
-/// Sessions Nook runs itself (started here, taken over, or from the workspace): working, waiting, or finished in the
-/// last day, newest first. Selecting one shows it on the right, where you control it completely.
+/// Sessions Nook runs itself (started here, taken over, or from the workspace), newest first. One you have not settled
+/// stays however long ago it last ran, so a quiet chat never drops out of its folder; a settled one only for a day, and
+/// at most `settledLimit` of those. Selecting one shows it on the right, where you control it completely.
 @MainActor
 enum WorkspaceRunsSection {
-    static func recent(_ workspace: WorkspaceManager) -> [WorkspaceRun] {
+    static let settledLimit = 12
+
+    static func recent(_ workspace: WorkspaceManager, finished: FinishedSessions = .shared, now: Date = Date()) -> [WorkspaceRun] {
         let list = workspace.runs
-            .filter { !$0.archived && ($0.status.isActive || Date().timeIntervalSince($0.updatedAt) < 24 * 3600) }
+            .filter { !$0.archived }
             .sorted { ($0.status.isActive ? 0 : 1, $1.updatedAt) < ($1.status.isActive ? 0 : 1, $0.updatedAt) }
-        return Array(list.prefix(12))
+        let isOpen = { (run: WorkspaceRun) in run.status.isActive || !finished.contains(FinishedSessions.key(run: run)) }
+        let settled = list.filter { !isOpen($0) && now.timeIntervalSince($0.updatedAt) < 24 * 3600 }
+        return list.filter(isOpen) + settled.prefix(settledLimit)
     }
 }
 
