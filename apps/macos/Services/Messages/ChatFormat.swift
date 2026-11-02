@@ -502,3 +502,85 @@ enum ChatMentions {
         return String(digits.suffix(9))
     }
 }
+
+/// Someone a message can tag: their name as the chat shows it and their id in their app (a WhatsApp JID, a Slack user
+/// id, a Telegram user id, a Teams user id, a Matrix user id for the chat helper). Apps without tags use the name.
+struct ChatTagPerson: Equatable, Sendable {
+    var name: String
+    var id: String
+}
+
+/// Tagging someone from Nook, the same in every chat app: "@" in the answer field lists the chat's people
+/// (`typing(in:)`, `matches`), choosing one writes "@Name" (`inserting`), and on its way out each app turns every
+/// "@Name" into its own tag (`replacing`, `found`): "@31612345678" for WhatsApp, "<@U1>" for Slack, a mention entity for
+/// Telegram, a mention for Teams, a Matrix pill for the chat helper. Messages, Snapchat and Mail have no tags: there
+/// "@Name" goes as words.
+enum ChatTags {
+    /// The tag being typed at the end of the text: what follows its "@" ("" right after it). Nil when the text does not
+    /// end in one: no "@" at a word's start, or a new line after it.
+    static func typing(in text: String) -> String? {
+        guard let at = text.lastIndex(of: "@") else { return nil }
+        if at > text.startIndex, !text[text.index(before: at)].isWhitespace { return nil }
+        let query = text[text.index(after: at)...]
+        guard !query.contains(where: \.isNewline), query.count <= 40, !query.hasPrefix(" ") else { return nil }
+        return String(query)
+    }
+
+    /// The people whose name, or a word of it, starts with `query` (any case, any accents), each once, at most `limit`.
+    static func matches(_ query: String, in people: [ChatTagPerson], limit: Int = 6) -> [ChatTagPerson] {
+        let wanted = fold(query)
+        var seen = Set<String>()
+        return Array(people.filter { person in
+            guard !person.name.isEmpty, seen.insert(person.name).inserted else { return false }
+            guard !wanted.isEmpty else { return true }
+            let name = fold(person.name)
+            return name.hasPrefix(wanted) || name.split(separator: " ").contains { $0.hasPrefix(wanted) }
+        }.prefix(limit))
+    }
+
+    /// The text with the tag being typed at its end replaced by "@Name " for `person`.
+    static func inserting(_ person: ChatTagPerson, in text: String) -> String {
+        guard let at = text.lastIndex(of: "@") else { return text + "@" + person.name + " " }
+        return String(text[..<at]) + "@" + person.name + " "
+    }
+
+    /// Every "@Name" of someone in `people`, in the order they stand: "@" at a word's start, then a name (the longest
+    /// that fits, any case) that does not go on into a longer word.
+    static func found(in text: String, people: [ChatTagPerson]) -> [(range: Range<String.Index>, person: ChatTagPerson)] {
+        let named = people.filter { !$0.name.isEmpty }.sorted { $0.name.count > $1.name.count }
+        guard !named.isEmpty, text.contains("@") else { return [] }
+        var result: [(range: Range<String.Index>, person: ChatTagPerson)] = []
+        var index = text.startIndex
+        while let at = text[index...].firstIndex(of: "@") {
+            let start = text.index(after: at)
+            index = start
+            if at > text.startIndex, text[text.index(before: at)].isLetter || text[text.index(before: at)].isNumber { continue }
+            let rest = text[start...]
+            for person in named {
+                guard let end = rest.index(rest.startIndex, offsetBy: person.name.count, limitedBy: rest.endIndex),
+                      rest[rest.startIndex..<end].compare(person.name, options: [.caseInsensitive]) == .orderedSame else { continue }
+                if end < text.endIndex, text[end].isLetter || text[end].isNumber { continue }
+                result.append((at..<end, person))
+                index = end
+                break
+            }
+        }
+        return result
+    }
+
+    /// The text with every "@Name" written as `write` makes it for that person.
+    static func replacing(in text: String, people: [ChatTagPerson], with write: (ChatTagPerson) -> String) -> String {
+        var result = ""
+        var last = text.startIndex
+        for tag in found(in: text, people: people) {
+            result += text[last..<tag.range.lowerBound]
+            result += write(tag.person)
+            last = tag.range.upperBound
+        }
+        return result + text[last...]
+    }
+
+    private static func fold(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).trimmingCharacters(in: .whitespaces)
+    }
+}

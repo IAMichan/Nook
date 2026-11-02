@@ -65,6 +65,7 @@ struct ChatReplyField: View {
     private var hasExtra = false
     private var pasted: (() -> Bool)?
     private var editLast: (() -> Bool)?
+    private var tagPeople: () -> [ChatTagPerson] = { [] }
 
     init(text: Binding<String>, notice: Binding<String?>, focus: FocusState<Bool>.Binding, placeholder: String,
          sendSymbol: String, sendLabel: String, readyNotice: String, outgoing: ChatSending? = nil, recipient: String? = nil,
@@ -108,6 +109,14 @@ struct ChatReplyField: View {
     func tray<Content: View>(_ content: Content?) -> Self {
         var copy = self
         copy.trayContent = content.map { AnyView($0) }
+        return copy
+    }
+
+    /// "@" also lists the chat's people, to tag one as its app does (`ChatTags`): choosing one writes "@Name", which the
+    /// app's bridge turns into its own tag as the message goes. Asked only while a tag is being typed.
+    func tags(_ people: @escaping () -> [ChatTagPerson]) -> Self {
+        var copy = self
+        copy.tagPeople = people
         return copy
     }
 
@@ -306,14 +315,25 @@ struct ChatReplyField: View {
 
     private var buttonLabel: String { asksNook ? tr("chats.draft.button") : sendLabel }
 
-    /// The menu for what is typed: "@" offers "@nook" and the ready-made requests, in the user's language.
+    /// The menu for what is typed: "@" offers "@nook" and the ready-made requests, in the user's language, and the
+    /// chat's people whose name fits what follows the "@".
     private func updateMenu(_ text: String) {
         let presets = ChatDraft.presetKeys.map { tr($0) }
-        menu.show(ChatDraft.choices(for: text, presets: presets).map { choice in
+        let nook = ChatDraft.choices(for: text, presets: presets).map { choice in
             ComposerSuggestion(id: "nook:" + choice.insertion, title: choice.title,
                                detail: tr(choice.isNook ? "chats.nook.detail" : "chats.nook.presetDetail"), symbol: "sparkles",
                                payload: .command(ComposerCommand(name: choice.insertion, insertion: choice.insertion, action: .insert)))
-        })
+        }
+        var people: [ComposerSuggestion] = []
+        if ChatDraft.instruction(in: text) == nil, let query = ChatTags.typing(in: text) {
+            people = ChatTags.matches(query, in: tagPeople()).map { person in
+                let insertion = ChatTags.inserting(person, in: text)
+                return ComposerSuggestion(id: "tag:" + person.id, title: person.name, detail: tr("chats.tag.detail"),
+                                          symbol: "person.crop.circle",
+                                          payload: .command(ComposerCommand(name: "tag:" + person.id, insertion: insertion, action: .insert)))
+            }
+        }
+        menu.show(nook + people)
     }
 
     /// A line of the menu fills the field; Return then lets Nook write.

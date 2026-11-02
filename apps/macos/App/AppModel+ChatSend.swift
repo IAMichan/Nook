@@ -100,6 +100,32 @@ extension AppModel {
         }
     }
 
+    /// The people "@" offers in the answer field of the chat behind `route` (`name` in its app), each by their id in that
+    /// app: each app's bridge knows its own and turns "@Name" into its own tag as it sends (`ChatTags`). Messages,
+    /// Snapchat and Mail have no tags: there a group's people are offered by name, and go as words.
+    func chatTagPeople(_ route: ChatRoute?, name: String) -> [ChatTagPerson] {
+        guard let route else { return [] }
+        let capture = ChatCaptureService.shared
+        switch route {
+        case .whatsApp(let key):
+            let (link, jid) = WhatsAppAccounts.shared.route(key)
+            return link.tagPeople(jid)
+        case .telegram(let id): return capture.telegramBridge.tagPeople(id)
+        case .teams(let chat): return capture.teamsBridge.tagPeople(chat)
+        case .slack(let chat): return capture.slackBridge.tagPeople(chat)
+        case .linked(let id): return capture.serviceBridge.tagPeople(id)
+        case .messages, .snapchat, .mail:
+            let thread = capture.loadedInbox.threads[ChatInbox.key(app: chatAppID(route), chat: name)]
+            return (thread?.members ?? []).map { ChatTagPerson(name: $0, id: $0) }
+        }
+    }
+
+    /// The people "@" offers on a chat's card in the notch (`chatTagPeople`).
+    func chatTagPeople(card: NookCard) -> [ChatTagPerson] {
+        guard let id = Self.chatCardThread(card), let thread = ChatCaptureService.shared.loadedInbox.threads[id] else { return [] }
+        return chatTagPeople(chatRoute(for: thread), name: thread.name)
+    }
+
     /// What can go to a chat besides text.
     func chatSends(_ route: ChatRoute?) -> Set<ChatOutgoing.Kind> { chatAbilities(route).sends }
 

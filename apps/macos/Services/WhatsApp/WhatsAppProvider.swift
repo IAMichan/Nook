@@ -33,9 +33,9 @@ protocol WhatsAppProvider: Sendable {
     func recentMessages(since date: Date, me: String?) async throws -> [WAMessage]
     /// The latest `limit` messages of one chat, oldest first.
     func messages(chat: String, limit: Int, me: String?) async throws -> [WAMessage]
-    /// Sends a text to an existing chat, as an answer to the message `replyTo` when set; returns the new message's id
-    /// when the gateway gives it.
-    func send(text: String, to chat: String, replyTo: String?) async throws -> String?
+    /// Sends a text to an existing chat, as an answer to the message `replyTo` when set, tagging `mentions` (JIDs, each
+    /// written in the text as "@" and its digits); returns the new message's id when the gateway gives it.
+    func send(text: String, to chat: String, replyTo: String?, mentions: [String]) async throws -> String?
     /// Puts `emoji` on a message in `chat`; an empty `emoji` takes back your reaction (`old`, the one you had).
     func react(_ emoji: String, to message: String, chat: String, old: String?) async throws
     /// Marks the chat read up to `lastIncoming` (the newest message received in it).
@@ -364,9 +364,11 @@ actor GOWAProvider: WhatsAppProvider {
         return Array(out.sorted { $0.date < $1.date }.suffix(limit))
     }
 
-    func send(text: String, to chat: String, replyTo: String?) async throws -> String? {
+    func send(text: String, to chat: String, replyTo: String?, mentions: [String]) async throws -> String? {
         var body: [String: any Sendable] = ["phone": chat, "message": text]
         if let replyTo { body["reply_message_id"] = replyTo }
+        // GOWA also finds "@<number>" in the text itself; the list names an @lid it cannot tell from a number.
+        if !mentions.isEmpty { body["mentions"] = mentions }
         let data = try await scoped("POST", "/send/message", json: body)
         return (WAGOWA.results(data) as? [String: Any])?["message_id"] as? String
     }
@@ -648,9 +650,10 @@ actor OpenWAProvider: WhatsAppProvider {
         return WAOpenWA.messages(data, me: me).sorted { $0.date < $1.date }
     }
 
-    func send(text: String, to chat: String, replyTo: String?) async throws -> String? {
+    func send(text: String, to chat: String, replyTo: String?, mentions: [String]) async throws -> String? {
         var body: [String: any Sendable] = ["chatId": Self.openwaId(chat), "text": text]
         if let replyTo { body["quotedMessageId"] = replyTo }
+        if !mentions.isEmpty { body["mentions"] = mentions.map(Self.openwaId) }
         let data = try await scoped("POST", "/messages/send-text", json: body)
         return ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["messageId"] as? String
     }

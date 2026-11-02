@@ -238,6 +238,19 @@ final class WhatsAppLink: ObservableObject {
         WAMemberIndex(conversation, book: names)
     }
 
+    /// The people you can tag in a chat: a group's other members by the name Nook shows them by (their number when it
+    /// knows none), each by the id WhatsApp tags them by (their number's JID, else their @lid). None in a private chat.
+    func tagPeople(_ jid: String) -> [ChatTagPerson] {
+        guard WAJID.isGroup(jid), let conversation = inbox.conversations[jid], let members = conversation.members else { return [] }
+        var index = memberIndex(conversation)
+        return members.compactMap { member in
+            guard let id = member.ids.first(where: { !$0.hasSuffix("@lid") && WAJID.digits($0).count >= 6 })
+                    ?? member.ids.first(where: { WAJID.digits($0).count >= 6 }) else { return nil }
+            if let me, member.ids.contains(where: { WAJID.sameUser($0, me) }) { return nil }
+            return ChatTagPerson(name: index.name(id), id: id)
+        }
+    }
+
     /// This account (JID or number), once linked.
     @Published private(set) var me: String?
     /// The chats on the phone (names to send to), refreshed every few minutes while linked.
@@ -1376,10 +1389,15 @@ final class WhatsAppLink: ObservableObject {
         guard rateLimit.allow() else { throw NookError(tr("whatsapp.reply.tooFast")) }
         let gen = generation
         do {
-            let id = try await provider.send(text: body, to: target.jid, replyTo: replyTo)
+            // "@Name" of a member goes as WhatsApp's own tag: "@" and their digits, with their id in the list.
+            let people = tagPeople(target.jid)
+            let tagged = ChatTags.found(in: body, people: people).map(\.person.id)
+            let sent = ChatTags.replacing(in: body, people: people) { "@" + WAJID.digits($0.id) }
+            let id = try await provider.send(text: sent, to: target.jid, replyTo: replyTo,
+                                             mentions: tagged.reduce(into: []) { if !$0.contains($1) { $0.append($1) } })
             guard gen == generation else { return target.name }
             var mine = WAMessage(id: id ?? "nook-\(UUID().uuidString)", chat: target.jid, sender: me ?? "",
-                                 senderName: "", text: body, date: Date(), fromMe: true)
+                                 senderName: "", text: sent, date: Date(), fromMe: true)
             mine.chatName = target.name
             mine.replyTo = replyTo
             inbox.add(mine, filters: filters, name: target.name)
