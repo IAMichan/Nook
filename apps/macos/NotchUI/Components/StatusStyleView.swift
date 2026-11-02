@@ -100,7 +100,7 @@ struct SteppedPulseDot: View {
                 // In a graph of its own (`SeparateGraph`), so its frames do not update the row or panel around it; the halo
                 // grows past the dot, so the graph is larger than the dot and laid out at its size.
                 SeparateGraph {
-                    TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended), paused: energy.plan.pace == .paused)) { context in
+                    TimelineView(.nookFrames(fps: energy.plan.progressFrameRate(attended: attended))) { context in
                         let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.period) / Self.period
                         dot(halo: 0.55 * (1 - phase), scale: 1 + 1.1 * phase)
                     }

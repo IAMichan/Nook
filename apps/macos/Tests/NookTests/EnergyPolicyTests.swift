@@ -137,6 +137,21 @@ final class EnergyPolicyTests: XCTestCase {
         XCTAssertEqual(light.frameRate(light.ambientFrameRate, attended: .unattended), 7.5)
     }
 
+    func testWorkUnderWayKeepsMovingSlowlyOnABusyMacAndHoldsStillOnlyWhenNobodySees() {
+        let full = EnergyPolicy.plan(for: EnergySignals(), mode: .automatic)
+        XCTAssertEqual(full.progressFrameRate(attended: .attended), full.ambientFrameRate)
+        XCTAssertEqual(full.progressFrameRate(attended: .unattended), full.unattendedFrameRate)
+        XCTAssertEqual(full.progressFrameRate(attended: .hidden), 0)
+        for signals in [EnergySignals(busy: true), EnergySignals(hot: true), EnergySignals(onBattery: true, lowBattery: true)] {
+            let plan = EnergyPolicy.plan(for: signals, mode: .automatic)
+            XCTAssertEqual(plan.pace, .paused)
+            XCTAssertEqual(plan.progressFrameRate(attended: .attended), plan.unattendedFrameRate,
+                           "a shimmer held still halfway reads as stuck: \(signals)")
+        }
+        XCTAssertEqual(EnergyPolicy.plan(for: EnergySignals(away: true), mode: .full).progressFrameRate(attended: .attended), 0)
+        XCTAssertEqual(EnergyPolicy.plan(for: EnergySignals(displayAsleep: true), mode: .full).progressFrameRate(attended: .attended), 0)
+    }
+
     func testEveryReasonHasAText() {
         // The keys exist in the texts (I18nCoverageTests checks the languages); here only that each reason maps to one.
         XCTAssertEqual(Set(EnergyReason.allCases.map(\.textKey)).count, EnergyReason.allCases.count)
