@@ -81,7 +81,8 @@ final class PullRequestActionState: ObservableObject {
 }
 
 /// The ⋯ menu of a pull request, in Nook's own dropdown panel: refresh it, copy its link, number or checkout command,
-/// ask for reviews, edit it, bring its branch up to date, close or reopen it. While GitHub is asked the ⋯ spins, as on
+/// ask for reviews, edit it, mark it ready for review or turn it back into a draft, bring its branch up to date, close or
+/// reopen it. While GitHub is asked the ⋯ spins, as on
 /// t3code's page. What changes GitHub goes through the confirmation in the action panel.
 struct PullRequestMoreMenu: View {
     @ObservedObject var state: PullRequestActionState
@@ -129,6 +130,10 @@ struct PullRequestMoreMenu: View {
                 if detail.state == .draft, !detail.nodeID.isEmpty {
                     DropdownRow(symbol: PullRequestIcon.symbol(.open), title: tr("agents.pr.action.ready")) {
                         ask(.markReady(nodeID: detail.nodeID))
+                    }
+                } else if detail.state == .open, !detail.nodeID.isEmpty {
+                    DropdownRow(symbol: PullRequestIcon.symbol(.draft), title: tr("agents.pr.action.draft")) {
+                        ask(.markDraft(nodeID: detail.nodeID))
                     }
                 }
                 if detail.mergeState == "behind" {
@@ -421,6 +426,7 @@ struct PullRequestActionPanel: View {
         case .updateBranch: return tr("agents.pr.confirm.updateBranch", detail.baseBranch, detail.headBranch)
         case .addLabels, .removeLabel: return tr("agents.pr.confirm.labels", target)
         case .markReady: return tr("agents.pr.confirm.ready", target)
+        case .markDraft: return tr("agents.pr.confirm.draft", target)
         case .changeBase(let branch): return tr("agents.pr.confirm.changeBase", target, branch)
         }
     }
@@ -437,6 +443,7 @@ struct PullRequestActionPanel: View {
         case .updateBranch: return PullRequestIcon.behind
         case .addLabels, .removeLabel: return "tag"
         case .markReady: return PullRequestIcon.symbol(.open)
+        case .markDraft: return PullRequestIcon.symbol(.draft)
         case .changeBase: return "arrow.triangle.branch"
         }
     }
