@@ -2,7 +2,7 @@ import Foundation
 import Combine
 
 /// The notices Nook gave since he started, so one you missed (a card that closed by itself, a strip while you were away,
-/// a notice held back during a meeting) can still be read under the bell in the panel. The rules are in `NoticeLog`;
+/// a notice held back during a meeting) can still be read in search. The rules are in `NoticeLog`;
 /// this publishes it. Kept in memory only, like the WhatsApp inbox: a notice can quote a message or a command, and
 /// neither belongs on disk.
 @MainActor

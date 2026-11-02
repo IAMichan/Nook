@@ -257,7 +257,7 @@ struct PanelView: View {
         }
     }
 
-    /// The tabs, a thin line, then search, talk, the bell and split view: one `graphite` capsule with a hairline edge and a soft
+    /// The tabs, a thin line, then search, talk and split view: one `graphite` capsule with a hairline edge and a soft
     /// shadow, lifted off the content. The selected tab is on the accent.
     private var headerCapsule: some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
@@ -278,8 +278,6 @@ struct PanelView: View {
             }
             NookIconButton(systemName: "mic", label: tr("button.talk"), size: 30) { viewModel.startListening() }
                 .help(tr("button.talk"))
-            // What Nook told you lately, for a notice that closed before you looked.
-            if !app.demoMode { NoticeBellButton() }
             // A second tab beside this one: the chats, the music or the Nook chat while you work here.
             if !app.demoMode { PanelSplitButton(current: tab) }
         }

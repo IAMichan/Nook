@@ -26,7 +26,7 @@ enum NoticeStyle: String, CaseIterable, Codable, Identifiable, Sendable {
     case strip
     /// A macOS notification; a click opens it in Nook.
     case system
-    /// Nothing pops up: the notice is only kept in the list under the bell (and in its own tab).
+    /// Nothing pops up: the notice is only kept in the notice history, which search finds (and in its own tab).
     case off
 
     var id: String { rawValue }

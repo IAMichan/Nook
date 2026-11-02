@@ -2,12 +2,12 @@ import SwiftUI
 
 /// The notice a coding agent gives by itself (done, failed, waiting on you), built once for every agent: a terminal
 /// session and a session Nook runs fill in an `AgentStatusNotice` and hand it here, so the card, the strip, the sound and the
-/// entry under the bell look and behave the same whichever agent it is.
+/// entry in the notice history look and behave the same whichever agent it is.
 extension AppModel {
     /// How long an agent notice stays while the pointer is off the notch; the ring on its OK counts down the same time.
     static let agentNoticeSeconds: TimeInterval = 5.2
 
-    /// Keeps the notice under the bell and shows it the way Settings › Notifications says for agents. `open` is what
+    /// Keeps the notice in the history and shows it the way Settings › Notifications says for agents. `open` is what
     /// View does (the session in the panel or the main window); `openApp` the second button, where the agent has one
     /// (its terminal). A notice that waits on you always reaches you (`NoticePacer`).
     func deliverAgentNotice(_ notice: AgentStatusNotice, app: String, target: NoticeEntry.Target, watching: Bool = false,
