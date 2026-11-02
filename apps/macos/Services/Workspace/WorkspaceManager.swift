@@ -129,6 +129,8 @@ final class WorkspaceManager: ObservableObject {
     var acpWakeFinish: [UUID: Task<Void, Never>] = [:]
     /// Sessions with work still running in the background: they stay open longer between turns (see BackgroundWork).
     var backgroundWork: Set<UUID> = []
+    /// The subagent whose end the next wake of a parked Claude Code is for, so its line can name it.
+    var wakeSubagent: [UUID: String] = [:]
     /// What MCP apps want the agent to know on its next turn, per session and app (see McpApp).
     var mcpAppContexts: [UUID: [String: String]] = [:]
     /// Codex reported new limits during a session: AppModel refreshes the usage shown.
@@ -1455,7 +1457,12 @@ final class WorkspaceManager: ObservableObject {
             // Claude Code's own task list (not a subagent's) becomes the Tasks strip above the composer.
             if name == "TodoWrite", !nested, let steps = RunTasks.claude(input.dictionary) { setTasks(id, steps) }
         case .toolResult(let callID, let output, let isError):
-            feed(id, .toolUpdated(id: callID, output: output, state: isError ? .failed : .done))
+            // A subagent started in the background answers at once that it started: it runs on until its notification.
+            let background = !isError && Subagents.isLaunchNote(output)
+                && timeline(id).last(where: { $0.callID == callID }).map(Subagents.isBackground) == true
+            feed(id, .toolUpdated(id: callID, output: output, state: isError ? .failed : (background ? .running : .done)))
+        case .backgroundTask(let update):
+            noteBackgroundSubagent(id, update)
         case .usage(let messageID, let tokens, let model):
             turns[id]?.messageUsage[messageID] = tokens
             turns[id]?.lastContext = tokens.context + tokens.output
@@ -1617,6 +1624,8 @@ final class WorkspaceManager: ObservableObject {
         // A Claude Code process that waited between turns ended (closed when idle, or gone): nothing else to do.
         if let process, claudeIdle[id]?.process === process {
             claudeIdle[id] = nil
+            // Subagents it ran in the background ended with it.
+            settleOpenWork(id, reason: .processExited)
             return
         }
         if let process, let current = processes[id], current !== process { return }
@@ -1852,6 +1861,7 @@ final class WorkspaceManager: ObservableObject {
         codexLimitSnapshots[id] = nil
         limitedTurns[id] = nil
         backgroundWork.remove(id)
+        wakeSubagent[id] = nil
         mcpAppContexts[id] = nil
         let appFolder = Self.mcpAppFolder(id)
         Task.detached(priority: .utility) { try? FileManager.default.removeItem(at: appFolder) }

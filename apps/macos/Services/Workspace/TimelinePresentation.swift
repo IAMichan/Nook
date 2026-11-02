@@ -348,7 +348,8 @@ enum TimelinePresentation {
     static func group(_ events: [RunEvent], tally: ([RunEvent]) -> ToolTally = { ToolTally($0) }) -> [TimelineBlock] {
         var blocks: [TimelineBlock] = []
         var run: [RunEvent] = []
-        func isWork(_ event: RunEvent) -> Bool { event.kind == .tool || event.kind == .fileChange }
+        // A subagent it started is a row of its own, never counted away in a group.
+        func isWork(_ event: RunEvent) -> Bool { (event.kind == .tool && !Subagents.isLaunch(event)) || event.kind == .fileChange }
         func flush() {
             // Thinking before the first tool and after the last belongs to what comes around the group.
             var leading: [RunEvent] = []
@@ -377,7 +378,8 @@ enum TimelinePresentation {
     }
 }
 
-/// A subagent the agent started (Claude Code's Task or Agent tool)'s subagent bar shows it.
+/// A subagent the agent started (Claude Code's Task or Agent tool, Codex's spawned agents): the subagent bar, its row in
+/// the timeline and the Subagents output show it.
 struct SubagentInfo: Identifiable, Equatable, Sendable {
     var id: UUID
     /// "Explore", "general-purpose"…
@@ -386,8 +388,18 @@ struct SubagentInfo: Identifiable, Equatable, Sendable {
     var prompt: String
     var state: RunEvent.State?
     var output: String?
+    /// Started to run in the background: the turn goes on (or ends) while it works.
+    var background = false
+    var started: Date = .distantPast
 
     var isRunning: Bool { state == nil || state == .running || state == .pending }
+    var failed: Bool { state == .failed || state == .denied || state == .expired }
+
+    /// What it answered: nothing while it runs, and not the note that it was started in the background.
+    var answer: String? {
+        guard !isRunning, let output, !output.isEmpty, !Subagents.isLaunchNote(output) else { return nil }
+        return output
+    }
 }
 
 enum Subagents {
@@ -398,16 +410,53 @@ enum Subagents {
         list(TimelinePresentation.split(events).last ?? [])
     }
 
+    /// The subagents the bar above the composer shows: those started since your last message (a wake after background
+    /// work is the same piece of work), and any still running from before it.
+    static func current(_ events: [RunEvent]) -> [SubagentInfo] {
+        let start = events.lastIndex { $0.kind == .user } ?? events.startIndex
+        let recent = list(Array(events[start...]))
+        let earlier = list(Array(events[..<start])).filter(\.isRunning)
+        return earlier + recent
+    }
+
+    /// The event is a subagent the agent started (not a call of a subagent's own).
+    static func isLaunch(_ event: RunEvent) -> Bool {
+        event.kind == .tool && event.tool.map(tools.contains) == true && !event.text.hasPrefix("↳")
+    }
+
+    /// The subagent was started with `run_in_background`: its call returns at once, and it ends later.
+    static func isBackground(_ event: RunEvent) -> Bool {
+        guard isLaunch(event), let detail = event.detail, detail.contains("run_in_background") else { return false }
+        return (input(event)["run_in_background"] as? Bool) == true
+    }
+
+    /// The output of a call that only started a subagent in the background ("Async agent launched successfully…").
+    static func isLaunchNote(_ output: String) -> Bool {
+        output.hasPrefix("Async agent launched")
+    }
+
+    /// The subagent a background task stands for: by the call that started it, else by the agent id its launch named.
+    static func event(for update: BackgroundTaskUpdate, in events: [RunEvent]) -> RunEvent? {
+        if let call = update.toolUseID, let event = events.last(where: { $0.callID == call && isLaunch($0) }) { return event }
+        guard let task = update.taskID, !task.isEmpty else { return nil }
+        return events.last { isLaunch($0) && ($0.output?.contains("agentId: " + task) == true || $0.callID == task) }
+    }
+
     static func list(_ events: [RunEvent]) -> [SubagentInfo] {
         events.compactMap { event in
-            guard event.kind == .tool, let tool = event.tool, tools.contains(tool), !event.text.hasPrefix("↳") else { return nil }
-            let input = event.detail.flatMap { $0.data(using: .utf8) }
-                .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            guard isLaunch(event) else { return nil }
+            let input = input(event)
             let kind = (input["subagent_type"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "agent"
             let title = (input["description"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? event.text
             return SubagentInfo(id: event.id, kind: kind, title: title, prompt: (input["prompt"] as? String) ?? "",
-                                state: event.state, output: event.output)
+                                state: event.state, output: event.output,
+                                background: (input["run_in_background"] as? Bool) == true, started: event.date)
         }
+    }
+
+    private static func input(_ event: RunEvent) -> [String: Any] {
+        event.detail.flatMap { $0.data(using: .utf8) }
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
     }
 }
 
@@ -466,6 +515,8 @@ enum BackgroundWork {
     /// instead of thirty minutes): from the latest turn, a tool still running when it ended, or one started
     /// to run in the background. It ends with a turn the agent woke up for by itself. `before` is what was known.
     static func pending(after events: [RunEvent], before: Bool) -> Bool {
+        // A subagent still working in the background, from this turn or an earlier one.
+        if events.contains(where: { $0.state == .running && Subagents.isBackground($0) }) { return true }
         guard let turn = TimelinePresentation.split(events).last else { return before }
         let started = turn.contains { event in
             guard event.kind == .tool else { return false }

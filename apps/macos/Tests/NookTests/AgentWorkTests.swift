@@ -60,6 +60,58 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertEqual(Subagents.latest([user, task, RunEvent(kind: .user, text: "next")]), [])
     }
 
+    func testBackgroundSubagentOutlivesItsTurn() {
+        let user = RunEvent(kind: .user, text: "audit")
+        let agent = RunEvent(kind: .tool, text: "Agent · Audit chats", tool: "Agent", callID: "toolu_1",
+                             detail: #"{"description":"Audit chats","prompt":"Look","run_in_background":true}"#,
+                             output: "Async agent launched successfully.\nagentId: a1b2", state: .running)
+        let wake = RunEvent(kind: .system, text: "woke", tool: "wake")
+        XCTAssertTrue(Subagents.isBackground(agent))
+        XCTAssertTrue(Subagents.isLaunchNote(agent.output ?? ""))
+        // The end of its turn does not settle it; the process ending does.
+        XCTAssertTrue(OpenWork.settle(events: [user, agent], reason: .completed).isEmpty)
+        XCTAssertEqual(OpenWork.settle(events: [user, agent], reason: .processExited).first?.state, .failed)
+        // It keeps the session open, and the bar shows it after a wake turn too.
+        XCTAssertTrue(BackgroundWork.pending(after: [user, agent, wake], before: false))
+        let current = Subagents.current([user, agent, wake])
+        XCTAssertEqual(current.map(\.title), ["Audit chats"])
+        XCTAssertEqual(current.first?.background, true)
+        XCTAssertNil(current.first?.answer, "the launch note is no answer")
+        // Found by the call that started it, or by the agent id its launch named.
+        XCTAssertEqual(Subagents.event(for: BackgroundTaskUpdate(toolUseID: "toolu_1"), in: [agent])?.id, agent.id)
+        XCTAssertEqual(Subagents.event(for: BackgroundTaskUpdate(taskID: "a1b2"), in: [agent])?.id, agent.id)
+        XCTAssertNil(Subagents.event(for: BackgroundTaskUpdate(taskID: "zz"), in: [agent]))
+        // Running ones from before your message stay; finished ones from then do not.
+        var finished = agent
+        finished.state = .done
+        XCTAssertEqual(Subagents.current([user, agent, RunEvent(kind: .user, text: "next")]).count, 1)
+        XCTAssertEqual(Subagents.current([user, finished, RunEvent(kind: .user, text: "next")]).count, 0)
+    }
+
+    func testClaudeBackgroundTaskMessages() {
+        let started = #"{"type":"system","subtype":"task_started","task_id":"a1b2","tool_use_id":"toolu_1","description":"Audit chats"}"#
+        XCTAssertEqual(ClaudeStreamParser.parse(started),
+                       [.backgroundTask(BackgroundTaskUpdate(taskID: "a1b2", toolUseID: "toolu_1", status: nil, summary: "Audit chats"))])
+        let ended = #"{"type":"system","subtype":"task_notification","task_id":"a1b2","tool_use_id":"toolu_1","status":"failed","summary":"Agent failed"}"#
+        XCTAssertEqual(ClaudeStreamParser.parse(ended),
+                       [.backgroundTask(BackgroundTaskUpdate(taskID: "a1b2", toolUseID: "toolu_1", status: .failed, summary: "Agent failed"))])
+        let note = "<task-notification>\n<task-id>a1b2</task-id>\n<status>completed</status>\n<summary>Agent \"Audit chats\" completed</summary>\n<result>All good</result>\n</task-notification>"
+        let update = BackgroundTaskUpdate.notification(note)
+        XCTAssertEqual(update?.taskID, "a1b2")
+        XCTAssertEqual(update?.status, .completed)
+        XCTAssertEqual(update?.result, "All good")
+        XCTAssertNil(BackgroundTaskUpdate.notification("plain text"))
+    }
+
+    func testSubagentLaunchIsItsOwnRow() {
+        let agent = RunEvent(kind: .tool, text: "Agent · Audit", tool: "Agent", detail: #"{"description":"Audit"}"#, state: .running)
+        let blocks = TimelinePresentation.group([RunEvent(kind: .tool, text: "Bash · ls", tool: "Bash", state: .done), agent,
+                                                 RunEvent(kind: .tool, text: "Bash · pwd", tool: "Bash", state: .done)])
+        XCTAssertTrue(blocks.contains(.event(agent)))
+        let outputs = SessionOutputs.collect([agent], tasks: nil, directory: "")
+        XCTAssertEqual(outputs.first?.id, SessionOutputs.subagentsID)
+    }
+
     // MARK: Pull request watch
 
     func testPullRequestNews() {
