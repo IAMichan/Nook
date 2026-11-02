@@ -1583,8 +1583,10 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
                 conversationsAt = Date()
             }
             // Where you stand in each conversation, as Slack's website asks it (Slack answers it for the website's sign-in):
-            // reading a chat in Slack reads it in Nook too. Without an answer Nook counts new messages itself.
-            let marks = (try? await call("client.counts", [:], auth: auth)).map(SlackData.readMarks) ?? [:]
+            // reading a chat in Slack reads it in Nook too. A pasted token gets no answer to that: it asks each
+            // conversation that may still be unread instead. Without either Nook counts new messages itself.
+            var marks = (try? await call("client.counts", [:], auth: auth)).map(SlackData.readMarks) ?? [:]
+            if marks.isEmpty { marks = await infoMarks(auth: auth) }
             var handed = Set<String>()
             var chats: [BridgedChat] = []
             // The conversations read before one that fails already moved `newest` on: their messages must still go to the
@@ -1657,6 +1659,27 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
             isWorking = false
             throw error
         }
+    }
+
+    /// How many conversations a read asks `conversations.info` at most, the busiest first.
+    private static let infoChecks = 10
+
+    /// Where you stand in each conversation for a pasted token, which `client.counts` does not answer: what was known,
+    /// with the conversations that may still be unread asked again through `conversations.info` (it tells any user token
+    /// its `last_read`). One whose newest message is yours, or that Slack already counted as read, is not asked until
+    /// someone writes again. A conversation that refuses is left to Nook's own count.
+    private func infoMarks(auth: SlackData.Auth) async -> [String: String] {
+        let open = conversations.filter { conversation in
+            guard let known = recent[conversation.id], known.last?.mine == false else { return false }
+            return lastRead[conversation.id].map { SlackData.unread(known, lastRead: $0) > 0 } ?? true
+        }
+        var marks = lastRead
+        for conversation in open.sorted(by: { (active[$0.id] ?? 0) > (active[$1.id] ?? 0) }).prefix(Self.infoChecks) {
+            guard let json = try? await call("conversations.info", ["channel": conversation.id], auth: auth),
+                  let read = SlackData.readMark(info: json) else { continue }
+            marks[conversation.id] = read
+        }
+        return marks
     }
 
     /// The newest messages read of a conversation, to count from.
