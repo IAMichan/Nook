@@ -2,19 +2,20 @@ import SwiftUI
 import AppKit
 
 extension MarkdownBlock {
-    /// Bold, italic, code, and links within an inline span.
+    /// Bold, italic, code, and links within an inline span. `files`: a code span that names a file by a relative path
+    /// (`banner.png`) becomes a link, where there is a folder to read it from (`fileLinkBase`).
     ///
     /// Cached per text and size: `AttributedString(markdown:)` is slow, and every paragraph, bullet and table cell of every
     /// visible message asks for it again on each redraw (another message streaming in, hover, a keystroke).
-    static func inline(_ text: String, size: CGFloat = 14) -> AttributedString {
-        let key = "\(size)|\(text)" as NSString
+    static func inline(_ text: String, size: CGFloat = 14, files: Bool = false) -> AttributedString {
+        let key = "\(size)|\(files)|\(text)" as NSString
         if let hit = InlineCache.shared.object(forKey: key) { return hit.value }
-        let value = renderInline(text, size: size)
+        let value = renderInline(text, size: size, files: files)
         InlineCache.shared.setObject(InlineCache.Entry(value), forKey: key)
         return value
     }
 
-    private static func renderInline(_ text: String, size: CGFloat) -> AttributedString {
+    private static func renderInline(_ text: String, size: CGFloat, files: Bool) -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         guard let parsed = try? AttributedString(markdown: text, options: options) else { return AttributedString(text) }
         // Answers can repeat text from mails or web pages: only web and mail links stay clickable, and a link whose text
@@ -32,7 +33,7 @@ extension MarkdownBlock {
         }
         for run in parsed.runs {
             let code = run.inlinePresentationIntent?.contains(.code) == true
-            for (text, link) in linkPieces(String(parsed[run.range].characters), link: run.link, code: code) {
+            for (text, link) in linkPieces(String(parsed[run.range].characters), link: run.link, code: code, files: files) {
                 var piece = AttributedString(text, attributes: run.attributes)
                 let url = link.flatMap { isSafeLink($0) || isFileLink($0) ? $0 : nil }
                 piece.link = url
@@ -54,10 +55,11 @@ extension MarkdownBlock {
     }
 
     /// A run's text in pieces, each with the link it opens: a code span that is a web address (`http://localhost:8080/`)
-    /// and an address written out in plain text become links too, so they open in the side panel like any other.
-    private static func linkPieces(_ text: String, link: URL?, code: Bool) -> [(text: String, link: URL?)] {
+    /// or names a file (`banner.png`), and an address written out in plain text become links too, so they open in the
+    /// side panel like any other.
+    private static func linkPieces(_ text: String, link: URL?, code: Bool, files: Bool) -> [(text: String, link: URL?)] {
         if let link { return [(text, link)] }
-        if code { return [(text, codeLink(text))] }
+        if code { return [(text, codeLink(text) ?? codeFileLink(text, relative: files))] }
         var pieces: [(text: String, link: URL?)] = []
         var start = text.startIndex
         for found in bareLinks(text) {
@@ -185,13 +187,28 @@ extension MarkdownBlock {
         return FileLink.parse(url.absoluteString) != nil
     }
 
+    /// The link of a code span that names a file (`FileLink.named`), as written; a relative path only when `relative`.
+    static func codeFileLink(_ code: String, relative: Bool) -> URL? {
+        let text = code.trimmingCharacters(in: .whitespaces)
+        guard let target = FileLink.named(text), relative || target.path.hasPrefix("/") || target.path.hasPrefix("~") else { return nil }
+        return URL(string: text.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? text)
+    }
+
     /// Opens a file link in Nook's own viewer at its line (`AppModel.openFileInNook`), beside the session in an agent's
-    /// conversation. False when it is not a file link or cannot be placed (a relative path without a folder).
+    /// conversation. A bare name that is not in the session's folder itself is looked up inside it (`FileLink.locate`).
+    /// False when it is not a file link or cannot be placed (a relative path without a folder).
     @MainActor
     static func openFileLink(_ url: URL, base: String?, beside: Bool) -> Bool {
         guard isFileLink(url), let target = FileLink.parse(url.absoluteString),
               let resolved = FileLink.resolve(target, base: base) else { return false }
-        AppModel.shared.openFileInNook(resolved, beside: beside)
+        if FileManager.default.fileExists(atPath: resolved.path) {
+            AppModel.shared.openFileInNook(resolved, beside: beside)
+            return true
+        }
+        Task { @MainActor in
+            let found = await Task.detached(priority: .userInitiated) { FileLink.find(target, base: base) }.value
+            AppModel.shared.openFileInNook(found ?? resolved, beside: beside)
+        }
         return true
     }
 }
@@ -285,7 +302,7 @@ struct MarkdownView: View {
     }
 
     private func paragraph(_ text: String, color: Color = NookTheme.textStrong) -> some View {
-        Text(MarkdownBlock.inline(text, size: size))
+        Text(MarkdownBlock.inline(text, size: size, files: fileLinkBase != nil))
             .font(NookTheme.font(size))
             .lineSpacing(5)
             .foregroundStyle(color)
@@ -307,6 +324,7 @@ extension Callout.Kind {
 }
 
 private struct CalloutBlock: View {
+    @Environment(\.fileLinkBase) private var fileLinkBase
     let callout: Callout
     let size: CGFloat
 
@@ -320,7 +338,7 @@ private struct CalloutBlock: View {
                     .font(NookTheme.font(size - 1, .semibold))
                     .foregroundStyle(callout.kind.color)
                 if !callout.body.isEmpty {
-                    Text(MarkdownBlock.inline(callout.body, size: size))
+                    Text(MarkdownBlock.inline(callout.body, size: size, files: fileLinkBase != nil))
                         .font(NookTheme.font(size))
                         .lineSpacing(4)
                         .foregroundStyle(NookTheme.textStrong)
@@ -454,6 +472,7 @@ private struct ChoiceRow: View {
 // MARK: Table
 
 private struct TableBlock: View {
+    @Environment(\.fileLinkBase) private var fileLinkBase
     let header: [String]
     let rows: [[String]]
     let size: CGFloat
@@ -509,7 +528,7 @@ private struct TableBlock: View {
 
     private func headerCell(_ cell: String, column: Int) -> some View {
         let alignment: HorizontalAlignment = numeric(column) ? .trailing : .leading
-        return Text(MarkdownBlock.inline(cell, size: size))
+        return Text(MarkdownBlock.inline(cell, size: size, files: fileLinkBase != nil))
             .font(NookTheme.font(size - 1.5, .semibold))
             .foregroundStyle(NookTheme.textTertiary)
             .gridColumnAlignment(alignment)
@@ -526,7 +545,7 @@ private struct TableBlock: View {
 
     private func bodyCell(_ cell: String, column: Int) -> some View {
         let weight: Font.Weight = column == 0 ? .medium : .regular
-        return Text(MarkdownBlock.inline(cell, size: size))
+        return Text(MarkdownBlock.inline(cell, size: size, files: fileLinkBase != nil))
             .font(NookTheme.font(size - 0.5, weight))
             .monospacedDigit()
             .foregroundStyle(NookTheme.textStrong)
