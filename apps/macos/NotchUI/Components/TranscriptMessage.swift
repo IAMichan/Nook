@@ -128,6 +128,9 @@ struct TranscriptReply<Extras: View, Actions: View>: View {
     @ViewBuilder var extras: () -> Extras
     @ViewBuilder var actions: () -> Actions
     @State private var hovering = false
+    @State private var files: [String] = []
+    @Environment(\.fileLinkBase) private var fileLinkBase
+    @Environment(\.sessionSide) private var side
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -145,6 +148,8 @@ struct TranscriptReply<Extras: View, Actions: View>: View {
                         MarkdownView(text: text, size: TranscriptStyle.textSize, onChoose: onChoose)
                     }
                 }
+                // In an agent's conversation: the files the turn's answer names, a click from the side panel.
+                if !files.isEmpty { AnswerFilesRow(paths: files) }
                 extras()
             }
             if footer && !text.isEmpty {
@@ -155,6 +160,12 @@ struct TranscriptReply<Extras: View, Actions: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+        .task(id: footer && fileLinkBase != nil ? text : "") {
+            guard footer, !text.isEmpty else { return }
+            let found = await AnswerFiles.load(text, date: date, base: fileLinkBase, side: side)
+            // A cancelled look (the answer streamed on) keeps the tiles until the next one is done.
+            if !Task.isCancelled { files = found }
+        }
     }
 }
 

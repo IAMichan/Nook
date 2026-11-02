@@ -32,6 +32,57 @@ final class FileLinksTests: XCTestCase {
         XCTAssertEqual(FileLink.resolve(FileTarget(path: "/abs/y"), base: nil)?.path, "/abs/y")
     }
 
+    func testCodeSpansThatNameAFile() {
+        XCTAssertEqual(FileLink.named("banner-eventbrite.jpg")?.path, "banner-eventbrite.jpg")
+        XCTAssertEqual(FileLink.named("src/app.swift:12"), FileTarget(path: "src/app.swift", line: 12))
+        XCTAssertEqual(FileLink.named("marketing/site/banner.custom")?.path, "marketing/site/banner.custom")
+        XCTAssertEqual(FileLink.named("~/notes.md")?.path, "~/notes.md")
+        XCTAssertNil(FileLink.named("AppModel.shared"))
+        XCTAssertNil(FileLink.named("example.com"))
+        XCTAssertNil(FileLink.named("docs.example.com/guide.io"))
+        XCTAssertNil(FileLink.named("/api/users"))
+        XCTAssertNil(FileLink.named("marketing/wereldfilosofie/"))
+        XCTAssertNil(FileLink.named("git status"))
+        XCTAssertNil(FileLink.named(".md"))
+        XCTAssertNil(FileLink.named("v1.2"))
+        XCTAssertNil(FileLink.named("https://example.com/a.png"))
+    }
+
+    func testMentionsInAnAnswer() {
+        let answer = """
+        **Files** in `marketing/wereldfilosofie/`:
+        - `banner-eventbrite.jpg`: for the upload
+        - `banner-eventbrite.png` and [the source](banner.html), again `banner-eventbrite.jpg`
+        ```
+        `inside.png`
+        ```
+        See [the site](https://example.com/x.png).
+        """
+        XCTAssertEqual(FileLink.mentions(in: answer).map(\.path),
+                       ["banner-eventbrite.jpg", "banner-eventbrite.png", "banner.html"])
+    }
+
+    func testFindingANameInsideTheFolder() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("filelinks-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = root.appendingPathComponent("marketing/flyer")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("node_modules/x"), withIntermediateDirectories: true)
+        try Data().write(to: folder.appendingPathComponent("banner.png"))
+        try Data().write(to: root.appendingPathComponent("node_modules/x/logo.png"))
+        try Data().write(to: root.appendingPathComponent("top.md"))
+
+        XCTAssertEqual(FileLink.locate("banner.png", in: root.path).map { URL(fileURLWithPath: $0).standardizedFileURL.path },
+                       folder.appendingPathComponent("banner.png").standardizedFileURL.path)
+        XCTAssertNotNil(FileLink.locate("flyer/banner.png", in: root.path))
+        XCTAssertNil(FileLink.locate("logo.png", in: root.path))
+        XCTAssertNil(FileLink.locate("../banner.png", in: root.path))
+        XCTAssertEqual(FileLink.find(FileTarget(path: "top.md"), base: root.path)?.path,
+                       root.appendingPathComponent("top.md").standardizedFileURL.path)
+        XCTAssertTrue(FileLink.find(FileTarget(path: "banner.png", line: 3), base: root.path)?.path.hasSuffix("/marketing/flyer/banner.png") == true)
+        XCTAssertEqual(FileLink.find(FileTarget(path: "banner.png", line: 3), base: root.path)?.line, 3)
+    }
+
     func testEditorLaunchStyles() {
         let target = FileTarget(path: "/r/a.swift", line: 12, column: 3)
         XCTAssertEqual(EditorLaunch.plan(bundleID: "com.microsoft.VSCode", appPath: "/Applications/Visual Studio Code.app",
