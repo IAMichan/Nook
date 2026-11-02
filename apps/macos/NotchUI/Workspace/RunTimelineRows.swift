@@ -155,8 +155,71 @@ struct SharedFilesRow: View {
     }
 }
 
+/// The files a session's final answer names (`FileLink.mentions`) that are made to be seen (a picture, a page, a document,
+/// a video), as tiles under it that open in the side panel, so a banner the agent rendered with a script is a click
+/// away even though it was never handed over (`AnswerFiles.load`).
+struct AnswerFilesRow: View {
+    let paths: [String]
+    @Environment(\.sessionSide) private var side
+
+    var body: some View {
+        ChipFlow(spacing: NookTheme.Spacing.sm) {
+            ForEach(paths, id: \.self) { path in
+                SharedFileTile(path: path, shown: path == side.shownFile) { side.showFile(path) }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Which files an answer names exist and are worth seeing (`SessionOutputs.kind`), in its order, at most `limit`.
+enum AnswerFiles {
+    struct Found: Sendable {
+        let path: String
+        let modified: Date
+    }
+
+    /// Answers that opened their file already, so scrolling back to one does not open it again.
+    @MainActor private static var opened: Set<String> = []
+
+    /// The files `text` names in `base`, looked up off the main thread once a streaming answer pauses. A fresh answer
+    /// (`date` under two minutes ago) opens the first file its turn wrote in the side panel, unless a file shows there.
+    @MainActor
+    static func load(_ text: String, date: Date?, base: String?, side: SessionSideLink) async -> [String] {
+        guard let base, !base.isEmpty else { return [] }
+        try? await Task.sleep(for: .milliseconds(500))
+        let mentioned = FileLink.mentions(in: text).filter { SessionOutputs.kind(path: $0.path) != nil }
+        guard !Task.isCancelled, !mentioned.isEmpty else { return [] }
+        let all = await Task.detached(priority: .utility) { viewable(mentioned, base: base) }.value
+        guard !Task.isCancelled else { return [] }
+        // Written in this turn (or close to it): a Markdown file only counts then, so a coding answer that names
+        // `README.md` gets no tile, and only such a file opens by itself.
+        let since = (date ?? Date()).addingTimeInterval(-30 * 60)
+        let found = all.filter { SessionOutputs.kind(path: $0.path) != .document || $0.modified > since }
+        if let date, Date().timeIntervalSince(date) < 120, side.shownFile == nil,
+           let made = found.first(where: { $0.modified > since }),
+           opened.insert(String(text.prefix(200)) + "|" + made.path).inserted {
+            side.showFile(made.path)
+        }
+        return found.map(\.path)
+    }
+
+    static func viewable(_ targets: [FileTarget], base: String, limit: Int = 8) -> [Found] {
+        var found: [Found] = []
+        var seen: Set<String> = []
+        for target in targets where SessionOutputs.kind(path: target.path) != nil {
+            guard let resolved = FileLink.find(target, base: base), seen.insert(resolved.path).inserted,
+                  let attributes = try? FileManager.default.attributesOfItem(atPath: resolved.path),
+                  attributes[.type] as? FileAttributeType == .typeRegular else { continue }
+            found.append(Found(path: resolved.path, modified: attributes[.modificationDate] as? Date ?? .distantPast))
+            if found.count == limit { break }
+        }
+        return found
+    }
+}
+
 /// One file in `SharedFilesRow` that is not a video: a picture as a small thumbnail, anything else as its icon and name.
-private struct SharedFileTile: View {
+struct SharedFileTile: View {
     let path: String
     let shown: Bool
     let action: () -> Void

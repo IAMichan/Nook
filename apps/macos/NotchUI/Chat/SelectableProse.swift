@@ -84,7 +84,7 @@ struct SelectableProse: NSViewRepresentable {
             .foregroundColor: NSColor(NookTheme.blue),
             .cursor: NSCursor.pointingHand,
         ]
-        let text = Self.attributed(blocks, size: size)
+        let text = Self.attributed(blocks, size: size, files: context.environment.fileLinkBase != nil)
         // The cache hands back the same text for the same blocks: skip comparing it character by character on every
         // redraw (hover, scrolling, another message streaming in).
         guard text !== context.coordinator.shown else { return }
@@ -250,8 +250,9 @@ struct SelectableProse: NSViewRepresentable {
     }()
 
     /// The blocks as one attributed text, in the same sizes, colors, and spacing as the SwiftUI blocks around them.
-    static func attributed(_ blocks: [MarkdownBlock], size: CGFloat) -> NSAttributedString {
-        let key = "\(size)|\(NookTheme.accentHex)|\(String(describing: blocks))" as NSString
+    /// `files`: a code span that names a file by a relative path becomes a link (there is a folder to read it from).
+    static func attributed(_ blocks: [MarkdownBlock], size: CGFloat, files: Bool = false) -> NSAttributedString {
+        let key = "\(size)|\(files)|\(NookTheme.accentHex)|\(String(describing: blocks))" as NSString
         if let hit = cache.object(forKey: key) { return hit }
         let result = NSMutableAttributedString()
         for (index, block) in blocks.enumerated() {
@@ -260,15 +261,15 @@ struct SelectableProse: NSViewRepresentable {
             switch block {
             case .heading(let level, let text):
                 let headingSize = level <= 1 ? size + 5 : level == 2 ? size + 3 : size + 1
-                let line = inline(text, size: headingSize, weight: .semibold, color: NookTheme.paper)
+                let line = inline(text, size: headingSize, weight: .semibold, color: NookTheme.paper, files: files)
                 // A heading takes more room above than below, so it clearly belongs to the text under it.
                 append(line, style: style(before: gap + (level <= 2 ? 8 : 4), lineSpacing: 1), to: result)
             case .paragraph(let text):
                 // Running text a step softer than headings (answers at 80 % of the text color).
-                append(inline(text, size: size, weight: .regular, color: NookTheme.textStrong), style: style(before: gap), to: result)
+                append(inline(text, size: size, weight: .regular, color: NookTheme.textStrong, files: files), style: style(before: gap), to: result)
             case .list(let items):
                 for (itemIndex, item) in items.enumerated() {
-                    appendItem(item, before: itemIndex == 0 ? gap : 6, size: size, to: result)
+                    appendItem(item, before: itemIndex == 0 ? gap : 6, size: size, files: files, to: result)
                 }
             default:
                 break
@@ -300,7 +301,8 @@ struct SelectableProse: NSViewRepresentable {
     }
 
     /// A list item: its marker in a column, the text indented past it on every line, nested items further in.
-    private static func appendItem(_ item: MarkdownListItem, before: CGFloat, size: CGFloat, to result: NSMutableAttributedString) {
+    private static func appendItem(_ item: MarkdownListItem, before: CGFloat, size: CGFloat, files: Bool,
+                                   to result: NSMutableAttributedString) {
         let indent = CGFloat(item.level) * (size + 4)
         let font = NSFont.systemFont(ofSize: size)
         let line = NSMutableAttributedString()
@@ -339,15 +341,16 @@ struct SelectableProse: NSViewRepresentable {
             paragraph.headIndent = indent + 16
         }
         line.append(NSAttributedString(string: "\t", attributes: [.font: font]))
-        line.append(inline(text, size: size, weight: .regular, color: color))
+        line.append(inline(text, size: size, weight: .regular, color: color, files: files))
         append(line, style: paragraph, to: result)
     }
 
     private static let bullets = ["•", "◦", "▪"]
 
     /// `MarkdownBlock.inline` (with its link checks) carried over to AppKit fonts and colors.
-    private static func inline(_ text: String, size: CGFloat, weight: NSFont.Weight, color: Color) -> NSMutableAttributedString {
-        let source = MarkdownBlock.inline(text, size: size)
+    private static func inline(_ text: String, size: CGFloat, weight: NSFont.Weight, color: Color,
+                               files: Bool) -> NSMutableAttributedString {
+        let source = MarkdownBlock.inline(text, size: size, files: files)
         let result = NSMutableAttributedString()
         for run in source.runs {
             let intent = run.inlinePresentationIntent ?? []
