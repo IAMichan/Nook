@@ -184,7 +184,7 @@ private struct ChatRemotePicture: View {
             } else {
                 RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
                     .fill(NookTheme.ink.opacity(0.3))
-                    .frame(width: PhotoButton.maxWidth, height: PhotoButton.maxHeight * 0.75)
+                    .fittedMedia(CGSize(width: PhotoButton.maxWidth, height: PhotoButton.maxHeight * 0.75))
                     .overlay(ProgressView().controlSize(.small))
             }
         }
