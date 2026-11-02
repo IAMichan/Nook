@@ -922,6 +922,30 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertNil(ChatServiceData.picture(["type": "group", "participants": ["items": [["imgURL": "file:///anna.jpg"]]]]))
     }
 
+    func testTagsInLinkedChatsShowTheNameInsteadOfTheNumber() {
+        let listed = ChatServiceData.chats(["items": [[
+            "id": "!g", "title": "Club", "network": "WhatsApp", "accountID": "whatsapp", "type": "group",
+            "participants": ["items": [
+                ["id": "@me", "isSelf": true, "fullName": "Me"],
+                ["id": "@whatsapp_31611111111:beeper.local", "fullName": "Anna"],
+                ["id": "@whatsapp_lid-45600000000001:beeper.local", "fullName": "Cor"],
+                ["id": "@bob", "fullName": "Bob", "phoneNumber": "+31 6 22222222"],
+                ["id": "@signal_1a2b3c4d-5e6f-1234-5678-123456789012:beeper.local", "fullName": "Dirk"],
+                ["id": "@whatsapp_31633333333:beeper.local", "fullName": "+31 6 33333333"],
+            ]],
+        ]]])
+        let chat = try! XCTUnwrap(listed.first)
+        let answer: [String: Any] = ["items": [
+            ["id": "1", "text": "Geldt dat voor jullie ook @31611111111 @45600000000001 @0622222222 @31633333333?",
+             "timestamp": "2026-10-23T10:00:00Z", "senderName": "Anna"],
+            ["id": "2", "text": "mail anna@31611111111.nl", "timestamp": "2026-10-23T10:01:00Z", "senderName": "Anna"],
+        ]]
+        XCTAssertEqual(ChatServiceData.messages(answer, chat: chat).map(\.text), [
+            "Geldt dat voor jullie ook @Anna @Cor @Bob @31633333333?", "mail anna@31611111111.nl",
+        ], "by id, by @lid, by phone number; a name that is only the number and a mail address stay")
+        XCTAssertNil(chat.tags[ChatMentions.key("123456789012")!], "a UUID's digits are no number")
+    }
+
     func testLinkedChatStateReactionsAndReceipts() {
         let listed = ChatServiceData.chats(["items": [[
             "id": "!a", "title": "Anna", "network": "Instagram", "accountID": "instagramgo", "type": "single",

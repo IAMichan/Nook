@@ -41,6 +41,22 @@ final class WhatsAppExportTests: XCTestCase {
         XCTAssertNil(chat.handle, "a group has no number")
     }
 
+    func testTagsShowTheNameInsteadOfTheNumber() {
+        let cor = "45600000000001@lid"
+        var tagged = message("1", chat: group, from: anna, text: "Geldt dat voor jullie ook @31622222222 @45600000000001 @31699999999?",
+                             name: "Anna")
+        tagged.replyTo = "0"
+        tagged.quotedText = "vraag @31622222222"
+        let book = WANameBook(contacts: [:], gateway: [WAContact(jid: cor, name: "Cor")])
+        let chat = export(groupChat([tagged, message("2", chat: group, from: anna, text: "mail anna@31622222222.nl", at: 1)],
+                                    members: [WAMember(ids: [anna], name: "Anna"), WAMember(ids: [bob], name: "Bob")]),
+                          names: book)
+        XCTAssertEqual(chat.messages[0].text, "Geldt dat voor jullie ook @Bob @Cor @31699999999?",
+                       "a member, a contact by @lid, and someone nobody knows keeps their number")
+        XCTAssertEqual(chat.messages[0].quote?.text, "vraag @Bob")
+        XCTAssertEqual(chat.messages[1].text, "mail anna@31622222222.nl", "an address is no tag")
+    }
+
     func testAPersonsChatIsCalledAfterThem() {
         let person = WAConversation(id: anna, name: "Anna", isGroup: false, messages: [message("1", chat: anna, name: "Anna")],
                                     lastActivity: Date(timeIntervalSince1970: 1_800_000_000))
