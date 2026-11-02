@@ -1330,6 +1330,7 @@ private struct ChatsRow: View, Equatable {
     var rowAction: ChatsRowAction? = nil
     let action: () -> Void
     @State private var hovering = false
+    @State private var onActions = false
     /// What the pointer resting here fetches. The row asks `AppModel.shared` without observing it, so it does not redraw
     /// with every change of the app model.
     @State private var prefetch: Task<Void, Never>?
@@ -1341,7 +1342,7 @@ private struct ChatsRow: View, Equatable {
             && lhs.rowAction?.title == rhs.rowAction?.title
     }
 
-    private static let time: DateFormatter = {
+    fileprivate static let time: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
         return formatter
@@ -1370,7 +1371,11 @@ private struct ChatsRow: View, Equatable {
                     .padding(.trailing, NookTheme.Spacing.sm)
                     .transition(.opacity)
                     .accessibilityHidden(true)
+                    .onHover { onActions = $0 }
             }
+        }
+        .hoverCard(suppressed: onActions) {
+            ChatsHoverCard(entry: entry)
         }
         // A row without a line under its name gets its newest message fetched.
         .onAppear { AppModel.shared.loadChatLine(entry) }
@@ -1477,6 +1482,57 @@ private struct ChatsRow: View, Equatable {
         .accessibilityLabel("\([MessagingApps.app(id: entry.app)?.name ?? entry.app, entry.account].compactMap { $0 }.joined(separator: " "))"
                             + ", \(entry.name), \(stateLabel): \(entry.preview)")
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// What a chat in the Chats tab shows on hover: its contact/group name, the app and account, group members,
+/// the newest message, and when it last spoke.
+private struct ChatsHoverCard: View {
+    let entry: ChatsEntry
+
+    private var appName: String {
+        MessagingApps.app(id: entry.app)?.name ?? entry.app
+    }
+
+    private var sourceLine: String {
+        let app = appName
+        if let account = entry.account, !account.isEmpty {
+            return "\(app) · \(account)"
+        }
+        return app
+    }
+
+    private var when: String {
+        guard entry.last > .distantPast else { return "" }
+        return Calendar.current.isDateInToday(entry.last) ? ChatsRow.time.string(from: entry.last)
+            : ChatTimeline.dayLabel(entry.last, locale: Locale(identifier: I18n.shared.currentLanguage.rawValue))
+    }
+
+    var body: some View {
+        HoverCard(title: entry.name) {
+            HoverCardRow(symbol: "message", text: sourceLine)
+            if let members = entry.members, !members.isEmpty {
+                HoverCardRow(symbol: "person.2", text: members.joined(separator: ", "))
+            }
+            if !entry.preview.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tr("chats.card.newest"))
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                    Text(entry.preview)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if !when.isEmpty {
+                HoverCardRow(symbol: "clock", text: when)
+            }
+            if entry.unread > 0 {
+                HoverCardRow(symbol: "envelope.badge", text: tr("chats.status.unread", entry.unread))
+            }
+        }
     }
 }
 

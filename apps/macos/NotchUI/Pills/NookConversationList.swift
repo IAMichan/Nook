@@ -358,20 +358,125 @@ private struct NookRow: View, Equatable {
     }
 }
 
-/// What a Nook shows on hover, like a session in the Agents tab: its title, when it started and was last active,
-/// how many messages it holds, and the sources it may use.
+/// What a Nook shows on hover: its title, what it did (tasks completed, actions taken, sources searched),
+/// a summary/preview of what was answered, and when it started and was last active.
 private struct NookHoverCard: View {
     let conversation: Conversation
 
+    private var latestTasks: [RunTaskStep] {
+        conversation.messages.last(where: { !$0.tasks.isEmpty })?.tasks ?? []
+    }
+
+    private var planSummary: String? {
+        guard !latestTasks.isEmpty else { return nil }
+        let done = latestTasks.filter { $0.status == .done }.count
+        return tr("nooks.card.tasks", done, latestTasks.count)
+    }
+
+    private var activeTask: (symbol: String, text: String)? {
+        guard !latestTasks.isEmpty else { return nil }
+        if let current = latestTasks.first(where: { $0.status == .active }) {
+            return ("hourglass", current.text)
+        }
+        if let lastDone = latestTasks.last(where: { $0.status == .done }) {
+            return ("checkmark", lastDone.text)
+        }
+        return nil
+    }
+
+    private var lastMailDraft: MailDraft? {
+        conversation.messages.flatMap(\.mails).last
+    }
+
+    private var lastChart: ChatChart? {
+        conversation.messages.flatMap(\.charts).last
+    }
+
+    private var consultedSources: String? {
+        var seen = Set<String>()
+        var list: [String] = []
+        for step in conversation.messages.flatMap(\.retrieval) {
+            let title = step.sourceTitle
+            if !title.isEmpty, seen.insert(title).inserted {
+                list.append(title)
+            }
+        }
+        guard !list.isEmpty else { return nil }
+        return list.prefix(3).joined(separator: ", ")
+    }
+
+    private var promptText: String? {
+        guard let prompt = conversation.messages.first(where: { $0.role == .user })?.text.trimmingCharacters(in: .whitespacesAndNewlines),
+              !prompt.isEmpty, prompt != conversation.title else { return nil }
+        let clean = prompt.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return clean.count > 120 ? String(clean.prefix(119)) + "…" : clean
+    }
+
+    private var summaryText: String {
+        guard let last = conversation.messages.last(where: { $0.role == .nook && !$0.text.isEmpty }) else { return "" }
+        let raw = last.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lines = raw.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+        let sample = lines.joined(separator: " ")
+        let cleaned = String(sample.unicodeScalars.filter { !CharacterSet(charactersIn: "#*_`>|").contains($0) })
+            .trimmingCharacters(in: .whitespaces)
+        return cleaned.count > 200 ? String(cleaned.prefix(199)) + "…" : cleaned
+    }
+
     var body: some View {
         HoverCard(title: conversation.title) {
+            if let tasks = planSummary {
+                HoverCardRow(symbol: "checklist", text: tasks)
+            }
+            if let task = activeTask {
+                HoverCardRow(symbol: task.symbol, text: task.text)
+            }
+            if let mail = lastMailDraft {
+                let to = mail.to.trimmingCharacters(in: .whitespaces)
+                HoverCardRow(symbol: "envelope", text: to.isEmpty ? tr("nooks.card.mailDrafted") : tr("nooks.card.mailTo", to))
+            }
+            if let chart = lastChart {
+                HoverCardRow(symbol: "chart.bar", text: chart.title.isEmpty ? tr("nooks.card.chartCreated") : chart.title)
+            }
+            if let sources = consultedSources {
+                HoverCardRow(symbol: "magnifyingglass", text: tr("nooks.card.sources", sources))
+            }
+            if let prompt = promptText {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tr("nooks.card.request"))
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                    Text(prompt)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.paper.opacity(0.85))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if !summaryText.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tr("nooks.card.summary"))
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                    Text(summaryText)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             HoverCardRow(symbol: "clock", text: tr("nooks.card.started", NookDates.ago(conversation.created)))
             if conversation.updated > conversation.created {
                 HoverCardRow(symbol: "arrow.clockwise", text: tr("nooks.card.updated", NookDates.ago(conversation.updated)))
             }
             HoverCardRow(symbol: "bubble.left.and.bubble.right", text: messageCount)
-            HoverCardRow(symbol: "line.3.horizontal.decrease",
-                         text: conversation.scope.isRestricted ? conversation.scope.label() : tr("scope.automaticShort"))
+            if conversation.scope.isRestricted {
+                HoverCardRow(symbol: "line.3.horizontal.decrease", text: conversation.scope.label())
+            }
         }
     }
 
