@@ -285,6 +285,8 @@ final class WorkspaceManager: ObservableObject {
     var stopCoordinators: [UUID: StopCoordinator] = [:]
     /// Worktree or remote preparation still running before the first turn starts; cancelled if you press Stop.
     var prepareTasks: [UUID: Task<Void, Never>] = [:]
+    /// Sessions whose removed worktree is being made again for a message (see `reopenWorktree`).
+    var reopeningWorktrees: Set<UUID> = []
     /// Last inspected project metadata per normalized folder, so opening "New Session" or starting is instant.
     private var projectCache: [String: ProjectInfo] = [:]
     /// When a repository's remote-tracking base (`repo\nbase`) was last fetched, so starting does not fetch again right away.
@@ -946,6 +948,11 @@ final class WorkspaceManager: ObservableObject {
         guard !clean.isEmpty, let run = run(id) else { return false }
         // You carry on yourself: whatever waited behind a failure or a stop goes on after this turn.
         if var held = queued[id], held.isHeld { held.resume(); queued[id] = held }
+        // Its worktree is being made again for an earlier message: this one follows that turn.
+        if reopeningWorktrees.contains(id) {
+            enqueue(id, text: clean)
+            return true
+        }
         if checkpointing.contains(id), awaitingCheckpoint[id] != nil {
             enqueue(id, text: clean)
             return true
@@ -954,6 +961,11 @@ final class WorkspaceManager: ObservableObject {
         guard let executable = launchExecutable(run) else {
             update(id) { $0.statusDetail = StartError.noExecutable(run.provider).errorDescription }
             return false
+        }
+        // Its worktree was removed (the pull request merged, the session settled, or by hand): it comes back first.
+        if needsWorktreeReopen(run) {
+            reopenWorktree(id, message: clean, shown: shown)
+            return true
         }
         // A folder on another machine cannot be checked from here; ssh and the agent there report what is wrong.
         guard run.isRemote || WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else {

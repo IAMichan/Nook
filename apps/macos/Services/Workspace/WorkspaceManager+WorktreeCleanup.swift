@@ -105,3 +105,72 @@ extension WorkspaceManager {
         }
     }
 }
+
+extension WorkspaceManager {
+    /// A session of its own worktree on this Mac whose folder is gone: removed after its pull request merged, after it
+    /// settled, or by hand.
+    func needsWorktreeReopen(_ run: WorkspaceRun) -> Bool {
+        guard !run.isRemote, run.isolation == .worktree, run.repoRoot != nil, let path = run.worktreePath,
+              WorkspacePathPolicy.normalize(path) == WorkspacePathPolicy.normalize(run.workingDirectory) else { return false }
+        return !FileManager.default.fileExists(atPath: path)
+    }
+
+    /// Makes the session's worktree again at the same path (the agent's conversation is kept per folder), then sends the
+    /// message. Its own branch comes back while its work is not done; after the pull request merged, new work starts on
+    /// a new branch from the base, so it gets a pull request of its own. Messages sent meanwhile wait in the queue.
+    func reopenWorktree(_ id: UUID, message: String, shown: Bool) {
+        guard let run = run(id), let git = gitService, let repo = run.repoRoot, let path = run.worktreePath,
+              reopeningWorktrees.insert(id).inserted else { return }
+        let merged = PullRequestSync.shared.merged(id) || run.prWatch?.state == "merged"
+        let branch = run.branch
+        let base = run.baseBranch
+        let newBranch = ProjectSettings.branchName(WorktreeNaming.branchName(task: message, id: UUID()),
+                                                   globalPrefix: WorktreeNaming.branchPrefix,
+                                                   projectPrefix: settings.sessionDefaults(for: repo).branchPrefix)
+        let refreshBase = base.map { shouldRefreshRemoteBase(root: repo, base: $0) } ?? false
+        let gone = tr("ws.error.folderGone", path)
+        Task { [weak self] in
+            let result: Result<WorktreeCleanup.Reopen, Error>
+            do {
+                let plan = try await FolderLease.shared.run(FolderLease.key(repo), priority: .userInitiated) { () throws -> WorktreeCleanup.Reopen in
+                    git.pruneWorktrees(repo)
+                    let exists = branch.map { git.localBranchExists($0, in: repo) } ?? false
+                    let plan = WorktreeCleanup.reopen(branch: branch, branchExists: exists, merged: merged, base: base, newBranch: newBranch)
+                    switch plan {
+                    case .branch(let name): try git.addWorktree(repo: repo, path: path, existingBranch: name)
+                    case .newBranch(let name, let base): try git.addWorktree(repo: repo, path: path, branch: name, base: base, refreshBase: refreshBase)
+                    case .impossible: throw GitError(gone)
+                    }
+                    return plan
+                }
+                result = .success(plan)
+            } catch {
+                result = .failure(error)
+            }
+            guard let self else { return }
+            self.reopeningWorktrees.remove(id)
+            guard self.run(id) != nil else { return }
+            switch result {
+            case .failure(let error):
+                self.append(id, RunEvent(kind: .error, text: tr("ws.worktree.reopenFailed", error.localizedDescription)))
+                return
+            case .success(.newBranch(let name, _)):
+                self.followBranch(id, to: name)
+                if self.run(id)?.prWatch != nil { self.watchPullRequest(id, url: nil) }
+                self.append(id, RunEvent(kind: .system, text: tr("ws.worktree.reopenedNewBranch", name, AgentPathFormat.tilde(path))))
+            case .success:
+                self.append(id, RunEvent(kind: .system, text: tr("ws.worktree.reopened", AgentPathFormat.tilde(path))))
+            }
+            if self.run(id)?.statusDetail == "worktreeRemoved" { self.update(id) { $0.statusDetail = nil } }
+            self.refreshGit(id)
+            self.refreshWorktrees()
+            if shown { self.sendHidden(id, text: message) } else { self.send(id, text: message) }
+            // The project's setup (nook.json `runOnWorktreeCreate`), as for a new worktree.
+            let setup = await Task.detached(priority: .userInitiated) { ProjectScripts.load(folder: path) }.value
+            for script in setup where script.runOnWorktreeCreate {
+                self.runScript?(path, script.command, script.name)
+                self.append(id, RunEvent(kind: .system, text: tr("ws.event.setupScript", script.name)))
+            }
+        }
+    }
+}
