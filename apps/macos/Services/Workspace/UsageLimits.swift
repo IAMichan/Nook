@@ -86,4 +86,14 @@ enum UsageLimits {
         guard !resets.contains(where: { $0 == nil }) else { return nil }
         return resets.compactMap { $0 }.max()
     }
+
+    /// The percentage to indicate across a list of window percentages: only indicates 100% when all windows are full;
+    /// otherwise shows the highest non-full window (capped at 99%).
+    static func effectiveHighestPercent(_ percents: [Double]) -> Double {
+        guard !percents.isEmpty else { return 0 }
+        if percents.allSatisfy({ $0 >= 99.5 }) { return 100 }
+        let nonFull = percents.filter { $0 < 99.5 }
+        if let max = nonFull.max() { return min(99, max) }
+        return 0
+    }
 }

@@ -519,7 +519,11 @@ struct ComposerUsageRing: View {
     @State private var hovering = false
     private static let shownLimits = 6
 
-    private var highest: Double { limits.map(\.percent).max() ?? 0 }
+    /// The highest percentage to display in the ring and header: only indicates 100% when all limits are full;
+    /// otherwise shows the highest non-full window (capped at 99%).
+    private var highest: Double {
+        UsageLimits.effectiveHighestPercent(limits.map(\.percent))
+    }
 
     /// "Limits of Work: 5 hours 34% · Week 12%".
     private var help: String {

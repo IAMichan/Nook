@@ -203,4 +203,12 @@ enum AntigravityAcp {
         let methods = (result["authMethods"] as? [[String: Any]]) ?? []
         return (info["name"] as? String) == agentName && methods.contains { ($0["id"] as? String) == authMethod }
     }
+
+    /// Whether a model or bucket is a third-party model (Claude, GPT, etc.) not supported by Antigravity.
+    static func isThirdPartyModel(_ text: String) -> Bool {
+        let lowered = text.lowercased()
+        return lowered.hasPrefix("3p-") || lowered.contains("3p")
+            || lowered.contains("claude") || lowered.contains("gpt")
+            || lowered.contains("anthropic") || lowered.contains("openai")
+    }
 }

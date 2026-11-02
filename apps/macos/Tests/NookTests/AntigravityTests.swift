@@ -96,6 +96,19 @@ final class AntigravityTests: XCTestCase {
         XCTAssertTrue(output.lines.contains("KEEP=1"))
         XCTAssertFalse(output.lines.contains { $0.hasPrefix("GEMINI_API_KEY=") }, "another Google key never reaches Antigravity")
     }
+
+    func testThirdPartyModelFilter() {
+        XCTAssertTrue(AntigravityAcp.isThirdPartyModel("3p-5h"))
+        XCTAssertTrue(AntigravityAcp.isThirdPartyModel("3p-weekly"))
+        XCTAssertTrue(AntigravityAcp.isThirdPartyModel("Claude and GPT models"))
+        XCTAssertTrue(AntigravityAcp.isThirdPartyModel("claude-opus-5-5-high"))
+        XCTAssertTrue(AntigravityAcp.isThirdPartyModel("gpt-oss-120b"))
+        XCTAssertFalse(AntigravityAcp.isThirdPartyModel("gemini-5h"))
+        XCTAssertFalse(AntigravityAcp.isThirdPartyModel("gemini-weekly"))
+        XCTAssertFalse(AntigravityAcp.isThirdPartyModel("Gemini Models"))
+        XCTAssertFalse(AntigravityAcp.isThirdPartyModel("Gemini 4 Argon"))
+        XCTAssertFalse(AntigravityAcp.isThirdPartyModel("gemini-argon-wtu-weekly"))
+    }
 }
 
 private final class LinesBox: @unchecked Sendable {

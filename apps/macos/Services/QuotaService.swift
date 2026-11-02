@@ -111,9 +111,11 @@ struct QuotaService {
         return windows.map { "\($0.label.lowercased()) \(Int($0.percent.rounded()))%" }.joined(separator: " · ")
     }
 
-    /// The highest percentage of the windows: the one reached first.
+    /// The highest percentage of the windows: only indicates 100% when all windows are full; otherwise shows the highest non-full window.
     func highest(for profile: AgentProfile) -> Double? {
-        limits(for: profile).map(\.percent).max()
+        let windows = limits(for: profile)
+        guard !windows.isEmpty else { return nil }
+        return UsageLimits.effectiveHighestPercent(windows.map(\.percent))
     }
 
     /// The reset credits an account has banked, when its agent offers them: one empties its windows at once. Nil for an

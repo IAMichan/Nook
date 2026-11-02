@@ -78,4 +78,20 @@ final class UsageLimitTests: XCTestCase {
         XCTAssertNil(UsageLimits.codexReset(["rateLimits": ["primary": ["usedPercent": 30, "resetsAt": 1]]]))
         XCTAssertNil(UsageLimits.codexReset(["rateLimits": ["limitId": "spark", "primary": ["usedPercent": 100, "resetsAt": 1]]]))
     }
+
+    func testEffectiveHighestPercent() {
+        // Only 100% when all windows are 100%
+        XCTAssertEqual(UsageLimits.effectiveHighestPercent([12, 3, 100]), 12,
+                       "Should not indicate 100% when not all windows are 100%")
+        XCTAssertEqual(UsageLimits.effectiveHighestPercent([90, 100]), 90)
+        XCTAssertEqual(UsageLimits.effectiveHighestPercent([100, 50]), 50,
+                       "When one window is at 100% and another is at 50%, shows 50%")
+        XCTAssertEqual(UsageLimits.effectiveHighestPercent([99.4, 50]), 99,
+                       "Caps at 99 so it never rounds to 100% when not all are 100%")
+        XCTAssertEqual(UsageLimits.effectiveHighestPercent([75.4, 50]), 75.4)
+        XCTAssertEqual(UsageLimits.effectiveHighestPercent([100, 100]), 100,
+                       "Should indicate 100% when all windows are 100%")
+        XCTAssertEqual(UsageLimits.effectiveHighestPercent([100]), 100)
+        XCTAssertEqual(UsageLimits.effectiveHighestPercent([]), 0)
+    }
 }
