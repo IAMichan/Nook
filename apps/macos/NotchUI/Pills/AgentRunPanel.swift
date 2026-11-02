@@ -35,6 +35,9 @@ struct AgentRunPanel: View {
     @State private var skills: [Skill] = []
     @State private var scroll = ScrollModel()
     @State private var atEnd = true
+    /// Counts the messages you sent from the composer (also those that steer or wait in line): each brings the
+    /// conversation down to its end, wherever you had scrolled.
+    @State private var sentCount = 0
     /// The blocks on screen, for where you left the session; not state, so scrolling does not redraw it.
     @State private var onScreen = VisibleTimelineRows()
     /// Where the timeline is scrolled, for the rail, and the position the rail scrolls it to when you drag it.
@@ -484,10 +487,17 @@ struct AgentRunPanel: View {
         }
     }
 
-    /// The context ring, and the microphone next to it.
+    /// The account's usage limits and the context ring, and the microphone next to them.
     @ViewBuilder
     private func composerTrailing(_ run: WorkspaceRun) -> some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
+            // The subscription limits of the account this session runs on, for every agent that reports them.
+            if let profile = app.profile(for: run) {
+                let limits = app.quota.limits(for: profile)
+                if !limits.isEmpty {
+                    ComposerUsageRing(limits: limits, account: AccountLabel.name(profile, app: app), accent: profile.kind.color)
+                }
+            }
             if let window = run.usage.contextWindow, let used = run.usage.contextTokens, window > 0 {
                 // Every agent that compacts on `/compact` (Claude Code, Codex, an ACP agent that offers it) gets the button.
                 let compacts = AgentCommands.canCompact(run.provider, offered: workspace.acpCommands[runID] ?? [])
@@ -719,10 +729,20 @@ struct AgentRunPanel: View {
             .onChange(of: events.count) { _, _ in
                 if scroll.shouldFollowEnd { withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
-            // You sent something: it is the newest thing and follows again.
-            .onChange(of: events.last(where: { $0.kind == .user })?.id) { _, _ in
-                scroll.jumpedToEnd()
-                proxy.scrollTo("bottom", anchor: .bottom)
+            // You sent something: it is the newest thing and follows again, also when you had scrolled up.
+            .onChange(of: sentCount) { _, _ in settleAtEnd(proxy) }
+            .onChange(of: events.last(where: { $0.kind == .user })?.id) { _, _ in settleAtEnd(proxy) }
+        }
+    }
+
+    /// Scrolls to the end now and again while the layout settles: the lazy rows only learn their real height once
+    /// laid out, so a single scroll from far up lands short of the end. Stops when you scroll away in the meantime.
+    private func settleAtEnd(_ proxy: ScrollViewProxy) {
+        scroll.jumpedToEnd()
+        proxy.scrollTo("bottom", anchor: .bottom)
+        for delay in [0.0, 0.1, 0.3] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                if scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
             }
         }
     }
@@ -1047,6 +1067,7 @@ struct AgentRunPanel: View {
             quotes.removeAll()
             // Still finishing the last turn (or messages wait in line): this one waits too, never sent past them.
             workspace.submit(runID, text: message)
+            sentCount += 1
         }
         // Codex over app-server and Claude Code take a new message during the turn (steering); others get it after the turn.
         // Return does what you chose in Settings, Cmd+Return the other.
@@ -1062,6 +1083,7 @@ struct AgentRunPanel: View {
                 images = []
                 let message = quotes.message(outgoing.send)
                 quotes.removeAll()
+                sentCount += 1
                 if ComposerDispatch.resolve(busy: true, intent: intent, canSteer: canSteer) == .steer,
                    workspace.steer(runID, text: message) { return }
                 workspace.enqueue(runID, text: message)

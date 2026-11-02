@@ -507,3 +507,75 @@ struct ComposerContextRing: View {
         }
     }
 }
+
+/// How much of its subscription the session's account has used: a ring like the context ring, filled to the window that
+/// runs out first and amber or coral as it comes close. A small bolt in the middle tells it apart from the context ring.
+/// Click for every window (5 hours, week, per model) with its reset time. Every agent that reports limits gets it.
+struct ComposerUsageRing: View {
+    let limits: [QuotaLimit]
+    let account: String
+    var accent: Color = NookTheme.textSecondary
+    @State private var open = false
+    private static let shownLimits = 6
+
+    private var highest: Double { limits.map(\.percent).max() ?? 0 }
+
+    /// "Limits of Work: 5 hours 34% · Week 12%".
+    private var help: String {
+        tr("compose.limits.help", account, limits.map { "\($0.label) \(Int($0.percent.rounded()))%" }.joined(separator: " · "))
+    }
+
+    var body: some View {
+        let tint = UsageTone.fill(highest, accent: NookTheme.textSecondary)
+        Button { open.toggle() } label: {
+            ZStack {
+                Circle().stroke(NookTheme.line2, lineWidth: 2)
+                Circle().trim(from: 0, to: min(1, max(0, highest / 100)))
+                    .stroke(tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: "bolt.fill")
+                    .font(NookTheme.font(7, .bold))
+                    .foregroundStyle(tint)
+            }
+            .frame(width: 16, height: 16)
+            .frame(width: 26, height: 26)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+        .popover(isPresented: $open, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(tr("compose.limits.title")).font(NookTheme.TextStyle.strong)
+                    Text(account).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
+                }
+                // The busiest first, so an agent with a quota per model stays short.
+                let shown = limits.count > Self.shownLimits
+                    ? Array(limits.sorted { $0.percent > $1.percent }.prefix(Self.shownLimits)) : limits
+                ForEach(shown) { limit in row(limit) }
+                Text(tr("compose.limits.note"))
+                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(12)
+            .frame(width: 260)
+        }
+    }
+
+    private func row(_ limit: QuotaLimit) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
+                Text(limit.label).font(NookTheme.TextStyle.body).lineLimit(1)
+                if let note = limit.note ?? AgentFormat.reset(limit.resetsAt) {
+                    Text(note).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
+                }
+                Spacer(minLength: NookTheme.Spacing.sm)
+                Text("\(Int(limit.percent.rounded()))%")
+                    .font(NookTheme.TextStyle.strong.monospacedDigit())
+                    .foregroundStyle(UsageTone.text(limit.percent))
+            }
+            UsageBar(fraction: limit.percent / 100, color: UsageTone.fill(limit.percent, accent: accent), pace: limit.elapsed())
+        }
+    }
+}
