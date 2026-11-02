@@ -11,9 +11,9 @@ enum SessionTool: String {
 
     /// The tools the side panel can show, in the order its + menu and picker list them.
     static let panelTools: [SessionTool] = [.outputs, .subagents, .terminal, .browser, .changes]
-    /// What the side panel's + menu and list of tools offer: the tools, then a pull request to pick (it opens beside
-    /// the session, never in the bottom panel).
-    static let launchable: [SessionTool] = panelTools + [.pullRequest]
+    /// What the side panel's + menu and list of tools offer: the tools, then a pull request to pick and a file to read
+    /// or edit (both open beside the session, never in the bottom panel).
+    static let launchable: [SessionTool] = panelTools + [.pullRequest, .file]
     /// Tabs beside a session: the tools, and a pull request opened from a link in it (the side panel only, never in the
     /// + menu, and not kept across launches). An artifact (a Claude artifact, a ChatGPT canvas) clicked in the conversation
     /// opens the same way, in the signed-in web version of the app that made it, and a file link in Nook's own viewer.
@@ -52,7 +52,8 @@ enum SessionTool: String {
         case .browser: return "b"
         case .changes: return "c"
         case .pullRequest: return "p"
-        case .conversation, .artifact, .file, .picker: return " "
+        case .file: return "f"
+        case .conversation, .artifact, .picker: return " "
         }
     }
     /// What the icon in the session's header does.
@@ -750,7 +751,7 @@ private struct SessionToolPanel: View {
                     SessionArtifactPanel()
                         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
                 case .file:
-                    SessionFilePanel()
+                    SessionFilePanel(directory: directory)
                 default:
                     BrowserView()
                         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
