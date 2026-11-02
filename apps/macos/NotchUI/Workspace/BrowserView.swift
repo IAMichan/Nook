@@ -476,6 +476,8 @@ private final class WebViewContainer: NSView {
     init(webView: WKWebView) {
         self.webView = webView
         super.init(frame: .zero)
+        // A page held at its size while a panel's line is dragged (`WebViewResize`) does not draw past the panel.
+        clipsToBounds = true
     }
 
     @available(*, unavailable)
@@ -526,8 +528,61 @@ private final class WebViewContainer: NSView {
         webView.removeFromSuperview()
         webView.translatesAutoresizingMaskIntoConstraints = true
         webView.frame = bounds
-        webView.autoresizingMask = [.width, .height]
+        // Sized here (`resizeSubviews`), not by its mask, so it can keep its size while a panel is dragged.
+        webView.autoresizingMask = []
         addSubview(webView)
+    }
+
+    /// The web view fills the place, except while a panel's line is dragged: then it keeps its size, pinned to the top
+    /// left, and only the place around it changes.
+    override func resizeSubviews(withOldSize oldSize: NSSize) {
+        guard webView.superview === self else { return super.resizeSubviews(withOldSize: oldSize) }
+        if WebViewResize.held {
+            webView.setFrameOrigin(NSPoint(x: 0, y: bounds.height - webView.frame.height))
+        } else {
+            fit()
+        }
+    }
+
+    private func fit() {
+        if webView.frame != bounds { webView.frame = bounds }
+    }
+
+    /// Every web view on screen takes the size of its place again.
+    static func fitAll() {
+        for list in hosts.values {
+            for host in list { if let view = host.view, view.webView.superview === view { view.fit() } }
+        }
+    }
+}
+
+/// Keeps web pages at their size while a panel's line is dragged (`PanelDrag`), and lays them out again when the line
+/// rests a moment or is let go. A web view laid out on every frame of the drag relays the whole page in WebKit's own
+/// process each time, which made dragging the side panel next to the browser stutter.
+@MainActor
+enum WebViewResize {
+    private(set) static var held = false
+    private static var settle: DispatchWorkItem?
+    /// How long the line rests before the pages take their new size during the drag.
+    private static let restSeconds = 0.18
+
+    /// A drag step: pages keep their size until the line rests. Resting lets go of them too, so a drag that never
+    /// reports its end cannot leave them held.
+    static func hold() {
+        held = true
+        settle?.cancel()
+        let work = DispatchWorkItem { release() }
+        settle = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + restSeconds, execute: work)
+    }
+
+    /// The drag ended: the pages take their size.
+    static func release() {
+        settle?.cancel()
+        settle = nil
+        guard held else { return }
+        held = false
+        WebViewContainer.fitAll()
     }
 }
 

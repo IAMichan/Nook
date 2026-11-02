@@ -56,7 +56,8 @@ private struct ResizablePanel: ViewModifier {
 
 /// How a drag line moves what it resizes: right under the pointer, every step without animation (an animation still
 /// running from the last step makes the panel trail the pointer and stutter), on whole points, only when the size
-/// really changed, and at most once per frame of the screen (`DragFrame`). The size lives in a `@State` while dragging
+/// really changed, and at most once per frame of the screen (`DragFrame`). Web pages keep their size meanwhile
+/// (`WebViewResize`). The size lives in a `@State` while dragging
 /// and goes to its `@AppStorage` once, at the end: writing the stored value on every mouse event saves it each time and
 /// redraws every view that reads it.
 @MainActor
@@ -65,6 +66,7 @@ enum PanelDrag {
         let snapped = value.rounded()
         DragFrame.shared.schedule {
             guard live.wrappedValue != snapped else { return }
+            WebViewResize.hold()
             still { live.wrappedValue = snapped }
         }
     }
@@ -73,6 +75,7 @@ enum PanelDrag {
     /// nothing jumps back for a frame.
     static func commit(_ live: Binding<Double?>, to stored: Binding<Double>) {
         DragFrame.shared.flush()
+        defer { WebViewResize.release() }
         guard let value = live.wrappedValue else { return }
         still {
             if stored.wrappedValue != value { stored.wrappedValue = value }
