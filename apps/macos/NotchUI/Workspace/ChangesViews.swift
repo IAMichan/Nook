@@ -16,8 +16,36 @@ struct ChangesSheet: View {
     private func close() { if let onClose { onClose() } else { dismiss() } }
     @State private var expanded: Set<String> = []
     @State private var showsTree = false
+    /// The branch as the header's "+58 −6" counts it: everything since it left its base, committed (and merged) work
+    /// included, not only what is uncommitted. Read for the session's folder; empty until read, or when it is not on
+    /// this Mac.
+    @State private var branch: FolderGitModel?
+    @State private var branchFiles: [GitFileChange] = []
 
-    private var files: [GitFileChange] { workspace.git[runID]?.status?.files ?? [] }
+    private var uncommitted: [GitFileChange] { workspace.git[runID]?.status?.files ?? [] }
+    /// The branch's changes, else (no base to compare with, or a remote session) what is uncommitted.
+    private var files: [GitFileChange] { branchFiles.isEmpty ? uncommitted : branchFiles }
+    private var directory: String { workspace.run(runID)?.workingDirectory ?? "" }
+
+    private func readBranch() async {
+        guard !directory.isEmpty else { return }
+        let model: FolderGitModel
+        if let branch, branch.directory == directory {
+            model = branch
+        } else {
+            // A model starts with what the folder showed last time, so the list is there at once.
+            model = FolderGitModel(directory: directory)
+            branch = model
+            branchFiles = model.changes
+        }
+        await model.refresh()
+        branchFiles = model.changes
+    }
+
+    private func diff(_ change: GitFileChange) async throws -> String {
+        if let branch, branchFiles.contains(where: { $0.path == change.path }) { return try await branch.diff(change) }
+        return try await workspace.diff(runID, file: change)
+    }
 
     var body: some View {
         let files = files.map(StackedDiffFile.init)
@@ -39,7 +67,10 @@ struct ChangesSheet: View {
                 // while git is read, so two quick clicks never race and leave the older result in view.
                 if embedded {
                     ToolbarIconButton("arrow.clockwise", tr("agents.pulls.refresh"),
-                                      enabled: workspace.git[runID]?.loading != true) { workspace.refreshGit(runID) }
+                                      enabled: workspace.git[runID]?.loading != true) {
+                        workspace.refreshGit(runID)
+                        Task { await readBranch() }
+                    }
                 }
                 StackedDiffToolbar(files: files, expanded: $expanded, showsTree: $showsTree)
                 if !embedded {
@@ -55,7 +86,7 @@ struct ChangesSheet: View {
                 StackedDiffList(files: files, scope: runID.uuidString, expanded: $expanded, showsTree: showsTree,
                                 focus: initialFile?.path) { file in
                     guard let change = self.files.first(where: { $0.path == file.path }) else { return "" }
-                    return try await workspace.diff(runID, file: change)
+                    return try await diff(change)
                 } content: { file, text in
                     DiffText(text: text, comments: (workspace.reviewComments[runID] ?? []).filter { $0.path == file.path },
                              onComment: { line, code, comment in
@@ -91,6 +122,9 @@ struct ChangesSheet: View {
                minHeight: embedded ? nil : 520, idealHeight: embedded ? nil : 700, maxHeight: embedded ? CGFloat.infinity : nil)
         .background(embedded ? Color.clear : WS.background)
         .onAppear { workspace.markReviewed(runID) }
+        .task(id: directory) { await readBranch() }
+        // The agent wrote or committed: read the branch again.
+        .onChange(of: uncommitted) { _, _ in Task { await readBranch() } }
     }
 }
 
