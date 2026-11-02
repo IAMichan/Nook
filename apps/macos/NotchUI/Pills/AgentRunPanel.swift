@@ -96,7 +96,6 @@ struct AgentRunPanel: View {
             let _ = derived.update(workspace.timeline(runID), run: run)
             let outputs = derived.outputs
             let signatures = derived.outputSignatures
-            let runningCommand = derived.runningCommand
             VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                 header(run)
                 timeline(run)
@@ -109,10 +108,6 @@ struct AgentRunPanel: View {
             .environment(\.quoteSelection, { addQuote($0, ask: false) })
             .environment(\.askAboutSelection, { addQuote($0, ask: true) })
             .keyCommands(["selection.quote": { quoteSelected(ask: false) }, "selection.ask": { quoteSelected(ask: true) }])
-            // An open terminal follows the agent to the next command it runs.
-            .onChange(of: runningCommand) { _, next in
-                if sideLink.shownConsole != nil, let next { sideLink.showConsole(next) }
-            }
             // What the agent produced goes to the outputs tab of the side panel, with a dot while something is new.
             .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(
                 outputs: outputs,
@@ -1401,7 +1396,6 @@ private final class RunTimelineDerived {
     private(set) var outputs: [SessionOutput] = []
     /// `SessionOutputs.signature` of each output: the panel compares them on every redraw, also for every streamed token.
     private(set) var outputSignatures: [String] = []
-    private(set) var runningCommand: UUID?
     /// The subagents since your last message while the agent works or any of them still runs, for the bar above the
     /// composer (which redraws on every keystroke).
     private(set) var subagents: [SubagentInfo] = []
@@ -1469,8 +1463,6 @@ private final class RunTimelineDerived {
         answerable = active ? nil : events.last(where: { $0.kind == .assistant }).flatMap { finalAnswers.contains($0.id) ? $0.id : nil }
         outputs = SessionOutputs.collect(all, tasks: run.tasks, directory: run.workingDirectory)
         outputSignatures = outputs.map(SessionOutputs.signature)
-        let lastTurn = TimelinePresentation.lastTurn(all)
-        runningCommand = CommandConsole.running(lastTurn)?.id
         allSubagents = Subagents.list(all)
         subagentsSignature = Subagents.signature(allSubagents)
         let current = Subagents.current(all)
