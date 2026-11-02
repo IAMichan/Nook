@@ -68,7 +68,7 @@ final class NotchViewModel: ObservableObject {
             guard selectedAgentID != oldValue else { return }
             UserDefaults.standard.set(selectedAgentID, forKey: "notch.lastAgentPage")
             // Another session starts on its conversation; the terminal or browser was for the one you left.
-            sessionTool = .conversation
+            closeSidePanel()
             bottomTool = .conversation
             resizeForWorkbench()
         }
@@ -91,11 +91,18 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
-    /// The tools open as tabs in a session's side panel, in the order you opened them. Kept between sessions and
-    /// launches; with none open the side panel offers the tools to choose from.
-    @Published var sessionTabs: [SessionTool] = (UserDefaults.standard.stringArray(forKey: "nook.agents.sideTabs") ?? [])
-        .compactMap(SessionTool.init(rawValue:)).filter { SessionTool.panelTools.contains($0) } {
-        didSet { UserDefaults.standard.set(sessionTabs.map(\.rawValue), forKey: "nook.agents.sideTabs") }
+    /// The tools open as tabs in a session's side panel, in the order you opened them. They go when the side panel
+    /// closes (`closeSidePanel`): it always opens on the list of tools to choose from.
+    @Published var sessionTabs: [SessionTool] = []
+
+    /// Closes a session's side panel with all its tabs, so it opens again on the list of tools instead of on what it
+    /// showed before.
+    func closeSidePanel() {
+        if sessionTabs.contains(.artifact) { EmbeddedAppStore.shared.closeArtifact() }
+        sessionTool = .conversation
+        sessionTabs = []
+        sidePullRequestTabs = []
+        activeSidePullRequest = nil
     }
 
     /// What the bottom panel under the selected session's conversation shows: nothing (closed), the list of tools, or
@@ -111,11 +118,8 @@ final class NotchViewModel: ObservableObject {
     }
 
     /// The tools open as tabs in the bottom panel, like `sessionTabs`; never one that is open in the side panel.
-    @Published var bottomTabs: [SessionTool] = {
-        let side = UserDefaults.standard.stringArray(forKey: "nook.agents.sideTabs") ?? []
-        return (UserDefaults.standard.stringArray(forKey: "nook.agents.bottomTabs") ?? [])
-            .compactMap(SessionTool.init(rawValue:)).filter { SessionTool.panelTools.contains($0) && !side.contains($0.rawValue) }
-    }() {
+    @Published var bottomTabs: [SessionTool] = (UserDefaults.standard.stringArray(forKey: "nook.agents.bottomTabs") ?? [])
+        .compactMap(SessionTool.init(rawValue:)).filter { SessionTool.panelTools.contains($0) } {
         didSet { UserDefaults.standard.set(bottomTabs.map(\.rawValue), forKey: "nook.agents.bottomTabs") }
     }
 

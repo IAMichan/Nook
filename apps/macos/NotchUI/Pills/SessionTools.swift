@@ -61,9 +61,9 @@ enum SessionTool: String {
 
 /// The panels' quiet icons in a session's header, one per side as in an editor: the session list on the left, the
 /// bottom panel and the side panel on the right (`SidePanelToggle`), each with the mark of its side. The terminal and the browser open from the panels themselves (their tabs, + and the list of tools). The bottom panel
-/// opens on what it showed last, the terminal by default; the side panel on what it showed last, or on the list of
-/// tools when no tab is open. When the agent started a process or opened a page that you have not looked at yet, the
-/// side panel's icon carries a small dot. The same goes for a plan or another output the agent made.
+/// opens on what it showed last, the terminal by default; the side panel always on the list of tools, with no tab open.
+/// When the agent started a process or opened a page that you have not looked at yet, the side panel's icon carries a
+/// small dot. The same goes for a plan or another output the agent made.
 struct SessionToolSwitch: View {
     @ObservedObject var viewModel: NotchViewModel
     /// The session's folder; empty means no terminal and no changes, only the browser.
@@ -71,7 +71,6 @@ struct SessionToolSwitch: View {
     /// The agent made a plan or another output you have not seen yet.
     var outputsFresh = false
     @ObservedObject private var bridge = WorkspaceBridge.shared
-    @AppStorage("nook.agents.sideTool") private var lastTool = SessionTool.browser.rawValue
     @AppStorage("nook.agents.bottomTool") private var lastBottomTool = SessionTool.terminal.rawValue
     /// The session list on the left of the Agents tab is put away (`AgentsTab`).
     @AppStorage(AgentsListVisibility.hiddenKey) private var listHidden = false
@@ -121,19 +120,16 @@ struct SessionToolSwitch: View {
         }
     }
 
-    /// Opens the side panel on the tool it showed last, or closes it.
+    /// Opens the side panel on the list of tools, with no tab open yet, or closes it with its tabs.
     private var panelToggle: some View {
         let open = viewModel.sessionTool != .conversation
         let base = open ? tr("agents.tool.close") : tr("agents.tool.panel")
         let help = fresh ? base + " · " + tr("bridge.tool.unseen") : base
         return SidePanelToggle(edge: .trailing, open: open, fresh: fresh, help: help) {
-            if open {
-                viewModel.sessionTool = .conversation
-            } else {
-                let tabs = viewModel.sessionTabs.filter { $0.available(in: directory) }
-                let last = SessionTool(rawValue: lastTool) ?? .browser
-                viewModel.sessionTool = tabs.contains(last) ? last : tabs.first ?? .picker
-            }
+            // Closing it also closes its tabs (a file or diff that took its place may have left some); it always
+            // opens on the list of tools.
+            viewModel.closeSidePanel()
+            if !open { viewModel.sessionTool = .picker }
         }
     }
 }
@@ -243,7 +239,6 @@ struct SessionWorkbench<Conversation: View>: View {
     @ViewBuilder var conversation: (AnyView) -> Conversation
     @EnvironmentObject private var workspace: WorkspaceManager
     @ObservedObject private var bridge = WorkspaceBridge.shared
-    @AppStorage("nook.agents.sideTool") private var lastTool = SessionTool.browser.rawValue
     @AppStorage("nook.agents.bottomTool") private var lastBottomTool = SessionTool.terminal.rawValue
     @AppStorage("nook.agents.toolWidth") private var toolWidth = PanelLayout.tool
     @AppStorage("nook.agents.outputsWidth") private var outputsWidth = PanelLayout.outputs
@@ -435,9 +430,6 @@ struct SessionWorkbench<Conversation: View>: View {
             consoleEventID = nil
         }
         .animation(NookTheme.reveal, value: bottom == .conversation)
-        .onChange(of: side) { _, next in
-            if SessionTool.panelTools.contains(next) { lastTool = next.rawValue }
-        }
         .onChange(of: bottom) { _, next in
             if SessionTool.panelTools.contains(next) { lastBottomTool = next.rawValue }
         }
@@ -570,7 +562,9 @@ struct SessionWorkbench<Conversation: View>: View {
                          updatePullRequest: { viewModel.updateSidePullRequest($0) },
                          showPullRequestList: { withAnimation(NookTheme.swap) { viewModel.showSidePullRequestList() } },
                          closeTab: { closeSessionTab($0, in: slot) },
-                         close: { viewModel[keyPath: slot.tool] = .conversation },
+                         close: {
+                             if slot.tool == \NotchViewModel.sessionTool { viewModel.closeSidePanel() } else { viewModel.bottomTool = .conversation }
+                         },
                          console: runID.flatMap { run in consoleEventID.map { CommandConsoleRef(run: run, event: $0) } },
                          closeConsole: { withAnimation(NookTheme.reveal) { consoleEventID = nil } })
     }
