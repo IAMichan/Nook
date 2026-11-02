@@ -271,7 +271,8 @@ final class PullRequestWatchSettings: ObservableObject {
 /// ones and the watched organizations, which take far longer to search and hardly change, follow in the background at
 /// most every three minutes and never hold the list up. A failed refresh keeps the rows; a passing failure (no
 /// connection for a moment, GitHub slow to answer) only shows once it happened twice in a row. With the panel closed, a
-/// quiet read keeps it current (see `PullRequestBackgroundRefresh`).
+/// quiet read keeps it current (see `PullRequestBackgroundRefresh`), and after every read the pages you are most likely
+/// to open are read ahead as well (see `PullRequestDetailWarmup`).
 @MainActor
 final class PullRequestStore: ObservableObject {
     static let shared = PullRequestStore()
@@ -379,6 +380,8 @@ final class PullRequestStore: ObservableObject {
         let changed = updated != accounts
         if changed { accounts = updated }
         if showsProgress { showsProgress = false }
+        // The pages you are most likely to open next are read ahead now, so they show at once.
+        PullRequestDetailModel.warm(accounts: accounts)
         refreshInBackground(force: force, after: slowAfter)
         if again {
             again = false
