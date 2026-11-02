@@ -40,7 +40,7 @@ struct UpdatePanel: View {
     private func available(_ update: AppUpdater.Available) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             header(symbol: "arrow.down.circle.fill", tint: NookTheme.mint, title: tr("update.title"),
-                   detail: tr("update.subtitle", update.count, update.branch))
+                   detail: tr("update.subtitle", update.count, update.branch), refreshable: true)
             commitRange(from: updater.source?.shortCommit ?? "", to: update.shortTarget, update: update)
             changeList(update.changes, total: update.count, github: update.github)
 
@@ -119,7 +119,7 @@ struct UpdatePanel: View {
     private func releaseAvailable(_ release: ReleaseCandidate) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             header(symbol: "arrow.down.circle.fill", tint: NookTheme.mint, title: tr("update.title"),
-                   detail: tr("update.release.subtitle", release.title))
+                   detail: tr("update.release.subtitle", release.title), refreshable: true)
             HStack(spacing: NookTheme.Spacing.sm) {
                 Text(verbatim: updater.release.map { "\($0.version)" } ?? "").foregroundStyle(NookTheme.textSecondary)
                 Image(systemName: "arrow.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
@@ -343,12 +343,13 @@ struct UpdatePanel: View {
 
     private var upToDate: some View {
         header(symbol: "checkmark.circle.fill", tint: NookTheme.mint, title: tr("update.settings.status.upToDate"),
-               detail: updater.lastChecked.map { tr("update.settings.lastChecked", NookDates.ago($0)) } ?? "")
+               detail: updater.lastChecked.map { tr("update.settings.lastChecked", NookDates.ago($0)) } ?? "", refreshable: true)
     }
 
     // MARK: Pieces
 
-    private func header(symbol: String?, tint: Color, title: String, detail: String) -> some View {
+    /// `refreshable` adds the button that fetches main again, for when the list misses what was merged just now.
+    private func header(symbol: String?, tint: Color, title: String, detail: String, refreshable: Bool = false) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Group {
                 if let symbol {
@@ -365,6 +366,14 @@ struct UpdatePanel: View {
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if refreshable {
+                Spacer(minLength: 0)
+                if updater.checking {
+                    ProgressView().controlSize(.mini).frame(width: 24, height: 24)
+                } else {
+                    ToolbarIconButton("arrow.clockwise", tr("update.refresh")) { updater.check() }
                 }
             }
         }
