@@ -248,6 +248,12 @@ enum MusicScriptOutput {
         return MusicQueue(playlist: value(name), tracks: rows.dropFirst().compactMap(track))
     }
 
+    /// One record per track, without a header: id, title, artist, duration in seconds (a library search).
+    static func tracks(_ raw: String) -> [MusicTrack] {
+        guard !raw.isEmpty else { return [] }
+        return records(raw).compactMap(track)
+    }
+
     /// One record per playlist: id, name, track count.
     static func playlists(_ raw: String) -> [MusicPlaylist] {
         guard !raw.isEmpty else { return [] }
@@ -263,10 +269,57 @@ enum MusicScriptOutput {
         return MusicTrack(id: value(fields[0]), title: value(fields[1]), artist: value(fields[2]), duration: max(0, Int(seconds)))
     }
 
+    /// id/title/artist/duration of the first tracks in Music's library that match `query` in any field (name, artist,
+    /// album, composer), as Music's own search field finds them. Not cached: the query is part of the source.
+    static func librarySearchScript(_ query: String, limit: Int) -> String {
+        """
+        with timeout of 8 seconds
+        tell application "Music"
+            set rs to character id 30
+            set fs to character id 31
+            set out to ""
+            set found to {}
+            try
+                set found to search library playlist 1 for \(MusicScriptOutput.quoted(query))
+            end try
+            if found is missing value then return ""
+            set n to count of found
+            if n > \(limit) then set n to \(limit)
+            repeat with i from 1 to n
+                try
+                    set tr to item i of found
+                    set entry to (persistent ID of tr) & fs & (name of tr) & fs & (artist of tr) & fs & ((duration of tr) as text)
+                    if out is "" then
+                        set out to entry
+                    else
+                        set out to out & rs & entry
+                    end if
+                end try
+            end repeat
+            return out
+        end tell
+        end timeout
+        """
+    }
+
     /// Escapes text for an AppleScript string literal.
     static func quoted(_ text: String) -> String {
         "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
     }
+}
+
+/// What the Music tab's search shows: the tracks found for `query`, in Music's library or on Spotify.
+struct MusicSearchResult: Equatable {
+    enum State: Equatable {
+        case idle, loading, done
+        /// Searching Spotify needs its Web API, so Spotify must be connected in Settings first.
+        case connectSpotify
+        case failed(String)
+    }
+
+    var query = ""
+    var state = State.idle
+    var tracks: [MusicTrack] = []
 }
 
 /// Tracks played before the current one, newest first, each once.
@@ -341,19 +394,49 @@ enum SpotifyResponses {
     static func queueTracks(from data: Data) -> [MusicTrack] {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let items = json["queue"] as? [[String: Any]] else { return [] }
-        return items.compactMap { item in
-            guard let uri = item["uri"] as? String, let name = item["name"] as? String, !name.isEmpty else { return nil }
-            let artists = (item["artists"] as? [[String: Any]])?.compactMap { $0["name"] as? String } ?? []
-            let show = (item["show"] as? [String: Any])?["name"] as? String
-            let images = ((item["album"] as? [String: Any])?["images"] ?? item["images"]) as? [[String: Any]] ?? []
-            // The smallest image that is still sharp on a cover (Spotify lists them largest first).
-            let image = images.last { (($0["width"] as? Int) ?? 0) >= 200 } ?? images.first
-            let milliseconds = (item["duration_ms"] as? Int) ?? 0
-            return MusicTrack(
-                id: uri, title: name, artist: artists.isEmpty ? (show ?? "") : artists.joined(separator: ", "),
-                duration: milliseconds / 1000, artworkURL: (image?["url"] as? String).flatMap(URL.init(string:))
-            )
-        }
+        return items.compactMap(track)
+    }
+
+    /// The tracks `GET /search?type=track` found, best match first. Spotify leaves `null` in the list for tracks it
+    /// cannot show; those are skipped.
+    static func searchTracks(from data: Data) -> [MusicTrack] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = (json["tracks"] as? [String: Any])?["items"] as? [Any] else { return [] }
+        return items.compactMap { ($0 as? [String: Any]).flatMap(track) }
+    }
+
+    /// One track or episode object.
+    private static func track(_ item: [String: Any]) -> MusicTrack? {
+        guard let uri = item["uri"] as? String, let name = item["name"] as? String, !name.isEmpty else { return nil }
+        let artists = (item["artists"] as? [[String: Any]])?.compactMap { $0["name"] as? String } ?? []
+        let show = (item["show"] as? [String: Any])?["name"] as? String
+        let images = ((item["album"] as? [String: Any])?["images"] ?? item["images"]) as? [[String: Any]] ?? []
+        // The smallest image that is still sharp on a cover (Spotify lists them largest first).
+        let image = images.last { (($0["width"] as? Int) ?? 0) >= 200 } ?? images.first
+        let milliseconds = (item["duration_ms"] as? Int) ?? 0
+        return MusicTrack(
+            id: uri, title: name, artist: artists.isEmpty ? (show ?? "") : artists.joined(separator: ", "),
+            duration: milliseconds / 1000, artworkURL: (image?["url"] as? String).flatMap(URL.init(string:))
+        )
+    }
+
+    /// Spotify allows at most 10 search results per page for apps in development mode, so a longer list is asked for
+    /// page by page with `offset`.
+    static let searchPageSize = 10
+
+    /// `GET /search` for tracks.
+    static func searchRequest(query: String, offset: Int, token: String) -> URLRequest? {
+        var components = URLComponents(string: "https://api.spotify.com/v1/search")
+        components?.queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "type", value: "track"),
+            URLQueryItem(name: "limit", value: String(searchPageSize)),
+            URLQueryItem(name: "offset", value: String(offset)),
+        ]
+        guard let url = components?.url else { return nil }
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return request
     }
 
     static func failure(status: Int, body: Data) -> Failure? {
