@@ -126,6 +126,8 @@ extension AppModel {
             throw NookError(tr("agents.nook.unsupported", session.name))
         }
         guard let conversation = conversationID(for: session) else { throw NookError(tr("agents.nook.noConversation")) }
+        // The session open now; taking it over keeps its side panel (see `continueSession`).
+        let shown = viewModel.selectedAgentID
         let busy = !session.isDetected && (session.status == .running || session.status == .waiting)
         var fork = false
         if endingTerminal {
@@ -152,7 +154,7 @@ extension AppModel {
         try applyChoice(choice, to: id)
         applySettings(settings, to: id)
         if let message, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { workspace.send(id, text: message) }
-        viewModel.selectedAgentID = "run:" + id.uuidString
+        viewModel.continueSession(as: "run:" + id.uuidString, from: shown)
         return id
     }
 
@@ -168,6 +170,7 @@ extension AppModel {
         guard FileManager.default.fileExists(atPath: folder) else {
             throw NookError(tr("agents.nook.folderGone", folder))
         }
+        let shown = viewModel.selectedAgentID
         let profile = self.profile(for: session) ?? profiles.preferredProfile(session.agent)
         let earlier = await earlierConversation(path: session.path, prompt: session.lastPrompt, reply: session.lastReply)
         let id = try await workspace.adopt(provider: provider, sessionID: session.sessionID, profileID: profile.id,
@@ -175,7 +178,7 @@ extension AppModel {
         try applyChoice(choice, to: id)
         applySettings(settings, to: id)
         if let message, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { workspace.send(id, text: message) }
-        viewModel.selectedAgentID = "run:" + id.uuidString
+        viewModel.continueSession(as: "run:" + id.uuidString, from: shown)
         return id
     }
 

@@ -83,12 +83,30 @@ final class NotchViewModel: ObservableObject {
         didSet {
             guard selectedAgentID != oldValue else { return }
             UserDefaults.standard.set(selectedAgentID, forKey: "notch.lastAgentPage")
-            // The session you left keeps its panels for when you come back; the one you open shows its own, or only
-            // its conversation the first time.
-            sessionLayouts[oldValue] = currentSessionLayout()
-            restoreSessionLayout(sessionLayouts[selectedAgentID])
+            if continuingSession {
+                // The same conversation under another key: its browser, terminal and other tabs stay as they are.
+                continuingSession = false
+                sessionLayouts[oldValue] = nil
+            } else {
+                // The session you left keeps its panels for when you come back; the one you open shows its own, or only
+                // its conversation the first time.
+                sessionLayouts[oldValue] = currentSessionLayout()
+                restoreSessionLayout(sessionLayouts[selectedAgentID])
+            }
             resizeForWorkbench()
         }
+    }
+
+    /// Set while `continueSession` moves the open conversation to its new key.
+    private var continuingSession = false
+
+    /// The conversation open under `previous` goes on as `id` (a new session that started, a terminal or earlier session
+    /// Nook took over): it keeps the panels it has open instead of opening bare, as another session would. When you went
+    /// elsewhere in the meantime, `id` opens like any other session.
+    func continueSession(as id: String, from previous: String) {
+        guard id != selectedAgentID else { return }
+        continuingSession = selectedAgentID == previous
+        selectedAgentID = id
     }
 
     /// The running session last open in the Agents tab, as it last read. When its agent ends it (a hook's `SessionEnd`, the
