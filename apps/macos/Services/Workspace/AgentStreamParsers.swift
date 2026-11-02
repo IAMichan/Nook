@@ -49,6 +49,8 @@ enum ClaudeStreamEvent: Equatable, Sendable {
     /// A streamed content block ended.
     case blockStopped
     case toolUse(id: String, name: String, input: JSONBox, nested: Bool)
+    /// A subagent's own thought, message or tool call, for the call that started it (`parent_tool_use_id`).
+    case subagentStep(parent: String, SubagentStep)
     case toolResult(id: String, output: String, isError: Bool)
     case usage(messageID: String, tokens: TokenCounts, model: String?)
     /// The agent requests permission (`--permission-prompt-tool stdio`).
@@ -73,7 +75,7 @@ extension ClaudeStreamEvent {
     /// The agent is working: it writes, thinks, uses a tool or asks permission (not a notice, usage or limits).
     static func isWork(_ event: ClaudeStreamEvent) -> Bool {
         switch event {
-        case .textDelta, .text, .thinking, .thinkingDelta, .toolUse, .permissionRequest: return true
+        case .textDelta, .text, .thinking, .thinkingDelta, .toolUse, .subagentStep, .permissionRequest: return true
         default: return false
         }
     }
@@ -130,6 +132,7 @@ enum ClaudeStreamParser {
               let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let type = object["type"] as? String else { return [] }
         let nested = !(object["parent_tool_use_id"] is NSNull) && object["parent_tool_use_id"] != nil
+        let parent = object["parent_tool_use_id"] as? String
 
         switch type {
         case "system":
@@ -179,16 +182,24 @@ enum ClaudeStreamParser {
             for block in (message["content"] as? [[String: Any]]) ?? [] {
                 switch block["type"] as? String {
                 case "text":
-                    if !nested, let text = block["text"] as? String,
-                       !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        events.append(.text(text))
-                    }
+                    guard let text = block["text"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { break }
+                    // A subagent's message is its own, not the answer: it goes with the call that started it.
+                    if let parent { events.append(.subagentStep(parent: parent, SubagentStep(kind: .text, text: text))) }
+                    else if !nested { events.append(.text(text)) }
                 case "thinking":
                     // Also when empty: it matches the streamed block, which keeps its text then.
                     if !nested { events.append(.thinking((block["thinking"] as? String) ?? "")) }
+                    else if let parent, let text = block["thinking"] as? String, !text.isEmpty {
+                        events.append(.subagentStep(parent: parent, SubagentStep(kind: .thinking, text: text)))
+                    }
                 case "tool_use":
                     if let id = block["id"] as? String, let name = block["name"] as? String {
-                        events.append(.toolUse(id: id, name: name, input: JSONBox(block["input"] ?? [String: Any]()), nested: nested))
+                        let input = block["input"] ?? [String: Any]()
+                        events.append(.toolUse(id: id, name: name, input: JSONBox(input), nested: nested))
+                        if let parent {
+                            let title = ToolSummary.describe(tool: name, input: (input as? [String: Any]) ?? [:])
+                            events.append(.subagentStep(parent: parent, SubagentStep(kind: .tool, text: title)))
+                        }
                     }
                 default:
                     break

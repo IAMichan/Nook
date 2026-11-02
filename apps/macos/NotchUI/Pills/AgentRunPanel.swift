@@ -65,6 +65,8 @@ struct AgentRunPanel: View {
     @State private var totalWidth: Double = 0
     /// The outputs (by signature) you have seen, for the dot on the outputs tab; nil until the session shows.
     @State private var seenOutputs: Set<String>?
+    /// The subagents (`Subagents.signature`) you have seen, for the dot on the Subagents tab; nil until the session shows.
+    @State private var seenSubagents: String?
     /// The terminal on the left: the command it shows; nil while it is closed.
     @State private var consoleEventID: UUID?
     /// The lines git counted per turn (by the turn's id), in place of those read from the agent's edits.
@@ -127,12 +129,28 @@ struct AgentRunPanel: View {
             // What the agent produced goes to the outputs tab of the side panel, with a dot while something is new.
             .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(
                 outputs: outputs,
+                subagents: derived.allSubagents,
+                subagentsFresh: !outputsLink.subagentsShown && seenSubagents.map { $0 != derived.subagentsSignature } == true,
                 turns: turnDiffs(run),
                 pullRequest: derived.createdPullRequest,
                 fresh: !outputsLink.shown && seenOutputs.map { seen in signatures.contains { !seen.contains($0) } } == true))
             // What the outputs tab shows is seen.
             .onChange(of: outputsLink.shown) { _, isShown in
                 if isShown { seenOutputs = Set(signatures) }
+            }
+            // What the Subagents tab shows is seen, also while it streams in.
+            .onChange(of: outputsLink.subagentsShown) { _, isShown in
+                if isShown { seenSubagents = derived.subagentsSignature }
+            }
+            // A subagent the agent starts while it works opens the tab, as a new plan opens the outputs tab; what a
+            // session that just opened already had is not news.
+            .onChange(of: derived.allSubagents.count) { before, after in
+                if run.status.isActive, seenSubagents != nil, after > before, outputsLink.openSubagents() {
+                    seenSubagents = derived.subagentsSignature
+                }
+            }
+            .onChange(of: derived.subagentsSignature) { _, next in
+                if outputsLink.subagentsShown || seenSubagents == nil { seenSubagents = next }
             }
             .onChange(of: signatures) { _, _ in
                 noticeOutputs(outputs, working: run.status.isActive, turnStart: run.turnStartedAt)
@@ -147,6 +165,7 @@ struct AgentRunPanel: View {
                 focused = true
                 // What was there before you opened the session is not news.
                 seenOutputs = Set(signatures)
+                seenSubagents = derived.subagentsSignature
                 Task { repository = await workspace.githubRepository(runID) }
                 loadComposerState(run)
             }
@@ -170,6 +189,7 @@ struct AgentRunPanel: View {
                 countedLines = [:]
                 quotes.removeAll()
                 seenOutputs = nil
+                seenSubagents = nil
                 consoleEventID = nil
                 // Folds you had open in this session last time come back (the timeline lands on its own, below).
                 visit = TimelineVisitStore.shared.visit(for: Self.visitKey(runID))
@@ -1074,7 +1094,7 @@ struct AgentRunPanel: View {
             // turn), and its task list.
             let subagents = derived.subagents
             if !subagents.isEmpty {
-                SubagentBar(agents: subagents) { outputsLink.open(SessionOutputs.subagentsID) }
+                SubagentBar(agents: subagents) { outputsLink.openSubagents() }
             }
             // While the agent works its list shows in the timeline; one it left unfinished waits here.
             if let tasks = run.tasks, !tasks.isEmpty, !TaskChecklist.showsInline(tasks, active: run.status.isActive) {
@@ -1343,6 +1363,9 @@ private final class RunTimelineDerived {
     /// The subagents since your last message while the agent works or any of them still runs, for the bar above the
     /// composer (which redraws on every keystroke).
     private(set) var subagents: [SubagentInfo] = []
+    /// Every subagent of the session, for the Subagents tab of the side panel, and their `Subagents.signature`.
+    private(set) var allSubagents: [SubagentInfo] = []
+    private(set) var subagentsSignature = ""
     /// The last pull request the agent reported with `<pr-created>`, for the tray above the composer.
     private(set) var createdPullRequest: URL?
 
@@ -1406,6 +1429,8 @@ private final class RunTimelineDerived {
         outputSignatures = outputs.map(SessionOutputs.signature)
         let lastTurn = TimelinePresentation.lastTurn(all)
         runningCommand = CommandConsole.running(lastTurn)?.id
+        allSubagents = Subagents.list(all)
+        subagentsSignature = Subagents.signature(allSubagents)
         let current = Subagents.current(all)
         subagents = active || current.contains(where: \.isRunning) ? current : []
         marks = TranscriptPresentation.promptMarks(events: events)

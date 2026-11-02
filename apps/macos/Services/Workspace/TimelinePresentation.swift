@@ -379,7 +379,7 @@ enum TimelinePresentation {
 }
 
 /// A subagent the agent started (Claude Code's Task or Agent tool, Codex's spawned agents): the subagent bar, its row in
-/// the timeline and the Subagents output show it.
+/// the timeline and the Subagents side panel show it.
 struct SubagentInfo: Identifiable, Equatable, Sendable {
     var id: UUID
     /// "Explore", "general-purpose"…
@@ -391,6 +391,8 @@ struct SubagentInfo: Identifiable, Equatable, Sendable {
     /// Started to run in the background: the turn goes on (or ends) while it works.
     var background = false
     var started: Date = .distantPast
+    /// What it thought, wrote and did while it worked, when its agent passes that on (`SubagentStep`).
+    var steps: [SubagentStep] = []
 
     var isRunning: Bool { state == nil || state == .running || state == .pending }
     var failed: Bool { state == .failed || state == .denied || state == .expired }
@@ -442,6 +444,11 @@ enum Subagents {
         return events.last { isLaunch($0) && ($0.output?.contains("agentId: " + task) == true || $0.callID == task) }
     }
 
+    /// Changes when the subagents do: one starts, ends, or takes another step. For the dot on the Subagents tab.
+    static func signature(_ agents: [SubagentInfo]) -> String {
+        agents.map { $0.id.uuidString + ($0.isRunning ? "+" : "-") + String($0.steps.count) }.joined(separator: ",")
+    }
+
     static func list(_ events: [RunEvent]) -> [SubagentInfo] {
         events.compactMap { event in
             guard isLaunch(event) else { return nil }
@@ -450,7 +457,8 @@ enum Subagents {
             let title = (input["description"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? event.text
             return SubagentInfo(id: event.id, kind: kind, title: title, prompt: (input["prompt"] as? String) ?? "",
                                 state: event.state, output: event.output,
-                                background: (input["run_in_background"] as? Bool) == true, started: event.date)
+                                background: (input["run_in_background"] as? Bool) == true, started: event.date,
+                                steps: event.subagentSteps ?? [])
         }
     }
 
