@@ -163,7 +163,7 @@ enum BuddyPlanner {
     static let minimumGap: TimeInterval = 20 * 60
     /// A break is suggested after this long without one.
     static let breakAfter: TimeInterval = 90 * 60
-    /// Round numbers of finished agent runs worth celebrating.
+    /// Round numbers of finished agent sessions worth celebrating.
     static let milestones = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000]
 
     struct Signals {
@@ -183,9 +183,9 @@ enum BuddyPlanner {
         var stretch: TimeInterval = 0
         /// Events in your calendar for the rest of today (the morning greeting mentions them).
         var eventsToday = 0
-        /// Agent runs that finished while you were away.
+        /// Agent sessions that finished while you were away.
         var finishedWhileAway = 0
-        /// Agent runs finished, ever.
+        /// Agent sessions finished, ever.
         var finishedTotal = 0
         var birthday: NookMonthDay?
     }
@@ -218,7 +218,7 @@ enum BuddyPlanner {
            let id = once(.welcomeBack, limit: 2, suffix: "#\(ledger.count(.welcomeBack))") {
             return BuddyMoment(kind: .welcomeBack, id: id, count: s.finishedWhileAway)
         }
-        // A round number of finished agent runs, celebrated once ever.
+        // A round number of finished agent sessions, celebrated once ever.
         if let reached = milestones.last(where: { $0 <= s.finishedTotal }), !ledger.milestones.contains(reached),
            s.finishedTotal - reached < 5 {
             return BuddyMoment(kind: .milestone, id: "milestone@\(reached)", count: reached)

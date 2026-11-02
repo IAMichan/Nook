@@ -10,9 +10,9 @@ extension AppModel {
         }
     }
 
-    /// An agent run finished: counts towards the milestones and the "while you were away" count.
-    func buddyAgentFinished() {
-        buddy.noteFinishedAgent()
+    /// An agent session finished a turn: counts towards the milestones and the "while you were away" count, once per session.
+    func buddyAgentFinished(session: String) {
+        buddy.noteFinishedAgent(session: session)
     }
 
     // MARK: Moments
