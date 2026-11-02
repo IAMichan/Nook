@@ -610,10 +610,7 @@ private struct ChatBubbleView: View, Equatable {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            if bubble.fromMe {
-                Spacer(minLength: 70)
-                actions
-            }
+            if bubble.fromMe { Spacer(minLength: 70) }
             CappedWidth(maximum: Self.maxWidth) {
                 VStack(alignment: bubble.fromMe ? .trailing : .leading, spacing: NookTheme.Spacing.xxs) {
                     content
@@ -638,10 +635,15 @@ private struct ChatBubbleView: View, Equatable {
                     }
                 }
             }
-            if !bubble.fromMe {
+            // Beside the bubble, in the room the spacer keeps free, not in its row: the bubble is as wide once it has
+            // arrived (and has these) as while it was on its way (without them), so its text does not wrap anew.
+            .overlay(alignment: bubble.fromMe ? .leading : .trailing) {
                 actions
-                Spacer(minLength: 70)
+                    .fixedSize()
+                    .alignmentGuide(.leading) { $0[.trailing] + NookTheme.Spacing.sm }
+                    .alignmentGuide(.trailing) { $0[.leading] - NookTheme.Spacing.sm }
             }
+            if !bubble.fromMe { Spacer(minLength: 70) }
         }
         .onHover { hovering = $0 }
         .environment(\.chatMediaLive, near)
