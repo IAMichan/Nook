@@ -117,4 +117,44 @@ final class WorkflowRunsTests: XCTestCase {
         XCTAssertNil(WorkflowRunParser.repository(from: "o"))
         XCTAssertNil(WorkflowRunParser.repository(from: "o/a pp"))
     }
+
+    func testRepositoryStatusForItsTab() {
+        func run(_ id: Int, workflow: Int, _ status: String, _ conclusion: String? = nil) -> [String: Any] {
+            runJSON(id, status: status, conclusion: conclusion, extra: ["workflow_id": workflow])
+        }
+        XCTAssertNil(WorkflowRepoStatus(runs: []), "no runs, no mark")
+        let calm = WorkflowRepoStatus(runs: WorkflowRunParser.runs(["workflow_runs": [
+            run(3, workflow: 1, "completed", "success"), run(2, workflow: 1, "completed", "failure"),
+        ]]))
+        XCTAssertEqual(calm?.outcome, .passing, "a failure fixed by a newer run is gone")
+        XCTAssertEqual(calm?.failing, 0)
+        let broken = WorkflowRepoStatus(runs: WorkflowRunParser.runs(["workflow_runs": [
+            run(4, workflow: 1, "completed", "success"), run(3, workflow: 2, "completed", "failure"),
+        ]]))
+        XCTAssertEqual(broken?.outcome, .failing, "one workflow's newest run failed")
+        XCTAssertEqual(broken?.failing, 1)
+        let busy = WorkflowRepoStatus(runs: WorkflowRunParser.runs(["workflow_runs": [
+            run(5, workflow: 1, "in_progress"), run(4, workflow: 2, "completed", "failure"),
+        ]]))
+        XCTAssertEqual(busy?.outcome, .pending, "something runs")
+        XCTAssertEqual(busy?.running, true)
+        XCTAssertEqual(busy?.active, 1)
+        XCTAssertEqual(busy?.failing, 1)
+    }
+
+    func testTabsKeepTheirOrder() {
+        XCTAssertEqual(WorkflowRunParser.recent(opening: "o/b", in: ["o/a", "o/b", "o/c"]), ["o/a", "o/b", "o/c"])
+        XCTAssertEqual(WorkflowRunParser.recent(opening: "O/B", in: ["o/a", "o/b"]), ["o/a", "o/b"], "ignoring case")
+        XCTAssertEqual(WorkflowRunParser.recent(opening: "o/d", in: ["o/a", "o/b", "o/c"], limit: 3), ["o/d", "o/a", "o/b"])
+    }
+
+    func testPickerSearch() {
+        let repos = ["acme/web", "ada/nook", "acme/nook-site", "x/tool"]
+        XCTAssertEqual(WorkflowRunParser.matching("", in: repos), repos)
+        XCTAssertEqual(WorkflowRunParser.matching("nook", in: repos), ["ada/nook", "acme/nook-site"])
+        XCTAssertEqual(WorkflowRunParser.matching("site", in: repos), ["acme/nook-site"])
+        XCTAssertEqual(WorkflowRunParser.matching("acme", in: repos), ["acme/web", "acme/nook-site"], "the owner counts too")
+        XCTAssertEqual(WorkflowRunParser.matching("ook", in: repos), ["ada/nook", "acme/nook-site"], "anywhere, after the names")
+        XCTAssertEqual(WorkflowRunParser.matching("t", in: repos), ["x/tool", "acme/nook-site"], "a name that starts with it first")
+    }
 }

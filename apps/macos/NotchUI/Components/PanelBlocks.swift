@@ -186,12 +186,17 @@ struct NookFilterChip: View {
     let title: String
     var count: Int? = nil
     let selected: Bool
+    /// The state of what the chip stands for (a workflow's newest run), shown only while it runs or when it failed.
+    var mark: (outcome: PullRequestCheck.Outcome, running: Bool)? = nil
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.xs) {
+                if let mark, mark.outcome == .failing || mark.outcome == .pending {
+                    CheckOutcomeGlyph(outcome: mark.outcome, size: 10, running: mark.running)
+                }
                 Text(title).font(NookTheme.TextStyle.label)
                 if let count {
                     Text("\(count)").font(NookTheme.rounded(11, .medium)).opacity(0.7)

@@ -40,7 +40,7 @@ shows what your file could not use, and the keys that claim the same chord.
 | ⇧⌘T | `panel.reopenClosed` | `!terminalFocus` | Reopen the tab closed last: a session's side or bottom panel tab (in the panel it was in, a pull request tab with its pull request), or a tab on the Pull requests page |
 | ⇧⌘L | `selection.quote` | `!terminalFocus && !editableFocus` | Words selected in an agent's answer go with your next message, as a chip above the composer |
 | ⌘L | `selection.ask` | `!terminalFocus && !editableFocus` | The same, and the keyboard goes to the composer to ask about them |
-| ⇧⌘[ / ⇧⌘] | `session.previous` / `session.next` | | Not available yet |
+| ⇧⌘[ / ⇧⌘] | `session.previous` / `session.next` | | The chat above or below on Chats; the repository tab on the left or right on the Actions page |
 | ⌘D | `diff.toggle` | `!terminalFocus` | Not available yet |
 | ⇧⌘M | `modelPicker.toggle` | `!terminalFocus` | Not available yet |
 | ⇧⌘S | `session.settle` | `!terminalFocus` | Not available yet |
