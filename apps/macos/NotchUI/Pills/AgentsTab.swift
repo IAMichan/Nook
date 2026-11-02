@@ -20,8 +20,8 @@ struct AgentsTab: View {
     @State private var totalWidth: Double = 0
     /// The folder picked for a new session: its terminal, browser and changes open beside the composer.
     @State private var newDirectory = ""
-    /// What was open before the pull requests page; empty picks what waits for you, as on a fresh start.
-    @State private var beforePullRequests = ""
+    /// What was open before the footer's pages (pull requests, Actions, usage); empty picks what waits for you, as on a fresh start.
+    @State private var beforeFooterPage = ""
 
     private enum Selection {
         case live(AgentSession)
@@ -69,7 +69,7 @@ struct AgentsTab: View {
                     if !app.demoMode {
                         PanelFooter(selected: selectedID(selection), open: { open($0) },
                                     openSettings: { app.openSettings() }, history: app.history,
-                                    onBack: { viewModel.selectedAgentID = beforePullRequests })
+                                    onBack: { viewModel.selectedAgentID = beforeFooterPage })
                     }
                 }
                 .listPanel(stacked: stacked, width: $listWidth, defaultWidth: PanelLayout.agentsList, available: totalWidth,
@@ -159,9 +159,9 @@ struct AgentsTab: View {
         // would hand the panels more room than there is and push everything off both sides.
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
         .onLayoutWidthChange { totalWidth = $0 }
-        // Where back on the pull requests page returns to.
+        // Where back on a footer page returns to: what was open before the first of them, so hopping between them keeps it.
         .onChange(of: viewModel.selectedAgentID) { previous, id in
-            if id == AgentsPage.pullRequests, previous != AgentsPage.pullRequests { beforePullRequests = previous }
+            if AgentsPage.footerPages.contains(id), !AgentsPage.footerPages.contains(previous) { beforeFooterPage = previous }
         }
         .overlay(alignment: .top) {
             if palette {
