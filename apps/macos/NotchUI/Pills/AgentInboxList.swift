@@ -302,7 +302,7 @@ struct AgentInboxList: View {
 
     /// Opens the new-session composer on `folder`.
     private func newSession(in folder: String) {
-        PromptLinkInbox.shared.pendingProject = folder
+        PromptLinkInbox.shared.requestProject(folder)
         select("new")
     }
 
