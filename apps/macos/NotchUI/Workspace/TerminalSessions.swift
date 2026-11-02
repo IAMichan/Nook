@@ -224,21 +224,21 @@ private struct TerminalHost: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let container = TerminalContainer()
-        attach(to: container)
+        attach(to: container, focus: context.environment.sidePanelTakesFocus)
         return container
     }
 
     func updateNSView(_ container: NSView, context: Context) {
-        if session.view.superview !== container { attach(to: container) }
+        if session.view.superview !== container { attach(to: container, focus: context.environment.sidePanelTakesFocus) }
     }
 
-    private func attach(to container: NSView) {
+    private func attach(to container: NSView, focus: Bool) {
         session.view.removeFromSuperview()
         session.view.translatesAutoresizingMaskIntoConstraints = true
         session.view.frame = container.bounds
         session.view.autoresizingMask = [.width, .height]
         container.addSubview(session.view)
-        DispatchQueue.main.async { container.window?.makeFirstResponder(session.view) }
+        if focus { DispatchQueue.main.async { container.window?.makeFirstResponder(session.view) } }
     }
 }
 

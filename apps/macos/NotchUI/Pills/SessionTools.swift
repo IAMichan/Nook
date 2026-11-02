@@ -263,6 +263,9 @@ struct SessionWorkbench<Conversation: View>: View {
     /// Whether the session panel was docked: it docks again only with some room to spare (`PanelLayout.dockHysteresis`),
     /// so dragging a panel near the edge of the room does not make the column come and go.
     @State private var wasDocked = true
+    /// Whether a panel's tool may take the keyboard: not while the session opens with a panel already open, so you type
+    /// in the composer right away; once you open or switch a tool in a panel, it may (`sidePanelTakesFocus`).
+    @State private var panelTakesFocus = false
 
     /// What a panel shows: nothing (closed), the list of tools, or one this session can use.
     private func shown(_ slot: SessionPanelSlot) -> SessionTool {
@@ -433,7 +436,9 @@ struct SessionWorkbench<Conversation: View>: View {
         .animation(NookTheme.reveal, value: bottom == .conversation)
         .onChange(of: bottom) { _, next in
             if SessionTool.panelTools.contains(next) { lastBottomTool = next.rawValue }
+            panelTakesFocus = true
         }
+        .onChange(of: side) { _, _ in panelTakesFocus = true }
         // The Terminal tab put away: the next time it opens it shows your own shells again.
         .onChange(of: consoleShown) { _, shown in
             if !shown { consoleEventID = nil }
@@ -568,6 +573,7 @@ struct SessionWorkbench<Conversation: View>: View {
                          },
                          console: runID.flatMap { run in consoleEventID.map { CommandConsoleRef(run: run, event: $0) } },
                          closeConsole: { withAnimation(NookTheme.reveal) { consoleEventID = nil } })
+            .environment(\.sidePanelTakesFocus, panelTakesFocus)
     }
 
     /// Closes a tab. One of several Pull request tabs goes by itself, and the one next to it comes into view.
