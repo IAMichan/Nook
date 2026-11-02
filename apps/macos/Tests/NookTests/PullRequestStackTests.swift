@@ -80,6 +80,11 @@ final class PullRequestStackTests: XCTestCase {
         XCTAssertEqual(request.body?["variables"], AnyHashable(["id": "PR_kw"] as [String: String]))
         XCTAssertNil(PullRequestAction.markReady(nodeID: "").request(repo: "acme/app", number: 7))
         XCTAssertEqual(PullRequestAction.markReady(nodeID: "x").auditTool, "github_ready_pr")
+        let draft = try XCTUnwrap(PullRequestAction.markDraft(nodeID: "PR_kw").request(repo: "acme/app", number: 7))
+        XCTAssertEqual(draft.path, "/graphql")
+        XCTAssertEqual(draft.body?["query"], AnyHashable(PullRequestAction.markDraftMutation))
+        XCTAssertNil(PullRequestAction.markDraft(nodeID: "").request(repo: "acme/app", number: 7))
+        XCTAssertEqual(PullRequestAction.markDraft(nodeID: "x").auditTool, "github_draft_pr")
         XCTAssertEqual(PullRequestAction.graphQLError(["errors": [["message": "Not allowed"]]]), "GitHub: Not allowed")
         XCTAssertNil(PullRequestAction.graphQLError(["data": [:] as [String: Any]]))
     }
