@@ -1410,7 +1410,7 @@ struct TicksView: View {
 
 /// A video in a chat bubble: its first frame, whole, with a play button, and a click plays it right there with the
 /// system's controls (pause, scrub, volume). The enlarge button carries on where the bubble was: in the main window over
-/// all of the window (`ChatVideoStage`), so split with another app it fills only Nook's part of the screen; in the notch
+/// all of the window (`ChatMediaStage`), so split with another app it fills only Nook's part of the screen; in the notch
 /// big in a window of its own that goes full screen.
 struct VideoTile: View {
     let url: URL
@@ -1423,7 +1423,7 @@ struct VideoTile: View {
     /// A frame of the video itself, when its app sent no picture of it: never a black box.
     @State private var still: ChatVideoStills.Still?
     @Environment(\.chatMediaLive) private var live
-    @Environment(\.chatVideoStage) private var stage
+    @Environment(\.chatMediaStage) private var stage
 
     private var picture: NSImage? { poster ?? still?.image }
     private var enlargeLabel: String { tr(stage == nil ? "card.video.enlarge" : "card.video.fullScreen") }
@@ -1546,30 +1546,31 @@ struct InlinePlayer: NSViewRepresentable {
     }
 }
 
-/// A chat bubble's photo enlarged over the whole card or chat, inside Nook: the bubble's picture at once, then the photo
-/// itself sharp from the file on this Mac. It opens fitted to the room, but never stretched past its own pixels (nor
-/// smaller than in its bubble), so a small photo stays sharp; a pinch or ⌘-scroll zooms in on it, a drag moves it. A
-/// click shrinks a zoomed photo back, and otherwise (or Escape) closes it; the open button shows it in Quick Look. Used
-/// by the chat card in the notch and by the Chats tab.
+/// A chat bubble's photo enlarged inside Nook: the bubble's picture at once, then the photo itself sharp from the file on
+/// this Mac. It opens as large as the room lets it, also past its own pixels, so even a small photo can really be seen;
+/// a pinch or ⌘-scroll zooms in on it further, a drag moves it. A click shrinks a zoomed photo back, and otherwise (or
+/// Escape) closes it; the open button shows it in Quick Look. In the main window it fills the whole window (`fills`, on
+/// the `ChatMediaStage`); in the notch it covers the chat card or the chat it is in.
 struct ChatPhotoZoom: View {
     let url: URL
     let preview: NSImage
     let name: String
+    /// Over the whole window, edge to edge, rather than as a rounded sheet over a card or chat.
+    var fills = false
     let onClose: () -> Void
     let onOpen: () -> Void
     @State private var sharp: NSImage?
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            Color.black.opacity(0.94)
+            Color.black.opacity(fills ? 1 : 0.94)
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onClose)
             ZoomablePhoto(image: sharp ?? preview,
                           pixels: ChatMediaImages.pixelSize(url) ?? preview.size,
-                          least: PhotoButton.fittedSize(for: preview.size),
                           onClick: onClose)
-                .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
-                .padding(NookTheme.Spacing.sm)
+                .clipShape(RoundedRectangle(cornerRadius: fills ? 0 : NookTheme.Radius.control, style: .continuous))
+                .padding(fills ? 0 : NookTheme.Spacing.sm)
                 .help(tr("chat.photo.zoomHint"))
                 .accessibilityElement()
                 .accessibilityLabel(name)
@@ -1584,9 +1585,9 @@ struct ChatPhotoZoom: View {
                 zoomButton("xmark", label: tr("button.close"), action: onClose)
                     .keyboardShortcut(.cancelAction)
             }
-            .padding(12)
+            .padding(fills ? NookTheme.Spacing.md : 12)
         }
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: fills ? 0 : NookTheme.Radius.sheet, style: .continuous))
         .task(id: url) {
             let url = self.url
             // Read and decoded off the main thread: decoding a large photo at this size held up the zoom.
@@ -1616,37 +1617,32 @@ struct ChatPhotoZoom: View {
 /// every zoom from the photo itself, so it stays as sharp as the photo is.
 private struct ZoomablePhoto: NSViewRepresentable {
     let image: NSImage
-    /// The photo's own size in pixels: one point per pixel is as large as it opens.
+    /// The photo's own size in pixels, for its shape.
     let pixels: CGSize
-    /// It never opens smaller than this (its size in the bubble).
-    let least: CGSize
     let onClick: () -> Void
 
     static let maxZoom: CGFloat = 8
 
     func makeNSView(context: Context) -> ZoomScrollView {
         let view = ZoomScrollView()
-        view.update(image: image, pixels: pixels, least: least, onClick: onClick)
+        view.update(image: image, pixels: pixels, onClick: onClick)
         return view
     }
 
     func updateNSView(_ view: ZoomScrollView, context: Context) {
-        view.update(image: image, pixels: pixels, least: least, onClick: onClick)
+        view.update(image: image, pixels: pixels, onClick: onClick)
     }
 
-    /// The opening size: fitted in `room`, at most one point per pixel, but never below `least` (nor past `room`).
-    static func fittedSize(pixels: CGSize, least: CGSize, in room: CGSize) -> CGSize {
+    /// The opening size: as large as fits in `room`, whatever the photo's own size.
+    static func fittedSize(pixels: CGSize, in room: CGSize) -> CGSize {
         guard pixels.width > 0, pixels.height > 0, room.width > 0, room.height > 0 else { return room }
-        let fit = min(room.width / pixels.width, room.height / pixels.height)
-        let floor = least.width > 0 ? min(least.width / pixels.width, least.height / pixels.height) : 0
-        let scale = min(fit, max(1, floor))
+        let scale = min(room.width / pixels.width, room.height / pixels.height)
         return CGSize(width: max(1, (pixels.width * scale).rounded()), height: max(1, (pixels.height * scale).rounded()))
     }
 
     final class ZoomScrollView: NSScrollView {
         private let photo = PhotoCanvas()
         private var pixels: CGSize = .zero
-        private var least: CGSize = .zero
         private var onClick: () -> Void = {}
         private var dragStart: NSPoint?
         private var dragged = false
@@ -1669,15 +1665,14 @@ private struct ZoomablePhoto: NSViewRepresentable {
         @available(*, unavailable)
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-        func update(image: NSImage, pixels: CGSize, least: CGSize, onClick: @escaping () -> Void) {
+        func update(image: NSImage, pixels: CGSize, onClick: @escaping () -> Void) {
             self.onClick = onClick
             if photo.image !== image {
                 photo.image = image
                 photo.needsDisplay = true
             }
-            guard self.pixels != pixels || self.least != least else { return }
+            guard self.pixels != pixels else { return }
             self.pixels = pixels
-            self.least = least
             fitPhoto()
         }
 
@@ -1688,7 +1683,7 @@ private struct ZoomablePhoto: NSViewRepresentable {
 
         /// The photo at its opening size for the room there is now; a zoom stays as it is.
         private func fitPhoto() {
-            let size = ZoomablePhoto.fittedSize(pixels: pixels, least: least, in: bounds.size)
+            let size = ZoomablePhoto.fittedSize(pixels: pixels, in: bounds.size)
             guard photo.frame.size != size else { return }
             photo.setFrameSize(size)
             contentView.scroll(to: contentView.constrainBoundsRect(contentView.bounds).origin)

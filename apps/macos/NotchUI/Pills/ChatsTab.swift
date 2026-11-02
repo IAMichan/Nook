@@ -1568,8 +1568,10 @@ private struct ChatsDetail: View, Equatable {
     /// the order you sent them while the field is free for the next one at once.
     @State private var sending: Task<Void, Never>?
     @FocusState private var replyFocused: Bool
-    /// A photo shown big over the chat, until it is clicked or Escape is pressed.
+    /// A photo shown big over the chat in the notch, until it is clicked or Escape is pressed.
     @State private var zoomed: ChatBubble?
+    /// In the main window a photo or video goes big over the whole window instead; nil in the notch.
+    @Environment(\.chatMediaStage) private var mediaStage
     /// The message the field answers, quoted above it until it is sent or let go.
     @State private var replyingTo: ChatBubble?
     /// Your message whose text the field changes, shown above it until the change goes or is let go.
@@ -1838,7 +1840,9 @@ private struct ChatsDetail: View, Equatable {
     /// Escape first shrinks an enlarged photo back, closes a poll, place, contact or sticker panel, and lets go of a
     /// message being changed or quoted; only then does it close the chat.
     private func escape() {
-        if forwarding != nil {
+        if let mediaStage, mediaStage.isShowing {
+            mediaStage.close()
+        } else if forwarding != nil {
             withAnimation(NookTheme.reveal) { forwarding = nil }
         } else if zoomed != nil {
             withAnimation(NookTheme.reveal) { zoomed = nil }
@@ -1854,10 +1858,15 @@ private struct ChatsDetail: View, Equatable {
         }
     }
 
-    /// A photo enlarges over the chat, inside Nook; a photo Nook does not have yet opens as any file does.
+    /// A photo enlarges inside Nook, over the whole main window or over the chat in the notch; a photo Nook does not
+    /// have yet opens as any file does.
     private func zoom(_ bubble: ChatBubble) {
-        guard case .photo(let url) = bubble.media, bubble.image ?? ChatMediaImages.image(url) != nil else { return open(bubble) }
-        withAnimation(NookTheme.reveal) { zoomed = bubble }
+        guard case .photo(let url) = bubble.media, let image = bubble.image ?? ChatMediaImages.image(url) else { return open(bubble) }
+        if let mediaStage {
+            mediaStage.show(photo: url, preview: image, name: bubble.attachment ?? "", open: { open(bubble) })
+        } else {
+            withAnimation(NookTheme.reveal) { zoomed = bubble }
+        }
     }
 
     /// Whether a poll in this chat can be voted on from here, as its app allows (`ChatAbilities.vote`).
