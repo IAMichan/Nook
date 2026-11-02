@@ -220,7 +220,7 @@ struct NookDivider: View {
     var vertical = false
     var inset: CGFloat = 0
     /// A line that marks something (where the new messages start) takes that state's color.
-    var tint: Color = NookTheme.line2
+    var tint: Color = NookTheme.border
 
     var body: some View {
         if vertical {
