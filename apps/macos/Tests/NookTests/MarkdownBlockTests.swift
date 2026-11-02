@@ -85,4 +85,21 @@ final class MarkdownBlockTests: XCTestCase {
         XCTAssertEqual(ChartRescue.tableNumber("€ 12,50"), 12.5)
         XCTAssertNil(ChartRescue.chart(fromTable: ["Map", "Branch"], rows: [["a", "nook/test-183d"], ["b", "nook/test-dd40"]], title: ""))
     }
+
+    func testCodeSpanWithAWebAddressBecomesALink() {
+        XCTAssertEqual(MarkdownBlock.codeLink("http://localhost:8080/")?.absoluteString, "http://localhost:8080/")
+        XCTAssertEqual(MarkdownBlock.codeLink("localhost:3000/admin")?.absoluteString, "http://localhost:3000/admin")
+        XCTAssertEqual(MarkdownBlock.codeLink("https://example.com")?.absoluteString, "https://example.com")
+        XCTAssertNil(MarkdownBlock.codeLink("bettr-finance/assets/css/style.css"))
+        XCTAssertNil(MarkdownBlock.codeLink("curl http://localhost:8080"))
+        XCTAssertNil(MarkdownBlock.codeLink("localhostname"))
+        XCTAssertNil(MarkdownBlock.codeLink("javascript:alert(1)"))
+    }
+
+    func testBareWebAddressesInTextLeaveTrailingPunctuationOut() {
+        let text = "Open http://localhost:8080/. Or see (https://en.wikipedia.org/wiki/Swift_(programming_language)), done."
+        let links = MarkdownBlock.bareLinks(text).map(\.url.absoluteString)
+        XCTAssertEqual(links, ["http://localhost:8080/", "https://en.wikipedia.org/wiki/Swift_(programming_language)"])
+        XCTAssertTrue(MarkdownBlock.bareLinks("no links here").isEmpty)
+    }
 }
