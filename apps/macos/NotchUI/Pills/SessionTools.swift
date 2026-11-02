@@ -464,12 +464,6 @@ struct SessionWorkbench<Conversation: View>: View {
         shown(.side) == .terminal || shown(.bottom) == .terminal
     }
 
-    /// The command the Terminal tab shows, while the session still has it.
-    private var consoleEvent: RunEvent? {
-        guard let consoleEventID, let runID else { return nil }
-        return workspace.timeline(runID).first { $0.id == consoleEventID }
-    }
-
     /// Opens a command the agent runs in the Terminal tab: in the bottom panel when the tab is open there, otherwise in
     /// the side panel on the right. The command the tab shows already goes away again, back to your own shells.
     private func toggleConsole(_ id: UUID) {
@@ -577,7 +571,7 @@ struct SessionWorkbench<Conversation: View>: View {
                          showPullRequestList: { withAnimation(NookTheme.swap) { viewModel.showSidePullRequestList() } },
                          closeTab: { closeSessionTab($0, in: slot) },
                          close: { viewModel[keyPath: slot.tool] = .conversation },
-                         console: consoleEvent,
+                         console: runID.flatMap { run in consoleEventID.map { CommandConsoleRef(run: run, event: $0) } },
                          closeConsole: { withAnimation(NookTheme.reveal) { consoleEventID = nil } })
     }
 
@@ -705,8 +699,9 @@ private struct SessionToolPanel: View {
     let closeTab: (SessionTab) -> Void
     let close: () -> Void
     /// A command the agent runs, opened from the conversation: the Terminal tab shows it in place of your shells.
-    var console: RunEvent? = nil
+    var console: CommandConsoleRef? = nil
     var closeConsole: () -> Void = {}
+    @EnvironmentObject private var workspace: WorkspaceManager
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @ObservedObject private var files = FileViewerStore.shared
     /// The open page's title for the browser's tab, once the browser was started (it is not started for it).
@@ -723,7 +718,8 @@ private struct SessionToolPanel: View {
                     SessionToolPicker(directory: directory) { launch($0) }
                 case .terminal:
                     if let console {
-                        CommandConsolePanel(event: console, close: closeConsole)
+                        LiveCommandConsole(timelines: workspace.timelines, workspace: workspace, console: console,
+                                           close: closeConsole)
                     } else {
                         SessionTerminalsView(directory: directory).id(directory)
                     }

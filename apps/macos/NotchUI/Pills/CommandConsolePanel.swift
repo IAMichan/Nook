@@ -1,6 +1,30 @@
 import SwiftUI
 import AppKit
 
+/// Which command the Terminal tab shows: the session Nook runs, and the command's event in its timeline.
+struct CommandConsoleRef: Equatable {
+    let run: UUID
+    let event: UUID
+}
+
+/// The command a `CommandConsoleRef` points to, read again as the agent streams its output: the timeline changes only
+/// through `WorkspaceManager.timelines`, so this view observes it and the workbench around it does not redraw.
+struct LiveCommandConsole: View {
+    @ObservedObject var timelines: TimelineChanges
+    let workspace: WorkspaceManager
+    let console: CommandConsoleRef
+    let close: () -> Void
+
+    var body: some View {
+        if let event = workspace.timeline(console.run).first(where: { $0.id == console.event }) {
+            CommandConsolePanel(event: event, close: close)
+        } else {
+            // The session no longer has the command: back to your own shells.
+            Color.clear.onAppear(perform: close)
+        }
+    }
+}
+
 /// A command the agent runs, in the Terminal tab of the session's side panel: the command and its output as it comes
 /// in, as you would see it in a shell. Opens from the live "Running a command" line; closing it shows your own shells.
 struct CommandConsolePanel: View {
