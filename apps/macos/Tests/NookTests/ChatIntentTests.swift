@@ -165,6 +165,20 @@ final class ChatIntentTests: XCTestCase {
         XCTAssertFalse(ChatIntent.claimsPrepared("Ik heb een overzicht van je mail opgesteld:"))
         XCTAssertFalse(ChatIntent.claimsPrepared("Ik heb een samenvatting voorbereid van je agenda."))
         XCTAssertFalse(ChatIntent.claimsPrepared("Lisa heeft je een bericht gestuurd."))
+        // The message belongs to another sentence than the overview that was made.
+        XCTAssertFalse(ChatIntent.claimsPrepared("Ik heb een overzicht opgesteld. Henk wil dat je hem een mail stuurt met de teksten."))
+    }
+
+    func testReadAnswersAreNotTakenForClaimedActions() {
+        // What someone else sent is the answer to a question, not a claim that Nook did something.
+        XCTAssertFalse(ChatIntent.claimsDone("Henk heeft je de afgelopen week drie mails gestuurd over de teksten."))
+        XCTAssertFalse(ChatIntent.claimsDone("Lisa hat die Datei gestern erstellt."))
+        XCTAssertTrue(ChatIntent.claimsDone("Het bericht is verzonden naar Lisa."))
+        XCTAssertTrue(ChatIntent.claimsDone("I've sent the message to Tom."))
+        // Searching again and reporting a mail that was sent is no claim to have sent it again.
+        XCTAssertFalse(ChatIntent.claimsRedone("Ik heb opnieuw gezocht in je mail. Zijn laatste mail is gisteren verstuurd."))
+        XCTAssertTrue(ChatIntent.claimsRedone("Ik heb het bericht opnieuw verstuurd naar Arjan."))
+        XCTAssertTrue(ChatIntent.claimsRedone("I sent it again: the message was sent again to Lisa."))
     }
 
     func testFollowUpWithoutAnOpenQuestionStaysPlain() {

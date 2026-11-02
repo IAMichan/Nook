@@ -360,8 +360,32 @@ struct ChatIntent: Equatable {
         let prepared = #"\b(ik heb|heb ik|i have|i've|ich habe|habe ich|j'ai|he)\b[^.?!]{0,60}\b(voorbereid|klaargezet|klaar gezet|opgesteld|prepared|drafted|vorbereitet|entworfen|préparé|rédigé|preparado|redactado)\b"#
         // "Een overzicht van je mail" is about mail, not a message.
         let message = #"(?<!van |of |from |von |uit |über |over |about |sur |sobre |je |your |deine |tes |tus )\b(bericht|berichtje|appje|message|nachricht|whats-?app|e-?mail|mail|mailtje|courriel|mensaje|correo)\b"#
-        func has(_ pattern: String) -> Bool { lower.range(of: pattern, options: .regularExpression) != nil }
-        return has(ready) || (has(prepared) && has(message))
+        func has(_ pattern: String, in text: String) -> Bool { text.range(of: pattern, options: .regularExpression) != nil }
+        // The message has to be in the sentence that says it was prepared: "Ik heb een overzicht opgesteld. Henk wil dat je
+        // hem een mail stuurt" prepared an overview.
+        return has(ready, in: lower) || sentences(lower).contains { has(prepared, in: $0) && has(message, in: $0) }
+    }
+
+    /// One sentence of the reply says Nook did something once more: "Ik heb het bericht opnieuw verzonden", "I sent it
+    /// again". "Ik heb opnieuw gezocht. Zijn mail is gisteren verstuurd" says no such thing.
+    static func claimsRedone(_ text: String) -> Bool {
+        sentences(text).contains { sentence in
+            sentence.range(of: #"\b(opnieuw|nogmaals|nog een keer|nog eens|again|erneut|nochmal|noch einmal|de nouveau|à nouveau|otra vez|de nuevo)\b"#,
+                           options: [.regularExpression, .caseInsensitive]) != nil && claimsDone(sentence)
+        }
+    }
+
+    /// The reply says an action already happened: "Het bericht is verzonden", "I've sent it", "Ich habe … erstellt".
+    /// Only Nook itself (first person) or the thing itself (passive) counts: "Henk heeft je een mail gestuurd" and "Lisa
+    /// hat die Datei erstellt" report what someone else did.
+    static func claimsDone(_ text: String) -> Bool {
+        let pattern = #"\b(is|zijn|werd|werden|heb|has been|have been|was|were|i've|i have|wurde|wurden|habe|est|a été|ai|ha sido|he)\b[^.?!]{0,40}\b(verzonden|verstuurd|gestuurd|aangemaakt|toegevoegd|ingepland|gemaakt|opgeslagen|sent|delivered|created|added|scheduled|saved|gesendet|verschickt|erstellt|hinzugefügt|gespeichert|envoyé|créé|ajouté|enregistré|enviado|creado|añadido|guardado)\b"#
+        return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    /// The sentences of a reply, split at . ? ! and line ends.
+    static func sentences(_ text: String) -> [String] {
+        text.split(whereSeparator: { ".?!\n".contains($0) }).map(String.init)
     }
 
     // MARK: Tables
