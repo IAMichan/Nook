@@ -35,8 +35,8 @@ struct ConnectorSignInBanner: View {
                     ConnectorSignInMenu(runID: runID, connectors: shown)
                 }
                 ToolbarIconButton("xmark", tr("ws.connector.hideHelp"), height: 22, width: 22) {
-                    dismissed.formUnion(shown.filter { !$0.waiting }.map(\.name))
-                    ConnectorSignIns.dismissed = dismissed
+                    workspace.hideConnectorSignIns(runID, names: shown.map(\.name))
+                    dismissed = ConnectorSignIns.dismissed
                 }
             }
             .padding(.horizontal, NookTheme.Spacing.lg)
