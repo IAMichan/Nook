@@ -385,11 +385,40 @@ final class MailConnector: ContextSource {
         // Mail has not answered even once yet (it is still starting or syncing): say so instead of "no mail".
         // A mail change clears `loadedAt` only to mark the inbox stale; the inbox of before still counts.
         guard loadedAt != nil || !inboxes.isEmpty else { throw NookError(tr("connect.mail.loading")) }
-        let rows = MailStats.select(recent, now: Date(), days: days, unansweredOnly: unansweredOnly)
+        var rows = MailStats.select(recent, now: Date(), days: days, unansweredOnly: unansweredOnly)
         guard !rows.isEmpty else {
             return "Geen mail in de inbox van de laatste \(days) dagen" + (unansweredOnly ? " waarop je nog niet antwoordde." : ".")
         }
+        // The refresh only reads the text of mail that waits for a reply: a subject alone says too little about what someone
+        // asks, so read the start of the rest of these now (once; kept for the next refresh).
+        let missing = rows.indices.filter { rows[$0].body.isEmpty && bodies[rows[$0].key] == nil }
+        if !missing.isEmpty {
+            let texts = MailStats.bodies((await ScriptText.run(MailStats.bodiesScript(missing.map { rows[$0] }), timeout: 5)).text ?? "")
+            for (n, index) in missing.enumerated() {
+                guard let text = texts[n] else { continue }
+                rows[index].body = text
+                bodies[rows[index].key] = text
+            }
+        }
         return MailStats.describe(rows, date: NookDates.iso)
+    }
+
+    /// Inbox mail Nook already holds whose sender or subject has one of `words`, newest first, with the start of each
+    /// text (read now for the few that have none yet). Nil when nothing in memory matches.
+    private func searchKnownInbox(words: [String]) async -> String? {
+        let words = words.map { $0.lowercased() }
+        var rows = Array(recent.filter { row in
+            let haystack = (row.sender + " " + row.subject).lowercased()
+            return words.contains { haystack.contains($0) }
+        }.prefix(8))
+        guard !rows.isEmpty else { return nil }
+        let missing = rows.indices.filter { rows[$0].body.isEmpty }
+        if !missing.isEmpty {
+            let texts = MailStats.bodies((await ScriptText.run(MailStats.bodiesScript(missing.map { rows[$0] }, length: 2_000), timeout: 4)).text ?? "")
+            for (n, index) in missing.enumerated() { rows[index].body = texts[n] ?? "" }
+        }
+        return "Mail was too slow to search, so these are the matches in the inbox of the last weeks (newest first; "
+            + "older mail and sent mail were not searched):\n\n" + MailStats.describe(rows, date: NookDates.iso)
     }
 
     nonisolated static func name(_ sender: String) -> String {
@@ -473,7 +502,7 @@ final class MailConnector: ContextSource {
                 kind: .read,
                 summarize: { _ in "Search mail" },
                 tag: { _ in ("", .neutral) },
-                run: { input in
+                run: { [weak self] input in
                     try await MailConnector.ensureRunning()
                     let query = ((input["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !query.isEmpty else { throw NookError("Search query is missing.") }
@@ -486,14 +515,20 @@ final class MailConnector: ContextSource {
                         return sent ? "subj contains \(q)" : "subj contains \(q) or sndr contains \(q)"
                     }.joined(separator: " or ")
 
-                    var result = await ScriptText.run(MailConnector.searchScript(filter: filter, sent: sent, bodies: true), timeout: 20)
+                    // Every try together stays under the 25 seconds a source gets (`RetrievalLedger.run`): a search that
+                    // runs out there loses its fallbacks too.
+                    var result = await ScriptText.run(MailConnector.searchScript(filter: filter, sent: sent, bodies: true), timeout: 11)
                     if result.errorNumber == -1743 {
                         throw NookError("Grant Nook permission to read Mail: System Settings › Privacy & Security › Automation.")
                     }
                     // Fetching message text is the slow part on big mailboxes: try once more with subjects and senders only
                     // (read_mail opens a whole message by its id).
                     if result.errorNumber == -1712 {
-                        result = await ScriptText.run(MailConnector.searchScript(filter: filter, sent: sent, bodies: false), timeout: 20)
+                        result = await ScriptText.run(MailConnector.searchScript(filter: filter, sent: sent, bodies: false), timeout: 8)
+                    }
+                    // Mail is still too slow: the inbox Nook keeps in memory holds the mail of the last weeks.
+                    if result.text == nil, !sent, let self, let found = await self.searchKnownInbox(words: words) {
+                        return found
                     }
                     if result.errorNumber == -1712 { throw NookError("Searching Mail took too long. Try a more specific keyword.") }
                     if result.text == nil {

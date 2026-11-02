@@ -153,7 +153,7 @@ final class BrainService {
         // The request clearly asks for one action, but the model answered without proposing it (small models often say
         // "done!" or ask for permission instead). Ask once more, with only that tool and the dates spelled out. A larger
         // model gets the same second chance when it claims the action is done or prepared without proposing it.
-        let claimsReady = Self.claimsDone(plan.text) || ChatIntent.claimsPrepared(plan.text)
+        let claimsReady = ChatIntent.claimsDone(plan.text) || ChatIntent.claimsPrepared(plan.text)
         if profile.isSmall || (plan.actions.isEmpty && claimsReady), let action = intent.action(among: allTools.map(\.name)), !runner.trace.contains(action),
            let spec = allTools.first(where: { $0.name == action }), !Self.asksBack(plan.text) {
             if let focused = try await fillIn(spec, request: userText, history: history, context: fitted[1],
@@ -165,7 +165,7 @@ final class BrainService {
         // text itself is the answer, whether or not WhatsApp is linked. A reply that only says it prepared or sent the
         // message holds no text, so write the text once more, without tools, and say plainly nothing was sent.
         if plan.actions.isEmpty, intent.wantsDraft {
-            guard Self.claimsDone(plan.text) || ChatIntent.claimsPrepared(plan.text) else { return plan }
+            guard ChatIntent.claimsDone(plan.text) || ChatIntent.claimsPrepared(plan.text) else { return plan }
             let draft = try? await writeDraft(request: userText, history: history, context: fitted[1], profile: profile)
             guard let draft, !draft.isEmpty else { return BrainPlan(text: tr("brain.notDone"), actions: []) }
             return BrainPlan(text: tr("brain.draftOnly") + "\n\n" + draft, actions: [])
@@ -179,22 +179,13 @@ final class BrainService {
         // (or the event was made) is never true. Say plainly that nothing happened instead. "Sent again" is never true
         // without an action, whatever the request looked like: sending again is a new message to approve.
         // "Ik heb het bericht voorbereid" is the same untruth, whatever the request looked like.
-        if plan.actions.isEmpty, ((intent.wantsAction || Self.claimsRedone(plan.text)) && Self.claimsDone(plan.text)) || ChatIntent.claimsPrepared(plan.text) {
+        // A question ("wat wil Henk van me?") is answered with what others sent or made: "Henk heeft je drie mails gestuurd",
+        // "ik heb opnieuw gezocht; zijn mail is gisteren verstuurd". That is the answer, not a claim, so only a request for an
+        // action is held to it; any other request only when one sentence says Nook itself did it again.
+        if plan.actions.isEmpty, (intent.primaryAction != nil && ChatIntent.claimsDone(plan.text)) || ChatIntent.claimsRedone(plan.text) || ChatIntent.claimsPrepared(plan.text) {
             return BrainPlan(text: tr("brain.notDone"), actions: plan.actions)
         }
         return plan
-    }
-
-    /// The reply says it did something once more: "opnieuw verzonden", "sent it again".
-    static func claimsRedone(_ text: String) -> Bool {
-        text.range(of: #"\b(opnieuw|nogmaals|nog een keer|nog eens|again|erneut|nochmal|noch einmal|de nouveau|à nouveau|otra vez|de nuevo)\b"#,
-                   options: [.regularExpression, .caseInsensitive]) != nil
-    }
-
-    /// The reply says an action already happened: "Het bericht is verzonden", "I've sent it", "Ich habe … erstellt".
-    static func claimsDone(_ text: String) -> Bool {
-        let pattern = #"\b(is|zijn|werd|werden|heb|heeft|has been|have been|was|were|i've|i have|wurde|wurden|habe|hat|est|a été|ai|ha sido|he)\b[^.?!]{0,40}\b(verzonden|verstuurd|gestuurd|aangemaakt|toegevoegd|ingepland|gemaakt|opgeslagen|sent|delivered|created|added|scheduled|saved|gesendet|verschickt|erstellt|hinzugefügt|gespeichert|envoyé|créé|ajouté|enregistré|enviado|creado|añadido|guardado)\b"#
-        return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
     // MARK: Understanding the question
@@ -706,6 +697,9 @@ final class BrainService {
         - For every question, work out where the answer lives: Notes → search_notes / list_notes / read_note; Reminders → list_reminders / search_reminders; Mail → inbox_mail / search_mail; Browser → read_browser_tab; Open apps / windows → read_app / list_running_apps; People / phone numbers → search_contacts; Meetings → check_availability / list_events; Files → search_files / read_file; Code/PRs → GitHub. Combine tools freely.
         - Action tools (events, reminders, todos, notes, mail changes, app menu commands, apps, links, music, volume, Shortcuts, messages via connected services, GitHub PR review/comment/merge/close) are not executed directly by you: they appear as a structured plan in chat and execute only when the user clicks Execute. Invoke them immediately with validated parameters, without asking for confirmation first. You may propose multiple actions in a single plan.
         - Pull requests: always inspect a PR first with github_pr_details before reviewing, approving, or merging, and base your verdict on the actual diff, CI status, and existing reviews. Provide a brief summary. Only merge or close when explicitly requested by the user. To merge several or all pull requests ("merge all my PRs"), list them with github_overview (or github_search, e.g. "is:pr is:open repo:owner/name") and propose one github_merge_prs with every pull request the user means; it checks each one itself and skips what is not ready, so reading each with github_pr_details is not needed.
+        - Mail from or about a person ("what did Henk send me", "what does Lisa want"): search_mail with their name (and with their address once you know it), in the inbox and in sent, then read_mail every relevant message in full. Never judge what someone wants from a subject line. When the user says there is more, search again with other words (a topic, a single word of the name, days 30 in inbox_mail) instead of repeating the same search.
+        - Read requests ("haal op", "zoek uit", "wat wil hij") ask for an answer, not an action: answer with what you found, structured per topic, with what is asked of the user as a clear list.
+        - When a tool fails or times out, try it once more yourself with a narrower query or another tool that holds the same data before you answer. Do not end with "shall I try again?": try, then say what you could not reach.
         - Never fabricate times, email addresses, names, or metrics. If critical details are missing, ask concisely.
         - Ground every statement in a source that is about the question. Do not answer from a note, mail, message or page about another topic, person or date just because it was found; say what you could not find instead.
         - Supply dates and times as ISO 8601 with timezone offset, in the user's local timezone.
