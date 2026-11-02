@@ -1,19 +1,22 @@
 <script lang="ts">
-  // The repository picker on the Actions page (`ActionsRepositoryPicker` on the Mac): a button with the chosen
-  // repository that opens a list of the ones you pushed to lately and the ones of your pull requests. Typing narrows
-  // the list; a full owner/name (or a GitHub link) that is not in it can be picked as well, so any repository you can
-  // read is one Enter away. Styled as the Filters dropdown next to the pull request search.
-  import { parseRepo, type ActionsRepo } from "../../../lib/actions";
+  // The repository picker on the Actions page (`ActionsRepoPicker` on the Mac): the "+" after the repository tabs, or a
+  // button with the chosen repository while there are none, that opens a list of the ones you pushed to lately and the
+  // ones of your pull requests. Typing narrows the list (owner or name first); a full owner/name (or a GitHub link) that
+  // is not in it can be picked as well, so any repository you can read is one Enter away. Styled as the Filters
+  // dropdown next to the pull request search.
+  import { matchRepos, parseRepo, type ActionsRepo } from "../../../lib/actions";
   import { tr } from "../../../lib/i18n.svelte";
 
-  let { repos, value, onpick }: { repos: ActionsRepo[]; value: string | null; onpick: (name: string) => void } = $props();
+  let {
+    repos, value, onpick, compact = false,
+  }: { repos: ActionsRepo[]; value: string | null; onpick: (name: string) => void; compact?: boolean } = $props();
 
   let open = $state(false);
   let query = $state("");
   let root = $state<HTMLElement | null>(null);
   let field = $state<HTMLInputElement | null>(null);
 
-  const shown = $derived(repos.filter((r) => !query.trim() || r.name.toLowerCase().includes(query.trim().toLowerCase())));
+  const shown = $derived(matchRepos(query, repos));
   // A typed repository that is not in the list yet.
   const typed = $derived.by(() => {
     const name = parseRepo(query);
@@ -45,11 +48,15 @@
 
 <svelte:window onclick={outside} />
 
-<div class="menu" bind:this={root}>
-  <button class="trigger" aria-expanded={open} title={tr("Kies een repository", "Choose a repository")} onclick={toggle}>
-    <span class="name">{value ?? tr("Kies een repository", "Choose a repository")}</span>
-    <span class="faint" aria-hidden="true">▾</span>
-  </button>
+<div class="menu" class:end={compact} bind:this={root}>
+  {#if compact}
+    <button class="trigger plus" aria-expanded={open} title={tr("Andere repository openen", "Open another repository")} aria-label={tr("Andere repository openen", "Open another repository")} onclick={toggle}>+</button>
+  {:else}
+    <button class="trigger" aria-expanded={open} title={tr("Kies een repository", "Choose a repository")} onclick={toggle}>
+      <span class="name">{value ?? tr("Kies een repository", "Choose a repository")}</span>
+      <span class="faint" aria-hidden="true">▾</span>
+    </button>
+  {/if}
   {#if open}
     <div class="panel" role="dialog" aria-label={tr("Repository", "Repository")}>
       <input bind:this={field} placeholder={tr("Zoek of typ eigenaar/naam", "Search or type owner/name")} bind:value={query} onkeydown={keys} />
@@ -72,6 +79,8 @@
 <style>
   .menu { position: relative; min-width: 0; }
   .trigger { height: 30px; max-width: 100%; padding: 0 10px; display: flex; align-items: center; gap: 6px; color: var(--paper); background: var(--field); font-size: 12.5px; }
+  .end .panel { left: auto; right: 0; }
+  .plus { width: 30px; padding: 0; justify-content: center; font-size: 16px; color: var(--text2); }
   .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .panel { position: absolute; left: 0; top: 36px; z-index: 20; width: min(340px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 6px; padding: 6px; background: var(--graphite); border: 1px solid var(--line2); border-radius: 12px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
   .panel input { font-size: 12.5px; }

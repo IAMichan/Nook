@@ -80,9 +80,10 @@ enum GitHubActions {
     }
 }
 
-/// The Actions page's list, kept between visits: the repository you picked (remembered across launches), its workflows,
-/// and the latest runs of the workflow you filter on. Runs read before show at once when you come back or switch back
-/// to a repository, while they are read again.
+/// The Actions page's list, kept between visits: the repository you picked (remembered across launches), the
+/// repositories on its tab bar, its workflows, and the latest runs of the workflow you filter on. Runs read before show
+/// at once when you come back or switch back to a repository, while they are read again; the other tabs are read in the
+/// background now and then, so each shows how it stands and opens without waiting.
 @MainActor
 final class ActionsStore: ObservableObject {
     static let shared = ActionsStore()
@@ -99,6 +100,12 @@ final class ActionsStore: ObservableObject {
         didSet { UserDefaults.standard.set(added, forKey: Self.addedKey) }
     }
     @Published private(set) var pushed: [String] = []
+    /// The repositories on the tab bar, in their order: a new one comes in first; remembered across launches.
+    @Published private(set) var recent: [String] {
+        didSet { UserDefaults.standard.set(recent, forKey: Self.recentKey) }
+    }
+    /// How each repository read so far stands, by its lowercased name, for its tab.
+    @Published private(set) var statuses: [String: WorkflowRepoStatus] = [:]
     /// The repositories you pushed to were read once, so a page without a repository can say to pick one.
     @Published private(set) var repositoriesLoaded = false
     @Published private(set) var loading = false
@@ -115,19 +122,31 @@ final class ActionsStore: ObservableObject {
     private var failures: [String: Int] = [:]
     private var cache: [String: (workflows: [Workflow], runs: [WorkflowRun])] = [:]
     private var pushedAt = Date.distantPast
+    /// When each tab's repository was last read in the background.
+    private var peekedAt: [String: Date] = [:]
+    private var peeking = false
+    private static let recentKey = "nook.actions.recent"
     private static let repoKey = "nook.actions.repo"
     private static let addedKey = "nook.actions.added"
 
     private init() {
-        repo = UserDefaults.standard.string(forKey: Self.repoKey)
-        added = UserDefaults.standard.stringArray(forKey: Self.addedKey) ?? []
+        let picked = UserDefaults.standard.string(forKey: Self.repoKey)
+        let typed = UserDefaults.standard.stringArray(forKey: Self.addedKey) ?? []
+        repo = picked
+        added = typed
+        // Before there were tabs: the repository you had open and the ones you typed in.
+        recent = UserDefaults.standard.stringArray(forKey: Self.recentKey)
+            ?? Array(WorkflowRunParser.candidates(selected: picked, pushed: typed, pullRequests: [], watched: []).prefix(8))
     }
+
+    func status(of repository: String) -> WorkflowRepoStatus? { statuses[repository.lowercased()] }
 
     var available: Bool { GitHubPullRequests.isAvailable }
     var hasActiveRuns: Bool { runs.contains { !$0.isCompleted } }
 
     /// Opens a repository: what was read of it before shows at once, the rest follows.
     func select(_ repository: String) {
+        recent = WorkflowRunParser.recent(opening: repository, in: recent)
         guard repository != repo else { return }
         repo = repository
         workflowID = nil
@@ -144,6 +163,21 @@ final class ActionsStore: ObservableObject {
         }
         select(repository)
         return true
+    }
+
+    /// Takes a repository off the tab bar. Closing the open one opens the tab next to it.
+    func close(_ repository: String) {
+        guard let index = recent.firstIndex(where: { $0.caseInsensitiveCompare(repository) == .orderedSame }) else { return }
+        recent.remove(at: index)
+        guard repository.caseInsensitiveCompare(repo ?? "") == .orderedSame, !recent.isEmpty else { return }
+        select(recent[min(index, recent.count - 1)])
+    }
+
+    /// The tab before or after the open one (`offset` −1 or 1), going round.
+    func selectNeighbor(_ offset: Int) {
+        guard recent.count > 1, let repo,
+              let index = recent.firstIndex(where: { $0.caseInsensitiveCompare(repo) == .orderedSame }) else { return }
+        select(recent[(index + offset + recent.count) % recent.count])
     }
 
     func select(workflow id: Int?) {
@@ -199,10 +233,11 @@ final class ActionsStore: ObservableObject {
             let runs = try await GitHubActions.runs(repo: repo, workflowID: workflowID, token: token)
             let list = (try? await workflows) ?? self.workflows
             failures[key] = 0
+            cache[key] = (list, runs)
+            if workflowID == nil { statuses[repo.lowercased()] = WorkflowRepoStatus(runs: runs) }
             guard repo == self.repo, workflowID == self.workflowID else { return }
             self.runs = runs
             self.workflows = list
-            cache[key] = (list, runs)
             error = nil
             errorKind = nil
             lastRead = Date()
@@ -240,6 +275,28 @@ final class ActionsStore: ObservableObject {
         repositoriesLoaded = true
         // Nothing picked yet: the repository you pushed to last.
         if repo == nil, let first = fresh.first { select(first) }
+    }
+
+    /// Reads the other tabs' repositories in the background, one after the other and each at most every two minutes,
+    /// so a tab shows how its runs stand and opens with them at once. A failure only leaves that tab without a mark.
+    func peekRecent() async {
+        guard available, !peeking else { return }
+        peeking = true
+        defer { peeking = false }
+        for repository in recent where repository.caseInsensitiveCompare(repo ?? "") != .orderedSame {
+            guard !Task.isCancelled else { return }
+            let name = repository.lowercased()
+            if let last = peekedAt[name], Date().timeIntervalSince(last) < 120 { continue }
+            peekedAt[name] = Date()
+            guard let token = try? await token(for: repository) else { continue }
+            async let workflows = GitHubActions.workflows(repo: repository, token: token)
+            guard let runs = try? await GitHubActions.runs(repo: repository, workflowID: nil, token: token) else { continue }
+            let list = (try? await workflows) ?? []
+            statuses[name] = WorkflowRepoStatus(runs: runs)
+            // The open repository's own read is the fresher one; never overwrite it with this.
+            let key = repository + "|"
+            if repository != repo || cache[key] == nil { cache[key] = (list, runs) }
+        }
     }
 
     /// The token for a run's page: the one that read the list.
