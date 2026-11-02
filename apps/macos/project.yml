@@ -381,6 +381,7 @@ targets:
       - path: Services/Workspace/WorkspaceBridgeArguments.swift
       - path: Services/Workspace/TimelinePresentation.swift
       - path: Services/Workspace/AgentProgress.swift
+      - path: Services/AppPrompt.swift
       - path: Services/Workspace/CommandConsole.swift
       - path: Services/Workspace/SessionOutputs.swift
       - path: Services/Workspace/ReviewComments.swift

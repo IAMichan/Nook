@@ -23,8 +23,11 @@ struct ApprovalRequest: Identifiable {
     let assessment: CommandAssessment
     let canAlways: Bool
     let created: Date
+    /// A title of its own, for a prompt worded by the agent's app (`AppPrompt.title`).
+    var customTitle: String? = nil
 
     var title: String {
+        if let customTitle { return customTitle }
         if assessment.level == .danger { return assessment.title }
         switch tool {
         case "Bash", "shell", "run_shell_command", "exec_command":
