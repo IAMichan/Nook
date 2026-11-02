@@ -13,6 +13,8 @@ struct SidePanelTabItem<Value: Hashable>: Identifiable {
     /// Something in it you have not looked at yet: a small dot on the icon.
     var fresh = false
     var help: String? = nil
+    /// A small control right after the tab, such as the browser's + for another browser tab.
+    var after: AnyView? = nil
     var id: Value { value }
 }
 
@@ -35,6 +37,7 @@ struct SidePanelTabBar<Value: Hashable, Add: View, Trailing: View>: View {
                             SidePanelTab(item: item, active: item.value == selected,
                                          select: { onSelect(item.value) }, close: { onClose(item.value) })
                                 .id(item.value)
+                            if let after = item.after { after }
                         }
                         add()
                     }

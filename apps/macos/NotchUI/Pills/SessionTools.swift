@@ -581,6 +581,13 @@ struct SessionWorkbench<Conversation: View>: View {
             } else {
                 closeTab(.pullRequest, in: slot)
             }
+        case .browser(let id):
+            // One of several browser tabs goes by itself; the last one closes the browser like any tool.
+            if let browser = BrowserStore.existing, browser.pages.count > 1 {
+                withAnimation(NookTheme.swap) { browser.close(id) }
+            } else {
+                closeTab(.browser, in: slot)
+            }
         }
     }
 
@@ -660,10 +667,11 @@ private struct BottomSplitHandle: View {
     }
 }
 
-/// One tab of a tool panel: a tool, or one of the Pull request tabs (there can be several).
+/// One tab of a tool panel: a tool, or one of the Pull request or browser tabs (there can be several of each).
 private enum SessionTab: Hashable {
     case tool(SessionTool)
     case pullRequest(UUID)
+    case browser(UUID)
 }
 
 /// A tool panel beside or under a session: its open tools as tabs, + to open another, the button that closes it, and
@@ -698,8 +706,9 @@ private struct SessionToolPanel: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @ObservedObject private var files = FileViewerStore.shared
-    /// The open page's title for the browser's tab, once the browser was started (it is not started for it).
-    @State private var browserTitle = ""
+    /// The browser's tabs with their titles, and the one in view, once the browser was started (it is not started for it).
+    @State private var browserTabs: [BrowserStore.Tab] = []
+    @State private var browserActive: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -754,7 +763,12 @@ private struct SessionToolPanel: View {
         .onAppear { bridge.markSeen(directory, tool.rawValue) }
         .onChange(of: tool) { _, next in bridge.markSeen(directory, next.rawValue) }
         .onChange(of: bridge.unseen) { _, _ in bridge.markSeen(directory, tool.rawValue) }
-        .onReceive(BrowserStore.existing?.$title.eraseToAnyPublisher() ?? Empty<String, Never>().eraseToAnyPublisher()) { browserTitle = $0 }
+        .onReceive(BrowserStore.existing?.$tabs.eraseToAnyPublisher() ?? Empty<[BrowserStore.Tab], Never>().eraseToAnyPublisher()) {
+            browserTabs = $0
+        }
+        .onReceive(BrowserStore.existing?.$page.map(\.id).eraseToAnyPublisher() ?? Empty<UUID, Never>().eraseToAnyPublisher()) {
+            browserActive = $0
+        }
     }
 
     /// The open tabs, + right after them, and the button that closes the panel, as t3code's right panel has them. The
@@ -770,6 +784,7 @@ private struct SessionToolPanel: View {
     /// The tab in view: a Pull request tab by its own id, as there can be several.
     private var selectedTab: SessionTab {
         if tool == .pullRequest, let active = activePullRequest ?? pullRequestTabs.first?.id { return .pullRequest(active) }
+        if tool == .browser, let active = browserActive, browserTabs.contains(where: { $0.id == active }) { return .browser(active) }
         return .tool(tool)
     }
 
@@ -777,11 +792,16 @@ private struct SessionToolPanel: View {
         switch tab {
         case .tool(let item): show(item)
         case .pullRequest(let id): selectPullRequest(id)
+        case .browser(let id):
+            BrowserStore.shared.select(id)
+            show(.browser)
         }
     }
 
-    /// The tabs of a tool: one, or for the Pull request tool one for each pull request (or list) open.
+    /// The tabs of a tool: one, or for the Pull request tool one for each pull request (or list) open, and for the
+    /// browser one for each of its tabs, followed by + for another.
     private func tabItems(_ item: SessionTool) -> [SidePanelTabItem<SessionTab>] {
+        if item == .browser { return browserTabItems }
         guard item == .pullRequest, !pullRequestTabs.isEmpty else { return [tabItem(item)] }
         return pullRequestTabs.map { tab in
             let request = tab.request
@@ -792,15 +812,31 @@ private struct SessionToolPanel: View {
         }
     }
 
-    /// A tab with what it shows: the page's title in the browser, the file's name, the name of a tool.
+    /// The browser's tabs, each with its page's title; the last one has + right after it for a new browser tab.
+    private var browserTabItems: [SidePanelTabItem<SessionTab>] {
+        let item = SessionTool.browser
+        let fresh = item != tool && bridge.hasUnseen(directory, item.rawValue)
+        let add = AnyView(ToolbarIconButton("plus", tr("browser.newTab"), width: 20) {
+            BrowserStore.shared.newTab()
+            show(.browser)
+        })
+        guard !browserTabs.isEmpty else {
+            return [SidePanelTabItem(value: .tool(item), title: item.title, icon: AnyView(SidePanelSymbol(symbol: "globe")),
+                                     fresh: fresh, help: item.help, after: add)]
+        }
+        return browserTabs.enumerated().map { index, tab in
+            SidePanelTabItem(value: .browser(tab.id), title: tab.title.isEmpty ? item.title : tab.title,
+                             icon: AnyView(SidePanelSymbol(symbol: "globe")), fresh: fresh && tab.id == browserActive,
+                             help: tab.title.isEmpty ? item.help : tab.title,
+                             after: index == browserTabs.count - 1 ? add : nil)
+        }
+    }
+
+    /// A tab with what it shows: the file's name, the name of a tool.
     private func tabItem(_ item: SessionTool) -> SidePanelTabItem<SessionTab> {
         let fresh = item != tool && (item == .outputs ? outputsFresh
             : item == .subagents ? subagentsFresh : bridge.hasUnseen(directory, item.rawValue))
         switch item {
-        case .browser:
-            return SidePanelTabItem(value: .tool(item), title: browserTitle.isEmpty ? item.title : browserTitle,
-                                    icon: AnyView(SidePanelSymbol(symbol: "globe")), fresh: fresh,
-                                    help: browserTitle.isEmpty ? item.help : browserTitle)
         case .pullRequest:
             return SidePanelTabItem(value: .tool(item), title: item.title, icon: AnyView(SidePanelPullRequestIcon(item: nil)),
                                     fresh: fresh, help: item.help)
