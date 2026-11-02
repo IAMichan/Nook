@@ -37,6 +37,7 @@ extension RunProvider {
 final class WorkspaceWindowController {
     static let shared = WorkspaceWindowController()
     private var window: NSWindow?
+    private var frameMemory: WindowFrameMemory?
     /// Whether the window's content is there. A closed window is kept to open again where it was, and its SwiftUI graph
     /// went on updating with every change to a session (the whole Agents tab, laid out at full size) while nothing showed.
     private let presence = WindowPresence()
@@ -85,8 +86,9 @@ final class WorkspaceWindowController {
             window.setContentSize(NSSize(width: 1240, height: 800))
             window.minSize = NSSize(width: 900, height: 580)
             window.isReleasedWhenClosed = false
-            window.setFrameAutosaveName("NookWorkspace")
-            if window.frame.origin == .zero { window.center() }
+            let frameMemory = WindowFrameMemory(window: window, name: "NookWorkspace")
+            if !frameMemory.restore() { window.center() }
+            self.frameMemory = frameMemory
             NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self, !self.quitting else { return }
