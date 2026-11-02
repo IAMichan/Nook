@@ -485,45 +485,26 @@ struct AgentSessionDetail: View {
                 .textSelection(.enabled)
             ScrollView {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-                    ForEach(Array(item.options.enumerated()), id: \.offset) { _, option in
+                    ForEach(Array(item.options.enumerated()), id: \.offset) { number, option in
                         let chosen = picks.contains(option.label)
-                        Button {
+                        SessionQuestionOptionButton(
+                            option: option,
+                            number: number,
+                            chosen: chosen,
+                            multiSelect: item.multiSelect
+                        ) {
                             if item.multiSelect {
                                 if fresh { questionID = request.id; questionStep = 0; questionAnswers = []; questionPicks = [] }
                                 if chosen { questionPicks.remove(option.label) } else { questionPicks.insert(option.label) }
                             } else {
                                 answer(request, index: index, labels: [option.label])
                             }
-                        } label: {
-                            HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-                                Image(systemName: item.multiSelect ? (chosen ? "checkmark.square.fill" : "square") : "arrow.right.circle")
-                                    .font(NookTheme.font(12, .semibold))
-                                    .foregroundStyle(chosen ? NookTheme.iris : NookTheme.textTertiary)
-                                    .frame(width: 14)
-                                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                                    Text(option.label)
-                                        .font(NookTheme.TextStyle.strong)
-                                        .foregroundStyle(NookTheme.paper)
-                                    if !option.description.isEmpty {
-                                        Text(option.description)
-                                            .font(NookTheme.TextStyle.detail)
-                                            .foregroundStyle(NookTheme.textSecondary)
-                                            .fixedSize(horizontal: false, vertical: true)
-                                    }
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(chosen ? NookTheme.iris.opacity(0.14) : NookTheme.field))
-                            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card))
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
             .scrollIndicators(.never)
-            .frame(maxHeight: 170)
+            .frame(maxHeight: 220)
             .fixedSize(horizontal: false, vertical: true)
             if item.multiSelect {
                 HStack {
@@ -725,6 +706,146 @@ struct AgentSessionDetail: View {
     private func plan(for profile: AgentProfile) -> String {
         if let plan = app.history.profileAccounts[profile.id]?.plan, !plan.isEmpty { return plan }
         return app.quota.codexPlan(for: profile)
+    }
+}
+
+/// An interactive option row for session questions with clear hover state, keycap badge, and intuitive indicator
+private struct SessionQuestionOptionButton: View {
+    let option: AgentQuestionOption
+    let number: Int
+    let chosen: Bool
+    let multiSelect: Bool
+    let onSelect: () -> Void
+
+    @State private var isHovered = false
+
+    private var parsedLabel: (title: String, badge: String?) {
+        let label = option.label
+        for tag in ["(Recommended)", "(Aanbevolen)", "(Recommandé)", "(Recomendado)"] {
+            if let range = label.range(of: tag, options: .caseInsensitive) {
+                let title = label.replacingCharacters(in: range, with: "").trimmingCharacters(in: .whitespaces)
+                let cleanTag = tag.trimmingCharacters(in: CharacterSet(charactersIn: "()"))
+                return (title, cleanTag)
+            }
+        }
+        return (label, nil)
+    }
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
+                keycapBadge
+
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    HStack(spacing: NookTheme.Spacing.xs) {
+                        Text(parsedLabel.title)
+                            .font(NookTheme.font(13.5, .semibold))
+                            .foregroundStyle(chosen ? NookTheme.paper : (isHovered ? NookTheme.paper : NookTheme.paper.opacity(0.92)))
+
+                        if let badge = parsedLabel.badge {
+                            Text(badge)
+                                .font(NookTheme.font(10, .semibold))
+                                .foregroundStyle(NookTheme.amber)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1.5)
+                                .background(Capsule().fill(NookTheme.amber.opacity(0.18)))
+                        }
+                    }
+
+                    if !option.description.isEmpty {
+                        Text(option.description)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(isHovered || chosen ? NookTheme.paper.opacity(0.78) : NookTheme.textSecondary)
+                            .lineSpacing(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Spacer(minLength: 4)
+
+                trailingIndicator
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                    .fill(backgroundColor)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                    .stroke(borderColor, lineWidth: isHovered || chosen ? 1.2 : 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .onDisappear {
+            if isHovered {
+                NSCursor.pop()
+                isHovered = false
+            }
+        }
+        .animation(NookTheme.hover, value: isHovered)
+        .animation(NookTheme.reveal, value: chosen)
+    }
+
+    private var keycapBadge: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+                .fill(chosen ? NookTheme.amber.opacity(0.2) : (isHovered ? NookTheme.smoke : NookTheme.well))
+            RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+                .stroke(chosen ? NookTheme.amber.opacity(0.6) : (isHovered ? NookTheme.amber.opacity(0.4) : Color.white.opacity(0.08)), lineWidth: 1)
+
+            Text(number < 9 ? "\(number + 1)" : "·")
+                .font(NookTheme.mono(11, .semibold))
+                .foregroundStyle(chosen ? NookTheme.amber : (isHovered ? NookTheme.amber : NookTheme.textSecondary))
+        }
+        .frame(width: 20, height: 20)
+        .padding(.top, 1)
+    }
+
+    @ViewBuilder
+    private var trailingIndicator: some View {
+        if multiSelect {
+            Image(systemName: chosen ? "checkmark.square.fill" : "square")
+                .font(NookTheme.font(14, .medium))
+                .foregroundStyle(chosen ? NookTheme.amber : (isHovered ? NookTheme.paper : NookTheme.textTertiary))
+                .padding(.top, 2)
+        } else {
+            Image(systemName: isHovered ? "arrow.right.circle.fill" : "circle")
+                .font(NookTheme.font(13, .medium))
+                .foregroundStyle(isHovered ? NookTheme.amber : Color.white.opacity(0.08))
+                .opacity(isHovered ? 1 : 0.4)
+                .padding(.top, 3)
+        }
+    }
+
+    private var backgroundColor: Color {
+        if chosen {
+            return NookTheme.amber.opacity(0.12)
+        } else if isHovered {
+            return NookTheme.smoke.opacity(0.85)
+        } else {
+            return NookTheme.field
+        }
+    }
+
+    private var borderColor: Color {
+        if chosen {
+            return NookTheme.amber.opacity(0.55)
+        } else if isHovered {
+            return NookTheme.amber.opacity(0.45)
+        } else {
+            return Color.white.opacity(0.04)
+        }
     }
 }
 
