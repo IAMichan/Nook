@@ -404,3 +404,36 @@ extension ChatFormat {
         "seconds", "seconde", "seconden", "sekunde", "sekunden", "secondes", "segundo", "segundos", "h", "hr", "uur", "std",
     ]
 }
+
+/// Tags by number ("@31612345678", as WhatsApp and the apps bridged to it write them) by name, the same for every chat
+/// app: each app gives `named(_:name:)` its own way to find who a number is. Slack, Teams, Telegram, Messages and Signal
+/// write a tag by name already.
+enum ChatMentions {
+    /// The text with every tag a name is known for as "@Name"; a tag nobody knows keeps its number. A tag is "@" and six
+    /// digits at least, not glued to a word before it (a mail address) or to more digits after.
+    static func named(_ text: String, name: (String) -> String?) -> String {
+        guard text.contains("@") else { return text }
+        var result = ""
+        var rest = text[...]
+        while let at = rest.firstIndex(of: "@") {
+            result += rest[..<at]
+            let digits = rest[rest.index(after: at)...].prefix { $0.isASCII && $0.isNumber }
+            let glued = at > text.startIndex && text[text.index(before: at)].isLetter
+            if digits.count >= 6, !glued, let found = name(String(digits)) {
+                result += "@" + found
+            } else {
+                result += rest[at..<digits.endIndex]
+            }
+            rest = rest[digits.endIndex...]
+        }
+        return result + rest
+    }
+
+    /// How a number is looked up: its last nine digits, as Contacts matches a number with or without its country code.
+    /// Nil for something too short to be a number.
+    static func key(_ number: String) -> String? {
+        let digits = number.filter { $0.isASCII && $0.isNumber }
+        guard digits.count >= 6 else { return nil }
+        return String(digits.suffix(9))
+    }
+}

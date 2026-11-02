@@ -435,6 +435,8 @@ struct WAMemberIndex {
     /// The newest message someone else wrote under a name, per key ("d" + digits, "e" + the id): its place and the name.
     private var writtenByKey: [String: (place: Int, name: String)] = [:]
     private var named: [String: String] = [:]
+    /// The name behind each tag's digits, nil where none is known.
+    private var mentioned: [String: String?] = [:]
     private var listed: [String]?
     /// Your Contacts and the phone's: a saved contact shows by the name you gave it, as in WhatsApp.
     private let book: WANameBook
@@ -474,6 +476,11 @@ struct WAMemberIndex {
     }
 
     private func lookUp(_ id: String) -> String {
+        known(id) ?? WAJID.displayNumber(id)
+    }
+
+    /// A member's name when anyone knows it; nil where only their number is known.
+    private func known(_ id: String) -> String? {
         if let first = Self.memberKeys(id).compactMap({ memberByKey[$0] }).min() {
             // Any of the member's ids may be the one a contact is saved under (their number when this is their @lid).
             if let saved = book.name(any: members[first].ids) { return saved }
@@ -483,7 +490,20 @@ struct WAMemberIndex {
         if let written = Self.writerKeys(id).compactMap({ writtenByKey[$0] }).max(by: { $0.place < $1.place }) {
             return written.name
         }
-        return WAJID.displayNumber(id)
+        return nil
+    }
+
+    /// The text with every tag by name, as WhatsApp shows it (`ChatMentions`): "@31612345678" (a number, or an @lid's
+    /// digits) becomes "@Anna" when the group or your Contacts know who that is, and stays as it is otherwise.
+    mutating func namingMentions(in text: String) -> String {
+        ChatMentions.named(text) { mentionName($0) }
+    }
+
+    private mutating func mentionName(_ digits: String) -> String? {
+        if let cached = mentioned[digits] { return cached }
+        let found = known(digits + "@s.whatsapp.net") ?? known(digits + "@lid")
+        mentioned[digits] = found
+        return found
     }
 
     /// The other members by name, as the group's info lists them.
