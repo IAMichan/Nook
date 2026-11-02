@@ -334,12 +334,15 @@ enum TimelinePresentation {
               let answer = turn.lastIndex(where: { $0.kind == .assistant && !BackgroundWork.isNotice($0) }) else {
             return group(turn, tally: tally)
         }
-        let work = turn.enumerated().filter { $0.offset != 0 && $0.offset != answer && $0.element.kind != .result }.map(\.element)
+        let between = turn.enumerated().filter { $0.offset != 0 && $0.offset != answer && $0.element.kind != .result }.map(\.element)
+        // Files it handed you stay in view next to its answer: they are what the work made, not part of it.
+        let shared = between.filter(SharedFiles.isShare)
+        let work = between.filter { !SharedFiles.isShare($0) }
         guard work.contains(where: { $0.kind != .assistant || BackgroundWork.isNotice($0) }) else { return group(turn, tally: tally) }
         let seconds = max(0, finished.date.timeIntervalSince(first.date))
         // The fold takes the id of the first work it hides: never the same as a block shown next to it.
-        return [.event(first), .fold(id: work[0].id, seconds: seconds, blocks: group(work), checks: Verification.checks(work)),
-                .event(turn[answer]), .event(finished)]
+        return [.event(first), .fold(id: work[0].id, seconds: seconds, blocks: group(work), checks: Verification.checks(work))]
+            + shared.map { .event($0) } + [.event(turn[answer]), .event(finished)]
     }
 
     /// Two or more tool calls in a row become one block, also across the agent's thinking between them and its notes
@@ -349,7 +352,10 @@ enum TimelinePresentation {
         var blocks: [TimelineBlock] = []
         var run: [RunEvent] = []
         // A subagent it started is a row of its own, never counted away in a group.
-        func isWork(_ event: RunEvent) -> Bool { (event.kind == .tool && !Subagents.isLaunch(event)) || event.kind == .fileChange }
+        // So are the files it handed you (SharedFiles).
+        func isWork(_ event: RunEvent) -> Bool {
+            (event.kind == .tool && !Subagents.isLaunch(event) && !SharedFiles.isShare(event)) || event.kind == .fileChange
+        }
         func flush() {
             // Thinking before the first tool and after the last belongs to what comes around the group.
             var leading: [RunEvent] = []

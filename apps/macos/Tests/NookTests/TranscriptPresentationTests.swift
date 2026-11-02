@@ -37,6 +37,23 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertTrue(isFinal, "the answer of a turn carries its copy button and time")
     }
 
+    /// Files the agent handed you are a row of their own beside the answer, never folded or grouped away.
+    func testSharedFilesStayOutOfTheFold() {
+        var share = step("f", "SendUserFile")
+        share.input = #"{"files":["reel.mp4"]}"#
+        let rows = TranscriptPresentation.rows([
+            message("u1", .user, "Maak een video", at: 0),
+            message("s1", .tools, steps: [step("a", "Bash", "ffmpeg"), share, step("b", "Read", "x.swift")], at: 5),
+            message("x1", .assistant, "Klaar.", at: 30),
+            message("u2", .user, "Nog iets", at: 100)
+        ], working: false)
+        XCTAssertEqual(rows.map(\.id), ["u1", "fold:s1", "step:f", "x1", "u2"])
+        guard case .fold(_, _, let inner) = rows[1] else { return XCTFail("\(rows)") }
+        XCTAssertEqual(inner.map(\.id), ["group:s1"], "the rest of the work groups as before")
+        let outputs = SessionOutputs.collect([message("s1", .tools, steps: [share], at: 5)], directory: "/p")
+        XCTAssertEqual(outputs.map(\.kind), [.video])
+    }
+
     func testFoldWithoutTimesHasNoDuration() {
         let rows = TranscriptPresentation.rows([
             message("u1", .user, "Hoi"),

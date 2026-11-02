@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import WebKit
+import AVKit
 
 /// The outputs tab in a session's side (or bottom) panel: what the agent produced (see SessionOutputs). Its task list,
 /// the plans it proposed, and the designs, documents and images it wrote, each shown the way it is meant to be seen: a
@@ -120,6 +121,7 @@ enum OutputText {
         case .design: return tr("ws.outputs.kind.design")
         case .document: return tr("ws.outputs.kind.document")
         case .image: return tr("ws.outputs.kind.image")
+        case .video: return tr("ws.outputs.kind.video")
         }
     }
 
@@ -130,6 +132,7 @@ enum OutputText {
         case .design: return "paintbrush.pointed"
         case .document: return "doc.richtext"
         case .image: return "photo"
+        case .video: return "play.rectangle"
         }
     }
 }
@@ -167,6 +170,8 @@ private struct OutputViewer: View {
             } else {
                 missing
             }
+        case .video:
+            if let path = output.path { VideoPreview(url: URL(fileURLWithPath: path)).id(output.date) }
         }
     }
 
@@ -252,6 +257,8 @@ struct FilePreviewPanel: View {
             } else {
                 FileTextPreview(path: path)
             }
+        case .video?:
+            VideoPreview(url: URL(fileURLWithPath: path))
         default:
             FileTextPreview(path: path)
         }
@@ -348,6 +355,26 @@ private enum PreviewImages {
         guard let image = NSImage(contentsOfFile: path) else { return nil }
         cache.setObject(image, forKey: key)
         return image
+    }
+}
+
+/// A video the agent made, with the system's controls, fitted whole in the panel; it plays when you press play.
+private struct VideoPreview: View {
+    let url: URL
+    @State private var player: AVPlayer?
+
+    var body: some View {
+        if FileManager.default.fileExists(atPath: url.path) {
+            Group {
+                if let player { InlinePlayer(player: player, fullScreen: true).padding(10) }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onAppear { player = AVPlayer(url: url) }
+            .onDisappear { player?.pause() }
+        } else {
+            Text(tr("ws.outputs.missing")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).padding(14)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
     }
 }
 
