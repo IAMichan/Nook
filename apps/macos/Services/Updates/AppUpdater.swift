@@ -86,7 +86,8 @@ final class AppUpdater: ObservableObject {
     let fromXcode: Bool
     private var timer: Timer?
     private var wakeObserver: NSObjectProtocol?
-    private var checking = false
+    /// A check runs now (also while an update is already shown): the panel's refresh button spins.
+    @Published private(set) var checking = false
     private var installation: Installation?
     /// A release install's own task, so cancelling stops a download too.
     private var releaseTask: Task<Void, Never>?
