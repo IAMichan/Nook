@@ -219,21 +219,20 @@ struct SidePanelToggle: View {
 
 /// From a session's workbench to the conversation inside it: opens a turn's diff or a file step in the side panel on
 /// the right (to the right of the docked session panel, taking turns with the tool panel), and reports which file is shown.
+/// A command the agent runs opens in the panel's Terminal tab (`showConsole`), with its output as it comes in.
 struct SessionSideLink {
     var shownFile: String? = nil
     var showFile: (String) -> Void = { _ in }
     var openDiff: (TurnDiffSelection) -> Void = { _ in }
+    /// The command (its event's id) the Terminal tab shows; nil while it shows your own shells.
+    var shownConsole: UUID? = nil
+    var showConsole: (UUID) -> Void = { _ in }
+    /// Opens the command in the Terminal tab, or puts it away when that tab shows it already.
+    var toggleConsole: (UUID) -> Void = { _ in }
 }
 
 extension EnvironmentValues {
     @Entry var sessionSide = SessionSideLink()
-}
-
-/// From the conversation up to its workbench: the room its own panel takes (a command's terminal on the left), so the
-/// docked session panel steps aside in time.
-struct SessionBesideWidth: PreferenceKey {
-    static let defaultValue: Double = 0
-    static func reduce(value: inout Double, nextValue: () -> Double) { value = max(value, nextValue()) }
 }
 
 /// From the conversation up to its workbench: where its composer sits, so a page the agent opened floats just above it.
