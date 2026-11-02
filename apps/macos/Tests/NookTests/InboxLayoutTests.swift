@@ -144,18 +144,33 @@ final class InboxLayoutTests: XCTestCase {
                     row("n2", .working, age: 10, project: "Nook"), row("p", project: "Nook"), row("z", project: "Nook")]
         let groups = InboxLayout.projectGroups(sections(rows, InboxState(pinned: ["p"], settled: ["z"])))
         XCTAssertEqual(groups.map(\.project), ["Nook", "WhoBench"])
-        // Running first, as the Working shelf sits above Active; pinned and settled keep their own sections.
+        // Newest activity first inside the project; pinned and settled keep their own sections.
         XCTAssertEqual(groups[0].rows.map(\.entry.id), ["n2", "n1"])
         XCTAssertEqual(groups[0].rows.map(\.kind), [.working, .active])
         XCTAssertEqual(groups[1].rows.map(\.entry.id), ["w1"])
     }
 
-    func testProjectThatNeedsYouComesFirst() {
-        let rows = [row("a", age: 10, project: "A"), row("b", .approval, age: 500, project: "B")]
+    func testProjectsKeepTheirPlaceWhenOneChanges() {
+        // B has the newest activity and waits for you, yet the folders stay in name order.
+        let rows = [row("a", age: 500, project: "A"), row("b", .approval, age: 1, project: "B")]
         let groups = InboxLayout.projectGroups(sections(rows))
-        XCTAssertEqual(groups.map(\.project), ["B", "A"])
-        XCTAssertTrue(groups[0].needsYou)
-        XCTAssertFalse(groups[1].needsYou)
+        XCTAssertEqual(groups.map(\.project), ["A", "B"])
+        XCTAssertFalse(groups[0].needsYou)
+        XCTAssertTrue(groups[1].needsYou)
+    }
+
+    func testChangedSessionMovesToTopOfItsProject() {
+        let rows = [row("old", age: 500, project: "A"), row("mid", age: 100, project: "A"),
+                    row("ask", .approval, age: 900, project: "A"), row("fresh", age: 1, project: "A")]
+        let groups = InboxLayout.projectGroups(sections(rows))
+        XCTAssertEqual(groups[0].rows.map(\.entry.id), ["fresh", "mid", "old", "ask"])
+    }
+
+    func testNestedSessionStaysUnderItsParentInsideProject() {
+        var child = row("child", age: 1, project: "A"); child.parentID = "parent"
+        let rows = [row("other", age: 50, project: "A"), row("parent", age: 500, project: "A"), child]
+        let groups = InboxLayout.projectGroups(sections(rows))
+        XCTAssertEqual(groups[0].rows.map(\.entry.id), ["parent", "child", "other"])
     }
 
     // MARK: Receding

@@ -264,9 +264,9 @@ enum InboxLayout {
         return result
     }
 
-    /// The Working and Active rows per project, in the order those sections have them (running first). A project with
-    /// something that waits for you comes first, then the one with the newest activity; pinned, snoozed and settled
-    /// sessions keep their own sections.
+    /// The Working and Active rows per project. The projects keep a fixed place (by name), so activity in one never
+    /// moves the whole folder; inside a project the session with the newest activity comes first, with the sessions it
+    /// started still right under it. Pinned, snoozed and settled sessions keep their own sections.
     static func projectGroups(_ sections: [InboxSection]) -> [InboxProjectGroup] {
         var groups: [String: InboxProjectGroup] = [:]
         var order: [String] = []
@@ -280,13 +280,34 @@ enum InboxLayout {
                 groups[project]?.rows.append((section.kind, entry))
             }
         }
-        func newest(_ group: InboxProjectGroup) -> Date { group.rows.map(\.entry.row.lastActivity).max() ?? .distantPast }
-        return order.compactMap { groups[$0] }.sorted { a, b in
-            if a.needsYou != b.needsYou { return a.needsYou }
-            let (na, nb) = (newest(a), newest(b))
-            if na != nb { return na > nb }
-            return a.project.localizedStandardCompare(b.project) == .orderedAscending
+        return order.compactMap { groups[$0] }
+            .map { group in
+                var group = group
+                group.rows = newestOnTop(group.rows)
+                return group
+            }
+            .sorted { a, b in
+                let compared = a.project.localizedStandardCompare(b.project)
+                return compared != .orderedSame ? compared == .orderedAscending : a.project < b.project
+            }
+    }
+
+    /// A project's rows with the most recently active session on top. A session and the ones nested under it move as
+    /// one block, ordered by the newest activity in it; blocks with the same time keep their order.
+    private static func newestOnTop(_ rows: [(kind: Kind, entry: InboxEntry)]) -> [(kind: Kind, entry: InboxEntry)] {
+        var blocks: [[(kind: Kind, entry: InboxEntry)]] = []
+        for row in rows {
+            if row.entry.depth > 0, !blocks.isEmpty { blocks[blocks.count - 1].append(row) } else { blocks.append([row]) }
         }
+        func newest(_ block: [(kind: Kind, entry: InboxEntry)]) -> Date {
+            block.map(\.entry.row.lastActivity).max() ?? .distantPast
+        }
+        return blocks.enumerated()
+            .sorted { a, b in
+                let (na, nb) = (newest(a.element), newest(b.element))
+                return na != nb ? na > nb : a.offset < b.offset
+            }
+            .flatMap(\.element)
     }
 
     /// The rows a shelf draws: all of them while it is open. Folded, a shelf shows only the session that is open on the
