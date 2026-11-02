@@ -399,10 +399,10 @@ struct AgentRunPanel: View {
         draft = restored ?? ""
     }
 
-    /// A file you add to the message: it sits in the text as a reference, the agent reads it itself.
+    /// A file you add to the message: a tile above the box and a reference the agent reads itself.
     private func attachFile(_ run: WorkspaceRun) {
         guard let ref = ComposerFilePicker.pick(startingIn: run.workingDirectory) else { return }
-        draft += (draft.isEmpty || draft.hasSuffix(" ") ? "" : " ") + ContextRefs.link(ref) + " "
+        draft = ComposerAttachments.appending(ref, to: draft)
         focused = true
     }
 

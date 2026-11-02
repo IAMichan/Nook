@@ -126,6 +126,45 @@ final class ComposerCoreTests: XCTestCase {
         XCTAssertEqual(ContextRefs.plain("Review \(link)"), "Review Pasted text (40 KB)")
     }
 
+    // MARK: Attached files
+
+    func testFilesAtTheEndBecomeTiles() {
+        let poster = ContextRef(kind: .file, id: "/Users/me/Downloads/poster (2).jpg", label: "poster (2).jpg")
+        let notes = ContextRef(kind: .file, id: "docs/notes.pdf", label: "notes.pdf")
+        var draft = ComposerAttachments.appending(poster, to: "Make a flyer")
+        draft = ComposerAttachments.appending(notes, to: draft)
+        let parts = ComposerAttachments.split(draft)
+        XCTAssertEqual(parts.body, "Make a flyer ")
+        XCTAssertEqual(parts.files.map(\.label), ["poster (2).jpg", "notes.pdf"])
+        XCTAssertEqual(parts.body + parts.tail, draft)
+    }
+
+    func testTypingKeepsTheFilesAtTheEnd() {
+        let draft = ComposerAttachments.appending(ContextRef(kind: .file, id: "a.pdf", label: "a.pdf"), to: "Read ")
+        let typed = ComposerAttachments.replacingBody(of: draft, with: "Read this ")
+        XCTAssertEqual(ComposerAttachments.split(typed).body, "Read this ", "the box gets back exactly what it set")
+        XCTAssertEqual(ComposerAttachments.split(typed).files.map(\.id), ["a.pdf"])
+    }
+
+    func testAFileInTheMiddleStaysInTheText() {
+        let link = ContextRefs.link(ContextRef(kind: .file, id: "a.swift", label: "a.swift"))
+        let parts = ComposerAttachments.split("compare \(link) with b")
+        XCTAssertTrue(parts.files.isEmpty)
+        XCTAssertEqual(ComposerAttachments.split("see " + ContextRefs.link(ContextRef(kind: .session, id: "s", label: "s"))).files.count, 0,
+                       "sessions are not files")
+    }
+
+    func testRemovingAFileAndSending() {
+        var draft = ComposerAttachments.appending(ContextRef(kind: .file, id: "a.pdf", label: "a.pdf"), to: "Read")
+        draft = ComposerAttachments.appending(ContextRef(kind: .file, id: "b.pdf", label: "b.pdf"), to: draft)
+        let fewer = ComposerAttachments.removing(at: 0, from: draft)
+        XCTAssertEqual(ComposerAttachments.split(fewer).files.map(\.id), ["b.pdf"])
+        XCTAssertEqual(ComposerAttachments.split(fewer).body, "Read ")
+        XCTAssertEqual(ContextRefs.visible(ContextRefs.project(ComposerAttachments.spaced(draft))), "Read\n\n@a.pdf @b.pdf")
+        let only = ComposerAttachments.appending(ContextRef(kind: .file, id: "a.pdf", label: "a.pdf"), to: "")
+        XCTAssertEqual(ComposerAttachments.split(only).body, "")
+    }
+
     // MARK: References
 
     func testLinkRoundTrips() {

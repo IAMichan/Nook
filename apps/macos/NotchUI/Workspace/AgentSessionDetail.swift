@@ -657,10 +657,10 @@ struct AgentSessionDetail: View {
         return messages
     }
 
-    /// A file you add to the message: a reference in the text, the agent reads it itself.
+    /// A file you add to the message: a tile above the box and a reference the agent reads itself.
     private func attachFile(in folder: String) {
         guard !folder.isEmpty, let ref = ComposerFilePicker.pick(startingIn: folder) else { return }
-        draft += (draft.isEmpty || draft.hasSuffix(" ") ? "" : " ") + ContextRefs.link(ref) + " "
+        draft = ComposerAttachments.appending(ref, to: draft)
     }
 
     /// The same box as the chat and the sessions Nook runs: `/` commands are for those; here `@` points at files and the

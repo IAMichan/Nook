@@ -260,7 +260,7 @@ struct NewSessionComposer: View {
     private func attachFile() {
         guard !config.projectPath.isEmpty,
               let ref = ComposerFilePicker.pick(startingIn: config.projectPath) else { return }
-        config.task += (config.task.isEmpty || config.task.hasSuffix(" ") ? "" : " ") + ContextRefs.link(ref) + " "
+        config.task = ComposerAttachments.appending(ref, to: config.task)
         focused = true
     }
 
