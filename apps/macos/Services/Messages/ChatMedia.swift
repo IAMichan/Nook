@@ -85,4 +85,37 @@ struct ChatMedia: Codable, Equatable, Sendable {
         if file.isEmpty { file = "file" }
         return folder.appendingPathComponent(safeKey, isDirectory: true).appendingPathComponent(String(file.suffix(120)))
     }
+
+    /// Where a chat's profile picture from `source` (the address its app gives for it) is kept: a file of its own per
+    /// picture, named after where it came from. A changed picture comes from another address, so it gets another file and
+    /// another path, and every list that showed the old one decodes the new one instead of keeping the old face cached
+    /// by its path. The same address keeps its file, so a picture is fetched once.
+    static func avatarDestination(key: String, source: String, ext: String = "jpg") -> URL {
+        // FNV-1a: the same name for the same address on every launch (`hashValue` changes per launch).
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in source.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x0000_0100_0000_01b3
+        }
+        let safeExt = ext.filter { $0.isLetter || $0.isNumber }.prefix(5)
+        return destination(key: key, name: "avatar-" + String(hash, radix: 16) + "." + (safeExt.isEmpty ? "jpg" : String(safeExt)))
+    }
+
+    /// The profile picture kept for `key` before, whichever address it came from, to show at once while its app is
+    /// asked whether it changed: the newest file in its folder.
+    static func savedAvatar(key: String) -> String? {
+        let dir = destination(key: key, name: "avatar.jpg").deletingLastPathComponent()
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        let date = { (url: URL) in (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast }
+        return files.filter { $0.lastPathComponent.hasPrefix("avatar") }.max { date($0) < date($1) }?.path
+    }
+
+    /// Removes the pictures `key` had before `kept`, once `kept` is its picture.
+    static func dropOtherAvatars(key: String, keeping kept: URL) {
+        let dir = kept.deletingLastPathComponent()
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        for file in files where file.lastPathComponent != kept.lastPathComponent && file.lastPathComponent.hasPrefix("avatar") {
+            try? FileManager.default.removeItem(at: file)
+        }
+    }
 }
