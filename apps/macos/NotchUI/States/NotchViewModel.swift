@@ -8,6 +8,22 @@ struct SidePullRequestTab: Identifiable, Equatable {
     var request: PullRequestOpenRequest?
 }
 
+/// What a session had open in its side and bottom panels when you went to another one (`NotchViewModel.sessionLayouts`).
+struct SessionLayout {
+    var sideTool: SessionTool
+    var sideTabs: [SessionTool]
+    var bottomTool: SessionTool
+    var bottomTabs: [SessionTool]
+    var pullRequestTabs: [SidePullRequestTab]
+    var activePullRequest: UUID?
+    /// The file its File tab showed, and the page in the browser while it had the browser open.
+    var file: FileTarget?
+    var page: URL?
+
+    /// Only the conversation was in view: nothing to bring back.
+    var isEmpty: Bool { sideTool == .conversation && bottomTool == .conversation }
+}
+
 /// What only the notch itself draws: its state and size, the pointer on it, and the strip under it. Published apart from
 /// the rest of `NotchViewModel`, which the main window observes: a card, a notice, the pointer on the notch, or dictation
 /// updating its card several times a second redraws the notch, not the whole window as well. Read and written through
@@ -67,9 +83,10 @@ final class NotchViewModel: ObservableObject {
         didSet {
             guard selectedAgentID != oldValue else { return }
             UserDefaults.standard.set(selectedAgentID, forKey: "notch.lastAgentPage")
-            // Another session starts on its conversation; the terminal or browser was for the one you left.
-            closeSidePanel()
-            bottomTool = .conversation
+            // The session you left keeps its panels for when you come back; the one you open shows its own, or only
+            // its conversation the first time.
+            sessionLayouts[oldValue] = currentSessionLayout()
+            restoreSessionLayout(sessionLayouts[selectedAgentID])
             resizeForWorkbench()
         }
     }
@@ -103,6 +120,40 @@ final class NotchViewModel: ObservableObject {
         sessionTabs = []
         sidePullRequestTabs = []
         activeSidePullRequest = nil
+    }
+
+    /// What each session you left had open beside and under its conversation, by `selectedAgentID`, so going to
+    /// another session and back brings its browser, terminal and other tabs back where they were. Not kept across
+    /// launches.
+    private var sessionLayouts: [String: SessionLayout] = [:]
+
+    private func currentSessionLayout() -> SessionLayout? {
+        let layout = SessionLayout(
+            sideTool: sessionTool, sideTabs: sessionTabs, bottomTool: bottomTool, bottomTabs: bottomTabs,
+            pullRequestTabs: sidePullRequestTabs, activePullRequest: activeSidePullRequest,
+            file: sessionTabs.contains(.file) ? FileViewerStore.shared.target : nil,
+            page: sessionTabs.contains(.browser) || (bottomTool != .conversation && bottomTabs.contains(.browser))
+                ? BrowserStore.existing?.pageURL : nil)
+        return layout.isEmpty ? nil : layout
+    }
+
+    /// Shows a session's panels as it left them, or only its conversation without `layout`. Nook has one browser and one
+    /// file viewer for every session, so the page and the file it showed load again when another session changed them.
+    /// An artifact does not come back: it is put away when its session's side panel closes.
+    private func restoreSessionLayout(_ layout: SessionLayout?) {
+        closeSidePanel()
+        guard let layout else {
+            bottomTool = .conversation
+            return
+        }
+        if let page = layout.page, BrowserStore.existing?.pageURL != page { BrowserStore.shared.open(page) }
+        if let file = layout.file, FileViewerStore.shared.target != file { FileViewerStore.shared.open(file) }
+        bottomTabs = layout.bottomTabs
+        bottomTool = layout.bottomTool
+        sessionTabs = layout.sideTabs.filter { $0 != .artifact }
+        sidePullRequestTabs = layout.pullRequestTabs
+        activeSidePullRequest = layout.activePullRequest
+        sessionTool = layout.sideTool == .artifact ? (sessionTabs.first ?? .picker) : layout.sideTool
     }
 
     /// What the bottom panel under the selected session's conversation shows: nothing (closed), the list of tools, or
