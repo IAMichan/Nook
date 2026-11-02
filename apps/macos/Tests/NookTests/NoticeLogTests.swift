@@ -67,4 +67,17 @@ final class NoticeLogTests: XCTestCase {
         log.clear()
         XCTAssertTrue(log.entries.isEmpty)
     }
+
+    func testMarkOneSeenAndRemoveOne() {
+        var log = NoticeLog()
+        log.add(entry("a", at: t0), now: t0)
+        log.add(entry("b", at: t0), now: t0)
+        let b = log.entries[0]
+        log.markSeen(b.id)
+        XCTAssertEqual(log.unseen, 1)
+        XCTAssertTrue(log.entries[0].seen)
+        log.remove(b.id)
+        XCTAssertEqual(log.entries.map(\.key), ["a"])
+        XCTAssertEqual(log.unseen, 1)
+    }
 }
