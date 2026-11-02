@@ -22,6 +22,15 @@ struct WorkspaceView: View {
         .padding(.horizontal, 28)
         .padding(.bottom, 22)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // The strip with the traffic lights and the room under it act as the title bar: there is no content there, so
+        // a double-click on it zooms the window and a drag moves it, as in every other Mac app.
+        .background {
+            GeometryReader { proxy in
+                WindowTitleBarArea()
+                    .frame(height: proxy.safeAreaInsets.top + WindowLayout.belowTitleBar)
+            }
+            .ignoresSafeArea(edges: .top)
+        }
         .background(NookTheme.notch.ignoresSafeArea())
         .background {
             // ⌘1, ⌘2, ⌘3 switch tabs.
