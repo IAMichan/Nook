@@ -92,6 +92,24 @@ extension PullRequestRef {
     static func gitHubItem(_ url: URL) -> PullRequestItem? { parse(url.absoluteString)?.gitHubItem }
 }
 
+/// Whether a tool call made or showed a pull request, so a pull request link in its output is that one: `gh pr create`,
+/// `glab mr view` and the like, or a tool named for pull or merge requests. A command that merely touches a file such as
+/// `PullRequestActions.swift` does not count: its output can hold any link (a test's sample `.../pull/3`).
+enum PullRequestToolCall {
+    private static let command = try? NSRegularExpression(
+        pattern: #"(?:^|[\s;&|(`"'])(?:gh\s+pr|glab\s+mr|tea\s+(?:pr|pulls))\s+(?:create|new|view|show)\b"#,
+        options: [.caseInsensitive])
+
+    static func showsPullRequest(tool: String?, command parts: [String?]) -> Bool {
+        if let tool = tool?.lowercased(),
+           ["pull_request", "pullrequest", "merge_request", "mergerequest"].contains(where: tool.contains) { return true }
+        guard let rx = command else { return false }
+        return parts.compactMap { $0 }.contains { text in
+            rx.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+        }
+    }
+}
+
 enum PullRequestState: String, Codable, Sendable {
     case draft, open, merged, closed
 
