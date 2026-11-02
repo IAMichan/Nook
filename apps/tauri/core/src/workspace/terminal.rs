@@ -294,7 +294,7 @@ pub fn scan_dev_servers(folder: &str) -> Vec<DevServer> {
     if listeners.is_empty() {
         return vec![];
     }
-    let mut system = System::new();
+    let Ok(mut system) = System::new() else { return vec![] };
     system.refresh_processes_specifics(
         ProcessesToUpdate::All,
         true,
