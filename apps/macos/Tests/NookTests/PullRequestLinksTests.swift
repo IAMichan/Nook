@@ -337,4 +337,18 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(SessionBranches.folded(rows, open: true).shown.count, 5)
         XCTAssertEqual(SessionBranches.folded(Array(rows.suffix(4)), open: false).hidden, 0, "four rows stay open: folding one saves nothing")
     }
+
+    func testOnlyACallThatMakesOrShowsAPullRequestLendsItsOutputLink() {
+        XCTAssertTrue(PullRequestToolCall.showsPullRequest(tool: "Bash", command: ["gh pr create --fill"]))
+        XCTAssertTrue(PullRequestToolCall.showsPullRequest(tool: "Bash", command: ["git push && gh pr view --json url"]))
+        XCTAssertTrue(PullRequestToolCall.showsPullRequest(tool: "shell", command: [nil, "glab mr create -t Fix"]))
+        XCTAssertTrue(PullRequestToolCall.showsPullRequest(tool: "pull_request_create", command: []))
+        XCTAssertTrue(PullRequestToolCall.showsPullRequest(tool: "mcp__github__create_pull_request", command: []))
+        // Editing or testing pull request code prints sample links that are no pull request of this session.
+        XCTAssertFalse(PullRequestToolCall.showsPullRequest(
+            tool: "Bash", command: ["python3 - <<'EOF' p='apps/macos/Services/Connectors/PullRequestActions.swift'"]))
+        XCTAssertFalse(PullRequestToolCall.showsPullRequest(tool: "Bash", command: ["./scripts/core-tests.sh --filter PullRequestStackTests"]))
+        XCTAssertFalse(PullRequestToolCall.showsPullRequest(tool: "Read", command: ["docs/pull_request_template.md"]))
+        XCTAssertFalse(PullRequestToolCall.showsPullRequest(tool: "Bash", command: ["gh pr list", "gh prompt create"]))
+    }
 }
