@@ -4,6 +4,13 @@ import SwiftUI
 // they show (the page's title, the pull request's number and title), whose icon turns into a cross under the pointer;
 // + right after the last tab; and with no tab open a short list to open one, each row with the key that opens it.
 
+extension EnvironmentValues {
+    /// Whether what a panel shows may take the keyboard when it appears (the list of tools, a terminal, a file being
+    /// edited). A session that opens with its side panel already open keeps the keyboard in its own composer; the panel
+    /// takes it only once you open something in it.
+    @Entry var sidePanelTakesFocus = true
+}
+
 /// One tab of the side panel: what it shows, as `SidePanelTabBar` draws it.
 struct SidePanelTabItem<Value: Hashable>: Identifiable {
     let value: Value
@@ -128,6 +135,7 @@ struct SidePanelLauncher: View {
     let items: [SidePanelLaunch]
     @State private var highlight: Int?
     @FocusState private var focused: Bool
+    @Environment(\.sidePanelTakesFocus) private var takesFocus
 
     private var available: [SidePanelLaunch] { items.filter { $0.disabledReason == nil } }
 
@@ -148,7 +156,7 @@ struct SidePanelLauncher: View {
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
-        .onAppear { focused = true }
+        .onAppear { if takesFocus { focused = true } }
         .onKeyPress(.downArrow) { move(1) }
         .onKeyPress(.upArrow) { move(-1) }
         .onKeyPress(.return) {

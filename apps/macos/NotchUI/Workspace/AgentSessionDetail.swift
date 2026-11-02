@@ -28,6 +28,8 @@ struct AgentSessionDetail: View {
         nonmutating set { composerState.images = newValue }
     }
     @StateObject private var composerModel = ComposerModel()
+    /// The keyboard is in the composer when the session opens, as in `AgentRunPanel`, also with a side panel open.
+    @FocusState private var composerFocused: Bool
     /// Why the last action in this view failed, shown above the composer.
     @State private var actionError: String?
     /// Another agent, account or model picked in the composer; the next message continues the conversation with it.
@@ -63,7 +65,9 @@ struct AgentSessionDetail: View {
                        detail: tr("confirm.endSession.detail"), confirmTitle: tr("agents.nook.takeOver")) { session in
             perform { try await app.continueInNook(session, endingTerminal: true) }
         }
+        .onAppear { composerFocused = true }
         .onChange(of: selectionID) { _, _ in
+            composerFocused = true
             actionError = nil
             draft = ""
             choice = nil
@@ -336,6 +340,8 @@ struct AgentSessionDetail: View {
                     : tr("agents.reply.unsupported", session.name),
                 canSend: canSend,
                 sending: working,
+                focus: $composerFocused,
+                busy: false,
                 onSend: send
             ) {
                 sessionMenu(session)
@@ -630,6 +636,8 @@ struct AgentSessionDetail: View {
                             : (session.cwd.isEmpty ? tr("agents.nook.noFolder") : tr("agents.nook.unsupported", session.agent.name)),
                         canSend: canContinue,
                         sending: working,
+                        focus: $composerFocused,
+                        busy: false,
                         onSend: send
                     ) {
                         // "Open in Nook" adopts the conversation: only for agents Nook runs itself (not Antigravity).
