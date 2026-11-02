@@ -841,6 +841,24 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertFalse(url.lastPathComponent.contains("/"))
     }
 
+    func testAChangedProfilePictureGetsItsOwnFile() {
+        let first = ChatMedia.avatarDestination(key: "wa-avatar-31612345678@s.whatsapp.net", source: "pps.whatsapp.net/v/t61/1_n.jpg")
+        let again = ChatMedia.avatarDestination(key: "wa-avatar-31612345678@s.whatsapp.net", source: "pps.whatsapp.net/v/t61/1_n.jpg")
+        let changed = ChatMedia.avatarDestination(key: "wa-avatar-31612345678@s.whatsapp.net", source: "pps.whatsapp.net/v/t61/2_n.jpg")
+        XCTAssertEqual(first, again)
+        XCTAssertNotEqual(first.path, changed.path)
+        XCTAssertEqual(first.deletingLastPathComponent(), changed.deletingLastPathComponent())
+        XCTAssertEqual(ChatMedia.avatarDestination(key: "slack-avatar-U1", source: "x", ext: "../png").pathExtension, "png")
+    }
+
+    func testAChangedPictureReachesAKnownChatWithoutAMessage() {
+        var inbox = ChatInbox()
+        let old = InboxMessage(id: "s1", text: "Hi", date: now)
+        _ = inbox.merge(BridgedChat(app: "slack", name: "Anna", messages: [old], unread: nil, avatar: "/a/avatar-1.png"))
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "slack", name: "Anna", messages: [], unread: nil, avatar: "/a/avatar-2.png")))
+        XCTAssertEqual(inbox.threads[ChatInbox.key(app: "slack", chat: "Anna")]?.avatar, "/a/avatar-2.png")
+    }
+
     func testAFileLaterFetchedShowsInItsMessage() {
         var inbox = ChatInbox()
         let key = ChatInbox.key(app: "telegram", chat: "Anna")

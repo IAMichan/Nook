@@ -19,7 +19,17 @@ final class ContactPhotos: ObservableObject {
     private var loadedAt: Date?
     private var loading = false
 
-    private init() {}
+    private init() {
+        // A photo changed in Contacts (or synced from the phone) shows in the list at once, not after `maxAge`.
+        NotificationCenter.default.addObserver(forName: .CNContactStoreDidChange, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated {
+                let photos = ContactPhotos.shared
+                guard photos.loadedAt != nil else { return }
+                photos.loadedAt = nil
+                photos.refresh()
+            }
+        }
+    }
 
     /// Whether the Chats tab should offer to show photos: Contacts was never asked.
     var canAsk: Bool { access == .notDetermined }

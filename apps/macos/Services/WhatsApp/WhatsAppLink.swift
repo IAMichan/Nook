@@ -863,8 +863,10 @@ final class WhatsAppLink: ObservableObject {
         inbox.applyVote(WAPollVote(poll: poll, choice: choice), chat: key, voter: WAPoll.me)
     }
 
-    /// Fetches the pictures of these chats that Nook does not have yet: the gateway says where each one is on WhatsApp's
-    /// own picture server, and only that server is asked for it. One that has none is asked again after six hours.
+    /// Fetches the pictures of these chats, and a picture again when it changed: the gateway says where each one is on
+    /// WhatsApp's own picture server, and only that server is asked for it. A changed picture has another address there,
+    /// so it is saved as another file (`ChatMedia.avatarDestination`) and the list shows the new one. A chat is asked
+    /// again after an hour when it has a picture, after six hours when it has none.
     func loadAvatars(_ chats: [String]) async {
         guard let provider, isConnected else { return }
         let gen = generation
@@ -879,24 +881,23 @@ final class WhatsAppLink: ObservableObject {
             lastFlush = Date()
         }
         defer { flush() }
-        for chat in chats.map(WAJID.normalized) where WAJID.kind(chat) != .status {
+        var done: Set<String> = []
+        for chat in chats.map(WAJID.normalized) where WAJID.kind(chat) != .status && done.insert(chat).inserted {
             if found.count >= 8 || (!found.isEmpty && Date().timeIntervalSince(lastFlush) > 0.5) { flush() }
             // The Chats tab starts this again (and cancels the run before) when the chat list comes in: a cancelled run
-            // stops here, before it marks the chats it did not get to as asked for six hours.
+            // stops here, before it marks the chats it did not get to as asked.
             if Task.isCancelled { return }
-            if avatars[chat] != nil || found[chat] != nil { continue }
-            let target = ChatMedia.destination(key: "wa-avatar-" + chat, name: "avatar.jpg")
-            if FileManager.default.fileExists(atPath: target.path) {
-                found[chat] = target.path
-                continue
-            }
+            let key = "wa-avatar-" + chat
+            // The picture fetched before shows at once, also after a restart; whether it changed is asked below.
+            if avatars[chat] == nil, let saved = ChatMedia.savedAvatar(key: key) { found[chat] = saved }
             let address: URL?
             if WAJID.kind(chat) == .channel {
                 // A channel's picture comes with the channel list; until that list is read there is nothing to ask.
                 address = channelPictures[chat]
                 if address == nil { continue }
             } else {
-                if let asked = avatarAsked[chat], Date().timeIntervalSince(asked) < 6 * 3600 { continue }
+                let has = avatars[chat] != nil || found[chat] != nil
+                if let asked = avatarAsked[chat], Date().timeIntervalSince(asked) < (has ? 3600 : 6 * 3600) { continue }
                 address = await provider.avatar(chat)
                 // Asked only counts once answered: a request cut off by cancelling is asked again on the next run.
                 if Task.isCancelled { return }
@@ -904,6 +905,12 @@ final class WhatsAppLink: ObservableObject {
             }
             // Only WhatsApp's own picture servers are asked.
             guard let url = address, gen == generation, WAAvatar.isWhatsApp(url) else { continue }
+            // The address without its query, which holds a signature that expires: the path names the picture itself.
+            let target = ChatMedia.avatarDestination(key: key, source: url.host.map { $0 + url.path } ?? url.path)
+            if FileManager.default.fileExists(atPath: target.path) {
+                if (found[chat] ?? avatars[chat]) != target.path { found[chat] = target.path }
+                continue
+            }
             let answer = try? await Self.avatarSession.data(from: url)
             if Task.isCancelled {
                 avatarAsked[chat] = nil
@@ -914,6 +921,7 @@ final class WhatsAppLink: ObservableObject {
                   Self.thumbnail(answer.0, side: 8) != nil else { continue }
             try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
             guard (try? answer.0.write(to: target, options: .atomic)) != nil else { continue }
+            ChatMedia.dropOtherAvatars(key: key, keeping: target)
             found[chat] = target.path
         }
     }
