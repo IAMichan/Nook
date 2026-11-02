@@ -388,6 +388,26 @@ struct GitService: Sendable {
         }
     }
 
+    /// Checks out an existing branch in a new worktree: a session's worktree that was removed, coming back.
+    func addWorktree(repo: String, path: String, existingBranch branch: String) throws {
+        guard localBranchExists(branch, in: repo) else { throw GitError("Branch '\(branch)' does not exist.") }
+        if remote == nil {
+            guard !FileManager.default.fileExists(atPath: path) else { throw GitError("Directory \(path) already exists.") }
+            try FileManager.default.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
+        }
+        do {
+            try run(["worktree", "add", "--", path, branch], in: repo, timeout: 180)
+        } catch {
+            throw Self.friendlyWorktreeError(error, base: branch)
+        }
+    }
+
+    /// Forgets worktrees whose folder is gone, so their path can be used again.
+    func pruneWorktrees(_ repo: String) {
+        _ = try? run(["worktree", "prune"], in: repo)
+    }
+
     /// Git's "already checked out" refusal in words you can act on.
     static func friendlyWorktreeError(_ error: Error, base: String) -> Error {
         let text = error.localizedDescription
