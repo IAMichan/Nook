@@ -113,6 +113,21 @@ struct InboxEntry: Identifiable, Equatable, Sendable {
     var id: String { row.id }
 }
 
+/// The sessions of one project (a repository: an agent's worktree counts as the repository it was made from), drawn as a
+/// dropdown when the list is grouped by project.
+struct InboxProjectGroup: Identifiable, Equatable, Sendable {
+    var project: String
+    /// Each row with the section it comes from, so a drag and the row's actions keep working as in that section.
+    var rows: [(kind: InboxSection.Kind, entry: InboxEntry)]
+    var id: String { project }
+    /// Something in it waits for you: the group sorts first and its folded header says so.
+    var needsYou: Bool { rows.contains { $0.entry.row.needsYou } }
+
+    static func == (a: Self, b: Self) -> Bool {
+        a.project == b.project && a.rows.map(\.kind) == b.rows.map(\.kind) && a.rows.map(\.entry) == b.rows.map(\.entry)
+    }
+}
+
 struct InboxSection: Equatable, Sendable {
     enum Kind: String, CaseIterable, Sendable { case pinned, active, working, snoozed, settled }
     var kind: Kind
@@ -247,6 +262,31 @@ enum InboxLayout {
         ]
         result.removeAll { $0.rows.isEmpty }
         return result
+    }
+
+    /// The Working and Active rows per project, in the order those sections have them (running first). A project with
+    /// something that waits for you comes first, then the one with the newest activity; pinned, snoozed and settled
+    /// sessions keep their own sections.
+    static func projectGroups(_ sections: [InboxSection]) -> [InboxProjectGroup] {
+        var groups: [String: InboxProjectGroup] = [:]
+        var order: [String] = []
+        for section in sections where section.kind == .working || section.kind == .active {
+            for entry in section.rows {
+                let project = entry.row.project
+                if groups[project] == nil {
+                    groups[project] = InboxProjectGroup(project: project, rows: [])
+                    order.append(project)
+                }
+                groups[project]?.rows.append((section.kind, entry))
+            }
+        }
+        func newest(_ group: InboxProjectGroup) -> Date { group.rows.map(\.entry.row.lastActivity).max() ?? .distantPast }
+        return order.compactMap { groups[$0] }.sorted { a, b in
+            if a.needsYou != b.needsYou { return a.needsYou }
+            let (na, nb) = (newest(a), newest(b))
+            if na != nb { return na > nb }
+            return a.project.localizedStandardCompare(b.project) == .orderedAscending
+        }
     }
 
     /// The rows a shelf draws: all of them while it is open. Folded, a shelf shows only the session that is open on the
