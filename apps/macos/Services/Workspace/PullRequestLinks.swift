@@ -309,6 +309,69 @@ enum PullRequestBackgroundRefresh {
     }
 }
 
+/// Which pull request pages are read ahead after the list was read (by the panel or a quiet read), so opening one shows
+/// it at once instead of loading: the open ones that ask for your review first, then your own, newest first. One that
+/// was read recently and did not change since stays as it is; even a changed one waits a few minutes, since an opened
+/// page reads it again anyway. Fewer on battery, none while the energy plan pauses.
+enum PullRequestDetailWarmup {
+    /// What was read ahead (or shown) of a pull request: its last update as GitHub said then, and when.
+    struct Seen: Equatable, Sendable {
+        var updated: Date?
+        var at: Date
+    }
+
+    struct Pick: Equatable, Sendable {
+        var accountID: String
+        var item: PullRequestItem
+    }
+
+    /// At full speed; half when light.
+    static let limit = 6
+    /// A pull request that did not change is read again after this.
+    static let freshFor: TimeInterval = 1800
+    /// One that changed waits at least this long since its last read.
+    static let minimumGap: TimeInterval = 300
+
+    static func count(plan: EnergyPlan) -> Int {
+        switch plan.pace {
+        case .full: return limit
+        case .light: return limit / 2
+        case .paused: return 0
+        }
+    }
+
+    /// The pull requests to read ahead now, in order. `seen` gives what is kept of one (by account and id), nil when none.
+    static func picks(accounts: [AccountPullRequests], seen: (String, String) -> Seen?, now: Date, plan: EnergyPlan) -> [Pick] {
+        let room = count(plan: plan)
+        guard room > 0 else { return [] }
+        let newest: (PullRequestItem, PullRequestItem) -> Bool = { ($0.updated ?? .distantPast) > ($1.updated ?? .distantPast) }
+        var reviews: [Pick] = [], mine: [Pick] = []
+        for account in accounts where account.error == nil {
+            reviews += account.reviews.filter { $0.state == .open }.sorted(by: newest).map { Pick(accountID: account.id, item: $0) }
+            mine += account.mine.filter { $0.state == .open }.sorted(by: newest).map { Pick(accountID: account.id, item: $0) }
+        }
+        var chosen: [Pick] = []
+        var taken = Set<String>()
+        for pick in reviews + mine {
+            guard chosen.count < room else { break }
+            let key = pick.accountID + " " + pick.item.id
+            guard !taken.contains(key) else { continue }
+            taken.insert(key)
+            if let kept = seen(pick.accountID, pick.item.id), !isDue(kept, item: pick.item, now: now) { continue }
+            chosen.append(pick)
+        }
+        return chosen
+    }
+
+    /// Whether a kept read is worth replacing; a clock that went backwards counts as due.
+    static func isDue(_ kept: Seen, item: PullRequestItem, now: Date) -> Bool {
+        let elapsed = now.timeIntervalSince(kept.at)
+        if elapsed < 0 { return true }
+        let changed = item.updated != nil && kept.updated != item.updated
+        return elapsed >= (changed ? minimumGap : freshFor)
+    }
+}
+
 /// The branches one session worked on, for the list above its composer: a branch the chat moved away from keeps its row
 /// with its pull request, so a chat that made several branches and pull requests shows the state of each.
 enum SessionBranches {

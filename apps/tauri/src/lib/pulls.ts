@@ -474,3 +474,79 @@ export function matchesQuery(query: string, parts: { repo: string; number: numbe
 
 /// The size of a change as a short label: "+120 −8".
 export const sizeLabel = (item: { additions: number; deletions: number }) => (item.additions || item.deletions ? `+${item.additions} −${item.deletions}` : "");
+
+// Reading ahead (`PullRequestBackgroundRefresh` and `PullRequestDetailWarmup` on the Mac): the list is read again now and
+// then while its page is closed, and after every read the pages you are most likely to open are read too, so opening one
+// shows it at once instead of loading.
+
+export type Pace = "full" | "light" | "paused";
+
+/// How much longer each wait is: twice when light, six times paused.
+export const slowdown = (pace: Pace) => (pace === "full" ? 1 : pace === "light" ? 2 : 6);
+
+/// Between two background reads of the list at full speed.
+export const BACKGROUND_EVERY = 600_000;
+
+/// Whether the list is due for a background read: not read (by its page or in the background) within the stretched wait.
+/// A clock that went backwards counts as due.
+export function listDue(lastRead: number, now: number, pace: Pace): boolean {
+  const elapsed = now - lastRead;
+  return elapsed < 0 || elapsed >= BACKGROUND_EVERY * slowdown(pace);
+}
+
+/// What was read ahead (or shown) of a pull request: its last update as GitHub said then, and when.
+export interface Seen {
+  updated: string | null;
+  at: number;
+}
+
+export interface WarmPick {
+  account: string;
+  item: PullRequestItem;
+}
+
+/// Pages read ahead per pass at full speed; half when light, none paused.
+export const WARM_LIMIT = 6;
+/// A pull request that did not change is read again after this.
+export const WARM_FRESH_FOR = 1_800_000;
+/// One that changed waits at least this long since its last read: an opened page reads it again anyway.
+export const WARM_MIN_GAP = 300_000;
+
+export const warmCount = (pace: Pace) => (pace === "full" ? WARM_LIMIT : pace === "light" ? WARM_LIMIT / 2 : 0);
+
+export const detailKey = (account: string, repo: string, number: number) => `${account} ${repo}#${number}`;
+
+/// Whether a kept read is worth replacing; a clock that went backwards counts as due.
+export function warmDue(kept: Seen, item: PullRequestItem, now: number): boolean {
+  const elapsed = now - kept.at;
+  if (elapsed < 0) return true;
+  const changed = item.updated !== null && kept.updated !== item.updated;
+  return elapsed >= (changed ? WARM_MIN_GAP : WARM_FRESH_FOR);
+}
+
+/// The pull requests to read ahead now, in order: the open ones that ask for your review first, then your own, newest
+/// first. One that was read recently and did not change since is passed over for the next.
+export function warmPicks(accounts: AccountPullRequests[], seen: (key: string) => Seen | undefined, now: number, pace: Pace): WarmPick[] {
+  const room = warmCount(pace);
+  if (room <= 0) return [];
+  const newest = (x: PullRequestItem, y: PullRequestItem) => (y.updated ?? "").localeCompare(x.updated ?? "");
+  const reviews: WarmPick[] = [];
+  const mine: WarmPick[] = [];
+  for (const a of accounts) {
+    if (a.error) continue;
+    reviews.push(...a.reviews.filter((i) => i.state === "open").sort(newest).map((item) => ({ account: a.id, item })));
+    mine.push(...a.mine.filter((i) => i.state === "open").sort(newest).map((item) => ({ account: a.id, item })));
+  }
+  const chosen: WarmPick[] = [];
+  const taken = new Set<string>();
+  for (const pick of [...reviews, ...mine]) {
+    if (chosen.length >= room) break;
+    const key = detailKey(pick.account, pick.item.repo, pick.item.number);
+    if (taken.has(key)) continue;
+    taken.add(key);
+    const kept = seen(key);
+    if (kept && !warmDue(kept, pick.item, now)) continue;
+    chosen.push(pick);
+  }
+  return chosen;
+}

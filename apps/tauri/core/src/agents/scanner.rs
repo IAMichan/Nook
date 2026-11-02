@@ -135,7 +135,11 @@ static SYSTEM: Mutex<Option<System>> = Mutex::new(None);
 pub fn scan() -> Vec<DetectedAgent> {
     let me = std::process::id();
     let mut guard = SYSTEM.lock().unwrap_or_else(|e| e.into_inner());
-    let system = guard.get_or_insert_with(System::new);
+    // sysinfo 0.40 can refuse to start on a system it does not support: then there is nothing to scan.
+    if guard.is_none() {
+        *guard = System::new().ok();
+    }
+    let Some(system) = guard.as_mut() else { return Vec::new() };
     let kind = ProcessRefreshKind::nothing()
         .with_cmd(UpdateKind::OnlyIfNotSet)
         .with_exe(UpdateKind::OnlyIfNotSet)
@@ -177,7 +181,7 @@ pub fn scan() -> Vec<DetectedAgent> {
 /// `pid` and the processes it was started from, nearest first, at most `limit`: the hook, the shell that ran it, the
 /// agent, its terminal. The hook reads it about itself, since it and its shell are gone a moment later.
 pub fn lineage(pid: u32, limit: usize) -> Vec<u32> {
-    let mut system = System::new();
+    let Ok(mut system) = System::new() else { return vec![pid] };
     let mut chain = Vec::new();
     let mut next = Some(pid);
     while let Some(current) = next {
@@ -197,7 +201,7 @@ pub fn terminate(pid: u32) -> bool {
     if pid <= 1 || pid == std::process::id() {
         return false;
     }
-    let mut system = System::new();
+    let Ok(mut system) = System::new() else { return false };
     let target = Pid::from_u32(pid);
     system.refresh_processes_specifics(ProcessesToUpdate::Some(&[target]), true, ProcessRefreshKind::nothing());
     let Some(process) = system.process(target) else { return false };
@@ -208,13 +212,13 @@ pub fn terminate(pid: u32) -> bool {
     std::thread::spawn(move || {
         for _ in 0..12 {
             std::thread::sleep(std::time::Duration::from_millis(250));
-            let mut s = System::new();
+            let Ok(mut s) = System::new() else { return };
             s.refresh_processes_specifics(ProcessesToUpdate::Some(&[target]), true, ProcessRefreshKind::nothing());
             if s.process(target).is_none() {
                 return;
             }
         }
-        let mut s = System::new();
+        let Ok(mut s) = System::new() else { return };
         s.refresh_processes_specifics(ProcessesToUpdate::Some(&[target]), true, ProcessRefreshKind::nothing());
         if let Some(p) = s.process(target) {
             p.kill();
