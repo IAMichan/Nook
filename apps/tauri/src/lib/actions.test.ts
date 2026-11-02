@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  candidateRepos, isLive, jobCheck, latestPerWorkflow, matchRepos, neighborTab, openTab, parseRepo, repoStatus, runClock,
+  candidateRepos, isLive, jobCheck, latestPerWorkflow, matchRepos, neighborTab, noJobsReason, openTab, parseRepo, repoStatus, runClock,
   type RunJob, type WorkflowRun,
 } from "./actions";
 import type { AccountPullRequests, PullRequestItem } from "./connectors";
@@ -60,6 +60,7 @@ describe("runs and jobs", () => {
 const run = (id: number, workflowId: number, status: string, outcome: WorkflowRun["outcome"]): WorkflowRun => ({
   id, workflowId, workflow: "CI", title: "t", number: id, attempt: 1, branch: "main", sha: "abc", event: "push", actor: "ada",
   status, conclusion: null, outcome, running: status === "in_progress", created: null, started: null, finished: null, url: null,
+  path: ".github/workflows/ci.yml",
 });
 
 describe("repository tabs", () => {
@@ -91,5 +92,24 @@ describe("repository tabs", () => {
     const busy = repoStatus([run(5, 1, "in_progress", "pending"), run(4, 2, "completed", "failing")]);
     expect(busy).toMatchObject({ outcome: "pending", running: true, active: 1, failing: 1 });
     expect(latestPerWorkflow([run(5, 1, "in_progress", "pending"), run(4, 1, "completed", "failing")]).get(1)?.id).toBe(5);
+  });
+});
+
+describe("a run without jobs", () => {
+  it("names the run that replaced a cancelled one and links to it", () => {
+    const why = noJobsReason({ kind: "replaced", id: 9, number: 2523, url: "https://github.com/o/r/actions/runs/9" }, run(1, 1, "completed", "cancelled"));
+    expect(why.text).toContain("#2523");
+    expect(why.text).toContain("main");
+    expect(why.link?.url).toBe("https://github.com/o/r/actions/runs/9");
+  });
+
+  it("points a run that could not start at its workflow file", () => {
+    const why = noJobsReason(
+      { kind: "workflowError", path: ".github/workflows/ci.yml", file: "https://github.com/o/r/blob/abc/.github/workflows/ci.yml" },
+      run(1, 1, "completed", "failing"),
+    );
+    expect(why.text).toContain(".github/workflows/ci.yml");
+    expect(why.link?.url).toBe("https://github.com/o/r/blob/abc/.github/workflows/ci.yml");
+    expect(noJobsReason({ kind: "cancelled" }, run(1, 1, "completed", "cancelled")).link).toBeNull();
   });
 });

@@ -6,7 +6,7 @@
   import { untrack } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import {
-    actionsApi, eventName, isLive, jobCheck, outcomeName, runClock,
+    actionsApi, eventName, isLive, jobCheck, noJobsReason, outcomeName, runClock,
     type RunAction, type RunDetail, type RunJob, type WorkflowRun,
   } from "../../../lib/actions";
   import { tr } from "../../../lib/i18n.svelte";
@@ -38,6 +38,8 @@
   const job = $derived(detail?.jobs.find((j) => j.id === openJob) ?? null);
   const check = $derived<PullRequestCheck | null>(job ? jobCheck(job) : null);
   const clock = $derived(runClock(run, now));
+  // A finished run without jobs has no log; this says why instead.
+  const why = $derived(detail?.noJobs ? noJobsReason(detail.noJobs, run) : null);
 
   $effect(() => {
     void reload;
@@ -146,7 +148,17 @@
             <span class="faint small">›</span>
           </button>
         {:else}
-          <span class="faint small">{live ? tr("Nog geen jobs gestart.", "No jobs started yet.") : tr("Deze run heeft geen jobs.", "This run has no jobs.")}</span>
+          {#if why}
+            <div class="why">
+              <p>{why.text}</p>
+              <div class="buttons">
+                {#if why.link}<button onclick={() => open(why.link?.url ?? null)}>{why.link.label} ↗</button>{/if}
+                {#if run.url}<button class="ghost" onclick={() => open(run.url)}>{tr("Run op GitHub", "Run on GitHub")} ↗</button>{/if}
+              </div>
+            </div>
+          {:else}
+            <span class="faint small">{live ? tr("Nog geen jobs gestart.", "No jobs started yet.") : tr("Deze run heeft geen jobs.", "This run has no jobs.")}</span>
+          {/if}
         {/each}
         {#if error}<p class="err">{error}</p>{/if}
       {/if}
@@ -179,5 +191,7 @@
   .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .clock { font-family: var(--mono); font-size: 10.5px; color: var(--text3); font-variant-numeric: tabular-nums; flex: none; }
   .bad { color: var(--coral); }
+  .why { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 9px; background: var(--smoke); }
+  .why p { margin: 0; font-size: 12.5px; line-height: 1.45; user-select: text; }
   .err { color: var(--coral); font-size: 12px; margin: 0; user-select: text; }
 </style>
