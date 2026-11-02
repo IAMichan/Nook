@@ -32,6 +32,15 @@ extension WorkspaceManager {
         }
     }
 
+    /// You hid these connectors: stop waiting on any sign-in page still open, so the row above the composer can go.
+    func hideConnectorSignIns(_ id: UUID, names: [String]) {
+        ConnectorSignIns.dismissed.formUnion(names)
+        for name in names {
+            connectorSignInChecks[id]?.removeValue(forKey: name)?.cancel()
+            setWaiting(id, name: name, false)
+        }
+    }
+
     /// Stops waiting for the connectors of a session that closed.
     func forgetConnectorSignIns(_ id: UUID) {
         connectorSignInChecks.removeValue(forKey: id)?.values.forEach { $0.cancel() }
