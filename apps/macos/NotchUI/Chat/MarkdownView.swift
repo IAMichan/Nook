@@ -31,23 +31,42 @@ extension MarkdownBlock {
             }
         }
         for run in parsed.runs {
-            var piece = AttributedString(parsed[run.range])
-            let url = run.link.flatMap { isSafeLink($0) || isFileLink($0) ? $0 : nil }
-            if run.link != nil, url == nil { piece.link = nil }
-            if run.inlinePresentationIntent?.contains(.code) == true {
-                piece.font = .system(size: size - 1.5, design: .monospaced)
-                piece.backgroundColor = NookTheme.field
-                piece.foregroundColor = NookTheme.textStrong
-            } else if run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true {
-                // Running text is a step softer than `paper`; bold keeps the full white, so it stands out without weight.
-                piece.foregroundColor = NookTheme.paper
+            let code = run.inlinePresentationIntent?.contains(.code) == true
+            for (text, link) in linkPieces(String(parsed[run.range].characters), link: run.link, code: code) {
+                var piece = AttributedString(text, attributes: run.attributes)
+                let url = link.flatMap { isSafeLink($0) || isFileLink($0) ? $0 : nil }
+                piece.link = url
+                if code {
+                    piece.font = .system(size: size - 1.5, design: .monospaced)
+                    piece.backgroundColor = NookTheme.field
+                    piece.foregroundColor = NookTheme.textStrong
+                } else if run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true {
+                    // Running text is a step softer than `paper`; bold keeps the full white, so it stands out without weight.
+                    piece.foregroundColor = NookTheme.paper
+                }
+                if open?.url != url { close() }
+                if let url { open = (url, (open?.text ?? "") + text) }
+                result += piece
             }
-            if open?.url != url { close() }
-            if let url { open = (url, (open?.text ?? "") + String(piece.characters)) }
-            result += piece
         }
         close()
         return result
+    }
+
+    /// A run's text in pieces, each with the link it opens: a code span that is a web address (`http://localhost:8080/`)
+    /// and an address written out in plain text become links too, so they open in the side panel like any other.
+    private static func linkPieces(_ text: String, link: URL?, code: Bool) -> [(text: String, link: URL?)] {
+        if let link { return [(text, link)] }
+        if code { return [(text, codeLink(text))] }
+        var pieces: [(text: String, link: URL?)] = []
+        var start = text.startIndex
+        for found in bareLinks(text) {
+            if start < found.range.lowerBound { pieces.append((String(text[start..<found.range.lowerBound]), nil)) }
+            pieces.append((String(text[found.range]), found.url))
+            start = found.range.upperBound
+        }
+        if start < text.endIndex || pieces.isEmpty { pieces.append((String(text[start...]), nil)) }
+        return pieces
     }
 }
 
