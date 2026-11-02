@@ -5,4 +5,6 @@ import Foundation
 final class PromptLinkInbox: ObservableObject {
     static let shared = PromptLinkInbox()
     @Published var pending: PromptLink?
+    /// A folder the composer should open on (the "+" beside a project in the Agents list); the task you typed stays.
+    @Published var pendingProject: String?
 }

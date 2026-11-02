@@ -55,7 +55,7 @@ struct NewSessionComposer: View {
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { restoreOrPrepare(); app.refreshAgentModels(); applyPromptLink() }
+        .onAppear { restoreOrPrepare(); app.refreshAgentModels(); applyPromptLink(); applyRequestedProject() }
         // Closing the notch (or switching tabs) drops this view; what you typed and chose waits for its return.
         .onDisappear(perform: keepDraft)
         .onChange(of: config.task) { _, task in
@@ -64,6 +64,7 @@ struct NewSessionComposer: View {
             if !started { ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: task) }
         }
         .onChange(of: promptLinks.pending) { _, _ in applyPromptLink() }
+        .onChange(of: promptLinks.pendingProject) { _, _ in applyRequestedProject() }
         .onChange(of: workingDirectory, initial: true) { _, directory in onDirectory(directory) }
     }
 
@@ -579,6 +580,14 @@ struct NewSessionComposer: View {
             if let model = link.model { config.model = model }
         }
         linkNotice = link.warnings.contains(.strippedHiddenCharacters) ? tr("promptLink.stripped") : tr("promptLink.filled")
+    }
+
+    /// A project's "+" in the Agents list opens the composer on that folder.
+    private func applyRequestedProject() {
+        guard let path = promptLinks.pendingProject else { return }
+        promptLinks.pendingProject = nil
+        if FileManager.default.fileExists(atPath: path) { select(path) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { focused = true }
     }
 
     /// Back where you left it when the notch closed, else a fresh box with your last choices (and the task you were
