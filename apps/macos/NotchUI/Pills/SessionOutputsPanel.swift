@@ -106,7 +106,6 @@ enum OutputText {
     static func title(_ output: SessionOutput) -> String {
         switch output.kind {
         case .tasks: return tr("ws.tasks.title")
-        case .subagents: return tr("ws.subagents.title")
         case .plan: return output.title.isEmpty ? tr("ws.plan.title") : output.title
         default: return output.title
         }
@@ -117,8 +116,6 @@ enum OutputText {
         case .tasks(let steps):
             let progress = RunTasks.progress(steps)
             return tr("ws.checklist.progress", progress.done, progress.total)
-        case .subagents(let agents):
-            return tr("ws.subagents.progress", agents.filter { !$0.isRunning }.count, agents.count)
         case .plan: return tr("ws.outputs.kind.plan")
         case .design: return tr("ws.outputs.kind.design")
         case .document: return tr("ws.outputs.kind.document")
@@ -129,7 +126,6 @@ enum OutputText {
     static func symbol(_ kind: SessionOutput.Kind) -> String {
         switch kind {
         case .tasks: return "checklist"
-        case .subagents: return "person.2"
         case .plan: return "list.bullet.clipboard"
         case .design: return "paintbrush.pointed"
         case .document: return "doc.richtext"
@@ -156,8 +152,6 @@ private struct OutputViewer: View {
         switch output.kind {
         case .tasks(let steps):
             ScrollView { TaskListRows(steps: steps).padding(NookTheme.Spacing.xl).frame(maxWidth: .infinity, alignment: .leading) }
-        case .subagents(let agents):
-            ScrollView { SubagentList(agents: agents).padding(NookTheme.Spacing.lg).frame(maxWidth: .infinity, alignment: .leading) }
         case .plan(let text):
             ScrollView { MarkdownView(text: text, size: 13.5).padding(NookTheme.Spacing.xl).frame(maxWidth: .infinity, alignment: .leading) }
         case .design:
@@ -211,10 +205,6 @@ private struct OutputViewer: View {
         switch kind {
         case .plan(let text): return text
         case .tasks(let steps): return steps.map { ($0.status == .done ? "- [x] " : "- [ ] ") + $0.text }.joined(separator: "\n")
-        case .subagents(let agents):
-            return agents.map { agent in
-                "## " + agent.title + " (" + agent.kind + ")\n\n" + agent.prompt + (agent.answer.map { "\n\n" + $0 } ?? "")
-            }.joined(separator: "\n\n")
         default: return ""
         }
     }

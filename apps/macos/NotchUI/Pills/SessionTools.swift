@@ -3,13 +3,14 @@ import SwiftUI
 
 /// What the side panel next to a session in the Agents tab shows: nothing (only the conversation), a terminal in its
 /// folder (or worktree), Nook's browser, for instance on the dev server the agent started, the folder's changes, or
-/// what the agent produced: its plans, task list and the files it wrote (`outputs`).
+/// what the agent produced: its plans, task list and the files it wrote (`outputs`), or the subagents it started, with
+/// what each thought, did and answered (`subagents`).
 /// `picker` is the open side panel without a tool yet: it lists the tools to open.
 enum SessionTool: String {
-    case conversation, terminal, browser, changes, outputs, pullRequest, artifact, file, picker
+    case conversation, terminal, browser, changes, outputs, subagents, pullRequest, artifact, file, picker
 
     /// The tools the side panel can show, in the order its + menu and picker list them.
-    static let panelTools: [SessionTool] = [.outputs, .terminal, .browser, .changes]
+    static let panelTools: [SessionTool] = [.outputs, .subagents, .terminal, .browser, .changes]
     /// What the side panel's + menu and list of tools offer: the tools, then a pull request to pick (it opens beside
     /// the session, never in the bottom panel).
     static let launchable: [SessionTool] = panelTools + [.pullRequest]
@@ -25,6 +26,7 @@ enum SessionTool: String {
         case .browser: return "safari"
         case .changes: return "plus.forwardslash.minus"
         case .outputs: return "list.bullet.clipboard"
+        case .subagents: return "person.2"
         case .pullRequest: return PullRequestIcon.generic
         case .artifact: return "square.on.square"
         case .file: return "doc.text"
@@ -32,9 +34,10 @@ enum SessionTool: String {
         }
     }
 
-    /// Whether the tool works for a session in `directory`: without a folder there is only the browser and the outputs.
+    /// Whether the tool works for a session in `directory`: without a folder there is only the browser, the outputs and
+    /// the subagents.
     func available(in directory: String) -> Bool {
-        if self == .pullRequest || self == .outputs || self == .artifact || self == .file { return true }
+        if self == .pullRequest || self == .outputs || self == .subagents || self == .artifact || self == .file { return true }
         return directory.isEmpty ? self == .browser : Self.panelTools.contains(self)
     }
 
@@ -44,6 +47,7 @@ enum SessionTool: String {
     var key: Character {
         switch self {
         case .outputs: return "o"
+        case .subagents: return "s"
         case .terminal: return "t"
         case .browser: return "b"
         case .changes: return "c"
@@ -170,6 +174,10 @@ struct ClosedSessionTab {
 /// panel's button).
 struct SessionOutputsReport: PreferenceKey, Equatable {
     var outputs: [SessionOutput] = []
+    /// Every subagent the agent started, for the Subagents tab; `subagentsFresh`: one started, ended or did something
+    /// you have not seen.
+    var subagents: [SubagentInfo] = []
+    var subagentsFresh = false
     var turns: [TurnDiff] = []
     /// The last pull request the conversation links, for the session panel to look up at once (`sessionPullRequest`).
     var pullRequest: URL?
@@ -178,15 +186,20 @@ struct SessionOutputsReport: PreferenceKey, Equatable {
     static let defaultValue = SessionOutputsReport()
     static func reduce(value: inout SessionOutputsReport, nextValue: () -> SessionOutputsReport) {
         let next = nextValue()
-        if !next.outputs.isEmpty || !next.turns.isEmpty || next.pullRequest != nil || next.fresh { value = next }
+        if !next.outputs.isEmpty || !next.subagents.isEmpty || !next.turns.isEmpty || next.pullRequest != nil || next.fresh {
+            value = next
+        }
     }
 }
 
 /// From the workbench to the conversation inside it: whether the outputs tab is in view (what it shows counts as seen),
-/// and how to open it on a new output; false when it stayed closed because you have another tool open.
+/// and how to open it on a new output; false when it stayed closed because you have another tool open. The same for the
+/// Subagents tab.
 struct SessionOutputsLink {
     var shown = false
     var open: (String) -> Bool = { _ in false }
+    var subagentsShown = false
+    var openSubagents: () -> Bool = { false }
 }
 
 extension EnvironmentValues {
@@ -274,6 +287,8 @@ struct SessionWorkbench<Conversation: View>: View {
         let side = shown(.side)
         let bottom = shown(.bottom)
         let outputsShown = side == .outputs || bottom == .outputs
+        let subagentsShown = side == .subagents || bottom == .subagents
+        let toolsFresh = (outputs.fresh && !outputsShown) || (outputs.subagentsFresh && !subagentsShown)
         let sideOpen = side != .conversation
         let conversationRoom = PanelLayout.minimumConversation + PanelSplit.handle
         // Too narrow for the conversation beside the side panel: the panel covers the conversation until you close it,
@@ -296,11 +311,12 @@ struct SessionWorkbench<Conversation: View>: View {
             VStack(spacing: 0) {
                 // Docked, the switch sits above the session panel instead of in the conversation's header.
                 conversation(docked ? AnyView(EmptyView()) : AnyView(SessionToolSwitch(viewModel: viewModel, directory: directory,
-                                                       outputsFresh: outputs.fresh && !outputsShown)))
+                                                       outputsFresh: toolsFresh)))
                     // A pull request link in the conversation opens in the side panel.
                     .environment(\.pullRequestLinksBeside, true)
                     // The conversation hands up what the agent produced, and opens a new plan in the outputs tab.
-                    .environment(\.sessionOutputs, SessionOutputsLink(shown: outputsShown, open: openOutput))
+                    .environment(\.sessionOutputs, SessionOutputsLink(shown: outputsShown, open: openOutput,
+                                                                      subagentsShown: subagentsShown, openSubagents: openSubagents))
                     .environment(\.sessionPanelDocked, docked)
                     // A diff or file the conversation opens takes the right side from the tool panel.
                     .environment(\.sessionSide, SessionSideLink(shownFile: filePreview, showFile: showFile, openDiff: openDiff))
@@ -348,7 +364,7 @@ struct SessionWorkbench<Conversation: View>: View {
                 // Always the leftmost side panel on the right side, right next to the conversation, with any tool, diff
                 // or file panel to its right. The switch takes the height of the conversation's header.
                 VStack(alignment: .trailing, spacing: 0) {
-                    SessionToolSwitch(viewModel: viewModel, directory: directory, outputsFresh: outputs.fresh && !outputsShown)
+                    SessionToolSwitch(viewModel: viewModel, directory: directory, outputsFresh: toolsFresh)
                         .frame(height: 30)
                         .padding(.trailing, NookTheme.Spacing.xs)
                     DockedSessionPanel(directory: directory, runID: runID, agentWorking: agentWorking) {
@@ -494,6 +510,16 @@ struct SessionWorkbench<Conversation: View>: View {
         return true
     }
 
+    /// Shows the Subagents tab: in the bottom panel when it is open there, otherwise beside the conversation. A terminal,
+    /// page or diff you have open beside it stays (false).
+    private func openSubagents() -> Bool {
+        let side = viewModel.sessionTool
+        if viewModel.bottomTool == .subagents || side == .subagents { return true }
+        guard (side == .conversation && !detailOpen) || side == .picker else { return false }
+        withAnimation(NookTheme.reveal) { viewModel.sessionTool = .subagents }
+        return true
+    }
+
     /// Dragging the line above the bottom panel up makes it taller.
     private func dragBottom(_ offset: Double) {
         let start = dragStart ?? BottomPanelLayout.height(bottomHeight, available: totalHeight)
@@ -505,6 +531,7 @@ struct SessionWorkbench<Conversation: View>: View {
         SessionToolPanel(directory: directory, runID: runID, tool: tool, tabs: tabs(slot), pullRequest: viewModel.sidePullRequest,
                          pullRequestTabs: viewModel.sidePullRequestTabs, activePullRequest: viewModel.activeSidePullRequest,
                          outputs: outputs.outputs, outputSelection: $outputSelection, outputsFresh: outputs.fresh,
+                         subagents: outputs.subagents, subagentsFresh: outputs.subagentsFresh,
                          closeHelp: tr(slot.closeHelp),
                          show: { item in withAnimation(NookTheme.swap) { viewModel[keyPath: slot.tool] = item } },
                          selectPullRequest: { id in
@@ -627,6 +654,8 @@ private struct SessionToolPanel: View {
     let outputs: [SessionOutput]
     @Binding var outputSelection: String?
     let outputsFresh: Bool
+    let subagents: [SubagentInfo]
+    let subagentsFresh: Bool
     let closeHelp: String
     let show: (SessionTool) -> Void
     let selectPullRequest: (UUID) -> Void
@@ -654,6 +683,7 @@ private struct SessionToolPanel: View {
                     SessionToolPicker(directory: directory) { launch($0) }
                 case .terminal: SessionTerminalsView(directory: directory).id(directory)
                 case .outputs: SessionOutputsPanel(outputs: outputs, selection: $outputSelection)
+                case .subagents: SessionSubagentsPanel(agents: subagents)
                 case .changes:
                     if let runID {
                         ChangesSheet(runID: runID, initialFile: nil, onClose: close, stacked: true).id(runID)
@@ -729,7 +759,8 @@ private struct SessionToolPanel: View {
 
     /// A tab with what it shows: the page's title in the browser, the file's name, the name of a tool.
     private func tabItem(_ item: SessionTool) -> SidePanelTabItem<SessionTab> {
-        let fresh = item != tool && (item == .outputs ? outputsFresh : bridge.hasUnseen(directory, item.rawValue))
+        let fresh = item != tool && (item == .outputs ? outputsFresh
+            : item == .subagents ? subagentsFresh : bridge.hasUnseen(directory, item.rawValue))
         switch item {
         case .browser:
             return SidePanelTabItem(value: .tool(item), title: browserTitle.isEmpty ? item.title : browserTitle,

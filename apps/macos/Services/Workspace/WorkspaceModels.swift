@@ -578,6 +578,9 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
     /// Taken from the agent's transcript, not written by a turn in Nook: the conversation went on outside Nook (see
     /// TranscriptFollow). The transcript message or step it stands for, so reading the transcript again updates it.
     var source: String? = nil
+    /// For a subagent's launch: what the subagent itself thought, wrote and did while it worked, in order
+    /// (`SubagentStep`). Nil for every other event.
+    var subagentSteps: [SubagentStep]? = nil
 
     init(kind: Kind, text: String, tool: String? = nil, callID: String? = nil, detail: String? = nil,
          output: String? = nil, state: State? = nil, date: Date = Date(), id: UUID = UUID()) {
@@ -603,6 +606,29 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
         let text = BridgeSecret.redact(text)
         let limit = limit == outputLimit && text.contains(McpUI.fence) ? appOutputLimit : limit
         return text.count > limit ? String(text.prefix(limit)) + "\n…" : text
+    }
+}
+
+/// One step of a subagent's own work, kept on the event that started it: a thought, a message, or a tool it called.
+struct SubagentStep: Codable, Equatable, Sendable {
+    enum Kind: String, Codable, Sendable { case thinking, text, tool }
+
+    var kind: Kind
+    var text: String
+
+    /// The steps kept per subagent, and the length of each: enough to follow its reasoning without the timeline
+    /// growing without bound.
+    static let limit = 400
+    static let textLimit = 6_000
+
+    /// `steps` with `step` added: a step clipped to its length, the oldest given up past the limit.
+    static func appending(_ step: SubagentStep, to steps: [SubagentStep]?) -> [SubagentStep] {
+        var steps = steps ?? []
+        let text = step.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return steps }
+        steps.append(SubagentStep(kind: step.kind, text: RunEvent.clip(text, textLimit)))
+        if steps.count > limit { steps.removeFirst(steps.count - limit) }
+        return steps
     }
 }
 

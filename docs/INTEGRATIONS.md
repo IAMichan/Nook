@@ -259,7 +259,8 @@ yourself.
 | Tool output in the row | ✓ | ✓ (commands live, MCP results) | ✓ (commands, MCP results) | ✓ | ✓ | ✓ |
 | Files a call changed | ✓ (Edit/Write) | ✓ (`fileChange`) | ✓ (`file_change`) | ✓ (call paths) | ✓ (replace/write_file) | ✓ (call paths) |
 | A read stops spinning once the agent moves on | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (`AcpOpenReads`: Antigravity 1.3.0 closes its `view_file` only at the end of the turn, without output) |
-| Subagents: their own row in the timeline, the bar above the composer and the Subagents output in the side panel (`Subagents`, `SubagentBar`, `SubagentList`) | ✓ (Task/Agent calls) | ✓ (`spawnAgent`, settled by its state reports) | – (exec reports no subagents) | – (ACP has no subagent calls) | – (same) | – (same) |
+| Subagents: their own row in the timeline, the bar above the composer and their own Subagents tab in the side panel, apart from the plans (`Subagents`, `SubagentBar`, `SessionSubagentsPanel`) | ✓ (Task/Agent calls) | ✓ (`spawnAgent`, settled by its state reports) | – (exec reports no subagents) | – (ACP has no subagent calls) | – (same) | – (same) |
+| A subagent's own steps (its thinking, messages and tool calls) in the Subagents tab (`SubagentStep`) | ✓ (stream messages with `parent_tool_use_id`, as Claude Code streams them) | – (Nook reads only each subagent thread's final message from its state reports) | – | – | – | – |
 | A subagent in the background keeps running after its turn and settles when it ends; the wake line names it | ✓ (`task_started` / `task_notification`, or the `<task-notification>` it hands the model) | – (its subagents end within the turn that waits for them) | – | – | – | – |
 
 Sessions in a terminal are read from the agent's own transcript (`AgentTranscript`). Claude Code and Codex give

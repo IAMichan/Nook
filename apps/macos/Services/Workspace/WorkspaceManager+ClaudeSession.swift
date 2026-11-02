@@ -92,6 +92,12 @@ extension WorkspaceManager {
         replace(run)
     }
 
+    /// A subagent's own thought, message or tool call: kept on the call that started it, for the Subagents panel.
+    func noteSubagentStep(_ id: UUID, parent: String, _ step: SubagentStep) {
+        guard let launch = timeline(id).last(where: { $0.callID == parent && Subagents.isLaunch($0) }) else { return }
+        mutateEvent(id, launch.id) { $0.subagentSteps = SubagentStep.appending(step, to: $0.subagentSteps) }
+    }
+
     /// Claude Code says a subagent it runs in the background started or ended (see `BackgroundTaskUpdate`): its row
     /// keeps running until then, and then settles with what it answered. The line where the agent picks up its result
     /// names it.

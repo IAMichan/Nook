@@ -102,7 +102,7 @@ struct TasksStrip: View {
 /// background, also after the turn that started them. The arrow shows them all in the side panel (`openPanel`).
 struct SubagentBar: View {
     let agents: [SubagentInfo]
-    /// Shows the subagents in the side panel's outputs; false when the panel is busy with something else.
+    /// Shows the subagents in the side panel's Subagents tab; false when the panel is busy with something else.
     var openPanel: (() -> Bool)? = nil
     @State private var open = false
     @State private var shown: UUID?
@@ -248,8 +248,32 @@ struct SubagentElapsed: View {
     }
 }
 
-/// Every subagent of a session, as the Subagents output in the side panel shows them: a card each with its state, what
-/// it was asked and what it answered, the running ones counting their time.
+/// The Subagents tab in a session's side (or bottom) panel: every subagent the agent started, apart from its plans and
+/// files, each with what it was asked, how it went about it and what it answered.
+struct SessionSubagentsPanel: View {
+    let agents: [SubagentInfo]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            if agents.isEmpty {
+                WSEmptyState(symbol: SessionTool.subagents.symbol, title: tr("ws.subagents.empty.title"),
+                             message: tr("ws.subagents.empty.body"))
+            } else {
+                ToolSurface {
+                    ScrollView {
+                        SubagentList(agents: agents)
+                            .padding(NookTheme.Spacing.lg)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// Every subagent of a session, as the Subagents tab in the side panel shows them: a card each with its state, what
+/// it was asked, its steps and what it answered, the running ones counting their time.
 struct SubagentList: View {
     let agents: [SubagentInfo]
 
@@ -274,10 +298,13 @@ struct SubagentList: View {
     }
 }
 
-/// One subagent in `SubagentList`: its state, title, kind and time; its task folded to a few lines, and its answer.
+/// One subagent in `SubagentList`: its state, title, kind and time; its task folded to a few lines, how it went about it
+/// (its steps, open while it works) and its answer.
 private struct SubagentCard: View {
     let agent: SubagentInfo
     @State private var open = false
+    /// Whether its steps show; nil follows the subagent: open while it works, folded once it is done.
+    @State private var stepsOpen: Bool?
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -330,6 +357,7 @@ private struct SubagentCard: View {
                 .buttonStyle(.plain)
                 .padding(.leading, 20)
             }
+            if !agent.steps.isEmpty { steps }
             if let answer = agent.answer {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(tr("ws.subagent.answer"))
@@ -349,6 +377,82 @@ private struct SubagentCard: View {
                 RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
                     .strokeBorder(NookTheme.iris.opacity(0.35), lineWidth: 1)
             }
+        }
+    }
+}
+
+extension SubagentCard {
+    /// "How it worked · 12 steps": what the subagent thought, wrote and did, in order, the newest at the bottom.
+    private var steps: some View {
+        let shown = stepsOpen ?? agent.isRunning
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+            Button {
+                withAnimation(NookTheme.reveal) { stepsOpen = !shown }
+            } label: {
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    Text(tr("ws.subagent.steps"))
+                    Text("·")
+                    Text(tr("ws.subagent.stepCount", agent.steps.count))
+                    Image(systemName: "chevron.right")
+                        .font(NookTheme.font(8, .bold))
+                        .rotationEffect(.degrees(shown ? 90 : 0))
+                }
+                .font(NookTheme.TextStyle.caption)
+                .foregroundStyle(NookTheme.textTertiary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if shown {
+                LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    ForEach(Array(agent.steps.enumerated()), id: \.offset) { _, step in
+                        SubagentStepRow(step: step)
+                    }
+                }
+                .textSelection(.enabled)
+            }
+        }
+        .padding(.leading, 20)
+    }
+}
+
+/// One step of a subagent: a thought quiet and italic, a message as written, a tool call as its one line.
+private struct SubagentStepRow: View {
+    let step: SubagentStep
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
+            Image(systemName: symbol)
+                .font(NookTheme.font(9.5, .semibold))
+                .foregroundStyle(NookTheme.textTertiary)
+                .frame(width: 12)
+                .help(tr("ws.subagent.step." + step.kind.rawValue))
+            switch step.kind {
+            case .thinking:
+                Text(step.text)
+                    .font(NookTheme.TextStyle.detail)
+                    .italic()
+                    .foregroundStyle(NookTheme.textTertiary)
+            case .text:
+                Text(step.text)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+            case .tool:
+                Text(step.text)
+                    .font(NookTheme.mono(10.5))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var symbol: String {
+        switch step.kind {
+        case .thinking: return "brain"
+        case .text: return "text.bubble"
+        case .tool: return "wrench.and.screwdriver"
         }
     }
 }
