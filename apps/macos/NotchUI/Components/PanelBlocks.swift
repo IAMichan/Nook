@@ -258,19 +258,30 @@ struct PanelNoticeBar<Trailing: View>: View {
     var countdown: TimeInterval? = nil
     var paused: Bool = false
     var onOK: () -> Void = {}
+    /// Floats over the panel's bottom edge in the toast's bubble (`toastBubble`), where the results of what you did show
+    /// too, instead of a bar under the tabs: a request or a note that comes in while you work elsewhere in the panel.
+    var floating: Bool = false
     /// What a request that waits for you asks with (`NookNoticeActions`: Allow and Deny).
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
-        NookNotice(title: title, detail: detail, symbol: symbol, tone: tone ?? NookTheme.textSecondary,
-                   actions: actions, countdown: countdown, paused: paused, onOK: onOK, trailing: trailing)
+        let notice = NookNotice(title: title, detail: detail, symbol: symbol, tone: tone ?? NookTheme.textSecondary,
+                                actions: actions, countdown: countdown, paused: paused, wraps: floating, onOK: onOK,
+                                trailing: trailing)
             .help(help ?? title)
-            .padding(.horizontal, NookTheme.Spacing.lg)
-            .padding(.vertical, NookTheme.Spacing.md)
-            .cardBackground(NookTheme.surface, stroke: (tone ?? NookTheme.line2).opacity(tone == nil ? 1 : 0.35),
-                            radius: NookTheme.Radius.panel, style: .continuous)
-            .padding(.top, NookTheme.Spacing.md)
-            .transition(.opacity.combined(with: .offset(y: -4)))
+        if floating {
+            notice
+                .toastBubble(tone: tone ?? NookTheme.textSecondary, maxWidth: 560)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+        } else {
+            notice
+                .padding(.horizontal, NookTheme.Spacing.lg)
+                .padding(.vertical, NookTheme.Spacing.md)
+                .cardBackground(NookTheme.surface, stroke: (tone ?? NookTheme.line2).opacity(tone == nil ? 1 : 0.35),
+                                radius: NookTheme.Radius.panel, style: .continuous)
+                .padding(.top, NookTheme.Spacing.md)
+                .transition(.opacity.combined(with: .offset(y: -4)))
+        }
     }
 }
 

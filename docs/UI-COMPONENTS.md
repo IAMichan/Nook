@@ -129,8 +129,8 @@ The checklist for a new or changed view:
   `~/.nook/keybindings.json` and listed under Settings › Shortcuts (see [`KEYBINDINGS.md`](KEYBINDINGS.md)).
 - A field where you write words (not a name, a path or a search) gets `@` through `.mentions` and `MentionSuggestions`.
 - A search is a `NookSearchField`, a list's title row a `PanelListHeader` (with `PanelNewButton` when it starts
-  something), a group's name a `NookSectionLabel`, a count a `NookCountBadge`, a line a `NookDivider` (between the items of a list a `NookRowSeparator`), and a notice under
-  the tabs a `PanelNoticeBar`. Change one of these and every tab follows.
+  something), a group's name a `NookSectionLabel`, a count a `NookCountBadge`, a line a `NookDivider` (between the items of a list a `NookRowSeparator`), and a notice in a
+  tab a `PanelNoticeBar` (`floating:` for what waits for you over the panel's bottom edge, above the toasts). Change one of these and every tab follows.
 - Empty: `WSEmptyState` for a whole panel, `ListEmptyNote` in a list. Loading: a whole panel or pane waiting for its content shows `PatientSpinner()` (nothing for the first 350 ms, so a quick load never flashes a spinner; show what was read last time while reading again where you can); a button or a row that is busy shows `ProgressView().controlSize(.small)`.
   Errors: `coralSoft` text, or a `.cardBackground` notice on `surface` with a coral symbol and a retry.
 
@@ -142,7 +142,8 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 - **Where it shows:** on one surface with `.nookToastHost()` (the panel in the notch and the main window, Settings): the
   key window's, else the one opened last. With none on screen, the notch shows it in its confirmation strip
   (`NotchViewModel.showToast`), but never over a card or a question that waits for you. A new window gets
-  `.nookToastHost()` once, at its root.
+  `.nookToastHost()` once, at its root. What waits for you on that surface (a permission request, an agent's question)
+  floats in the same spot, above the toast, through `.nookToastHost { … }` and `PanelNoticeBar(floating: true)`.
 - **Kinds keep the state colors:** `success` mint, `error` coral, `warning` amber, `info` iris. An error stays longest,
   every toast stays while hovered, and an error with a detail can be copied in one click.
 - **Words:** the title says what happened in a few words ("Pushed", "Couldn't remove the worktree", `toast.failed` for
@@ -180,7 +181,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `NookSectionLabel` | `PanelBlocks.swift` | A group's name in a list or on a page ("Pinned", "For you"), lined up with the rows under it |
 | `NookDivider` | `PanelBlocks.swift` | The one line between rows or regions, horizontal (with an `inset`) or `vertical` |
 | `NookRowSeparator` | `PanelBlocks.swift` | The clearer line between the items of a list (the Chats tab), in `NookTheme.separator`; placed before every item but the first |
-| `PanelNoticeBar` | `PanelBlocks.swift` | A `NookNotice` under the tabs (a permission request, an agent's question, a short note): symbol, title, a line, and its `NookNoticeActions`; `tone` tints a risky one, `countdown` adds the OK for a note that closes by itself |
+| `PanelNoticeBar` | `PanelBlocks.swift` | A `NookNotice` in a tab, or with `floating` in the toast's bubble over the panel's bottom edge (a permission request, an agent's question, a short note): symbol, title, a line, and its `NookNoticeActions`; `tone` tints a risky one, `countdown` adds the OK for a note that closes by itself |
 | `AdaptiveActionRow` | `PanelBlocks.swift` | Text beside its buttons (a confirmation, a recovery card, a banner, a sheet's footer): the buttons on the right while the text keeps a readable width, on a line of their own under it in a narrow tab or split view. Use it for every such row instead of an `HStack` with a `Spacer` and buttons, which squeezes the text to a word per line |
 | `ComposerUsageRing` | `ComposerRich.swift` | At the right end of the choices under a session's composer (`SessionComposer.trayTrailing`): the account's subscription limits as a small ring with its percentage, filled to the window that runs out first, with every window per model group, its reset and pace in a popover. Shown for every agent `QuotaService` has limits for |
 | `ResetCreditRow` | `ResetCreditRow.swift` | An account's banked reset credits and "Use a reset" (after a confirmation), in the Limits tab, Settings › Coding agents and a limited session's banner. Shows nothing for an account without credits |

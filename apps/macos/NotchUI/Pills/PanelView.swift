@@ -50,8 +50,6 @@ struct PanelView: View {
                     .transition(.opacity.combined(with: .offset(y: 6)))
             } else {
                 header
-                PanelApprovalBar(viewModel: viewModel, tab: tab, sheet: sheet, hub: app.hub, workspace: app.workspace)
-                    .padding(.leading, headerInset)   // Clear of Nook's ring, under the tabs.
                 // A Double Tap Nook works on, or just finished: every step, and what it typed, to check.
                 if !app.demoMode {
                     DoubleTapRunBar(doubleTap: DoubleTap.shared)
@@ -141,8 +139,13 @@ struct PanelView: View {
         }
         // ⌘K (a rule, see `Keybindings`): search everything from every tab, and again to close it.
         .keyCommand("search.toggle", enabled: sheet == nil && !app.demoMode) { searching.toggle() }
-        // Short results from anywhere in Nook (saved, approved, failed) show over the panel's bottom edge.
-        .nookToastHost()
+        // Short results from anywhere in Nook (saved, approved, failed) show over the panel's bottom edge, and above them
+        // what waits for you there: a permission request, an agent's question, a short note.
+        .nookToastHost {
+            if sheet == nil {
+                PanelApprovalBar(viewModel: viewModel, tab: tab, sheet: sheet, hub: app.hub, workspace: app.workspace)
+            }
+        }
     }
 
     /// Agents, the chat and Chats show the footer under their own list instead of along the bottom.
@@ -312,7 +315,7 @@ private final class MeasuredWidth {
 }
 
 /// A permission request or multiple-choice question that comes in while the panel (or the main window) is open: one
-/// compact bar under the tabs instead of a card over the whole notch. Hidden while the session that asks is on screen,
+/// compact notice floating over the panel's bottom edge, where toasts show, instead of a card over the whole notch. Hidden while the session that asks is on screen,
 /// which shows the whole request itself.
 struct PanelApprovalBar: View {
     @ObservedObject var viewModel: NotchViewModel
@@ -331,7 +334,8 @@ struct PanelApprovalBar: View {
         if let approval = waiting.first(where: { !onScreen($0) }) {
             PanelNoticeBar(title: approval.title, detail: subtitle(approval, more: waiting.count - 1),
                            symbol: approval.danger ? "exclamationmark.triangle.fill" : "hand.raised.fill",
-                           tone: approval.danger ? NookTheme.coral : NookTheme.amber, help: approval.command) {
+                           tone: approval.danger ? NookTheme.coral : NookTheme.amber, help: approval.command,
+                           floating: true) {
                 NookNoticeActions(
                     primary: NookNoticeAction(tr("button.allow")) { decide(approval, .allow) },
                     secondary: NookNoticeAction(tr("button.deny")) { decide(approval, .deny) },
@@ -360,7 +364,7 @@ struct PanelApprovalBar: View {
             }]
         } ?? []
         return PanelNoticeBar(title: notice.message, actions: actions, countdown: notice.seconds,
-                              paused: viewModel.panelNoticeHeld, onOK: { viewModel.dismissPanelNotice() }) {
+                              paused: viewModel.panelNoticeHeld, onOK: { viewModel.dismissPanelNotice() }, floating: true) {
             EmptyView()
         }
         .id(notice.id)
@@ -370,7 +374,7 @@ struct PanelApprovalBar: View {
     /// The agent's question, with View to answer it in the session itself (one question at a time, as on the card).
     private func questionBar(_ request: AgentQuestionRequest, more: Int) -> some View {
         PanelNoticeBar(title: request.items.first?.question ?? "", detail: subtitle(request, more: more),
-                       symbol: "questionmark.bubble.fill", tone: NookTheme.amber) {
+                       symbol: "questionmark.bubble.fill", tone: NookTheme.amber, floating: true) {
             NookNoticeActions(
                 primary: NookNoticeAction(tr("button.view")) {
                     viewModel.selectedAgentID = request.sessionKey
