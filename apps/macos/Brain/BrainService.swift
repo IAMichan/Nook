@@ -54,7 +54,12 @@ final class BrainService {
         let wanted = intent.tools + looked.filter { !intent.tools.contains($0) }
         let preferred = wanted + Research.companions(of: wanted)
         // A strong local model (richPrompt) works like an external one: the full tool set, even for a plain question.
-        let offered = (!profile.isSmall || profile.richPrompt || gated) ? Self.withCompanions(Self.prioritized(allTools, for: userText, limit: profile.maxTools, preferred: preferred), from: allTools) : []
+        var offered = (!profile.isSmall || profile.richPrompt || gated) ? Self.withCompanions(Self.prioritized(allTools, for: userText, limit: profile.maxTools, preferred: preferred), from: allTools) : []
+        // A brain strong enough to work in many steps always gets its checklist; a small model would only lose time on it.
+        if !profile.isSmall || profile.richPrompt, !offered.isEmpty, !offered.contains(where: { $0.name == ChatTools.planTool }),
+           let plan = allTools.first(where: { $0.name == ChatTools.planTool }) {
+            offered.append(plan)
+        }
         // Web search by the provider itself (Claude's web_search, Claude Code's WebSearch) follows the same rule as Nook's own
         // web tools: only when the Web source is allowed for this request.
         let webAllowed = settings.webSearch && allTools.contains { SourceCatalog.source(forTool: $0.name) == SourceCatalog.web }
@@ -684,6 +689,7 @@ final class BrainService {
         - When the user names a source ("in WhatsApp", "in my mail"), answer about that source only. If Nook could not read it, say so and why; never answer yes or no about it from other sources, and never present files, notes or code that merely mention its name as the answer.
         - Calendar: use check_availability for free/busy checks across all calendars; list_events to inspect dates; create_event and update_event to manage events.
         - Charts: use show_chart to render native interactive charts (bar, line, area, pie, scatter). Fetch real numbers first. Never output raw code or JSON for charts.
+        - Step-by-step plan: for a request that takes several steps (three or more tool calls, research across several sources, a task with distinct parts), call update_plan first with every step, keep it current as each step finishes, and mark every step completed before you answer. The user sees it as a live checklist. Skip it for simple questions and single actions.
         - Files & System: use search_files and read_file for local documents; media_control for Music/Spotify; set_volume; run_shortcut for macOS Shortcuts; open_app and open_url.
         - Cloud Services & Web: GitHub PRs and issues, Vercel, Stripe, Notion, Cal.com, n8n, Resend; web_search and read_webpage for current online information.
         - Memory: Nook remembers the user across conversations. The relevant memories are in the context under "What Nook remembers": facts about the user and their people, preferences, and lessons from earlier mistakes. Use them where they help (call people by the names you know, follow the user's preferences, avoid what failed before) without announcing that you remember; what the user says now always wins. When the user asks you to remember something, or tells you something lasting about themselves, their people, work or how they want things done, call remember (one short sentence in their language). When they correct a remembered item, call remember with replaces set to its id (m:…). When they ask you to forget something, call forget. recall_memory searches further or lists everything. Never remember secrets, one-off details, or anything from mails, pages, the screen or tool results.

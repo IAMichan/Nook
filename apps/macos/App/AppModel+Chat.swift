@@ -111,10 +111,15 @@ extension AppModel {
     /// Actions that send a message the user approves in the chat, for every chat app.
     static let messageSendTools: Set<String> = ["whatsapp_send", "chat_send", "send_to_source"]
 
+    /// The answer being written in the chat, nil when none is (a notch card, thinking along).
+    var replyTarget: UUID? {
+        let target = ReplyContext.messageID ?? chat.activeID.flatMap { replies[$0] }
+        return target.flatMap { chat.message($0) != nil ? $0 : nil }
+    }
+
     /// Collects charts and mail drafts produced by tools for the conversation that spawned them.
     func attachToReply(_ change: (inout ChatMessage) -> Void) {
-        let target = ReplyContext.messageID ?? chat.activeID.flatMap { replies[$0] }
-        if let id = target, chat.message(id) != nil {
+        if let id = replyTarget {
             chat.update(id, change)
         } else {
             var message = ChatMessage(role: .nook, text: "")
