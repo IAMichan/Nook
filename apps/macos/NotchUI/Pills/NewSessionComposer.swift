@@ -244,6 +244,7 @@ struct NewSessionComposer: View {
             ComposerDivider()
             permissionMenu
             effortMenu
+            usageLimits
         }
         .rich(composerModel, composerConfig)
         .images($images)
@@ -347,6 +348,18 @@ struct NewSessionComposer: View {
                 }
             }
             .help(tr("compose.effort.help"))
+        }
+    }
+
+    /// The subscription limits of the chosen account, beside the effort as in a running session, for every agent that
+    /// reports them: you see how much room is left before you start.
+    @ViewBuilder
+    private var usageLimits: some View {
+        if let profile = app.profiles.profile(id: config.profileID) {
+            let limits = app.quota.limits(for: profile)
+            if !limits.isEmpty {
+                ComposerUsageRing(limits: limits, account: AccountLabel.name(profile, app: app), accent: profile.kind.color)
+            }
         }
     }
 
