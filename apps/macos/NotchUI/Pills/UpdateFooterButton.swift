@@ -53,10 +53,11 @@ struct UpdateFooterButton<Idle: View>: View {
         ZStack {
             if let look {
                 Button { open.toggle() } label: {
-                    // Narrow list: the symbol (or spinner) and the count are enough.
+                    // Narrow list: the symbol (or spinner) and the count are enough; narrower still, only the symbol.
                     ViewThatFits(in: .horizontal) {
                         pill(look, showLabel: true)
                         pill(look, showLabel: false)
+                        pill(look, showLabel: false, showCount: false)
                     }
                 }
                 .buttonStyle(.plain)
@@ -91,8 +92,10 @@ struct UpdateFooterButton<Idle: View>: View {
         }
     }
 
-    private func pill(_ look: Look, showLabel: Bool) -> some View {
-        HStack(spacing: 5) {
+    private func pill(_ look: Look, showLabel: Bool, showCount: Bool = true) -> some View {
+        let count = showCount ? look.count : nil
+        let iconOnly = !showLabel && count == nil
+        return HStack(spacing: 5) {
             if look.busy {
                 ProgressView().controlSize(.mini).tint(look.tint)
             } else if let symbol = look.symbol {
@@ -101,7 +104,7 @@ struct UpdateFooterButton<Idle: View>: View {
             if showLabel {
                 Text(look.label).font(NookTheme.TextStyle.strong).lineLimit(1).fixedSize()
             }
-            if let count = look.count {
+            if let count {
                 Text("\(count)")
                     .font(NookTheme.TextStyle.caption)
                     .monospacedDigit()
@@ -112,15 +115,16 @@ struct UpdateFooterButton<Idle: View>: View {
             }
         }
         .foregroundStyle(look.tint)
-        .padding(.leading, NookTheme.Spacing.md)
-        .padding(.trailing, look.count == nil ? 9 : 5)
-        .frame(height: 26)
+        .padding(.leading, iconOnly ? 0 : NookTheme.Spacing.md)
+        .padding(.trailing, iconOnly ? 0 : count == nil ? 9 : 5)
+        .frame(minWidth: iconOnly ? 26 : nil, minHeight: 26, maxHeight: 26)
         .cardBackground(look.tint.opacity(hovering || open ? 0.22 : 0.13), stroke: look.tint.opacity(0.32), radius: NookTheme.Radius.panel,
                         style: .continuous)
         .overlay(alignment: .topTrailing) {
             // A new update pulses once in a while until you have looked at it.
             if look.id == "available", !updater.seen {
-                PulseDot(color: look.tint, animated: true).offset(x: 2, y: -2)
+                // Inside the pill's corner, so a list that clips at its edge does not cut it off.
+                PulseDot(color: look.tint, animated: true)
             }
         }
         .contentShape(Capsule())
