@@ -521,7 +521,9 @@ struct SessionPanel: View {
     // MARK: Changes
 
     private var changesRow: some View {
-        let files = runID.flatMap { workspace.git[$0]?.status?.files } ?? model.changes
+        // What the branch changed since its base, committed work included, like the header's counts and the panel it
+        // opens; a session's own status (only what is uncommitted) when that could not be read.
+        let files = model.changes.isEmpty ? (runID.flatMap { workspace.git[$0]?.status?.files } ?? []) : model.changes
         let added = files.compactMap(\.added).reduce(0, +)
         let removed = files.compactMap(\.removed).reduce(0, +)
         return PanelRow(icon: symbol("plus.forwardslash.minus"),
