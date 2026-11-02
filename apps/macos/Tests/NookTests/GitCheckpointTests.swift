@@ -46,6 +46,21 @@ final class GitCheckpointTests: XCTestCase {
         XCTAssertTrue(try git.lineCounts(repo.path, paths: [], from: before, to: nil).isEmpty)
     }
 
+    func testLineCountsOfEveryFileATurnChanged() throws {
+        let before = GitService.checkpointRef(session: UUID(), index: 0)
+        try git.checkpoint(repo.path, ref: before)
+        // Changed by a command, not an edit tool: only the snapshots know.
+        try write("a.txt", "een\ntwee\n")
+        try write("b.txt", "nieuw\n")
+        try write("secret.txt", "ignored")
+        let after = GitService.checkpointRef(session: UUID(), index: 1)
+        try git.checkpoint(repo.path, ref: after)
+
+        let turn = try git.lineCounts(repo.path, paths: nil, from: before, to: after)
+        XCTAssertEqual(Set(turn.keys), ["a.txt", "b.txt"], "every changed file, a new one too, but not an ignored one")
+        XCTAssertEqual(turn["b.txt"]?.added, 1)
+    }
+
     func testFirstSnapshotOfAFreshWorktreeIsHead() throws {
         let ref = GitService.checkpointRef(session: UUID(), index: 0)
         try git.checkpointHead(repo.path, ref: ref)

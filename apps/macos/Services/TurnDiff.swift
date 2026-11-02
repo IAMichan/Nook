@@ -126,6 +126,14 @@ enum EditPatch {
     }
 }
 
+/// The lines git counted for one turn, per file relative to the session's folder.
+struct TurnLines: Equatable, Sendable {
+    var counts: [String: EditLines] = [:]
+    /// Counted between the snapshots on both sides of the turn: every file the turn changed is here, not only those
+    /// the agent's edits name.
+    var complete = false
+}
+
 /// What one turn of a conversation changed, file by file: for the card under the turn's answer ("3 changed files
 /// +12 −4") and the diff panel next to the conversation, where you pick a turn or the whole session.
 struct TurnDiff: Equatable, Identifiable, Sendable {
@@ -216,7 +224,9 @@ struct TurnDiff: Equatable, Identifiable, Sendable {
 
     /// The finished turns of a session Nook runs that changed a file, from its timeline. The card goes under the
     /// turn's end; a file the agent changed without an edit tool (Codex's file changes) has no patch of its own.
-    static func collect(events: [RunEvent]) -> [TurnDiff] {
+    /// `keepEmpty`: also the finished turns without an edit, whose files git can still find in the snapshots around them
+    /// (`counted`).
+    static func collect(events: [RunEvent], keepEmpty: Bool = false) -> [TurnDiff] {
         var turns: [TurnDiff] = []
         var number = 0
         for events in TimelinePresentation.split(events) {
@@ -242,17 +252,24 @@ struct TurnDiff: Equatable, Identifiable, Sendable {
                     continue
                 }
             }
-            if !turn.isEmpty { turns.append(turn) }
+            if keepEmpty || !turn.isEmpty { turns.append(turn) }
         }
         return turns
     }
 
     /// The same turn with the lines git counted (keyed by the path relative to `directory`) in place of those from the
-    /// agent's edits.
-    func counted(_ counts: [String: EditLines], relativeTo directory: String?) -> TurnDiff {
+    /// agent's edits. When git counted every file of the turn, the files the agent changed without an edit tool (a
+    /// script, `sed`, a formatter) join them, so the card says what the turn really changed.
+    func counted(_ lines: TurnLines, relativeTo directory: String?) -> TurnDiff {
         var copy = self
         for index in copy.files.indices {
-            if let lines = counts[Self.relative(copy.files[index].path, to: directory)] { copy.files[index].lines = lines }
+            if let counted = lines.counts[Self.relative(copy.files[index].path, to: directory)] { copy.files[index].lines = counted }
+        }
+        guard lines.complete else { return copy }
+        let known = Set(copy.files.map { Self.relative($0.path, to: directory) })
+        let root = directory.map { $0.isEmpty || $0.hasSuffix("/") ? $0 : $0 + "/" } ?? ""
+        for (path, counted) in lines.counts.sorted(by: { $0.key < $1.key }) where !known.contains(path) {
+            copy.files.append(File(path: root + path, lines: counted))
         }
         return copy
     }
