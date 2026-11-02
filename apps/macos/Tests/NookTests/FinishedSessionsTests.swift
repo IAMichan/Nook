@@ -34,6 +34,18 @@ final class FinishedSessionsTests: XCTestCase {
         XCTAssertFalse(store.contains(key), "still in the list")
     }
 
+    /// An update that keeps unsettled chats must not bring back the ones that had already left the list by themselves.
+    func testChatGoneBeforeKeepingUnsettledStaysSettled() {
+        let store = FinishedSessions.shared
+        let since = store.keepsOpenSince
+        XCTAssertTrue(store.isSettled(key, lastActive: since.addingTimeInterval(-SessionLiveness.doneLifetime - 60)),
+                      "already out of the list before the update")
+        XCTAssertFalse(store.isSettled(key, lastActive: since.addingTimeInterval(-3600)), "still listed then: stays until settled")
+        XCTAssertFalse(store.isSettled(key, lastActive: since.addingTimeInterval(30 * 24 * 3600)), "a later chat stays")
+        store.mark(key)
+        XCTAssertTrue(store.isSettled(key, lastActive: since.addingTimeInterval(30 * 24 * 3600)))
+    }
+
     func testIdleChatFinishesByItself() {
         let store = FinishedSessions.shared
         let now = Date()

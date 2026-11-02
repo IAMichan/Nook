@@ -342,7 +342,8 @@ final class AgentHub: ObservableObject {
             case "done": status = .done
             default: status = .running
             }
-            let settled = Self.isSettled(key: item.key, agent: item.agent, sessionID: item.sessionID, cwd: item.cwd)
+            let settled = Self.isSettled(key: item.key, agent: item.agent, sessionID: item.sessionID, cwd: item.cwd,
+                                         lastActive: item.updated)
             guard !SessionLiveness.isExpired(done: status == .done || status == .failed, settled: settled, age: age) else { continue }
             let marks: [String: AgentStep.Mark] = ["done": .done, "running": .running, "blocked": .blocked, "failed": .failed, "todo": .todo]
             var record = Record(agentID: item.agentID, agent: item.agent, project: Self.projectName(item.cwd), cwd: item.cwd,
@@ -1059,16 +1060,18 @@ final class AgentHub: ObservableObject {
         let now = Date()
         records = records.filter { key, record in
             if pendingApprovals.values.contains(where: { $0.request.sessionKey == key }) { return true }
-            let settled = Self.isSettled(key: key, agent: record.agent, sessionID: record.sessionID, cwd: record.cwd)
+            let settled = Self.isSettled(key: key, agent: record.agent, sessionID: record.sessionID, cwd: record.cwd,
+                                         lastActive: record.updated)
             return !SessionLiveness.isExpired(done: record.status == .done || record.status == .failed, settled: settled, age: now.timeIntervalSince(record.updated))
         }
         rebuild()
     }
 
     /// Whether you settled this session in the Agents list (`FinishedSessions.key(session:)` for a hooked session).
-    private static func isSettled(key: String, agent: String, sessionID: String, cwd: String) -> Bool {
+    private static func isSettled(key: String, agent: String, sessionID: String, cwd: String, lastActive: Date) -> Bool {
         let conversation = FinishedSessions.ownConversation(id: key, sessionID: sessionID, cwd: cwd, detected: false)
-        return FinishedSessions.shared.contains(FinishedSessions.key(agent: agent, conversation: conversation, fallback: key))
+        return FinishedSessions.shared.isSettled(FinishedSessions.key(agent: agent, conversation: conversation, fallback: key),
+                                                 lastActive: lastActive)
     }
 
     /// When `sessions` was last published, and whether a later publish is waiting (see `rebuild`).

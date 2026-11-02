@@ -20,13 +20,18 @@ final class FinishedSessions: ObservableObject {
     private static let defaultsKey = "agents.finishedSessions"
     private static let keptKey = "agents.keptOpenSessions"
     private static let busyKey = "agents.finishedWhileBusy"
+    private static let keepsOpenSinceKey = "agents.keepsUnsettledSince"
     /// How long a done session stays in the notch after its last activity. The Agents list keeps it until you settle it.
     static let autoFinishAfter: TimeInterval = 10 * 60
     /// Chats you reopened, and when.
     @Published private(set) var kept: [String: Date]
-    private static let limit = 500
+    /// A mark that falls off brings its chat back to the list, so keep plenty.
+    private static let limit = 5000
     /// Chats you marked while they were busy, until that busy spell ends.
     private var markedWhileBusy: Set<String>
+    /// Since when an unsettled chat stays in the Agents list for good. Before, a quiet chat left the list a day after its
+    /// last activity without a mark, so an update must not bring back what had already gone (see `isSettled`).
+    let keepsOpenSince: Date
 
     private init() {
         let stored = UserDefaults.standard.stringArray(forKey: Self.defaultsKey) ?? []
@@ -36,9 +41,26 @@ final class FinishedSessions: ObservableObject {
         let raw = UserDefaults.standard.dictionary(forKey: Self.keptKey) as? [String: Double] ?? [:]
         kept = raw.mapValues { Date(timeIntervalSince1970: $0) }
         markedWhileBusy = Set(UserDefaults.standard.stringArray(forKey: Self.busyKey) ?? []).intersection(storedKeys)
+        if let since = UserDefaults.standard.object(forKey: Self.keepsOpenSinceKey) as? Date {
+            keepsOpenSince = since
+        } else {
+            keepsOpenSince = Date()
+            UserDefaults.standard.set(keepsOpenSince, forKey: Self.keepsOpenSinceKey)
+        }
     }
 
     func contains(_ key: String) -> Bool { keys.contains(key) }
+
+    /// Settled for the Agents list: marked by you, or quiet for a day already before unsettled chats were kept
+    /// (`keepsOpenSince`), when it had left the list by itself. `lastActive` is the last time anything happened in it.
+    func isSettled(_ key: String, lastActive: Date) -> Bool {
+        keys.contains(key) || Self.leftBefore(keepsOpenSince, lastActive: lastActive)
+    }
+
+    /// A chat whose last activity lies more than a day before `since` had already dropped out of the list then.
+    nonisolated static func leftBefore(_ since: Date, lastActive: Date) -> Bool {
+        lastActive < since.addingTimeInterval(-SessionLiveness.doneLifetime)
+    }
 
     /// `busy`: the chat still reads as busy, so the mark must outlast the current turn (see `reconcile(busy:)`).
     func mark(_ key: String, busy: Bool = false) {
