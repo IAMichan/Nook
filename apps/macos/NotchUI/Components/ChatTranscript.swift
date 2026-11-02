@@ -72,8 +72,9 @@ struct ChatTranscript: View, Equatable {
     /// How long after opening a chat what comes in does not glide in.
     private static let settling: TimeInterval = 2
 
-    /// How many messages a chat lays out when it opens.
-    static let page = 60
+    /// How many messages a chat lays out when it opens: a little more than the tallest window shows, so the chat is
+    /// built in the frame it opens in. Scrolling up draws the ones before them (`olderPage`).
+    static let page = 30
     /// How many more it lays out each time you reach the top: a small step, so reaching the top never stalls the chat.
     static let olderPage = 30
 

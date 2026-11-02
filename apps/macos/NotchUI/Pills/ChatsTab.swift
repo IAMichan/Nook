@@ -496,6 +496,7 @@ struct ChatsTab: View {
                                             onCompose: { draft in withAnimation(NookTheme.reveal) { composing = draft } })
                                     .equatable()
                                     .id(current.id)
+                                    .transition(Self.paneTransition)
                             } else {
                                 // No chat open (none picked yet, closed with Escape, or not in what the list shows).
                                 VStack(spacing: NookTheme.Spacing.sm) {
@@ -512,13 +513,15 @@ struct ChatsTab: View {
                                         .multilineTextAlignment(.center)
                                 }
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .transition(Self.paneTransition)
                             }
                         }
                         .padding(.leading, stacked ? 0 : NookTheme.Spacing.lg)
                         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     }
                 }
-                .animation(NookTheme.reveal, value: stacked && detailShown)
+                // No animation over the row: one column at a time, it animated the whole list in and out with the
+                // chat. The pane fades on its own (`paneTransition`).
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -563,7 +566,13 @@ struct ChatsTab: View {
         // With "Read in Nook when opened" on, a chat you open is read in Nook, and so is what comes in while it is open:
         // its badge goes and stays gone after a restart. The app itself (and whoever wrote) hears nothing until you
         // choose "Mark as read in <app>". The same for every app.
-        .onChange(of: current.map { "\($0.id) \($0.unread)" }, initial: true) { _, _ in readOpenChat() }
+        // Once the chat is on screen: reading it redraws the whole app (every badge), which in the frame it opens in made
+        // the chat stall as it appeared.
+        .task(id: current.map { "\($0.id) \($0.unread)" }) {
+            try? await Task.sleep(for: NookTheme.tabSettle)
+            guard !Task.isCancelled else { return }
+            readOpenChat()
+        }
         // The main window that opened behind the app you were in (at login) is read once you come to it.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in readOpenChat() }
     }
@@ -653,8 +662,13 @@ struct ChatsTab: View {
     private func closeChat() {
         guard selection != nil else { return }
         if stacked { returnTo = selection }
-        withAnimation(NookTheme.reveal) { selection = nil }
+        selection = nil
     }
+
+    /// A chat (or the placeholder) fades in and the one before goes at once, as a tab does: only one chat is ever drawn,
+    /// and nothing around the pane (the list, its rows) is animated with it. Opening, switching and closing alike.
+    private static let paneTransition = AnyTransition.asymmetric(insertion: .opacity.animation(NookTheme.tabFade),
+                                                                 removal: .identity)
 
     /// "Mark as unread", by hand, in Nook only: the badge comes back, and an open chat closes so that opening it again
     /// reads it.
@@ -662,7 +676,7 @@ struct ChatsTab: View {
         keptInView.insert(entry.id)
         if selection == entry.id {
             if stacked { returnTo = entry.id }
-            withAnimation(NookTheme.reveal) { selection = nil }
+            selection = nil
         }
         app.markChatUnread(entry)
     }
@@ -1778,8 +1792,11 @@ private struct ChatsDetail: View, Equatable {
             Text(deleteDetail(bubble))
         }
         .task(id: entry.id) {
-            // Every app the same: an opened chat is read from its app now, so it shows the newest messages at once.
+            // Every app the same: an opened chat is read from its app, so it shows the newest messages. Once it is on
+            // screen: what comes back redraws the chat, which in the frame it opens in made it stall as it appeared.
             landNew()
+            try? await Task.sleep(for: NookTheme.tabSettle)
+            guard !Task.isCancelled else { return }
             await app.openedChat(entry)
             landNew()
         }
