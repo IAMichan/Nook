@@ -1325,7 +1325,11 @@ struct ChatInbox: Codable, Equatable, Sendable {
 
     /// Newest first.
     var sorted: [InboxThread] {
-        threads.values.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
+        // Each chat's `last` once: worked out in every comparison, it went through the chats' messages again and again
+        // each time the Chats tab made its list.
+        threads.values.map { (last: $0.last, thread: $0) }
+            .sorted { $0.last != $1.last ? $0.last > $1.last : $0.thread.id < $1.thread.id }
+            .map(\.thread)
     }
 
     var totalUnread: Int { threads.values.reduce(0) { $0 + $1.unread } }
