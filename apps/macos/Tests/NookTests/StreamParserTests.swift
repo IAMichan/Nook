@@ -45,8 +45,17 @@ final class ClaudeStreamParserTests: XCTestCase {
     func testNestedToolUseIsMarked() {
         let line = #"{"type":"assistant","parent_tool_use_id":"toolu_parent","message":{"id":"m","content":[{"type":"text","text":"sub"},{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"/a"}}],"usage":{"input_tokens":1,"output_tokens":1}}}"#
         let events = ClaudeStreamParser.parse(line)
-        XCTAssertEqual(events, [.toolUse(id: "t2", name: "Read", input: JSONBox(["file_path": "/a"]), nested: true)],
-                       "text and tokens from subagents do not count as top-level response")
+        XCTAssertEqual(events, [.subagentStep(parent: "toolu_parent", SubagentStep(kind: .text, text: "sub")),
+                                .toolUse(id: "t2", name: "Read", input: JSONBox(["file_path": "/a"]), nested: true),
+                                .subagentStep(parent: "toolu_parent", SubagentStep(kind: .tool,
+                                                                                    text: ToolSummary.describe(tool: "Read", input: ["file_path": "/a"])))],
+                       "text and tokens from subagents do not count as top-level response; they go with the subagent")
+    }
+
+    func testNestedThinkingGoesWithTheSubagent() {
+        let line = #"{"type":"assistant","parent_tool_use_id":"toolu_parent","message":{"id":"m","content":[{"type":"thinking","thinking":"Check the tests first"},{"type":"thinking","thinking":""}]}}"#
+        XCTAssertEqual(ClaudeStreamParser.parse(line),
+                       [.subagentStep(parent: "toolu_parent", SubagentStep(kind: .thinking, text: "Check the tests first"))])
     }
 
     func testToolResultStringAndBlocks() {

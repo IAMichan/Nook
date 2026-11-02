@@ -1463,6 +1463,8 @@ final class WorkspaceManager: ObservableObject {
             feed(id, .toolUpdated(id: callID, output: output, state: isError ? .failed : (background ? .running : .done)))
         case .backgroundTask(let update):
             noteBackgroundSubagent(id, update)
+        case .subagentStep(let parent, let step):
+            noteSubagentStep(id, parent: parent, step)
         case .usage(let messageID, let tokens, let model):
             turns[id]?.messageUsage[messageID] = tokens
             turns[id]?.lastContext = tokens.context + tokens.output
