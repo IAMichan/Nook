@@ -50,6 +50,8 @@ struct AgentsTab: View {
         let past = app.demoMode ? [] : Array(lists.past.lazy
             .filter { app.profile(for: $0).map { connected.contains($0.id) } ?? false }.prefix(60))
         let selection = resolve(live: live, past: past)
+        // The running session that is open: remembered, so it stays open once its agent ends it.
+        let openLive = live.first { $0.id == viewModel.selectedAgentID }
         // A session with its side panel open needs room for both: the list gives way first, so a narrow window keeps
         // the conversation and the panel side by side for as long as it can.
         let besideRoom = workbench(selection) && viewModel.sessionTool != .conversation
@@ -143,7 +145,11 @@ struct AgentsTab: View {
         .onChange(of: entries.busyKeys) { _, keys in finishedMarks.reconcile(busy: keys) }
         .onAppear {
             finishedMarks.reconcile(busy: entries.busyKeys)
+            if let openLive { viewModel.lastOpenLiveSession = openLive }
             visits.visit(selectedID(selection))
+        }
+        .onChange(of: openLive) { _, session in
+            if let session { viewModel.lastOpenLiveSession = session }
         }
         .onChange(of: selectedID(selection)) { old, new in
             visits.visit(old)
@@ -247,12 +253,23 @@ struct AgentsTab: View {
             return .run(uuid)
         }
         if let session = live.first(where: { $0.id == id }) { return .live(session) }
+        // The session you have open ended (its agent closed it, its process quit): it stays open, as its transcript once that
+        // is read, otherwise as it last read. Only a session you did not have open gives way to what waits or works.
+        if let ended = viewModel.lastOpenLiveSession, ended.id == id {
+            return transcript(of: ended).map { .past($0) } ?? .live(ended)
+        }
         // A session that waits for you comes before a run that is only busy.
         if let first = live.first(where: { $0.status == .waiting || $0.approvalID != nil }) { return .live(first) }
         if !app.demoMode, let run = app.workspace.activeRuns.first(where: { !$0.archived }) { return .run(run.id) }
         if let first = live.first(where: { $0.status == .running }) { return .live(first) }
         if app.demoMode, let first = live.first { return .live(first) }
         return .new
+    }
+
+    /// The earlier session that holds this running session's conversation, once the history has read it.
+    private func transcript(of session: AgentSession) -> PastSession? {
+        guard let kind = AgentKind(agentName: session.name), let conversation = app.conversationID(for: session) else { return nil }
+        return app.history.sessions.first { $0.agent == kind && ($0.sessionID == conversation || $0.earlierIDs.contains(conversation)) }
     }
 
     private func selectedID(_ selection: Selection) -> String {
