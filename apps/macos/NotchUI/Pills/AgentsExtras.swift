@@ -12,6 +12,8 @@ enum AgentsPage {
     static let browser = "browser"
     static let worktrees = "worktrees"
     static let simulator = "simulator"
+    /// The pages the footer opens: on them a back button in the footer returns to what was open before.
+    static let footerPages: Set<String> = [pullRequests, actions, usage]
     /// The pages that are a tool you work in: the panel widens for them and stays open.
     static let tools: Set<String> = [terminals, browser, worktrees, simulator]
 }
@@ -21,8 +23,8 @@ enum AgentsPage {
 /// button follows the line beside the list when you drag it. A tab without a list shows it at the bottom as wide as the
 /// list would be. On the other tabs, pull requests, Actions and usage open their page on Agents.
 /// Refresh reads the session lists again and checks main for an update; while there is one (or it installs), the
-/// update button takes its place, so there is never a second round arrow beside it. On the pull requests page a back
-/// button replaces the icons and the refresh (the page has its own), and only the update button stays beside it.
+/// update button takes its place, so there is never a second round arrow beside it. On a page the footer opens (pull
+/// requests, Actions, usage) a back button replaces the icons and the refresh, and only the update button stays beside it.
 struct PanelFooter: View {
     let selected: String
     let open: (String) -> Void
@@ -30,12 +32,12 @@ struct PanelFooter: View {
     @ObservedObject var history: AgentHistory
     /// The icons one under the other, for a narrow column (the Chats tab's rail of icons).
     var vertical = false
-    /// Leaving the pull requests page for where you were; nil keeps the icons there too.
+    /// Leaving a footer page for where you were; nil keeps the icons there too.
     var onBack: (() -> Void)? = nil
     @ObservedObject private var updater = AppUpdater.shared
 
     var body: some View {
-        if selected == AgentsPage.pullRequests, let onBack {
+        if AgentsPage.footerPages.contains(selected), let onBack {
             HStack(spacing: NookTheme.Spacing.xs) {
                 FooterIcon(label: tr("agents.pr.back"), active: false, showsLabel: true, action: onBack) {
                     ToolGlyph(symbol: "chevron.left")
