@@ -87,10 +87,19 @@ class NookState {
     if (this.activeId) await api.stop(this.activeId);
   }
 
-  async saveSettings(patch: Partial<Settings>) {
-    if (!this.settings) return;
-    this.settings = await api.saveSettings({ ...this.settings, ...patch });
-    this.info = await api.appInfo();
+  private saving: Promise<void> = Promise.resolve();
+
+  /// Saves one after the other, each on top of the last saved settings, so two quick changes never undo each other.
+  /// A function patch reads those latest settings (a dismissal added to the ones before it).
+  saveSettings(patch: Partial<Settings> | ((s: Settings) => Partial<Settings>)): Promise<void> {
+    const run = this.saving.then(async () => {
+      if (!this.settings) return;
+      const changes = typeof patch === "function" ? patch(this.settings) : patch;
+      this.settings = await api.saveSettings({ ...this.settings, ...changes });
+      this.info = await api.appInfo();
+    });
+    this.saving = run.catch(() => {});
+    return run;
   }
 
   get busy(): boolean {
