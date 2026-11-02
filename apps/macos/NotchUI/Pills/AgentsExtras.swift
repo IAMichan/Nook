@@ -73,6 +73,8 @@ struct PanelFooter: View {
                 }
                 .disabled(busy)
             }
+            // The icons give up room first, so the update pill stays whole inside a narrow list.
+            .layoutPriority(1)
         }
         .padding(.horizontal, NookTheme.Spacing.xs)
         .frame(maxWidth: .infinity, alignment: vertical ? .center : .leading)
