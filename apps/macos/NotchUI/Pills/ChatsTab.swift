@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import UniformTypeIdentifiers
 import Combine
 
@@ -295,9 +296,9 @@ final class ChatsShownMemo {
 
     func shown(all: [ChatsEntry], needle: String, view: ChatsView, filter: String?, account: String?,
                listKind: ChatsListKind = .chats, selection: String?, kept: Set<String> = [],
-               make: () -> [ChatsEntry]) -> [ChatsEntry] {
+               day: Date = ChatsDay.now(), make: () -> [ChatsEntry]) -> [ChatsEntry] {
         let wanted = Key(all: all, needle: needle, view: view, filter: filter, account: account, listKind: listKind,
-                         selection: selection, kept: kept, day: Calendar.current.startOfDay(for: Date()))
+                         selection: selection, kept: kept, day: day)
         if key == wanted { return value }
         value = make()
         key = wanted
@@ -390,6 +391,9 @@ struct ChatsTab: View {
     /// When the open chat was opened: a "Mark as unread" after that (in the other surface, on the iPhone) is not read
     /// again just because it is open here.
     @State private var openedAt = Date()
+    /// The day the list is drawn for. Nothing else redraws the tab when a new day starts (overnight, or while the Mac
+    /// slept), so without it a chat from yesterday stayed under "Today" with its time, until something else changed.
+    @State private var day = ChatsDay.now()
     /// The list is scrolling: a row the pointer rests on meanwhile fetches nothing (`ChatsRow`).
     @MainActor static var listScrolling = false
     /// The open chat: the one you opened last, also after the tab was closed or Nook restarted; nil shows none.
@@ -539,6 +543,11 @@ struct ChatsTab: View {
             keptInView = []
         }
         .onChange(of: view) { _, _ in keptInView = [] }
+        // A new day: the groups ("Today", "Yesterday") and the rows' times move on with it.
+        .onReceive(ChatsDay.changes) { _ in
+            let now = ChatsDay.now()
+            if now != day { day = now }
+        }
         .onChange(of: account) { _, _ in keptInView = [] }
         .onChange(of: listKind) { _, _ in keptInView = [] }
         .onChange(of: selection) { old, id in
@@ -757,7 +766,7 @@ struct ChatsTab: View {
     private var shown: [ChatsEntry] {
         let needle = query.trimmingCharacters(in: .whitespaces)
         return shownMemo.shown(all: all, needle: needle, view: view, filter: filter, account: shownAccount,
-                               listKind: shownListKind, selection: selection, kept: keptInView) { makeShown(needle) }
+                               listKind: shownListKind, selection: selection, kept: keptInView, day: day) { makeShown(needle) }
     }
 
     private func makeShown(_ needle: String) -> [ChatsEntry] {
@@ -944,7 +953,7 @@ struct ChatsTab: View {
                                 // track of a row that moves to the top of its group, and kept showing its old line.
                                 VStack(spacing: NookTheme.Spacing.xxs) {
                                     if entry.id != section.entries.first?.id { NookRowSeparator() }
-                                    ChatsRow(entry: entry, selected: entry.id == selected,
+                                    ChatsRow(entry: entry, selected: entry.id == selected, day: day,
                                              typing: typists.chats.isEmpty ? nil : typing.line(entry.id),
                                              rowAction: rowAction(entry)) {
                                         revealSelection = false
@@ -1213,6 +1222,26 @@ enum ChatsGroup: Int, Comparable, CaseIterable {
     }
 }
 
+/// The day the Chats list is drawn for, and when it may have moved on: the calendar day changed, the Mac woke (it may
+/// have slept past midnight), or the clock or time zone changed.
+enum ChatsDay {
+    static func now(calendar: Calendar = .current) -> Date { calendar.startOfDay(for: Date()) }
+
+    /// Made once: a publisher made again on every redraw would be subscribed to again each time.
+    @MainActor static let changes: AnyPublisher<Void, Never> = {
+        let center = NotificationCenter.default
+        return Publishers.MergeMany(
+            center.publisher(for: .NSCalendarDayChanged),
+            center.publisher(for: .NSSystemClockDidChange),
+            center.publisher(for: .NSSystemTimeZoneDidChange),
+            NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)
+        )
+        .map { _ in () }
+        .receive(on: RunLoop.main)
+        .eraseToAnyPublisher()
+    }()
+}
+
 /// One group of the list and its chats, newest first.
 struct ChatsSection: Identifiable {
     let group: ChatsGroup
@@ -1279,6 +1308,8 @@ struct ChatsRowAction {
 private struct ChatsRow: View, Equatable {
     let entry: ChatsEntry
     let selected: Bool
+    /// The day the list is drawn for (`ChatsDay`): a new day turns today's time into "Yesterday".
+    var day = ChatsDay.now()
     /// Who types in this chat ("Jan is typing…"), in place of its newest message; nil while no one does.
     var typing: String? = nil
     /// What a click on the button that shows under the pointer does.
@@ -1292,7 +1323,7 @@ private struct ChatsRow: View, Equatable {
     /// row under the pointer), and drawing every row again each time made scrolling stutter. The actions follow the
     /// entry, so an equal entry has the same ones.
     static func == (lhs: ChatsRow, rhs: ChatsRow) -> Bool {
-        lhs.entry == rhs.entry && lhs.selected == rhs.selected && lhs.typing == rhs.typing
+        lhs.entry == rhs.entry && lhs.selected == rhs.selected && lhs.day == rhs.day && lhs.typing == rhs.typing
             && lhs.rowAction?.title == rhs.rowAction?.title
     }
 
