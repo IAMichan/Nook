@@ -74,6 +74,10 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// The running session last open in the Agents tab, as it last read. When its agent ends it (a hook's `SessionEnd`, the
+    /// process quits) it stays open there instead of giving way to another session. Not published: nothing draws it.
+    var lastOpenLiveSession: AgentSession?
+
     /// What the selected session shows in the Agents tab: its conversation, or a terminal or the browser next to it.
     /// A tool that opens gets its own tab in the side panel, and leaves the bottom panel if it was open there.
     @Published var sessionTool: SessionTool = .conversation {
