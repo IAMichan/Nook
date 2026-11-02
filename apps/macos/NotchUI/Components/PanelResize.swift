@@ -132,8 +132,6 @@ enum PanelLayout {
     /// A session's results on the right; "widen" in its header jumps to `outputsWide`.
     static let outputs: Double = 400
     static let outputsWide: Double = 620
-    /// A command's terminal on the left of a session.
-    static let console: Double = 400
     /// The side panel with a session's terminal, browser or changes.
     static let tool: Double = 460
     /// The session panel (machine, scripts, branch, changes) docked beside a session, and the room the rest of the

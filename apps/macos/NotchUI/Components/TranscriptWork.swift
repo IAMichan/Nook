@@ -306,7 +306,7 @@ struct TranscriptLiveLine: View {
             } else {
                 TranscriptWorkLine(symbol: AgentActivityText.symbol(activity),
                                    label: AgentActivityText.headline(activity, step: tasks.flatMap(TaskChecklist.activeStep)),
-                                   live: true, link: openConsole == nil ? nil : "sidebar.left", action: openConsole)
+                                   live: true, link: openConsole == nil ? nil : "sidebar.right", action: openConsole)
                     .help(openConsole == nil ? (help ?? "") : tr("ws.console.open"))
             }
         }
