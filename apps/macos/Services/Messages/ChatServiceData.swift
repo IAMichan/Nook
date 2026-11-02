@@ -22,6 +22,8 @@ enum ChatServiceData {
         var me: String? = nil
         /// Everyone's name by their id in it, to say who read your message.
         var people: [String: String] = [:]
+        /// Everyone's name by their number (`ChatMentions.key`), to show a tag by name instead of by number.
+        var tags: [String: String] = [:]
         /// Pinned or muted in its app.
         var isPinned = false
         var isMuted = false
@@ -67,7 +69,7 @@ enum ChatServiceData {
             return Chat(id: id, app: source, title: title, isGroup: isGroup, unread: unread,
                         last: ChatJSON.date(chat["lastActivity"]), picture: picture(chat), members: isGroup ? members(chat) : [],
                         me: people.first { $0["isSelf"] as? Bool == true }?["id"] as? String, people: names(people),
-                        isPinned: chat["isPinned"] as? Bool == true, isMuted: chat["isMuted"] as? Bool == true,
+                        tags: tags(people), isPinned: chat["isPinned"] as? Bool == true, isMuted: chat["isMuted"] as? Bool == true,
                         canEdit: supports(abilities?["edit"]), canDelete: supports(abilities?["delete"]),
                         canReact: supports(abilities?["reaction"]), canVote: chat["canVote"] as? Bool == true,
                         account: (account?.isEmpty == false ? account : nil))
@@ -234,6 +236,25 @@ enum ChatServiceData {
         return names
     }
 
+    /// The people of a chat by their number, for tags: the phone number the service gives, else the digits in their id
+    /// ("@whatsapp_31612345678:beeper.local", "whatsapp-lid-123456789012"). Yourself too: a tag of you shows your name.
+    static func tags(_ people: [[String: Any]]) -> [String: String] {
+        var tags: [String: String] = [:]
+        for person in people {
+            let name = ((person["fullName"] as? String) ?? (person["username"] as? String) ?? "").trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty, !name.hasPrefix("+"), !name.allSatisfy({ $0.isNumber || $0 == " " }) else { continue }
+            // Only an id of words and then a number: a UUID's digits (Signal) are no number.
+            let user = ((person["id"] as? String) ?? "").split(separator: ":").first ?? ""
+            let parts = user.split { "@_-".contains($0) }
+            let words = parts.dropLast().allSatisfy { !$0.contains(where: \.isNumber) }
+            let id = words ? parts.last.map(String.init).flatMap { $0.allSatisfy(\.isNumber) ? $0 : nil } ?? "" : ""
+            for number in [(person["phoneNumber"] as? String) ?? "", id] {
+                if let key = ChatMentions.key(number), tags[key] == nil { tags[key] = name }
+            }
+        }
+        return tags
+    }
+
     /// A chat's picture: its own, else (in a private chat) the other person's.
     static func picture(_ chat: [String: Any]) -> String? {
         if let own = chat["imgURL"] as? String, !own.isEmpty { return own }
@@ -251,6 +272,7 @@ enum ChatServiceData {
             var text = ((message["text"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             // Only invisible marks (what an app sends around a reaction): nothing to show.
             if ChatFormat.isBlank(text) { text = "" }
+            text = ChatMentions.named(text) { ChatMentions.key($0).flatMap { chat.tags[$0] } }
             let media = (message["attachments"] as? [[String: Any]])?.first.flatMap(Self.file)
             if text.isEmpty, media == nil { text = label(message) }
             // The service writes a file's name as the text of a message with only that file.
