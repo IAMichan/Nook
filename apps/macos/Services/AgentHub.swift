@@ -127,7 +127,9 @@ final class AgentHub: ObservableObject {
 
     private enum PendingKind {
         case permission(suggestions: Any?, canAlways: Bool)
-        case legacyPreToolUse
+        /// A hook before the tool call (`PreToolGate`, or Claude Code's hooks before PermissionRequest). `grant`: what
+        /// "Always" allows for the rest of the session; nil when the request offers no Always.
+        case preToolUse(grant: String?)
         /// A prompt the agent's own app draws (`AppPrompt`): answered by pressing its button, not by a hook reply.
         case appPrompt(bundleIDs: [String])
     }
@@ -170,6 +172,8 @@ final class AgentHub: ObservableObject {
     private static let appPromptTimeout: UInt64 = 600
     /// App prompts Nook is pressing the button of right now, so a second click does not press again.
     private var answering: Set<String> = []
+    /// What you allowed "always" for a session in a gated agent (`PreToolGate.grant`), by session key.
+    private var sessionGrants: [String: Set<String>] = [:]
     private static let questionTimeout: UInt64 = 120
 
     func start() {
@@ -476,6 +480,9 @@ final class AgentHub: ObservableObject {
             closeApproval(id, response: response, status: .running, step: (.running, "allowed via Nook"), message: "Allowed")
         case .always:
             recap?.decision(allowed: true)
+            if case .preToolUse(let grant?) = pending.kind {
+                sessionGrants[pending.request.sessionKey, default: []].insert(grant)
+            }
             closeApproval(id, response: response, status: .running, step: (.running, "always allowed via Nook"), message: "Always allowed")
         case .deny:
             recap?.decision(allowed: false)
@@ -597,6 +604,7 @@ final class AgentHub: ObservableObject {
 
         if kind == "SessionEnd" {
             records[key] = nil
+            sessionGrants[key] = nil
             for (id, pending) in pendingApprovals where pending.request.sessionKey == key {
                 closeApproval(id, response: nil, status: nil, step: nil)
             }
@@ -682,9 +690,32 @@ final class AgentHub: ObservableObject {
                     return
                 }
                 let suggestions = event["permission_suggestions"]
-                let canAlways = agentID.hasPrefix("claude") && ((suggestions as? [Any])?.isEmpty == false)
+                // Claude Code stores the rule it suggests; the OpenCode and Hermes plugins turn it into their own
+                // "always" / "session" answer. Codex and Muse take no rule back.
+                let canAlways = (agentID.hasPrefix("claude") || Self.pluginAlways.contains(agentID))
+                    && ((suggestions as? [Any])?.isEmpty == false)
                 requestApproval(key: key, record: &record, tool: tool, input: input,
                                 kind: .permission(suggestions: suggestions, canAlways: canAlways), connection: connection)
+                records[key] = record
+                rebuild()
+                return
+            }
+            if kind == "PreToolUse", PreToolGate.agents.contains(agentID) {
+                // The agent's hook runs before every tool call: ask only where the agent would ask (`PreToolGate`).
+                Self.push(&record, .running, Self.describe(tool: tool, input: input))
+                if record.turnStarted == nil { record.turnStarted = Date() }
+                let grant = PreToolGate.grant(tool: tool, input: input)
+                if sessionGrants[key]?.contains(grant) == true {
+                    connection.reply(Self.response(for: .allow, kind: .preToolUse(grant: nil)))
+                } else if PreToolGate.wouldAsk(tool: tool, input: input), !Self.allowsEverything(connection.lineage) {
+                    requestApproval(key: key, record: &record, tool: tool, input: input, kind: .preToolUse(grant: grant),
+                                    connection: connection)
+                    records[key] = record
+                    rebuild()
+                    return
+                } else {
+                    connection.reply(nil)
+                }
                 records[key] = record
                 rebuild()
                 return
@@ -693,7 +724,7 @@ final class AgentHub: ObservableObject {
                 // Legacy integration (prior to PermissionRequest): only commands that are not clearly safe.
                 Self.push(&record, .running, Self.describe(tool: tool, input: input))
                 if let command = Self.commandText(input), CommandRisk.assess(command).level != .safe {
-                    requestApproval(key: key, record: &record, tool: tool, input: input, kind: .legacyPreToolUse, connection: connection)
+                    requestApproval(key: key, record: &record, tool: tool, input: input, kind: .preToolUse(grant: nil), connection: connection)
                     records[key] = record
                     rebuild()
                     return
@@ -830,8 +861,8 @@ final class AgentHub: ObservableObject {
         switch kind {
         case .permission(_, let always):
             canAlways = always
-        case .legacyPreToolUse:
-            break
+        case .preToolUse(let grant):
+            canAlways = grant != nil
         case .appPrompt:
             summary = AppPrompt.summary(input: input)
             title = AppPrompt.title(tool: tool, agent: record.agent)
@@ -897,6 +928,14 @@ final class AgentHub: ObservableObject {
         }
     }
 
+    /// Plugin agents that answer "Always" themselves (see `AgentPlugins`).
+    private static let pluginAlways: Set<String> = ["opencode", "hermes"]
+
+    /// The agent was started allowing every tool (`--allow-all-tools`, `--yolo`): it never asks, so Nook does not either.
+    private static func allowsEverything(_ lineage: [Int32]) -> Bool {
+        lineage.contains { pid in LocalAgentScanner.commandLine(pid).map(PreToolGate.allowsEverything) ?? false }
+    }
+
     /// Closes the app-prompt cards of a session.
     private func closeAppPrompts(key: String, step: (AgentStep.Mark, String)?) {
         for (id, pending) in pendingApprovals where pending.request.sessionKey == key {
@@ -928,7 +967,7 @@ final class AgentHub: ObservableObject {
     private static func response(for decision: ApprovalDecision, kind: PendingKind) -> Data? {
         let payload: [String: Any]
         switch kind {
-        case .legacyPreToolUse:
+        case .preToolUse:
             let value: String
             switch decision {
             case .allow, .always: value = "allow"
