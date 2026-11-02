@@ -1,10 +1,14 @@
 import Foundation
 
-/// Tools that display interactive content directly in chat: a chart or an email draft. They execute immediately (like read tools)
-/// because nothing happens outside Nook yet: an email is only sent when the user clicks "Send".
+/// Tools that display interactive content directly in chat: a chart, an email draft or a step-by-step plan. They execute
+/// immediately (like read tools) because nothing happens outside Nook yet: an email is only sent when the user clicks "Send".
 @MainActor
 enum ChatTools {
-    static func specs(onChart: @escaping (ChatChart) -> Void, onMail: @escaping (MailDraft) -> Void) -> [ToolSpec] {
+    /// The plan Nook keeps while it works through a request of several steps, shown as a checklist with its answer.
+    static let planTool = "update_plan"
+
+    static func specs(onChart: @escaping (ChatChart) -> Void, onMail: @escaping (MailDraft) -> Void,
+                      onPlan: @escaping ([RunTaskStep]) -> Void) -> [ToolSpec] {
         let point: [String: Any] = [
             "type": "object",
             "properties": [
@@ -78,7 +82,47 @@ enum ChatTools {
                     onMail(draft)
                     return "The email draft is displayed in chat. The user will review it and send it using the Send button."
                 }
+            ),
+            ToolSpec(
+                name: planTool,
+                description: "Shows your step-by-step plan in chat as a live checklist above your answer. Use it for a request that takes several steps (three or more tool calls, research across several sources, or a task with distinct parts): call it first with every step as pending and the first as in_progress, call it again with the whole list each time a step finishes, and once more with every step completed before you answer. Exactly one step is in_progress while you work. Skip it for a simple question or a single action. Write each step as a short line in the user's language. Do not repeat the plan in your answer.",
+                schema: [
+                    "type": "object",
+                    "properties": [
+                        "steps": [
+                            "type": "array",
+                            "description": "The whole plan, in order.",
+                            "items": [
+                                "type": "object",
+                                "properties": [
+                                    "step": ["type": "string", "description": "What this step does, in a few words."],
+                                    "status": ["type": "string", "enum": ["pending", "in_progress", "completed"]]
+                                ],
+                                "required": ["step", "status"]
+                            ]
+                        ]
+                    ],
+                    "required": ["steps"]
+                ],
+                kind: .read,
+                summarize: { input in "Plan: \(((input["steps"] as? [Any]) ?? []).count) steps" },
+                tag: { _ in ("", .neutral) },
+                run: { input in
+                    guard let steps = plan(input) else { throw NookError("No steps: provide steps with step and status.") }
+                    onPlan(steps)
+                    return "The plan is displayed in chat. Keep it current with \(planTool) as you work; do not repeat it in your answer."
+                }
             )
         ]
+    }
+
+    /// The steps of an `update_plan` call, nil when it holds none. Unknown statuses read as pending.
+    static func plan(_ input: [String: Any]) -> [RunTaskStep]? {
+        guard let raw = input["steps"] as? [[String: Any]] else { return nil }
+        let steps = raw.compactMap { entry -> RunTaskStep? in
+            let text = ((entry["step"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? nil : RunTaskStep(text: text, status: RunTasks.status(entry["status"] as? String))
+        }
+        return steps.isEmpty ? nil : steps
     }
 }
