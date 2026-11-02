@@ -5,6 +5,8 @@ import Foundation
 
 let chatMediaTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "card.video.fullScreen": "Volledig scherm",
+        "card.video.exitFullScreen": "Volledig scherm verlaten",
         "chat.deleteMessage": "Verwijderen",
         "chat.delete.choose": "Bericht verwijderen?",
         "chat.delete.forMe": "Verwijderen voor mij",
@@ -151,6 +153,8 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chats.own.messages.step": "Geef Nook schijftoegang",
     ],
     .en: [
+        "card.video.fullScreen": "Full screen",
+        "card.video.exitFullScreen": "Exit full screen",
         "chat.deleteMessage": "Delete",
         "chat.delete.choose": "Delete message?",
         "chat.delete.forMe": "Delete for me",
@@ -297,6 +301,8 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chats.own.messages.step": "Give Nook disk access",
     ],
     .de: [
+        "card.video.fullScreen": "Vollbild",
+        "card.video.exitFullScreen": "Vollbild beenden",
         "chat.deleteMessage": "Löschen",
         "chat.delete.choose": "Nachricht löschen?",
         "chat.delete.forMe": "Für mich löschen",
@@ -443,6 +449,8 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chats.own.messages.step": "Gib Nook Festplattenzugriff",
     ],
     .fr: [
+        "card.video.fullScreen": "Plein écran",
+        "card.video.exitFullScreen": "Quitter le plein écran",
         "chat.deleteMessage": "Supprimer",
         "chat.delete.choose": "Supprimer le message ?",
         "chat.delete.forMe": "Supprimer pour moi",
@@ -589,6 +597,8 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chats.own.messages.step": "Donnez à Nook l’accès au disque",
     ],
     .es: [
+        "card.video.fullScreen": "Pantalla completa",
+        "card.video.exitFullScreen": "Salir de pantalla completa",
         "chat.deleteMessage": "Eliminar",
         "chat.delete.choose": "¿Eliminar el mensaje?",
         "chat.delete.forMe": "Eliminar para mí",

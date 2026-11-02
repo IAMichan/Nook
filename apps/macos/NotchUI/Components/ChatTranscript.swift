@@ -1409,8 +1409,9 @@ struct TicksView: View {
 }
 
 /// A video in a chat bubble: its first frame, whole, with a play button, and a click plays it right there with the
-/// system's controls (pause, scrub, volume). The enlarge button opens it big in a window of its
-/// own that goes full screen, carrying on where the bubble was.
+/// system's controls (pause, scrub, volume). The enlarge button carries on where the bubble was: in the main window over
+/// all of the window (`ChatVideoStage`), so split with another app it fills only Nook's part of the screen; in the notch
+/// big in a window of its own that goes full screen.
 struct VideoTile: View {
     let url: URL
     let poster: NSImage?
@@ -1420,8 +1421,10 @@ struct VideoTile: View {
     /// A frame of the video itself, when its app sent no picture of it: never a black box.
     @State private var still: ChatVideoStills.Still?
     @Environment(\.chatMediaLive) private var live
+    @Environment(\.chatVideoStage) private var stage
 
     private var picture: NSImage? { poster ?? still?.image }
+    private var enlargeLabel: String { tr(stage == nil ? "card.video.enlarge" : "card.video.fullScreen") }
 
     private var size: CGSize {
         guard let poster = picture, poster.size.width > 0, poster.size.height > 0 else {
@@ -1468,8 +1471,8 @@ struct VideoTile: View {
                 }
                 .buttonStyle(.plain)
                 .padding(6)
-                .help(tr("card.video.enlarge"))
-                .accessibilityLabel("\(tr("card.video.enlarge")): \(name)")
+                .help(enlargeLabel)
+                .accessibilityLabel("\(enlargeLabel): \(name)")
             }
         }
         .overlay(alignment: .bottomLeading) {
@@ -1508,7 +1511,11 @@ struct VideoTile: View {
         let time = player?.currentTime() ?? .zero
         player?.pause()
         player = nil
-        VideoWindow.shared.show(url, title: name, at: time, aspect: picture?.size)
+        if let stage {
+            stage.show(url, name: name, at: time)
+        } else {
+            VideoWindow.shared.show(url, title: name, at: time, aspect: picture?.size)
+        }
     }
 }
 
