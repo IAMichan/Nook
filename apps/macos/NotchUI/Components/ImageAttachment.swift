@@ -353,10 +353,15 @@ struct ChatPictureSizeBadge: View {
     }
 }
 
-/// The pictures above the text field, each with a small remove button.
+/// The pictures and files above the text field, each with a small remove button. A file shows its first page (or its
+/// icon) with its type written across it, so you see what it is instead of its path.
 struct ImageAttachmentStrip: View {
     let images: [ImageAttachment]
+    var files: [ContextRefs.Found] = []
+    /// The folder relative file references start from.
+    var fileRoot: String? = nil
     let remove: (ImageAttachment) -> Void
+    var removeFile: (Int) -> Void = { _ in }
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -364,21 +369,38 @@ struct ImageAttachmentStrip: View {
                 ForEach(images) { image in
                     ZStack(alignment: .topTrailing) {
                         thumbnail(image)
-                        Button { remove(image) } label: {
-                            Image(systemName: "xmark")
-                                .font(NookTheme.font(8, .bold))
-                                .foregroundStyle(NookTheme.paper)
-                                .frame(width: 16, height: 16)
-                                .background(Circle().fill(Color.black.opacity(0.7)))
-                        }
-                        .buttonStyle(.plain)
-                        .padding(3)
-                        .accessibilityLabel(tr("image.remove"))
+                        removeButton { remove(image) }
+                    }
+                }
+                ForEach(Array(files.enumerated()), id: \.offset) { index, file in
+                    ZStack(alignment: .topTrailing) {
+                        ComposerFileTile(file: file, url: url(of: file))
+                        removeButton { removeFile(index) }
                     }
                 }
             }
         }
         .frame(height: 56)
+    }
+
+    private func url(of file: ContextRefs.Found) -> URL? {
+        guard file.kind == .file else { return nil }
+        if file.id.hasPrefix("/") { return URL(fileURLWithPath: file.id) }
+        guard let fileRoot else { return nil }
+        return URL(fileURLWithPath: fileRoot, isDirectory: true).appendingPathComponent(file.id)
+    }
+
+    private func removeButton(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(NookTheme.font(8, .bold))
+                .foregroundStyle(NookTheme.paper)
+                .frame(width: 16, height: 16)
+                .background(Circle().fill(Color.black.opacity(0.7)))
+        }
+        .buttonStyle(.plain)
+        .padding(3)
+        .accessibilityLabel(tr("image.remove"))
     }
 
     private func thumbnail(_ image: ImageAttachment) -> some View {
@@ -393,6 +415,53 @@ struct ImageAttachmentStrip: View {
         .background(NookTheme.smoke)
         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
         .help(image.name)
+    }
+}
+
+/// A file going out with a message: its preview (a picture, a document's first page, else the Finder icon), dimmed, with
+/// its type ("PDF", "JPG", "TXT") across it like a watermark.
+private struct ComposerFileTile: View {
+    let file: ContextRefs.Found
+    let url: URL?
+    @State private var preview: NSImage?
+
+    private var type: String {
+        let ext = URL(fileURLWithPath: file.label).pathExtension
+        if file.kind == .paste || ext.isEmpty { return file.kind == .paste ? "TXT" : tr("compose.file.type") }
+        return String(ext.uppercased().prefix(5))
+    }
+
+    var body: some View {
+        ZStack {
+            if let preview {
+                Image(nsImage: preview).resizable().scaledToFill()
+            } else {
+                Image(systemName: file.kind == .paste ? "doc.plaintext" : "doc")
+                    .font(NookTheme.font(22, .regular))
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+            NookTheme.ink.opacity(0.45)
+            Text(type)
+                .font(NookTheme.font(13, .heavy))
+                .foregroundStyle(NookTheme.paper.opacity(0.92))
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .padding(.horizontal, NookTheme.Spacing.xs)
+        }
+        .frame(width: 56, height: 56)
+        .background(NookTheme.smoke)
+        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+        .help(file.label)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(file.label)
+        .task(id: url) {
+            guard let url else { return }
+            if let image = await ChatFileThumbnails.shared.image(url, kind: .file) {
+                preview = image
+            } else if FileManager.default.fileExists(atPath: url.path) {
+                preview = NSWorkspace.shared.icon(forFile: url.path)
+            }
+        }
     }
 }
 
