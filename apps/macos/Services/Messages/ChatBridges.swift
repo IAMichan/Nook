@@ -1315,6 +1315,13 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
         isReady ? chatIDs[app + "|" + name] : nil
     }
 
+    /// The people you can tag in a group the helper links: everyone it lists in it but you, by their id in the helper.
+    func tagPeople(_ chat: String) -> [ChatTagPerson] {
+        guard let found = chats[chat], found.isGroup else { return [] }
+        return found.people.filter { $0.key != found.me }.map { ChatTagPerson(name: $0.value, id: $0.key) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
     /// What every app the helper links can take from Nook: text and files; a place or a contact goes as text.
     var sends: Set<ChatOutgoing.Kind> { ChatOutgoing.Kind.noPolls }
 
@@ -1345,6 +1352,9 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
             guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
             request = WASendRequest(path: messages, json: ["text": body])
             if let answered { request.json?["replyToMessageID"] = answered }
+            // "@Name" of someone in the chat: the helper makes it the app's own tag.
+            let tagged = ChatTags.found(in: body, people: tagPeople(chat)).map { ["id": $0.person.id, "name": $0.person.name] }
+            if !tagged.isEmpty { request.json?["mentions"] = tagged }
         }
         _ = try await post(request.path, request.json ?? [:], token: token, timeout: 30)
         // The chat is read again at the next turn, with the message just sent.
@@ -1533,6 +1543,8 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
     private var active: [String: Double] = [:]
     /// The people of each group conversation, by name, asked once.
     private var people: [String: [String]] = [:]
+    /// A group's other people by their Slack user id, per conversation, to tag them.
+    private var memberIDs: [String: [String]] = [:]
     private var turn = 0
     /// Conversations changed from Nook, to read at once, with the messages (their `ts`) to read again: one you edited or
     /// put an emoji on, which a read of only the newer messages would not bring back.
@@ -1559,6 +1571,7 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
         newest = [:]
         active = [:]
         people = [:]
+        memberIDs = [:]
         stale = [:]
         gone = [:]
         lastRead = [:]
@@ -1637,6 +1650,7 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
                     // One refused list (a missing scope) leaves the group without its people, not without its messages.
                     let json = try? await call("conversations.members", ["channel": conversation.id, "limit": "200"], auth: auth)
                     people[conversation.id] = json.map { SlackData.members($0, users: users, me: me) } ?? []
+                    memberIDs[conversation.id] = (json?["members"] as? [String] ?? []).filter { $0 != me }
                 }
                 let members = people[conversation.id] ?? []
                 remember(messages, in: conversation.id)
@@ -1699,6 +1713,13 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
     }
 
     /// The conversation Nook shows as `name`.
+    /// The people you can tag in the conversation Nook shows as `name`: a group's other people by name, each by their
+    /// Slack user id.
+    func tagPeople(_ name: String) -> [ChatTagPerson] {
+        guard let conversation = conversation(name) else { return [] }
+        return (memberIDs[conversation.id] ?? []).compactMap { id in users[id].map { ChatTagPerson(name: $0, id: id) } }
+    }
+
     private func conversation(_ name: String) -> SlackData.Conversation? {
         let key = ChatInbox.key(app: app, chat: name)
         return conversations.first { ChatInbox.key(app: app, chat: SlackData.chatName($0, users: users, me: me)) == key }
@@ -1890,7 +1911,9 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
         guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
         let (auth, conversation) = try target(name)
         let thread = replyTo.flatMap { threadTS(answering: $0, in: conversation, name: name) }
-        _ = try await post("chat.postMessage", SlackData.postFields(channel: conversation.id, text: body, thread: thread), auth: auth)
+        // "@Name" of someone in the conversation goes as Slack's own tag, which Slack shows as their name.
+        let tagged = ChatTags.replacing(in: body, people: tagPeople(name)) { "<@" + $0.id + ">" }
+        _ = try await post("chat.postMessage", SlackData.postFields(channel: conversation.id, text: tagged, thread: thread), auth: auth)
         changed(conversation)
     }
 

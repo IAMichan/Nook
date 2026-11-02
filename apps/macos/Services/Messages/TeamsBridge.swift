@@ -544,7 +544,9 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
         let (account, chat) = try await webChat(name)
-        var html = TeamsWebData.html(body)
+        // "@Name" of someone in the chat goes as a Teams mention, which tells them.
+        let tagged = TeamsWebData.tagged(body, people: tagPeople(name))
+        var html = tagged.html
         if let replyTo, let answered = ChatCaptureService.shared.loadedInbox.threads[ChatInbox.key(app: app, chat: name)]?
             .messages.first(where: { $0.id == replyTo }) {
             let author = answered.isMine ? account.session.me : authors[replyTo]
@@ -553,7 +555,8 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         }
         // One id for both tries: Teams keeps a message once even when the first try reached it.
         let clientID = String(UInt64.random(in: 1_000_000_000_000_000...9_999_999_999_999_999))
-        let json = TeamsWebData.outgoing(html: html, name: account.session.name, clientMessageID: clientID)
+        let json = TeamsWebData.outgoing(html: html, name: account.session.name, clientMessageID: clientID,
+                                         mentions: tagged.mentions)
         try await webAct("POST", account: account, path: "/v1/users/ME/conversations/" + ChatJSON.segment(chat.id) + "/messages",
                          json: json)
         // The chat moved: its history is read again, with the message just sent.
@@ -629,6 +632,20 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
 
     /// The linked account and chat behind the chat Nook shows as `name`, with a session that does not run out within
     /// the minute.
+    /// The people you can tag in the group chat Nook shows as `name`: everyone else who wrote in it, by the name their
+    /// message carries and their Teams id. Teams' website lists a chat's members only with its messages.
+    func tagPeople(_ name: String) -> [ChatTagPerson] {
+        let key = ChatInbox.key(app: app, chat: name)
+        guard case .web(_, let chat) = sources[key], chat.isGroup,
+              let thread = ChatCaptureService.shared.loadedInbox.threads[key] else { return [] }
+        var people: [ChatTagPerson] = []
+        for message in thread.messages.reversed() where !message.isMine && !message.sender.isEmpty {
+            guard let id = authors[message.id], !people.contains(where: { $0.id == id }) else { continue }
+            people.append(ChatTagPerson(name: message.sender, id: id))
+        }
+        return people
+    }
+
     private func webChat(_ name: String) async throws -> (TeamsWebData.Account, TeamsData.Chat) {
         guard case .web(let id, let chat) = sources[ChatInbox.key(app: app, chat: name)],
               var account = TeamsWebSession.shared.accounts.first(where: { $0.id == id }) else {

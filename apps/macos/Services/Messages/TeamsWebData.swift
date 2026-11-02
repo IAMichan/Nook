@@ -375,19 +375,51 @@ enum TeamsWebData {
     /// What sending a message posts to {base}/v1/users/ME/conversations/{id}/messages, as the website sends it: your
     /// message as rich text (`html(_:)`, after `replyHTML` for an answer) under your name, with an id of the sender's
     /// own that tells a retry from a new message.
-    static func outgoing(html: String, name: String, clientMessageID: String) -> [String: Any] {
-        [
+    static func outgoing(html: String, name: String, clientMessageID: String, mentions: [ChatTagPerson] = []) -> [String: Any] {
+        var properties: [String: Any] = ["importance": "", "subject": ""]
+        if let tags = mentionsProperty(mentions) { properties["mentions"] = tags }
+        return [
             "content": html, "messagetype": "RichText/Html", "contenttype": "text",
             "clientmessageid": clientMessageID, "imdisplayname": name,
-            "properties": ["importance": "", "subject": ""],
+            "properties": properties,
         ]
     }
 
     /// Text as the rich text the website sends: escaped, each line a paragraph of its own, an empty line kept.
     static func html(_ text: String) -> String {
-        text.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n", omittingEmptySubsequences: false).map { line in
-            "<p>" + (line.isEmpty ? "&nbsp;" : escaped(String(line))) + "</p>"
+        tagged(text, people: []).html
+    }
+
+    /// `html(_:)` with every "@Name" of someone in `people` (their Teams id, "8:orgid:…", as `id`) as a mention, as the
+    /// website writes one: their name in a span with its number in the message, and the people in that order for
+    /// `outgoing(…mentions:)`.
+    static func tagged(_ text: String, people: [ChatTagPerson]) -> (html: String, mentions: [ChatTagPerson]) {
+        var mentions: [ChatTagPerson] = []
+        let html = text.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n", omittingEmptySubsequences: false).map { line in
+            guard !line.isEmpty else { return "<p>&nbsp;</p>" }
+            let line = String(line)
+            var written = ""
+            var last = line.startIndex
+            for tag in ChatTags.found(in: line, people: people) {
+                written += escaped(String(line[last..<tag.range.lowerBound]))
+                written += "<span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"\(mentions.count)\">"
+                    + escaped(tag.person.name) + "</span>"
+                mentions.append(tag.person)
+                last = tag.range.upperBound
+            }
+            return "<p>" + written + escaped(String(line[last...])) + "</p>"
         }.joined()
+        return (html, mentions)
+    }
+
+    /// The `mentions` property of a message with tags: a JSON list, as a string, of each one's number, id and name.
+    static func mentionsProperty(_ mentions: [ChatTagPerson]) -> String? {
+        guard !mentions.isEmpty else { return nil }
+        let list: [[String: Any]] = mentions.enumerated().map { index, person in
+            ["@type": "http://schema.skype.com/Mention", "itemid": index, "mri": person.id, "mentionType": "person",
+             "displayName": person.name]
+        }
+        return (try? JSONSerialization.data(withJSONObject: list, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) }
     }
 
     /// The quote an answer starts with, as the website writes it (and `reply(_:me:)` reads it): the answered message's
