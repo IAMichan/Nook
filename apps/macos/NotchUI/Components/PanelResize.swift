@@ -125,6 +125,8 @@ enum PanelLayout {
     /// The widest a conversation and its composer read (46rem): on a wide window they stay one centered
     /// column instead of lines running from edge to edge.
     static let chatColumn: CGFloat = 736
+    /// The widest a page of blocks reads (usage, a pull request): centered on a wider window.
+    static let pageColumn: CGFloat = 960
     /// The session list on the left of the Agents tab.
     static let agentsList: Double = 280
     /// A session's results on the right; "widen" in its header jumps to `outputsWide`.
@@ -210,6 +212,13 @@ extension View {
     func chatColumn() -> some View {
         frame(maxWidth: PanelLayout.chatColumn, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    /// A page of blocks (Agents › Usage) as one centered column of `PanelLayout.pageColumn` at most, so its bars and rows
+    /// do not run from edge to edge on a wide window.
+    func pageColumn() -> some View {
+        frame(maxWidth: PanelLayout.pageColumn, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .top)
     }
 
     /// Puts the composer (and what sits on it) over the bottom of a conversation's scroll view: the conversation goes on

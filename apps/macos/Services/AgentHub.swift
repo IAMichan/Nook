@@ -44,12 +44,9 @@ final class AgentHub: ObservableObject {
     /// home is the default account.
     func applyPlanReading(_ reading: UsageLimits.PlanReading, home: String) {
         let known = home.isEmpty ? planUsage : profilePlanUsage[home]
-        var usage = known ?? PlanUsage(fiveHour: nil, sevenDay: nil, updated: Date())
-        let window = PlanWindow(usedPercent: reading.usedPercent, resetsAt: reading.resetsAt)
-        if reading.window == "seven_day" { usage.sevenDay = window } else { usage.fiveHour = window }
-        usage.updated = Date()
-        // A session reports this with many of its turns, mostly unchanged: as for the status line, an unchanged reading is
-        // stored once a minute, not redrawn and written to UserDefaults each time.
+        let usage = PlanUsage.merging(reading, into: known)
+        // A session reports this with many of its turns, mostly unchanged: an unchanged reading is not redrawn and written
+        // to UserDefaults each time.
         if let known, !usage.differs(from: known) { return }
         if home.isEmpty { planUsage = usage } else { profilePlanUsage[home] = usage }
     }
