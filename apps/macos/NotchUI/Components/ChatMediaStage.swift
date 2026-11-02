@@ -1,13 +1,14 @@
 import SwiftUI
 import AVKit
 
-/// A chat's video shown over the whole of Nook's main window, from where its bubble was: in a window that is split
-/// with another app (or already full screen) it fills exactly that window's part of the screen, never the whole display.
-/// In an ordinary window its full-screen button takes the window full screen, and closing the video brings it back.
-/// Every chat app's videos come here, the ones sent as files and the ones a link points at (`VideoTile`). In the notch
-/// there is no stage, and a video opens big in a window of its own (`VideoWindow`).
+/// A chat's video or photo shown over the whole of Nook's main window, from where its bubble was: in a window that is
+/// split with another app (or already full screen) it fills exactly that window's part of the screen, never the whole
+/// display. For a video, its full-screen button takes an ordinary window full screen, and closing the video brings it
+/// back. Every chat app's videos come here, the ones sent as files and the ones a link points at (`VideoTile`), and so
+/// do the photos the Chats tab enlarges (`ChatPhotoZoom`). In the notch there is no stage: a video opens big in a
+/// window of its own (`VideoWindow`), a photo over the card or chat it is in.
 @MainActor
-final class ChatVideoStage: ObservableObject {
+final class ChatMediaStage: ObservableObject {
     struct Video: Identifiable {
         let id = UUID()
         let url: URL
@@ -15,37 +16,70 @@ final class ChatVideoStage: ObservableObject {
         let time: CMTime
     }
 
+    struct Photo: Identifiable {
+        let id = UUID()
+        let url: URL
+        let preview: NSImage
+        let name: String
+        /// Shows the photo in its app (Quick Look); the stage closes first.
+        let open: () -> Void
+    }
+
     @Published var video: Video?
+    @Published var photo: Photo?
+
+    /// Whether a video or photo is on the stage.
+    var isShowing: Bool { video != nil || photo != nil }
 
     func show(_ url: URL, name: String, at time: CMTime) {
-        withAnimation(NookTheme.reveal) { video = Video(url: url, name: name, time: time) }
+        withAnimation(NookTheme.reveal) {
+            photo = nil
+            video = Video(url: url, name: name, time: time)
+        }
+    }
+
+    func show(photo url: URL, preview: NSImage, name: String, open: @escaping () -> Void) {
+        withAnimation(NookTheme.reveal) {
+            video = nil
+            photo = Photo(url: url, preview: preview, name: name, open: open)
+        }
     }
 
     func close() {
-        withAnimation(NookTheme.reveal) { video = nil }
+        withAnimation(NookTheme.reveal) {
+            video = nil
+            photo = nil
+        }
     }
 }
 
 extension EnvironmentValues {
-    /// Where a chat's video goes big: the main window's stage; nil in the notch.
-    @Entry var chatVideoStage: ChatVideoStage?
+    /// Where a chat's video or photo goes big: the main window's stage; nil in the notch.
+    @Entry var chatMediaStage: ChatMediaStage?
 }
 
 extension View {
-    /// Lets the chats in this window show their videos over all of it. Add it once, at the window's root.
-    func chatVideoStage(_ stage: ChatVideoStage) -> some View {
-        environment(\.chatVideoStage, stage)
-            .overlay { ChatVideoStageOverlay(stage: stage) }
+    /// Lets the chats in this window show their videos and photos over all of it. Add it once, at the window's root.
+    func chatMediaStage(_ stage: ChatMediaStage) -> some View {
+        environment(\.chatMediaStage, stage)
+            .overlay { ChatMediaStageOverlay(stage: stage) }
     }
 }
 
-private struct ChatVideoStageOverlay: View {
-    @ObservedObject var stage: ChatVideoStage
+private struct ChatMediaStageOverlay: View {
+    @ObservedObject var stage: ChatMediaStage
 
     var body: some View {
         if let video = stage.video {
             ChatVideoStageView(video: video, onClose: stage.close)
                 .id(video.id)
+                .transition(.opacity)
+        } else if let photo = stage.photo {
+            ChatPhotoZoom(url: photo.url, preview: photo.preview, name: photo.name, fills: true,
+                          onClose: stage.close,
+                          onOpen: { stage.close(); photo.open() })
+                .ignoresSafeArea()
+                .id(photo.id)
                 .transition(.opacity)
         }
     }
@@ -54,7 +88,7 @@ private struct ChatVideoStageOverlay: View {
 /// The video itself over the window: the system's player with its controls, and buttons for full screen and to close
 /// (Escape closes too).
 private struct ChatVideoStageView: View {
-    let video: ChatVideoStage.Video
+    let video: ChatMediaStage.Video
     let onClose: () -> Void
     @State private var player: AVPlayer
     @State private var window: NSWindow?
@@ -63,7 +97,7 @@ private struct ChatVideoStageView: View {
     /// The window went full screen for this video, so it comes back out when the video closes.
     @State private var enteredFullScreen = false
 
-    init(video: ChatVideoStage.Video, onClose: @escaping () -> Void) {
+    init(video: ChatMediaStage.Video, onClose: @escaping () -> Void) {
         self.video = video
         self.onClose = onClose
         _player = State(initialValue: AVPlayer(url: video.url))
