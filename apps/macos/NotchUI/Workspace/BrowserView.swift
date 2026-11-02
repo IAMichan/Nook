@@ -1,11 +1,14 @@
+import Combine
 import SwiftUI
 import WebKit
 import Security
 
-/// The browser in Nook's window. You browse as usual; Nook can read the open page when you ask (a read tool), and only
-/// navigates on its own after your approval (an action). It keeps no history beyond the session and stores no passwords.
+/// The browser in Nook's window, with one or more tabs (`BrowserPage`). You browse as usual; Nook can read the open page
+/// when you ask (a read tool), and only navigates on its own after your approval (an action). It keeps no history beyond
+/// the session and stores no passwords. Everything that acts on "the page" (agents, the bridge, the chat) acts on the
+/// tab in view.
 @MainActor
-final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
+final class BrowserStore: ObservableObject {
     /// Made on first use: a web view starts WebKit's own processes, so Nook only pays for them once the browser is used.
     static var shared: BrowserStore {
         if let instance { return instance }
@@ -17,29 +20,129 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
     /// The browser if it was ever opened, without starting it.
     static var existing: BrowserStore? { instance }
 
-    @Published var address = ""
-    @Published private(set) var title = ""
-    @Published private(set) var loading = false
-    @Published private(set) var canGoBack = false
-    @Published private(set) var canGoForward = false
-    /// The agent that opened the current page through the workspace bridge; nil once you browse yourself.
-    @Published private(set) var openedBy: String?
-    /// Why the last page did not load, if it did not.
-    @Published private(set) var lastError: String?
-    /// When the page was last loaded again after its process crashed.
-    private var lastCrashReload = Date.distantPast
+    /// One tab as the side panel's tab row shows it.
+    struct Tab: Identifiable, Equatable {
+        let id: UUID
+        let title: String
+    }
+
+    /// The open tabs, in order; there is always at least one.
+    @Published private(set) var pages: [BrowserPage]
+    /// The tab in view.
+    @Published private(set) var page: BrowserPage
+    /// The tabs with their titles, kept current for the tab row.
+    @Published private(set) var tabs: [Tab] = []
     /// How many browser pages (notch, workspace window) show the web view now. While one does, a page Nook opens is
     /// already in sight and needs no popup.
     var shownInWorkbench = 0
-    let webView: WKWebView
-    /// The page put away while the browser was out of sight (see `outOfSight`), and its title.
-    private var parked: (url: URL, title: String)?
-    private var parkTask: Task<Void, Never>?
-    private static let parkSeconds: UInt64 = 15 * 60
+    private var watchers: [UUID: AnyCancellable] = [:]
 
-    /// The open page, also while it is put away.
-    var pageURL: URL? { parked?.url ?? webView.url }
-    var pageTitle: String { parked?.title ?? webView.title ?? "" }
+    /// One website data store for every tab, so a sign-in in one tab holds in the others. Nothing of it is written to disk.
+    let dataStore = WKWebsiteDataStore.nonPersistent()
+
+    private init() {
+        let first = BrowserPage(dataStore: dataStore)
+        pages = [first]
+        page = first
+        watch(first)
+        updateTabs()
+    }
+
+    /// Whether `page` is in sight now: the tab in view while a browser page, the popup or a chat corner shows it.
+    func isShowing(_ page: BrowserPage) -> Bool {
+        page === self.page
+            && (shownInWorkbench > 0 || BrowserPopup.shared.isVisible || SessionBrowserOwner.shared.shownInChat > 0)
+    }
+
+    /// Opens an empty tab after the one in view and brings it into view.
+    @discardableResult
+    func newTab() -> BrowserPage {
+        let made = BrowserPage(dataStore: dataStore)
+        let index = pages.firstIndex { $0 === page }.map { $0 + 1 } ?? pages.count
+        pages.insert(made, at: index)
+        watch(made)
+        select(made.id)
+        return made
+    }
+
+    /// Brings a tab into view; the one that was in view may be put away after a while (see `BrowserPage.outOfSight`).
+    func select(_ id: UUID) {
+        guard let next = pages.first(where: { $0.id == id }), next !== page else { return }
+        let previous = page
+        page = next
+        updateTabs()
+        previous.outOfSight()
+        next.inSight()
+    }
+
+    /// Closes a tab; the one next to it comes into view. The last tab stays: closing it closes the browser's panel tab.
+    func close(_ id: UUID) {
+        guard pages.count > 1, let index = pages.firstIndex(where: { $0.id == id }) else { return }
+        let closing = pages.remove(at: index)
+        watchers[closing.id] = nil
+        closing.discard()
+        if closing === page {
+            page = pages[min(index, pages.count - 1)]
+            page.inSight()
+        }
+        updateTabs()
+    }
+
+    private func watch(_ page: BrowserPage) {
+        // Every change in the tab in view reaches the views watching the store; a title change in any tab reaches the tab row.
+        watchers[page.id] = page.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self, weak page] in
+                guard let self, let page else { return }
+                if page === self.page { self.objectWillChange.send() }
+                self.updateTabs()
+            }
+    }
+
+    private func updateTabs() {
+        let next = pages.map { Tab(id: $0.id, title: $0.title) }
+        if next != tabs { tabs = next }
+    }
+
+    // MARK: The tab in view
+
+    var address: String {
+        get { page.address }
+        set { page.address = newValue }
+    }
+    var title: String { page.title }
+    var loading: Bool { page.loading }
+    var canGoBack: Bool { page.canGoBack }
+    var canGoForward: Bool { page.canGoForward }
+    var openedBy: String? { page.openedBy }
+    var lastError: String? { page.lastError }
+    var webView: WKWebView { page.webView }
+    var pageURL: URL? { page.pageURL }
+    var pageTitle: String { page.pageTitle }
+
+    func go(_ input: String) { page.go(input) }
+    func open(_ url: URL) { page.open(url) }
+    func load(_ url: URL, by agent: String, timeout: TimeInterval = 15) async -> String? {
+        await page.load(url, by: agent, timeout: timeout)
+    }
+    func consoleMessages() async -> [String] { await page.consoleMessages() }
+    func screenshot(maxWidth: Int = 1280) async throws -> Data { try await page.screenshot(maxWidth: maxWidth) }
+    func pageText() async throws -> (title: String, url: String, text: String) { try await page.pageText() }
+    func evaluate(_ script: String) async throws -> Any { try await page.evaluate(script) }
+    func openInDefaultBrowser() { page.openInDefaultBrowser() }
+
+    /// No browser page and no popup shows the browser any more: every tab may be put away after a while.
+    func outOfSight() { pages.forEach { $0.outOfSight() } }
+
+    /// The browser shows again: the tab in view comes back.
+    func inSight() { page.inSight() }
+
+    /// Shows a page you asked for (a pull request Nook made, say) in Nook's own browser: the small window beside where you
+    /// are, unless a browser page is already in view.
+    static func show(_ url: URL) {
+        shared.open(url)
+        BrowserPopup.shared.show()
+    }
 
     /// Apple's browser entitlement. A build signed with it gets the system's passkeys in this web view: iCloud Keychain,
     /// a phone nearby (over Bluetooth or a QR code) and security keys, like Safari. Apple grants it on request; see
@@ -74,6 +177,72 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
     })();
     """
 
+    // MARK: Tools
+
+    /// Reading the open page runs right away; going somewhere is an action that waits for approval. Static, so offering
+    /// the tools to the model does not start the browser.
+    static var tools: [ToolSpec] {
+        [
+            ToolSpec(
+                name: "read_nook_browser",
+                description: "Reads the text of the page open in Nook's own browser (Agents › Browser), with its title and address.",
+                schema: ["type": "object", "properties": [String: Any](), "required": [String]()],
+                kind: .read,
+                summarize: { _ in "Read Nook's browser" },
+                tag: { _ in ("", .neutral) },
+                run: { _ in
+                    // Never opened: nothing to read, and no reason to start the browser for that.
+                    guard let browser = BrowserStore.instance else { throw NookError(tr("workbench.browser.nothingOpen")) }
+                    let page = try await browser.pageText()
+                    return "## \(page.title)\nURL: \(page.url)\n\n\(page.text)\n\n" + ReferenceParser.line(title: page.title, url: page.url, detail: "Nook browser")
+                }
+            ),
+            ToolSpec(
+                name: "open_in_nook_browser",
+                description: "Opens a web address in Nook's own browser so the user can look at it together with Nook. Only https addresses.",
+                schema: ["type": "object", "properties": ["url": ["type": "string", "description": "The full https address."]], "required": ["url"]],
+                kind: .action,
+                summarize: { input in "Browser: open \((input["url"] as? String) ?? "")" },
+                tag: { _ in ("", .neutral) },
+                run: { input in
+                    guard let raw = input["url"] as? String, let url = URL(string: raw), url.scheme?.lowercased() == "https" else {
+                        throw NookError("Only https addresses can be opened.")
+                    }
+                    BrowserStore.shared.open(url)
+                    // The chat stays where it is; the page shows in a small window to follow along.
+                    BrowserPopup.shared.show()
+                    return "Opened \(url.absoluteString) in Nook's browser"
+                }
+            )
+        ]
+    }
+}
+
+/// One tab of Nook's browser: its own web view and page.
+@MainActor
+final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
+    let id = UUID()
+    @Published var address = ""
+    @Published private(set) var title = ""
+    @Published private(set) var loading = false
+    @Published private(set) var canGoBack = false
+    @Published private(set) var canGoForward = false
+    /// The agent that opened the current page through the workspace bridge; nil once you browse yourself.
+    @Published private(set) var openedBy: String?
+    /// Why the last page did not load, if it did not.
+    @Published private(set) var lastError: String?
+    /// When the page was last loaded again after its process crashed.
+    private var lastCrashReload = Date.distantPast
+    let webView: WKWebView
+    /// The page put away while the browser was out of sight (see `outOfSight`), and its title.
+    private var parked: (url: URL, title: String)?
+    private var parkTask: Task<Void, Never>?
+    private static let parkSeconds: UInt64 = 15 * 60
+
+    /// The open page, also while it is put away.
+    var pageURL: URL? { parked?.url ?? webView.url }
+    var pageTitle: String { parked?.title ?? webView.title ?? "" }
+
     /// Collects console errors and warnings (and uncaught errors) of each page, so an agent checking its dev server can
     /// see what went wrong. The list lives in the page itself and starts empty on every load.
     private static let consoleCapture = """
@@ -103,15 +272,15 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
     })();
     """
 
-    override init() {
+    init(dataStore: WKWebsiteDataStore) {
         let configuration = WKWebViewConfiguration()
         // Nothing persists between launches: no cookies or storage on disk.
-        configuration.websiteDataStore = .nonPersistent()
+        configuration.websiteDataStore = dataStore
         configuration.userContentController.addUserScript(
             WKUserScript(source: Self.consoleCapture, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        if !Self.hasPasskeyEntitlement {
+        if !BrowserStore.hasPasskeyEntitlement {
             configuration.userContentController.addUserScript(
-                WKUserScript(source: Self.hidePasskeys, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+                WKUserScript(source: BrowserStore.hidePasskeys, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         }
         // Present as Safari, so sign-in pages treat it like the browser it is built on instead of refusing an unknown one.
         configuration.applicationNameForUserAgent = "Version/18.0 Safari/605.1.15"
@@ -122,14 +291,13 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
         webView.allowsBackForwardNavigationGestures = true
     }
 
-    /// No browser page and no popup shows the web view any more: after `parkSeconds` the page is put away, since a page can
+    /// Not in sight any more (the browser went away, or another tab came into view): after `parkSeconds` the page is put away, since a page can
     /// hold hundreds of MB and keep running its scripts for no one. It comes back as soon as the browser is shown or read.
     func outOfSight() {
         parkTask?.cancel()
         parkTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: Self.parkSeconds * 1_000_000_000)
-            guard !Task.isCancelled, let self, self.parked == nil, self.shownInWorkbench == 0, !BrowserPopup.shared.isVisible,
-                  SessionBrowserOwner.shared.shownInChat == 0,
+            guard !Task.isCancelled, let self, self.parked == nil, BrowserStore.existing?.isShowing(self) != true,
                   !self.loading, let url = self.webView.url, url.scheme != "about" else { return }
             self.parked = (url, self.webView.title ?? "")
             self.webView.loadHTMLString("", baseURL: nil)
@@ -169,13 +337,6 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
         SessionBrowserOwner.shared.owner = nil
         lastError = nil
         webView.load(URLRequest(url: url))
-    }
-
-    /// Shows a page you asked for (a pull request Nook made, say) in Nook's own browser: the small window beside where you
-    /// are, unless a browser page is already in view.
-    static func show(_ url: URL) {
-        shared.open(url)
-        BrowserPopup.shared.show()
     }
 
     /// Opens a page for an agent and waits (up to `timeout`) until it has loaded. Returns the error when it failed.
@@ -244,44 +405,6 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
 
     // MARK: Tools
 
-    /// Reading the open page runs right away; going somewhere is an action that waits for approval. Static, so offering
-    /// the tools to the model does not start the browser.
-    static var tools: [ToolSpec] {
-        [
-            ToolSpec(
-                name: "read_nook_browser",
-                description: "Reads the text of the page open in Nook's own browser (Agents › Browser), with its title and address.",
-                schema: ["type": "object", "properties": [String: Any](), "required": [String]()],
-                kind: .read,
-                summarize: { _ in "Read Nook's browser" },
-                tag: { _ in ("", .neutral) },
-                run: { _ in
-                    // Never opened: nothing to read, and no reason to start the browser for that.
-                    guard let browser = BrowserStore.instance else { throw NookError(tr("workbench.browser.nothingOpen")) }
-                    let page = try await browser.pageText()
-                    return "## \(page.title)\nURL: \(page.url)\n\n\(page.text)\n\n" + ReferenceParser.line(title: page.title, url: page.url, detail: "Nook browser")
-                }
-            ),
-            ToolSpec(
-                name: "open_in_nook_browser",
-                description: "Opens a web address in Nook's own browser so the user can look at it together with Nook. Only https addresses.",
-                schema: ["type": "object", "properties": ["url": ["type": "string", "description": "The full https address."]], "required": ["url"]],
-                kind: .action,
-                summarize: { input in "Browser: open \((input["url"] as? String) ?? "")" },
-                tag: { _ in ("", .neutral) },
-                run: { input in
-                    guard let raw = input["url"] as? String, let url = URL(string: raw), url.scheme?.lowercased() == "https" else {
-                        throw NookError("Only https addresses can be opened.")
-                    }
-                    BrowserStore.shared.open(url)
-                    // The chat stays where it is; the page shows in a small window to follow along.
-                    BrowserPopup.shared.show()
-                    return "Opened \(url.absoluteString) in Nook's browser"
-                }
-            )
-        ]
-    }
-
     // MARK: WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { refresh(loading: true) }
@@ -293,6 +416,14 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         lastError = error.localizedDescription
         refresh(loading: false)
+    }
+
+    /// The tab was closed: its page goes and its web view stops.
+    func discard() {
+        parkTask?.cancel()
+        parked = nil
+        webView.stopLoading()
+        webView.loadHTMLString("", baseURL: nil)
     }
 
     /// The page's process crashed or was ended by macOS (memory pressure): the view would stay blank, so load the page
@@ -477,7 +608,9 @@ struct BrowserView: View {
             if store.webView.url == nil && !store.loading {
                 WSEmptyState(symbol: "safari", title: tr("workbench.browser.emptyTitle"), message: tr("workbench.browser.emptyMessage"), action: nil)
             }
+            // A container of its own for each tab: a container holds one web view.
             WebViewHost(webView: store.webView)
+                .id(store.page.id)
                 .opacity(store.webView.url == nil && !store.loading ? 0 : 1)
         }
         // In view: whatever an agent opens here is seen, also while you watch.
@@ -614,7 +747,7 @@ private struct BrowserPopupView: View {
             .padding(.trailing, 10)
             .frame(height: 38)
             Divider()
-            WebViewHost(webView: store.webView)
+            WebViewHost(webView: store.webView).id(store.page.id)
         }
         .background(NookTheme.field)
         .ignoresSafeArea()
@@ -717,7 +850,7 @@ private struct SessionBrowserCard: View {
             .padding(.trailing, NookTheme.Spacing.xs)
             .frame(height: 34)
             NookDivider()
-            WebViewHost(webView: store.webView)
+            WebViewHost(webView: store.webView).id(store.page.id)
         }
         // Its usual size, narrower when the conversation it floats over is narrow (see `SessionTools`).
         .frame(maxWidth: Self.size.width)
