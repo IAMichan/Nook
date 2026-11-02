@@ -87,7 +87,11 @@ struct ChatsSidebar: View {
     let accounts: [String]
     /// Chats with something new per account of the chosen app.
     let newByAccount: [String: Int]
+    /// Your own profile picture in each of the chosen app's accounts (by its name), when its app gives it.
+    var accountPictures: [String: String] = [:]
     let addSource: () -> Void
+    /// Redraws once an account's picture is decoded.
+    @ObservedObject private var pictures = ChatAvatarImages.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -148,8 +152,16 @@ struct ChatsSidebar: View {
         ForEach(accounts, id: \.self) { name in
             ChatsSidebarRow(title: name, count: newByAccount[name] ?? 0, countTint: NookTheme.amber,
                             selected: account == name, compact: compact) {
-                Image(systemName: "person.crop.circle")
-                    .font(NookTheme.font(11.5, .medium))
+                if let path = accountPictures[name], let photo = pictures.image(path, chat: "account|" + name) {
+                    Image(nsImage: photo)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 18, height: 18)
+                        .clipShape(Circle())
+                } else {
+                    Image(systemName: "person.crop.circle")
+                        .font(NookTheme.font(11.5, .medium))
+                }
             } action: {
                 withAnimation(NookTheme.swap) { account = account == name ? nil : name }
             }
