@@ -84,10 +84,15 @@ final class WorkspaceManager: ObservableObject {
     @Published var runs: [WorkspaceRun] = []
     /// Each session's timeline. Not `@Published`: a streaming answer changes it for every token, and a published
     /// dictionary can only be replaced as a whole, which copied the session's entire timeline per token. Changed in place
-    /// here, and views hear about it at most every `eventsPublishInterval` (see `eventsDidChange`).
+    /// here, and the views that draw a timeline hear about it through `timelines`, at most every `eventsPublishInterval`
+    /// (see `eventsDidChange`).
     var events: [UUID: [RunEvent]] = [:] {
         didSet { eventsDidChange() }
     }
+    /// Announces a changed timeline. Apart from this manager's own change: a streaming answer changes a timeline up to 20
+    /// times a second, and announcing that on the manager redrew every view that observes it (the session's frame, its
+    /// side panels, git buttons, usage badges), which only read the sessions and not what they say.
+    let timelines = TimelineChanges()
     /// Settable within the module: the Codex app-server extension adds and answers requests too.
     @Published var approvals: [UUID: [PendingPermission]] = [:]
     /// Follow-up messages typed while the agent was working; the first goes out as soon as the turn has ended.
@@ -2243,7 +2248,7 @@ final class WorkspaceManager: ObservableObject {
             eventsDirty = true
             return
         }
-        objectWillChange.send()
+        timelines.objectWillChange.send()
         eventsThrottled = true
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: Self.eventsPublishInterval)
@@ -2339,3 +2344,8 @@ enum AgentPathFormat {
         usd < 0.01 && usd > 0 ? "< $0.01" : String(format: "$%.2f", usd)
     }
 }
+
+/// Tells the views that draw a session's timeline that one changed (`WorkspaceManager.timelines`). Observe it next to
+/// the manager in a view that reads `timeline(_:)`.
+@MainActor
+final class TimelineChanges: ObservableObject {}

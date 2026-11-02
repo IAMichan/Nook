@@ -82,8 +82,9 @@ final class NookStore {
         exec("PRAGMA journal_mode = WAL;")
         migrate()
         // A long log is a long delete: not while Nook starts. Every use of the connection holds `lock`, so this waits
-        // for one on the main thread or makes it wait, and the store lives as long as the work it started.
-        DispatchQueue.global(qos: .utility).async { [self] in pruneAudit() }
+        // for one on the main thread or makes it wait, and the store lives as long as the work it started. Started a
+        // little later: right at launch the main thread reads memories and loops from the same connection.
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 15) { [self] in pruneAudit() }
     }
 
     deinit { sqlite3_close(db) }

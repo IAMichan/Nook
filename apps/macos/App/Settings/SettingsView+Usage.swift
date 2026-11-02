@@ -50,12 +50,17 @@ extension SettingsView {
         }
     }
 
+    /// Read off the main thread: each agent's settings file is read and parsed, while Settings draws its first frame.
     func refreshAgentStates() {
-        var states: [AgentConfigInstaller.Target: AgentConfigInstaller.State] = [:]
-        for target in AgentConfigInstaller.Target.allCases {
-            states[target] = AgentConfigInstaller.state(of: target)
+        Task {
+            agentStates = await Task.detached(priority: .userInitiated) {
+                var states: [AgentConfigInstaller.Target: AgentConfigInstaller.State] = [:]
+                for target in AgentConfigInstaller.Target.allCases {
+                    states[target] = AgentConfigInstaller.state(of: target)
+                }
+                return states
+            }.value
         }
-        agentStates = states
     }
 
     func prepare(_ target: AgentConfigInstaller.Target, install: Bool) {

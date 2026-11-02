@@ -45,9 +45,7 @@ final class KeepAwake: ObservableObject {
     /// Takes in what changed (a session, a phone connecting, the companion switched off) and holds what the policy says.
     func update(now: Date = Date()) {
         guard let app, CompanionStore.shared.enabled else { hold(.none); return }
-        let working = CompanionServer.shared.digests(app).contains {
-            KeepAwakePolicy.isBusy(attention: $0.attention, waiting: !$0.items.isEmpty)
-        }
+        let working = CompanionServer.shared.anyBusy(app)
         if working { lastBusy = now }
         let busy = working || lastBusy.map { now.timeIntervalSince($0) < KeepAwakePolicy.grace } == true
         let power = PowerSource.current()

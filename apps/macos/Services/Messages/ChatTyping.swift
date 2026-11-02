@@ -66,6 +66,11 @@ struct ChatTypingState: Equatable, Sendable {
         (chats[chat] ?? []).filter { $0.until > now }
     }
 
+    /// What the chats show of this state: who types in which chat and how, without when their word runs out.
+    var shown: [String: [String]] {
+        chats.mapValues { $0.map { "\($0.id)|\($0.name)|\($0.kind.rawValue)" } }
+    }
+
     /// When the next word runs out, to look again then; nil when no one types anywhere.
     var nextExpiry: Date? { chats.values.flatMap { $0 }.map(\.until).min() }
 }

@@ -17,7 +17,7 @@ struct UsageLimitBanner: View {
                         .foregroundStyle(NookTheme.amber)
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         Text(tr("ws.limit.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.textSecondary)
-                        TimelineView(.periodic(from: .now, by: 30)) { context in
+                        TimelineView(.nookTicks(every: 30)) { context in
                             Text(line(now: context.date, auto: auto))
                                 .font(NookTheme.TextStyle.detail)
                                 .foregroundStyle(NookTheme.textTertiary)

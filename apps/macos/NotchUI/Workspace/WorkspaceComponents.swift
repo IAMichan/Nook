@@ -535,7 +535,7 @@ struct ElapsedText: View {
     let since: Date
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
+        TimelineView(.nookTicks(every: 1)) { context in
             Text(AgentPathFormat.duration(context.date.timeIntervalSince(since)))
                 .monospacedDigit()
         }

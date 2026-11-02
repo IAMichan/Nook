@@ -67,7 +67,9 @@ final class SearchCenter: ObservableObject {
             for run in missing {
                 guard !Task.isCancelled else { return }
                 let events = await app.workspace.timelineForSearch(run.id)
-                Self.transcripts[run.id] = (run.updatedAt, AppModel.searchPassages(events, run: run))
+                // Off the main thread: a long session's timeline held it up once for every session after launch.
+                let passages = await Task.detached(priority: .utility) { AppModel.searchPassages(events, run: run) }.value
+                Self.transcripts[run.id] = (run.updatedAt, passages)
             }
             guard !missing.isEmpty, !Task.isCancelled else { self.indexing = false; return }
             let full = app.searchDocuments(transcripts: Self.transcripts.mapValues { $0.passages })
@@ -79,12 +81,6 @@ final class SearchCenter: ObservableObject {
             self.indexing = false
             if !self.text.isEmpty { self.rerun() }
         }
-    }
-
-    /// Prepares state when opening search panel.
-    func prepareOpen(_ app: AppModel) {
-        reset()
-        load(app)
     }
 
     /// Resets the active search query and results without throwing away the index.

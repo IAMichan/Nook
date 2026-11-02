@@ -44,7 +44,7 @@ private struct RecordingBadgeView: View {
     @ObservedObject var notes: NoteTaker
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
+        TimelineView(.nookTicks(every: 1)) { context in
             HStack(spacing: NookTheme.Spacing.md) {
                 Circle()
                     .fill(NookTheme.coral)
