@@ -101,9 +101,9 @@ extension WorkspaceManager {
     }
 
     /// Where the button stands for a session; nil outside a repository.
-    func quickGitState(_ id: UUID) async -> GitQuickState? {
+    func quickGitState(_ id: UUID, linked: URL? = nil) async -> GitQuickState? {
         guard let run = run(id), run.repoRoot != nil, let target = quickTarget(run), let status = self.git[id]?.status else { return nil }
-        let open = await quickGitState(target, status: status, known: openPullRequests[id]) { [weak self] found in
+        let open = await quickGitState(target, status: status, known: openPullRequests[id], linked: linked) { [weak self] found in
             if self?.openPullRequests[id] != found { self?.openPullRequests[id] = found }
         }
         return open
@@ -119,7 +119,7 @@ extension WorkspaceManager {
     }
 
     private func quickGitState(_ target: QuickGitTarget, status: GitStatus, known: URL?,
-                               found: @escaping (URL?) -> Void) async -> GitQuickState {
+                               linked: URL? = nil, found: @escaping (URL?) -> Void) async -> GitQuickState {
         let git = target.git, directory = target.directory, sessionBase = target.baseBranch
         let facts = await Task.detached(priority: .userInitiated) { () -> (base: String?, remote: Bool, ahead: Int, repo: RemoteRepository?) in
             let remotes = git.remotes(directory)
@@ -147,6 +147,10 @@ extension WorkspaceManager {
                 if answer.landed { pullRequestLanded.insert(key) } else { pullRequestLanded.remove(key) }
                 found(open)
             }
+            // The forge's list can miss a request (a lookup that failed, a branch it names differently): the one the
+            // conversation links, which the tray reads as open, still means the branch has its pull request.
+            if open == nil, let linked, let status = PullRequestStatusStore.shared.status(linked),
+               [.open, .draft, .conflict].contains(status.glyph) { open = linked }
             landed = open == nil && pullRequestLanded.contains(key)
         }
         return GitQuickState(hasChanges: !status.isClean, branch: branch, isDefaultBranch: branch != nil && branch == facts.base,
