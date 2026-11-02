@@ -96,11 +96,12 @@ enum TextGeneration {
     // MARK: Commands
 
     /// `claude -p` that only answers: a small model, the schema, no tools, no slash commands, no MCP servers and no
-    /// hooks (so this call never shows up in the notch as a session). The prompt goes on stdin.
+    /// hooks (so this call never shows up in the notch as a session), and no saved transcript (so it never shows up in the
+    /// session list either). The prompt goes on stdin.
     static func claudeArguments(schema: [String: Any], model: String = "haiku") -> [String] {
         ["-p", "--output-format", "json", "--json-schema", json(schema), "--model", model,
          "--settings", #"{"disableAllHooks":true}"#, "--tools", "", "--disable-slash-commands", "--strict-mcp-config",
-         "--permission-mode", "dontAsk"]
+         "--permission-mode", "dontAsk", "--no-session-persistence"]
     }
 
     /// `codex exec` that only answers: read-only, ephemeral, low effort, the schema and answer in files, prompt on stdin.
@@ -172,6 +173,14 @@ enum TextGeneration {
 
 /// One headless call, off the main thread, with a time limit.
 enum TextGenerationRunner {
+    static let folderPrefix = "nook-text-"
+
+    /// The scratch folder of one of these calls: transcripts Claude Code saved there before `--no-session-persistence`
+    /// are Nook's own, not sessions of the user.
+    static func isScratchFolder(_ path: String) -> Bool {
+        URL(fileURLWithPath: path).lastPathComponent.hasPrefix(folderPrefix)
+    }
+
     private final class Output: @unchecked Sendable {
         private let lock = NSLock()
         private var lines: [String] = []
@@ -181,7 +190,7 @@ enum TextGenerationRunner {
 
     static func run(engine: TextGeneration.Engine, executable: String, environment: [String: String], prompt: String,
                     schema: [String: Any], cwd: String, timeout: TimeInterval = 120, model: String? = nil) -> [String: Any]? {
-        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("nook-text-" + UUID().uuidString, isDirectory: true)
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent(folderPrefix + UUID().uuidString, isDirectory: true)
         guard (try? FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)) != nil else { return nil }
         defer { try? FileManager.default.removeItem(at: temp) }
         let answerFile = temp.appendingPathComponent("answer.txt")
