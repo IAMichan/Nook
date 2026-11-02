@@ -24,6 +24,8 @@ struct SessionComposer<Controls: View>: View {
 
     /// An extra round button next to send (the microphone), kept on the right instead of among the choices.
     private var trailingAccessory: AnyView?
+    /// A status at the right end of the tray of choices (the account's usage limits), outside the fitting.
+    private var trayAccessory: AnyView?
     /// While busy: puts the text in line for after the current turn (or steers the turn) instead of sending it.
     private var queueAction: (() -> Void)?
     private var queueLabel = ""
@@ -92,6 +94,13 @@ struct SessionComposer<Controls: View>: View {
     func trailing<Accessory: View>(@ViewBuilder _ accessory: () -> Accessory) -> Self {
         var copy = self
         copy.trailingAccessory = AnyView(accessory())
+        return copy
+    }
+
+    /// The same composer with a small view at the right end of the tray of choices under the box (`choicesBelowBox`).
+    func trayTrailing<Accessory: View>(@ViewBuilder _ accessory: () -> Accessory) -> Self {
+        var copy = self
+        copy.trayAccessory = AnyView(accessory())
         return copy
     }
 
@@ -431,9 +440,13 @@ struct SessionComposer<Controls: View>: View {
         .padding(.leading, -NookTheme.Spacing.md)
     }
 
-    /// The choices alone, in the tray under the box; they give up their words step by step like the row in the box.
+    /// The choices in the tray under the box, and its accessory at the right end; the choices give up their words step
+    /// by step like the row in the box, in the width the accessory leaves them.
     private var choicesRow: some View {
-        ComposerDensityFit(content: controls(), minGap: 0)
+        HStack(spacing: NookTheme.Spacing.xs) {
+            ComposerDensityFit(content: controls(), minGap: trayAccessory == nil ? 0 : NookTheme.Spacing.md)
+            if let trayAccessory { trayAccessory }
+        }
     }
 
     /// The extra button, then send, or stop and queue while the agent works.
