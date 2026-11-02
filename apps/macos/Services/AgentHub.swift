@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 /// Tracks running AI agents based on their hooks and surfaces their questions to the notch:
 /// permissions (only when the agent would prompt the user directly) and multiple-choice questions (AskUserQuestion).
@@ -127,11 +128,14 @@ final class AgentHub: ObservableObject {
     private enum PendingKind {
         case permission(suggestions: Any?, canAlways: Bool)
         case legacyPreToolUse
+        /// A prompt the agent's own app draws (`AppPrompt`): answered by pressing its button, not by a hook reply.
+        case appPrompt(bundleIDs: [String])
     }
 
     private struct PendingApproval {
         let request: ApprovalRequest
-        let connection: HookConnection
+        /// The hook waiting for the answer; nil for an app prompt, whose hook has already returned.
+        let connection: HookConnection?
         let kind: PendingKind
     }
 
@@ -162,6 +166,10 @@ final class AgentHub: ObservableObject {
 
     /// After this many seconds without answer, agent prompts user directly (hook timeout is 120s).
     private static let approvalTimeout: UInt64 = 110
+    /// An app prompt waits in the app as long as you take; the card goes after this long, the app keeps asking.
+    private static let appPromptTimeout: UInt64 = 600
+    /// App prompts Nook is pressing the button of right now, so a second click does not press again.
+    private var answering: Set<String> = []
     private static let questionTimeout: UInt64 = 120
 
     func start() {
@@ -457,6 +465,10 @@ final class AgentHub: ObservableObject {
 
     func decide(_ id: String, _ decision: ApprovalDecision) {
         guard let pending = pendingApprovals[id] else { return }
+        if case .appPrompt(let bundleIDs) = pending.kind, decision != .terminal {
+            answerAppPrompt(id, bundleIDs: bundleIDs, allow: decision != .deny)
+            return
+        }
         let response = Self.response(for: decision, kind: pending.kind)
         switch decision {
         case .allow:
@@ -596,6 +608,13 @@ final class AgentHub: ObservableObject {
             return
         }
 
+        // The app's prompt was answered in the app (the tool went on), or the turn moved past it: its card goes.
+        let finishedTool = (event["tool_name"] as? String) ?? (event["toolName"] as? String) ?? ""
+        let promptTool = (kind == "PostToolUse" || kind == "PostToolUseFailure") && ScreenAction(tool: finishedTool)?.asksYou == true
+        if promptTool || ["UserPromptSubmit", "Stop", "StopFailure", "Interrupt"].contains(kind) {
+            closeAppPrompts(key: key, step: (.running, "answered in \(name)"))
+        }
+
         var record = records[key] ?? Record(
             agentID: agentID,
             agent: name,
@@ -712,6 +731,13 @@ final class AgentHub: ObservableObject {
             // The prompt was missed (Nook started mid-turn): this turn is at least this old.
             if record.turnStarted == nil { record.turnStarted = Date() }
             recap?.toolUse(tool)
+            // The agent's app is about to ask you in its own window (Claude's "Allow Claude to use …?"): ask here too.
+            let hosts = AppPrompt.hostBundleIDs(agentID: agentID, hostBundleID: record.hostBundleID, tool: tool)
+            if !hosts.isEmpty {
+                closeAppPrompts(key: key, step: nil)
+                requestApproval(key: key, record: &record, tool: tool, input: input, kind: .appPrompt(bundleIDs: hosts),
+                                connection: nil)
+            }
         case "PostToolUse":
             Self.complete(&record, as: .done)
             Self.resume(&record, asking: isAsking(key))
@@ -792,14 +818,26 @@ final class AgentHub: ObservableObject {
         tool: String,
         input: [String: Any],
         kind: PendingKind,
-        connection: HookConnection
+        connection: HookConnection?
     ) {
         let id = UUID().uuidString
-        let summary = Self.approvalSummary(tool: tool, input: input)
+        var summary = Self.approvalSummary(tool: tool, input: input)
         let edit = Self.editDiff(tool: tool, input: input)
-        let assessment = Self.assess(tool: tool, input: input, edit: edit)
+        var assessment = Self.assess(tool: tool, input: input, edit: edit)
         var canAlways = false
-        if case .permission(_, let always) = kind { canAlways = always }
+        var title: String?
+        var timeout = Self.approvalTimeout
+        switch kind {
+        case .permission(_, let always):
+            canAlways = always
+        case .legacyPreToolUse:
+            break
+        case .appPrompt:
+            summary = AppPrompt.summary(input: input)
+            title = AppPrompt.title(tool: tool, agent: record.agent)
+            assessment = CommandAssessment(level: .review, title: "", note: tr("ws.approval.appPromptNote", record.agent))
+            timeout = Self.appPromptTimeout
+        }
 
         let request = ApprovalRequest(
             id: id,
@@ -811,7 +849,8 @@ final class AgentHub: ObservableObject {
             diff: edit?.lines ?? [],
             assessment: assessment,
             canAlways: canAlways,
-            created: Date()
+            created: Date(),
+            customTitle: title
         )
         pendingApprovals[id] = PendingApproval(request: request, connection: connection, kind: kind)
         approvals.append(request)
@@ -820,17 +859,50 @@ final class AgentHub: ObservableObject {
         if let edit { record.diff = edit.lines }
         Self.replaceLast(&record, .blocked, "waiting for you: " + Self.shorten(summary, 50))
 
-        connection.onPeerClosed { [weak self] in
+        connection?.onPeerClosed { [weak self] in
             Task { @MainActor in
                 self?.closeApproval(id, response: nil, status: .running, step: (.running, "answered in the terminal"))
             }
         }
+        let wait = timeout
         Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: Self.approvalTimeout * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: wait * 1_000_000_000)
             // No answer received: the agent will prompt directly, as normal.
             self?.closeApproval(id, response: nil, status: .waiting, step: (.blocked, "waiting for you in the terminal"))
         }
         onApproval?(request)
+    }
+
+    /// Answers the app's own prompt by pressing its button. When Nook cannot find the button for sure (the app shows
+    /// another conversation, or Nook has no Accessibility access), it opens the app, so you answer there.
+    private func answerAppPrompt(_ id: String, bundleIDs: [String], allow: Bool) {
+        guard answering.insert(id).inserted else { return }
+        Task { @MainActor [weak self] in
+            let pressed = await AppPromptPresser.press(allow ? .allow : .deny, bundleIDs: bundleIDs)
+            guard let self else { return }
+            self.answering.remove(id)
+            guard self.pendingApprovals[id] != nil else { return }
+            if pressed {
+                self.recap?.decision(allowed: allow)
+                if allow {
+                    self.closeApproval(id, response: nil, status: .running, step: (.running, "allowed via Nook"), message: "Allowed")
+                } else {
+                    self.closeApproval(id, response: nil, status: .running, step: (.failed, "denied via Nook"), message: "Denied")
+                }
+            } else {
+                self.closeApproval(id, response: nil, status: .waiting, step: (.blocked, "waiting for you in the app"))
+                let app = bundleIDs.compactMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0).first }.first
+                app?.activate(options: [.activateAllWindows])
+            }
+        }
+    }
+
+    /// Closes the app-prompt cards of a session.
+    private func closeAppPrompts(key: String, step: (AgentStep.Mark, String)?) {
+        for (id, pending) in pendingApprovals where pending.request.sessionKey == key {
+            guard case .appPrompt = pending.kind else { continue }
+            closeApproval(id, response: nil, status: .running, step: step)
+        }
     }
 
     private func closeApproval(
@@ -841,7 +913,7 @@ final class AgentHub: ObservableObject {
         message: String? = nil
     ) {
         guard let pending = pendingApprovals.removeValue(forKey: id) else { return }
-        pending.connection.reply(response)
+        pending.connection?.reply(response)
         approvals.removeAll { $0.id == id }
         let key = pending.request.sessionKey
         if var record = records[key] {
@@ -870,6 +942,8 @@ final class AgentHub: ObservableObject {
                     "permissionDecisionReason": value == "allow" ? "Approved via Nook" : "Denied via Nook"
                 ]
             ]
+        case .appPrompt:
+            return nil
         case .permission(let suggestions, let canAlways):
             var result: [String: Any]
             switch decision {
