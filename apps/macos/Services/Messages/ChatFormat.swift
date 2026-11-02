@@ -37,6 +37,71 @@ enum ChatFormat {
         return made
     }
 
+    /// A web or mail address in a message, for "Copy link" and "Copy email address" in its menu.
+    struct Address: Equatable, Sendable {
+        enum Kind: Equatable, Sendable { case link, email }
+        var kind: Kind
+        /// What is copied: a link as the message writes it (or where a Markdown link leads), a mail address without
+        /// "mailto:".
+        var text: String
+    }
+
+    /// The web and mail addresses in a message, in the order they come, each once; none in code. Kept per text: the
+    /// detector is costly and a bubble's menu asks for them each time it is drawn.
+    static func addresses(_ text: String) -> [Address] {
+        guard text.contains(".") || text.contains("](") else { return [] }
+        let key = text as NSString
+        if let kept = addressCache.object(forKey: key) { return kept.value }
+        var found: [Address] = []
+        func add(_ address: Address?) {
+            if let address, !address.text.isEmpty, !found.contains(address) { found.append(address) }
+        }
+        for block in blocks(text) {
+            let spans: [Span]
+            switch block {
+            case .paragraph(let line), .quote(let line), .item(_, let line): spans = line
+            case .code: continue
+            }
+            for span in spans where !span.code {
+                if let link = span.link {
+                    add(address(link, written: nil))
+                    continue
+                }
+                guard span.text.contains("."), let detector = addressDetector else { continue }
+                let written = span.text as NSString
+                for match in detector.matches(in: span.text, range: NSRange(location: 0, length: written.length)) {
+                    guard let url = match.url else { continue }
+                    add(address(url, written: written.substring(with: match.range)))
+                }
+            }
+        }
+        addressCache.setObject(Kept(found), forKey: key)
+        return found
+    }
+
+    /// A web link (http, https) or a mail address; nil for anything else (a phone number, a file).
+    private static func address(_ url: URL, written: String?) -> Address? {
+        switch url.scheme?.lowercased() {
+        case "mailto":
+            var mail = written ?? url.absoluteString
+            if mail.lowercased().hasPrefix("mailto:") { mail = String(mail.dropFirst("mailto:".count)) }
+            mail = String(mail.split(separator: "?", maxSplits: 1).first ?? "")
+            return Address(kind: .email, text: mail.removingPercentEncoding ?? mail)
+        case "http", "https":
+            return Address(kind: .link, text: written ?? url.absoluteString)
+        default:
+            return nil
+        }
+    }
+
+    private static let addressDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+
+    private static let addressCache: NSCache<NSString, Kept<[Address]>> = {
+        let cache = NSCache<NSString, Kept<[Address]>>()
+        cache.countLimit = 2_000
+        return cache
+    }()
+
     /// A value an `NSCache` can hold.
     final class Kept<Value>: @unchecked Sendable {
         let value: Value
