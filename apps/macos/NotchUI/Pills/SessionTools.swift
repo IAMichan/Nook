@@ -307,104 +307,108 @@ struct SessionWorkbench<Conversation: View>: View {
                 : 0
         let needed = PanelLayout.sessionPanelRoom + (wasDocked ? 0 : PanelLayout.dockHysteresis)
         let docked = dockSessionPanel && !directory.isEmpty && totalWidth - rightRoom >= needed
-        HStack(alignment: .top, spacing: 0) {
-            VStack(spacing: 0) {
-                // Docked, the switch sits above the session panel instead of in the conversation's header.
-                conversation(docked ? AnyView(EmptyView()) : AnyView(SessionToolSwitch(viewModel: viewModel, directory: directory,
-                                                       outputsFresh: toolsFresh)))
-                    // A pull request link in the conversation opens in the side panel.
-                    .environment(\.pullRequestLinksBeside, true)
-                    // The conversation hands up what the agent produced, and opens a new plan in the outputs tab.
-                    .environment(\.sessionOutputs, SessionOutputsLink(shown: outputsShown, open: openOutput,
-                                                                      subagentsShown: subagentsShown, openSubagents: openSubagents))
-                    .environment(\.sessionPanelDocked, docked)
-                    // A diff or file the conversation opens takes the right side from the tool panel.
-                    .environment(\.sessionSide, SessionSideLink(shownFile: filePreview, showFile: showFile, openDiff: openDiff,
-                                                                 toggleConsole: toggleConsole))
-                    .onPreferenceChange(SessionOutputsReport.self) { outputs = $0 }
-                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    // A page this session's agent opened: small in the chat's bottom right corner, above the composer,
-                    // and in no other chat.
-                    .overlayPreferenceValue(SessionComposerBounds.self) { composer in
-                        GeometryReader { proxy in
-                            let above = composer.map { max(0, proxy.size.height - proxy[$0].minY) } ?? 0
-                            SessionBrowserCorner(runID: runID, directory: directory, hidden: side == .browser || bottom == .browser) {
-                                withAnimation(NookTheme.reveal) { viewModel.sessionTool = .browser }
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    // Docked, the switch sits above the session panel instead of in the conversation's header.
+                    conversation(docked ? AnyView(EmptyView()) : AnyView(SessionToolSwitch(viewModel: viewModel, directory: directory,
+                                                           outputsFresh: toolsFresh)))
+                        // A pull request link in the conversation opens in the side panel.
+                        .environment(\.pullRequestLinksBeside, true)
+                        // The conversation hands up what the agent produced, and opens a new plan in the outputs tab.
+                        .environment(\.sessionOutputs, SessionOutputsLink(shown: outputsShown, open: openOutput,
+                                                                          subagentsShown: subagentsShown, openSubagents: openSubagents))
+                        .environment(\.sessionPanelDocked, docked)
+                        // A diff or file the conversation opens takes the right side from the tool panel.
+                        .environment(\.sessionSide, SessionSideLink(shownFile: filePreview, showFile: showFile, openDiff: openDiff,
+                                                                     toggleConsole: toggleConsole))
+                        .onPreferenceChange(SessionOutputsReport.self) { outputs = $0 }
+                        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        // A page this session's agent opened: small in the chat's bottom right corner, above the composer,
+                        // and in no other chat.
+                        .overlayPreferenceValue(SessionComposerBounds.self) { composer in
+                            GeometryReader { proxy in
+                                let above = composer.map { max(0, proxy.size.height - proxy[$0].minY) } ?? 0
+                                SessionBrowserCorner(runID: runID, directory: directory, hidden: side == .browser || bottom == .browser) {
+                                    withAnimation(NookTheme.reveal) { viewModel.sessionTool = .browser }
+                                }
+                                // In a narrow conversation the page covers part of it, not all of it.
+                                .frame(maxWidth: max(240, proxy.size.width * 0.7), alignment: .trailing)
+                                .padding(.trailing, NookTheme.Spacing.lg)
+                                .padding(.bottom, above + NookTheme.Spacing.md)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                             }
-                            // In a narrow conversation the page covers part of it, not all of it.
-                            .frame(maxWidth: max(240, proxy.size.width * 0.7), alignment: .trailing)
-                            .padding(.trailing, NookTheme.Spacing.lg)
-                            .padding(.bottom, above + NookTheme.Spacing.md)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                         }
+                }
+                .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                // Under the covering panel the conversation keeps its place (and what you typed) but takes no clicks.
+                .allowsHitTesting(!covering)
+                .accessibilityHidden(covering)
+                if docked {
+                    // Always the leftmost side panel on the right side, right next to the conversation, with any tool, diff
+                    // or file panel to its right. The switch takes the height of the conversation's header.
+                    VStack(alignment: .trailing, spacing: 0) {
+                        SessionToolSwitch(viewModel: viewModel, directory: directory, outputsFresh: toolsFresh)
+                            .frame(height: 30)
+                            .padding(.trailing, NookTheme.Spacing.xs)
+                        DockedSessionPanel(directory: directory, runID: runID, agentWorking: agentWorking) {
+                            if let runID { workspace.markReviewed(runID) }
+                            viewModel.sessionTool = .changes
+                        }
+                        .id(directory)
                     }
-                if bottom != .conversation {
-                    VStack(spacing: 0) {
-                        BottomSplitHandle(onDrag: dragBottom,
-                                          onEnd: {
-                                              dragStart = nil
-                                              PanelDrag.commit($liveBottomHeight, to: $bottomHeight)
-                                          },
-                                          onReset: { withAnimation(NookTheme.reveal) { bottomHeight = BottomPanelLayout.standard } })
-                        panel(.bottom, tool: bottom)
+                    .fixedSidePanel(width: PanelLayout.sessionPanel)
+                }
+                if sideOpen && !covering {
+                    panel(.side, tool: side)
+                        .sidePanel(.trailing, width: $toolWidth, defaultWidth: PanelLayout.tool, available: totalWidth,
+                                   rest: conversationRoom)
+                } else if let selection = diffSelection, !outputs.turns.isEmpty {
+                    TurnDiffPanel(turns: outputs.turns, selection: Binding(get: { diffSelection ?? selection }, set: { diffSelection = $0 }),
+                                  directory: directory.isEmpty ? nil : directory, wide: PanelLayout.wide($outputsWidth),
+                                  load: runID.flatMap { id in
+                                      workspace.run(id)?.isRemote == false ? { turn, files in try await gitDiff(id, turn: turn, files: files) } : nil
+                                  }) {
+                        withAnimation(NookTheme.reveal) { diffSelection = nil }
                     }
-                    .frame(height: CGFloat(BottomPanelLayout.height(liveBottomHeight ?? bottomHeight, available: totalHeight)))
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .sidePanel(.trailing, width: $outputsWidth, defaultWidth: PanelLayout.outputs, available: totalWidth,
+                               rest: conversationRoom)
+                } else if let filePreview {
+                    FilePreviewPanel(path: filePreview, wide: PanelLayout.wide($outputsWidth)) {
+                        withAnimation(NookTheme.reveal) { self.filePreview = nil }
+                    }
+                    .id(filePreview)
+                    .sidePanel(.trailing, width: $outputsWidth, defaultWidth: PanelLayout.outputs, available: totalWidth,
+                               rest: conversationRoom)
                 }
             }
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .onLayoutHeightChange {
-                totalHeight = $0
-                SessionWorkbenchSize.height = $0
+            .overlay {
+                if covering {
+                    panel(.side, tool: side)
+                        .background(NookTheme.notch)
+                        .transition(.opacity)
+                }
             }
-            // Under the covering panel the conversation keeps its place (and what you typed) but takes no clicks.
-            .allowsHitTesting(!covering)
-            .accessibilityHidden(covering)
-            if docked {
-                // Always the leftmost side panel on the right side, right next to the conversation, with any tool, diff
-                // or file panel to its right. The switch takes the height of the conversation's header.
-                VStack(alignment: .trailing, spacing: 0) {
-                    SessionToolSwitch(viewModel: viewModel, directory: directory, outputsFresh: toolsFresh)
-                        .frame(height: 30)
-                        .padding(.trailing, NookTheme.Spacing.xs)
-                    DockedSessionPanel(directory: directory, runID: runID, agentWorking: agentWorking) {
-                        if let runID { workspace.markReviewed(runID) }
-                        viewModel.sessionTool = .changes
-                    }
-                    .id(directory)
+            // The bottom panel runs the full width of the workbench, under the docked session panel and the side panel too.
+            if bottom != .conversation {
+                VStack(spacing: 0) {
+                    BottomSplitHandle(onDrag: dragBottom,
+                                      onEnd: {
+                                          dragStart = nil
+                                          PanelDrag.commit($liveBottomHeight, to: $bottomHeight)
+                                      },
+                                      onReset: { withAnimation(NookTheme.reveal) { bottomHeight = BottomPanelLayout.standard } })
+                    panel(.bottom, tool: bottom)
                 }
-                .fixedSidePanel(width: PanelLayout.sessionPanel)
-            }
-            if sideOpen && !covering {
-                panel(.side, tool: side)
-                    .sidePanel(.trailing, width: $toolWidth, defaultWidth: PanelLayout.tool, available: totalWidth,
-                               rest: conversationRoom)
-            } else if let selection = diffSelection, !outputs.turns.isEmpty {
-                TurnDiffPanel(turns: outputs.turns, selection: Binding(get: { diffSelection ?? selection }, set: { diffSelection = $0 }),
-                              directory: directory.isEmpty ? nil : directory, wide: PanelLayout.wide($outputsWidth),
-                              load: runID.flatMap { id in
-                                  workspace.run(id)?.isRemote == false ? { turn, files in try await gitDiff(id, turn: turn, files: files) } : nil
-                              }) {
-                    withAnimation(NookTheme.reveal) { diffSelection = nil }
-                }
-                .sidePanel(.trailing, width: $outputsWidth, defaultWidth: PanelLayout.outputs, available: totalWidth,
-                           rest: conversationRoom)
-            } else if let filePreview {
-                FilePreviewPanel(path: filePreview, wide: PanelLayout.wide($outputsWidth)) {
-                    withAnimation(NookTheme.reveal) { self.filePreview = nil }
-                }
-                .id(filePreview)
-                .sidePanel(.trailing, width: $outputsWidth, defaultWidth: PanelLayout.outputs, available: totalWidth,
-                           rest: conversationRoom)
+                .frame(height: CGFloat(BottomPanelLayout.height(liveBottomHeight ?? bottomHeight, available: totalHeight)))
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .overlay {
-            if covering {
-                panel(.side, tool: side)
-                    .background(NookTheme.notch)
-                    .transition(.opacity)
-            }
+        .onLayoutHeightChange {
+            totalHeight = $0
+            SessionWorkbenchSize.height = $0
         }
         .onLayoutWidthChange { width in
             SessionWorkbenchSize.width = width
