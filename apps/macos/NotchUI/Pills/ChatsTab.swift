@@ -520,7 +520,8 @@ struct ChatsTab: View {
                         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     }
                 }
-                .animation(NookTheme.reveal, value: stacked && detailShown)
+                // No animation over the row: one column at a time, it animated the whole list in and out with the
+                // chat. The pane fades on its own (`paneTransition`).
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
