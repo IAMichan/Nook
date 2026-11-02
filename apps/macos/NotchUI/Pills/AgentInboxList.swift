@@ -28,6 +28,8 @@ struct AgentInboxList: View {
     /// before the last row says "left", which must not take the section's mark away.
     @State private var targetedSpot: String?
     @State private var hint: String?
+    /// The project header under the pointer: it shows its "+".
+    @State private var hoveredProject: String?
     @State private var selection = ListSelection<String>()
 
     private static let wakeFormat: DateFormatter = {
@@ -278,7 +280,7 @@ struct AgentInboxList: View {
         let home = Dictionary(sections.map { ($0.kind, $0) }, uniquingKeysWith: { first, _ in first })
         let active = home[.active] ?? InboxSection(kind: .active, rows: [])
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-            projectHeader(group)
+            projectHeader(group, folder: folder(of: group, byID: byID))
             ForEach(rows(of: group), id: \.entry.id) { pair in
                 entryRow(pair.entry, in: home[pair.kind] ?? active, sections: sections, byID: byID, shown: shown)
             }
@@ -287,10 +289,43 @@ struct AgentInboxList: View {
         .modifier(DropTarget(kind: .active, section: active, list: self, sections: sections, byID: byID, row: nil))
     }
 
-    private func projectHeader(_ group: InboxProjectGroup) -> some View {
+    /// The folder a new session for this project starts in: the main checkout behind a session on this Mac (an agent's
+    /// worktree leads back to its repository). Nil for a project of sessions on other machines or without a folder.
+    private func folder(of group: InboxProjectGroup, byID: [String: AgentListItem]) -> String? {
+        guard !group.project.isEmpty, group.project != "no folder" else { return nil }
+        let local = group.rows.lazy.compactMap { byID[$0.entry.id] }
+            .first { $0.machine == MachineName.local && !$0.path.isEmpty }
+        return local.map { WorktreeOrigin.checkoutPath(of: $0.path) }
+    }
+
+    /// Opens the new-session composer on `folder`.
+    private func newSession(in folder: String) {
+        PromptLinkInbox.shared.pendingProject = folder
+        select("new")
+    }
+
+    private func projectHeader(_ group: InboxProjectGroup, folder: String?) -> some View {
         let open = !store.collapsedProjects.contains(group.project) || !store.query.isEmpty
         let name = group.project.isEmpty || group.project == "no folder" ? tr("inbox.project.none") : group.project
-        return Button {
+        return HStack(spacing: 0) {
+            foldButton(group, name: name, open: open)
+            if let folder {
+                ToolbarIconButton("plus", tr("inbox.project.newSession", name), height: 22, width: 22) {
+                    newSession(in: folder)
+                }
+                .opacity(hoveredProject == group.project ? 1 : 0)
+                .padding(.trailing, NookTheme.Spacing.sm)
+            }
+        }
+        .onHover { inside in
+            withAnimation(NookTheme.hover) {
+                if inside { hoveredProject = group.project } else if hoveredProject == group.project { hoveredProject = nil }
+            }
+        }
+    }
+
+    private func foldButton(_ group: InboxProjectGroup, name: String, open: Bool) -> some View {
+        Button {
             withAnimation(NookTheme.reveal) {
                 if store.collapsedProjects.contains(group.project) {
                     store.collapsedProjects.remove(group.project)

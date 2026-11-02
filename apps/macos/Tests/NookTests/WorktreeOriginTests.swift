@@ -24,5 +24,20 @@ final class WorktreeOriginTests: XCTestCase {
         XCTAssertEqual(WorktreeOrigin.repositoryName(of: nested.path), "shop")
         // The main checkout has a .git folder: its own name is right.
         XCTAssertNil(WorktreeOrigin.repositoryName(of: main.path))
+
+        // A new session for the project starts in the main checkout, not in the agent's worktree.
+        XCTAssertEqual(WorktreeOrigin.checkoutPath(of: nested.path), main.standardizedFileURL.path)
+        XCTAssertEqual(WorktreeOrigin.checkoutPath(of: main.path), main.path)
+        XCTAssertEqual(WorktreeOrigin.checkoutPath(of: ""), "")
+    }
+
+    func testBareRepositoryKeepsTheWorktreeAsCheckout() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("worktree-origin-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let worktree = root.appendingPathComponent("fix-x")
+        try FileManager.default.createDirectory(at: worktree, withIntermediateDirectories: true)
+        try "gitdir: \(root.path)/shop.git/worktrees/fix-x\n".write(to: worktree.appendingPathComponent(".git"), atomically: true, encoding: .utf8)
+
+        XCTAssertEqual(WorktreeOrigin.checkoutPath(of: worktree.path), worktree.path)
     }
 }
