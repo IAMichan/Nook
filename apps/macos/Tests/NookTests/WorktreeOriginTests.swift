@@ -51,6 +51,11 @@ final class WorktreeOriginTests: XCTestCase {
         let removedClaude = main.appendingPathComponent(".claude/worktrees/fix-cart").path
         let removedNook = root.appendingPathComponent("worktrees/shop/fix-cart").path
 
+        // A session that moved on to another repository does not lead there.
+        let moved = root.appendingPathComponent("blog")
+        try FileManager.default.createDirectory(at: moved, withIntermediateDirectories: true)
+        XCTAssertEqual(WorktreeOrigin.newSessionFolder(project: "shop", paths: [moved.path, main.path], known: []), main.path)
+        XCTAssertNil(WorktreeOrigin.newSessionFolder(project: "shop", paths: [moved.path], known: []))
         // A folder that still exists wins, also after a removed worktree.
         XCTAssertEqual(WorktreeOrigin.newSessionFolder(project: "shop", paths: [removedNook, main.path], known: []), main.path)
         // A removed agent worktree inside the repository leads back to it.
