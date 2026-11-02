@@ -51,6 +51,11 @@ struct ChatMessageView: View, Equatable {
 
     @ViewBuilder
     private var extras: some View {
+        // The plan Nook works through, the same checklist an agent session shows.
+        if !message.tasks.isEmpty {
+            TaskChecklistCard(steps: planSteps)
+        }
+
         if message.text.isEmpty && message.streaming && message.charts.isEmpty && message.mails.isEmpty {
             TypingIndicator(status: message.status, since: message.date)
         }
@@ -93,6 +98,12 @@ struct ChatMessageView: View, Equatable {
         if message.streaming && !message.text.isEmpty && !message.status.isEmpty {
             TypingIndicator(status: message.status, since: message.date)
         }
+    }
+
+    /// Once the answer stops, nothing runs any more: a step the brain left in progress reads as not done, not spinning.
+    private var planSteps: [RunTaskStep] {
+        guard !message.streaming else { return message.tasks }
+        return message.tasks.map { $0.status == .active ? RunTaskStep(text: $0.text, status: .pending) : $0 }
     }
 
     @ViewBuilder
