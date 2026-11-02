@@ -3,8 +3,9 @@ import Foundation
 /// What you can do to a pull request from its page, besides merging it: review
 /// it (approve, request changes, comment), write in its conversation, close or reopen it, edit its title and
 /// description, ask people for a review, bring its branch up to date with the base, add or remove a label, mark a draft
-/// ready for review, and point it at another base branch (when the pull request under it in a stack was merged). Each is
-/// one GitHub call (REST, or GraphQL for marking ready), asked after your own click, and written to the action log. Foundation only, so
+/// ready for review or turn it back into a draft, and point it at another base branch (when the pull request under it in a
+/// stack was merged). Each is one GitHub call (REST, or GraphQL for the draft state), asked after your own click, and
+/// written to the action log. Foundation only, so
 /// the requests are tested on their own.
 enum PullRequestAction: Equatable, Sendable {
     enum Verdict: String, CaseIterable, Sendable {
@@ -35,11 +36,15 @@ enum PullRequestAction: Equatable, Sendable {
     case removeLabel(String)
     /// A draft becomes ready for review. Only GitHub's GraphQL API can do this, by the pull request's node id.
     case markReady(nodeID: String)
+    /// An open pull request goes back to draft. GraphQL only too.
+    case markDraft(nodeID: String)
     /// Merges into another branch from now on.
     case changeBase(String)
 
     static let markReadyMutation =
         "mutation NookMarkReady($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { isDraft } } }"
+    static let markDraftMutation =
+        "mutation NookMarkDraft($id: ID!) { convertPullRequestToDraft(input: {pullRequestId: $id}) { pullRequest { isDraft } } }"
 
     struct Request: Equatable {
         var method: String
@@ -88,6 +93,9 @@ enum PullRequestAction: Equatable, Sendable {
         case .markReady(let nodeID):
             guard !nodeID.isEmpty else { return nil }
             return Request(method: "POST", path: "/graphql", body: ["query": Self.markReadyMutation, "variables": ["id": nodeID] as [String: String]])
+        case .markDraft(let nodeID):
+            guard !nodeID.isEmpty else { return nil }
+            return Request(method: "POST", path: "/graphql", body: ["query": Self.markDraftMutation, "variables": ["id": nodeID] as [String: String]])
         case .changeBase(let branch):
             let name = branch.trimmingCharacters(in: .whitespaces)
             guard !name.isEmpty else { return nil }
@@ -107,6 +115,7 @@ enum PullRequestAction: Equatable, Sendable {
         case .updateBranch: return "github_update_branch"
         case .addLabels, .removeLabel: return "github_labels"
         case .markReady: return "github_ready_pr"
+        case .markDraft: return "github_draft_pr"
         case .changeBase: return "github_change_base"
         }
     }
@@ -125,6 +134,7 @@ enum PullRequestAction: Equatable, Sendable {
         case .addLabels(let labels): return "\(target) + \(labels.joined(separator: ", "))"
         case .removeLabel(let label): return "\(target) − \(label)"
         case .markReady: return "\(target) ready for review"
+        case .markDraft: return "\(target) convert to draft"
         case .changeBase(let branch): return "\(target) base: \(branch)"
         }
     }
