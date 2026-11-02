@@ -114,6 +114,30 @@ final class NookSearchTests: XCTestCase {
         XCTAssertEqual(ids(""), [])
     }
 
+    func testSettledSessions() {
+        let sessions = [
+            SearchDocument(id: "past:claude:1", kind: .session, title: "Release notes", flags: ["done", "settled"],
+                           passages: [SearchPassage(text: "Wrote the changelog for the release", author: "Claude Code")]),
+            SearchDocument(id: "run:open", kind: .session, title: "Changelog draft", flags: ["running"]),
+        ]
+        XCTAssertEqual(ids("is:settled", in: sessions), ["past:claude:1"])
+        XCTAssertEqual(ids("is:afgehandeld changelog", in: sessions), ["past:claude:1"], "in Dutch too")
+        XCTAssertEqual(ids("-is:settled changelog", in: sessions), ["run:open"])
+    }
+
+    func testEveryWordInOneMessageRanksFirst() {
+        let sessions = [
+            SearchDocument(id: "run:spread", kind: .session, title: "Session one",
+                           passages: [SearchPassage(text: "the invoice is late"), SearchPassage(text: "export ran fine"),
+                                      SearchPassage(text: "nothing else")]),
+            SearchDocument(id: "run:together", kind: .session, title: "Session two",
+                           passages: [SearchPassage(text: "nothing here"), SearchPassage(text: "the invoice export failed again")]),
+        ]
+        let hits = SearchIndex(sessions).search(SearchQuery.parse("export invoice", calendar: calendar))
+        XCTAssertEqual(hits.map(\.id), ["run:together", "run:spread"])
+        XCTAssertEqual(hits.first?.passage?.text, "the invoice export failed again", "the message that says it all is the snippet")
+    }
+
     func testDateFilters() {
         let notes = [
             SearchDocument(id: "note:old", kind: .note, title: "Standup", date: date(2026, 9, 1)),

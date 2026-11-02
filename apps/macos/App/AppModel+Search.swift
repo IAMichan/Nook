@@ -1,15 +1,17 @@
 import Foundation
 
-/// Search everything: what it searches (conversations with Nook, agent sessions with their transcripts, chats, call
+/// Search everything: what it searches (conversations with Nook, agent sessions with their transcripts, settled and
+/// earlier ones included, chats, call
 /// notes, memories, notices, settings and actions) and where a hit takes you. Everything stays on this Mac; nothing here
 /// goes to a brain. The engine is `SearchIndex`; `SearchCenter` runs it for the panel.
 extension AppModel {
     /// Everything search can find, as it is now. `transcripts` holds the passages of sessions whose timeline is not in
-    /// memory, read from disk earlier by `SearchCenter`.
-    func searchDocuments(transcripts: [UUID: [SearchPassage]] = [:]) -> [SearchDocument] {
+    /// memory, and `agentTranscripts` those of every coding agent's own transcript files by path, both read from disk
+    /// earlier by `SearchCenter`.
+    func searchDocuments(transcripts: [UUID: [SearchPassage]] = [:], agentTranscripts: [String: [SearchPassage]] = [:]) -> [SearchDocument] {
         var documents = searchActions() + searchSettings()
         documents += searchConversations()
-        documents += searchSessions(transcripts: transcripts)
+        documents += searchSessions(transcripts: transcripts, agentTranscripts: agentTranscripts)
         documents += searchChats()
         documents += searchNotes()
         documents += searchMemories()
@@ -72,11 +74,14 @@ extension AppModel {
         }
     }
 
-    /// Sessions Nook runs, with their whole conversation, and the agents it follows in a terminal or an editor.
-    private func searchSessions(transcripts: [UUID: [SearchPassage]]) -> [SearchDocument] {
+    /// Sessions Nook runs, with their whole conversation, the agents it follows in a terminal or an editor, and every
+    /// earlier session of every coding agent: the ones the Agents list files under "Settled" too.
+    private func searchSessions(transcripts: [UUID: [SearchPassage]], agentTranscripts: [String: [SearchPassage]]) -> [SearchDocument] {
+        let finished = FinishedSessions.shared
         let runs = workspace.runs.map { run -> SearchDocument in
             var flags: Set<String> = []
             if run.archived { flags.insert("archived") }
+            if run.archived || (!run.status.isActive && finished.contains(FinishedSessions.key(run: run))) { flags.insert("settled") }
             if run.status.isActive { flags.insert("running") }
             switch run.status {
             case .failed: flags.insert("failed")
@@ -110,16 +115,73 @@ extension AppModel {
             case .failed: flags.insert("failed")
             case .done: flags.insert("done")
             }
+            if session.status != .running, finished.contains(FinishedSessions.key(session: session)) { flags.insert("settled") }
+            if let read = agentTranscripts[session.transcriptPath], !read.isEmpty {
+                return Self.searchDocument(session, flags: flags, passages: read)
+            }
             var passages: [SearchPassage] = []
             if !session.lastPrompt.isEmpty { passages.append(SearchPassage(text: session.lastPrompt, author: "me", date: session.turnStarted)) }
             if !session.lastReply.isEmpty { passages.append(SearchPassage(text: session.lastReply, author: session.name, date: session.updated)) }
             if !session.summary.isEmpty { passages.append(SearchPassage(text: session.summary, author: session.name, date: session.updated)) }
-            return SearchDocument(id: "agent:" + session.id, kind: .session, title: session.project.isEmpty ? session.name : session.project,
-                                  subtitle: [session.name, AgentPathFormat.tilde(session.cwd)].filter { !$0.isEmpty }.joined(separator: " · "),
-                                  date: session.updated ?? session.started, facets: ["agent": session.name, "project": session.project],
-                                  flags: flags, passages: passages, icon: .agent(session.name))
+            return Self.searchDocument(session, flags: flags, passages: passages)
         }
-        return runs + followed
+        let earlier = pastSessionsOutsideWorkspace.map { past -> SearchDocument in
+            let agent = past.agent.name
+            let flags: Set<String> = ["done", "settled"]
+            var facets = ["agent": [agent, past.model].filter { !$0.isEmpty }.joined(separator: " "), "project": past.project]
+            if !past.branch.isEmpty { facets["branch"] = past.branch }
+            var passages = agentTranscripts[past.path] ?? []
+            if passages.isEmpty {
+                // Not read yet: what the history knows of it, until `SearchCenter` has read the whole conversation.
+                for prompt in [past.firstPrompt, past.lastPrompt] where !prompt.isEmpty && !passages.contains(where: { $0.text == prompt }) {
+                    passages.append(SearchPassage(text: prompt, author: "me", date: prompt == past.firstPrompt ? past.started : past.ended))
+                }
+                if !past.lastReply.isEmpty { passages.append(SearchPassage(text: past.lastReply, author: agent, date: past.ended)) }
+            }
+            let subtitle = [agent, past.project, past.branch].filter { !$0.isEmpty }.joined(separator: " · ")
+            return SearchDocument(id: "past:" + past.id, kind: .session, title: AgentFormat.title(past.title), subtitle: subtitle,
+                                  date: past.ended, facets: facets, flags: flags, passages: passages, icon: .agent(agent))
+        }
+        return runs + followed + earlier
+    }
+
+    private static func searchDocument(_ session: AgentSession, flags: Set<String>, passages: [SearchPassage]) -> SearchDocument {
+        SearchDocument(id: "agent:" + session.id, kind: .session, title: session.project.isEmpty ? session.name : session.project,
+                       subtitle: [session.name, AgentPathFormat.tilde(session.cwd)].filter { !$0.isEmpty }.joined(separator: " · "),
+                       date: session.updated ?? session.started, facets: ["agent": session.name, "project": session.project],
+                       flags: flags, passages: passages, icon: .agent(session.name))
+    }
+
+    /// The transcript files of the agents Nook follows and of every earlier session, newest first, with the agent that
+    /// wrote each: what `SearchCenter` reads (off the main thread) for their whole conversation.
+    func searchTranscriptFiles() -> [(path: String, agent: String)] {
+        let live = hub.sessions.filter { !$0.id.hasPrefix("run:") && !$0.transcriptPath.isEmpty }
+            .map { (path: $0.transcriptPath, agent: $0.name, date: $0.updated ?? $0.started ?? .distantPast) }
+        let earlier = pastSessionsOutsideWorkspace.filter { !$0.path.isEmpty }
+            .map { (path: $0.path, agent: $0.agent.name, date: $0.ended) }
+        var seen = Set<String>()
+        return (live + earlier).sorted { $0.date > $1.date }
+            .filter { seen.insert($0.path).inserted }
+            .map { (path: $0.path, agent: $0.agent) }
+    }
+
+    /// The text of an agent's own transcript worth finding, the same way as a session Nook runs (`searchPassages(_:run:)`):
+    /// what you asked, what the agent said and the steps it took; thinking stays out. Bounded as the index keeps it.
+    nonisolated static func searchPassages(_ messages: [AgentChatMessage], agent: String) -> [SearchPassage] {
+        let passages = messages.compactMap { message -> SearchPassage? in
+            let text: String
+            switch message.kind {
+            case .thinking: return nil
+            case .tools:
+                let steps = message.steps.map { [$0.name, $0.summary, $0.error ?? ""].filter { !$0.isEmpty }.joined(separator: " ") }
+                text = String(steps.joined(separator: "\n").prefix(Self.toolPassageLimit))
+            case .user, .assistant, .notice:
+                text = String(message.text.prefix(SearchIndex.passageLimit)).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            guard !text.isEmpty else { return nil }
+            return SearchPassage(text: text, author: message.kind == .user ? "me" : agent, date: message.date, anchor: message.id)
+        }
+        return Array(passages.suffix(SearchIndex.passagesPerDocument))
     }
 
     /// The text of a session's timeline worth finding: what you asked, what the agent said, what failed, which tools ran.
@@ -256,7 +318,9 @@ extension AppModel {
             chat.select(uuid)
             return .chat
         case .session:
-            if hit.document.id.hasPrefix("run:"), let uuid = UUID(uuidString: value) {
+            if hit.document.id.hasPrefix("past:") {
+                viewModel.selectedAgentID = hit.document.id
+            } else if hit.document.id.hasPrefix("run:"), let uuid = UUID(uuidString: value) {
                 workspace.selectedRunID = uuid
                 viewModel.selectedAgentID = "run:" + uuid.uuidString
                 // The session opens on what matched: its find bar takes the first highlighted words.

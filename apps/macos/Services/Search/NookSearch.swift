@@ -11,7 +11,7 @@ import Foundation
 //   in:agents, in:chats       only these kinds (nook, agents, chats, notes, memory, notices, settings, actions); -in: leaves one out
 //   from:me, from:lisa        only what this person (or Nook, or an agent) wrote
 //   app:telegram, project:nook, branch:main, agent:codex
-//   is:unread, is:pinned, is:archived, is:running, is:failed; -is: inverts
+//   is:unread, is:pinned, is:archived, is:running, is:failed, is:settled; -is: inverts
 //   after:2026-10-01, before:7d, on:yesterday, date:week
 //   /regex/                   a regular expression, ignoring case
 // Matching ignores case and accents. Ranking is BM25-like (rare words weigh more, repeats count less and less), with a
@@ -68,7 +68,7 @@ struct SearchDocument: Identifiable, Equatable, Sendable {
     var date: Date? = nil
     /// Named values `key:value` filters on ("app": "Telegram", "project": "nook"). Their values count as text too.
     var facets: [String: String] = [:]
-    /// What `is:` filters on: "unread", "pinned", "archived", "running", "failed" …
+    /// What `is:` filters on: "unread", "pinned", "archived", "running", "failed", "settled" …
     var flags: Set<String> = []
     var passages: [SearchPassage] = []
     /// Added to the score: a pinned conversation, an unread chat.
@@ -223,6 +223,8 @@ struct SearchQuery: Equatable, Sendable {
         case "error", "failed", "fout", "mislukt", "fehler", "erreur", "fallido": return "failed"
         case "waiting", "wacht", "approval", "wartet", "attente", "esperando": return "waiting"
         case "done", "klaar", "completed", "fertig", "termine", "hecho": return "done"
+        case "settled", "finished", "handled", "afgehandeld", "afgerond", "erledigt", "abgeschlossen", "regle", "resolu",
+             "resuelto", "cerrado": return "settled"
         case "group", "groep", "gruppe", "groupe", "grupo": return "group"
         default: return value
         }
@@ -695,9 +697,12 @@ struct SearchIndex: Sendable {
             var passageWords: [Int: Set<String>] = [:]
             var titleGroups = 0
             var missing = false
+            /// The passages every group matched in: one message that says all of it.
+            var together: Set<Int>?
             for group in groups {
                 var best = 0.0
                 var inPassages = 0
+                var fields: Set<Int> = []
                 for (field, place) in group[number] ?? [:] {
                     switch field {
                     case SearchIndex.title:
@@ -712,6 +717,7 @@ struct SearchIndex: Sendable {
                         let index = Int(field)
                         guard allowed(index) else { continue }
                         inPassages += 1
+                        fields.insert(index)
                         passageScores[index, default: 0] += place.score
                         passageWords[index, default: []].formUnion(place.word.split(separator: " ").map(String.init))
                         best = max(best, place.score)
@@ -721,8 +727,15 @@ struct SearchIndex: Sendable {
                 if inPassages > 1 { best += min(1, log(Double(inPassages)) * 0.25) }
                 if best <= 0 { missing = true; break }
                 total += best
+                together = together.map { $0.intersection(fields) } ?? fields
             }
             if missing { continue }
+            // Every word in one message ranks above the same words spread over a long conversation, and that message
+            // is the snippet.
+            if groups.count >= 2, let together, !together.isEmpty {
+                total += 1
+                for index in together { passageScores[index, default: 0] += 1 }
+            }
 
             var regexRanges: [Int: [Range<Int>]] = [:]
             var titleRegexRanges: [Range<Int>] = []
