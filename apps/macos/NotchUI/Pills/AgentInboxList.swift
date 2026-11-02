@@ -292,12 +292,20 @@ struct AgentInboxList: View {
     }
 
     /// The folder a new session for this project starts in: the main checkout behind a session on this Mac (an agent's
-    /// worktree leads back to its repository). Nil for a project of sessions on other machines or without a folder.
+    /// worktree leads back to its repository; a Nook session names the folder it was started on). Only a folder that is
+    /// still there, also when the first session's worktree was removed. Nil for a project of sessions on other machines
+    /// or without a folder.
     private func folder(of group: InboxProjectGroup, byID: [String: AgentListItem]) -> String? {
         guard !group.project.isEmpty, group.project != "no folder" else { return nil }
-        let local = group.rows.lazy.compactMap { byID[$0.entry.id] }
-            .first { $0.machine == MachineName.local && !$0.path.isEmpty }
-        return local.map { WorktreeOrigin.checkoutPath(of: $0.path) }
+        let local = group.rows.compactMap { byID[$0.entry.id] }.filter { $0.machine == MachineName.local }
+        let paths = local.flatMap { item -> [String] in
+            let started = item.id.hasPrefix("run:")
+                ? UUID(uuidString: String(item.id.dropFirst(4))).flatMap { app.workspace.run($0)?.projectPath } : nil
+            return [started, item.path].compactMap { $0 }
+        }
+        let settings = app.workspace.settings
+        let known = settings.favoriteProjects + settings.recentProjects + [settings.lastProject]
+        return WorktreeOrigin.newSessionFolder(project: group.project, paths: paths, known: known)
     }
 
     /// Opens the new-session composer on `folder`.
