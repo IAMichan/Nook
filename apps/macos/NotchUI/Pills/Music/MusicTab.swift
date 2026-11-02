@@ -75,9 +75,9 @@ enum MusicSection: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Spotify's AppleScript has no queue or playlists.
+    /// Spotify's AppleScript has no playlists. Its queue comes from the Web API once Spotify is connected in Settings.
     static func available(for app: String) -> [MusicSection] {
-        app == "Music" ? allCases : [.lyrics, .recent]
+        app == "Music" ? allCases : [.lyrics, .upNext, .recent]
     }
 }
 
@@ -136,7 +136,7 @@ private struct MusicPlayerView: View {
     private func load() {
         if expanded {
             // The full player shows the next few tracks; lyrics are only looked up while they are on screen.
-            if info.app == "Music" { service.refreshUpNext() }
+            service.refreshUpNext()
             return
         }
         switch section {
@@ -187,12 +187,12 @@ private struct MusicPlayerView: View {
                     .lineLimit(1)
                     .transition(.opacity)
             }
-            if info.app == "Spotify", !expanded, section != .recent {
+            if info.app == "Spotify", !expanded, section == .lyrics {
                 Image(systemName: "info.circle")
                     .font(NookTheme.font(12))
                     .foregroundStyle(NookTheme.textTertiary)
-                    .help(tr("music.spotifyNote"))
-                    .accessibilityLabel(tr("music.spotifyNote"))
+                    .help(tr("music.spotifyNote", tr("settings.section.connections")))
+                    .accessibilityLabel(tr("music.spotifyNote", tr("settings.section.connections")))
             }
         }
         .padding(.trailing, NookTheme.Spacing.xs)

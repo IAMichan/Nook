@@ -76,6 +76,7 @@ struct ConnectionsPage: View {
             }
             if !own.isEmpty { ownSection(own) }
             if matches(tr("settings.devices.iphone")) { devicesSection(options) }
+            if matches("Spotify " + tr("music.connect.title")) { MusicConnectionSection() }
         }
         Group {
             if query.isEmpty { elsewhereSection }
