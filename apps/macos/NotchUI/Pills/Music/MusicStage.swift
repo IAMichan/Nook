@@ -1,6 +1,7 @@
 import SwiftUI
 
-// What the Music tab shows above the player bar: lyrics, Up Next, playlists or recent tracks, over the full width.
+// What the Music tab shows above the player bar: lyrics, Up Next, playlists, recent tracks or a search, over the full
+// width.
 
 // MARK: Lyrics
 
@@ -283,6 +284,81 @@ struct MusicRecentView: View {
                 noteSymbol: info.app == "Spotify" ? "info.circle" : nil,
                 items: items
             )])
+        }
+    }
+}
+
+/// Search the playing player: Music's library, or Spotify once it is connected. A found track plays on click, and goes
+/// in the queue from the button on its cover or its context menu, like everywhere else in the tab.
+struct MusicSearchView: View {
+    let info: NowPlayingInfo
+    @ObservedObject var service: NowPlayingService
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    private var isSpotify: Bool { info.app == "Spotify" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            NookSearchField(prompt: isSpotify ? tr("music.search.promptSpotify") : tr("music.search.promptMusic"),
+                            text: $text, focus: $focused, onSubmit: { service.search(for: text) })
+                .focusOnAppear($focused)
+                .padding(.horizontal, NookTheme.Spacing.xs)
+            results
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .onAppear { text = service.searchResult.query }
+        .onChange(of: text) { service.search(for: text) }
+        // Another player started: what was found in the other one cannot play here.
+        .onChange(of: info.app) {
+            service.search(for: "")
+            service.search(for: text)
+        }
+    }
+
+    @ViewBuilder
+    private var results: some View {
+        let result = service.searchResult
+        switch result.state {
+        case .idle:
+            MusicPlaceholder(symbol: "magnifyingglass", title: isSpotify ? tr("music.search.idleSpotify") : tr("music.search.idleMusic"),
+                             detail: tr("music.search.idleDetail"))
+        case .connectSpotify:
+            MusicPlaceholder(symbol: "link", title: tr("music.search.connectSpotify"),
+                             detail: tr("music.search.connectSpotifyDetail", tr("settings.section.connections")))
+        case .failed(let message):
+            MusicPlaceholder(symbol: "exclamationmark.triangle", title: tr("music.search.failed"), detail: message) {
+                SmallGhostButton(title: tr("music.lyrics.retry")) {
+                    service.search(for: "")
+                    service.search(for: text)
+                }
+            }
+        case .loading where result.tracks.isEmpty:
+            MusicPlaceholder(symbol: "magnifyingglass", title: tr("music.search.loading"), loading: true)
+        case .loading, .done:
+            if result.tracks.isEmpty {
+                MusicPlaceholder(symbol: "music.note", title: tr("music.search.empty", result.query),
+                                 detail: isSpotify ? nil : tr("music.search.emptyMusicDetail"))
+            } else {
+                MusicShelf(sections: [.init(id: "search", note: note(result), noteSymbol: "magnifyingglass", items: items(result))])
+                    .opacity(result.state == .loading ? 0.6 : 1)
+                    .animation(NookTheme.hover, value: result.state)
+            }
+        }
+    }
+
+    private func note(_ result: MusicSearchResult) -> String {
+        let count = result.tracks.count
+        return isSpotify ? tr("music.search.countSpotify", count) : tr("music.search.countMusic", count)
+    }
+
+    private func items(_ result: MusicSearchResult) -> [MusicCoverItem] {
+        result.tracks.enumerated().map { index, track in
+            MusicCoverItem(
+                id: "\(index)|\(track.id)", title: track.title, subtitle: track.artist,
+                artworkURL: track.artworkURL, help: tr("music.play"),
+                secondary: .enqueue(track, in: service)
+            ) { service.play(track, fromQueue: false) }
         }
     }
 }

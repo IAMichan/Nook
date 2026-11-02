@@ -64,6 +64,22 @@ enum SpotifyWebAPI {
         return SpotifyResponses.queueTracks(from: data)
     }
 
+    /// Tracks on Spotify matching `query`, best match first: `pages` pages, fetched side by side.
+    static func search(_ query: String, pages: Int = 3) async throws -> [MusicTrack] {
+        try await withThrowingTaskGroup(of: (Int, [MusicTrack]).self) { group in
+            for page in 0..<max(1, pages) {
+                group.addTask {
+                    let data = try await authorized { token in SpotifyResponses.searchRequest(query: query, offset: page * SpotifyResponses.searchPageSize, token: token) }
+                    return (page, SpotifyResponses.searchTracks(from: data))
+                }
+            }
+            var found: [Int: [MusicTrack]] = [:]
+            for try await (page, tracks) in group { found[page] = tracks }
+            var seen = Set<String>()
+            return found.keys.sorted().flatMap { found[$0] ?? [] }.filter { seen.insert($0.id).inserted }
+        }
+    }
+
     /// Runs a request with a valid token; a 401 refreshes the token once and tries again.
     private static func authorized(_ make: (String) -> URLRequest?) async throws -> Data {
         for attempt in 0..<2 {
