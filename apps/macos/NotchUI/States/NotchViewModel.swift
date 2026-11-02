@@ -871,11 +871,10 @@ final class NotchViewModel: ObservableObject {
         show(.panel(homeTab()), inNotch: true)
     }
 
-    /// Where the panel opens: at the agent that waits for you, otherwise at the tab you used last. Predictable, no jumping.
+    /// Where the panel opens: on the Agents tab while an agent waits for you, otherwise at the tab you used last. The
+    /// session you had open stays open: only you switch to another agent, the waiting one is marked in the list.
     private func homeTab() -> PanelTab {
-        if let waiting = app?.activeAgents.first(where: { $0.status == .waiting || $0.approvalID != nil }) {
-            // A published write redraws everything that watches the notch, also for the same value.
-            if selectedAgentID != waiting.id { selectedAgentID = waiting.id }
+        if app?.activeAgents.contains(where: { $0.status == .waiting || $0.approvalID != nil }) == true {
             return .agents
         }
         // Music only exists while a player is open.
@@ -883,12 +882,10 @@ final class NotchViewModel: ObservableObject {
         return lastTab
     }
 
-    /// Where the main window opens: at the agent that waits for you, otherwise at the tab it showed last (Music only while
-    /// a player is open).
+    /// Where the main window opens: on the Agents tab while an agent waits for you, otherwise at the tab it showed last
+    /// (Music only while a player is open). Like the notch, it keeps the session you had open.
     func prepareWindow() {
-        if let waiting = app?.activeAgents.first(where: { $0.status == .waiting || $0.approvalID != nil }) {
-            // A published write redraws everything that watches the notch, also for the same value.
-            if selectedAgentID != waiting.id { selectedAgentID = waiting.id }
+        if app?.activeAgents.contains(where: { $0.status == .waiting || $0.approvalID != nil }) == true {
             windowSheet = nil
             windowTab = .agents
         } else if windowTab == .music, app?.nowPlaying.current == nil {
