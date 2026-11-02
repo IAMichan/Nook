@@ -285,28 +285,48 @@ struct ChatReadLine: View {
     let markReadInApp: () -> Void
 
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
-            ChatReadMark(state: state)
-                .frame(minWidth: 16)
-            Text(line)
-                .font(NookTheme.TextStyle.label)
-                .foregroundStyle(NookTheme.textSecondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .help(explanation)
-            Spacer(minLength: NookTheme.Spacing.sm)
-            if state.isUnread {
-                ChatMarkButton(to: .readInNook, title: tr("chats.markReadInNook"), help: tr("chats.legend.readInNook"),
-                               action: markReadInNook)
-            }
-            if state != .read {
-                ChatMarkButton(to: .read, title: tr("chats.markReadInApp", appName), help: explanation, action: markReadInApp)
-            }
+        // As the answer field narrows, the row gives up its words step by step rather than running past the tray:
+        // first the status line, then the long button titles, then the titles altogether (the marks and help stay).
+        ViewThatFits(in: .horizontal) {
+            row(.full)
+            row(.noLine)
+            row(.shortTitles)
+            row(.marksOnly)
         }
         // The same row as the queued messages' header in an agent's tray (see `QueuedMessagesStrip`).
         .padding(.horizontal, NookTheme.Spacing.md)
         .padding(.vertical, 3)
         .animation(NookTheme.reveal, value: state)
+    }
+
+    private enum Fit { case full, noLine, shortTitles, marksOnly }
+
+    private func row(_ fit: Fit) -> some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            ChatReadMark(state: state)
+                .frame(minWidth: 16)
+                .help(line)
+            if fit == .full {
+                Text(line)
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(1)
+                    .help(explanation)
+            }
+            Spacer(minLength: NookTheme.Spacing.sm)
+            if state.isUnread {
+                ChatMarkButton(to: .readInNook,
+                               title: fit == .shortTitles ? tr("chats.row.markRead") : tr("chats.markReadInNook"),
+                               help: tr("chats.legend.readInNook"), showsTitle: fit != .marksOnly,
+                               action: markReadInNook)
+            }
+            if state != .read {
+                ChatMarkButton(to: .read,
+                               title: fit == .shortTitles ? tr("chats.row.markReadInApp", appName)
+                                                          : tr("chats.markReadInApp", appName),
+                               help: explanation, showsTitle: fit != .marksOnly, action: markReadInApp)
+            }
+        }
     }
 
     private var line: String {
@@ -381,6 +401,8 @@ struct ChatMarkButton: View {
     let title: String
     let help: String
     var compact = false
+    /// Off where there is no room for the word: the mark alone, with the title in its help.
+    var showsTitle = true
     let action: () -> Void
     @State private var hovering = false
 
@@ -388,13 +410,15 @@ struct ChatMarkButton: View {
         Button(action: action) {
             HStack(spacing: compact ? NookTheme.Spacing.xs : NookTheme.Spacing.sm) {
                 mark
-                Text(title)
-                    .font(compact ? NookTheme.TextStyle.caption : NookTheme.TextStyle.label)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
-                    .lineLimit(1)
+                if showsTitle {
+                    Text(title)
+                        .font(compact ? NookTheme.TextStyle.caption : NookTheme.TextStyle.label)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
+                        .lineLimit(1)
+                }
             }
-            .padding(.horizontal, compact ? NookTheme.Spacing.md : NookTheme.Spacing.lg)
+            .padding(.horizontal, compact || !showsTitle ? NookTheme.Spacing.md : NookTheme.Spacing.lg)
             .frame(height: compact ? 22 : 26)
             .background(Capsule().fill(hovering ? NookTheme.smoke : (compact ? NookTheme.surface : Color.clear)))
             .overlay(Capsule().strokeBorder(NookTheme.separator, lineWidth: 1))
@@ -404,8 +428,8 @@ struct ChatMarkButton: View {
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .fixedSize()
-        .help(help)
-        .accessibilityLabel(help)
+        .help(showsTitle ? help : "\(title): \(help)")
+        .accessibilityLabel(showsTitle ? help : "\(title): \(help)")
     }
 
     @ViewBuilder
