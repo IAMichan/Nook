@@ -207,10 +207,10 @@ extension AppModel {
         workspace.onRateLimits = { [weak self] in self?.refreshQuotas() }
         // Codex reports its new limits while it works: they show right away, without asking its app-server.
         workspace.onCodexRateLimits = { [weak self] limits, profileID in
-            guard let self, let params = limits.object as? [String: Any] else { return }
+            // An account removed meanwhile has no limits to show; without this guard its push would land on the default one.
+            guard let self, let params = limits.object as? [String: Any], let profile = self.profiles.profile(id: profileID) else { return }
             // The default account (no home of its own) is `~/.codex`, as `QuotaService` reads it.
-            let home = self.profiles.profile(id: profileID).flatMap { profile in profile.home.map { _ in profile.homeURL } }
-            self.codex.apply(pushed: params, home: home)
+            self.codex.apply(pushed: params, home: profile.home.map { _ in profile.homeURL })
         }
         // A turn ran into a limit: the limits shown are read again now (at most once a minute), so they say so.
         workspace.onLimitReached = { [weak self] in self?.refreshQuotas(maxAge: 60) }

@@ -96,13 +96,16 @@ final class CodexUsage: ObservableObject {
         let outcome = await Task.detached(priority: .userInitiated) {
             CodexUsage.consumeResetCredit(codex: codex, home: home, idempotencyKey: idempotencyKey)
         }.value
-        redeeming.remove(key)
-        // The windows (or the count of credits) changed: read them again now, whatever the answer.
+        // The windows (or the count of credits) changed: read them again now, whatever the answer. A read that was
+        // already running may have started before the reset and so show the old windows: wait for it, then read anew.
+        while states[key]?.busy == true { try? await Task.sleep(nanoseconds: 200_000_000) }
         var state = states[key] ?? HomeState()
         state.lastAppServerFetch = nil
         states[key] = state
         refresh(home, maxAge: 0)
         while states[key]?.busy == true { try? await Task.sleep(nanoseconds: 200_000_000) }
+        // Only now: until the fresh reading is in, the row keeps its spinner instead of offering the spent credit again.
+        redeeming.remove(key)
         return outcome
     }
 
