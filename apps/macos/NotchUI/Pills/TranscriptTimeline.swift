@@ -346,6 +346,9 @@ private struct TranscriptRowView: View, Equatable {
             .padding(.bottom, isFinal ? NookTheme.Spacing.lg : NookTheme.Spacing.xxs)
         case .thinking(let message):
             thinking(message)
+        case .step(let step) where directory != nil && SharedFiles.isShare(step):
+            SharedFilesRow(input: AgentActivity.input(step.input) ?? [:], directory: directory ?? "", showFile: side.showFile,
+                           shownFile: side.shownFile)
         case .step(let step):
             stepLine(step)
         case .group(let id, let steps, let thoughts):
