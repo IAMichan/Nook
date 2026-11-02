@@ -44,7 +44,8 @@ extension AppModel {
 
     /// The pictures of the chats in the list whose app gives them only on request (WhatsApp's linked phones), the newest
     /// first; every other app brings each chat's picture with it. Each account asks its own gateway device for its own
-    /// newest chats, all accounts at once: one account's chats never wait behind the other's.
+    /// newest chats, all accounts at once: one account's chats never wait behind the other's. Your own picture in each
+    /// account comes first, for the account's row in the sidebar.
     func loadChatAvatars(_ entries: [ChatsEntry]) async {
         let accounts = WhatsAppAccounts.shared
         let keys = entries.compactMap { entry -> (account: String, jid: String)? in
@@ -53,7 +54,8 @@ extension AppModel {
         }
         await withTaskGroup(of: Void.self) { group in
             for link in accounts.connected {
-                let own = Array(keys.filter { $0.account == link.account }.prefix(60).map(\.jid))
+                let mine = link.me.map { [WAJID.normalized($0)] } ?? []
+                let own = mine + Array(keys.filter { $0.account == link.account }.prefix(60).map(\.jid))
                 group.addTask { await link.loadAvatars(own) }
             }
         }

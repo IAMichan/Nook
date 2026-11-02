@@ -96,6 +96,13 @@ final class WhatsAppAccounts: ObservableObject {
         return link.me.map(WAJID.displayNumber) ?? "WhatsApp"
     }
 
+    /// Your own profile picture in the account the Chats tab names `name` (`name(of:)`), on this Mac; nil until it was
+    /// fetched (`AppModel.loadChatAvatars` asks for it with the account's chats).
+    func picture(ofAccount name: String) -> String? {
+        guard let link = connected.first(where: { self.name(of: $0) == name }), let me = link.me else { return nil }
+        return link.avatars[WAJID.normalized(me)]
+    }
+
     /// Where a WhatsApp chat is, as its card, notice and search result say it: "WhatsApp", and with more than one account
     /// linked the account too ("WhatsApp · Business").
     func context(of link: WhatsAppLink) -> String {
