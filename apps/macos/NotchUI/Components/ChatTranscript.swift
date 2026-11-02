@@ -940,11 +940,38 @@ private struct CappedWidth: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         guard let content = subviews.first else { return .zero }
         let width = proposal.width.map { min($0, maximum) } ?? maximum
-        return content.sizeThatFits(ProposedViewSize(width: width, height: proposal.height))
+        let size = content.sizeThatFits(ProposedViewSize(width: width, height: proposal.height))
+        // Never wider than offered: one bubble that cannot shrink must not widen the whole chat past the window's edge.
+        return CGSize(width: min(size.width, width), height: size.height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
+    }
+}
+
+/// A photo or video at its own size, narrower in a chat narrower than it (its shape kept), so a picture never pushes the
+/// chat and its field past the window's edge.
+struct FittedMedia: Layout {
+    let size: CGSize
+
+    private func fitted(_ proposal: ProposedViewSize) -> CGSize {
+        guard size.width > 0, size.height > 0 else { return size }
+        let width = min(proposal.width ?? size.width, size.width)
+        return CGSize(width: width, height: width * size.height / size.width)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize { fitted(proposal) }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
+    }
+}
+
+extension View {
+    /// At `size`, or narrower with its shape kept when the chat is narrower (`FittedMedia`).
+    func fittedMedia(_ size: CGSize) -> some View {
+        FittedMedia(size: size) { frame(maxWidth: .infinity, maxHeight: .infinity) }
     }
 }
 
@@ -1430,7 +1457,7 @@ struct VideoTile: View {
                     .allowsHitTesting(false)
             }
         }
-        .frame(width: size.width, height: size.height)
+        .fittedMedia(size)
         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
         .onHover { hovering = $0 }
         .onDisappear { player?.pause() }
@@ -1757,7 +1784,7 @@ struct ChatPhotoPlaceholder: View {
             ?? CGSize(width: PhotoButton.maxWidth, height: PhotoButton.maxHeight * 0.75)
         RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
             .fill(NookTheme.ink.opacity(0.3))
-            .frame(width: shown.width, height: shown.height)
+            .fittedMedia(shown)
             .overlay {
                 Image(systemName: "photo")
                     .font(NookTheme.font(22))
@@ -1792,7 +1819,7 @@ struct PhotoButton: View {
             Image(nsImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: size.width, height: size.height)
+                .fittedMedia(size)
                 .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
                 .opacity(hovering ? 0.85 : 1)
                 .contentShape(Rectangle())

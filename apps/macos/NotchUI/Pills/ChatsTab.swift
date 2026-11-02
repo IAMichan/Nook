@@ -1328,8 +1328,9 @@ private struct ChatsRow: View, Equatable {
                                 .foregroundStyle(NookTheme.mint)
                                 .lineLimit(1)
                         } else {
-                            // A chat on the phone that wrote nothing since Nook was linked: its messages load when opened.
-                            Text(entry.preview.isEmpty ? tr("chats.row.load") : previewText)
+                            // A chat on the phone that wrote nothing since Nook was linked: its newest message is being
+                            // fetched (`loadChatLine`); until then the line says only that something new came in.
+                            Text(entry.preview.isEmpty ? (entry.read.isUnread ? tr("chats.row.new") : " ") : previewText)
                                 .font(NookTheme.TextStyle.detail)
                                 .foregroundStyle(entry.preview.isEmpty ? NookTheme.textTertiary
                                                  : (entry.read.isUnread ? NookTheme.textStrong : NookTheme.textSecondary))
