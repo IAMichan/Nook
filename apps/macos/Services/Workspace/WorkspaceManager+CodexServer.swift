@@ -97,6 +97,7 @@ extension WorkspaceManager {
                                 if let model = response.dictionary["model"] as? String, !model.isEmpty { $0.resolvedModel = model }
                             }
                             if let threadID { self.noteConversationSession(id, threadID, keepsHistory: false) }
+                            self.checkCodexConnectors(id, client)
                             if let next = prompt ?? self.warmPrompts.removeValue(forKey: id) {
                                 self.startCodexTurn(id, client, prompt: next)
                             } else {
