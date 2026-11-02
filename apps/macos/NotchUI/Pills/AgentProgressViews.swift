@@ -223,8 +223,7 @@ struct SpinningRing: View {
             // own rate and redraws the whole window with it, for as long as the agent works. Still with Reduce Motion.
             // In a graph of its own (`SeparateGraph`), so its frames do not update the transcript or panel around it.
             SeparateGraph {
-                TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended),
-                                         paused: energy.plan.pace == .paused || reduceMotion)) { context in
+                TimelineView(.nookFrames(fps: energy.plan.progressFrameRate(attended: attended), paused: reduceMotion)) { context in
                     let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9
                     Circle()
                         .trim(from: 0, to: 0.7)

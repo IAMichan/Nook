@@ -825,9 +825,9 @@ private struct GlidingPlane: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let rate = energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended)
+        let rate = energy.plan.progressFrameRate(attended: attended)
         // perf: flies only for the second or two a message takes to send.
-        TimelineView(.nookFrames(fps: rate, paused: reduceMotion || energy.plan.pace == .paused)) { context in
+        TimelineView(.nookFrames(fps: rate, paused: reduceMotion)) { context in
             let phase = reduceMotion ? 0.35 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4
             // Out to the top right while it fades, then in again from the bottom left.
             let travel = (phase - 0.35) * 14
@@ -849,10 +849,10 @@ private struct SendingSweep: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let rate = energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended)
+        let rate = energy.plan.progressFrameRate(attended: attended)
         GeometryReader { proxy in
             // perf: runs only for the second or two a message takes to send.
-            TimelineView(.nookFrames(fps: rate, paused: reduceMotion || energy.plan.pace == .paused)) { context in
+            TimelineView(.nookFrames(fps: rate, paused: reduceMotion)) { context in
                 let phase = reduceMotion ? 0.5 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
                 let width = proxy.size.width * 0.3
                 Capsule()
@@ -875,11 +875,11 @@ private struct WritingDots: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let rate = energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended)
+        let rate = energy.plan.progressFrameRate(attended: attended)
         // In a graph of its own (`SeparateGraph`), so its frames do not update the conversation around it for as long as
         // Nook writes.
         SeparateGraph {
-            TimelineView(.nookFrames(fps: rate, paused: reduceMotion || energy.plan.pace == .paused)) { context in
+            TimelineView(.nookFrames(fps: rate, paused: reduceMotion)) { context in
                 let t = context.date.timeIntervalSinceReferenceDate
                 HStack(spacing: NookTheme.Spacing.xs) {
                     ForEach(0..<3) { index in

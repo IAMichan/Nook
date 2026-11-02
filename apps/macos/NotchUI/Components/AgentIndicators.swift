@@ -35,7 +35,7 @@ struct PulseDot: View {
                 // In a graph of its own (`SeparateGraph`), so its frames do not update the list or panel around it; the ring
                 // grows past the dot, so the graph is larger than the dot and laid out at its size.
                 SeparateGraph {
-                    TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended), paused: energy.plan.pace == .paused)) { context in
+                    TimelineView(.nookFrames(fps: energy.plan.progressFrameRate(attended: attended))) { context in
                         // An ease-out over 1.4 s, starting over: the ring grows and fades.
                         let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4
                         let eased = 1 - (1 - phase) * (1 - phase)
@@ -78,7 +78,7 @@ struct ShimmerText: View {
             .foregroundStyle(NookTheme.textMuted)
             .overlay {
                 SeparateGraph {
-                    TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended), paused: energy.plan.pace == .paused)) { context in
+                    TimelineView(.nookFrames(fps: energy.plan.progressFrameRate(attended: attended))) { context in
                         let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.2) / 2.2
                         Text(text)
                             .font(font)

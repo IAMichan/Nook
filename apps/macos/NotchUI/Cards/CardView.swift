@@ -517,9 +517,9 @@ private struct WaveformDetail: View {
         GeometryReader { proxy in
             // As many bars as fit: the wave runs the full width of the card.
             let count = max(1, Int((proxy.size.width + Self.gap) / (Self.barWidth + Self.gap)))
-            let rate = energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended)
+            let rate = energy.plan.progressFrameRate(attended: attended)
             SeparateGraph {
-                TimelineView(.nookFrames(fps: rate, paused: energy.plan.pace == .paused)) { context in
+                TimelineView(.nookFrames(fps: rate)) { context in
                     let levels = history.sample(at: context.date, step: 1.0 / max(1, rate)).suffix(count)
                     HStack(spacing: Self.gap) {
                         ForEach(Array(levels.enumerated()), id: \.offset) { _, level in
