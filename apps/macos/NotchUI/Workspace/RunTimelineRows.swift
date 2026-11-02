@@ -1,4 +1,5 @@
 import SwiftUI
+import ImageIO
 
 // The rows of a session's timeline (messages, thinking, tool calls, approvals), shared by the session views.
 
@@ -49,6 +50,10 @@ struct EventRow: View {
 
         case .tool where Subagents.isLaunch(event):
             SubagentRow(event: event, expanded: expanded, toggle: toggle)
+
+        case .tool where directory != nil && SharedFiles.isShare(event):
+            SharedFilesRow(input: AgentActivity.input(event.detail) ?? [:], directory: directory ?? "", showFile: showFile,
+                           shownFile: shownFile)
 
         case .tool:
             if let showFile, let file = ToolRow.file(event, in: directory) {
@@ -106,6 +111,111 @@ struct EventRow: View {
                                    label: event.text.isEmpty ? tr("ws.event.turnDone") : tr("ws.event.turnDoneWith", event.text),
                                    failed: true)
             }
+        }
+    }
+}
+
+/// Files the agent handed you (SharedFiles), as their own row: what it said with them, then each file as itself. A video
+/// plays right here (and opens big from its enlarge button), a picture shows small, and any file opens in the side panel.
+struct SharedFilesRow: View {
+    /// The call's input (`SharedFiles.paths`, `SharedFiles.caption`).
+    let input: [String: Any]
+    /// The folder the files' relative paths resolve in.
+    let directory: String
+    var showFile: ((String) -> Void)? = nil
+    var shownFile: String? = nil
+
+    var body: some View {
+        let paths = SharedFiles.paths(input).map { SessionOutputs.resolve($0, in: directory) }
+        let videos = paths.filter { SessionOutputs.kind(path: $0) == .video && FileManager.default.fileExists(atPath: $0) }
+        let others = paths.filter { !videos.contains($0) }
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            TranscriptWorkLine(symbol: "paperclip", label: SharedFiles.caption(input) ?? tr("ws.shared.title"))
+                .help(paths.map(AgentPathFormat.tilde).joined(separator: "\n"))
+            ForEach(videos, id: \.self) { path in
+                VideoTile(url: URL(fileURLWithPath: path), poster: nil, name: URL(fileURLWithPath: path).lastPathComponent,
+                          maxHeight: 420)
+            }
+            if !others.isEmpty {
+                ChipFlow(spacing: NookTheme.Spacing.sm) {
+                    ForEach(others, id: \.self) { path in
+                        SharedFileTile(path: path, shown: path == shownFile) { open(path) }
+                    }
+                }
+            }
+        }
+        .padding(.leading, TranscriptStyle.workIndent)
+        .padding(.vertical, NookTheme.Spacing.xs)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// In the side panel when the session has one, else in its own app.
+    private func open(_ path: String) {
+        if let showFile { showFile(path) } else { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
+    }
+}
+
+/// One file in `SharedFilesRow` that is not a video: a picture as a small thumbnail, anything else as its icon and name.
+private struct SharedFileTile: View {
+    let path: String
+    let shown: Bool
+    let action: () -> Void
+    @State private var thumbnail: NSImage?
+    @State private var hovering = false
+
+    private var name: String { URL(fileURLWithPath: path).lastPathComponent }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 0) {
+                if let thumbnail {
+                    Image(nsImage: thumbnail)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 140, height: 96)
+                        .clipped()
+                    NookDivider()
+                }
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    Image(systemName: OutputText.symbol(SessionOutputs.kind(path: path) ?? .document))
+                        .font(NookTheme.font(10.5, .medium))
+                        .foregroundStyle(NookTheme.textTertiary)
+                    Text(name)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(shown || hovering ? NookTheme.paper : NookTheme.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .padding(.horizontal, NookTheme.Spacing.sm)
+                .padding(.vertical, NookTheme.Spacing.xs)
+                .frame(maxWidth: thumbnail == nil ? 220 : 140, alignment: .leading)
+            }
+            .background(NookTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                    .strokeBorder(shown ? NookTheme.iris : NookTheme.fieldStroke)
+            )
+            .fixedSize()
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(tr("ws.shared.show") + " · " + AgentPathFormat.tilde(path))
+        .accessibilityLabel(name)
+        .task(id: path) {
+            guard SessionOutputs.kind(path: path) == .image else { return }
+            // A small picture made off the main thread: the shared file is often a full-size render.
+            let url = URL(fileURLWithPath: path) as CFURL
+            let small = await Task.detached(priority: .utility) { () -> CGImage? in
+                guard let source = CGImageSourceCreateWithURL(url, nil) else { return nil }
+                let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                                kCGImageSourceCreateThumbnailWithTransform: true,
+                                                kCGImageSourceThumbnailMaxPixelSize: 400]
+                return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+            }.value
+            thumbnail = small.map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
         }
     }
 }
