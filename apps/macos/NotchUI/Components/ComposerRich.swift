@@ -509,9 +509,8 @@ struct ComposerContextRing: View {
 }
 
 /// How much of its subscription the session's account has used, at the right end of the choices under the composer: a
-/// small ring filled to the window that runs out first, with a bolt in the middle and its percentage beside it, amber or
-/// coral as it comes close. Click for every window (5 hours, week, per model) with its reset time and pace. Every agent
-/// that reports limits gets it.
+/// small ring filled to the window that runs out first with its percentage beside it, amber or coral as it comes close.
+/// Click for every window (5 hours, week, per model) with its reset time and pace. Every agent that reports limits gets it.
 struct ComposerUsageRing: View {
     let limits: [QuotaLimit]
     let account: String
@@ -538,7 +537,7 @@ struct ComposerUsageRing: View {
         let tint = UsageTone.fill(highest, accent: NookTheme.textSecondary)
         Button { open.toggle() } label: {
             HStack(spacing: NookTheme.Spacing.sm) {
-                ring(tint: tint, size: 15, line: 2)
+                ring(tint: tint, size: 11, line: 2)
                 Text("\(Int(highest.rounded()))%")
                     .font(NookTheme.TextStyle.label.monospacedDigit())
                     .foregroundStyle(highest < 75 ? (hovering ? NookTheme.paper : NookTheme.textSecondary) : UsageTone.text(highest))
@@ -563,9 +562,6 @@ struct ComposerUsageRing: View {
             Circle().trim(from: 0, to: min(1, max(0, highest / 100)))
                 .stroke(tint, style: StrokeStyle(lineWidth: line, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-            Image(systemName: "bolt.fill")
-                .font(NookTheme.font(size * 0.45, .bold))
-                .foregroundStyle(tint)
         }
         .frame(width: size, height: size)
     }
