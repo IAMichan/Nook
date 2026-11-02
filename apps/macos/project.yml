@@ -420,6 +420,7 @@ targets:
       - path: Services/Workspace/TranscriptFollow.swift
       - path: Services/Workspace/GitQuickActions.swift
       - path: Services/Workspace/UsageLimits.swift
+      - path: Services/CodexRateLimits.swift
       - path: Services/Workspace/Antigravity.swift
       - path: Services/Workspace/AgentStreamParsers.swift
       - path: Services/Workspace/AgentTimeline.swift

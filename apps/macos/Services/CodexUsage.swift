@@ -1,75 +1,5 @@
 import Foundation
 
-/// Codex subscription plan usage: 5-hour window and weekly limits.
-struct CodexUsageSnapshot: Equatable {
-    struct Window: Equatable {
-        /// Percentage used, 0–100, as reported by Codex.
-        var usedPercent: Double
-        /// Timestamp when this window resets. `nil` if not reported by Codex.
-        var resetsAt: Date?
-        /// Window duration in minutes (300 for 5 hours, 10080 for one week).
-        var windowMinutes: Int?
-
-        /// Current percentage: 0 if window has already reset.
-        func percent(at date: Date = Date()) -> Int {
-            if let resetsAt, resetsAt <= date { return 0 }
-            return Int(min(100, max(0, usedPercent)).rounded())
-        }
-    }
-
-    enum Source: Equatable {
-        /// `codex app-server`, same source as `/status` in Codex.
-        case appServer
-        /// The last rate limit entry in a session log under ~/.codex/sessions.
-        case sessionLog
-    }
-
-    var fiveHour: Window?
-    var weekly: Window?
-    var planType: String?
-    var updatedAt: Date
-    var source: Source
-
-    /// E.g. "5 hours: 42% used · resets at 14:30".
-    var fiveHourLabel: String? {
-        guard let fiveHour else { return nil }
-        var text = "5 hours: \(fiveHour.percent())% used"
-        if let reset = fiveHour.resetsAt, reset > Date() {
-            text += " · resets at \(Self.timeFormatter.string(from: reset))"
-        }
-        return text
-    }
-
-    /// E.g. "Weekly: 18% used · resets Thu Oct 16".
-    var weeklyLabel: String? {
-        guard let weekly else { return nil }
-        var text = "Weekly: \(weekly.percent())% used"
-        if let reset = weekly.resetsAt, reset > Date() {
-            text += " · resets \(Self.dayFormatter.string(from: reset))"
-        }
-        return text
-    }
-
-    /// Highest of the two windows: the one you will reach first.
-    var dominantPercent: Int? {
-        [fiveHour?.percent(), weekly?.percent()].compactMap { $0 }.max()
-    }
-
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "HH:mm"
-        return formatter
-    }()
-
-    private static let dayFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "EEE d MMM"
-        return formatter
-    }()
-}
-
 /// Reads Codex plan usage matching Codex's native `/status`: via `codex app-server` (`account/rateLimits/read`),
 /// falling back to the latest session log under ~/.codex/sessions. No-op if ~/.codex does not exist.
 @MainActor
@@ -92,7 +22,7 @@ final class CodexUsage: ObservableObject {
     private var states: [String: HomeState] = [:]
 
     /// Query `codex app-server` at most this often, unless a session log was modified in the interim.
-    private nonisolated static let appServerInterval: TimeInterval = 10 * 60
+    private nonisolated static let appServerInterval: TimeInterval = 5 * 60
     private nonisolated static let appServerRetryInterval: TimeInterval = 10 * 60
 
     func start() {
@@ -131,7 +61,7 @@ final class CodexUsage: ObservableObject {
 
     /// Reads every account right away, instead of waiting for the next minute tick: after adding, logging in or changing an account.
     /// With `maxAge`, the app-server is asked again once its last answer is older than that (a usage view on screen, the
-    /// refresh button), instead of only every ten minutes: without a running session nothing else would change the numbers.
+    /// refresh button), instead of only every five minutes: without a running session nothing else would change the numbers.
     func refreshNow(maxAge: TimeInterval? = nil) {
         refresh(maxAge: maxAge)
     }
@@ -144,6 +74,37 @@ final class CodexUsage: ObservableObject {
 
     /// The refresh button asks again at most this often per account, however often it is clicked.
     private nonisolated static let manualInterval: TimeInterval = 10
+
+    /// A session in Nook reported new limits (`account/rateLimits/updated`): they show right away, without starting an
+    /// app-server (`CodexRateLimits.merge`).
+    func apply(pushed params: [String: Any], home: URL?) {
+        let key = (home ?? Self.codexHome).path
+        guard let snapshot = CodexRateLimits.merge(pushed: params, into: snapshots[key]), snapshot != snapshots[key] else { return }
+        snapshots[key] = snapshot
+    }
+
+    /// Accounts whose reset is being redeemed: one at a time, so a double click never spends two credits.
+    @Published private(set) var redeeming = Set<String>()
+
+    /// Uses one reset credit of an account through the official `codex app-server`, then reads its limits again so the
+    /// emptied windows show. One idempotency key per click: a retry inside Codex never spends a second credit.
+    func useResetCredit(home: URL?) async -> CodexRateLimits.ResetOutcome {
+        let home = home ?? Self.codexHome
+        let key = home.path
+        guard let codex = Self.codexExecutable(), redeeming.insert(key).inserted else { return .failed }
+        let idempotencyKey = UUID().uuidString
+        let outcome = await Task.detached(priority: .userInitiated) {
+            CodexUsage.consumeResetCredit(codex: codex, home: home, idempotencyKey: idempotencyKey)
+        }.value
+        redeeming.remove(key)
+        // The windows (or the count of credits) changed: read them again now, whatever the answer.
+        var state = states[key] ?? HomeState()
+        state.lastAppServerFetch = nil
+        states[key] = state
+        refresh(home, maxAge: 0)
+        while states[key]?.busy == true { try? await Task.sleep(nanoseconds: 200_000_000) }
+        return outcome
+    }
 
     private func refresh(maxAge: TimeInterval? = nil) {
         var wanted: [URL] = []
@@ -188,6 +149,8 @@ final class CodexUsage: ObservableObject {
                 if var fresh = result.snapshot {
                     // A session log does not always name the plan; keep the one the app-server reported.
                     if fresh.planType == nil, fresh.source == .sessionLog { fresh.planType = self.snapshots[key]?.planType }
+                    // Only the app-server counts reset credits; a session log keeps the last count.
+                    if fresh.source == .sessionLog { fresh.resetCredits = self.snapshots[key]?.resetCredits }
                     if fresh != self.snapshots[key] { self.snapshots[key] = fresh }
                 }
             }
@@ -281,6 +244,20 @@ final class CodexUsage: ObservableObject {
 
     /// Starts `codex app-server`, requests `account/rateLimits/read`, and stops the process. `nil` if Codex is not signed in.
     private nonisolated static func readRateLimits(codex: String, home: URL) -> CodexUsageSnapshot? {
+        request(codex: codex, home: home, method: "account/rateLimits/read", timeout: 15).flatMap { CodexRateLimits.snapshot(read: $0) }
+    }
+
+    /// Starts `codex app-server`, sends `account/rateLimitResetCredit/consume` and stops the process.
+    private nonisolated static func consumeResetCredit(codex: String, home: URL, idempotencyKey: String) -> CodexRateLimits.ResetOutcome {
+        guard let result = request(codex: codex, home: home, method: "account/rateLimitResetCredit/consume",
+                                   params: ["idempotencyKey": idempotencyKey], timeout: 20) else { return .failed }
+        return CodexRateLimits.resetOutcome(result)
+    }
+
+    /// Starts `codex app-server` for one account, sends one request after the handshake and returns its `result`. Nil when
+    /// Codex does not start, answers with an error, or takes longer than `timeout` seconds.
+    private nonisolated static func request(codex: String, home: URL, method: String, params: [String: Any]? = nil,
+                                            timeout seconds: Double) -> [String: Any]? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: codex)
         process.arguments = ["app-server"]
@@ -300,15 +277,18 @@ final class CodexUsage: ObservableObject {
         do { try process.run() } catch { return nil }
         defer { if process.isRunning { process.terminate() } }
 
-        // Give up after 15 seconds: terminating closes stdout, ending the read loop.
+        // Give up after `seconds`: terminating closes stdout, ending the read loop.
         let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 15, execute: timeout)
+        DispatchQueue.global().asyncAfter(deadline: .now() + seconds, execute: timeout)
         defer { timeout.cancel() }
 
+        var call: [String: Any] = ["id": 2, "method": method]
+        if let params { call["params"] = params }
+        guard let body = try? JSONSerialization.data(withJSONObject: call) else { return nil }
         let requests = [
             #"{"id":1,"method":"initialize","params":{"clientInfo":{"name":"nook","version":"1"}}}"#,
             #"{"method":"initialized"}"#,
-            #"{"id":2,"method":"account/rateLimits/read"}"#,
+            String(decoding: body, as: UTF8.self),
         ]
         input.fileHandleForWriting.write(Data((requests.joined(separator: "\n") + "\n").utf8))
 
@@ -322,32 +302,9 @@ final class CodexUsage: ObservableObject {
                 buffer.removeSubrange(buffer.startIndex...newline)
                 guard let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
                       number(object["id"]) == 2 else { continue }
-                guard let result = object["result"] as? [String: Any] else { return nil }
-                return parseAppServer(result)
+                return object["result"] as? [String: Any]
             }
         }
-    }
-
-    /// Reads an `account/rateLimits/read` response. primary and secondary are not fixed: duration determines which window it is.
-    private nonisolated static func parseAppServer(_ result: [String: Any]) -> CodexUsageSnapshot? {
-        guard let limits = result["rateLimits"] as? [String: Any] else { return nil }
-        var snapshot = CodexUsageSnapshot(
-            fiveHour: nil, weekly: nil,
-            planType: limits["planType"] as? String,
-            updatedAt: Date(), source: .appServer
-        )
-        for (index, key) in ["primary", "secondary"].enumerated() {
-            guard let raw = limits[key] as? [String: Any], let percent = number(raw["usedPercent"]) else { continue }
-            let minutes = number(raw["windowDurationMins"]).map { Int($0) }
-            let window = CodexUsageSnapshot.Window(
-                usedPercent: percent,
-                resetsAt: number(raw["resetsAt"]).map { Date(timeIntervalSince1970: $0) },
-                windowMinutes: minutes
-            )
-            assign(window, minutes: minutes, isPrimary: index == 0, to: &snapshot)
-        }
-        guard snapshot.fiveHour != nil || snapshot.weekly != nil else { return nil }
-        return snapshot
     }
 
     // MARK: Session Logs
@@ -416,7 +373,7 @@ final class CodexUsage: ObservableObject {
                     resetsAt = lineDate.addingTimeInterval(relative)
                 }
                 let window = CodexUsageSnapshot.Window(usedPercent: percent, resetsAt: resetsAt, windowMinutes: minutes)
-                assign(window, minutes: minutes, isPrimary: index == 0, to: &snapshot)
+                CodexRateLimits.assign(window, minutes: minutes, isPrimary: index == 0, to: &snapshot)
             }
             if snapshot.fiveHour != nil || snapshot.weekly != nil { return snapshot }
         }
@@ -424,16 +381,6 @@ final class CodexUsage: ObservableObject {
     }
 
     // MARK: Helpers
-
-    private nonisolated static func assign(
-        _ window: CodexUsageSnapshot.Window,
-        minutes: Int?,
-        isPrimary: Bool,
-        to snapshot: inout CodexUsageSnapshot
-    ) {
-        let isShort = minutes.map { $0 <= 24 * 60 } ?? isPrimary
-        if isShort { snapshot.fiveHour = window } else { snapshot.weekly = window }
-    }
 
     private nonisolated static func number(_ value: Any?) -> Double? {
         if let number = value as? NSNumber { return number.doubleValue }

@@ -116,6 +116,41 @@ struct QuotaService {
         limits(for: profile).map(\.percent).max()
     }
 
+    /// The reset credits an account has banked, when its agent offers them: one empties its windows at once. Nil for an
+    /// agent that has none or that offers no way to use them outside its own app.
+    func resetCredits(for profile: AgentProfile) -> CodexUsageSnapshot.ResetCredits? {
+        switch profile.kind {
+        case .codex:
+            return codex.snapshot(home: profile.home.map { _ in profile.homeURL })?.resetCredits
+        case .claude:
+            // Claude Code redeems its resets only in its own limit menu (no control request does it), and Nook never
+            // touches Claude Code's login to call the API itself.
+            return nil
+        case .gemini, .antigravity, .opencode, .cursor, .grok, .acp:
+            return nil
+        }
+    }
+
+    /// True while a reset of this account is being redeemed.
+    func isRedeemingReset(for profile: AgentProfile) -> Bool {
+        switch profile.kind {
+        case .codex:
+            return codex.redeeming.contains((profile.home.map { _ in profile.homeURL } ?? CodexUsage.codexHome).path)
+        case .claude, .gemini, .antigravity, .opencode, .cursor, .grok, .acp:
+            return false
+        }
+    }
+
+    /// Uses one reset credit of an account and reads its limits again. `.failed` for an agent without reset credits.
+    func useResetCredit(for profile: AgentProfile) async -> CodexRateLimits.ResetOutcome {
+        switch profile.kind {
+        case .codex:
+            return await codex.useResetCredit(home: profile.home.map { _ in profile.homeURL })
+        case .claude, .gemini, .antigravity, .opencode, .cursor, .grok, .acp:
+            return .failed
+        }
+    }
+
     /// The plan Codex reports for this account ("Plus", "Pro"), capitalised.
     func codexPlan(for profile: AgentProfile) -> String {
         guard profile.kind == .codex,

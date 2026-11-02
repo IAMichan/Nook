@@ -10,33 +10,39 @@ struct UsageLimitBanner: View {
     var body: some View {
         if run.limitedAt != nil, !run.status.isActive {
             let auto = run.autoResume == true
-            AdaptiveActionRow {
-                HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
-                    Image(systemName: auto ? "clock.arrow.circlepath" : "hourglass")
-                        .font(NookTheme.font(12, .semibold))
-                        .foregroundStyle(NookTheme.amber)
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                        Text(tr("ws.limit.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.textSecondary)
-                        TimelineView(.nookTicks(every: 30)) { context in
-                            Text(line(now: context.date, auto: auto))
-                                .font(NookTheme.TextStyle.detail)
-                                .foregroundStyle(NookTheme.textTertiary)
-                                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                AdaptiveActionRow {
+                    HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
+                        Image(systemName: auto ? "clock.arrow.circlepath" : "hourglass")
+                            .font(NookTheme.font(12, .semibold))
+                            .foregroundStyle(NookTheme.amber)
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                            Text(tr("ws.limit.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.textSecondary)
+                            TimelineView(.nookTicks(every: 30)) { context in
+                                Text(line(now: context.date, auto: auto))
+                                    .font(NookTheme.TextStyle.detail)
+                                    .foregroundStyle(NookTheme.textTertiary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                     }
-                }
-            } actions: {
-                if let suggestion = suggestion() {
-                    SmallGhostButton(title: tr("ws.limit.switchTo", AccountLabel.name(suggestion.profile, app: app) + " · " + suggestion.profile.kind.name)) {
-                        _ = workspace.switchProvider(run.id, to: suggestion.provider, profileID: suggestion.profile.id)
+                } actions: {
+                    if let suggestion = suggestion() {
+                        SmallGhostButton(title: tr("ws.limit.switchTo", AccountLabel.name(suggestion.profile, app: app) + " · " + suggestion.profile.kind.name)) {
+                            _ = workspace.switchProvider(run.id, to: suggestion.provider, profileID: suggestion.profile.id)
+                        }
+                        .help(suggestion.sameAgent ? tr("ws.limit.switchHelpSame") : tr("ws.limit.switchHelp"))
                     }
-                    .help(suggestion.sameAgent ? tr("ws.limit.switchHelpSame") : tr("ws.limit.switchHelp"))
-                }
-                if run.limitResetAt != nil {
-                    SmallGhostButton(title: auto ? tr("ws.limit.cancelResume") : tr("ws.limit.resume")) {
-                        workspace.setAutoResume(run.id, !auto)
+                    if run.limitResetAt != nil {
+                        SmallGhostButton(title: auto ? tr("ws.limit.cancelResume") : tr("ws.limit.resume")) {
+                            workspace.setAutoResume(run.id, !auto)
+                        }
+                        .help(tr("ws.limit.resumeHelp"))
                     }
-                    .help(tr("ws.limit.resumeHelp"))
+                }
+                // A banked reset credit of this account frees it now, instead of waiting for the reset.
+                if let profile = app.profiles.profile(id: run.profileID) {
+                    ResetCreditRow(profile: profile)
                 }
             }
             .padding(.horizontal, NookTheme.Spacing.lg)

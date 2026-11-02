@@ -24,8 +24,9 @@ final class ClaudeUsage {
     private var busy = Set<String>()
 
     /// Per account this often, multiplied by the energy plan's slowdown. Each reading starts a whole `claude` process (a few
-    /// hundred MB of Node), and a turn or a limit event already reads again (`refreshNow`): the timer only covers the quiet hours.
-    private static let interval: TimeInterval = 30 * 60
+    /// hundred MB of Node) for a second, and a turn or a limit event already reads again (`refreshNow`): the timer covers the
+    /// quiet hours, often enough that the limits shown in the notch are never far behind what was used elsewhere.
+    private static let interval: TimeInterval = 10 * 60
     /// `refreshNow` asks again at most this often per account: it is called when a usage view opens, after a turn, on every
     /// rate limit event and while logging in.
     private static let minimumInterval: TimeInterval = 60
