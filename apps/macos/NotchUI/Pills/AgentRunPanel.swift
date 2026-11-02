@@ -487,17 +487,22 @@ struct AgentRunPanel: View {
         }
     }
 
-    /// The account's usage limits and the context ring, and the microphone next to them.
+    /// The subscription limits of the account this session runs on, for every agent that reports them: at the right end
+    /// of the row of choices under the box.
+    @ViewBuilder
+    private func usageLimits(_ run: WorkspaceRun) -> some View {
+        if let profile = app.profile(for: run) {
+            let limits = app.quota.limits(for: profile)
+            if !limits.isEmpty {
+                ComposerUsageRing(limits: limits, account: AccountLabel.name(profile, app: app), accent: profile.kind.color)
+            }
+        }
+    }
+
+    /// The context ring, and the microphone next to it.
     @ViewBuilder
     private func composerTrailing(_ run: WorkspaceRun) -> some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
-            // The subscription limits of the account this session runs on, for every agent that reports them.
-            if let profile = app.profile(for: run) {
-                let limits = app.quota.limits(for: profile)
-                if !limits.isEmpty {
-                    ComposerUsageRing(limits: limits, account: AccountLabel.name(profile, app: app), accent: profile.kind.color)
-                }
-            }
             if let window = run.usage.contextWindow, let used = run.usage.contextTokens, window > 0 {
                 // Every agent that compacts on `/compact` (Claude Code, Codex, an ACP agent that offers it) gets the button.
                 let compacts = AgentCommands.canCompact(run.provider, offered: workspace.acpCommands[runID] ?? [])
@@ -1128,6 +1133,7 @@ struct AgentRunPanel: View {
                 .rich(composerModel, composerConfig(run))
                 .choicesBelowBox()
                 .trailing { composerTrailing(run) }
+                .trayTrailing { usageLimits(run) }
                 // While it works, what you type steers the turn or waits in line, and Cmd+Return does the other.
                 .queueing(active ? deliver(preferred) : nil,
                           alternate: active ? deliver(preferred == .steer ? .queue : .steer) : nil,
