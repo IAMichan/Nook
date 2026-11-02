@@ -170,7 +170,7 @@ enum PanelLayout {
     static let minimumConversation: Double = 360
     /// The room a list and a conversation need side by side: the narrowest list, its line and gap, and the narrowest
     /// conversation. Narrower than this (split view, a small window) a tab shows one of them at a time (`stacks`).
-    static let sideBySide: Double = minimumList + PanelSplit.handle + Double(SidePanelMetrics.gap) + minimumConversation
+    static let sideBySide: Double = minimumList + PanelSplit.handle + Double(SidePanelMetrics.listGap) + minimumConversation
 
     /// Whether a tab of `total` width shows its list and its conversation one at a time, each over the whole width, with
     /// a back button (`PanelBackButton`) from the conversation to the list, as a phone does. False while the width is
