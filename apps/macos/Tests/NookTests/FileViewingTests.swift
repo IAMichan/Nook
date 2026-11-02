@@ -54,4 +54,32 @@ final class FileViewingTests: XCTestCase {
         XCTAssertEqual(FileViewing.clampedLine(0, count: 10), 1)
         XCTAssertNil(FileViewing.clampedLine(nil, count: 10))
     }
+
+    func testEditingKeepsLineBreaksMarkAndPermissions() throws {
+        let path = write(".env", Data("\u{FEFF}KEY=old\r\nOTHER=1\r\n".utf8))
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+        let file = try XCTUnwrap(FileViewing.editable(path: path))
+        XCTAssertEqual(file.text, "KEY=old\nOTHER=1\n")
+        XCTAssertTrue(file.byteOrderMark)
+        XCTAssertTrue(file.windowsBreaks)
+        guard case .saved = FileViewing.save("KEY=new\nOTHER=1\n", as: file, to: path) else { return XCTFail("not saved") }
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), Data("\u{FEFF}KEY=new\r\nOTHER=1\r\n".utf8))
+        let permissions = try FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? Int
+        XCTAssertEqual(permissions, 0o600)
+    }
+
+    func testSavingOverAChangeOnDiskAsksFirst() throws {
+        let path = write("config.json", Data("{}".utf8))
+        var file = try XCTUnwrap(FileViewing.editable(path: path))
+        file.modified = Date(timeIntervalSince1970: 0)
+        XCTAssertEqual(FileViewing.save("{\"a\": 1}", as: file, to: path), .changedOnDisk)
+        XCTAssertEqual(try String(contentsOfFile: path, encoding: .utf8), "{}")
+        guard case .saved = FileViewing.save("{\"a\": 1}", as: file, to: path, overwrite: true) else { return XCTFail("not saved") }
+        XCTAssertEqual(try String(contentsOfFile: path, encoding: .utf8), "{\"a\": 1}")
+    }
+
+    func testBinaryIsNotEditable() {
+        XCTAssertNil(FileViewing.editable(Data([0x41, 0x00, 0x42])))
+        XCTAssertEqual(FileViewing.editable(Data("a\nb".utf8))?.windowsBreaks, false)
+    }
 }
