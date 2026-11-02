@@ -39,14 +39,15 @@ enum WorktreeOrigin {
     }
 
     /// The folder a new session for the project `name` starts in, from the folders of its sessions (most telling first)
-    /// and the folders you opened before (`known`). Always one that is still on disk: an agent's worktree that was removed
-    /// leads to the checkout around it (`repo/.claude/worktrees/x` → `repo`), else to a known folder with the project's
-    /// name. Nil when none is left, so the "+" never opens the composer on whatever folder it showed last.
+    /// and the folders you opened before (`known`). Always one that is still on disk and carries the project's name: a
+    /// session that moved on to another repository keeps its row under this project, but its folder is not this one. An
+    /// agent's worktree that was removed leads to the checkout around it (`repo/.claude/worktrees/x` → `repo`), else to a
+    /// known folder with the project's name. Nil when none is left, so the "+" never opens the composer on another folder.
     static func newSessionFolder(project name: String, paths: [String], known: [String]) -> String? {
         let paths = paths.filter { !$0.isEmpty }
         for path in paths {
             let checkout = checkoutPath(of: path)
-            if isDirectory(checkout) { return checkout }
+            if URL(fileURLWithPath: checkout).lastPathComponent == name, isDirectory(checkout) { return checkout }
         }
         for path in paths {
             var dir = URL(fileURLWithPath: path).standardizedFileURL.deletingLastPathComponent()
