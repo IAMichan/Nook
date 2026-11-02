@@ -6,6 +6,7 @@ import AppKit
 struct MusicConnectionSection: View {
     @ObservedObject private var spotify = SpotifySignIn.shared
     @AppStorage("spotifyClientID") private var clientID = ""
+    @State private var copiedRedirect = false
 
     var body: some View {
         Section {
@@ -18,7 +19,22 @@ struct MusicConnectionSection: View {
                 }
                 SettingNote(tr("music.connect.spotifyConnectedDetail"))
             } else {
-                SettingNote(tr("music.connect.spotifySteps", SpotifyWebAPI.redirectURI))
+                SettingNote(tr("music.connect.spotifySteps"))
+                // The redirect the user pastes into the Spotify dashboard: selectable, and one click to copy.
+                LabeledContent(tr("music.connect.redirectURI")) {
+                    HStack(spacing: NookTheme.Spacing.sm) {
+                        Text(SpotifyWebAPI.redirectURI)
+                            .font(NookTheme.mono(12))
+                            .textSelection(.enabled)
+                        Button {
+                            Pasteboard.copy(SpotifyWebAPI.redirectURI)
+                            copiedRedirect = true
+                        } label: {
+                            Label(copiedRedirect ? tr("button.copied") : tr("button.copy"),
+                                  systemImage: copiedRedirect ? "checkmark" : "doc.on.doc")
+                        }
+                    }
+                }
                 HStack {
                     TextField(tr("music.connect.clientID"), text: $clientID)
                         .textFieldStyle(.roundedBorder)
