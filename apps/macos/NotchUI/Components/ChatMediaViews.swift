@@ -247,16 +247,30 @@ final class ChatAvatarImages: ObservableObject {
     /// How long a file that could not be read is left alone before it is tried again (it may still be coming in).
     private static let retry: TimeInterval = 30
 
+    /// How many decoded pictures are kept (about 37 KB each at `side`).
+    private static let limit = 1_000
+
     @Published private(set) var generation = 0
+    /// The decoded pictures, held here rather than in the shared media cache: that one is emptied under memory pressure,
+    /// and each time it was, every face fell back to its Contacts photo or initials until it was decoded again, which
+    /// made the list flicker between the old and the real picture.
+    private var images: [String: NSImage] = [:]
+    /// The picture each chat showed last, kept while a new file for it decodes: a chat whose picture moved to another
+    /// file keeps its face instead of blinking to the initials in between.
+    private var shown: [String: NSImage] = [:]
     private var loading: Set<String> = []
     private var failed: [String: Date] = [:]
     private var announcing = false
 
-    /// The picture when it is decoded; nil while it is (the list shows the initials meanwhile and redraws once it is in).
-    func image(_ path: String) -> NSImage? {
-        if let image = ChatMediaImages.cached(URL(fileURLWithPath: path, isDirectory: false), side: Self.side) { return image }
+    /// The picture when it is decoded; while it is, the picture `chat` showed before, else nil (the list shows the
+    /// initials meanwhile and redraws once it is in).
+    func image(_ path: String, chat: String? = nil) -> NSImage? {
+        if let image = images[path] {
+            if let chat, shown[chat] !== image { shown[chat] = image }
+            return image
+        }
         load(path)
-        return nil
+        return chat.flatMap { shown[$0] }
     }
 
     private func load(_ path: String) {
@@ -269,12 +283,16 @@ final class ChatAvatarImages: ObservableObject {
                 ChatMediaImages.image(URL(fileURLWithPath: path, isDirectory: false), side: side) != nil
             }.value
             loading.remove(path)
-            if found {
-                failed[path] = nil
-                announce()
-            } else {
+            guard found else {
                 failed[path] = Date()
+                return
             }
+            failed[path] = nil
+            // Gone from the media cache already (memory pressure): the next redraw asks again.
+            guard let image = ChatMediaImages.cached(URL(fileURLWithPath: path, isDirectory: false), side: side) else { return }
+            if images.count >= Self.limit { images.removeAll(keepingCapacity: true) }
+            images[path] = image
+            announce()
         }
     }
 

@@ -1483,7 +1483,7 @@ struct ChatsFace: View {
     private var photo: NSImage? {
         // Straight to the image cache: a file check first cost a disk lookup per row on every redraw of the list. A
         // missing file gives no image either way.
-        if let avatar = entry.avatar, let image = avatars.image(avatar) { return image }
+        if let avatar = entry.avatar, let image = avatars.image(avatar, chat: entry.id) { return image }
         return photos.photo(handle: entry.handle, name: entry.name)
     }
 }
