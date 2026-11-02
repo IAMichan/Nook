@@ -344,6 +344,9 @@ final class WhatsAppLink: ObservableObject {
     private var linesAsked: Set<String> = []
     private var linesWaiting: [String] = []
     private var linesLoading = false
+    /// The move of each chat (the list's `last`) whose newest messages were fetched because they never came in live
+    /// (`WAInbox.behind`).
+    private var caughtUp: [String: Date] = [:]
     /// Files the notch card shows (photos, videos, documents), by message id, oldest first in `previewOrder`.
     private var previews: [String: WAPreview] = [:] {
         didSet { previewRevision &+= 1 }
@@ -447,6 +450,7 @@ final class WhatsAppLink: ObservableObject {
         membersLoaded = [:]
         linesAsked = []
         linesWaiting = []
+        caughtUp = [:]
         if online, let provider { Task { await provider.setOnline(false, chat: nil) } }
         online = false
         onlineChat = nil
@@ -724,6 +728,14 @@ final class WhatsAppLink: ObservableObject {
                 readElsewhere(key)
             }
         }
+        // The list moved a chat on (its row goes under "Today") past the newest message Nook holds of it: that message
+        // never came in live, so it is fetched, and the row gets its line and time.
+        for chat in inbox.behind(knownChats, asked: caughtUp) {
+            guard gen == generation, isConnected else { return }
+            caughtUp[chat.jid] = chat.last
+            _ = try? await fetchHistory(chat.jid, limit: Self.lineFetch)
+        }
+        guard gen == generation else { return }
         // Who the numbers are: your Contacts first (what you call someone), then the phone's address book.
         // A failed request answers with an empty list: the last list stays, rather than every name going back to a number.
         let listed = await provider.contacts()

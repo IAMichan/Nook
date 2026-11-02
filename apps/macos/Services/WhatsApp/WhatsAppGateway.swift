@@ -705,6 +705,28 @@ struct WAInbox: Equatable, Sendable {
         return Array(byId.values.sorted { $0.date < $1.date }.suffix(limit))
     }
 
+    /// How far back the chat list is looked through for chats whose newest message never came in.
+    static let catchUpWindow: TimeInterval = 2 * 86_400
+    /// The most chats fetched in one pass of the chat list.
+    static let catchUpLimit = 10
+
+    /// The chats the gateway's list says moved later than the newest message Nook holds of them (by more than a second,
+    /// the rounding of the two): that message never came in live (a webhook or poll that missed it), and the row would
+    /// sit under "Today" with Friday's line and time. Only chats Nook already holds (a row without a line gets it from
+    /// `loadLine`), moved within `catchUpWindow`, and not asked for that same move before (`asked`): a newest message
+    /// that shows nothing (a vote, a blank) is never asked for again and again. Newest first, `catchUpLimit` at most.
+    func behind(_ chats: [WAChatInfo], asked: [String: Date], now: Date = Date()) -> [WAChatInfo] {
+        let since = now.addingTimeInterval(-Self.catchUpWindow)
+        return chats.filter { chat in
+            guard chat.last > since, asked[chat.jid] != chat.last,
+                  let newest = conversations[chat.jid]?.messages.last?.date else { return false }
+            return newest < chat.last.addingTimeInterval(-1)
+        }
+        .sorted { $0.last > $1.last }
+        .prefix(Self.catchUpLimit)
+        .map { $0 }
+    }
+
     private(set) var conversations: [String: WAConversation] = [:]
     /// Every vote received, kept across restarts (see `WAPollLedger`).
     private(set) var pollLedger: WAPollLedger

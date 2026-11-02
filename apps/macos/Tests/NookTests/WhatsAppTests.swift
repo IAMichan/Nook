@@ -9,6 +9,26 @@ final class WhatsAppTests: XCTestCase {
                   date: Date(timeIntervalSince1970: 1_800_000_000 + at), fromMe: fromMe, mentionsMe: mention)
     }
 
+    func testAChatTheListMovedPastItsNewestMessageIsFetched() {
+        var inbox = WAInbox()
+        let group = "120363000000000001@g.us"
+        let friend = "31600000001@s.whatsapp.net"
+        inbox.add(message("1", chat: group, at: 0), filters: WAFilters())
+        inbox.add(message("2", chat: friend, at: 0), filters: WAFilters())
+        let now = Date(timeIntervalSince1970: 1_800_000_000 + 3600)
+        let moved = WAChatInfo(jid: group, name: "Life Crafters", last: Date(timeIntervalSince1970: 1_800_000_000 + 1800))
+        let rounded = WAChatInfo(jid: friend, name: "Lisa", last: Date(timeIntervalSince1970: 1_800_000_000 + 0.5))
+        let unknown = WAChatInfo(jid: "31600000002@s.whatsapp.net", name: "Jan", last: moved.last)
+        XCTAssertEqual(inbox.behind([moved, rounded, unknown], asked: [:], now: now).map(\.jid), [group],
+                       "only a chat Nook holds whose list time is past its newest message, beyond the rounding")
+        XCTAssertTrue(inbox.behind([moved], asked: [group: moved.last], now: now).isEmpty,
+                      "the same move is asked for once, even when its newest message shows nothing")
+        XCTAssertTrue(inbox.behind([moved], asked: [:], now: now.addingTimeInterval(WAInbox.catchUpWindow)).isEmpty,
+                      "an old move is left alone")
+        inbox.add(message("3", chat: group, at: 1800), filters: WAFilters())
+        XCTAssertTrue(inbox.behind([moved], asked: [:], now: now).isEmpty, "caught up once the message is in")
+    }
+
     func testAMessageWithNothingToShowIsNoBubble() {
         var inbox = WAInbox()
         let group = "120363000000000001@g.us"
