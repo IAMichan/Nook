@@ -873,7 +873,9 @@ enum WorkspaceRunsSection {
         let list = workspace.runs
             .filter { !$0.archived }
             .sorted { ($0.status.isActive ? 0 : 1, $1.updatedAt) < ($1.status.isActive ? 0 : 1, $0.updatedAt) }
-        let isOpen = { (run: WorkspaceRun) in run.status.isActive || !finished.contains(FinishedSessions.key(run: run)) }
+        let isOpen = { (run: WorkspaceRun) in
+            run.status.isActive || !finished.isSettled(FinishedSessions.key(run: run), lastActive: run.updatedAt)
+        }
         let settled = list.filter { !isOpen($0) && now.timeIntervalSince($0.updatedAt) < 24 * 3600 }
         return list.filter(isOpen) + settled.prefix(settledLimit)
     }
