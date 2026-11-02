@@ -129,22 +129,15 @@ struct TranscriptConversation: View {
                     ScrollFrame(offset: geometry.contentOffset.y, content: geometry.contentSize.height,
                                 container: geometry.containerSize.height,
                                 insetTop: geometry.contentInsets.top, insetBottom: geometry.contentInsets.bottom)
-                } action: { _, frame in
+                } action: { old, frame in
                     viewport.frame = frame
+                    keepEnd(old, frame, proxy)
                 }
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 48
                 } action: { _, nowAtEnd in
                     atEnd = nowAtEnd
                     if nowAtEnd { scroll.reachedEnd() }
-                }
-                // While following, growth keeps the distance to the end, so getting further from it can only be you:
-                // this catches a mouse wheel too, which reports no scroll phase.
-                .onScrollGeometryChange(for: [Double].self) { geometry in
-                    [geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height,
-                     geometry.containerSize.height]
-                } action: { old, new in
-                    if scroll.shouldFollowEnd, new[0] > old[0] + 0.5, new[0] > 48, new[1] == old[1] { scroll.userScrolled() }
                 }
                 .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
                     overflows = now
@@ -249,6 +242,25 @@ struct TranscriptConversation: View {
     private func scrollToEnd(_ proxy: ScrollViewProxy) {
         guard !shown.isEmpty || footer != nil else { return }
         proxy.scrollTo("bottom", anchor: .bottom)
+    }
+
+    /// Keeps the conversation at its end while it is there. The anchor for size changes alone let it slip up as it opens:
+    /// the lazy rows below measure taller after the first scroll, and the composer under it grows (a card, a draft),
+    /// which changes the inset rather than the content. Either happens at the end without you, so the conversation stays
+    /// there; only moving while the sizes stay the same is you scrolling away (a mouse wheel too, which reports no phase).
+    private func keepEnd(_ old: ScrollFrame, _ new: ScrollFrame, _ proxy: ScrollViewProxy) {
+        let resized = new.content != old.content || new.container != old.container || new.insetBottom != old.insetBottom
+        if resized {
+            // At the end before the change counts too: a landing on what is new that fits on screen ends there as well.
+            let wasAtEnd = old.maxOffset - old.offset <= 1
+            guard scroll.shouldFollowEnd || wasAtEnd, scrollPhase.value == .idle, new.maxOffset - new.offset > 0.5 else { return }
+            scroll.reachedEnd()
+            var still = Transaction()
+            still.disablesAnimations = true
+            withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
+            return
+        }
+        if scroll.shouldFollowEnd, new.offset < old.offset - 0.5, new.maxOffset - new.offset > 48 { scroll.userScrolled() }
     }
 
     /// Once the conversation has loaded: what came in since your last visit (under its line), the row you were reading
