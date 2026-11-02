@@ -21,7 +21,7 @@ final class CompanionNotifier: ObservableObject {
         self.app = app
         // A session that starts, waits or finishes changes the workspace or the hub. Streaming text changes them many
         // times a second, so at most one look every three seconds; the planner sends only what changed.
-        liveWatch = app.workspace.objectWillChange.merge(with: app.hub.objectWillChange)
+        liveWatch = app.workspace.objectWillChange.merge(with: app.workspace.timelines.objectWillChange, app.hub.objectWillChange)
             .throttle(for: .seconds(3), scheduler: RunLoop.main, latest: true)
             // `objectWillChange` fires before the change lands; look on a later turn of the run loop.
             .sink { [weak self] _ in DispatchQueue.main.async { self?.refreshLiveActivities() } }

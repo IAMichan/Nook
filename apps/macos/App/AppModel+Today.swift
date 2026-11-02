@@ -148,7 +148,8 @@ extension AppModel {
                 SettingsView().nookToastHost()
             }
             let host = NSHostingController(rootView: root.nookAttention().environmentObject(self))
-            host.sizingOptions = [.minSize]
+            // The window sets its own minSize: letting the hosting view drive it measured the whole Form on every update.
+            host.sizingOptions = []
             let window = NSWindow(contentViewController: host)
             window.title = "Nook"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]

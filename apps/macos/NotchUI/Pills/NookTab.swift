@@ -299,7 +299,7 @@ struct NookChatView: View {
                 }
                 Spacer(minLength: NookTheme.Spacing.md)
                 if conversation.busy, let since = conversation.turnStarted {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                    TimelineView(.nookTicks(every: 1)) { context in
                         AgentStatusBadge(state: .working, detail: AgentFormat.short(context.date.timeIntervalSince(since)))
                     }
                 } else if conversation.status == .waiting {

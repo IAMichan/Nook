@@ -1001,7 +1001,7 @@ struct ChatTypingBubble: View {
 /// Three dots that light up one after the other while someone types.
 struct ChatTypingDots: View {
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.3)) { context in
+        TimelineView(.nookTicks(every: 0.3)) { context in
             let step = Int(context.date.timeIntervalSinceReferenceDate / 0.3) % 3
             HStack(spacing: NookTheme.Spacing.xxs) {
                 ForEach(0..<3, id: \.self) { dot in
@@ -1550,8 +1550,10 @@ struct ChatPhotoZoom: View {
         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
         .task(id: url) {
             let url = self.url
-            let data = await Task.detached(priority: .userInitiated) { try? Data(contentsOf: url) }.value
-            sharp = data.flatMap { WhatsAppLink.thumbnail($0, side: 2400) }
+            // Read and decoded off the main thread: decoding a large photo at this size held up the zoom.
+            sharp = await Task.detached(priority: .userInitiated) {
+                (try? Data(contentsOf: url)).flatMap { WhatsAppLink.thumbnail($0, side: 2400) }
+            }.value
         }
     }
 

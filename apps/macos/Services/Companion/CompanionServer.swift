@@ -43,7 +43,7 @@ final class CompanionServer: ObservableObject {
         self.app = app
         // Subscribed phones get the sessions when they change; streaming text changes the workspace many times a
         // second, so at most one look a second, and only what changed is sent.
-        watch = app.workspace.objectWillChange.merge(with: app.hub.objectWillChange)
+        watch = app.workspace.objectWillChange.merge(with: app.workspace.timelines.objectWillChange, app.hub.objectWillChange)
             .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] _ in DispatchQueue.main.async { self?.pushChanges() } }
         apply()
@@ -599,6 +599,22 @@ final class CompanionServer: ObservableObject {
     /// Workspace sessions, then agents running in a terminal and bridge requests (`CompanionAgents`).
     func digests(_ app: AppModel) -> [SessionDigest] {
         digests(app.workspace) + CompanionAgents.digests(app)
+    }
+
+    /// Whether any session works or waits for you, as the digests would say (`KeepAwakePolicy.isBusy`), without making
+    /// them: keeping the Mac awake asks every two seconds while sessions change, and needs none of their text.
+    func anyBusy(_ app: AppModel) -> Bool {
+        let workspace = app.workspace
+        let now = Date()
+        let runs = workspace.runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }.prefix(25)
+        let working = runs.contains { run in
+            let waiting = !(workspace.approvals[run.id] ?? []).isEmpty || !(workspace.questions[run.id] ?? []).isEmpty
+            return KeepAwakePolicy.isBusy(attention: String(describing: workspace.attention(run, unseen: false, now: now)),
+                                          waiting: waiting)
+        }
+        return working || CompanionAgents.digests(app).contains {
+            KeepAwakePolicy.isBusy(attention: $0.attention, waiting: !$0.items.isEmpty)
+        }
     }
 
     private func digests(_ workspace: WorkspaceManager) -> [SessionDigest] {

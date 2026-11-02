@@ -44,7 +44,6 @@ struct WorkspaceView: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
-        .animation(NookTheme.swap, value: viewModel.windowTab)
         // ⌘N starts a session, unless a list on screen starts its own kind (a new Nook chat).
         .keyCommand("session.new", priority: -1) { newSession() }
         .sheet(isPresented: $app.showOnboarding) {
@@ -65,7 +64,9 @@ struct WorkspaceView: View {
 
     private func select(_ tab: PanelTab) {
         viewModel.windowSheet = nil
-        viewModel.windowTab = tab
+        // Animated here and not on the window: an animation on the root sprang everything that changes with the tab
+        // (the footer, the bars around the content), and the tab laid out again on every frame of it.
+        withAnimation(NookTheme.swap) { viewModel.windowTab = tab }
     }
 
     private func newSession() {

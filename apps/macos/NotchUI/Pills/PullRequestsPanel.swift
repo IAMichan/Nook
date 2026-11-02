@@ -445,7 +445,7 @@ struct PullRequestFreshness: View {
     let date: Date
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 5)) { context in
+        TimelineView(.nookTicks(every: 5)) { context in
             let age = context.date.timeIntervalSince(date)
             Text(age < 10 ? tr("agents.pulls.updatedNow") : tr("agents.pulls.updatedAgo", AgentFormat.short(age)))
                 .font(NookTheme.TextStyle.detail)

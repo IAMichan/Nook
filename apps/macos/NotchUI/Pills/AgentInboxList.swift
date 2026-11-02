@@ -31,6 +31,8 @@ struct AgentInboxList: View {
     /// The project header under the pointer: it shows its "+".
     @State private var hoveredProject: String?
     @State private var selection = ListSelection<String>()
+    /// The past sessions by id, made again only when the history changes (`pastSession`).
+    @State private var pastIndex = PastSessionIndex()
 
     private static let wakeFormat: DateFormatter = {
         let format = DateFormatter()
@@ -96,8 +98,7 @@ struct AgentInboxList: View {
     private func pastSession(_ rowID: String) -> PastSession? {
         let id = rowID.dropFirst(5)
         guard let colon = id.firstIndex(of: ":") else { return nil }
-        let agent = id[..<colon], session = id[id.index(after: colon)...]
-        return app.history.sessions.first { $0.sessionID == session && $0.agent.rawValue == agent }
+        return pastIndex.session(agent: id[..<colon], id: id[id.index(after: colon)...], in: app.history.sessions)
     }
 
     /// The watched pull request, the one Nook opened, else the last one the conversation links. Only a conversation
@@ -160,7 +161,8 @@ struct AgentInboxList: View {
                                 : (title: tr("agents.newSession"), run: { select("new") }))
             } else {
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    // Lazy: the list holds every running and earlier session, and only the ones in view are built.
+                    LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         if store.groupByProject {
                             ForEach(sections.filter { $0.kind == .pinned }, id: \.kind) { section in
                                 sectionView(section, sections: sections, byID: byID, shown: shown)
@@ -668,7 +670,7 @@ struct AgentInboxList: View {
     }
 
     private var undoTimeline: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
+        TimelineView(.nookTicks(every: 1)) { context in
             if let entry = store.undoLog.current(now: context.date) {
                 HStack(spacing: NookTheme.Spacing.md) {
                     Text(tr(entry.messageKey, entry.count))
@@ -736,5 +738,28 @@ private extension View {
         } else {
             self
         }
+    }
+}
+
+/// The history's sessions by agent and id, for the rows of the session list: each row looked its session up in the whole
+/// history, on every redraw of the list. Made again when the history is another array than last time.
+@MainActor
+final class PastSessionIndex {
+    /// The history it was made from; held so its storage stays the same while nothing changes it.
+    private var source: [PastSession] = []
+    private var byKey: [String: PastSession] = [:]
+
+    func session(agent: Substring, id: Substring, in sessions: [PastSession]) -> PastSession? {
+        let same = sessions.withUnsafeBufferPointer { new in
+            source.withUnsafeBufferPointer { old in new.baseAddress == old.baseAddress && new.count == old.count }
+        }
+        if !same {
+            source = sessions
+            byKey = [:]
+            for past in sessions where byKey["\(past.agent.rawValue):\(past.sessionID)"] == nil {
+                byKey["\(past.agent.rawValue):\(past.sessionID)"] = past
+            }
+        }
+        return byKey["\(agent):\(id)"]
     }
 }

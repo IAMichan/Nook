@@ -92,7 +92,7 @@ private struct BlinkingCursor: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.55)) { context in
+        TimelineView(.nookTicks(every: 0.55)) { context in
             let on = reduceMotion || Int(context.date.timeIntervalSinceReferenceDate / 0.55) % 2 == 0
             Rectangle()
                 .fill(NookTheme.textSecondary)

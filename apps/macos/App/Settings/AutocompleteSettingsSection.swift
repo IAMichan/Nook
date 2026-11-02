@@ -120,7 +120,7 @@ struct AutocompleteSettingsSection: View {
     /// What elsewhere on the Mac stands in the way: Secure Input held by another app, and macOS's own predictions. Looked at
     /// again every few seconds while Settings is open, so a row goes away once it is solved.
     private var obstacles: some View {
-        TimelineView(.periodic(from: .now, by: 3)) { _ in
+        TimelineView(.nookTicks(every: 3)) { _ in
             let secure = CompletionSystemChecks.secureInput()
             if secure.on {
                 StatusRow(title: tr("autocomplete.secureInput"),
@@ -526,7 +526,7 @@ struct AutocompleteSettingsSection: View {
     private var apps: [InstalledApp] {
         var byID = Dictionary(installed.map { ($0.bundleID, $0) }, uniquingKeysWith: { first, _ in first })
         for bundleID in Set(store.prefs.apps.keys).union(autocomplete.seenApps.keys) where byID[bundleID] == nil {
-            byID[bundleID] = InstalledApp(bundleID: bundleID, name: autocomplete.seenApps[bundleID] ?? bundleID, url: NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID))
+            byID[bundleID] = InstalledApp(bundleID: bundleID, name: autocomplete.seenApps[bundleID] ?? bundleID, url: InstalledApp.url(of: bundleID))
         }
         let query = search.trimmingCharacters(in: .whitespaces).lowercased()
         return byID.values
@@ -790,7 +790,7 @@ struct AutocompleteSettingsSection: View {
                     let most = max(top.first?.count.takes ?? 1, 1)
                     ForEach(top, id: \.bundleID) { entry in
                         HStack(spacing: 10) {
-                            AppIcon(url: NSWorkspace.shared.urlForApplication(withBundleIdentifier: entry.bundleID))
+                            AppIcon(url: InstalledApp.url(of: entry.bundleID))
                             Text(appName(entry.bundleID)).frame(width: 140, alignment: .leading).lineLimit(1)
                             ProgressView(value: Double(entry.count.takes), total: Double(most)).tint(SettingsSection.autocomplete.tileColors.1)
                             Text(tr("autocomplete.stats.timesShort", entry.count.takes)).monospacedDigit().foregroundStyle(NookTheme.textSecondary)
@@ -812,7 +812,7 @@ struct AutocompleteSettingsSection: View {
     private func appName(_ bundleID: String) -> String {
         if let app = installed.first(where: { $0.bundleID == bundleID }) { return app.name }
         if let name = autocomplete.seenApps[bundleID] { return name }
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+        if let url = InstalledApp.url(of: bundleID) {
             return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
         }
         return bundleID
@@ -859,6 +859,17 @@ private struct AppIcon: View {
 
 /// An app on this Mac that you might type in.
 struct InstalledApp: Identifiable, Hashable {
+    /// Where the app with `bundleID` is, asked of LaunchServices at most once a minute per app: the app list and the
+    /// statistics ask for every app they show on each redraw, and the search field redraws them on every keystroke.
+    @MainActor static func url(of bundleID: String) -> URL? {
+        if let known = locations[bundleID], known.asked.timeIntervalSinceNow > -60 { return known.url }
+        let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+        locations[bundleID] = (url, Date())
+        return url
+    }
+
+    @MainActor private static var locations: [String: (url: URL?, asked: Date)] = [:]
+
     let bundleID: String
     let name: String
     let url: URL?
