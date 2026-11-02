@@ -388,8 +388,9 @@ struct NookChatView: View {
             .defaultScrollAnchor(scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
             // Scrolling away from the end stops the following until you come back, or jump back with the pill.
             // Moving up while the sizes stay the same can only be you (following only ever moves down), and so is
-            // getting further from the end while following (growth keeps that distance), so this also catches a mouse
-            // wheel while the answer streams, and a scroll that starts at the end before it leaves it.
+            // getting further from the end while following with the sizes the same, so this also catches a mouse wheel
+            // while the answer streams, and a scroll that starts at the end before it leaves it. Growth does not count:
+            // a lazy row measured taller as the chat opens left the end too, and stopped the following halfway up.
             .onScrollGeometryChange(for: ThreadScrollGeometry.self) { geometry in
                 ThreadScrollGeometry(offset: geometry.contentOffset.y,
                                      container: geometry.containerSize.height,
@@ -399,7 +400,7 @@ struct NookChatView: View {
                 // draw the whole chat again for each frame.
                 if atEnd != new.atEnd { atEnd = new.atEnd }
                 let movedUp = new.offset < old.offset - 0.5 && new.content == old.content
-                let leftEnd = scroll.shouldFollowEnd && new.fromEnd > old.fromEnd + 0.5
+                let leftEnd = scroll.shouldFollowEnd && new.fromEnd > old.fromEnd + 0.5 && new.content == old.content
                 if movedUp || leftEnd, new.container == old.container, !new.atEnd {
                     if !scroll.isFreeAfterUserScroll { scroll.userScrolled() }
                 } else if new.atEnd, scroll.mode == .free {
@@ -415,8 +416,9 @@ struct NookChatView: View {
             }
             // The lazy rows only learn their real height once laid out, and the notch is still growing while it opens:
             // as long as we follow the end, every change in size is caught up with, so the chat never opens halfway up.
+            // The composer growing under it (a card, a draft) changes the inset instead, and is caught up with as well.
             .onScrollGeometryChange(for: [Double].self) { geometry in
-                [geometry.containerSize.height, geometry.contentSize.height]
+                [geometry.containerSize.height, geometry.contentSize.height, geometry.contentInsets.bottom]
             } action: { _, _ in
                 if scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
             }
