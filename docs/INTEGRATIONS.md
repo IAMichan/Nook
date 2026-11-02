@@ -347,5 +347,9 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
   the Accessibility permission and the track in Music's library or current playlist). When the player cannot take it,
   Nook keeps the track in its own queue and starts it itself. Up next reads Spotify's real queue once connected; for
   Music it still shows the playlist order, because Music's own queue cannot be read by another app.
+- **Music players: search.** The Music tab's Search section finds tracks in the playing player: Music's library through
+  AppleScript (`search library playlist 1`, so only tracks in the library, not the Apple Music catalogue), Spotify
+  through its Web API search (needs Spotify connected in Settings › Connections, not Premium). A found track plays on
+  click and goes in the queue like any other track in the tab.
 
 Add an item here when a change cannot reach every member yet.

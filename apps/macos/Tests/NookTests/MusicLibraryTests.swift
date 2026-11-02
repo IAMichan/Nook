@@ -213,6 +213,44 @@ final class MusicLibraryTests: XCTestCase {
         XCTAssertTrue(SpotifyResponses.queueTracks(from: Data("nope".utf8)).isEmpty)
     }
 
+    func testParsesLibrarySearch() {
+        let raw = "A1B2\u{1F}Song\u{1F}Artist\u{1F}201,5\u{1E}\u{1F}No id\u{1F}X\u{1F}10\u{1E}C3D4\u{1F}Other\u{1F}missing value\u{1F}62"
+        let tracks = MusicScriptOutput.tracks(raw)
+        XCTAssertEqual(tracks.map(\.id), ["A1B2", "C3D4"])
+        XCTAssertEqual(tracks[0].duration, 201)
+        XCTAssertEqual(tracks[1].artist, "")
+        XCTAssertTrue(MusicScriptOutput.tracks("").isEmpty)
+    }
+
+    func testLibrarySearchScriptQuotesTheQuery() {
+        let script = MusicScriptOutput.librarySearchScript(#"say "hi" \ bye"#, limit: 5)
+        XCTAssertTrue(script.contains(#"search library playlist 1 for "say \"hi\" \\ bye""#))
+    }
+
+    func testReadsSpotifySearch() {
+        let json = """
+        {"tracks":{"items":[
+          {"uri":"spotify:track:one","name":"One","duration_ms":120000,"artists":[{"name":"A"}],
+           "album":{"images":[{"url":"https://i.scdn.co/640","width":640},{"url":"https://i.scdn.co/300","width":300}]}},
+          null,
+          {"uri":"spotify:track:two","name":"","artists":[]}
+        ]}}
+        """
+        let tracks = SpotifyResponses.searchTracks(from: Data(json.utf8))
+        XCTAssertEqual(tracks.map(\.id), ["spotify:track:one"])
+        XCTAssertEqual(tracks[0].artworkURL?.absoluteString, "https://i.scdn.co/300")
+        XCTAssertTrue(SpotifyResponses.searchTracks(from: Data(#"{"queue":[]}"#.utf8)).isEmpty)
+    }
+
+    func testSpotifySearchRequestPagesByOffset() throws {
+        let request = try XCTUnwrap(SpotifyResponses.searchRequest(query: "daft punk & co", offset: 10, token: "t"))
+        let items = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(items.first { $0.name == "q" }?.value, "daft punk & co")
+        XCTAssertEqual(items.first { $0.name == "type" }?.value, "track")
+        XCTAssertEqual(items.first { $0.name == "offset" }?.value, "10")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer t")
+    }
+
     func testSpotifyStatusCodes() {
         XCTAssertNil(SpotifyResponses.failure(status: 204, body: Data()))
         XCTAssertEqual(SpotifyResponses.failure(status: 401, body: Data()), .notSignedIn)

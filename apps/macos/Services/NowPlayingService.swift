@@ -71,6 +71,9 @@ final class NowPlayingService: ObservableObject {
     @Published var upNext: MusicQueue?
     /// Music: the user's playlists.
     @Published var playlists: [MusicPlaylist] = []
+    /// The Music tab's search (see `NowPlayingService+Search`).
+    @Published var searchResult = MusicSearchResult()
+    var searchTask: Task<Void, Never>?
     /// A library request (queue, playlists, lyrics) is running.
     @Published var libraryLoading = false
     /// macOS has not granted Nook permission to control Spotify or Music.
