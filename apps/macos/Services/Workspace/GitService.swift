@@ -350,12 +350,12 @@ struct GitService: Sendable {
     }
 
     /// Lines added and removed per file between two snapshots (`to` nil: the files as they are now), keyed by the path
-    /// relative to `directory`; for the numbers on what a single turn changed.
-    func lineCounts(_ directory: String, paths: [String], from: String, to: String?) throws -> [String: (added: Int?, removed: Int?)] {
-        guard !paths.isEmpty else { return [:] }
+    /// relative to `directory`; for the numbers on what a single turn changed. `paths` nil: every file that differs.
+    func lineCounts(_ directory: String, paths: [String]?, from: String, to: String?) throws -> [String: (added: Int?, removed: Int?)] {
+        if let paths, paths.isEmpty { return [:] }
         var arguments = ["diff", "--numstat", "-z", "-M", "--relative", from]
         if let to { arguments.append(to) }
-        arguments += ["--"] + paths
+        if let paths { arguments += ["--"] + paths }
         return Self.parseNumstat(try run(arguments, in: directory))
     }
 

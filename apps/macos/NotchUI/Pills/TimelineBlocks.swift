@@ -58,7 +58,7 @@ struct TimelineRowContext: Equatable {
     /// The file open beside the conversation.
     var shownFile: String?
     /// The lines git counted per turn and file.
-    var counted: [String: [String: EditLines]]
+    var counted: [String: TurnLines]
 }
 
 /// "+7 −8": the lines an edit (or a group of edits) added and removed.

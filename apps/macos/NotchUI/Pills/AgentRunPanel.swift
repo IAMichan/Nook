@@ -68,7 +68,7 @@ struct AgentRunPanel: View {
     /// The terminal on the left: the command it shows; nil while it is closed.
     @State private var consoleEventID: UUID?
     /// The lines git counted per turn (by the turn's id), in place of those read from the agent's edits.
-    @State private var countedLines: [String: [String: EditLines]] = [:]
+    @State private var countedLines: [String: TurnLines] = [:]
     /// The timeline's blocks, turns and outputs, made again only when the events change (not on every keystroke).
     @State private var derived = RunTimelineDerived()
 
@@ -499,20 +499,28 @@ struct AgentRunPanel: View {
 
     // MARK: Turn diffs
 
-    /// The finished turns that changed files, with the lines git counted where it did.
+    /// The finished turns that changed files, with the files and lines git counted where it did.
     private func turnDiffs(_ run: WorkspaceRun) -> [TurnDiff] {
-        let turns = derived.update(workspace.timeline(runID), run: run).turns
-        guard !countedLines.isEmpty else { return turns }
-        return turns.map { turn in
-            countedLines[turn.id].map { turn.counted($0, relativeTo: run.workingDirectory) } ?? turn
-        }
+        derived.update(workspace.timeline(runID), run: run).turns
+            .map { counted($0, run: run) }
+            .filter { !$0.isEmpty }
     }
 
-    /// Counts a turn's lines with git, between the snapshots around it (once per turn and set of files).
-    private func countLines(_ turn: TurnDiff, run: WorkspaceRun) async {
-        guard !run.isRemote, let start = turn.start, let end = turn.end else { return }
-        if let counts = try? await workspace.turnLines(runID, paths: turn.files.map(\.path), start: start, end: end) {
-            countedLines[turn.id] = counts
+    /// The turn with what git counted for it, when it did.
+    private func counted(_ turn: TurnDiff, run: WorkspaceRun) -> TurnDiff {
+        countedLines[turn.id].map { turn.counted($0, relativeTo: run.workingDirectory) } ?? turn
+    }
+
+    /// Counts the finished turns with git, between the snapshots around them; a turn counted between both of its
+    /// snapshots stays as it is, the others are counted again once their snapshot is made.
+    private func countTurns(_ turns: [TurnDiff], run: WorkspaceRun) async {
+        guard !run.isRemote else { return }
+        for turn in turns where countedLines[turn.id]?.complete != true {
+            guard let start = turn.start, let end = turn.end else { continue }
+            if let lines = try? await workspace.turnLines(runID, paths: turn.files.map(\.path), start: start, end: end) {
+                guard !Task.isCancelled else { return }
+                countedLines[turn.id] = lines
+            }
         }
     }
 
@@ -577,11 +585,11 @@ struct AgentRunPanel: View {
                                     VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                                         // What the turn changed (its card): under the final answer, inside it, as in an
                                         // agent's own transcript; a file or Open diff opens the diff beside it.
-                                        let card = cards[event.id].map { turn in
-                                            AnyView(TurnChangesCard(turn: turn, directory: run.workingDirectory) { file in
+                                        // A turn that changed files only by a command still gets one, once git counted it.
+                                        let card = cards[event.id].map { counted($0, run: run) }.flatMap { turn in
+                                            turn.isEmpty ? nil : AnyView(TurnChangesCard(turn: turn, directory: run.workingDirectory) { file in
                                                 sideLink.openDiff(TurnDiffSelection(turn: turn.id, file: file))
-                                            }
-                                            .task(id: turn.id + "|\(turn.files.count)") { await countLines(turn, run: run) })
+                                            })
                                         }
                                         let inReply = event.kind == .assistant && memo.finalAnswers.contains(event.id)
                                         eventRow(event, final: memo.finalAnswers.contains(event.id),
@@ -620,6 +628,10 @@ struct AgentRunPanel: View {
                 .chatColumn()
             }
             .scrollPosition($position)
+            // The files and lines of every finished turn from git (`countTurns`): again when a turn ends or a snapshot is made.
+            .task(id: "\(runID)|\(memo.turns.count)|\(memo.turns.last?.files.count ?? 0)|\(run.checkpoints?.count ?? 0)") {
+                await countTurns(memo.turns, run: run)
+            }
             // Following the end while the answer streams: the scroll view keeps its bottom in place as the content grows,
             // instead of a `scrollTo` (a layout down to the end and a scroll) for every streamed update.
             .defaultScrollAnchor(run.status.isActive && scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
@@ -1370,7 +1382,8 @@ private final class RunTimelineDerived {
             return self
         }
         revision &+= 1
-        turns = TurnDiff.collect(events: all)
+        // Also the turns without an edit: git may find files they changed by a command (`countTurns`).
+        turns = TurnDiff.collect(events: all, keepEmpty: true)
         finalAnswers = []
         cards = [:]
         let byTurn = Dictionary(turns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
