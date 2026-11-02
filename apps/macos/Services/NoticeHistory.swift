@@ -27,6 +27,15 @@ final class NoticeHistory: ObservableObject {
         log.markAllSeen()
     }
 
+    func markSeen(_ entry: NoticeEntry) {
+        guard !entry.seen else { return }
+        log.markSeen(entry.id)
+    }
+
+    func remove(_ entry: NoticeEntry) {
+        log.remove(entry.id)
+    }
+
     func clear() {
         log.clear()
     }

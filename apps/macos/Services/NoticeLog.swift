@@ -65,6 +65,17 @@ struct NoticeLog: Equatable {
         for index in entries.indices { entries[index].seen = true }
     }
 
+    /// Marks one entry seen, as opening it does.
+    mutating func markSeen(_ id: UUID) {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[index].seen = true
+    }
+
+    /// Drops one entry, as its cross in the history does.
+    mutating func remove(_ id: UUID) {
+        entries.removeAll { $0.id == id }
+    }
+
     mutating func clear() {
         entries.removeAll()
     }
