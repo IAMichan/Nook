@@ -74,17 +74,21 @@ enum NookTheme {
     static let mintSoft = Color(hex: 0x74DDB3)
     static let music = Color(hex: 0xF0936A)
 
-    /// The canvas behind every window: the Workspace, Settings, and the Today window share it.
-    static let canvas = Color(hex: 0x0A0A0A)
+    /// The canvas behind every window: the Workspace, Settings, and the Today window share it. Pure black, as the
+    /// notch, so cards and borders carry the structure.
+    static let canvas = Color(hex: 0x000000)
     /// A sunken well inside a card: code, logs, and the composer tray.
     static let well = Color(hex: 0x080808)
     /// A lifted surface: sidebars, menus, the composer.
     static let surface = Color(hex: 0x121212)
     /// The faintest divider between regions of a panel.
     static let hairline = Color(hex: 0x1E1E1E)
-    /// The line between the items of a list (a chat in the Chats tab): a step brighter than `line2`, so
+    /// The line between a window's columns and panels (the sidebar, the side panel, a pane's header): a light grey that
+    /// reads clearly on the black canvas without drawing the eye.
+    static let border = Color(hex: 0x383838)
+    /// The line between the items of a list (a chat in the Chats tab): a step brighter than `border`, so
     /// each item reads as its own.
-    static let separator = Color(hex: 0x323232)
+    static let separator = Color(hex: 0x3E3E3E)
     /// The stroke of a text field or tray at rest.
     static let fieldStroke = Color(hex: 0x282828)
     /// Body text that reads a little softer than `paper`, without dropping to `textSecondary`.

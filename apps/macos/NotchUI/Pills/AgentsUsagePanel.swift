@@ -205,6 +205,7 @@ struct AgentsUsagePanel: View {
                     }
                 }
             }
+            ResetCreditRow(profile: profile)
         }
         .padding(NookTheme.Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)

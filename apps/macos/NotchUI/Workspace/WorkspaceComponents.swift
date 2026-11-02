@@ -8,7 +8,7 @@ enum WS {
     static let sidebar = NookTheme.surface
     static let surface = Color(hex: 0x151517)
     static let raised = Color(hex: 0x1B1B1E)
-    static let border = Color.white.opacity(0.05)
+    static let border = NookTheme.border
     static let subtle = Color.white.opacity(0.04)
     /// A row or control under the pointer.
     static let hover = Color.white.opacity(0.045)

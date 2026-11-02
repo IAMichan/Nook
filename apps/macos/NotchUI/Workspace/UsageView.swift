@@ -97,6 +97,7 @@ struct UsageView: View {
                         }
                     }
                 }
+                ResetCreditRow(profile: profile)
             }
             .padding(.leading, 34)
         }

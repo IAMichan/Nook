@@ -20,6 +20,7 @@ extension WorkspaceManager {
     func checkUsageLimit(_ id: UUID) {
         guard let known = limitedTurns.removeValue(forKey: id) else { return }
         guard let run = run(id), run.status == .failed else { return }
+        onLimitReached?()
         let reset = known ?? codexLimitSnapshots[id].flatMap { UsageLimits.codexReset($0.dictionary) }
         let auto = settings.autoResumeLimited && reset != nil
         update(id) {

@@ -288,7 +288,7 @@ extension WorkspaceManager {
                 client.respondError(rpcID, message: "Nook does not support this request.")
             case .rateLimits(let limits):
                 codexLimitSnapshots[id] = limits
-                onRateLimits?()
+                if let run = run(id) { onCodexRateLimits?(limits, run.profileID) }
             case .mcpApp(let callID, let server, let tool, let arguments, let result, let uri):
                 captureMcpApp(id, client, callID: callID, server: server, tool: tool, arguments: arguments, result: result, resourceUri: uri)
             case .commandFinished(_, let command, let output, let exitCode)
