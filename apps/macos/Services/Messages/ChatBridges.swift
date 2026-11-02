@@ -1111,6 +1111,9 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
     /// Each chat's unread count as last passed on: a chat read on your phone (or in the app) changes only this, not its
     /// newest message, and still goes to the inbox at once, so it is read in Nook too.
     private var reportedUnread: [String: Int] = [:]
+    /// Each chat's picture as last passed on (its address at the helper): a changed photo goes to the inbox without a
+    /// new message too.
+    private var reportedPicture: [String: String] = [:]
     private static let behindRetries = 3
     /// Files the helper downloaded for Nook, by their `mxc://` address.
     private var downloaded: [String: String] = [:]
@@ -1165,6 +1168,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
         stale = []
         behind = [:]
         reportedUnread = [:]
+        reportedPicture = [:]
         covered = []
         isWorking = false
     }
@@ -1192,11 +1196,20 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
             if byID != chats { chats = byID }
             var result: [BridgedChat] = []
             for chat in listed where !(stale.contains(chat.id) || (chat.last.map({ seen[chat.id] != $0 }) ?? (seen[chat.id] == nil))) {
-                // Nothing new in it, but read (or marked unread) somewhere else since: only its count goes.
-                guard let reported = reportedUnread[chat.id], reported != chat.unread else { continue }
+                // Nothing new in it, but read (or marked unread) somewhere else since, or with another picture: only
+                // its count and its picture go.
+                let reread = reportedUnread[chat.id].map { $0 != chat.unread } ?? false
+                let repictured = reportedPicture[chat.id] != nil && chat.picture != nil && reportedPicture[chat.id] != chat.picture
+                guard reread || repictured else { continue }
                 reportedUnread[chat.id] = chat.unread
+                var picture: String?
+                if repictured {
+                    picture = await local(chat.picture, token: token)
+                    if picture != nil { reportedPicture[chat.id] = chat.picture }
+                }
                 let account = chat.account ?? ChatLinker.shared.accountName(for: chat.app)
-                result.append(BridgedChat(app: chat.app, name: chat.title, messages: [], unread: chat.unread, account: account))
+                result.append(BridgedChat(app: chat.app, name: chat.title, messages: [], unread: reread ? chat.unread : nil,
+                                          avatar: picture, account: account))
             }
             // The chats read before one that fails are already marked seen: their messages must still go to the inbox, or
             // they never come again. The failed one stays stale and is read again at the next tick.
@@ -1230,6 +1243,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                 chatIDs[chat.app + "|" + chat.title] = chat.id
                 guard !messages.isEmpty || !deleted.isEmpty else { continue }
                 let picture = await local(chat.picture, token: token)
+                if picture != nil { reportedPicture[chat.id] = chat.picture }
                 let account = chat.account ?? ChatLinker.shared.accountName(for: chat.app)
                 result.append(BridgedChat(app: chat.app, name: chat.title, messages: messages, unread: chat.unread, avatar: picture,
                                           members: chat.members.isEmpty ? nil : chat.members, deleted: deleted, account: account))
@@ -1534,6 +1548,8 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
     /// Each person's profile picture address, and where it is on this Mac once fetched.
     private var avatars: [String: String] = [:]
     private var avatarFiles: [String: String] = [:]
+    /// The picture each direct message was last handed with, so a changed photo reaches the list without a new message.
+    private var handedAvatars: [String: String] = [:]
     private var usersAt: Date?
     private var conversations: [SlackData.Conversation] = []
     private var conversationsAt: Date?
@@ -1565,6 +1581,7 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
         users = [:]
         avatars = [:]
         avatarFiles = [:]
+        handedAvatars = [:]
         usersAt = nil
         conversations = []
         conversationsAt = nil
@@ -1655,6 +1672,7 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
                 let members = people[conversation.id] ?? []
                 remember(messages, in: conversation.id)
                 handed.insert(conversation.id)
+                if let picture { handedAvatars[conversation.id] = picture }
                 chats.append(BridgedChat(app: app, name: SlackData.chatName(conversation, users: users, me: me),
                                          messages: messages, unread: unread(conversation.id, marks: marks), avatar: picture,
                                          members: members.isEmpty ? nil : members, deleted: deleted))
@@ -1664,6 +1682,18 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
                 && marks[conversation.id] != nil && marks[conversation.id] != lastRead[conversation.id] {
                 chats.append(BridgedChat(app: app, name: SlackData.chatName(conversation, users: users, me: me), messages: [],
                                          unread: unread(conversation.id, marks: marks)))
+                handed.insert(conversation.id)
+            }
+            // Someone changed their photo (the people list names another address for it): the chat shows the new one.
+            for conversation in conversations where !handed.contains(conversation.id) {
+                guard let user = conversation.user, let before = handedAvatars[conversation.id],
+                      let address = avatars[user], let url = URL(string: address),
+                      ChatMedia.avatarDestination(key: "slack-avatar-" + user, source: address,
+                                                  ext: url.pathExtension.isEmpty ? "png" : url.pathExtension).path != before,
+                      let picture = await avatar(of: user), picture != before else { continue }
+                handedAvatars[conversation.id] = picture
+                chats.append(BridgedChat(app: app, name: SlackData.chatName(conversation, users: users, me: me), messages: [],
+                                         unread: nil, avatar: picture))
             }
             if !marks.isEmpty { lastRead = marks }
             if chats.isEmpty, let failure { throw failure }
@@ -1775,16 +1805,27 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
         return ChatHistorySearch.chats(found)
     }
 
-    /// A direct message's picture: the other person's profile photo, fetched once (a public address, no token sent).
+    /// A direct message's picture: the other person's profile photo, fetched once per picture (a public address, no
+    /// token sent). A changed photo has another address in the people list (read again every hour), so it is saved as
+    /// another file and the list shows the new one; one that cannot be fetched keeps the photo before.
     private func avatar(of user: String?) async -> String? {
         guard let user else { return nil }
-        if let file = avatarFiles[user], FileManager.default.fileExists(atPath: file) { return file }
-        guard let address = avatars[user], let url = URL(string: address), url.scheme == "https",
-              let answer = try? await ConnectorHTTP.session.data(from: url),
-              (answer.1 as? HTTPURLResponse)?.statusCode == 200, answer.0.count < 2_000_000 else { return nil }
-        let target = ChatMedia.destination(key: "slack-avatar-" + user, name: "avatar." + (url.pathExtension.isEmpty ? "png" : url.pathExtension))
+        let key = "slack-avatar-" + user
+        guard let address = avatars[user], let url = URL(string: address), url.scheme == "https" else {
+            return avatarFiles[user].flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
+        }
+        let target = ChatMedia.avatarDestination(key: key, source: address, ext: url.pathExtension.isEmpty ? "png" : url.pathExtension)
+        if FileManager.default.fileExists(atPath: target.path) {
+            avatarFiles[user] = target.path
+            return target.path
+        }
+        guard let answer = try? await ConnectorHTTP.session.data(from: url),
+              (answer.1 as? HTTPURLResponse)?.statusCode == 200, answer.0.count < 2_000_000 else {
+            return avatarFiles[user].flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
+        }
         try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
         guard (try? answer.0.write(to: target, options: .atomic)) != nil else { return nil }
+        ChatMedia.dropOtherAvatars(key: key, keeping: target)
         avatarFiles[user] = target.path
         return target.path
     }
