@@ -93,7 +93,7 @@ final class ComposerModel: ObservableObject {
     func outgoing(_ text: String) -> Outgoing {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         history.record(clean)
-        let projected = ContextRefs.project(clean, excerpts: excerpts)
+        let projected = ContextRefs.project(ComposerAttachments.spaced(clean), excerpts: excerpts)
         let sent = pictures.isEmpty ? projected : ImageAttachment.appendingPaths(of: pictures, to: projected)
         excerpts = [:]
         pictures = []
