@@ -77,6 +77,26 @@ enum WorktreeCleanup {
         guard let changes = facts.uncommittedFiles else { return .keep(.unknownChanges) }
         return changes == 0 ? .remove(reason) : .keep(.uncommittedChanges)
     }
+
+    // MARK: Coming back
+
+    /// How a session whose worktree is gone gets one back when you write to it again, at the same path so the agent's
+    /// conversation carries on there.
+    enum Reopen: Equatable, Sendable {
+        /// Its own branch, checked out again: the work on it is not done yet.
+        case branch(String)
+        /// A new branch from the base: the old one landed (or is gone), so new work gets its own pull request.
+        case newBranch(String, base: String)
+        /// Neither its branch nor a base to start from.
+        case impossible
+    }
+
+    static func reopen(branch: String?, branchExists: Bool, merged: Bool, base: String?, newBranch: String) -> Reopen {
+        if let branch, branchExists, !merged { return .branch(branch) }
+        if let base, !base.isEmpty { return .newBranch(newBranch, base: base) }
+        if let branch, branchExists { return .branch(branch) }
+        return .impossible
+    }
 }
 
 /// One operation at a time per folder: a checkpoint, a restore and the removal of the same worktree never overlap
