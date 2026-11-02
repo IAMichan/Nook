@@ -227,7 +227,7 @@ struct SessionPanel: View {
     private func readState() async {
         if let linkedPullRequest { workspace.pullRequestLinked(linkedPullRequest) }
         if let runID {
-            quick = await workspace.quickGitState(runID)
+            quick = await workspace.quickGitState(runID, linked: linkedPullRequest)
         } else {
             await readFolderState()
         }
@@ -499,7 +499,7 @@ struct SessionPanel: View {
     private func finish() async {
         localProgress = nil
         await model.refresh()
-        if let runID { quick = await workspace.quickGitState(runID) } else { await readFolderState() }
+        if let runID { quick = await workspace.quickGitState(runID, linked: linkedPullRequest) } else { await readFolderState() }
     }
 
     /// Pushing to the default branch asks first, right here in the panel.
