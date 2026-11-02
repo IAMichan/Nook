@@ -224,9 +224,21 @@ private struct MusicUpcomingStrip: View {
 
     private static let count = 4
 
-    /// Spotify shares no queue, so it shows what played before instead.
-    private var showsQueue: Bool { info.app == "Music" }
-    private var tracks: [MusicTrack] { showsQueue ? (service.upNext?.tracks ?? []) : service.recent.tracks }
+    /// One chip: a track the user queued in Nook (`entry`), or one from the player's Up Next or Recent.
+    private struct Chip {
+        let track: MusicTrack
+        var entry: MusicPlayQueue.Entry.ID? = nil
+    }
+
+    /// What Nook queued itself comes first, then the player's own queue. Spotify only shares its queue once it is
+    /// connected in Settings; until then, with nothing queued, the strip shows what played before instead.
+    private var showsQueue: Bool { info.app == "Music" || service.upNext != nil || !service.playQueue.isEmpty }
+    private var chipsToShow: [Chip] {
+        let queued = service.playQueue.entries.map { Chip(track: $0.track, entry: $0.id) }
+        if let upNext = service.upNext { return queued + upNext.tracks.map { Chip(track: $0) } }
+        if info.app == "Music" || !queued.isEmpty { return queued }
+        return service.recent.tracks.map { Chip(track: $0) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
@@ -235,13 +247,18 @@ private struct MusicUpcomingStrip: View {
                 Text(showsQueue ? tr("music.section.upNext") : tr("music.recent.title"))
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textSecondary)
-                if showsQueue, let playlist = service.upNext?.playlist, !playlist.isEmpty {
+                if !service.playQueue.isEmpty {
+                    Text(tr("music.queue.count", service.playQueue.entries.count))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
+                } else if info.app == "Music", let playlist = service.upNext?.playlist, !playlist.isEmpty {
                     Text(tr("music.upNext.from", playlist))
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
                 }
-                if showsQueue && info.shuffle {
+                if info.app == "Music" && info.shuffle {
                     Image(systemName: "shuffle")
                         .font(NookTheme.font(10, .semibold))
                         .foregroundStyle(NookTheme.music)
@@ -249,13 +266,13 @@ private struct MusicUpcomingStrip: View {
                         .accessibilityLabel(tr("music.upNext.shuffleNote"))
                 }
                 Spacer(minLength: NookTheme.Spacing.md)
-                if !tracks.isEmpty {
+                if !chipsToShow.isEmpty {
                     MusicShowAllButton { onShowAll(showsQueue ? .upNext : .recent) }
                 }
             }
             .padding(.horizontal, NookTheme.Spacing.xs)
             Group {
-                if tracks.isEmpty {
+                if chipsToShow.isEmpty {
                     Text(emptyText)
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
@@ -282,16 +299,30 @@ private struct MusicUpcomingStrip: View {
 
     /// `count` columns, each at least wide enough for a title; empty columns keep them even with fewer tracks.
     private func chips(_ count: Int) -> some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
-            ForEach(Array(tracks.prefix(count).enumerated()), id: \.offset) { _, track in
-                MusicUpcomingChip(track: track) { service.play(track, fromQueue: showsQueue) }
+        let shown = chipsToShow
+        return HStack(spacing: NookTheme.Spacing.sm) {
+            ForEach(Array(shown.prefix(count).enumerated()), id: \.offset) { _, chip in
+                chipView(chip)
                     .frame(maxWidth: .infinity)
             }
-            ForEach(0..<max(0, count - tracks.count), id: \.self) { _ in
+            ForEach(0..<max(0, count - shown.count), id: \.self) { _ in
                 Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
             }
         }
         .frame(minWidth: CGFloat(count) * 150)
+    }
+
+    private func chipView(_ chip: Chip) -> some View {
+        if let entry = chip.entry {
+            return MusicUpcomingChip(track: chip.track, queued: true,
+                                     secondary: (tr("music.queue.remove"), { service.removeFromQueue(entry) })) {
+                service.playFromQueue(entry)
+            }
+        }
+        let fromQueue = info.app == "Music"
+        return MusicUpcomingChip(track: chip.track, secondary: chip.track.id.isEmpty ? nil : (tr("music.queue.add"), { service.enqueue(chip.track) })) {
+            service.play(chip.track, fromQueue: fromQueue)
+        }
     }
 
     private var emptyText: String {
@@ -302,6 +333,10 @@ private struct MusicUpcomingStrip: View {
 
 private struct MusicUpcomingChip: View {
     let track: MusicTrack
+    /// Queued in Nook: marked with the queue symbol.
+    var queued = false
+    /// Add to or remove from the queue, in the context menu.
+    var secondary: (label: String, action: () -> Void)? = nil
     let action: () -> Void
     @State private var hovering = false
 
@@ -330,6 +365,13 @@ private struct MusicUpcomingChip: View {
                     }
                 }
                 Spacer(minLength: 0)
+                if queued {
+                    Image(systemName: "text.line.last.and.arrowtriangle.forward")
+                        .font(NookTheme.font(10, .semibold))
+                        .foregroundStyle(NookTheme.music)
+                        .help(tr("music.queue.queued"))
+                        .accessibilityLabel(tr("music.queue.queued"))
+                }
             }
             .padding(NookTheme.Spacing.sm)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.paper.opacity(hovering ? 0.06 : 0)))
@@ -339,6 +381,12 @@ private struct MusicUpcomingChip: View {
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(tr("music.play"))
+        .contextMenu {
+            Button(tr("music.play"), action: action)
+            if let secondary {
+                Button(secondary.label, action: secondary.action)
+            }
+        }
         .accessibilityLabel(track.artist.isEmpty ? track.title : "\(track.title), \(track.artist)")
         .accessibilityHint(tr("music.play"))
     }

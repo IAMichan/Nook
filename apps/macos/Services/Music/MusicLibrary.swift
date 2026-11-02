@@ -280,3 +280,91 @@ struct RecentTracks: Equatable {
         if tracks.count > Self.limit { tracks.removeLast(tracks.count - Self.limit) }
     }
 }
+
+/// Tracks the user queued in Nook, in the order they play. Neither Music nor Spotify lets another app add to its own
+/// queue, so Nook keeps this one and starts each track itself when the one before it ends (see
+/// `NowPlayingService+Queue`). The same track may be queued more than once, so each entry has its own id.
+struct MusicPlayQueue: Equatable {
+    struct Entry: Equatable, Identifiable {
+        var id = UUID()
+        var track: MusicTrack
+    }
+
+    static let limit = 100
+    private(set) var entries: [Entry] = []
+
+    var isEmpty: Bool { entries.isEmpty }
+    var tracks: [MusicTrack] { entries.map(\.track) }
+
+    /// Adds a track at the end. `false` when the queue is full or the track has nothing to play it by.
+    @discardableResult
+    mutating func append(_ track: MusicTrack) -> Bool {
+        guard !track.id.isEmpty, entries.count < Self.limit else { return false }
+        entries.append(Entry(track: track))
+        return true
+    }
+
+    mutating func remove(_ id: Entry.ID) {
+        entries.removeAll { $0.id == id }
+    }
+
+    /// Takes out the entry with `id`, or the first one without.
+    mutating func take(_ id: Entry.ID? = nil) -> MusicTrack? {
+        guard let index = id.map({ id in entries.firstIndex { $0.id == id } }) ?? (entries.isEmpty ? nil : 0) else { return nil }
+        return entries.remove(at: index).track
+    }
+
+    mutating func clear() {
+        entries.removeAll()
+    }
+
+    /// The player moved on by itself while tracks were queued: did the previous track end (so the queue should take
+    /// over), or did the user pick something else in the player? `position` is where the previous track was estimated
+    /// to be at the change; one that got within a few seconds of its end ended.
+    static func ended(position: Double, duration: Int) -> Bool {
+        duration > 0 && position >= Double(duration) - 3
+    }
+}
+
+/// What Spotify's Web API answers (see `SpotifyWebAPI`), read without the network so it can be tested.
+enum SpotifyResponses {
+    enum Failure: Error, Equatable {
+        case notSignedIn
+        /// Spotify answered 403: the account has no Premium.
+        case premiumRequired
+        /// Spotify answered 404: no device is playing.
+        case noActiveDevice
+        case failed(String)
+    }
+
+    /// The tracks in `GET /me/player/queue`, in the order Spotify plays them. Episodes count too.
+    static func queueTracks(from data: Data) -> [MusicTrack] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = json["queue"] as? [[String: Any]] else { return [] }
+        return items.compactMap { item in
+            guard let uri = item["uri"] as? String, let name = item["name"] as? String, !name.isEmpty else { return nil }
+            let artists = (item["artists"] as? [[String: Any]])?.compactMap { $0["name"] as? String } ?? []
+            let show = (item["show"] as? [String: Any])?["name"] as? String
+            let images = ((item["album"] as? [String: Any])?["images"] ?? item["images"]) as? [[String: Any]] ?? []
+            // The smallest image that is still sharp on a cover (Spotify lists them largest first).
+            let image = images.last { (($0["width"] as? Int) ?? 0) >= 200 } ?? images.first
+            let milliseconds = (item["duration_ms"] as? Int) ?? 0
+            return MusicTrack(
+                id: uri, title: name, artist: artists.isEmpty ? (show ?? "") : artists.joined(separator: ", "),
+                duration: milliseconds / 1000, artworkURL: (image?["url"] as? String).flatMap(URL.init(string:))
+            )
+        }
+    }
+
+    static func failure(status: Int, body: Data) -> Failure? {
+        switch status {
+        case 200..<300: return nil
+        case 401: return .notSignedIn
+        case 403: return .premiumRequired
+        case 404: return .noActiveDevice
+        default:
+            let message = ((try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["error"] as? [String: Any])?["message"] as? String
+            return .failed(message ?? "HTTP \(status)")
+        }
+    }
+}

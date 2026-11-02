@@ -52,11 +52,19 @@ final class NowPlayingService: ObservableObject {
 
     @Published private(set) var current: NowPlayingInfo? {
         didSet {
+            scheduleQueueAdvance()
             // Remember the track that just ended for Recent.
             guard let old = oldValue, old.trackKey != current?.trackKey else { return }
             recent.add(MusicTrack(id: old.trackID, title: old.title, artist: old.artist, duration: old.duration, artworkURL: old.artworkURL))
+            queueTrackChanged(from: old, to: current)
         }
     }
+    /// Tracks the user queued in Nook (see `NowPlayingService+Queue`).
+    @Published var playQueue = MusicPlayQueue()
+    /// Starts the next queued track as the playing one ends.
+    var queueAdvanceTask: Task<Void, Never>?
+    /// When Nook last started a queued track, so the track change that follows is not taken for the player moving on.
+    var queueStartedAt = Date.distantPast
     /// Tracks played before the current one, this session.
     @Published private(set) var recent = RecentTracks()
     /// Music: what comes next in the playlist it plays from. `nil` until loaded, or for Spotify.
@@ -127,6 +135,8 @@ final class NowPlayingService: ObservableObject {
     }
 
     func control(_ command: Command) {
+        // Next plays what the user queued first, as it does in the players themselves.
+        if command == .next, playNextQueued() { return }
         let appName = current?.app
         // Optimistic update; subsequent poll confirms or corrects.
         if command == .playPause, var info = current {
