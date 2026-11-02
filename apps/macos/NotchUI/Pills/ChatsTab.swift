@@ -283,10 +283,10 @@ final class ChatsShownMemo {
         if key == wanted { return value }
         value = make()
         key = wanted
-        let now = Date()
+        let days = ChatsGroup.Days()
         sections = []
         for entry in value {
-            let group = ChatsGroup.of(entry, now: now)
+            let group = days.group(of: entry)
             if sections.last?.group == group { sections[sections.count - 1].entries.append(entry) }
             else { sections.append(ChatsSection(group: group, entries: [entry])) }
         }
@@ -556,7 +556,8 @@ struct ChatsTab: View {
 
     /// Opens the chat `offset` rows from the open one in the list (the first one when none is open). False at either end.
     private func step(_ offset: Int) -> Bool {
-        let rows = shown.filter { searching || !collapsed.contains(ChatsGroup.of($0, now: Date())) }
+        let days = ChatsGroup.Days()
+        let rows = shown.filter { searching || !collapsed.contains(days.group(of: $0)) }
         guard !rows.isEmpty else { return false }
         let index = selection.flatMap { id in rows.firstIndex { $0.id == id } }
         let next = index.map { $0 + offset } ?? (offset > 0 ? 0 : rows.count - 1)
@@ -701,10 +702,10 @@ struct ChatsTab: View {
     }
 
     private func makeShown(_ needle: String) -> [ChatsEntry] {
-        let now = Date()
+        let days = ChatsGroup.Days()
         let found = needle.isEmpty ? inApp : inApp.compactMap { $0.found(needle, capture: capture) }
         return found.filter { view.shows($0.read) || $0.id == selection || keptInView.contains($0.id) }
-            .map { (entry: $0, group: ChatsGroup.of($0, now: now)) }
+            .map { (entry: $0, group: days.group(of: $0)) }
             .sorted { a, b in
                 if a.group != b.group { return a.group < b.group }
                 return a.entry.last != b.entry.last ? a.entry.last > b.entry.last : a.entry.id < b.entry.id
@@ -1109,12 +1110,31 @@ enum ChatsGroup: Int, Comparable, CaseIterable {
 
     /// Where a chat goes: by its newest message.
     static func of(_ entry: ChatsEntry, now: Date, calendar: Calendar = .current) -> ChatsGroup {
-        let today = calendar.startOfDay(for: now)
-        if entry.last >= today { return .today }
-        if let yesterday = calendar.date(byAdding: .day, value: -1, to: today), entry.last >= yesterday { return .yesterday }
-        if let week = calendar.date(byAdding: .day, value: -7, to: today), entry.last >= week { return .week }
-        if let month = calendar.date(byAdding: .day, value: -30, to: today), entry.last >= month { return .month }
-        return .earlier
+        Days(now: now, calendar: calendar).group(of: entry)
+    }
+
+    /// Where each group starts, worked out once for a whole list: asking the calendar for every chat on every redraw
+    /// of the list kept the main thread busy while you scrolled.
+    struct Days {
+        private let today: Date
+        private let yesterday: Date
+        private let week: Date
+        private let month: Date
+
+        init(now: Date = Date(), calendar: Calendar = .current) {
+            today = calendar.startOfDay(for: now)
+            yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
+            week = calendar.date(byAdding: .day, value: -7, to: today) ?? yesterday
+            month = calendar.date(byAdding: .day, value: -30, to: today) ?? week
+        }
+
+        func group(of entry: ChatsEntry) -> ChatsGroup {
+            if entry.last >= today { return .today }
+            if entry.last >= yesterday { return .yesterday }
+            if entry.last >= week { return .week }
+            if entry.last >= month { return .month }
+            return .earlier
+        }
     }
 }
 
@@ -1235,7 +1255,9 @@ private struct ChatsRow: View, Equatable {
         // A row without a line under its name gets its newest message fetched.
         .onAppear { AppModel.shared.loadChatLine(entry) }
         .onHover { inside in
-            hovering = inside
+            // Rows sliding under a pointer that stands still while the list scrolls do not light up: each one made its
+            // action button and ran the hover animation, frame after frame of the scroll.
+            hovering = inside && !ChatsTab.listScrolling
             // What the click needs is fetched once the pointer rests on the chat, so it opens filled; passing over the
             // list on the way elsewhere fetches nothing.
             prefetch?.cancel()

@@ -1153,8 +1153,10 @@ final class WhatsAppLink: ObservableObject {
     /// loaded at launch counts too: GOWA says nothing of what was read before, and claiming "read in WhatsApp" for a chat
     /// that is not was worse than offering "Mark as read" once too often. Then "Mark as read" can still tell WhatsApp,
     /// also when Nook shows no badge any more.
-    func waitsInWhatsApp(_ chat: String) -> Bool {
-        let key = WAJID.normalized(chat)
+    func waitsInWhatsApp(_ chat: String) -> Bool { waitsInWhatsApp(key: WAJID.normalized(chat)) }
+
+    /// `waitsInWhatsApp` for a chat id that is normalized already.
+    private func waitsInWhatsApp(key: String) -> Bool {
         if carried(key) > 0 { return true }
         let readThere = readInWhatsApp[key] ?? .distantPast
         if let conversation = inbox.conversations[key], let last = conversation.messages.last {
@@ -1173,9 +1175,14 @@ final class WhatsAppLink: ObservableObject {
     /// from history loaded at launch shows no mark in the list rather than a wrong one.
     func readIsKnown(_ chat: String) -> Bool {
         let key = WAJID.normalized(chat)
+        return readIsKnown(key: key, unread: unread(key: key))
+    }
+
+    /// `readIsKnown` for a chat id that is normalized already, with its unread count when it is worked out already.
+    private func readIsKnown(key: String, unread: @autoclosure () -> Int) -> Bool {
         if gatewayCountsUnread || readInNook[key] != nil || readInWhatsApp[key] != nil { return true }
         if inbox.conversations[key]?.messages.last?.fromMe == true { return true }
-        return unread(key) > 0
+        return unread() > 0
     }
 
     /// Whether the gateway counts unread messages itself (OpenWA). The running gateway's own kind when there is one: the
@@ -1214,8 +1221,10 @@ final class WhatsAppLink: ObservableObject {
 
     /// The unread count a chat shows in Nook: what came in while Nook ran, else what WhatsApp itself counts (when the
     /// gateway says), until you read it in Nook.
-    func unread(_ chat: String) -> Int {
-        let key = WAJID.normalized(chat)
+    func unread(_ chat: String) -> Int { unread(key: WAJID.normalized(chat)) }
+
+    /// `unread` for a chat id that is normalized already.
+    private func unread(key: String) -> Int {
         let counted = (inbox.conversations[key]?.unread ?? 0) + carried(key)
         if counted > 0 { return counted }
         if markedUnread[key] != nil { return 1 }
@@ -1252,9 +1261,11 @@ final class WhatsAppLink: ObservableObject {
         let key = WAJID.normalized(jid)
         var facts = WhatsAppExport.Facts(key: chatKey(key))
         facts.account = name
-        facts.unread = unread(key)
-        facts.waitsInApp = waitsInWhatsApp(key)
-        facts.readKnown = readIsKnown(key)
+        // The key is normalized once and the count made once: this runs for every chat at each read, on the main thread.
+        let unread = unread(key: key)
+        facts.unread = unread
+        facts.waitsInApp = waitsInWhatsApp(key: key)
+        facts.readKnown = readIsKnown(key: key, unread: unread)
         facts.avatar = avatars[key]
         let listed = known(key)
         facts.listed = listed != nil
