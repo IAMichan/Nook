@@ -178,25 +178,49 @@ struct MusicUpNextView: View {
     let info: NowPlayingInfo
     @ObservedObject var service: NowPlayingService
 
+    /// The player's own queue: Music's playlist order, or Spotify's queue when Spotify is connected in Settings.
+    private var showsPlayerQueue: Bool { info.app == "Music" || SpotifySignIn.shared.isSignedIn }
+
     var body: some View {
-        if let queue = service.upNext {
-            if queue.tracks.isEmpty {
-                MusicPlaceholder(symbol: "checkmark.circle", title: tr("music.upNext.empty"))
-            } else {
-                MusicShelf(note: note(queue), noteSymbol: info.shuffle ? "shuffle" : nil, items: items(queue))
-            }
-        } else if service.libraryLoading {
+        let queued = queuedSection
+        if let queue = service.upNext, showsPlayerQueue, !queue.tracks.isEmpty {
+            MusicShelf(sections: (queued.map { [$0] } ?? []) + [MusicShelf.Section(
+                id: "upNext", note: note(queue), noteSymbol: info.shuffle ? "shuffle" : nil, items: items(queue)
+            )])
+        } else if let queued {
+            MusicShelf(sections: [queued])
+        } else if showsPlayerQueue, service.upNext == nil, service.libraryLoading {
             MusicPlaceholder(symbol: "list.bullet", title: tr("music.upNext.loading"), loading: true)
+        } else if showsPlayerQueue {
+            MusicPlaceholder(symbol: "checkmark.circle", title: tr("music.upNext.empty"), detail: tr("music.queue.emptyDetail"))
         } else {
-            MusicPlaceholder(symbol: "list.bullet", title: tr("music.upNext.empty"))
+            MusicPlaceholder(symbol: "text.line.last.and.arrowtriangle.forward", title: tr("music.queue.empty"),
+                             detail: tr("music.queue.emptyDetail") + " " + tr("music.queue.connectSpotify", tr("settings.section.connections")))
         }
+    }
+
+    /// What the user queued in Nook, ahead of the player's own Up Next.
+    private var queuedSection: MusicShelf.Section? {
+        guard !service.playQueue.isEmpty else { return nil }
+        let items = service.playQueue.entries.enumerated().map { index, entry in
+            MusicCoverItem(
+                id: entry.id.uuidString, title: entry.track.title, subtitle: entry.track.artist,
+                artworkURL: entry.track.artworkURL, number: index + 1, help: tr("music.play"),
+                secondary: .init(symbol: "minus", label: tr("music.queue.remove")) { service.removeFromQueue(entry.id) }
+            ) { service.playFromQueue(entry.id) }
+        }
+        return MusicShelf.Section(
+            id: "queue", note: tr("music.queue.note"), noteSymbol: "text.line.last.and.arrowtriangle.forward",
+            items: items, trailing: .init(title: tr("music.queue.clear")) { service.clearQueue() }
+        )
     }
 
     private func items(_ queue: MusicQueue) -> [MusicCoverItem] {
         queue.tracks.enumerated().map { index, track in
             MusicCoverItem(
                 id: "\(index)|\(track.id)|\(track.title)", title: track.title, subtitle: track.artist,
-                artworkURL: track.artworkURL, number: index + 1, help: tr("music.play")
+                artworkURL: track.artworkURL, number: index + 1, help: tr("music.play"),
+                secondary: .enqueue(track, in: service)
             ) { service.play(track, fromQueue: true) }
         }
     }
@@ -227,7 +251,7 @@ struct MusicPlaylistsView: View {
                 MusicPlaceholder(symbol: "music.note.list", title: tr("music.playlists.empty"))
             }
         } else {
-            MusicShelf(note: tr("music.playlists.hint"), items: items)
+            MusicShelf(sections: [.init(id: "playlists", note: tr("music.playlists.hint"), items: items)])
         }
     }
 }
@@ -240,7 +264,8 @@ struct MusicRecentView: View {
         service.recent.tracks.enumerated().map { index, track in
             MusicCoverItem(
                 id: "\(index)|\(track.id)|\(track.title)", title: track.title, subtitle: track.artist,
-                artworkURL: track.artworkURL, help: tr("music.play")
+                artworkURL: track.artworkURL, help: tr("music.play"),
+                secondary: .enqueue(track, in: service)
             ) { service.play(track, fromQueue: false) }
         }
     }
@@ -249,14 +274,15 @@ struct MusicRecentView: View {
         if service.recent.tracks.isEmpty {
             MusicPlaceholder(
                 symbol: "clock.arrow.circlepath", title: tr("music.recent.empty"),
-                detail: info.app == "Spotify" ? tr("music.spotifyNote") : nil
+                detail: info.app == "Spotify" ? tr("music.spotifyNote", tr("settings.section.connections")) : nil
             )
         } else {
-            MusicShelf(
-                note: info.app == "Spotify" ? tr("music.spotifyNote") : tr("music.recent.hint"),
+            MusicShelf(sections: [.init(
+                id: "recent",
+                note: info.app == "Spotify" ? tr("music.spotifyNote", tr("settings.section.connections")) : tr("music.recent.hint"),
                 noteSymbol: info.app == "Spotify" ? "info.circle" : nil,
                 items: items
-            )
+            )])
         }
     }
 }
@@ -271,37 +297,77 @@ struct MusicCoverItem: Identifiable {
     /// The position in Up Next.
     var number: Int? = nil
     let help: String
+    /// A second thing to do with the item (queue it, take it out of the queue): a small button on the cover while the
+    /// pointer is over it, and the item's context menu.
+    var secondary: Secondary? = nil
     let action: () -> Void
+
+    struct Secondary {
+        let symbol: String
+        let label: String
+        let action: () -> Void
+
+        /// "Add to queue", for a track the player can play by its id.
+        @MainActor static func enqueue(_ track: MusicTrack, in service: NowPlayingService) -> Secondary? {
+            guard !track.id.isEmpty else { return nil }
+            return Secondary(symbol: "text.line.last.and.arrowtriangle.forward", label: tr("music.queue.add")) { service.enqueue(track) }
+        }
+    }
 }
 
-/// A short note over a grid of covers that wraps to the stage's width and scrolls when there are more.
-private struct MusicShelf: View {
-    let note: String
-    var noteSymbol: String? = nil
-    let items: [MusicCoverItem]
+/// One or more groups of covers, each under a short note, in a grid that wraps to the stage's width and scrolls when
+/// there are more.
+struct MusicShelf: View {
+    struct Section: Identifiable {
+        let id: String
+        let note: String
+        var noteSymbol: String? = nil
+        let items: [MusicCoverItem]
+        /// A small text button at the end of the note (Clear).
+        var trailing: Trailing? = nil
+    }
+
+    struct Trailing {
+        let title: String
+        let action: () -> Void
+    }
+
+    let sections: [Section]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                if let noteSymbol {
-                    Image(systemName: noteSymbol).font(NookTheme.font(10.5, .semibold))
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
+                ForEach(sections) { section in
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                        header(section)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 108, maximum: 136), spacing: NookTheme.Spacing.xl, alignment: .top)],
+                                  alignment: .leading, spacing: NookTheme.Spacing.xl + NookTheme.Spacing.xs) {
+                            ForEach(section.items) { MusicCoverCard(item: $0) }
+                        }
+                    }
                 }
-                Text(note).lineLimit(1).truncationMode(.tail)
             }
-            .font(NookTheme.TextStyle.detail)
-            .foregroundStyle(NookTheme.textTertiary)
-            .help(note)
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 108, maximum: 136), spacing: NookTheme.Spacing.xl, alignment: .top)],
-                          alignment: .leading, spacing: NookTheme.Spacing.xl + NookTheme.Spacing.xs) {
-                    ForEach(items) { MusicCoverCard(item: $0) }
-                }
-                .padding(.top, NookTheme.Spacing.xs)
-                .padding(.bottom, NookTheme.Spacing.xl)
-            }
-            .mask(LinearGradient(stops: [.init(color: .black, location: 0.86), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
+            .padding(.bottom, NookTheme.Spacing.xl)
         }
+        .mask(LinearGradient(stops: [.init(color: .black, location: 0.86), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
         .padding(.horizontal, NookTheme.Spacing.xs)
+    }
+
+    private func header(_ section: Section) -> some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            if let symbol = section.noteSymbol {
+                Image(systemName: symbol).font(NookTheme.font(10.5, .semibold))
+            }
+            Text(section.note).lineLimit(1).truncationMode(.tail)
+            if let trailing = section.trailing {
+                Spacer(minLength: NookTheme.Spacing.md)
+                SmallGhostButton(title: trailing.title, action: trailing.action)
+            }
+        }
+        .font(NookTheme.TextStyle.detail)
+        .foregroundStyle(NookTheme.textTertiary)
+        .help(section.note)
+        .padding(.top, NookTheme.Spacing.xs)
     }
 }
 
@@ -338,6 +404,13 @@ private struct MusicCoverCard: View {
                         }
                         .opacity(hovering ? 1 : 0)
                     }
+                    .overlay(alignment: .topTrailing) {
+                        if let secondary = item.secondary {
+                            NookIconButton(systemName: secondary.symbol, label: secondary.label, filled: true, size: 26, action: secondary.action)
+                                .padding(6)
+                                .opacity(hovering ? 1 : 0)
+                        }
+                    }
                     // A soft shadow and a small lift: the cover reads as something to press, without jumping.
                     .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
                     .offset(y: hovering ? -2 : 0)
@@ -360,6 +433,12 @@ private struct MusicCoverCard: View {
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(item.help)
+        .contextMenu {
+            Button(item.help, action: item.action)
+            if let secondary = item.secondary {
+                Button(secondary.label, action: secondary.action)
+            }
+        }
         .accessibilityLabel(item.subtitle.isEmpty ? item.title : "\(item.title), \(item.subtitle)")
         .accessibilityHint(item.help)
     }

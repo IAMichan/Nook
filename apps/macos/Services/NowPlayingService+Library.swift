@@ -2,14 +2,25 @@ import Foundation
 import AppKit
 
 /// Music tab extras: Up Next and playlists from Music, playing a track or playlist the user clicks, and lyrics stored with
-/// a track in Music. Spotify's AppleScript dictionary has no queue or playlists, so for Spotify only Recent (kept by Nook
-/// itself) and playing a recent track by its URI work.
+/// a track in Music. Spotify's AppleScript dictionary has no queue or playlists: for Spotify, Up Next comes from its Web
+/// API when the user connected it (`SpotifyWebAPI`), and Recent is kept by Nook itself.
 extension NowPlayingService {
     /// How many upcoming tracks Up Next shows.
     nonisolated static let upNextLimit = 25
 
-    /// Reloads Up Next (Music only). Clears it for other players.
+    /// Reloads Up Next: Music's playlist order, or Spotify's own queue when Spotify is connected. Clears it otherwise.
     func refreshUpNext() {
+        if current?.app == "Spotify", SpotifySignIn.shared.isSignedIn {
+            libraryLoading = true
+            Task { @MainActor [weak self] in
+                let tracks = try? await SpotifyWebAPI.queue()
+                guard let self else { return }
+                self.libraryLoading = false
+                let parsed = tracks.map { MusicQueue(playlist: "", tracks: Array($0.prefix(NowPlayingService.upNextLimit))) }
+                if self.upNext != parsed { self.upNext = parsed }
+            }
+            return
+        }
         guard current?.app == "Music" else {
             upNext = nil
             return
@@ -89,7 +100,7 @@ extension NowPlayingService {
             Task { @MainActor in
                 guard let self else { return }
                 self.poll()
-                if app == "Music" { self.refreshUpNext() }
+                self.refreshUpNext()
             }
         }
     }

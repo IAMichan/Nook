@@ -145,4 +145,79 @@ final class MusicLibraryTests: XCTestCase {
         let spread = Set(["Focus", "Favorites", "Road trip", "Sunday", "Workout Mix", "New finds", "Chill"].map { MusicCoverPalette.index(for: $0, count: 7) })
         XCTAssertGreaterThan(spread.count, 2)
     }
+
+    // MARK: Nook's queue
+
+    private func track(_ id: String) -> MusicTrack { MusicTrack(id: id, title: "T\(id)", artist: "A", duration: 200) }
+
+    func testQueuePlaysInOrderAndAllowsRepeats() {
+        var queue = MusicPlayQueue()
+        XCTAssertTrue(queue.append(track("1")))
+        XCTAssertTrue(queue.append(track("2")))
+        XCTAssertTrue(queue.append(track("1")))
+        XCTAssertEqual(queue.tracks.map(\.id), ["1", "2", "1"])
+        XCTAssertEqual(queue.take()?.id, "1")
+        XCTAssertEqual(queue.tracks.map(\.id), ["2", "1"])
+    }
+
+    func testQueueTakesAndRemovesByEntry() {
+        var queue = MusicPlayQueue()
+        queue.append(track("1"))
+        queue.append(track("2"))
+        queue.append(track("3"))
+        let middle = queue.entries[1].id
+        XCTAssertEqual(queue.take(middle)?.id, "2")
+        XCTAssertNil(queue.take(middle))
+        queue.remove(queue.entries[0].id)
+        XCTAssertEqual(queue.tracks.map(\.id), ["3"])
+        queue.clear()
+        XCTAssertTrue(queue.isEmpty)
+        XCTAssertNil(queue.take())
+    }
+
+    func testQueueRefusesTracksWithoutIDAndPastTheLimit() {
+        var queue = MusicPlayQueue()
+        XCTAssertFalse(queue.append(MusicTrack(id: "", title: "Radio", artist: "", duration: 0)))
+        for index in 0..<MusicPlayQueue.limit { queue.append(track("\(index)")) }
+        XCTAssertFalse(queue.append(track("x")))
+        XCTAssertEqual(queue.entries.count, MusicPlayQueue.limit)
+    }
+
+    func testTrackEndedOnlyNearItsEnd() {
+        XCTAssertTrue(MusicPlayQueue.ended(position: 199, duration: 200))
+        XCTAssertTrue(MusicPlayQueue.ended(position: 200, duration: 200))
+        XCTAssertFalse(MusicPlayQueue.ended(position: 120, duration: 200))
+        XCTAssertFalse(MusicPlayQueue.ended(position: 10, duration: 0))
+    }
+
+    // MARK: Spotify Web API
+
+    func testReadsSpotifyQueue() {
+        let json = """
+        {"currently_playing": {"uri": "spotify:track:now", "name": "Now"},
+         "queue": [
+           {"uri": "spotify:track:abc", "name": "First", "duration_ms": 201500,
+            "artists": [{"name": "A"}, {"name": "B"}],
+            "album": {"images": [{"url": "https://i.scdn.co/640", "width": 640}, {"url": "https://i.scdn.co/300", "width": 300},
+                                 {"url": "https://i.scdn.co/64", "width": 64}]}},
+           {"uri": "spotify:episode:xyz", "name": "Episode", "duration_ms": 60000, "show": {"name": "Podcast"}},
+           {"uri": "spotify:track:nameless"}
+         ]}
+        """
+        let tracks = SpotifyResponses.queueTracks(from: Data(json.utf8))
+        XCTAssertEqual(tracks.map(\.id), ["spotify:track:abc", "spotify:episode:xyz"])
+        XCTAssertEqual(tracks[0].artist, "A, B")
+        XCTAssertEqual(tracks[0].duration, 201)
+        XCTAssertEqual(tracks[0].artworkURL?.absoluteString, "https://i.scdn.co/300")
+        XCTAssertEqual(tracks[1].artist, "Podcast")
+        XCTAssertTrue(SpotifyResponses.queueTracks(from: Data("nope".utf8)).isEmpty)
+    }
+
+    func testSpotifyStatusCodes() {
+        XCTAssertNil(SpotifyResponses.failure(status: 204, body: Data()))
+        XCTAssertEqual(SpotifyResponses.failure(status: 401, body: Data()), .notSignedIn)
+        XCTAssertEqual(SpotifyResponses.failure(status: 403, body: Data()), .premiumRequired)
+        XCTAssertEqual(SpotifyResponses.failure(status: 404, body: Data()), .noActiveDevice)
+        XCTAssertEqual(SpotifyResponses.failure(status: 500, body: Data(#"{"error":{"status":500,"message":"Oops"}}"#.utf8)), .failed("Oops"))
+    }
 }
