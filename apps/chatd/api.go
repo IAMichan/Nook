@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"html"
 	"net/http"
 	"net/url"
 	"slices"
@@ -629,6 +630,8 @@ func (a *API) send(w http.ResponseWriter, r *http.Request) {
 			MimeType string  `json:"mimeType"`
 			Duration float64 `json:"duration"`
 		} `json:"attachment"`
+		// People the text tags as "@Name": each becomes a Matrix pill, which the bridge sends as its app's own tag.
+		Mentions []mention `json:"mentions"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -674,6 +677,9 @@ func (a *API) send(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "nothing to send")
 		return
 	}
+	if content.URL == "" {
+		tag(content, body.Mentions)
+	}
 	if body.ReplyTo != "" {
 		content.RelatesTo = (&event.RelatesTo{}).SetReplyTo(id.EventID(body.ReplyTo))
 	}
@@ -687,6 +693,40 @@ func (a *API) send(w http.ResponseWriter, r *http.Request) {
 	a.store.MarkRead(room.ID, evt.Timestamp)
 	go net.Bridge.QueueMatrixEvent(net.Bridge.BackgroundCtx, evt)
 	writeJSON(w, http.StatusOK, map[string]any{"chatID": string(room.ID), "pendingMessageID": string(evt.ID)})
+}
+
+// mention is someone a message tags: their Matrix user id in the room and the name the text writes after "@".
+type mention struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// tag gives a text message the HTML a Matrix client writes for a tag: every "@Name" of someone in mentions becomes a
+// pill (a link to their user id), and m.mentions lists them, so each bridge sends its app's own tag.
+func tag(content *event.MessageEventContent, mentions []mention) {
+	formatted := html.EscapeString(content.Body)
+	var ids []id.UserID
+	// The longest name first, so "@Anna Bakker" is not taken for "@Anna".
+	mentions = slices.Clone(mentions)
+	slices.SortStableFunc(mentions, func(a, b mention) int { return len(b.Name) - len(a.Name) })
+	for _, m := range mentions {
+		if m.ID == "" || m.Name == "" {
+			continue
+		}
+		written := html.EscapeString("@" + m.Name)
+		if !strings.Contains(formatted, written) {
+			continue
+		}
+		pill := `<a href="https://matrix.to/#/` + html.EscapeString(m.ID) + `">` + html.EscapeString(m.Name) + `</a>`
+		formatted = strings.ReplaceAll(formatted, written, pill)
+		ids = append(ids, id.UserID(m.ID))
+	}
+	if len(ids) == 0 {
+		return
+	}
+	content.Format = event.FormatHTML
+	content.FormattedBody = strings.ReplaceAll(formatted, "\n", "<br>")
+	content.Mentions = &event.Mentions{UserIDs: ids}
 }
 
 func (a *API) edit(w http.ResponseWriter, r *http.Request) {

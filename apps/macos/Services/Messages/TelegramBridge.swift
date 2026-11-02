@@ -679,7 +679,15 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
     func send(text: String, to chat: Int64, replyTo: String? = nil) throws {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
-        try request(TelegramData.textContent(body), legacy: nil, chat: chat, replyTo: replyTo)
+        try request(TelegramData.textContent(body, tags: tagPeople(chat)), legacy: nil, chat: chat, replyTo: replyTo)
+    }
+
+    /// The people you can tag in a group: its other members by name, each by their Telegram user id. Asks for the
+    /// members when they are not known yet.
+    func tagPeople(_ chat: Int64) -> [ChatTagPerson] {
+        guard chats[chat]?.isGroup == true else { return [] }
+        askMembers(of: chat)
+        return (members[chat] ?? []).filter { $0 != meID }.compactMap { id in users[id].map { ChatTagPerson(name: $0, id: String(id)) } }
     }
 
     /// Sends a file, a poll, a place or a contact card to a chat, as `send(text:)` does.

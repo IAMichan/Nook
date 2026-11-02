@@ -189,6 +189,21 @@ final class TeamsWebDataTests: XCTestCase {
         XCTAssertEqual(json["clientmessageid"] as? String, "42")
     }
 
+    func testTagsGoAsTeamsMentions() {
+        let anna = ChatTagPerson(name: "Anna <A>", id: "8:orgid:1")
+        let tagged = TeamsWebData.tagged("Hi @Anna <A>\nand @Anna <A> & @Bob", people: [anna])
+        XCTAssertEqual(tagged.html, "<p>Hi <span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"0\">Anna &lt;A&gt;</span></p>"
+                       + "<p>and <span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"1\">Anna &lt;A&gt;</span> &amp; @Bob</p>")
+        XCTAssertEqual(tagged.mentions, [anna, anna])
+        XCTAssertEqual(TeamsWebData.html("a\n\nb"), "<p>a</p><p>&nbsp;</p><p>b</p>", "without tags it is the same as before")
+        let json = TeamsWebData.outgoing(html: tagged.html, name: "Me", clientMessageID: "1", mentions: tagged.mentions)
+        let property = (json["properties"] as? [String: Any])?["mentions"] as? String ?? ""
+        let list = (try? JSONSerialization.jsonObject(with: Data(property.utf8))) as? [[String: Any]]
+        XCTAssertEqual(list?.map { $0["itemid"] as? Int }, [0, 1])
+        XCTAssertEqual(list?.first?["mri"] as? String, "8:orgid:1")
+        XCTAssertNil((TeamsWebData.outgoing(html: "<p>hi</p>", name: "Me", clientMessageID: "2")["properties"] as? [String: Any])?["mentions"])
+    }
+
     func testReactionKeysMatchTheEmojiNookShows() {
         XCTAssertEqual(TeamsData.key(emoji: "👍"), "like")
         XCTAssertEqual(TeamsData.key(emoji: "❤"), "heart", "with or without the emoji mark")
