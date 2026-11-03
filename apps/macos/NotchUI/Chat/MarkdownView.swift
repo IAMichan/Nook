@@ -7,7 +7,7 @@ extension MarkdownBlock {
     ///
     /// Cached per text and size: `AttributedString(markdown:)` is slow, and every paragraph, bullet and table cell of every
     /// visible message asks for it again on each redraw (another message streaming in, hover, a keystroke).
-    static func inline(_ text: String, size: CGFloat = 14, files: Bool = false) -> AttributedString {
+    static func inline(_ text: String, size: CGFloat = 13, files: Bool = false) -> AttributedString {
         let key = "\(size)|\(files)|\(text)" as NSString
         if let hit = InlineCache.shared.object(forKey: key) { return hit.value }
         let value = renderInline(text, size: size, files: files)
@@ -213,13 +213,18 @@ extension MarkdownBlock {
     }
 }
 
-struct MarkdownView: View {
+struct MarkdownView: View, Equatable {
     @Environment(\.fileLinkBase) private var fileLinkBase
     @Environment(\.pullRequestLinksBeside) private var pullRequestLinksBeside
     let text: String
-    var size: CGFloat = 14
+    var size: CGFloat = 13
     /// When set, the options of a question at the end of the answer become buttons that answer it.
     var onChoose: ((String) -> Void)? = nil
+
+    /// The same text at the same size draws the same: a row that redraws on hover or while scrolling past skips it.
+    nonisolated static func == (a: MarkdownView, b: MarkdownView) -> Bool {
+        a.text == b.text && a.size == b.size && (a.onChoose == nil) == (b.onChoose == nil)
+    }
 
     var body: some View {
         let blocks = MarkdownCache.blocks(text)

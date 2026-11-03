@@ -58,7 +58,9 @@ struct AgentRunPanel: View {
     @State private var finding = false
     @State private var findQuery = ""
     @State private var findIndex: Int?
-    @StateObject private var composerModel = ComposerModel()
+    /// Held, not observed: only its suggestion list watches it (`ComposerSuggestionSlot`), so a key that changes the
+    /// list does not redraw this whole panel.
+    @State private var composerModel = ComposerModel()
     @FocusState private var focused: Bool
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var bridge = WorkspaceBridge.shared

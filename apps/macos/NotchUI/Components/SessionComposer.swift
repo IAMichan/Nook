@@ -169,8 +169,10 @@ struct SessionComposer<Controls: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            if let extras, extras.model.isOpen {
-                ComposerSuggestionList(model: extras.model, tint: tint) { choose($0) }
+            // The list watches the model itself: the panel around the composer does not, so a key that changes the
+            // list redraws the list and not the conversation above it.
+            if let extras {
+                ComposerSuggestionSlot(model: extras.model, tint: tint) { choose($0) }
             }
             if choicesBelow {
                 // The box comes first in z-order so the tray runs on behind it (see ComposerTray).
