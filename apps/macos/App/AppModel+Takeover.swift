@@ -109,8 +109,8 @@ extension AppModel {
     // MARK: Starting from the notch
 
     /// A double tap (or one tap) of the Double Tap key: a small field in the notch asks what Nook should do. It is the Nook
-    /// chat's composer, with the model and what Nook may do by itself (⇧Tab) under the box. Escape closes it. A tap while
-    /// a task runs stops it.
+    /// chat's composer, with the model and what Nook may do by itself (⇧Tab) under the box. Escape, its cross or a click
+    /// outside the notch closes it. A tap while a task runs stops it.
     func presentTakeoverPrompt() {
         if TakeoverState.shared.isRunning {
             TakeoverState.shared.stop()
