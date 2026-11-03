@@ -53,9 +53,10 @@ extension NowPlayingService {
         }
     }
 
-    /// Plays a track from Up Next (`fromQueue`) or Recent.
-    func play(_ track: MusicTrack, fromQueue: Bool) {
-        guard let app = current?.app ?? NowPlayingService.runningPlayerName() else { return }
+    /// Plays a track from Up Next (`fromQueue`), Recent or a search. `app`: the player it came from, when no player is
+    /// playing yet (a search the brain did); otherwise the player that is playing.
+    func play(_ track: MusicTrack, fromQueue: Bool, app preferred: String? = nil) {
+        guard let app = current?.app ?? NowPlayingService.runningPlayerName() ?? preferred else { return }
         let verb: String
         if app == "Spotify" {
             guard Self.isSpotifyURI(track.id) else { return }

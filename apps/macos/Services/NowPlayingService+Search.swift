@@ -27,7 +27,8 @@ extension NowPlayingService {
         }
     }
 
-    private static func results(for query: String, app: String?) async -> MusicSearchResult {
+    /// Tracks for `query` in `app` (Spotify or Music), as the Music tab and the brain's `search_music` find them.
+    static func results(for query: String, app: String?) async -> MusicSearchResult {
         switch app {
         case "Spotify":
             guard SpotifySignIn.shared.isSignedIn else { return MusicSearchResult(query: query, state: .connectSpotify) }
