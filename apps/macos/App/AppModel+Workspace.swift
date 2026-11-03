@@ -66,17 +66,19 @@ final class WorkspaceWindowController {
                 .environmentObject(app)
                 .environmentObject(app.workspace)
                 .environmentObject(app.workspace.settings)
-            let host = NSHostingController(rootView: root)
+            let host = WorkspaceHostingView(rootView: root)
             // The window sets its own minSize; letting the hosting view also drive it makes a pane's appearance resize
             // the window in a layout loop.
             host.sizingOptions = []
-            let window = NSWindow(contentViewController: host)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 800),
+                                  styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                                  backing: .buffered, defer: false)
+            window.contentView = host
             // Dark for the window and everything presented from it (sheets inherit the window's appearance). Asking for it
             // with `.preferredColorScheme` inside the window and inside each sheet makes the sheets re-negotiate it on every
             // layout pass, which loops ("needing another Update Constraints in Window pass").
             window.appearance = NSAppearance(named: .darkAqua)
             window.title = tr("ws.windowTitle")
-            window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
             // The panel runs up under the traffic lights, as the open notch runs up under the camera; the title is in the
             // Dock and ⌘Tab.
             window.titlebarAppearsTransparent = true
@@ -161,6 +163,14 @@ final class WindowPresence: ObservableObject {
             MainActor.assumeIsolated { self?.shown = true }
         }
     }
+}
+
+/// The main window's content. Its headers run up into the title bar's row, where AppKit lets any view that does not
+/// say otherwise move the window: a click on a button there (a side panel's cross, the sidebar's head) that moved the
+/// pointer by a point dragged the window instead of pressing the button. Only `WindowTitleBarArea`, behind the empty
+/// parts of that row, moves the window.
+final class WorkspaceHostingView<Content: View>: NSHostingView<Content> {
+    override var mouseDownCanMoveWindow: Bool { false }
 }
 
 /// A kept window's root: `content` while the window is open, its background alone while it is closed or minimized.
