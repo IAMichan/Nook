@@ -80,7 +80,8 @@ enum WhatsAppExport {
         }
         inbox.mentionsMe = message.mentionsMe
         inbox.senderID = message.fromMe ? nil : WAJID.normalized(message.sender)
-        return inbox
+        if message.edited { inbox.edited = true }
+        return message.deleted ? inbox.withdrawn() : inbox
     }
 
     /// The message's words: its text, after what came with it when that has no file of its own to show (a place, a
@@ -96,8 +97,9 @@ enum WhatsAppExport {
         return [kind, message.text.isEmpty ? nil : message.text].compactMap { $0 }.joined(separator: " ")
     }
 
-    /// The messages a chat no longer holds that it held when it was last handed over, newer than its oldest now: deleted
-    /// (for everyone, from Nook or on the phone), not let go of because the chat keeps only its newest.
+    /// The messages a chat no longer holds that it held when it was last handed over, newer than its oldest now: gone
+    /// from the gateway's history (deleted for everyone), not let go of because the chat keeps only its newest. The
+    /// shared inbox shows them as deleted.
     static func deleted(before: BridgedChat?, now: BridgedChat) -> [String] {
         guard let before, let oldest = now.messages.first?.date else { return [] }
         let kept = Set(now.messages.map(\.id))

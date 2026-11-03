@@ -74,12 +74,14 @@ final class VideoWindow: NSObject, NSWindowDelegate {
 
     private var window: NSWindow?
     private var playerView: AVPlayerView?
+    private var loading: Task<Void, Never>?
 
-    /// Plays the video from `time`, in a window that fits it on the screen with the notch.
+    /// Plays the video from `time`, in a window that fits it on the screen with the notch, once its file is complete
+    /// and playable (`ChatVideoAsset`). One that cannot be played closes the window again with a toast that says so.
     func show(_ url: URL, title: String, at time: CMTime = .zero, aspect: CGSize? = nil) {
         let (window, view) = existing() ?? make()
         view.player?.pause()
-        let player = AVPlayer(url: url)
+        let player = AVPlayer()
         view.player = player
         window.title = title
         if !window.styleMask.contains(.fullScreen) { window.setFrame(frame(for: aspect, on: window.screen), display: true) }
@@ -88,10 +90,24 @@ final class VideoWindow: NSObject, NSWindowDelegate {
         } else {
             window.resizeIncrements = NSSize(width: 1, height: 1)   // no ratio known: resizes freely
         }
-        if time.isValid, time.seconds > 0 {
-            player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
+        loading?.cancel()
+        loading = Task { @MainActor [weak self] in
+            let asset = await ChatVideoAsset.load(url)
+            guard !Task.isCancelled, view.player === player else { return }
+            guard let asset else {
+                self?.window?.close()
+                ToastCenter.shared.error(tr("card.video.unplayable"), detail: title,
+                                         action: NookToastAction(title: tr("card.video.openElsewhere")) {
+                                             NSWorkspace.shared.open(url)
+                                         })
+                return
+            }
+            player.replaceCurrentItem(with: AVPlayerItem(asset: asset))
+            if time.isValid, time.seconds > 0 {
+                await player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
+            }
+            player.play()
         }
-        player.play()
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
     }
@@ -142,6 +158,7 @@ final class VideoWindow: NSObject, NSWindowDelegate {
 
     /// A closed window stops what plays in it.
     func windowWillClose(_ notification: Notification) {
+        loading?.cancel()
         playerView?.player?.pause()
         playerView?.player = nil
     }

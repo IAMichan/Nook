@@ -237,8 +237,9 @@ struct CardView: View {
     }
 
     /// The compact card's one field (the Double Tap field): the same composer as the Nook chat, with the model and what
-    /// Nook may do by itself (⇧Tab) in a tray under the box. Return sends, Escape closes the card. A long message wraps
-    /// and the box grows with it (the notch follows through `onHeight`), so all of it stays readable.
+    /// Nook may do by itself (⇧Tab) in a tray under the box, with a cross at its right end. Return sends; Escape, the
+    /// cross or a click outside the notch closes the card. A long message wraps and the box grows with it (the notch
+    /// follows through `onHeight`), so all of it stays readable.
     private var promptField: some View {
         SessionComposer(text: $reply, prompt: card.inputPrompt ?? tr("chat.followupPrompt"), sendLabel: tr("card.send"),
                         focus: $replyFocused, onSend: submitReply) {
@@ -248,6 +249,10 @@ struct CardView: View {
         }
         .rich(mentionModel, mentionConfig)
         .choicesBelowBox()
+        // Closes the field as Escape does, for whoever reaches for the mouse.
+        .trayTrailing {
+            ToolbarIconButton("xmark", tr("button.close"), height: 20, width: 20) { onAction(card.escape ?? card.primary) }
+        }
         // In the non-activating notch panel the binding can lag behind the field until Return commits it, which left
         // the send arrow looking disabled; take every keystroke straight from the field itself.
         .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidChangeNotification)) { note in

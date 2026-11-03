@@ -210,6 +210,17 @@ enum PullRequestMergeability {
         return (pull["mergeable"] as? Bool) == false
     }
 
+    /// GitHub has an answer once `mergeable` is set, or the merge state already says `dirty`.
+    static func githubKnown(_ pull: [String: Any]) -> Bool {
+        pull["mergeable"] is Bool || (pull["mergeable_state"] as? String)?.lowercased() == "dirty"
+    }
+
+    /// GitLab is still working it out while the merge status says so.
+    static func gitlabKnown(_ item: [String: Any]) -> Bool {
+        if (item["has_conflicts"] as? Bool) == true { return true }
+        return !["checking", "unchecked", "preparing"].contains((item["detailed_merge_status"] as? String)?.lowercased() ?? "")
+    }
+
     static func gitlabConflicted(_ item: [String: Any]) -> Bool {
         if (item["has_conflicts"] as? Bool) == true { return true }
         return (item["detailed_merge_status"] as? String)?.lowercased() == "conflict"

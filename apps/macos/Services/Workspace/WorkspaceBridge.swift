@@ -43,6 +43,10 @@ final class WorkspaceBridge: ObservableObject {
     private var openDevices: [String: [String]] = [:]
     /// Answers to calls that carried a client_request_id (see WorkspaceBridge+Tools).
     var ledger = BridgeRequestLedger()
+    /// The agent that may use the screen now, if any (see WorkspaceBridge+Screen).
+    @Published var screenGrant: BridgeScreenGrant?
+    /// Gives the screen back when the grant runs out.
+    var screenExpiry: Task<Void, Never>?
     private var installed = false
     private var started = false
 
@@ -230,6 +234,12 @@ final class WorkspaceBridge: ObservableObject {
             case .watchPullRequest: return try await watchPullRequest(arguments, caller)
             case .getPullRequestStatus: return try await pullRequestStatus(arguments, caller)
             case .requestSecret: return await requestSecret(arguments, caller, context)
+            case .nookTools: return nookTools(arguments)
+            case .nookUse: return await nookUse(arguments, caller, context)
+            case .nookChatList: return nookChatList(arguments)
+            case .nookChatRead: return nookChatRead(arguments)
+            case .nookChatSend: return await nookChatSend(arguments, caller, context)
+            case .takeOverScreen: return await takeOverScreen(arguments, caller, context)
             }
         } catch {
             return .error(error.localizedDescription)
@@ -237,9 +247,9 @@ final class WorkspaceBridge: ObservableObject {
     }
 
     func verdict(_ tool: BridgeTool, _ caller: BridgeCaller, command: CommandAssessment.Level? = nil,
-                 localPage: Bool = false) -> BridgeVerdict {
+                 localPage: Bool = false, nookAction: Bool = true) -> BridgeVerdict {
         BridgePolicy.verdict(tool: tool, caller: caller, command: command, enabled: WorkspaceSettings.shared.agentTools,
-                             localPage: localPage)
+                             localPage: localPage, nookAction: nookAction)
     }
 
     /// The answer for a refused call, in words the agent can act on.
@@ -248,7 +258,7 @@ final class WorkspaceBridge: ObservableObject {
         case .disabled: return "The user has switched off agent access to Nook's workspace (Settings › Agents › Workspace)."
         case .planMode: return "This session is in Plan mode: it may read, not start processes or open pull requests. Describe the step in your plan instead."
         case .dangerous: return "Nook refuses this command through its terminal because it is dangerous. Ask the user to run it themselves if it is really needed."
-        case .needsReview, .outward, .delegation, .schedule, .secret: return "The user did not approve this in Nook."
+        case .needsReview, .outward, .delegation, .schedule, .secret, .action, .screen: return "The user did not approve this in Nook."
         }
     }
 
@@ -806,34 +816,18 @@ final class WorkspaceBridge: ObservableObject {
     private func sessionRead(_ arguments: [String: Any]) -> BridgeRPC.ToolResult {
         guard let workspace = app?.workspace,
               let id = UUID(uuidString: ((arguments["session_id"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)),
-              let run = workspace.run(id) else {
+              let summary = workspace.sessionSummary(id) else {
             return .error("No such session. Use the id from the reference the user gave you.")
         }
-        workspace.loadTimeline(id)
-        var lines = ["# Session: \(run.title)", "Agent: \(run.provider.displayName) · status: \(DelegatedTask.state(run.status).rawValue)",
-                     "Folder: \(run.workingDirectory)"]
-        if let branch = run.branch { lines.append("Branch: \(branch)") }
-        lines.append("")
-        if let summary = ContextHandoff.render(events: workspace.timeline(id), source: run.provider.displayName) {
-            lines.append(summary.text)
-        } else {
-            lines.append("Nothing has happened in this session yet.")
-        }
-        return BridgeRPC.ToolResult(text: lines.joined(separator: "\n"))
+        return BridgeRPC.ToolResult(text: summary)
     }
 
     // MARK: Other sessions
 
     private func sessionList(_ arguments: [String: Any]) -> BridgeRPC.ToolResult {
         guard let workspace = app?.workspace else { return .error("Nook is not ready.") }
-        let limit = min(50, max(1, (arguments["limit"] as? Int) ?? 15))
-        let runs = workspace.runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }.prefix(limit)
-        guard !runs.isEmpty else { return BridgeRPC.ToolResult(text: "No sessions.") }
-        let lines = runs.map { run in
-            "- \(run.id.uuidString) · \(run.title) · \(run.provider.displayName) · \(DelegatedTask.state(run.status).rawValue) · \(run.workingDirectory)"
-                + (run.branch.map { " · \($0)" } ?? "")
-        }
-        return BridgeRPC.ToolResult(text: lines.joined(separator: "\n"))
+        let lines = workspace.sessionLines(limit: min(50, max(1, (arguments["limit"] as? Int) ?? 15)))
+        return BridgeRPC.ToolResult(text: lines.isEmpty ? "No sessions." : lines.joined(separator: "\n"))
     }
 
     private func sessionSend(_ arguments: [String: Any], _ caller: BridgeCaller, _ context: Context) async -> BridgeRPC.ToolResult {

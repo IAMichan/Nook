@@ -145,8 +145,9 @@ final class TeamsWebDataTests: XCTestCase {
              "properties": ["deletetime": 1], "composetime": "2026-10-23T09:00:00.000Z"],
         ]]
         let messages = TeamsWebData.messages(history, chat: chats[1], me: me)
-        XCTAssertEqual(messages.map(\.text), ["plan.pdf", "Mine"], "oldest first; no activity, no deleted message")
-        XCTAssertEqual(messages.first?.sender, "Bo")
+        XCTAssertEqual(messages.map(\.text), ["", "plan.pdf", "Mine"], "oldest first; no activity; a deleted message without its text")
+        XCTAssertEqual(messages.first?.isDeleted, true)
+        XCTAssertEqual(messages[1].sender, "Bo")
         XCTAssertEqual(messages.last?.isMine, true)
         XCTAssertEqual(TeamsWebData.people(history, me: me), ["Bo"])
         XCTAssertEqual(TeamsWebData.myName(history, me: me), "Me Myself")
@@ -228,7 +229,7 @@ final class TeamsWebDataTests: XCTestCase {
         XCTAssertEqual(result.map { $0.map(\.name) }, [["", "Team (Work)"], ["", "Team (School)"]])
     }
 
-    func testDeletedMessagesAreReportedSoTheChatDropsThem() {
+    func testDeletedMessagesAreReportedAndShownAsDeleted() {
         let json: [String: Any] = ["messages": [
             ["id": "1800", "messagetype": "RichText/Html", "content": "", "composetime": "2027-01-15T10:00:00.000Z",
              "from": "https://x/contacts/" + me, "properties": ["deletetime": "1800000000500"]],
@@ -237,7 +238,9 @@ final class TeamsWebDataTests: XCTestCase {
         ]]
         let chat = TeamsData.Chat(id: "19:a@unq.gbl.spaces", name: "Jan", isGroup: false, last: nil, readUntil: nil)
         XCTAssertEqual(TeamsWebData.deleted(json), ["teams-1800"])
-        XCTAssertEqual(TeamsWebData.messages(json, chat: chat, me: me).map(\.id), ["teams-1900"])
+        let messages = TeamsWebData.messages(json, chat: chat, me: me)
+        XCTAssertEqual(messages.map(\.id), ["teams-1800", "teams-1900"])
+        XCTAssertEqual(messages.map(\.isDeleted), [true, false])
         XCTAssertEqual(TeamsWebData.deleted(["messages": []]), [])
     }
 
