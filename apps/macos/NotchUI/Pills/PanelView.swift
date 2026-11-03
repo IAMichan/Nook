@@ -35,6 +35,8 @@ struct PanelView: View {
     /// The pointer is on the tab beside this one, whether or not the tab bar follows it now.
     @State private var pointerOnSide = false
     @State private var clickMonitor: Any?
+    /// A tab draws the main window's sidebar (`PanelSidebarTop`): the header with the floating capsule stays out.
+    @State private var sidebarShown = false
 
     /// The height of the header row (the floating capsule with the tabs, or a task's title), so Nook can be centered
     /// on it: a 30 pt button with the capsule's 4 pt padding above and below.
@@ -49,13 +51,15 @@ struct PanelView: View {
                 }
                     .transition(.opacity.combined(with: .offset(y: 6)))
             } else {
-                header
+                if !usesSidebar { header }
                 // A Double Tap Nook works on, or just finished: every step, and what it typed, to check.
                 if !app.demoMode {
                     DoubleTapRunBar(doubleTap: DoubleTap.shared)
-                        .padding(.leading, headerInset)
+                        .padding(.leading, usesSidebar ? PanelSidebarMetrics.inset : headerInset)
                 }
                 HStack(alignment: .top, spacing: 0) {
+                    // A tab without a list of its own (Music) still gets the sidebar in the main window.
+                    if sidebar != nil && !footerUnderList { sidebarColumn }
                     // Switching tabs: the old tab goes at once and the new one fades in on its own, outside the spring that
                     // moves the tab capsule and resizes the panel. In that spring the old and the new tab were both on
                     // screen and laid out on every frame, and every change the new tab made as it appeared (its width, its
@@ -69,6 +73,8 @@ struct PanelView: View {
                         // Swapping the two tabs: the same as switching tabs above, the old one goes at once and the new
                         // one fades in, instead of two whole tabs laid out on every frame of the spring.
                         PanelSplitPane(viewModel: viewModel, tab: side, inWindow: inWindow, swap: { swapSplit(side) })
+                            // The sidebar is the main tab's: the tab beside it starts with its own list.
+                            .environment(\.panelSidebar, nil)
                             .id(side)
                             .transition(.asymmetric(insertion: .opacity.animation(NookTheme.tabFade), removal: .identity))
                             .transaction(value: side) { $0.animation = nil }
@@ -100,11 +106,16 @@ struct PanelView: View {
                     measuredWidth.value = width
                     if splitTab != nil, contentWidth != width { contentWidth = width }
                 }
-                .padding(.top, headerInset > 0 ? PanelOrb.belowHeader : NookTheme.Spacing.xl)
+                .environment(\.panelSidebar, sidebar)
+                .onPreferenceChange(PanelSidebarShown.self) { shown in
+                    if sidebarShown != shown { sidebarShown = shown }
+                }
+                .padding(.top, usesSidebar ? 0 : headerInset > 0 ? PanelOrb.belowHeader : NookTheme.Spacing.xl)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Agents, the chat and Chats keep the footer under their list. A tab without one (Music) shows it at the
-                // bottom as wide as the Agents list, so the refresh and update button stays where it is on Agents.
-                if !footerUnderList && !app.demoMode {
+                // bottom as wide as the Agents list, so the refresh and update button stays where it is on Agents; in
+                // the main window it is at the foot of the sidebar instead.
+                if !footerUnderList && !app.demoMode && sidebar == nil {
                     PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() },
                                 history: app.history)
                         .frame(width: agentsListWidth)
@@ -145,6 +156,42 @@ struct PanelView: View {
             if sheet == nil {
                 PanelApprovalBar(viewModel: viewModel, tab: tab, sheet: sheet, hub: app.hub, workspace: app.workspace)
             }
+        }
+    }
+
+    /// What the main window's sidebar shows on top (`PanelSidebarContext`); nil in the notch and in demo mode, which
+    /// keep the header's capsule.
+    private var sidebar: PanelSidebarContext? {
+        guard inWindow, !app.demoMode else { return nil }
+        let side = splitTab
+        let onSide = splitHover && side != nil
+        let main = tabItems.first { PanelSplitChoice.same($0.value, tab) }?.value ?? tab
+        return PanelSidebarContext(
+            tabs: tabItems, selected: onSide ? side ?? main : main, beside: onSide ? main : side, current: tab,
+            select: { value in if value == side { swapSplit(value) } else { select(value) } },
+            search: { searching.toggle() },
+            talk: { viewModel.startListening() },
+            orb: AnyView(PanelOrb(viewModel: viewModel, mood: viewModel.mood(for: tab), size: PanelSidebarMetrics.orb,
+                                  inWindow: true)))
+    }
+
+    /// The tab draws the sidebar now: no header of the panel's own.
+    private var usesSidebar: Bool { sidebar != nil && sidebarShown }
+
+    /// The sidebar of a tab without a list (Music): the head, the tabs, and the footer at the bottom, as wide as the
+    /// Agents list.
+    private var sidebarColumn: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                PanelSidebarTop()
+                Spacer(minLength: 0)
+                PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() }, history: app.history)
+            }
+            .panelSidebarColumn()
+            .padding(.trailing, NookTheme.Spacing.md)
+            .frame(width: agentsListWidth)
+            NookDivider(vertical: true)
+                .padding(.trailing, NookTheme.Spacing.xl)
         }
     }
 
@@ -260,8 +307,9 @@ struct PanelView: View {
         }
     }
 
-    /// The tabs, a thin line, then search, talk and split view: one `graphite` capsule with a hairline edge and a soft
-    /// shadow, lifted off the content. The selected tab is on the accent.
+    /// The tabs, a thin line, then search, talk and split view: one quiet `surface` capsule with a hairline edge, a tonal
+    /// step above the canvas and no shadow, so the header belongs to the window instead of floating over it. The selected
+    /// tab is on `smoke` with bright text, as everywhere else; the accent is kept for state.
     private var headerCapsule: some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
             // The tab beside this one is outlined, and a click on it swaps the two, as the swap button in its pane does.
@@ -271,7 +319,7 @@ struct PanelView: View {
             let onSide = splitHover && side != nil
             NookTabBar(items: tabItems, selected: onSide ? side ?? tab : tab, onSelect: { value in
                 if value == side { swapSplit(value) } else { select(value) }
-            }, prominent: true, beside: onSide ? main : side)
+            }, beside: onSide ? main : side)
             NookDivider(vertical: true)
                 .frame(height: 18)
                 .padding(.horizontal, NookTheme.Spacing.sm)
@@ -286,9 +334,8 @@ struct PanelView: View {
         }
         .padding(NookTheme.Spacing.xs)
         .background(
-            Capsule().fill(NookTheme.graphite)
-                .overlay(Capsule().strokeBorder(NookTheme.line2, lineWidth: 1))
-                .shadow(color: NookTheme.notch.opacity(0.55), radius: 14, y: 6)
+            Capsule().fill(NookTheme.surface)
+                .overlay(Capsule().strokeBorder(NookTheme.line, lineWidth: 1))
         )
         .fixedSize()
     }

@@ -1,10 +1,13 @@
 import Foundation
 
-// Texts for Search everything (⌘K or ⇧⌘F): the field, the kinds it filters on, the tips for the query language, and the
-// actions it can run.
+// Texts for Search everything (⌘K or ⇧⌘F) and the main window's sidebar that opens it: the field, the kinds it
+// filters on, the tips for the query language, the actions it can run, and the sidebar's labels.
 
 let searchTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "sidebar.sessions": "Sessies",
+        "sidebar.conversations": "Gesprekken",
+        "search.sidebar": "Zoeken",
         "search.button": "Alles doorzoeken (⌘K)",
         "search.placeholder": "Zoek in gesprekken, sessies, chats, notities, instellingen…",
         "search.none": "Niets gevonden",
@@ -41,6 +44,9 @@ let searchTranslations: [AppLanguage: [String: String]] = [
         "search.author.me": "Jij",
     ],
     .en: [
+        "sidebar.sessions": "Sessions",
+        "sidebar.conversations": "Conversations",
+        "search.sidebar": "Search",
         "search.button": "Search everything (⌘K)",
         "search.placeholder": "Search conversations, sessions, chats, notes, settings…",
         "search.none": "Nothing found",
@@ -77,6 +83,9 @@ let searchTranslations: [AppLanguage: [String: String]] = [
         "search.author.me": "You",
     ],
     .de: [
+        "sidebar.sessions": "Sitzungen",
+        "sidebar.conversations": "Gespräche",
+        "search.sidebar": "Suchen",
         "search.button": "Alles durchsuchen (⌘K)",
         "search.placeholder": "Gespräche, Sitzungen, Chats, Notizen, Einstellungen durchsuchen…",
         "search.none": "Nichts gefunden",
@@ -113,6 +122,9 @@ let searchTranslations: [AppLanguage: [String: String]] = [
         "search.author.me": "Du",
     ],
     .fr: [
+        "sidebar.sessions": "Sessions",
+        "sidebar.conversations": "Conversations",
+        "search.sidebar": "Rechercher",
         "search.button": "Tout rechercher (⌘K)",
         "search.placeholder": "Rechercher conversations, sessions, chats, notes, réglages…",
         "search.none": "Rien trouvé",
@@ -149,6 +161,9 @@ let searchTranslations: [AppLanguage: [String: String]] = [
         "search.author.me": "Toi",
     ],
     .es: [
+        "sidebar.sessions": "Sesiones",
+        "sidebar.conversations": "Conversaciones",
+        "search.sidebar": "Buscar",
         "search.button": "Buscar en todo (⌘K)",
         "search.placeholder": "Busca en conversaciones, sesiones, chats, notas, ajustes…",
         "search.none": "No se encontró nada",

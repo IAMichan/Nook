@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// A row of tabs: plain words, the selected one on a soft capsule that slides to the next one; no track behind them.
-/// The panel's own tabs (Nook, Agents, Chats, Music) sit in the header's floating capsule and mark the selected one
-/// `prominent`, on the accent. Also used for tabs inside a page, such as a pull request's Conversation, Commits and
+/// The panel's own tabs (Nook, Agents, Chats, Music) sit in the header's quiet capsule, the selected one on `smoke`.
+/// Also used for tabs inside a page, such as a pull request's Conversation, Commits and
 /// Files. The side panel next to a session has its own small tabs (`SidePanelTabBar`).
 struct NookTabBar<Value: Hashable>: View {
     struct Item: Identifiable {

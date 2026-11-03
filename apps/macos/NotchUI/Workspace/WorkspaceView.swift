@@ -9,20 +9,30 @@ struct WorkspaceView: View {
     @ObservedObject private var viewModel = AppModel.shared.viewModel
     /// A chat's video or photo shown over the whole window.
     @StateObject private var mediaStage = ChatMediaStage()
+    /// The tab draws the sidebar along the window's left edge (`PanelSidebarTop`), with Nook at its head: no margin on
+    /// that side, and no Nook of the window's own beside the header.
+    @State private var sidebarShown = false
 
     var body: some View {
         let orb = PanelOrb.panelSize
         ZStack(alignment: .topLeading) {
             PanelView(viewModel: viewModel, tab: viewModel.windowTab, headerInset: PanelOrb.headerInset, inWindow: true)
-            PanelOrb(viewModel: viewModel, mood: viewModel.mood(for: viewModel.windowTab), size: orb, inWindow: true)
-                .offset(y: (PanelView.headerHeight - orb) / 2)
+            if !sidebarShown {
+                PanelOrb(viewModel: viewModel, mood: viewModel.mood(for: viewModel.windowTab), size: orb, inWindow: true)
+                    .offset(y: (PanelView.headerHeight - orb) / 2)
+            }
         }
-        // The notch's margins. On top, the title bar with the traffic lights takes the place of the camera's strip: the
-        // content stays in the safe area below it (whatever height the system gives the title bar), and only the black
-        // runs up under it. Adding the title bar's height by hand on top of the safe area left a wide empty band.
-        .padding(.top, WindowLayout.belowTitleBar)
-        .padding(.horizontal, 28)
-        .padding(.bottom, 22)
+        .onPreferenceChange(PanelSidebarShown.self) { shown in
+            if sidebarShown != shown { sidebarShown = shown }
+        }
+        // The notch's margins, or with the sidebar none on its side and less elsewhere. On top, the title bar with the
+        // traffic lights takes the place of the camera's strip: the content stays in the safe area below it (whatever
+        // height the system gives the title bar), and only the black runs up under it. Adding the title bar's height by
+        // hand on top of the safe area left a wide empty band.
+        .padding(.top, sidebarShown ? WindowLayout.belowTitleBarWithSidebar : WindowLayout.belowTitleBar)
+        .padding(.leading, sidebarShown ? 0 : 28)
+        .padding(.trailing, sidebarShown ? 20 : 28)
+        .padding(.bottom, sidebarShown ? 16 : 22)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // The strip with the traffic lights and the room under it act as the title bar: there is no content there, so
         // a double-click on it zooms the window and a drag moves it, as in every other Mac app.
@@ -85,6 +95,8 @@ private enum WindowLayout {
     /// Nook sits on the header row's center, as in the notch: lifted above it, his ring ran into the traffic lights.
     /// The content below starts under his ring (`PanelOrb.belowHeader`).
     static let belowTitleBar: CGFloat = 16
+    /// With the sidebar Nook sits small at its head, in the row of a session's header, and needs less room.
+    static let belowTitleBarWithSidebar: CGFloat = NookTheme.Spacing.sm
 }
 
 /// Display name for an account: custom label, organization name, or "Personal".

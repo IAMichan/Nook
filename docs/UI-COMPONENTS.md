@@ -49,6 +49,10 @@ and a selected row stands a full step above a hovered one with a `selectionMark`
 - **Show at rest only what you use most.** Row actions, message actions, a tool row's chevron,
   and the panel header's rarer buttons (talk, the window) appear under the pointer. A finished turn is folded
   into "Worked for …"; a thought shows two lines; a successful step has no mark (only a failure does).
+- **Lists are a sidebar, not a stack of cards.** A row has no fill at rest (`rowFill(…, rest: .clear)`); only the
+  row under the pointer and the selected one lift. Under a project's header a session is one line (logo, name, status
+  or time), indented so its logo sits under the folder's mark, as a thread sits under its project in t3code; the
+  branch and the rest are in its hover card.
 - **No boxes around groups.** Toolbar groups (`.toolbarGroup()`) and the composer's choices have no fill or stroke of
   their own; a gap separates them (`ComposerDivider`), and a button gets a fill only under the pointer. Badges in a
   row (`RowBadgeBackground`) have no fill: a mark and a word. A card that reports a problem (recovery, an error, a
@@ -171,6 +175,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `NookSearchField` | `PanelBlocks.swift` | The one search field (panel lists, Settings rows, menus, the command palette): magnifying glass, text, a clear button, Escape clears and then calls `onEscape`. `panel`, `inline` (in a Settings form or a menu) and `large` (a palette). Never build a search field by hand |
 | `.focusOnAppear(_:)` | `PanelBlocks.swift` | Puts the keyboard in a palette's field as it opens (⌘K search, the command palette), also when it appears with a transition or the panel takes the keyboard later. Use it instead of `.onAppear { focused = true }` on a field that must take typing at once |
 | `QRCodeView`, `QRCode` | `QRCode.swift` | The one QR code for a phone to scan (linking a chat app, WhatsApp, pairing the companion): crisp pixels on a light card, with a label for VoiceOver. Never draw a QR image by hand |
+| `PanelSidebarTop`, `.panelSidebarColumn()` | `PanelSidebar.swift` | The head of the main window's sidebar (Nook, the tabs and Search as rows) at the top of a tab's first column, and the inset that column keeps from the window's edge; nothing in the notch |
 | `PanelListHeader`, `PanelNewButton` | `PanelBlocks.swift` | The title row on top of every tab's list (Nook, Agents, Chats, Pull requests): name, `NookCountBadge`, the list's actions; `PanelNewButton` is the "new" in it, lit while the new one is open |
 | `NookCountBadge` | `PanelBlocks.swift` | How many wait for you: a small amber count, on a tab or a list title |
 | `PullRequestRow`, `PullRequestTag`, `PullRequestLineCounts` | `NotchUI/Pills/PullRequestRow.swift` | One pull request in a list: state mark, then the title (so titles line up), checks and review, lines changed; under it the repository and number, author, labels, stack position, age, with its quick actions. The Pull requests page and the side panel's picker both draw their rows with it; never build a second pull request row. `PullRequestLineCounts` is the "+120 −8" of a row, the pull request page's header and a changed file: grouped numbers and a real minus sign, never drawn by hand |
@@ -266,6 +271,15 @@ The main window (`WorkspaceView`) is the open notch with more room: it shows the
 window layout. In the window the header's empty space (`WindowTitleBarArea`) moves the window and zooms it on a double-click, the traffic lights replace the close
 button, the window remembers its tab (and opens at an agent that waits for you), and the chat keeps a readable width
 (`PanelLayout.readableChat`). In the notch, the window button continues on the same tab in the window.
+
+In the window the tabs live in a sidebar along the left edge, as in t3code (`PanelSidebar.swift`): `PanelView` hands
+the tab a `PanelSidebarContext` through the environment, and the tab's first column starts with `PanelSidebarTop`
+(Nook with talk and split view, the tabs and Search as rows) and carries `.panelSidebarColumn()`. The tab's list
+follows under it, with its `PanelListHeader` as a quiet section label (`sidebarTitle`, "Sessions" under Agents), and
+the `PanelFooter` at the bottom. A tab without a list (Music) gets the column from `PanelView`. While a tab draws the
+head (`PanelSidebarShown`), the panel leaves out its floating capsule and the window its left margin and its own Nook;
+when no column shows it (the list put away, one column at a time, a task over the tab), the capsule comes back. A new
+tab with a list starts its first column the same way; the notch never gets the context and keeps the capsule.
 
 The header has no notice list. What Nook told you since he started is kept in the notice history (`NoticeHistory`),
 which search finds, so a card that closed before you looked can still be read and opened. A new notice Nook gives by himself (an

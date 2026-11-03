@@ -130,7 +130,7 @@ struct NookList: View {
 
     /// "Nook" with the button that starts a new one, as "Agents" has.
     private var header: some View {
-        PanelListHeader(tr("tab.nook")) {
+        PanelListHeader(tr("tab.nook"), sidebarTitle: tr("sidebar.conversations")) {
             PanelNewButton(label: tr("nooks.newHelp"), active: chat.isEmpty) { app.newChat() }
                 .keyCommand("session.new") { app.newChat() }
         }
@@ -264,7 +264,8 @@ private struct NookRow: View, Equatable {
             && x.messages.last?.revision == y.messages.last?.revision && x.status == y.status
     }
 
-    private var background: Color { NookTheme.rowFill(selected: selected, hovering: hovering) }
+    /// No fill at rest, as in every list: only the row under the pointer or the selected one lifts.
+    private var background: Color { NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear) }
     private var receded: Bool { conversation.status == .idle && !selected }
 
     var body: some View {
@@ -308,7 +309,8 @@ private struct NookRow: View, Equatable {
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(background))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(background))
+        .selectionMark(selected)
         .contentShape(Rectangle())
     }
 

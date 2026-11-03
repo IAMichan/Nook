@@ -283,9 +283,14 @@ struct AgentInboxList: View {
         let active = home[.active] ?? InboxSection(kind: .active, rows: [])
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             projectHeader(group, folder: folder(of: group, byID: byID))
-            ForEach(rows(of: group), id: \.entry.id) { pair in
-                entryRow(pair.entry, in: home[pair.kind] ?? active, sections: sections, byID: byID, shown: shown)
+            // Indented under the header, so the logo of each session lines up with the folder's mark above it.
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                ForEach(rows(of: group), id: \.entry.id) { pair in
+                    entryRow(pair.entry, in: home[pair.kind] ?? active, sections: sections, byID: byID, shown: shown)
+                }
             }
+            // The chevron's room (`Spacing.lg`) and its gap: the logo sits under the folder's mark, the name under its name.
+            .padding(.leading, NookTheme.Spacing.xl)
         }
         .padding(.top, NookTheme.Spacing.xs)
         .modifier(DropTarget(kind: .active, section: active, list: self, sections: sections, byID: byID, row: nil))
@@ -468,6 +473,7 @@ struct AgentInboxList: View {
             AgentListRow(
                 item: item, now: now, selected: current == item.id,
                 receded: entry.receded, pinned: entry.row.pinned, woke: entry.woke, slim: slim,
+                grouped: store.groupByProject && (section.kind == .active || section.kind == .working),
                 wakeLabel: snoozeActive ? item.snoozedUntil.map { tr("inbox.snooze.until", Self.wakeFormat.string(from: $0)) } : nil,
                 actions: AgentRowActions(
                     pinned: entry.row.pinned,
