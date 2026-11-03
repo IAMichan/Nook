@@ -68,6 +68,7 @@ extension AppModel {
     /// "Claude Opus 5.5"), "Default" for none.
     func modelName(_ model: String, for provider: RunProvider, profileID: String? = nil) -> String {
         if model.isEmpty { return tr("ws.model.default") }
+        if model == AutoModel.id { return tr("auto.model") }
         return workspace.modelChoice(model, for: provider, profileID: profileID)?.name ?? model
     }
 

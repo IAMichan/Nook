@@ -329,6 +329,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var lineage: RunLineage? = nil
     /// Reasoning effort for the next turns ("low", "medium", "high"); nil is the agent's own default.
     var effort: String? = nil
+    /// "Auto": Nook picks `model` for each turn (see `AutoModel`); nil for a model you chose.
+    var autoModel: Bool? = nil
     /// The agent's own task list, as it last reported it.
     var tasks: [RunTaskStep]? = nil
     /// The pull request this session watches: what it last saw, so only news wakes it.
