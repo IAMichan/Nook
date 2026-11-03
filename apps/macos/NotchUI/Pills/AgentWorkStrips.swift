@@ -569,9 +569,13 @@ struct PullRequestWatchStrip: View {
     }
 
     /// A GitHub pull request opens in Nook, as a link to it in the conversation does: in the session's side panel. A
-    /// GitLab merge request (or no GitHub account) opens in your browser.
+    /// GitLab merge request (or no GitHub account) opens as any web link there does: in the side panel's browser, or
+    /// in your browser when the link setting, ⌘ or ⌃ says so.
     private func open() {
-        if !AppModel.shared.openPullRequestLink(url, beside: pullRequestLinksBeside) { NSWorkspace.shared.open(url) }
+        let app = AppModel.shared
+        if app.openPullRequestLink(url, beside: pullRequestLinksBeside) { return }
+        if pullRequestLinksBeside, app.openLinkBeside(url) { return }
+        NSWorkspace.shared.open(url)
     }
 
     private func openCI() {
