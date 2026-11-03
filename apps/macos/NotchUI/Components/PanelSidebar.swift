@@ -39,8 +39,8 @@ enum PanelSidebarMetrics {
     static let row: CGFloat = 32
     /// The column a row's mark stands in.
     static let mark: CGFloat = 18
-    /// Room between the window's edge and the sidebar's rows.
-    static let inset: CGFloat = NookTheme.Spacing.md
+    /// Room between the window's edge and the sidebar's rows, and the same between its rows and the line on its right.
+    static let inset: CGFloat = NookTheme.Spacing.lg
 }
 
 private struct PanelSidebarKey: EnvironmentKey {

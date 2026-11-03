@@ -186,7 +186,7 @@ struct PanelView: View {
                 PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() }, history: app.history)
             }
             .panelSidebarColumn()
-            .padding(.trailing, NookTheme.Spacing.md)
+            .padding(.trailing, PanelSidebarMetrics.inset)
             .frame(width: agentsListWidth)
             NookDivider(vertical: true)
                 .padding(.trailing, NookTheme.Spacing.xl)
