@@ -100,18 +100,8 @@ struct TimelineToEndPill: View {
 extension View {
     /// The "scroll to end" pill just above this view (a composer over a conversation), without taking room from it.
     func toEndPill(_ shown: Bool, action: @escaping () -> Void) -> some View {
-        // A zero-height strip along the top edge that the pill grows up from: an alignment guide on the
-        // conditional pill was ignored, which put it on top of the composer instead of above it.
-        overlay(alignment: .top) {
-            Color.clear
-                .frame(height: 0)
-                .overlay(alignment: .bottom) {
-                    if shown {
-                        TimelineToEndPill(action: action)
-                            .fixedSize()
-                            .padding(.bottom, NookTheme.Spacing.md)
-                    }
-                }
+        outside(.top, spacing: NookTheme.Spacing.md) {
+            if shown { TimelineToEndPill(action: action) }
         }
     }
 }
