@@ -198,6 +198,8 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `.panelCard()` | `PanelBlocks.swift` | The quiet card that groups rows: field fill, panel corners, no stroke |
 | `NookIconButton` | `NookButtons.swift` | Round symbol button (mic, close, play) |
 | `ToolbarIconButton` | `NookButtons.swift` | Small borderless symbol button in a panel header, a row, or under a message, with hover feedback; `width`/`height` for a tighter row and `enabled` for a dimmed one. Never hand-roll a `.plain` button around a lone `Image` |
+| `CopyIconButton`, `CopyGhostButton`, `CopiedMoment` | `NookButtons.swift` | Every copy button: the symbol turns into a checkmark (or the word into "Copied") for 1.5 s, and a second click restarts the moment. Never hand-roll a `copied` flag with `asyncAfter`; a button of another shape holds a `@StateObject CopiedMoment` |
+| `.composerFocusOnAppear(_:enabled:)` | `PanelBlocks.swift` | Focuses a composer when it appears, again after the panel becomes key, without stealing focus from another text field. Use it on every composer |
 | `.rowActionsBackdrop(_:)` | `NookButtons.swift` | Puts a list row's hover buttons on the row's own fill, fading in from the left, so the title runs out softly underneath them instead of colliding with them |
 | `ConfirmedButton`, `.confirmDelete(_:question:detail:confirmTitle:action:)` | `ConfirmDestructive.swift` | Anything that cannot be undone (delete, remove a key, sign out, clear a history) asks first in the same dialog. `.confirmDelete` is for menu items, which cannot hold a dialog themselves |
 | `PatientSpinner` | `PatientSpinner.swift` | What a panel or pane shows while its content loads: invisible for the first 350 ms, then a small spinner that fades in |
