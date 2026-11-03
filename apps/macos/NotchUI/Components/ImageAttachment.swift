@@ -64,7 +64,7 @@ struct ImageAttachment: Identifiable, Equatable {
     }()
 
     /// At most 256 pixels on the longest side: sharp at the 96-point size of a sent picture on a Retina screen.
-    private static func makeThumbnail(_ data: Data) -> NSImage? {
+    static func makeThumbnail(_ data: Data) -> NSImage? {
         let options = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,

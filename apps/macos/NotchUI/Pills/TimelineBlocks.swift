@@ -131,9 +131,16 @@ struct QueuedMessagesStrip: View {
         let isEditing = editing == message.id
         let showsActions = hovered == message.id || isEditing
         let fill = NookTheme.rowFill(selected: isEditing, hovering: hovered == message.id, rest: .clear)
+        // A picture travels as its path at the end of the text; the row shows the picture itself, like the chat does.
+        let parts = ImageAttachment.splittingPaths(from: message.text)
         return HStack(spacing: NookTheme.Spacing.md) {
             position(index, editing: isEditing)
-            Text(ToolSummary.oneLine(ContextRefs.visible(message.text), 120))
+            if !parts.images.isEmpty {
+                HStack(spacing: NookTheme.Spacing.xxs) {
+                    ForEach(parts.images, id: \.self) { QueuedPictureThumbnail(url: $0) }
+                }
+            }
+            Text(ToolSummary.oneLine(ContextRefs.visible(parts.text), 120))
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(isEditing ? NookTheme.paper : NookTheme.textStrong)
                 .lineLimit(1)
@@ -190,6 +197,35 @@ struct QueuedMessagesStrip: View {
 
     private func iconButton(_ symbol: String, _ label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         ToolbarIconButton(symbol, label, height: 22, width: 22, enabled: enabled, action)
+    }
+}
+
+/// A small picture in a queued message's row, read from disk off the main thread.
+private struct QueuedPictureThumbnail: View {
+    let url: URL
+    @State private var image: NSImage?
+
+    var body: some View {
+        ZStack {
+            if let image {
+                Image(nsImage: image).resizable().scaledToFill()
+            } else {
+                Image(systemName: "photo")
+                    .font(NookTheme.font(10))
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+        }
+        .frame(width: 22, height: 22)
+        .background(NookTheme.smoke)
+        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
+        .help(url.lastPathComponent)
+        .accessibilityLabel(url.lastPathComponent)
+        .task(id: url) {
+            let url = url
+            image = await Task.detached(priority: .utility) {
+                (try? Data(contentsOf: url)).flatMap { ImageAttachment.makeThumbnail($0) }
+            }.value
+        }
     }
 }
 
