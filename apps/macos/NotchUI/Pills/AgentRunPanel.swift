@@ -42,8 +42,6 @@ struct AgentRunPanel: View {
     /// Counts the messages you sent from the composer (also those that steer or wait in line): each brings the
     /// conversation down to its end, wherever you had scrolled.
     @State private var sentCount = 0
-    /// The blocks on screen, for where you left the session; not state, so scrolling does not redraw it.
-    @State private var onScreen = VisibleTimelineRows()
     /// Where the timeline is scrolled, for the rail, and the position the rail scrolls it to when you drag it.
     @State private var viewport = TimelineViewport()
     @State private var position = ScrollPosition()
@@ -688,7 +686,6 @@ struct AgentRunPanel: View {
             }
             .padding(.top, NookTheme.Spacing.xs)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .onScrollTargetVisibilityChange(idType: UUID.self, threshold: 0.1) { ids in onScreen.ids = Set(ids.map(\.uuidString)) }
             // Scrolling away from the end stops the following until you come back.
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 48
@@ -742,7 +739,7 @@ struct AgentRunPanel: View {
                 let fresh = TimelineSearch.search(events, query: findQuery)
                 if let first = fresh.next(after: nil) { findIndex = first; reveal(fresh, at: first, blocks: blocks, proxy: proxy) }
             }
-            // Back where you left it: the end, or the block you were reading (TimelineLanding);
+            // Always the end, with what is new since your last visit under its line;
             // after the handlers that follow the end on a new session, hence on the next turn of the run loop.
             .onAppear {
                 proxy.scrollTo("bottom", anchor: .bottom)
@@ -784,35 +781,18 @@ struct AgentRunPanel: View {
 
     private static func visitKey(_ id: UUID) -> String { "run:" + id.uuidString }
 
-    /// The timeline's blocks in order with their times, as `timeline(_:)` shows them.
-    private func visitRows(_ id: UUID) -> [TimelineLanding.Row] {
-        // The session on screen: its blocks are already made (this runs as it opens and as you leave it).
-        if id == runID, let run = workspace.run(id) {
-            return derived.update(workspace.timeline(id), run: run).blocks.map { ($0.id.uuidString, $0.visitDate) }
-        }
-        let events = workspace.timeline(id).filter { !($0.kind == .system && $0.tool == "launch") }
-        return TimelinePresentation.blocks(events, active: workspace.run(id)?.status.isActive ?? false)
-            .map { ($0.id.uuidString, $0.visitDate) }
+    /// The timeline's blocks in order with their times, as `timeline(_:)` shows them (already made as it opens).
+    private var visitRows: [TimelineLanding.Row] {
+        guard let run = workspace.run(runID) else { return [] }
+        return derived.update(workspace.timeline(runID), run: run).blocks.map { ($0.id.uuidString, $0.visitDate) }
     }
 
-    /// The block you were reading when you left, else the end (with what came in since your last visit under its
-    /// line); following stops at a block, so what comes in does not pull you away from it.
+    /// The very end of the session, with what came in since your last visit under its line.
     private func land(_ proxy: ScrollViewProxy) {
         landsOnLoad = !workspace.isTimelineLoaded(runID)
         guard !landsOnLoad else { return }
-        let rows = visitRows(runID)
-        newSince = visit.flatMap { TimelineLanding.firstNew(rows, since: $0.lastViewedAt) }.flatMap(UUID.init(uuidString:))
-        switch TimelineLanding.decide(rows, visit: visit) {
-        case .end:
-            scroll.jumpedToEnd()
-            proxy.scrollTo("bottom", anchor: .bottom)
-        case .row(let id):
-            guard let block = UUID(uuidString: id) else { return }
-            scroll.userScrolled()
-            proxy.scrollTo(block, anchor: .top)
-            // Once the lazy blocks are laid out: the first scroll used their estimated heights.
-            DispatchQueue.main.async { proxy.scrollTo(block, anchor: .top) }
-        }
+        newSince = visit.flatMap { TimelineLanding.firstNew(visitRows, since: $0.lastViewedAt) }.flatMap(UUID.init(uuidString:))
+        settleAtEnd(proxy)
     }
 
     /// Keeps the run at its end while it is there, as `TranscriptConversation.keepEnd` does: the lazy blocks below
@@ -830,13 +810,11 @@ struct AgentRunPanel: View {
         withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
     }
 
-    /// Where you leave a session: the block at the top, what you opened, and whether you were at the end.
+    /// Where you leave a session: what you opened and when.
     private func rememberVisit(_ id: UUID) {
         // Left before its timeline was read: the earlier visit still says where you were.
         guard workspace.run(id) != nil, workspace.isTimelineLoaded(id) else { return }
-        TimelineVisitStore.shared.remember(sessionID: Self.visitKey(id), visit: TimelineVisit(
-            anchorID: TimelineLanding.top(visitRows(id), visible: onScreen.ids), open: openBlocks, atEnd: atEnd,
-            lastViewedAt: Date()))
+        TimelineVisitStore.shared.remember(sessionID: Self.visitKey(id), visit: TimelineVisit(open: openBlocks, lastViewedAt: Date()))
     }
 
     // MARK: Quotes

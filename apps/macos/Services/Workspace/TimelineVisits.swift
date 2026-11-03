@@ -1,33 +1,25 @@
 import Foundation
 
-// Where you left each session's conversation and when you last looked at it, so coming back lands where you were
-// reading, or at the end with a line above what is new since. Stored, so decoding is tolerant.
+// When you last looked at each session's conversation and the folds you had open, so coming back lands at the end
+// with a line above what is new since. Stored, so decoding is tolerant (older visits also hold where you were reading).
 
 struct TimelineVisit: Codable, Equatable, Sendable {
-    /// The row at the top of the conversation when you left it; nil when unknown.
-    var anchorID: String?
     /// Folds, groups and thoughts you had open.
     var open: Set<String>
-    /// You were at the newest message: you come back to the end (or to what is new since).
-    var atEnd: Bool
     /// When you left the conversation.
     var lastViewedAt: Date
 
-    init(anchorID: String?, open: Set<String>, atEnd: Bool, lastViewedAt: Date) {
-        self.anchorID = anchorID
+    init(open: Set<String>, lastViewedAt: Date) {
         self.open = open
-        self.atEnd = atEnd
         self.lastViewedAt = lastViewedAt
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        anchorID = try c.decodeIfPresent(String.self, forKey: .anchorID)
         open = try c.decodeIfPresent(Set<String>.self, forKey: .open) ?? []
-        atEnd = try c.decodeIfPresent(Bool.self, forKey: .atEnd) ?? true
         lastViewedAt = try c.decodeIfPresent(Date.self, forKey: .lastViewedAt) ?? Date(timeIntervalSince1970: 0)
     }
-    enum CodingKeys: String, CodingKey { case anchorID, open, atEnd, lastViewedAt }
+    enum CodingKeys: String, CodingKey { case open, lastViewedAt }
 }
 
 /// The visits per session id; bounded, the least recently viewed go first.
@@ -60,13 +52,9 @@ struct TimelineVisits: Codable, Equatable, Sendable {
     mutating func forget(sessionID: String) { visits[sessionID] = nil }
 }
 
-/// Where a conversation opens when you come back to it.
-enum TimelineLanding: Equatable, Sendable {
-    /// The very end of the conversation (the latest results, not the latest prompt), following what comes in.
-    case end
-    /// The row that was at the top when you left.
-    case row(String)
-
+/// A conversation always opens at its very end (the latest results, not the latest prompt); what came in since your
+/// last visit gets a line above it to scroll back to.
+enum TimelineLanding {
     /// A conversation's rows in order, each with its time (nil: a row without one of its own).
     typealias Row = (id: String, date: Date?)
 
@@ -75,19 +63,6 @@ enum TimelineLanding: Equatable, Sendable {
     static func firstNew(_ rows: [Row], since: Date) -> String? {
         guard let index = rows.firstIndex(where: { ($0.date ?? .distantPast) > since }), index > 0 else { return nil }
         return rows[index].id
-    }
-
-    /// Never seen or left at the end: the end, also when something came in since (its "New since your last visit"
-    /// line stays above it to scroll back to). Left higher up: that row, while it is still there.
-    static func decide(_ rows: [Row], visit: TimelineVisit?) -> TimelineLanding {
-        guard let visit, !visit.atEnd else { return .end }
-        if let anchor = visit.anchorID, rows.contains(where: { $0.id == anchor }) { return .row(anchor) }
-        return .end
-    }
-
-    /// The topmost of the rows that are on screen, in the conversation's order.
-    static func top(_ rows: [Row], visible: Set<String>) -> String? {
-        rows.first { visible.contains($0.id) }?.id
     }
 }
 

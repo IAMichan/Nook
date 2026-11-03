@@ -8,40 +8,16 @@ final class TimelineVisitsTests: XCTestCase {
         [("a", at(0)), ("step", nil), ("b", at(10)), ("c", at(20)), ("d", at(30))]
     }
 
-    func testANeverSeenConversationOpensAtTheEnd() {
-        XCTAssertEqual(TimelineLanding.decide(rows, visit: nil), .end)
-    }
-
-    func testLeftAtTheEndComesBackToTheEndAlsoWithSomethingNew() {
-        let visit = TimelineVisit(anchorID: "a", open: [], atEnd: true, lastViewedAt: at(15))
-        XCTAssertEqual(TimelineLanding.decide(rows, visit: visit), .end, "the latest results, not the first new row")
-        XCTAssertEqual(TimelineLanding.firstNew(rows, since: visit.lastViewedAt), "c", "the new line still marks it")
-        let nothingNew = TimelineVisit(anchorID: "a", open: [], atEnd: true, lastViewedAt: at(40))
-        XCTAssertEqual(TimelineLanding.decide(rows, visit: nothingNew), .end)
-    }
-
-    func testLeftHigherUpComesBackToThatRow() {
-        let visit = TimelineVisit(anchorID: "b", open: ["fold:x"], atEnd: false, lastViewedAt: at(15))
-        XCTAssertEqual(TimelineLanding.decide(rows, visit: visit), .row("b"))
-        let gone = TimelineVisit(anchorID: "zz", open: [], atEnd: false, lastViewedAt: at(15))
-        XCTAssertEqual(TimelineLanding.decide(rows, visit: gone), .end, "a row that is gone falls back to the end")
-    }
-
     func testTheNewLineNeedsSomethingOlderAboveIt() {
         XCTAssertNil(TimelineLanding.firstNew(rows, since: at(-5)), "everything is new: no line at the top")
         XCTAssertEqual(TimelineLanding.firstNew(rows, since: at(0)), "b", "a row without a time is skipped")
         XCTAssertNil(TimelineLanding.firstNew(rows, since: at(30)))
     }
 
-    func testTopIsTheFirstVisibleRowInOrder() {
-        XCTAssertEqual(TimelineLanding.top(rows, visible: ["d", "b", "c"]), "b")
-        XCTAssertNil(TimelineLanding.top(rows, visible: []))
-    }
-
     func testVisitsAreBoundedByLastViewed() {
         var visits = TimelineVisits()
         for index in 0..<(TimelineVisits.limit + 5) {
-            visits.remember(sessionID: "s\(index)", visit: TimelineVisit(anchorID: nil, open: [], atEnd: true, lastViewedAt: at(Double(index))))
+            visits.remember(sessionID: "s\(index)", visit: TimelineVisit(open: [], lastViewedAt: at(Double(index))))
         }
         XCTAssertEqual(visits.visits.count, TimelineVisits.limit)
         XCTAssertNil(visits.visit(for: "s0"))
@@ -52,13 +28,14 @@ final class TimelineVisitsTests: XCTestCase {
 
     func testDecodingIsTolerant() throws {
         var visits = TimelineVisits()
-        visits.remember(sessionID: "run:1", visit: TimelineVisit(anchorID: "x", open: ["fold:a"], atEnd: false, lastViewedAt: at(5)))
+        visits.remember(sessionID: "run:1", visit: TimelineVisit(open: ["fold:a"], lastViewedAt: at(5)))
         let back = try JSONDecoder().decode(TimelineVisits.self, from: JSONEncoder().encode(visits))
         XCTAssertEqual(back, visits)
         XCTAssertEqual(try JSONDecoder().decode(TimelineVisits.self, from: Data("{}".utf8)).visits.count, 0)
         let partial = try JSONDecoder().decode(TimelineVisit.self, from: Data("{}".utf8))
-        XCTAssertTrue(partial.atEnd)
-        XCTAssertNil(partial.anchorID)
+        XCTAssertTrue(partial.open.isEmpty)
+        let older = try JSONDecoder().decode(TimelineVisit.self, from: Data(#"{"anchorID":"x","atEnd":false,"open":["fold:a"]}"#.utf8))
+        XCTAssertEqual(older.open, ["fold:a"], "a visit stored with where you were reading still reads")
     }
 
     func testRowDates() {
