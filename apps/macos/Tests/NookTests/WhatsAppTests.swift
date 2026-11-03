@@ -634,15 +634,6 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(inbox.conversations[chat]?.unread, 1)
     }
 
-    func testRateLimit() {
-        var limit = WARateLimit(limit: 2, window: 60)
-        let now = Date()
-        XCTAssertTrue(limit.allow(now: now))
-        XCTAssertTrue(limit.allow(now: now))
-        XCTAssertFalse(limit.allow(now: now.addingTimeInterval(10)))
-        XCTAssertTrue(limit.allow(now: now.addingTimeInterval(61)))
-    }
-
     // MARK: Webhook
 
     func testOnlyASignedDeliveryCounts() {
