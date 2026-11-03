@@ -129,13 +129,9 @@ extension AppModel {
     /// not connected), so the link opens in the browser instead.
     @discardableResult
     func openPullRequestLink(_ url: URL, beside: Bool = false) -> Bool {
-        guard !demoMode, GitHubPullRequestList.isAvailable, let link = PullRequestRef.gitHubItem(url) else { return false }
-        let key = link.id.lowercased()
-        let listed = PullRequestStore.shared.accounts.lazy.compactMap { account in
-            (account.mine + account.reviews + account.watched).first { $0.id.lowercased() == key }.map { (account.id, $0) }
-        }.first
-        let account = listed?.0 ?? AccountRegistry.shared.accounts(for: "github").first?.id ?? "github"
-        let request = PullRequestOpenRequest(account: account, item: listed?.1 ?? link)
+        guard let request = pullRequestRequest(for: url) else { return false }
+        // GitHub is asked now, not once the page has slid in and appeared; the page picks up the read that runs.
+        PullRequestDetailModel.prefetch(accountID: request.account, item: request.item)
         if beside {
             viewModel.openSidePullRequest(request)
             return true
@@ -144,6 +140,24 @@ extension AppModel {
         viewModel.selectedAgentID = AgentsPage.pullRequests
         viewModel.show(.panel(.agents))
         return true
+    }
+
+    /// A github.com pull request link as Nook opens it: with the account that lists it (else the first GitHub account)
+    /// and what the list knows of it. Nil when Nook cannot read it (another forge, GitHub not connected).
+    func pullRequestRequest(for url: URL) -> PullRequestOpenRequest? {
+        guard !demoMode, GitHubPullRequestList.isAvailable, let link = PullRequestRef.gitHubItem(url) else { return nil }
+        let key = link.id.lowercased()
+        let listed = PullRequestStore.shared.accounts.lazy.compactMap { account in
+            (account.mine + account.reviews + account.watched).first { $0.id.lowercased() == key }.map { (account.id, $0) }
+        }.first
+        let account = listed?.0 ?? AccountRegistry.shared.accounts(for: "github").first?.id ?? "github"
+        return PullRequestOpenRequest(account: account, item: listed?.1 ?? link)
+    }
+
+    /// Reads ahead the pull request a conversation links last, so clicking the link shows it at once.
+    func prefetchPullRequestLink(_ url: URL) {
+        guard let request = pullRequestRequest(for: url) else { return }
+        PullRequestDetailModel.prefetch(accountID: request.account, item: request.item, priority: .utility)
     }
 
     /// "@chat Jan": with a linked phone, Jan's chat shows as the card a new message from Jan brings up (the chat so

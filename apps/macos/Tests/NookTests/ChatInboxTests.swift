@@ -1046,12 +1046,48 @@ final class ChatInboxTests: XCTestCase {
             ["id": "2", "text": "weg", "timestamp": "2026-10-23T10:01:00Z", "isDeleted": true],
         ]]
         let messages = ChatServiceData.messages(answer, chat: chat)
-        XCTAssertEqual(messages.map(\.id), ["beeper-!a-1"])
+        XCTAssertEqual(messages.map(\.id), ["beeper-!a-1", "beeper-!a-2"], "a deleted message keeps its place")
+        XCTAssertEqual(messages.last?.isDeleted, true)
+        XCTAssertEqual(messages.last?.text, "", "nothing of what it said")
         XCTAssertEqual(messages.first?.receipt, .read)
         XCTAssertEqual(messages.first?.reactions, [InboxReaction(emoji: "😂", count: 1, mine: false, people: ["Anna"])], "with who put it there")
         XCTAssertEqual(ChatServiceData.deleted(answer, chat: chat), ["beeper-!a-2"])
         XCTAssertEqual(ChatServiceData.networkID("beeper-!a-1", chat: "!a"), "1")
         XCTAssertNil(ChatServiceData.networkID("beeper-!b-1", chat: "!a"), "a message of another chat")
+    }
+
+    func testEditedAndDeletedMessagesShowAsSuch() {
+        var inbox = ChatInbox()
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        var photo = InboxMessage(id: "m1", text: "look", date: date, fromMe: false)
+        photo.media = ChatMedia(kind: .photo)
+        photo.reactions = [InboxReaction(emoji: "❤️", count: 1, mine: true)]
+        let plain = InboxMessage(id: "m2", text: "see you at 8", date: date.addingTimeInterval(1), fromMe: true)
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "telegram", name: "Anna", messages: [photo, plain], unread: 0), now: date))
+        var changed = plain
+        changed.text = "see you at 9"
+        changed.edited = true
+        var gone = photo
+        gone.deleted = true
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "telegram", name: "Anna", messages: [gone, changed], unread: 0), now: date))
+        var thread = try! XCTUnwrap(inbox.threads.values.first)
+        XCTAssertEqual(thread.messages.map(\.id), ["m1", "m2"])
+        XCTAssertEqual(thread.messages[0].isDeleted, true)
+        XCTAssertNil(thread.messages[0].media, "nothing of what it held stays")
+        XCTAssertNil(thread.messages[0].reactions)
+        XCTAssertEqual(thread.messages[1].text, "see you at 9")
+        XCTAssertTrue(thread.messages[1].isEdited)
+        // A later read that still brings the old message does not bring it back.
+        XCTAssertFalse(inbox.merge(BridgedChat(app: "telegram", name: "Anna", messages: [photo], unread: 0), now: date))
+        thread = try! XCTUnwrap(inbox.threads.values.first)
+        XCTAssertTrue(thread.messages[0].isDeleted)
+        // A message that comes in already deleted keeps its place, and is nothing new.
+        var late = InboxMessage(id: "m3", text: "oops", date: date.addingTimeInterval(5), fromMe: false)
+        late.deleted = true
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "telegram", name: "Anna", messages: [late], unread: nil), now: date))
+        thread = try! XCTUnwrap(inbox.threads.values.first)
+        XCTAssertEqual(thread.messages.last?.text, "")
+        XCTAssertEqual(thread.unread, 0)
     }
 
     func testLinkedChatDeletionsAndReactionsMerge() {
@@ -1064,7 +1100,9 @@ final class ChatInboxTests: XCTestCase {
         liked.reactions = [InboxReaction(emoji: "❤️", count: 1, mine: false)]
         XCTAssertTrue(inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: [liked], unread: 0, deleted: ["m2"]), now: date))
         let thread = try! XCTUnwrap(inbox.threads.values.first)
-        XCTAssertEqual(thread.messages.map(\.id), ["m1"], "a message deleted in its app leaves the chat")
+        XCTAssertEqual(thread.messages.map(\.id), ["m1", "m2"], "a message deleted in its app keeps its place")
+        XCTAssertEqual(thread.messages.last?.isDeleted, true)
+        XCTAssertEqual(thread.messages.last?.text, "")
         XCTAssertEqual(thread.messages.first?.reactions?.first?.emoji, "❤️")
         XCTAssertFalse(inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: [], unread: 0, deleted: ["m2"]), now: date),
                        "a deletion already shown changes nothing")
@@ -1577,7 +1615,8 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(chats[2].preview?.id, "teams-p1")
         XCTAssertEqual(chats[2].preview?.text, "ship it")
         XCTAssertEqual(chats[2].preview?.sender, "Jan")
-        XCTAssertNil(chats[3].preview, "a deleted message is no preview")
+        XCTAssertEqual(chats[3].preview?.isDeleted, true, "a deleted message shows as deleted")
+        XCTAssertEqual(chats[3].preview?.text, "")
         XCTAssertNil(chats[0].preview)
     }
 

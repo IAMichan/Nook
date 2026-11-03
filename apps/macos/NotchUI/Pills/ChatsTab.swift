@@ -1776,7 +1776,7 @@ private struct ChatsDetail: View, Equatable {
     }
 
     /// "For everyone" is offered for your own message in an app that takes it; "for me" for every message.
-    private func canDeleteForEveryone(_ bubble: ChatBubble) -> Bool { bubble.fromMe && abilities.delete && route != nil }
+    private func canDeleteForEveryone(_ bubble: ChatBubble) -> Bool { bubble.fromMe && !bubble.deleted && abilities.delete && route != nil }
 
     /// A mail app's conversation as mail (`MailThreadView`): every mail whole, read from Mail as it opens.
     private var mailThread: some View {
@@ -1842,6 +1842,7 @@ private struct ChatsDetail: View, Equatable {
                                    onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil,
                                    typing: typing.line(entry.id), newFrom: newFrom)
                         .equatable()
+                        .environment(\.chatFetchFile) { [entry] in await app.fetchChatFile($0, in: entry) }
                         .padding(.horizontal, NookTheme.Spacing.xs)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }

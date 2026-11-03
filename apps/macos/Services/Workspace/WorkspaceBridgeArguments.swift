@@ -368,6 +368,9 @@ enum BridgePullRequestStatus {
         lines.append("Reviews: " + (order.isEmpty ? "none"
             : order.map { "@\($0) " + (verdicts[$0] ?? "").lowercased().replacingOccurrences(of: "_", with: " ") }.joined(separator: ", ")))
         lines.append("Comments: \(snapshot.comments.count)")
+        if snapshot.state == "open" {
+            lines.append("Merge conflicts: " + (!snapshot.mergeabilityKnown ? "not known yet" : snapshot.conflicted ? "yes" : "no"))
+        }
         return lines.joined(separator: "\n")
     }
 }

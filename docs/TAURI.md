@@ -112,6 +112,7 @@ game. Events can also be logged by hand.
 | Git: changes, commit, push, pull request (all GitHub accounts, owner first), worktrees | ✓ | `core/src/workspace/` |
 | Terminals (portable-pty + xterm.js), browser (opens http(s):// addresses such as http://localhost:3000 directly; http and https only), dev servers | ✓ (no browser screenshot) | `src-tauri/src/workspace/` |
 | Workspace for agents (MCP bridge `nook --mcp`) | ✓ | `src-tauri/src/workspace/` |
+| Nook's own tools, Nook Chat and the screen for agents (`nook_tools`, `nook_use`, `nook_chat_*`, `take_over_screen`), agent sessions and music search as tools for Nook Chat | ○ (the Tauri bridge has the terminal, browser and pull request tools only so far) | |
 | Usage and limits | ◐ | `views/workspace/` |
 
 ## Companion and Android

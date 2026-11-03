@@ -30,7 +30,15 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.secret.prompt.title": "Secret for %@",
         "bridge.secret.prompt.detail": "%@ gets this value for this session only. Nook hides it in the timeline and logs only the name.",
         "bridge.secret.prompt.give": "Give",
-        "bridge.secret.prompt.remember": "Keep in Nook's keychain"
+        "bridge.secret.prompt.remember": "Keep in Nook's keychain",
+        "bridge.approval.nookAction": "%@ wants Nook to do this",
+        "bridge.approval.nookActionNote": "Nook carries it out in your apps exactly as shown, like a step of a plan in Nook Chat.",
+        "bridge.approval.nookChat": "%@ wants to write in Nook Chat",
+        "bridge.approval.nookChatNote": "Nook answers in Nook Chat; anything its answer proposes still waits for you there.",
+        "bridge.approval.screen": "%@ wants to take over your screen",
+        "bridge.approval.screenNote": "For %ld minutes it can read and use your apps with Nook's cursor. Paying, sending, deleting and signing still ask you each time; Stop in the notch ends it.",
+        "bridge.approval.screenStep": "%@ wants to do this on your screen",
+        "bridge.screen.working": "%@ is using your screen"
     ],
     .nl: [
         "bridge.approval.schedule": "%@ wil een taak inplannen",
@@ -58,7 +66,15 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.secret.prompt.title": "Geheim voor %@",
         "bridge.secret.prompt.detail": "%@ krijgt deze waarde alleen voor deze sessie. Nook verbergt hem in de tijdlijn en logt alleen de naam.",
         "bridge.secret.prompt.give": "Geven",
-        "bridge.secret.prompt.remember": "Bewaren in Nooks sleutelhanger"
+        "bridge.secret.prompt.remember": "Bewaren in Nooks sleutelhanger",
+        "bridge.approval.nookAction": "%@ wil dat Nook dit doet",
+        "bridge.approval.nookActionNote": "Nook voert het precies zo uit in je apps, net als een stap van een plan in Nook Chat.",
+        "bridge.approval.nookChat": "%@ wil schrijven in Nook Chat",
+        "bridge.approval.nookChatNote": "Nook antwoordt in Nook Chat; wat dat antwoord voorstelt wacht daar nog op jou.",
+        "bridge.approval.screen": "%@ wil je scherm overnemen",
+        "bridge.approval.screenNote": "%ld minuten lang kan hij je apps lezen en gebruiken met de cursor van Nook. Betalen, versturen, verwijderen en ondertekenen vragen het je steeds opnieuw; Stop in de notch beëindigt het.",
+        "bridge.approval.screenStep": "%@ wil dit doen op je scherm",
+        "bridge.screen.working": "%@ gebruikt je scherm"
     ],
     .de: [
         "bridge.approval.schedule": "%@ möchte eine Aufgabe planen",
@@ -86,7 +102,15 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.secret.prompt.title": "Geheimnis für %@",
         "bridge.secret.prompt.detail": "%@ bekommt diesen Wert nur für diese Sitzung. Nook verbirgt ihn im Verlauf und protokolliert nur den Namen.",
         "bridge.secret.prompt.give": "Geben",
-        "bridge.secret.prompt.remember": "Im Schlüsselbund von Nook behalten"
+        "bridge.secret.prompt.remember": "Im Schlüsselbund von Nook behalten",
+        "bridge.approval.nookAction": "%@ möchte, dass Nook das tut",
+        "bridge.approval.nookActionNote": "Nook führt es genau so in deinen Apps aus, wie einen Schritt eines Plans im Nook Chat.",
+        "bridge.approval.nookChat": "%@ möchte im Nook Chat schreiben",
+        "bridge.approval.nookChatNote": "Nook antwortet im Nook Chat; was die Antwort vorschlägt, wartet dort weiter auf dich.",
+        "bridge.approval.screen": "%@ möchte deinen Bildschirm übernehmen",
+        "bridge.approval.screenNote": "%ld Minuten lang kann er deine Apps mit dem Cursor von Nook lesen und bedienen. Bezahlen, Senden, Löschen und Unterschreiben fragen dich jedes Mal; Stopp in der Notch beendet es.",
+        "bridge.approval.screenStep": "%@ möchte das auf deinem Bildschirm tun",
+        "bridge.screen.working": "%@ benutzt deinen Bildschirm"
     ],
     .fr: [
         "bridge.approval.schedule": "%@ veut planifier une tâche",
@@ -114,7 +138,15 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.secret.prompt.title": "Secret pour %@",
         "bridge.secret.prompt.detail": "%@ reçoit cette valeur pour cette session uniquement. Nook la masque dans l’historique et n’enregistre que le nom.",
         "bridge.secret.prompt.give": "Donner",
-        "bridge.secret.prompt.remember": "Garder dans le trousseau de Nook"
+        "bridge.secret.prompt.remember": "Garder dans le trousseau de Nook",
+        "bridge.approval.nookAction": "%@ veut que Nook fasse ceci",
+        "bridge.approval.nookActionNote": "Nook l’exécute dans vos apps exactement comme affiché, comme une étape d’un plan dans Nook Chat.",
+        "bridge.approval.nookChat": "%@ veut écrire dans Nook Chat",
+        "bridge.approval.nookChatNote": "Nook répond dans Nook Chat ; ce que sa réponse propose vous y attend toujours.",
+        "bridge.approval.screen": "%@ veut prendre le contrôle de votre écran",
+        "bridge.approval.screenNote": "Pendant %ld minutes, il peut lire et utiliser vos apps avec le curseur de Nook. Payer, envoyer, supprimer et signer vous sont toujours demandés ; Arrêter dans l’encoche y met fin.",
+        "bridge.approval.screenStep": "%@ veut faire ceci sur votre écran",
+        "bridge.screen.working": "%@ utilise votre écran"
     ],
     .es: [
         "bridge.approval.schedule": "%@ quiere programar una tarea",
@@ -142,6 +174,14 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.secret.prompt.title": "Secreto para %@",
         "bridge.secret.prompt.detail": "%@ recibe este valor solo para esta sesión. Nook lo oculta en la línea de tiempo y solo registra el nombre.",
         "bridge.secret.prompt.give": "Dar",
-        "bridge.secret.prompt.remember": "Guardar en el llavero de Nook"
+        "bridge.secret.prompt.remember": "Guardar en el llavero de Nook",
+        "bridge.approval.nookAction": "%@ quiere que Nook haga esto",
+        "bridge.approval.nookActionNote": "Nook lo ejecuta en tus apps tal como se muestra, como un paso de un plan en Nook Chat.",
+        "bridge.approval.nookChat": "%@ quiere escribir en Nook Chat",
+        "bridge.approval.nookChatNote": "Nook responde en Nook Chat; lo que proponga su respuesta sigue esperándote allí.",
+        "bridge.approval.screen": "%@ quiere tomar el control de tu pantalla",
+        "bridge.approval.screenNote": "Durante %ld minutos puede leer y usar tus apps con el cursor de Nook. Pagar, enviar, eliminar y firmar te lo siguen preguntando cada vez; Detener en el notch lo termina.",
+        "bridge.approval.screenStep": "%@ quiere hacer esto en tu pantalla",
+        "bridge.screen.working": "%@ está usando tu pantalla"
     ]
 ]

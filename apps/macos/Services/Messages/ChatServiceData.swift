@@ -110,7 +110,7 @@ enum ChatServiceData {
         return newest < last.addingTimeInterval(-1)
     }
 
-    /// The messages of /v1/chats/{id}/messages that were deleted, by their id in Nook.
+    /// The messages of /v1/chats/{id}/messages that were deleted, by their id in Nook: the chat shows them as deleted.
     static func deleted(_ json: [String: Any], chat: Chat) -> [String] {
         (json["items"] as? [[String: Any]] ?? []).compactMap { message in
             guard message["isDeleted"] as? Bool == true, let id = message["id"] as? String else { return nil }
@@ -263,12 +263,18 @@ enum ChatServiceData {
         return people.first { $0["isSelf"] as? Bool != true }.flatMap { $0["imgURL"] as? String }.flatMap { $0.isEmpty ? nil : $0 }
     }
 
-    /// The messages of /v1/chats/{id}/messages, oldest first, without reactions, hidden and deleted ones.
+    /// The messages of /v1/chats/{id}/messages, oldest first, without reactions and hidden ones; a deleted one shows
+    /// as deleted (`InboxMessage.withdrawn()`), an edited one says so.
     static func messages(_ json: [String: Any], chat: Chat) -> [InboxMessage] {
         let messages: [InboxMessage] = (json["items"] as? [[String: Any]] ?? []).compactMap { message in
             guard let id = message["id"] as? String, message["type"] as? String != "REACTION",
-                  message["isHidden"] as? Bool != true, message["isDeleted"] as? Bool != true,
+                  message["isHidden"] as? Bool != true,
                   let sent = ChatJSON.date(message["timestamp"]) else { return nil }
+            let mine = message["isSender"] as? Bool == true
+            if message["isDeleted"] as? Bool == true {
+                let sender = mine || !chat.isGroup ? "" : ((message["senderName"] as? String) ?? "")
+                return InboxMessage(id: messageID(id, chat: chat.id), sender: sender, text: "", date: sent, fromMe: mine).withdrawn()
+            }
             var text = ((message["text"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             // Only invisible marks (what an app sends around a reaction): nothing to show.
             if ChatFormat.isBlank(text) { text = "" }
@@ -278,7 +284,6 @@ enum ChatServiceData {
             // The service writes a file's name as the text of a message with only that file.
             if let name = media?.name, text == name { text = "" }
             guard !text.isEmpty || media != nil else { return nil }
-            let mine = message["isSender"] as? Bool == true
             let sender = mine || !chat.isGroup ? "" : ((message["senderName"] as? String) ?? "")
             var inbox = InboxMessage(id: messageID(id, chat: chat.id), sender: sender, text: text, date: sent, fromMe: mine,
                                      media: media)
@@ -293,6 +298,7 @@ enum ChatServiceData {
             if let answered = ((message["linkedMessageID"] as? String) ?? (message["replyToMessageID"] as? String)), !answered.isEmpty {
                 inbox.quote = InboxQuote(id: messageID(answered, chat: chat.id))
             }
+            if message["isEdited"] as? Bool == true { inbox.edited = true }
             return inbox
         }
         return messages.sorted { $0.date < $1.date }

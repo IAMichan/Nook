@@ -63,6 +63,8 @@ extension ChatBubble {
     init(_ message: InboxMessage, time: String, members: [String] = [], person: String? = nil) {
         self.init(id: message.id, text: message.text, time: time, date: message.date, sender: message.sender,
                   fromMe: message.isMine)
+        edited = message.isEdited
+        deleted = message.isDeleted
         poll = message.poll
         reactions = (message.reactions ?? []).map {
             BubbleReaction(emoji: $0.emoji, count: $0.count, mine: $0.mine, people: $0.people ?? [])
@@ -117,8 +119,10 @@ final class ChatFileThumbnails: @unchecked Sendable {
 
     private let cache = NSCache<NSString, NSImage>()
     private let lock = NSLock()
-    /// The files whose picture could not be made, so they are not tried again.
-    private var failed: Set<String> = []
+    /// The files whose picture could not be made, and when: they are tried again a while later (a video may still
+    /// have been coming in).
+    private var failed: [String: Date] = [:]
+    private static let retry: TimeInterval = 60
 
     /// The picture when it was made before; nil otherwise, without making it.
     func cached(_ url: URL) -> NSImage? {
@@ -130,9 +134,9 @@ final class ChatFileThumbnails: @unchecked Sendable {
     func image(_ url: URL, kind: ChatMedia.Kind) async -> NSImage? {
         guard kind == .video || kind == .file else { return nil }
         if let image = cached(url) { return image }
-        guard !lock.withLock({ failed.contains(url.path) }) else { return nil }
+        guard !lock.withLock({ failed[url.path].map { Date().timeIntervalSince($0) < Self.retry } ?? false }) else { return nil }
         guard let image = await Self.make(url, kind: kind) else {
-            lock.withLock { _ = failed.insert(url.path) }
+            lock.withLock { failed[url.path] = Date() }
             return nil
         }
         cache.setObject(image, forKey: url.path as NSString)
@@ -143,7 +147,8 @@ final class ChatFileThumbnails: @unchecked Sendable {
     private static func make(_ url: URL, kind: ChatMedia.Kind) async -> NSImage? {
         switch kind {
         case .video:
-            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+            guard let asset = await ChatVideoAsset.load(url, waits: [0, 1, 3]) else { return nil }
+            let generator = AVAssetImageGenerator(asset: asset)
             generator.appliesPreferredTrackTransform = true
             generator.maximumSize = CGSize(width: 960, height: 960)
             guard let frame = try? await generator.image(at: .zero).image else { return nil }
@@ -316,6 +321,9 @@ extension EnvironmentValues {
     /// decode, play, animate or fetch its preview. Messages far up in a long chat's history stay a still placeholder of
     /// the same size, so scrolling through them stays smooth. True outside a chat.
     @Entry var chatMediaLive = true
+    /// Asks the chat's app for a message's file Nook does not have yet, by the message's id (`AppModel.fetchChatFile`).
+    /// Nil where no chat is around it.
+    @Entry var chatFetchFile: (@MainActor (String) async -> Void)? = nil
 }
 
 extension View {
@@ -478,6 +486,7 @@ private struct LoopingVideo: NSViewRepresentable {
 
     final class Coordinator {
         var looper: AVPlayerLooper?
+        var loading: Task<Void, Never>?
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -485,18 +494,24 @@ private struct LoopingVideo: NSViewRepresentable {
     func makeNSView(context: Context) -> AVPlayerView {
         let player = AVQueuePlayer()
         player.isMuted = true
-        context.coordinator.looper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(url: url))
         let view = AVPlayerView()
         view.controlsStyle = .none
         view.videoGravity = .resizeAspect
         view.player = player
-        player.play()
+        // It loops once its file is complete and playable (`ChatVideoAsset`), not on a file still coming in.
+        let coordinator = context.coordinator
+        coordinator.loading = Task { @MainActor [url] in
+            guard let asset = await ChatVideoAsset.load(url), !Task.isCancelled else { return }
+            coordinator.looper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(asset: asset))
+            player.play()
+        }
         return view
     }
 
     func updateNSView(_ view: AVPlayerView, context: Context) {}
 
     static func dismantleNSView(_ view: AVPlayerView, coordinator: Coordinator) {
+        coordinator.loading?.cancel()
         view.player?.pause()
         coordinator.looper = nil
         view.player = nil
@@ -649,6 +664,95 @@ final class ChatAudioPlayer: ObservableObject {
     static func clock(_ seconds: Double) -> String {
         let total = max(0, Int(seconds.rounded()))
         return String(format: "%d:%02d", total / 60, total % 60)
+    }
+}
+
+/// The controls over a video playing in a chat bubble, small enough for a narrow bubble: a play button in the middle
+/// while it is paused, and along the bottom on a soft shade the time it is at, a bar to scrub and how long it lasts.
+/// They show while the pointer is on the video or it is paused, and step aside while it plays.
+struct ChatVideoControls: View {
+    @ObservedObject var playback: ChatVideoPlayback
+    let hovering: Bool
+    let name: String
+    @State private var scrubbing = false
+
+    private var visible: Bool { hovering || !playback.playing || scrubbing }
+    private var label: String { tr(playback.playing ? "chat.media.pause" : "chat.media.play") }
+
+    var body: some View {
+        ZStack {
+            if !playback.playing {
+                Button(action: playback.toggle) {
+                    Image(systemName: "play.fill")
+                        .font(NookTheme.font(18, .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(Circle().fill(Color.black.opacity(0.5)))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help(label)
+                .accessibilityLabel("\(label): \(name)")
+            }
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                bar
+            }
+        }
+        .opacity(visible ? 1 : 0)
+        .allowsHitTesting(visible)
+        .animation(NookTheme.hover, value: visible)
+    }
+
+    private var bar: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            Button(action: playback.toggle) {
+                Image(systemName: playback.playing ? "pause.fill" : "play.fill")
+                    .font(NookTheme.font(11, .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(label)
+            .accessibilityLabel("\(label): \(name)")
+            Text(ChatAudioPlayer.clock(playback.elapsed))
+                .font(NookTheme.TextStyle.caption)
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .fixedSize()
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.3))
+                    Capsule().fill(Color.white)
+                        .frame(width: geometry.size.width * playback.progress)
+                }
+                .frame(height: scrubbing ? 5 : 3)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0)
+                    .onChanged { drag in
+                        scrubbing = true
+                        playback.seek(to: drag.location.x / max(1, geometry.size.width))
+                    }
+                    .onEnded { _ in scrubbing = false })
+            }
+            .frame(height: 14)
+            if let duration = playback.duration {
+                Text(ChatAudioPlayer.clock(duration))
+                    .font(NookTheme.TextStyle.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.75))
+                    .fixedSize()
+            }
+        }
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .padding(.top, NookTheme.Spacing.lg)
+        .padding(.bottom, NookTheme.Spacing.sm)
+        .background(
+            LinearGradient(colors: [.clear, Color.black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
+                .allowsHitTesting(false)
+        )
     }
 }
 
