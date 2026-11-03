@@ -84,6 +84,64 @@ extension View {
 }
 
 /// How many things wait for you: a small amber count (a tab, a list's title). Zero shows nothing.
+/// A button drawn as a `NookSearchField` that opens a search instead of being one (the main window's sidebar opens
+/// Search everything with it): the same field, glyph and inset, the prompt, and the shortcut as a `NookKeyHint`.
+/// `compact` is only the glyph, for a rail of icons.
+struct NookSearchLauncher: View {
+    let prompt: String
+    var shortcut: String? = nil
+    var help: String? = nil
+    var compact = false
+    var height: CGFloat = 32
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+        Button(action: action) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Image(systemName: "magnifyingglass")
+                    .font(NookTheme.font(11, .medium))
+                    .accessibilityHidden(true)
+                if !compact {
+                    Text(prompt)
+                        .font(NookTheme.TextStyle.body)
+                        .lineLimit(1)
+                    Spacer(minLength: NookTheme.Spacing.xs)
+                    if let shortcut { NookKeyHint(text: shortcut) }
+                }
+            }
+            .foregroundStyle(hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
+            .padding(.horizontal, compact ? 0 : NookTheme.Spacing.md)
+            .frame(maxWidth: compact ? height + NookTheme.Spacing.sm : .infinity, minHeight: height, maxHeight: height)
+            .background(shape.fill(NookTheme.field))
+            .overlay(shape.strokeBorder(hovering ? NookTheme.line2 : NookTheme.fieldStroke, lineWidth: 1))
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+        .help(help ?? prompt)
+        .accessibilityLabel(help ?? prompt)
+    }
+}
+
+/// A keyboard shortcut as a small key: the keys in quiet text on a faint cap.
+struct NookKeyHint: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(NookTheme.font(10.5, .medium))
+            .foregroundStyle(NookTheme.textTertiary)
+            .padding(.horizontal, NookTheme.Spacing.xs)
+            .frame(height: 18)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.smoke))
+            .fixedSize()
+            .accessibilityHidden(true)
+    }
+}
+
 struct NookCountBadge: View {
     let count: Int
 

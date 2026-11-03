@@ -9,39 +9,42 @@ struct WorkspaceView: View {
     @ObservedObject private var viewModel = AppModel.shared.viewModel
     /// A chat's video or photo shown over the whole window.
     @StateObject private var mediaStage = ChatMediaStage()
-    /// The tab draws the sidebar along the window's left edge (`PanelSidebarTop`), with Nook at its head: no margin on
-    /// that side, and no Nook of the window's own beside the header.
+    /// The tab draws the sidebar along the window's left edge (`PanelSidebarTop`): no margin on that side, and Nook stands
+    /// small in the title bar's row, just past the traffic lights, instead of beside the header.
     @State private var sidebarShown = false
 
     var body: some View {
-        let orb = PanelOrb.panelSize
+        let orb = sidebarShown ? PanelSidebarMetrics.orb : PanelOrb.panelSize
         ZStack(alignment: .topLeading) {
             PanelView(viewModel: viewModel, tab: viewModel.windowTab, headerInset: PanelOrb.headerInset, inWindow: true)
-            if !sidebarShown {
-                PanelOrb(viewModel: viewModel, mood: viewModel.mood(for: viewModel.windowTab), size: orb, inWindow: true)
-                    .offset(y: (PanelView.headerHeight - orb) / 2)
-            }
+            // Drawn here, over the panel, and not inside the sidebar's column: that column clips, and cut off his ring
+            // and the labels it shows on hover.
+            PanelOrb(viewModel: viewModel, mood: viewModel.mood(for: viewModel.windowTab), size: orb, inWindow: true)
+                .offset(x: sidebarShown ? PanelSidebarMetrics.orbLeading : 0,
+                        y: sidebarShown ? (PanelSidebarMetrics.titleBand - orb) / 2 - PanelSidebarMetrics.contentTop
+                            : (PanelView.headerHeight - orb) / 2)
         }
         .onPreferenceChange(PanelSidebarShown.self) { shown in
             if sidebarShown != shown { sidebarShown = shown }
         }
-        // The notch's margins, or with the sidebar none on its side and less elsewhere. On top, the title bar with the
-        // traffic lights takes the place of the camera's strip: the content stays in the safe area below it (whatever
-        // height the system gives the title bar), and only the black runs up under it. Adding the title bar's height by
-        // hand on top of the safe area left a wide empty band.
-        .padding(.top, sidebarShown ? WindowLayout.belowTitleBarWithSidebar : WindowLayout.belowTitleBar)
+        // The notch's margins, or with the sidebar none on its side and less elsewhere. On top the content runs up into
+        // the title bar's row (its empty toolbar puts the traffic lights in the middle of a 52 pt band): with the sidebar
+        // its head fills that row and a session's header is centered on it; without, the header starts below it.
+        .padding(.top, sidebarShown ? PanelSidebarMetrics.contentTop : WindowLayout.belowTitleBar)
         .padding(.leading, sidebarShown ? 0 : 28)
         .padding(.trailing, sidebarShown ? 20 : 28)
         .padding(.bottom, sidebarShown ? 16 : 22)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        // The strip with the traffic lights and the room under it act as the title bar: there is no content there, so
-        // a double-click on it zooms the window and a drag moves it, as in every other Mac app.
-        .background {
-            GeometryReader { proxy in
-                WindowTitleBarArea()
-                    .frame(height: proxy.safeAreaInsets.top + WindowLayout.belowTitleBar)
-            }
-            .ignoresSafeArea(edges: .top)
+        .ignoresSafeArea(.container, edges: .top)
+        // The row with the traffic lights acts as the title bar where no content lies on it, so a double-click there
+        // zooms the window and a drag moves it, as in every other Mac app.
+        .background(alignment: .top) {
+            // Measured from the window's top, as the content now is: the title bar's row, and without the sidebar the
+            // room under it down to the header.
+            WindowTitleBarArea()
+                .frame(height: sidebarShown ? PanelSidebarMetrics.titleBand : WindowLayout.belowTitleBar)
+                .frame(maxWidth: .infinity)
+                .ignoresSafeArea(edges: .top)
         }
         .background(NookTheme.notch.ignoresSafeArea())
         .chatMediaStage(mediaStage)
@@ -94,9 +97,9 @@ private enum WindowLayout {
     /// row, to stay clear of the traffic lights.
     /// Nook sits on the header row's center, as in the notch: lifted above it, his ring ran into the traffic lights.
     /// The content below starts under his ring (`PanelOrb.belowHeader`).
-    static let belowTitleBar: CGFloat = 16
-    /// With the sidebar Nook sits small at its head, in the row of a session's header, and needs less room.
-    static let belowTitleBarWithSidebar: CGFloat = NookTheme.Spacing.sm
+    /// Measured from the window's top: past the title bar's row (`PanelSidebarMetrics.titleBand`) with the margin
+    /// Nook's ring needs.
+    static let belowTitleBar: CGFloat = 48
 }
 
 /// Display name for an account: custom label, organization name, or "Personal".
