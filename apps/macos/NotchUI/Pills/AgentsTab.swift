@@ -598,10 +598,9 @@ struct AgentListRow: View {
     /// When a snoozed row wakes, as text ("tot 9:00").
     var wakeLabel: String? = nil
     var actions: AgentRowActions? = nil
-    /// "#12" of the session's pull request.
-    var pullRequest: PullRequestBadge? = nil
-    /// The pull requests behind that badge, for the card it shows on hover.
-    var pullRequestLinks: [PullRequestLink] = []
+    /// The session's pull requests, of its branch now and of the ones it worked on before: "#12" (or "#12 +1") on the row,
+    /// and each of them in the card it shows on hover.
+    var pullRequests = SessionPullRequests(current: [])
     let action: () -> Void
     @State private var hovering = false
     /// The pointer is on the hover buttons.
@@ -731,7 +730,7 @@ struct AgentListRow: View {
     private var hasChanges: Bool { item.linesAdded + item.linesRemoved > 0 || (item.changedFiles ?? 0) > 0 }
 
     /// Anything for the line under the name: a branch, changes, or a pull request.
-    private var hasMeta: Bool { shownBranch != nil || hasChanges || pullRequest != nil }
+    private var hasMeta: Bool { shownBranch != nil || hasChanges || !pullRequests.isEmpty }
 
     /// "[worktree] feature/calm-ui  +120 −8  [#12]": the branch (a worktree's with the worktree mark), cut in the middle
     /// when it is long, then what the session changed and its pull request.
@@ -759,9 +758,9 @@ struct AgentListRow: View {
     /// The pull request badge; on hover a card with its title, state, branches, size and checks.
     @ViewBuilder
     private var pullRequestPill: some View {
-        if let pullRequest {
-            PullRequestPill(badge: pullRequest, compact: true, tooltip: pullRequestLinks.isEmpty)
-                .detailCard(enabled: !pullRequestLinks.isEmpty, onDetail: $onDetail) { RowPullRequestCard(links: pullRequestLinks) }
+        if let badge = pullRequests.badge {
+            PullRequestPill(badge: badge, compact: true, tooltip: false)
+                .detailCard(onDetail: $onDetail) { RowPullRequestCard(pullRequests: pullRequests) }
         }
     }
 

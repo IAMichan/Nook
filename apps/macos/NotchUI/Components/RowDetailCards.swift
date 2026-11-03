@@ -42,17 +42,52 @@ struct RowChangesCard: View {
 
 /// The hover card of a session row's pull request badge: per pull request its title, state, branches, size, checks and
 /// who it waits for. A GitHub pull request is read for it (kept for a minute, shared by every row); any other shows what
-/// the branch sync knows.
+/// the branch sync knows. With more than one it says how many, and the ones of branches or worktrees the chat worked on
+/// before sit under their own heading, so the state of a request the chat moved on from stays in view.
 struct RowPullRequestCard: View {
-    let links: [PullRequestLink]
+    let pullRequests: SessionPullRequests
+    /// More than this and the rest is counted under the list.
+    static let limit = 4
+
+    private var shownCurrent: [PullRequestLink] { Array(pullRequests.current.prefix(Self.limit)) }
+    private var shownEarlier: [PullRequestLink] { Array(pullRequests.earlier.prefix(max(0, Self.limit - shownCurrent.count))) }
+    private var hidden: Int { pullRequests.all.count - shownCurrent.count - shownEarlier.count }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            ForEach(links.prefix(3)) { RowPullRequestSummary(link: $0) }
+            if pullRequests.all.count > 1 {
+                Text(tr("agents.row.pr.count", pullRequests.all.count))
+                    .font(NookTheme.TextStyle.strong)
+                    .foregroundStyle(NookTheme.paper)
+            }
+            // Headings only when the chat has requests of an earlier branch: one branch's list needs none.
+            let sections = !pullRequests.earlier.isEmpty
+            if !shownCurrent.isEmpty {
+                section(sections ? tr("agents.row.pr.current") : nil, shownCurrent)
+            }
+            if !shownEarlier.isEmpty {
+                if !shownCurrent.isEmpty { NookDivider() }
+                section(tr("agents.row.pr.earlier"), shownEarlier)
+            }
+            if hidden > 0 {
+                Text(tr("agents.row.changes.more", hidden))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
         }
         .padding(NookTheme.Spacing.lg + NookTheme.Spacing.xxs)
         .frame(width: 320, alignment: .leading)
         .background(DropdownStyle.panel)
+    }
+
+    private func section(_ title: String?, _ links: [PullRequestLink]) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            if let title { NookSectionLabel(title, inset: 0) }
+            ForEach(Array(links.enumerated()), id: \.element.id) { index, link in
+                if index > 0 { NookDivider() }
+                RowPullRequestSummary(link: link)
+            }
+        }
     }
 }
 

@@ -475,6 +475,26 @@ enum SessionBranches {
     }
 }
 
+/// The pull requests behind a session row's badge and its hover card: the ones of the branch it is on now, and the ones
+/// of branches (worktrees) it worked on before. A chat that opened a pull request and then moved on to a new worktree
+/// keeps showing that request's state until the new branch has one of its own, and the badge counts all of them.
+struct SessionPullRequests: Equatable, Sendable {
+    var current: [PullRequestLink]
+    /// Newest first, without the ones `current` already has.
+    var earlier: [PullRequestLink]
+
+    init(current: [PullRequestLink], earlier: [PullRequestLink] = []) {
+        var seen = Set<String>()
+        self.current = current.filter { seen.insert($0.id).inserted }
+        self.earlier = earlier.filter { seen.insert($0.id).inserted }
+            .sorted { ($0.updatedAt ?? .distantPast, $0.number) > ($1.updatedAt ?? .distantPast, $1.number) }
+    }
+
+    var all: [PullRequestLink] { current + earlier }
+    var isEmpty: Bool { current.isEmpty && earlier.isEmpty }
+    var badge: PullRequestBadge? { PullRequestBadge.text(links: all) }
+}
+
 enum BranchPolicy {
     enum FastForward: Equatable, Sendable { case fastForward, skipDirty, skipDiverged, upToDate }
 
