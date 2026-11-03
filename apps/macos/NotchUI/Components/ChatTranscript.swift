@@ -1440,8 +1440,9 @@ struct TicksView: View {
     }
 }
 
-/// A video in a chat bubble: its first frame, whole, with a play button, and a click plays it right there with the
-/// system's controls (pause, scrub, volume). The enlarge button carries on where the bubble was: in the main window over
+/// A video in a chat bubble: its first frame, whole, with a play button, and a click plays it right there with Nook's own
+/// small controls (`ChatVideoControls`: play and pause, a bar to scrub, the time), which fit even a narrow bubble where
+/// the system's would crowd over the picture. The enlarge button carries on where the bubble was: in the main window over
 /// all of the window (`ChatMediaStage`), so split with another app it fills only Nook's part of the screen; in the notch
 /// big in a window of its own that goes full screen.
 struct VideoTile: View {
@@ -1475,8 +1476,8 @@ struct VideoTile: View {
     var body: some View {
         ZStack {
             if let playback {
-                ChatVideoPlaybackView(playback: playback, poster: picture, onHover: { hovering = $0 },
-                                      onPaused: { isPaused = $0 }, onDoubleClick: enlarge)
+                ChatVideoPlaybackView(playback: playback, poster: picture, hovering: hovering, name: name,
+                                      onHover: { hovering = $0 }, onPaused: { isPaused = $0 }, onDoubleClick: enlarge)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Button { play() } label: {
@@ -1564,10 +1565,13 @@ struct VideoTile: View {
 }
 
 /// A bubble's video once you clicked it: its picture with a spinner while its file is still coming in, then the
-/// system's player, or why it cannot be played with a way to try again or open it elsewhere.
+/// video with Nook's own small controls over it (`ChatVideoControls`), or why it cannot be played with a way to try
+/// again or open it elsewhere.
 private struct ChatVideoPlaybackView: View {
     @ObservedObject var playback: ChatVideoPlayback
     let poster: NSImage?
+    let hovering: Bool
+    let name: String
     var onHover: ((Bool) -> Void)?
     var onPaused: ((Bool) -> Void)?
     var onDoubleClick: (() -> Void)?
@@ -1575,7 +1579,11 @@ private struct ChatVideoPlaybackView: View {
     var body: some View {
         switch playback.phase {
         case .ready:
-            InlinePlayer(player: playback.player, onHover: onHover, onPaused: onPaused, onDoubleClick: onDoubleClick)
+            ZStack {
+                InlinePlayer(player: playback.player, controls: false, onHover: onHover, onPaused: onPaused,
+                             onClick: playback.toggle, onDoubleClick: onDoubleClick)
+                ChatVideoControls(playback: playback, hovering: hovering, name: name)
+            }
         case .loading, .failed:
             ZStack {
                 Color.black
@@ -1603,8 +1611,12 @@ struct InlinePlayer: NSViewRepresentable {
     let player: AVPlayer
     /// Its own full-screen button; in a bubble full screen happens in the video's own window instead.
     var fullScreen = false
+    /// The system's controls; off where the view draws its own over it (`ChatVideoControls`).
+    var controls = true
     var onHover: ((Bool) -> Void)?
     var onPaused: ((Bool) -> Void)?
+    /// One click on the picture; a double click is `onDoubleClick`.
+    var onClick: (() -> Void)?
     var onDoubleClick: (() -> Void)?
 
     func makeCoordinator() -> Coordinator {
@@ -1613,11 +1625,12 @@ struct InlinePlayer: NSViewRepresentable {
 
     func makeNSView(context: Context) -> InlineAVPlayerView {
         let view = InlineAVPlayerView()
-        view.controlsStyle = .floating
+        view.controlsStyle = controls ? .floating : .none
         view.videoGravity = .resizeAspect
         view.showsFullScreenToggleButton = fullScreen
         view.player = player
         view.onHover = onHover
+        view.onClick = onClick
         view.onDoubleClick = onDoubleClick
         context.coordinator.attach(player: player)
         return view
@@ -1625,6 +1638,7 @@ struct InlinePlayer: NSViewRepresentable {
 
     func updateNSView(_ view: InlineAVPlayerView, context: Context) {
         view.onHover = onHover
+        view.onClick = onClick
         view.onDoubleClick = onDoubleClick
         if view.player !== player {
             view.player = player
@@ -1664,6 +1678,7 @@ struct InlinePlayer: NSViewRepresentable {
 
 final class InlineAVPlayerView: AVPlayerView {
     var onHover: ((Bool) -> Void)?
+    var onClick: (() -> Void)?
     var onDoubleClick: (() -> Void)?
     private var trackingArea: NSTrackingArea?
 
@@ -1716,7 +1731,9 @@ final class InlineAVPlayerView: AVPlayerView {
 
     override func mouseUp(with event: NSEvent) {
         super.mouseUp(with: event)
-        if event.clickCount == 2 {
+        if event.clickCount == 1 {
+            onClick?()
+        } else if event.clickCount == 2 {
             onDoubleClick?()
         }
     }
