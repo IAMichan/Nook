@@ -101,7 +101,7 @@ final class GitHubSignIn: ObservableObject {
         }
     }
 
-    private struct CLIError: Error { let message: String }
+    struct CLIError: Error { let message: String }
 
     private nonisolated static var cliDirectories: [String] {
         ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "\(NSHomeDirectory())/.local/bin"]
@@ -111,7 +111,7 @@ final class GitHubSignIn: ObservableObject {
         cliDirectories.map { "\($0)/gh" }.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
-    private nonisolated static func cliToken() -> Result<String, CLIError> {
+    nonisolated static func cliToken() -> Result<String, CLIError> {
         guard let gh = ghPath() else {
             return .failure(CLIError(message: tr("connector.ghMissing")))
         }

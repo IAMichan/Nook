@@ -337,7 +337,7 @@ struct PullRequestSheet: View {
             }
             if let error { Text(error).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coralSoft) }
             if let created {
-                Button(tr("ws.pr.created")) { BrowserStore.show(created) }
+                Button(tr("ws.pr.created")) { PullRequestViewer.show(created) }
                     .buttonStyle(.link)
                     .font(NookTheme.TextStyle.strong)
             }
@@ -376,7 +376,7 @@ struct PullRequestSheet: View {
         guard let repo, let branch else { return }
         let cleanBase = base.hasPrefix("origin/") ? String(base.dropFirst(7)) : base
         guard SourceForge.canCreate(repo) else {
-            if let url = SourceForge.newRequestPage(repo: repo, base: cleanBase, head: branch, title: title, body: bodyText, draft: draft) { NSWorkspace.shared.open(url) }
+            if let url = SourceForge.newRequestPage(repo: repo, base: cleanBase, head: branch, title: title, body: bodyText, draft: draft) { BrowserStore.show(url) }
             close()
             return
         }
@@ -384,9 +384,18 @@ struct PullRequestSheet: View {
         error = nil
         Task {
             do {
-                created = try await SourceForge.create(repo: repo, title: title, body: bodyText, head: branch, base: cleanBase, draft: draft)
+                let link = try await SourceForge.create(repo: repo, title: title, body: bodyText, head: branch, base: cleanBase, draft: draft)
+                created = link
+                PullRequestViewer.show(link)
             } catch let failure {
-                error = failure.localizedDescription + " " + tr("ws.pr.pushFirst")
+                // Neither of GitHub's APIs took it (a rate limit on both): its page in Nook's browser still does.
+                if ConnectorErrorKind.classify(failure) == .rateLimited,
+                   let url = SourceForge.newRequestPage(repo: repo, base: cleanBase, head: branch, title: title, body: bodyText, draft: draft) {
+                    BrowserStore.show(url)
+                    close()
+                } else {
+                    error = failure.localizedDescription + " " + tr("ws.pr.pushFirst")
+                }
             }
             working = false
         }
