@@ -81,6 +81,30 @@ private struct HoverCardModifier<Card: View>: ViewModifier {
     }
 }
 
+/// A part of a row with a card of its own: underlined as soon as the pointer is on it, so you see which part it found
+/// before the card opens.
+private struct DetailCardModifier<Card: View>: ViewModifier {
+    let onDetail: Binding<Bool>
+    let card: () -> Card
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(alignment: .bottom) {
+                NookDivider(tint: NookTheme.textSecondary)
+                    .offset(y: NookTheme.Spacing.xxs)
+                    .opacity(hovering ? 1 : 0)
+            }
+            .contentShape(Rectangle())
+            .pointerStyle(.link)
+            .onHover { inside in
+                withAnimation(NookTheme.hover) { hovering = inside }
+                onDetail.wrappedValue = inside
+            }
+            .hoverCard(card)
+    }
+}
+
 extension View {
     /// A part of a row with its own card (the changed files, the pull request): while the pointer is on it, `onDetail`
     /// is set so the row holds its own card back, and this part's card opens instead. Off: the view as it is.
@@ -88,9 +112,7 @@ extension View {
     func detailCard<Card: View>(enabled: Bool = true, onDetail: Binding<Bool>,
                                 @ViewBuilder _ card: @escaping () -> Card) -> some View {
         if enabled {
-            contentShape(Rectangle())
-                .onHover { onDetail.wrappedValue = $0 }
-                .hoverCard(card)
+            modifier(DetailCardModifier(onDetail: onDetail, card: card))
         } else {
             self
         }
