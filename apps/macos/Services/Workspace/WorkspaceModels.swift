@@ -39,7 +39,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass], steering: true, nativeFork: true,
-                                        canRollbackConversation: true, canForkFromTurn: true)
+                                        canRollbackConversation: true, canForkFromTurn: true, liveSettings: true)
         case .codex:
             // Over app-server Codex asks for approval, streams its answer and reports its context window.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
@@ -49,19 +49,24 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             // Over ACP Gemini asks Nook for permission; its headless fallback cannot (auto_edit or yolo there).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass])
-        case .antigravity, .cursor:
-            // ACP, with its conversations on disk: Antigravity's in ~/.gemini/antigravity, Cursor's in ~/.cursor (its ACP
-            // server has no session/list).
+                                        policies: [.ask, .acceptEdits, .bypass], liveSettings: true)
+        case .antigravity:
+            // ACP, with its conversations on disk in ~/.gemini/antigravity. It restarts its agent session to switch models,
+            // which ends a running prompt, so its settings wait for the next message.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass])
+        case .cursor:
+            // ACP, with its conversations on disk in ~/.cursor (its ACP server has no session/list).
+            return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
+                                        reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
+                                        policies: [.ask, .acceptEdits, .bypass], liveSettings: true)
         case .opencode, .grok, .acp:
             // ACP: permission requests, cancel, streamed messages and thoughts, usage updates with context and cost. Their
             // earlier sessions come from the agent itself (`session/list`).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass], pastSessions: .agent)
+                                        policies: [.ask, .acceptEdits, .bypass], pastSessions: .agent, liveSettings: true)
         }
     }
 
@@ -107,6 +112,10 @@ struct ProviderCapabilities: Equatable, Sendable {
     /// Where Nook finds the agent's earlier sessions: its transcripts on disk (`AgentHistory`), or the agent's own list
     /// (ACP `session/list`, when the agent offers it).
     var pastSessions: PastSessionSource = .disk
+    /// A model, mode or effort picked during a turn reaches the agent at once, so the running turn goes on with it (Claude
+    /// Code's control requests on stdin, ACP's `session/set_model` or `session/set_config_option`); otherwise it counts
+    /// from the next message. Codex's app-server has no call that changes a running turn.
+    var liveSettings = false
 }
 
 enum PastSessionSource: Equatable, Sendable {
