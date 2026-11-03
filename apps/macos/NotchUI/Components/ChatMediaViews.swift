@@ -117,8 +117,10 @@ final class ChatFileThumbnails: @unchecked Sendable {
 
     private let cache = NSCache<NSString, NSImage>()
     private let lock = NSLock()
-    /// The files whose picture could not be made, so they are not tried again.
-    private var failed: Set<String> = []
+    /// The files whose picture could not be made, and when: they are tried again a while later (a video may still
+    /// have been coming in).
+    private var failed: [String: Date] = [:]
+    private static let retry: TimeInterval = 60
 
     /// The picture when it was made before; nil otherwise, without making it.
     func cached(_ url: URL) -> NSImage? {
@@ -130,9 +132,9 @@ final class ChatFileThumbnails: @unchecked Sendable {
     func image(_ url: URL, kind: ChatMedia.Kind) async -> NSImage? {
         guard kind == .video || kind == .file else { return nil }
         if let image = cached(url) { return image }
-        guard !lock.withLock({ failed.contains(url.path) }) else { return nil }
+        guard !lock.withLock({ failed[url.path].map { Date().timeIntervalSince($0) < Self.retry } ?? false }) else { return nil }
         guard let image = await Self.make(url, kind: kind) else {
-            lock.withLock { _ = failed.insert(url.path) }
+            lock.withLock { failed[url.path] = Date() }
             return nil
         }
         cache.setObject(image, forKey: url.path as NSString)
@@ -143,7 +145,8 @@ final class ChatFileThumbnails: @unchecked Sendable {
     private static func make(_ url: URL, kind: ChatMedia.Kind) async -> NSImage? {
         switch kind {
         case .video:
-            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+            guard let asset = await ChatVideoAsset.load(url, waits: [0, 1, 3]) else { return nil }
+            let generator = AVAssetImageGenerator(asset: asset)
             generator.appliesPreferredTrackTransform = true
             generator.maximumSize = CGSize(width: 960, height: 960)
             guard let frame = try? await generator.image(at: .zero).image else { return nil }
@@ -316,6 +319,9 @@ extension EnvironmentValues {
     /// decode, play, animate or fetch its preview. Messages far up in a long chat's history stay a still placeholder of
     /// the same size, so scrolling through them stays smooth. True outside a chat.
     @Entry var chatMediaLive = true
+    /// Asks the chat's app for a message's file Nook does not have yet, by the message's id (`AppModel.fetchChatFile`).
+    /// Nil where no chat is around it.
+    @Entry var chatFetchFile: (@MainActor (String) async -> Void)? = nil
 }
 
 extension View {
@@ -478,6 +484,7 @@ private struct LoopingVideo: NSViewRepresentable {
 
     final class Coordinator {
         var looper: AVPlayerLooper?
+        var loading: Task<Void, Never>?
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -485,18 +492,24 @@ private struct LoopingVideo: NSViewRepresentable {
     func makeNSView(context: Context) -> AVPlayerView {
         let player = AVQueuePlayer()
         player.isMuted = true
-        context.coordinator.looper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(url: url))
         let view = AVPlayerView()
         view.controlsStyle = .none
         view.videoGravity = .resizeAspect
         view.player = player
-        player.play()
+        // It loops once its file is complete and playable (`ChatVideoAsset`), not on a file still coming in.
+        let coordinator = context.coordinator
+        coordinator.loading = Task { @MainActor [url] in
+            guard let asset = await ChatVideoAsset.load(url), !Task.isCancelled else { return }
+            coordinator.looper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(asset: asset))
+            player.play()
+        }
         return view
     }
 
     func updateNSView(_ view: AVPlayerView, context: Context) {}
 
     static func dismantleNSView(_ view: AVPlayerView, coordinator: Coordinator) {
+        coordinator.loading?.cancel()
         view.player?.pause()
         coordinator.looper = nil
         view.player = nil
