@@ -2,14 +2,22 @@ import Foundation
 import AppKit
 import AuthenticationServices
 
-/// Spotify's Web API, for what its AppleScript cannot do: put a track in Spotify's own queue and read that queue.
+/// Spotify's Web API, for what its AppleScript cannot do: put a track in Spotify's own queue and read that queue, search,
+/// and read and keep the user's playlists.
 /// Signing in uses the user's own Spotify app (a client ID from developer.spotify.com, with `redirectURI` added to it)
 /// and PKCE, so there is no secret. Adding to the queue needs Spotify Premium; without it, or without a device playing,
 /// `NowPlayingService` keeps the track in Nook's own queue instead.
 enum SpotifyWebAPI {
     /// Nook's one OAuth redirect: add it to the Spotify app in the dashboard.
     static let redirectURI = MCPOAuth.redirectURI
-    static let scopes = "user-read-playback-state user-modify-playback-state"
+    /// Playback for the queue; the playlist scopes for the Music tab's playlists. A sign-in made before Nook asked for
+    /// the playlist scopes gets `Failure.missingScope` and must connect again.
+    static let scopes = [
+        "user-read-playback-state", "user-modify-playback-state",
+        "playlist-read-private", "playlist-read-collaborative", "playlist-modify-private", "playlist-modify-public",
+        "user-library-modify",
+    ].joined(separator: " ")
+    private static let base = "https://api.spotify.com/v1"
     static let dashboardURL = URL(string: "https://developer.spotify.com/dashboard")!
 
     typealias Failure = SpotifyResponses.Failure
@@ -80,6 +88,126 @@ enum SpotifyWebAPI {
         }
     }
 
+    // MARK: Playlists
+
+    /// How many playlists and tracks per playlist Nook reads at most.
+    static let playlistLimit = 200
+    static let playlistTrackLimit = 500
+
+    /// The user's own id, read once per session: it tells their own playlists from those they follow.
+    static func userID() async throws -> String? {
+        if let known = await SpotifyAuthorizer.shared.userID { return known }
+        let data = try await get("\(base)/me")
+        let id = SpotifyResponses.userID(from: data)
+        await SpotifyAuthorizer.shared.setUserID(id)
+        return id
+    }
+
+    /// The user's playlists, their own and those they follow, in Spotify's order.
+    static func playlists() async throws -> [MusicPlaylist] {
+        let me = try await userID()
+        var result: [MusicPlaylist] = []
+        var next = URL(string: "\(base)/me/playlists?limit=50")
+        while let url = next, result.count < playlistLimit {
+            let data = try await get(url.absoluteString)
+            result += SpotifyResponses.playlists(from: data, userID: me)
+            next = SpotifyResponses.nextPage(from: data)
+        }
+        return Array(result.prefix(playlistLimit))
+    }
+
+    /// The tracks of a playlist, in its order.
+    static func playlistTracks(_ playlist: MusicPlaylist) async throws -> [MusicTrack] {
+        let id = try bareID(playlist)
+        var result: [MusicTrack] = []
+        // Spotify moved a playlist's tracks from `/tracks` to `/items` in 2026: the new path first, the old one when
+        // it is not there (yet).
+        var next = try await firstAvailable(["\(base)/playlists/\(id)/items?limit=50", "\(base)/playlists/\(id)/tracks?limit=50"]) { $0 }
+        while true {
+            result += SpotifyResponses.playlistTracks(from: next.data)
+            guard result.count < playlistTrackLimit, let url = SpotifyResponses.nextPage(from: next.data) else { break }
+            next = (try await get(url.absoluteString), url.absoluteString)
+        }
+        return Array(result.prefix(playlistTrackLimit))
+    }
+
+    /// Adds a track to the end of a playlist the user may edit.
+    static func add(_ trackURI: String, to playlist: MusicPlaylist) async throws {
+        let id = try bareID(playlist)
+        _ = try await firstAvailable(["\(base)/playlists/\(id)/items", "\(base)/playlists/\(id)/tracks"]) { url in
+            (url, "POST", ["uris": [trackURI]])
+        }
+    }
+
+    /// Takes every occurrence of a track out of a playlist.
+    static func remove(_ trackURI: String, from playlist: MusicPlaylist) async throws {
+        let id = try bareID(playlist)
+        _ = try await firstAvailable(["\(base)/playlists/\(id)/items", "\(base)/playlists/\(id)/tracks"]) { url in
+            (url, "DELETE", [url.hasSuffix("/items") ? "items" : "tracks": [["uri": trackURI]]])
+        }
+    }
+
+    /// Makes a new private playlist for the user.
+    static func createPlaylist(named name: String) async throws -> MusicPlaylist {
+        let me = try await userID()
+        var urls = ["\(base)/me/playlists"]
+        if let me { urls.append("\(base)/users/\(me)/playlists") }
+        let answer = try await firstAvailable(urls) { url in (url, "POST", ["name": name, "public": false]) }
+        guard let json = try? JSONSerialization.jsonObject(with: answer.data) as? [String: Any],
+              let playlist = SpotifyResponses.playlist(json, userID: me) else { throw Failure.failed("no playlist in the answer") }
+        return playlist
+    }
+
+    static func rename(_ playlist: MusicPlaylist, to name: String) async throws {
+        let id = try bareID(playlist)
+        _ = try await send("\(base)/playlists/\(id)", method: "PUT", json: ["name": name])
+    }
+
+    /// Removes a playlist from the user's library (Spotify's "delete": the playlist stays for those who follow it).
+    static func delete(_ playlist: MusicPlaylist) async throws {
+        let id = try bareID(playlist)
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: ":")
+        let uri = playlist.id.addingPercentEncoding(withAllowedCharacters: allowed) ?? playlist.id
+        _ = try await firstAvailable(["\(base)/playlists/\(id)/followers", "\(base)/me/library?uris=\(uri)"]) { url in
+            (url, "DELETE", nil)
+        }
+    }
+
+    private static func bareID(_ playlist: MusicPlaylist) throws -> String {
+        guard let id = SpotifyResponses.playlistID(playlist.id) else { throw Failure.failed("not a Spotify playlist") }
+        return id
+    }
+
+    private static func get(_ url: String) async throws -> Data {
+        try await send(url, method: "GET", json: nil)
+    }
+
+    private static func send(_ url: String, method: String, json: [String: Any]?) async throws -> Data {
+        try await authorized { token in
+            URL(string: url).map { SpotifyResponses.request($0, method: method, json: json, token: token) }
+        }
+    }
+
+    /// Tries each URL in turn while Spotify answers 404 (the path does not exist): for endpoints Spotify moved.
+    private static func firstAvailable(_ urls: [String], _ make: (String) -> (String, String, [String: Any]?)) async throws -> (data: Data, url: String) {
+        var lastError: Error = Failure.failed("no endpoint")
+        for url in urls {
+            let (address, method, json) = make(url)
+            do {
+                return (try await send(address, method: method, json: json), address)
+            } catch Failure.noActiveDevice {
+                lastError = Failure.failed("HTTP 404")
+                continue
+            }
+        }
+        throw lastError
+    }
+
+    private static func firstAvailable(_ urls: [String], _ make: (String) -> String) async throws -> (data: Data, url: String) {
+        try await firstAvailable(urls) { (make($0), "GET", nil) }
+    }
+
     /// Runs a request with a valid token; a 401 refreshes the token once and tries again.
     private static func authorized(_ make: (String) -> URLRequest?) async throws -> Data {
         for attempt in 0..<2 {
@@ -146,6 +274,10 @@ enum SpotifyCredentialStore {
 actor SpotifyAuthorizer {
     static let shared = SpotifyAuthorizer()
     private var refreshing: Task<SpotifyWebAPI.Credentials, Error>?
+    /// The signed-in user's Spotify id, once read (`SpotifyWebAPI.userID`).
+    private(set) var userID: String?
+
+    func setUserID(_ id: String?) { userID = id }
 
     func accessToken(forceRefresh: Bool) async throws -> String {
         guard let credentials = SpotifyCredentialStore.load() else { throw SpotifyWebAPI.Failure.notSignedIn }
@@ -196,6 +328,7 @@ final class SpotifySignIn: NSObject, ObservableObject {
                         throw NookError(tr("connect.error.keychain"), kind: .config)
                     }
                 }
+                await SpotifyAuthorizer.shared.setUserID(nil)
                 isSignedIn = true
                 phase = .idle
             } catch MCPOAuthError.cancelled {
@@ -214,6 +347,7 @@ final class SpotifySignIn: NSObject, ObservableObject {
 
     func signOut() {
         SpotifyCredentialStore.remove()
+        Task { await SpotifyAuthorizer.shared.setUserID(nil) }
         isSignedIn = false
         phase = .idle
     }

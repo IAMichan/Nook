@@ -1,8 +1,7 @@
 import Foundation
 import AppKit
 
-/// Music tab extras: Up Next and playlists from Music, playing a track or playlist the user clicks, and lyrics stored with
-/// a track in Music. Spotify's AppleScript dictionary has no queue or playlists: for Spotify, Up Next comes from its Web
+/// Music tab extras: Up Next from Music, playing a track the user clicks, and lyrics stored with a track in Music. Spotify's AppleScript dictionary has no queue or playlists: for Spotify, Up Next comes from its Web
 /// API when the user connected it (`SpotifyWebAPI`), and Recent is kept by Nook itself.
 extension NowPlayingService {
     /// How many upcoming tracks Up Next shows.
@@ -37,22 +36,6 @@ extension NowPlayingService {
         }
     }
 
-    /// Loads the user's playlists from Music.
-    func refreshPlaylists() {
-        guard current?.app == "Music" || NowPlayingService.isRunning("com.apple.Music") else {
-            playlists = []
-            return
-        }
-        queue.async { [weak self] in
-            let raw = NowPlayingService.runPlayerScript(NowPlayingService.playlistsScript, cacheKey: "music.playlists").text
-            let parsed = raw.map(MusicScriptOutput.playlists) ?? []
-            Task { @MainActor in
-                guard let self, self.playlists != parsed else { return }
-                self.playlists = parsed
-            }
-        }
-    }
-
     /// Plays a track from Up Next (`fromQueue`), Recent or a search. `app`: the player it came from, when no player is
     /// playing yet (a search the brain did); otherwise the player that is playing.
     func play(_ track: MusicTrack, fromQueue: Bool, app preferred: String? = nil) {
@@ -67,12 +50,6 @@ extension NowPlayingService {
             verb = "play (first track of \(container) whose persistent ID is \(MusicScriptOutput.quoted(track.id)))"
         }
         playAndRefresh(verb, app: app)
-    }
-
-    /// Plays a Music playlist from its first track (or shuffled, when shuffle is on in Music).
-    func play(_ playlist: MusicPlaylist) {
-        guard Self.isPersistentID(playlist.id) else { return }
-        playAndRefresh("play (first user playlist whose persistent ID is \(MusicScriptOutput.quoted(playlist.id)))", app: "Music")
     }
 
     /// Lyrics stored with the current track in Music, or `nil`.
@@ -94,7 +71,7 @@ extension NowPlayingService {
         return text
     }
 
-    private func playAndRefresh(_ verb: String, app: String) {
+    func playAndRefresh(_ verb: String, app: String) {
         queue.async { [weak self] in
             _ = NowPlayingService.runPlayerScript("with timeout of 4 seconds\ntell application \"\(app)\" to \(verb)\nend timeout")
             Thread.sleep(forTimeInterval: 0.4)
@@ -164,28 +141,6 @@ extension NowPlayingService {
                 end try
             end repeat
         end if
-        return out
-    end tell
-    end timeout
-    """
-
-    /// id/name/track count of each of the user's own playlists (not the library or special ones such as Music Videos).
-    private nonisolated static let playlistsScript = """
-    with timeout of 5 seconds
-    tell application "Music"
-        set rs to character id 30
-        set fs to character id 31
-        set out to ""
-        repeat with p in (every user playlist whose special kind is none)
-            try
-                set entry to (persistent ID of p) & fs & (name of p) & fs & ((count of tracks of p) as text)
-                if out is "" then
-                    set out to entry
-                else
-                    set out to out & rs & entry
-                end if
-            end try
-        end repeat
         return out
     end tell
     end timeout

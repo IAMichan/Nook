@@ -200,12 +200,57 @@ struct MusicTrack: Equatable, Identifiable {
     var artist: String
     var duration: Int
     var artworkURL: URL? = nil
+    var album = ""
 }
 
+/// A playlist in Music (`id` a persistent ID) or on Spotify (`id` a `spotify:playlist:…` URI).
 struct MusicPlaylist: Equatable, Identifiable {
     var id: String
     var name: String
     var trackCount: Int
+    var artworkURL: URL? = nil
+    /// The user may add and remove tracks: not a smart playlist in Music, not someone else's playlist on Spotify.
+    var editable = true
+    /// Who made it, when that is not the user (Spotify).
+    var owner = ""
+}
+
+/// How far loading something for the Music tab (a search, the playlists, a playlist's tracks) got.
+enum MusicLoadState: Equatable {
+    case idle, loading, done
+    /// Spotify's playlists and search need its Web API, so Spotify must be connected in Settings first.
+    case connectSpotify
+    /// Spotify is connected, but without the permission this needs (it was connected before Nook asked for it).
+    case reconnectSpotify
+    case failed(String)
+}
+
+/// A playlist opened in the Music tab, with its tracks.
+struct MusicPlaylistDetail: Equatable {
+    var playlist: MusicPlaylist
+    /// The player it belongs to: "Music" or "Spotify".
+    var app: String
+    var state = MusicLoadState.loading
+    var tracks: [MusicTrack] = []
+
+    /// A track with its position in the playlist (0-based).
+    struct Row: Identifiable, Equatable {
+        var index: Int
+        var track: MusicTrack
+        var id: Int { index }
+    }
+
+    /// Tracks whose title, artist or album contains every word of `filter`, in playlist order with their position.
+    func tracks(matching filter: String) -> [Row] {
+        let words = filter.lowercased().split(separator: " ").map(String.init)
+        return tracks.enumerated().compactMap { index, track in
+            let haystack = "\(track.title) \(track.artist) \(track.album)".lowercased()
+            return words.allSatisfy { haystack.contains($0) } ? Row(index: index, track: track) : nil
+        }
+    }
+
+    /// The total length in seconds.
+    var duration: Int { tracks.reduce(0) { $0 + $1.duration } }
 }
 
 /// Placeholder colours for things without artwork (Music's queue, playlists): the same name always gets the same pick,
@@ -254,19 +299,143 @@ enum MusicScriptOutput {
         return records(raw).compactMap(track)
     }
 
-    /// One record per playlist: id, name, track count.
+    /// One record per playlist: id, name, track count, and (optionally) whether it is a smart playlist.
     static func playlists(_ raw: String) -> [MusicPlaylist] {
         guard !raw.isEmpty else { return [] }
         return records(raw).compactMap { fields in
             guard fields.count >= 3, !value(fields[0]).isEmpty, !value(fields[1]).isEmpty else { return nil }
-            return MusicPlaylist(id: value(fields[0]), name: value(fields[1]), trackCount: Int(value(fields[2])) ?? 0)
+            let smart = fields.count >= 4 && value(fields[3]) == "true"
+            return MusicPlaylist(id: value(fields[0]), name: value(fields[1]), trackCount: Int(value(fields[2])) ?? 0, editable: !smart)
         }
     }
 
+    /// id, title, artist, duration in seconds, and (optionally) album.
     private static func track(_ fields: [String]) -> MusicTrack? {
         guard fields.count >= 4, !value(fields[0]).isEmpty, !value(fields[1]).isEmpty else { return nil }
         let seconds = Double(value(fields[3]).replacingOccurrences(of: ",", with: ".")) ?? 0
-        return MusicTrack(id: value(fields[0]), title: value(fields[1]), artist: value(fields[2]), duration: max(0, Int(seconds)))
+        return MusicTrack(id: value(fields[0]), title: value(fields[1]), artist: value(fields[2]), duration: max(0, Int(seconds)),
+                          album: fields.count >= 5 ? value(fields[4]) : "")
+    }
+
+    /// Finds the user playlist with persistent ID `id` as `pl`, inside `tell application "Music"`.
+    private static func findPlaylist(_ id: String) -> String {
+        "set pl to (first user playlist whose persistent ID is \(quoted(id)))"
+    }
+
+    /// id/title/artist/duration/album of the first `limit` tracks of a Music playlist, in its order.
+    static func playlistTracksScript(_ id: String, limit: Int) -> String {
+        """
+        with timeout of 10 seconds
+        tell application "Music"
+            set rs to character id 30
+            set fs to character id 31
+            \(findPlaylist(id))
+            set n to count of tracks of pl
+            if n > \(limit) then set n to \(limit)
+            if n is 0 then return ""
+            set ids to persistent ID of tracks 1 thru n of pl
+            set names to name of tracks 1 thru n of pl
+            set artists to artist of tracks 1 thru n of pl
+            set durations to duration of tracks 1 thru n of pl
+            set albums to album of tracks 1 thru n of pl
+            set out to ""
+            repeat with i from 1 to n
+                set entry to (item i of ids) & fs & (item i of names) & fs & (item i of artists) & fs & ((item i of durations) as text) & fs & (item i of albums)
+                if i is 1 then
+                    set out to entry
+                else
+                    set out to out & rs & entry
+                end if
+            end repeat
+            return out
+        end tell
+        end timeout
+        """
+    }
+
+    /// Adds the library track with persistent ID `track` to the end of a Music playlist. Returns "ok".
+    static func addToPlaylistScript(track: String, playlist: String) -> String {
+        """
+        with timeout of 8 seconds
+        tell application "Music"
+            \(findPlaylist(playlist))
+            duplicate (first track of library playlist 1 whose persistent ID is \(quoted(track))) to pl
+            return "ok"
+        end tell
+        end timeout
+        """
+    }
+
+    /// Takes a track out of a Music playlist (not out of the library): the one at `position` (1-based) when it is still
+    /// that track, otherwise the first with its persistent ID. Returns "ok".
+    static func removeFromPlaylistScript(track: String, position: Int, playlist: String) -> String {
+        """
+        with timeout of 8 seconds
+        tell application "Music"
+            \(findPlaylist(playlist))
+            set target to missing value
+            try
+                set candidate to track \(max(1, position)) of pl
+                if persistent ID of candidate is \(quoted(track)) then set target to candidate
+            end try
+            if target is missing value then set target to (first track of pl whose persistent ID is \(quoted(track)))
+            delete target
+            return "ok"
+        end tell
+        end timeout
+        """
+    }
+
+    /// Makes a new, empty user playlist and returns its persistent ID.
+    static func createPlaylistScript(name: String) -> String {
+        """
+        with timeout of 8 seconds
+        tell application "Music"
+            set pl to make new user playlist with properties {name:\(quoted(name))}
+            return persistent ID of pl
+        end tell
+        end timeout
+        """
+    }
+
+    static func renamePlaylistScript(_ id: String, to name: String) -> String {
+        """
+        with timeout of 8 seconds
+        tell application "Music"
+            \(findPlaylist(id))
+            set name of pl to \(quoted(name))
+            return "ok"
+        end tell
+        end timeout
+        """
+    }
+
+    static func deletePlaylistScript(_ id: String) -> String {
+        """
+        with timeout of 8 seconds
+        tell application "Music"
+            \(findPlaylist(id))
+            delete pl
+            return "ok"
+        end tell
+        end timeout
+        """
+    }
+
+    /// Plays a Music playlist from its first track, or from the track with persistent ID `track` (so Music carries on
+    /// through the playlist afterwards). `shuffle` turns shuffle on or off first; `nil` leaves it.
+    static func playPlaylistScript(_ id: String, track: String? = nil, shuffle: Bool? = nil) -> String {
+        let shuffleLine = shuffle.map { "set shuffle enabled to \($0)" } ?? ""
+        let play = track.map { "play (first track of pl whose persistent ID is \(quoted($0)))" } ?? "play pl"
+        return """
+        with timeout of 6 seconds
+        tell application "Music"
+            \(findPlaylist(id))
+            \(shuffleLine)
+            \(play)
+        end tell
+        end timeout
+        """
     }
 
     /// id/title/artist/duration of the first tracks in Music's library that match `query` in any field (name, artist,
@@ -310,12 +479,7 @@ enum MusicScriptOutput {
 
 /// What the Music tab's search shows: the tracks found for `query`, in Music's library or on Spotify.
 struct MusicSearchResult: Equatable {
-    enum State: Equatable {
-        case idle, loading, done
-        /// Searching Spotify needs its Web API, so Spotify must be connected in Settings first.
-        case connectSpotify
-        case failed(String)
-    }
+    typealias State = MusicLoadState
 
     var query = ""
     var state = State.idle
@@ -387,6 +551,8 @@ enum SpotifyResponses {
         case premiumRequired
         /// Spotify answered 404: no device is playing.
         case noActiveDevice
+        /// Spotify answered 403 because the sign-in lacks a permission (it was made before Nook asked for it).
+        case missingScope
         case failed(String)
     }
 
@@ -405,6 +571,74 @@ enum SpotifyResponses {
         return items.compactMap { ($0 as? [String: Any]).flatMap(track) }
     }
 
+    // MARK: Playlists
+
+    /// The bare id in `spotify:playlist:<id>`, or `nil` for anything else.
+    static func playlistID(_ uri: String) -> String? {
+        let parts = uri.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts[0] == "spotify", parts[1] == "playlist", !parts[2].isEmpty, parts[2].count <= 64,
+              parts[2].allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else { return nil }
+        return String(parts[2])
+    }
+
+    /// The user's own id in `GET /me`.
+    static func userID(from data: Data) -> String? {
+        (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["id"] as? String
+    }
+
+    /// The `next` page of a paged answer, or `nil` on the last page.
+    static func nextPage(from data: Data) -> URL? {
+        ((try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["next"] as? String).flatMap(URL.init(string:))
+    }
+
+    /// The playlists in a page of `GET /me/playlists`. A playlist is editable when `userID` owns it or it is
+    /// collaborative. Spotify renamed the playlist's `tracks` count to `items` in 2026; both are read.
+    static func playlists(from data: Data, userID: String?) -> [MusicPlaylist] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = json["items"] as? [Any] else { return [] }
+        return items.compactMap { ($0 as? [String: Any]).flatMap { playlist($0, userID: userID) } }
+    }
+
+    /// One playlist object (`GET /me/playlists`, `POST /me/playlists`).
+    static func playlist(_ item: [String: Any], userID: String?) -> MusicPlaylist? {
+        guard let uri = item["uri"] as? String, playlistID(uri) != nil, let name = item["name"] as? String else { return nil }
+        let count = ((item["items"] ?? item["tracks"]) as? [String: Any])?["total"] as? Int ?? 0
+        let images = item["images"] as? [[String: Any]] ?? []
+        let owner = item["owner"] as? [String: Any]
+        let ownerID = owner?["id"] as? String
+        let mine = userID != nil && ownerID == userID
+        return MusicPlaylist(
+            id: uri, name: name, trackCount: count,
+            artworkURL: ((images.last { (($0["width"] as? Int) ?? 300) >= 200 } ?? images.first)?["url"] as? String).flatMap(URL.init(string:)),
+            editable: mine || (item["collaborative"] as? Bool ?? false),
+            owner: mine ? "" : (owner?["display_name"] as? String ?? ownerID ?? "")
+        )
+    }
+
+    /// The tracks in a page of a playlist's items. Each entry holds its track under `item` (since 2026) or `track`;
+    /// local files and tracks Spotify cannot show (`null`) are skipped.
+    static func playlistTracks(from data: Data) -> [MusicTrack] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = json["items"] as? [Any] else { return [] }
+        return items.compactMap { entry in
+            guard let entry = entry as? [String: Any],
+                  let object = (entry["item"] ?? entry["track"]) as? [String: Any],
+                  (object["is_local"] as? Bool) != true else { return nil }
+            return track(object)
+        }
+    }
+
+    static func request(_ url: URL, method: String = "GET", json: [String: Any]? = nil, token: String) -> URLRequest {
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.httpMethod = method
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let json, let body = try? JSONSerialization.data(withJSONObject: json) {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = body
+        }
+        return request
+    }
+
     /// One track or episode object.
     private static func track(_ item: [String: Any]) -> MusicTrack? {
         guard let uri = item["uri"] as? String, let name = item["name"] as? String, !name.isEmpty else { return nil }
@@ -416,7 +650,8 @@ enum SpotifyResponses {
         let milliseconds = (item["duration_ms"] as? Int) ?? 0
         return MusicTrack(
             id: uri, title: name, artist: artists.isEmpty ? (show ?? "") : artists.joined(separator: ", "),
-            duration: milliseconds / 1000, artworkURL: (image?["url"] as? String).flatMap(URL.init(string:))
+            duration: milliseconds / 1000, artworkURL: (image?["url"] as? String).flatMap(URL.init(string:)),
+            album: (item["album"] as? [String: Any])?["name"] as? String ?? show ?? ""
         )
     }
 
@@ -443,7 +678,9 @@ enum SpotifyResponses {
         switch status {
         case 200..<300: return nil
         case 401: return .notSignedIn
-        case 403: return .premiumRequired
+        case 403:
+            let message = ((try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["error"] as? [String: Any])?["message"] as? String
+            return message?.lowercased().contains("scope") == true ? .missingScope : .premiumRequired
         case 404: return .noActiveDevice
         default:
             let message = ((try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["error"] as? [String: Any])?["message"] as? String

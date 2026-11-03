@@ -173,7 +173,7 @@ private struct PlainLyrics: View {
     }
 }
 
-// MARK: Up Next, playlists, recent
+// MARK: Up Next, recent (playlists are in MusicPlaylists.swift)
 
 struct MusicUpNextView: View {
     let info: NowPlayingInfo
@@ -187,9 +187,9 @@ struct MusicUpNextView: View {
         if let queue = service.upNext, showsPlayerQueue, !queue.tracks.isEmpty {
             MusicShelf(sections: (queued.map { [$0] } ?? []) + [MusicShelf.Section(
                 id: "upNext", note: note(queue), noteSymbol: info.shuffle ? "shuffle" : nil, items: items(queue)
-            )])
+            )], service: service)
         } else if let queued {
-            MusicShelf(sections: [queued])
+            MusicShelf(sections: [queued], service: service)
         } else if showsPlayerQueue, service.upNext == nil, service.libraryLoading {
             MusicPlaceholder(symbol: "list.bullet", title: tr("music.upNext.loading"), loading: true)
         } else if showsPlayerQueue {
@@ -207,7 +207,8 @@ struct MusicUpNextView: View {
             MusicCoverItem(
                 id: entry.id.uuidString, title: entry.track.title, subtitle: entry.track.artist,
                 artworkURL: entry.track.artworkURL, number: index + 1, help: tr("music.play"),
-                secondary: .init(symbol: "minus", label: tr("music.queue.remove")) { service.removeFromQueue(entry.id) }
+                secondary: .init(symbol: "minus", label: tr("music.queue.remove")) { service.removeFromQueue(entry.id) },
+                track: entry.track
             ) { service.playFromQueue(entry.id) }
         }
         return MusicShelf.Section(
@@ -221,7 +222,7 @@ struct MusicUpNextView: View {
             MusicCoverItem(
                 id: "\(index)|\(track.id)|\(track.title)", title: track.title, subtitle: track.artist,
                 artworkURL: track.artworkURL, number: index + 1, help: tr("music.play"),
-                secondary: .enqueue(track, in: service)
+                secondary: .enqueue(track, in: service), track: track
             ) { service.play(track, fromQueue: true) }
         }
     }
@@ -229,31 +230,6 @@ struct MusicUpNextView: View {
     private func note(_ queue: MusicQueue) -> String {
         let from = queue.playlist.isEmpty ? tr("music.section.upNext") : tr("music.upNext.from", queue.playlist)
         return info.shuffle ? from + " · " + tr("music.upNext.shuffleNote") : from
-    }
-}
-
-struct MusicPlaylistsView: View {
-    @ObservedObject var service: NowPlayingService
-
-    private var items: [MusicCoverItem] {
-        service.playlists.map { playlist in
-            MusicCoverItem(
-                id: playlist.id, title: playlist.name, subtitle: tr("music.playlists.count", playlist.trackCount),
-                symbol: "music.note.list", help: tr("music.playlists.play", playlist.name)
-            ) { service.play(playlist) }
-        }
-    }
-
-    var body: some View {
-        if service.playlists.isEmpty {
-            if service.libraryLoading {
-                MusicPlaceholder(symbol: "music.note.list", title: tr("music.upNext.loading"), loading: true)
-            } else {
-                MusicPlaceholder(symbol: "music.note.list", title: tr("music.playlists.empty"))
-            }
-        } else {
-            MusicShelf(sections: [.init(id: "playlists", note: tr("music.playlists.hint"), items: items)])
-        }
     }
 }
 
@@ -266,7 +242,7 @@ struct MusicRecentView: View {
             MusicCoverItem(
                 id: "\(index)|\(track.id)|\(track.title)", title: track.title, subtitle: track.artist,
                 artworkURL: track.artworkURL, help: tr("music.play"),
-                secondary: .enqueue(track, in: service)
+                secondary: .enqueue(track, in: service), track: track
             ) { service.play(track, fromQueue: false) }
         }
     }
@@ -283,7 +259,7 @@ struct MusicRecentView: View {
                 note: info.app == "Spotify" ? tr("music.spotifyNote", tr("settings.section.connections")) : tr("music.recent.hint"),
                 noteSymbol: info.app == "Spotify" ? "info.circle" : nil,
                 items: items
-            )])
+            )], service: service)
         }
     }
 }
@@ -323,7 +299,7 @@ struct MusicSearchView: View {
         case .idle:
             MusicPlaceholder(symbol: "magnifyingglass", title: isSpotify ? tr("music.search.idleSpotify") : tr("music.search.idleMusic"),
                              detail: tr("music.search.idleDetail"))
-        case .connectSpotify:
+        case .connectSpotify, .reconnectSpotify:
             MusicPlaceholder(symbol: "link", title: tr("music.search.connectSpotify"),
                              detail: tr("music.search.connectSpotifyDetail", tr("settings.section.connections")))
         case .failed(let message):
@@ -340,7 +316,7 @@ struct MusicSearchView: View {
                 MusicPlaceholder(symbol: "music.note", title: tr("music.search.empty", result.query),
                                  detail: isSpotify ? nil : tr("music.search.emptyMusicDetail"))
             } else {
-                MusicShelf(sections: [.init(id: "search", note: note(result), noteSymbol: "magnifyingglass", items: items(result))])
+                MusicShelf(sections: [.init(id: "search", note: note(result), noteSymbol: "magnifyingglass", items: items(result))], service: service)
                     .opacity(result.state == .loading ? 0.6 : 1)
                     .animation(NookTheme.hover, value: result.state)
             }
@@ -357,7 +333,7 @@ struct MusicSearchView: View {
             MusicCoverItem(
                 id: "\(index)|\(track.id)", title: track.title, subtitle: track.artist,
                 artworkURL: track.artworkURL, help: tr("music.play"),
-                secondary: .enqueue(track, in: service)
+                secondary: .enqueue(track, in: service), track: track
             ) { service.play(track, fromQueue: false) }
         }
     }
@@ -373,9 +349,17 @@ struct MusicCoverItem: Identifiable {
     /// The position in Up Next.
     var number: Int? = nil
     let help: String
+    /// What the cover shows under the pointer: what a click does.
+    var hoverSymbol = "play.fill"
     /// A second thing to do with the item (queue it, take it out of the queue): a small button on the cover while the
     /// pointer is over it, and the item's context menu.
     var secondary: Secondary? = nil
+    /// More things to do with the item, in its context menu only.
+    var menu: [Secondary] = []
+    /// A destructive one, last in the context menu.
+    var destructive: Secondary? = nil
+    /// The track the item is, for "Add to playlist" in its context menu.
+    var track: MusicTrack? = nil
     let action: () -> Void
 
     struct Secondary {
@@ -409,6 +393,8 @@ struct MusicShelf: View {
     }
 
     let sections: [Section]
+    /// For "Add to playlist" in the context menu of the tracks.
+    var service: NowPlayingService? = nil
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -418,7 +404,7 @@ struct MusicShelf: View {
                         header(section)
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 108, maximum: 136), spacing: NookTheme.Spacing.xl, alignment: .top)],
                                   alignment: .leading, spacing: NookTheme.Spacing.xl + NookTheme.Spacing.xs) {
-                            ForEach(section.items) { MusicCoverCard(item: $0) }
+                            ForEach(section.items) { MusicCoverCard(item: $0, service: service) }
                         }
                     }
                 }
@@ -449,6 +435,7 @@ struct MusicShelf: View {
 
 private struct MusicCoverCard: View {
     let item: MusicCoverItem
+    let service: NowPlayingService?
     @State private var hovering = false
 
     var body: some View {
@@ -472,7 +459,7 @@ private struct MusicCoverCard: View {
                     .overlay {
                         ZStack {
                             RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(Color.black.opacity(0.35))
-                            Image(systemName: "play.fill")
+                            Image(systemName: item.hoverSymbol)
                                 .font(NookTheme.font(14, .bold))
                                 .foregroundStyle(NookTheme.ink)
                                 .frame(width: 38, height: 38)
@@ -511,8 +498,18 @@ private struct MusicCoverCard: View {
         .help(item.help)
         .contextMenu {
             Button(item.help, action: item.action)
-            if let secondary = item.secondary {
+            if let secondary = item.secondary, !item.menu.contains(where: { $0.label == secondary.label }) {
                 Button(secondary.label, action: secondary.action)
+            }
+            ForEach(Array(item.menu.enumerated()), id: \.offset) { _, entry in
+                Button(entry.label, action: entry.action)
+            }
+            if let track = item.track, let service {
+                MusicAddToPlaylistMenu(track: track, service: service)
+            }
+            if let destructive = item.destructive {
+                Divider()
+                Button(destructive.label, role: .destructive, action: destructive.action)
             }
         }
         .accessibilityLabel(item.subtitle.isEmpty ? item.title : "\(item.title), \(item.subtitle)")

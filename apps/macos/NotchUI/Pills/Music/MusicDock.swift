@@ -89,6 +89,7 @@ private struct MusicBar: View {
                         .frame(height: 16)
                         .padding(.horizontal, NookTheme.Spacing.sm)
                 }
+                MusicAddToPlaylistButton(track: service.currentTrack, service: service)
                 NookIconButton(systemName: "arrow.up.forward.app", label: tr("music.openPlayer", musicPlayerName(info)), size: 30) {
                     openMusicPlayer(info)
                 }
@@ -132,6 +133,7 @@ private struct MusicFullPlayer: View {
         }
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 2) {
+                MusicAddToPlaylistButton(track: service.currentTrack, service: service)
                 NookIconButton(systemName: "arrow.up.forward.app", label: tr("music.openPlayer", musicPlayerName(info)), size: 30) {
                     openMusicPlayer(info)
                 }
@@ -178,8 +180,8 @@ private struct MusicFullPlayer: View {
                 .lineLimit(1)
                 .help(info.title)
                 .padding(.top, NookTheme.Spacing.md)
-                // Clear of the open and fold buttons in the corner.
-                .padding(.trailing, 72)
+                // Clear of the playlist, open and fold buttons in the corner.
+                .padding(.trailing, 104)
             subtitleText
                 .font(NookTheme.TextStyle.body)
                 .lineLimit(1)
@@ -315,12 +317,13 @@ private struct MusicUpcomingStrip: View {
     private func chipView(_ chip: Chip) -> some View {
         if let entry = chip.entry {
             return MusicUpcomingChip(track: chip.track, queued: true,
-                                     secondary: (tr("music.queue.remove"), { service.removeFromQueue(entry) })) {
+                                     secondary: (tr("music.queue.remove"), { service.removeFromQueue(entry) }), service: service) {
                 service.playFromQueue(entry)
             }
         }
         let fromQueue = info.app == "Music"
-        return MusicUpcomingChip(track: chip.track, secondary: chip.track.id.isEmpty ? nil : (tr("music.queue.add"), { service.enqueue(chip.track) })) {
+        return MusicUpcomingChip(track: chip.track, secondary: chip.track.id.isEmpty ? nil : (tr("music.queue.add"), { service.enqueue(chip.track) }),
+                                 service: service) {
             service.play(chip.track, fromQueue: fromQueue)
         }
     }
@@ -337,6 +340,8 @@ private struct MusicUpcomingChip: View {
     var queued = false
     /// Add to or remove from the queue, in the context menu.
     var secondary: (label: String, action: () -> Void)? = nil
+    /// For "Add to playlist" in the context menu.
+    var service: NowPlayingService? = nil
     let action: () -> Void
     @State private var hovering = false
 
@@ -385,6 +390,9 @@ private struct MusicUpcomingChip: View {
             Button(tr("music.play"), action: action)
             if let secondary {
                 Button(secondary.label, action: secondary.action)
+            }
+            if let service {
+                MusicAddToPlaylistMenu(track: track, service: service)
             }
         }
         .accessibilityLabel(track.artist.isEmpty ? track.title : "\(track.title), \(track.artist)")

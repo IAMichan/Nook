@@ -117,6 +117,42 @@ final class MusicLibraryTests: XCTestCase {
         XCTAssertEqual(MusicScriptOutput.playlists(raw).map(\.name), ["Favourites", "Chill"])
         XCTAssertEqual(MusicScriptOutput.playlists(raw).first?.trackCount, 42)
         XCTAssertTrue(MusicScriptOutput.playlists("").isEmpty)
+        XCTAssertTrue(MusicScriptOutput.playlists(raw).allSatisfy(\.editable))
+    }
+
+    func testSmartPlaylistsAreNotEditable() {
+        let rs = "\u{1E}", fs = "\u{1F}"
+        let raw = "AAAA" + fs + "Mine" + fs + "4" + fs + "false" + rs + "BBBB" + fs + "Recently Added" + fs + "25" + fs + "true"
+        XCTAssertEqual(MusicScriptOutput.playlists(raw).map(\.editable), [true, false])
+    }
+
+    func testPlaylistTracksKeepTheirAlbum() {
+        let rs = "\u{1E}", fs = "\u{1F}"
+        let raw = "A1" + fs + "One" + fs + "Artist" + fs + "200,5" + fs + "Album" + rs + "B2" + fs + "Two" + fs + "" + fs + "60"
+        let tracks = MusicScriptOutput.tracks(raw)
+        XCTAssertEqual(tracks.map(\.album), ["Album", ""])
+        XCTAssertEqual(tracks.map(\.duration), [200, 60])
+    }
+
+    func testPlaylistScriptsQuoteNames() {
+        let script = MusicScriptOutput.createPlaylistScript(name: #"Road "Trip""#)
+        XCTAssertTrue(script.contains(#"{name:"Road \"Trip\""}"#))
+        let remove = MusicScriptOutput.removeFromPlaylistScript(track: "ABCD", position: 0, playlist: "EF01")
+        XCTAssertTrue(remove.contains("track 1 of pl"))
+        XCTAssertTrue(remove.contains(#"persistent ID is "EF01""#))
+        XCTAssertTrue(MusicScriptOutput.playPlaylistScript("EF01", shuffle: true).contains("set shuffle enabled to true"))
+        XCTAssertTrue(MusicScriptOutput.playPlaylistScript("EF01", track: "ABCD").contains(#"whose persistent ID is "ABCD")"#))
+    }
+
+    func testFilterOpenPlaylistKeepsPositions() {
+        let detail = MusicPlaylistDetail(playlist: MusicPlaylist(id: "P", name: "P", trackCount: 3), app: "Music", state: .done, tracks: [
+            MusicTrack(id: "1", title: "Get Lucky", artist: "Daft Punk", duration: 240),
+            MusicTrack(id: "2", title: "Hey Jude", artist: "The Beatles", duration: 420),
+            MusicTrack(id: "3", title: "One More Time", artist: "Daft Punk", duration: 320, album: "Discovery"),
+        ])
+        XCTAssertEqual(detail.tracks(matching: "daft discovery").map(\.index), [2])
+        XCTAssertEqual(detail.tracks(matching: "").count, 3)
+        XCTAssertEqual(detail.duration, 980)
     }
 
     func testQuotedEscapesForAppleScript() {
@@ -257,5 +293,58 @@ final class MusicLibraryTests: XCTestCase {
         XCTAssertEqual(SpotifyResponses.failure(status: 403, body: Data()), .premiumRequired)
         XCTAssertEqual(SpotifyResponses.failure(status: 404, body: Data()), .noActiveDevice)
         XCTAssertEqual(SpotifyResponses.failure(status: 500, body: Data(#"{"error":{"status":500,"message":"Oops"}}"#.utf8)), .failed("Oops"))
+        XCTAssertEqual(SpotifyResponses.failure(status: 403, body: Data(#"{"error":{"status":403,"message":"Insufficient client scope"}}"#.utf8)), .missingScope)
+    }
+
+    // MARK: Spotify playlists
+
+    func testSpotifyPlaylistID() {
+        XCTAssertEqual(SpotifyResponses.playlistID("spotify:playlist:37i9dQZF1DXcBWIGoYBM5M"), "37i9dQZF1DXcBWIGoYBM5M")
+        XCTAssertNil(SpotifyResponses.playlistID("spotify:track:abc"))
+        XCTAssertNil(SpotifyResponses.playlistID("spotify:playlist:../me"))
+    }
+
+    func testSpotifyPlaylistsTellOwnFromFollowed() {
+        let json = #"""
+        {"items":[
+          {"uri":"spotify:playlist:mine1","name":"Mine","owner":{"id":"me"},"collaborative":false,
+           "items":{"total":12},"images":[{"url":"https://i.scdn.co/640","width":640},{"url":"https://i.scdn.co/300","width":300}]},
+          {"uri":"spotify:playlist:theirs","name":"Theirs","owner":{"id":"spotify","display_name":"Spotify"},"tracks":{"total":50},"images":null},
+          {"uri":"spotify:playlist:collab","name":"Shared","owner":{"id":"friend"},"collaborative":true,"tracks":{"total":3}},
+          null
+        ],"next":"https://api.spotify.com/v1/me/playlists?offset=50"}
+        """#
+        let data = Data(json.utf8)
+        let lists = SpotifyResponses.playlists(from: data, userID: "me")
+        XCTAssertEqual(lists.map(\.name), ["Mine", "Theirs", "Shared"])
+        XCTAssertEqual(lists.map(\.trackCount), [12, 50, 3])
+        XCTAssertEqual(lists.map(\.editable), [true, false, true])
+        XCTAssertEqual(lists.map(\.owner), ["", "Spotify", "friend"])
+        XCTAssertEqual(lists[0].artworkURL?.absoluteString, "https://i.scdn.co/300")
+        XCTAssertEqual(SpotifyResponses.nextPage(from: data)?.absoluteString, "https://api.spotify.com/v1/me/playlists?offset=50")
+    }
+
+    func testSpotifyPlaylistItemsReadBothShapes() {
+        let json = #"""
+        {"items":[
+          {"item":{"uri":"spotify:track:new","name":"New","duration_ms":1000,"artists":[{"name":"A"}],"album":{"name":"Alb","images":[]}}},
+          {"track":{"uri":"spotify:track:old","name":"Old","duration_ms":2000,"artists":[{"name":"B"}]}},
+          {"track":{"uri":"spotify:local:x","name":"Local","is_local":true}},
+          {"track":null}
+        ],"next":null}
+        """#
+        let tracks = SpotifyResponses.playlistTracks(from: Data(json.utf8))
+        XCTAssertEqual(tracks.map(\.id), ["spotify:track:new", "spotify:track:old"])
+        XCTAssertEqual(tracks[0].album, "Alb")
+        XCTAssertNil(SpotifyResponses.nextPage(from: Data(json.utf8)))
+    }
+
+    func testSpotifyJSONRequest() throws {
+        let request = SpotifyResponses.request(try XCTUnwrap(URL(string: "https://api.spotify.com/v1/me/playlists")), method: "POST",
+                                               json: ["name": "Road"], token: "t")
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: Any])
+        XCTAssertEqual(body["name"] as? String, "Road")
     }
 }
