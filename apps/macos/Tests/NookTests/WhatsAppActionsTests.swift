@@ -81,22 +81,41 @@ final class WhatsAppActionsTests: XCTestCase {
         inbox.add(message("1", chat: chat, text: "helo"), filters: WAFilters())
         XCTAssertEqual(inbox.applyEdit("hello", message: "1", chat: chat), chat)
         XCTAssertEqual(inbox.conversations[chat]?.messages.first?.text, "hello")
+        XCTAssertEqual(inbox.conversations[chat]?.messages.first?.edited, true, "it says it was edited")
         XCTAssertNil(inbox.applyEdit("hello", message: "1", chat: chat), "the same text changes nothing")
         XCTAssertNil(inbox.applyEdit("x", message: "unknown", chat: chat))
     }
 
-    func testADeletedMessageLeavesAndStaysGone() {
+    func testADeletedMessageShowsAsDeletedAndStaysSo() {
         var inbox = WAInbox()
         let chat = "31600000001@s.whatsapp.net"
         inbox.add(message("1", chat: chat), filters: WAFilters())
         inbox.add(message("2", chat: chat, at: 5), filters: WAFilters())
         XCTAssertEqual(inbox.applyDelete(message: "1", chat: chat), chat)
-        XCTAssertEqual(inbox.conversations[chat]?.messages.map(\.id), ["2"])
+        XCTAssertEqual(inbox.conversations[chat]?.messages.map(\.id), ["1", "2"], "it keeps its place")
+        XCTAssertEqual(inbox.conversations[chat]?.messages.first?.deleted, true)
+        XCTAssertEqual(inbox.conversations[chat]?.messages.first?.text, "")
         XCTAssertTrue(inbox.wasDeleted("1"))
+        XCTAssertNil(inbox.applyDelete(message: "1", chat: chat), "deleted once")
+        XCTAssertNil(inbox.applyEdit("back", message: "1", chat: chat), "a deleted message is not edited")
         XCTAssertEqual(inbox.add(message("1", chat: chat), filters: WAFilters(), history: true), .ignored,
-                       "the gateway's history does not bring it back")
-        XCTAssertEqual(inbox.conversations[chat]?.messages.map(\.id), ["2"])
+                       "the gateway's history does not bring its text back")
+        XCTAssertEqual(inbox.conversations[chat]?.messages.first?.text, "")
         inbox.clear()
         XCTAssertFalse(inbox.wasDeleted("1"))
+    }
+
+    func testEditsAndDeletionsOnAPhoneComeInFromTheWebhook() {
+        let chat = "31600000001@s.whatsapp.net"
+        let gowaEdit = Data(#"{"event":"message","payload":{"id":"E1","chat_id":"31600000001@s.whatsapp.net","from":"31600000001@s.whatsapp.net","body":"","action":"message_edited","original_message_id":"M1","edited_text":"new words"}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: gowaEdit), .edited(chat: chat, message: "M1", text: "new words"))
+        let gowaRevoke = Data(#"{"event":"message","payload":{"id":"E2","chat_id":"31600000001@s.whatsapp.net","body":"","action":"message_revoked","revoked_message_id":"M1"}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: gowaRevoke), .revoked(chat: chat, message: "M1"))
+        let gowaEvent = Data(#"{"event":"message.revoked","payload":{"chat_id":"31600000001@s.whatsapp.net","revoked_message_id":"M2"}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: gowaEvent), .revoked(chat: chat, message: "M2"))
+        let openwaRevoked = Data(#"{"event":"message.received","data":{"id":"M3","chatId":"31600000001@c.us","type":"revoked","body":""}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .openwa, body: openwaRevoked), .revoked(chat: "31600000001@c.us", message: "M3"))
+        let openwaEdit = Data(#"{"event":"message.edited","data":{"id":"M4","chatId":"31600000001@c.us","newBody":"fixed"}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .openwa, body: openwaEdit), .edited(chat: "31600000001@c.us", message: "M4", text: "fixed"))
     }
 }

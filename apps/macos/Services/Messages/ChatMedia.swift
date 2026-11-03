@@ -66,6 +66,28 @@ struct ChatMedia: Codable, Equatable, Sendable {
         return Self.kind(mimeType: nil, name: name.flatMap { $0.isEmpty ? nil : $0 } ?? path)
     }
 
+    /// Whether a fetched file is whole: there, not empty, and not written to for `quiet` seconds. An app or a helper
+    /// hands a file over the moment it exists, often while it still writes it; a photo decoded then shows (and is
+    /// cached) half grey, and a video does not play at all.
+    static func isSettled(_ url: URL, quiet: TimeInterval = 1.5, now: Date = Date()) -> Bool {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attributes[.size] as? NSNumber, size.intValue > 0 else { return false }
+        guard let modified = attributes[.modificationDate] as? Date else { return true }
+        return now.timeIntervalSince(modified) >= quiet
+    }
+
+    /// The MIME type of a video by its first bytes, for a file whose name does not say (a chat helper's "dbe80cq9", a
+    /// "video.bin"): an MP4, QuickTime or 3GP file names its brand right after "ftyp". Nil for anything else.
+    static func videoMIMEType(head: Data) -> String? {
+        let bytes = [UInt8](head.prefix(12))
+        guard bytes.count == 12, String(bytes: bytes[4..<8], encoding: .ascii) == "ftyp" else { return nil }
+        let brand = String(bytes: bytes[8..<12], encoding: .ascii) ?? ""
+        if brand == "qt  " { return "video/quicktime" }
+        if brand.hasPrefix("M4A") { return "audio/mp4" }
+        if brand.hasPrefix("3g") { return "video/3gpp" }
+        return "video/mp4"
+    }
+
     /// The largest file a bridge fetches by itself to show in a chat; a larger one opens in its app.
     static let maxBytes = 25_000_000
 

@@ -164,12 +164,18 @@ enum TeamsData {
         (json["@odata.nextLink"] as? String).flatMap(URL.init(string:))
     }
 
-    /// The messages of /me/chats/{id}/messages, oldest first. System notices (someone joined, a call ended) and deleted
-    /// messages are left out; a message with only a file shows its name.
+    /// The messages of /me/chats/{id}/messages, oldest first. System notices (someone joined, a call ended) are left
+    /// out; a deleted message shows as deleted, an edited one says so, and a message with only a file shows its name.
     static func messages(_ json: [String: Any], chat: Chat, me: String?) -> [InboxMessage] {
         let messages: [InboxMessage] = (json["value"] as? [[String: Any]] ?? []).compactMap { message in
             guard let id = message["id"] as? String, (message["messageType"] as? String ?? "message") == "message",
-                  message["deletedDateTime"] as? String == nil, message["isDeleted"] as? Bool != true, let sent = ChatJSON.date(message["createdDateTime"]) else { return nil }
+                  let sent = ChatJSON.date(message["createdDateTime"]) else { return nil }
+            if message["deletedDateTime"] as? String != nil || message["isDeleted"] as? Bool == true {
+                let user = ((message["from"] as? [String: Any])?["user"] as? [String: Any]) ?? [:]
+                let mine = me != nil && (user["id"] as? String) == me
+                let sender = mine || !chat.isGroup ? "" : ((user["displayName"] as? String) ?? "")
+                return InboxMessage(id: "teams-\(id)", sender: sender, text: "", date: sent, fromMe: mine).withdrawn()
+            }
             let body = message["body"] as? [String: Any] ?? [:]
             var text = (body["content"] as? String) ?? ""
             if (body["contentType"] as? String)?.lowercased() == "html" { text = plain(html: text) }
@@ -186,6 +192,7 @@ enum TeamsData {
             var inbox = InboxMessage(id: "teams-\(id)", sender: sender, text: text, date: sent, fromMe: mine)
             // Graph shares no one's read receipts but your own: your message is on Teams, and that is all it says.
             if mine { inbox.receipt = .sent }
+            if message["lastEditedDateTime"] as? String != nil { inbox.edited = true }
             inbox.quote = attachments.lazy.compactMap { quote($0, me: me) }.first
             inbox.reactions = reactions((message["reactions"] as? [[String: Any]] ?? []).map { reaction -> (key: String, mine: Bool, name: String?) in
                 let user = (reaction["user"] as? [String: Any])?["user"] as? [String: Any]

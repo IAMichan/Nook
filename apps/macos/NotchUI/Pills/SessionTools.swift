@@ -238,6 +238,7 @@ struct SessionWorkbench<Conversation: View>: View {
     var dockSessionPanel = false
     var agentWorking = false
     @ViewBuilder var conversation: (AnyView) -> Conversation
+    @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @AppStorage("nook.agents.bottomTool") private var lastBottomTool = SessionTool.terminal.rawValue
@@ -420,6 +421,13 @@ struct SessionWorkbench<Conversation: View>: View {
         }
         // The branch button in the conversation's header and the docked session panel both read it.
         .environment(\.sessionPullRequest, outputs.pullRequest)
+        // The pull request the conversation links last is the one you are likely to open: read it ahead, once the
+        // session has settled in, so its link opens on the page at once.
+        .task(id: outputs.pullRequest) {
+            guard let url = outputs.pullRequest else { return }
+            try? await Task.sleep(for: NookTheme.tabSettle)
+            if !Task.isCancelled { app.prefetchPullRequestLink(url) }
+        }
         .animation(NookTheme.reveal, value: side == .conversation)
         .animation(NookTheme.reveal, value: docked)
         .onChange(of: docked) { _, now in wasDocked = now }
@@ -722,6 +730,8 @@ private struct SessionToolPanel: View {
     /// The browser's tabs with their titles, and the one in view, once the browser was started (it is not started for it).
     @State private var browserTabs: [BrowserStore.Tab] = []
     @State private var browserActive: UUID?
+    /// The panel still slides in: a pull request page it opens on waits with its full page until it is in place.
+    @State private var opening = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -753,7 +763,7 @@ private struct SessionToolPanel: View {
                         // extra row above it.
                         PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item, onUpdate: { updated in
                             updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
-                        }, onBack: showPullRequestList)
+                        }, onBack: showPullRequestList, waitsForPanel: opening)
                             .id(pullRequest.account + " " + pullRequest.item.id)
                     } else {
                         SidePanelPullRequestPicker(directory: directory) { openPullRequest($0) }
@@ -774,6 +784,10 @@ private struct SessionToolPanel: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // What the agent opened here is in view now, also when it opens more while you look.
         .onAppear { bridge.markSeen(directory, tool.rawValue) }
+        .task {
+            try? await Task.sleep(for: NookTheme.tabSettle)
+            opening = false
+        }
         .onChange(of: tool) { _, next in bridge.markSeen(directory, next.rawValue) }
         .onChange(of: bridge.unseen) { _, _ in bridge.markSeen(directory, tool.rawValue) }
         .onReceive(BrowserStore.existing?.$tabs.eraseToAnyPublisher() ?? Empty<[BrowserStore.Tab], Never>().eraseToAnyPublisher()) {

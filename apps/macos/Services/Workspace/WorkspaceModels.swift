@@ -451,6 +451,8 @@ struct PullRequestWatch: Codable, Equatable, Sendable {
     /// Reviews and comments seen so far.
     var reviewCount: Int = 0
     var commentCount: Int = 0
+    /// In conflict with its base branch at the last look; nil before the forge has said so (and in watches from before).
+    var conflicted: Bool? = nil
     /// Send news to the agent as a message (otherwise it only shows in the timeline).
     var wakeAgent: Bool = true
     var checkedAt: Date? = nil
@@ -474,6 +476,8 @@ struct PullRequestSnapshot: Equatable, Sendable {
     var draft = false
     /// Open and in conflict with its base branch.
     var conflicted = false
+    /// Whether `conflicted` is the forge's answer: GitHub works it out lazily after a push, and says nothing until then.
+    var mergeabilityKnown = true
 }
 
 /// What changed on a watched pull request since the last look: lines for the timeline, and the message for the agent.
@@ -491,6 +495,7 @@ enum PullRequestNews {
             default: break
             }
         }
+        if let conflict = conflictLine(old: old.conflicted, new: new) { lines.append(conflict) }
         for review in new.reviews.dropFirst(min(old.reviewCount, new.reviews.count)) {
             let body = plain(review.text)
             let text = body.isEmpty ? "" : ": " + body
@@ -501,6 +506,16 @@ enum PullRequestNews {
             lines.append("Comment from @\(comment.author)" + (body.isEmpty ? "" : ": " + body))
         }
         return lines
+    }
+
+    /// The first look at a watch reports nothing that happened before, except a conflict: that is still there to fix.
+    static func firstLook(_ new: PullRequestSnapshot) -> [String] {
+        conflictLine(old: false, new: new).map { [$0] } ?? []
+    }
+
+    private static func conflictLine(old: Bool?, new: PullRequestSnapshot) -> String? {
+        guard new.state == "open", new.mergeabilityKnown, let old, new.conflicted != old else { return nil }
+        return new.conflicted ? "The pull request has merge conflicts with its base branch." : "The merge conflicts are resolved."
     }
 
     /// A review or comment as one readable line: a bot's HTML comments, tags, badges and images left out, links as their
@@ -526,11 +541,16 @@ enum PullRequestNews {
         return ToolSummary.oneLine(words, limit)
     }
 
-    /// Worth waking the agent for: something it can act on (failed CI, reviews, comments), not a merge or a pass.
+    /// Worth waking the agent for: something it can act on (failed CI, a merge conflict, reviews, comments), not a merge
+    /// or a pass.
     static func needsAgent(old: PullRequestWatch, new: PullRequestSnapshot) -> Bool {
         guard new.state == "open" else { return false }
-        return (new.checks == "failure" && old.checks != "failure") || new.reviews.count > old.reviewCount
-            || new.comments.count > old.commentCount
+        return (new.checks == "failure" && old.checks != "failure") || newConflict(old: old, new: new)
+            || new.reviews.count > old.reviewCount || new.comments.count > old.commentCount
+    }
+
+    static func newConflict(old: PullRequestWatch, new: PullRequestSnapshot) -> Bool {
+        new.state == "open" && new.mergeabilityKnown && new.conflicted && old.conflicted != true
     }
 
     static func message(url: String, lines: [String]) -> String {
@@ -544,6 +564,7 @@ enum PullRequestNews {
         next.checks = snapshot.checks
         next.reviewCount = snapshot.reviews.count
         next.commentCount = snapshot.comments.count
+        if snapshot.mergeabilityKnown { next.conflicted = snapshot.conflicted }
         next.checkedAt = date
         return next
     }

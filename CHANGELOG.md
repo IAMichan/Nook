@@ -14,6 +14,11 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 - Ask Nook about any text you select in Nook: a message in the Chats tab, an agent's answer, a page in Nook's
   browser, the terminal. A small bar above the selection answers, explains or translates it in a card right there,
   with room for a follow-up and a way to continue in the chat (Settings › Assistant › Ask about selected text).
+
+- Chats show what happened to a message, in every chat app that says it: a message deleted for everyone keeps its
+  place as "This message was deleted" (or "You deleted this message"), and an edited message says "Edited" beside its
+  time. WhatsApp now also follows edits and deletions made on a phone, and Telegram and Slack show their edits.
+
 - An Actions page beside Pull requests under the Agents list (the play icon): a repository's GitHub Actions runs,
   newest first under a heading per day, filtered by workflow (CI, Promote, Release…) and by state (running, failed).
   A run opens with its jobs, each job's steps and log, and re-run (all or only the failed jobs) or cancel. Runs that
