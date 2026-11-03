@@ -1123,13 +1123,13 @@ final class WhatsAppLink: ObservableObject {
     /// How many fetched files stay at most; the oldest go first, from memory and from disk.
     static let previewLimit = 48
     /// How long a preview that failed waits before it is tried again.
-    static let previewRetry: TimeInterval = 60
+    static let previewRetry: TimeInterval = 10
 
     /// A file already fetched for the notch card.
     func preview(_ id: String) -> WAPreview? { previews[id] }
 
     /// Fetches these messages' files for the card (a photo, a video, a document) with a picture of each: the photo
-    /// itself, the video's first frame, the document's first page. One that failed is tried again after a minute.
+    /// itself, the video's first frame, the document's first page. One that failed is tried again after `previewRetry`.
     /// True when at least one new preview came in while the link stayed the same.
     func loadPreviews(_ ids: [String], chat: String) async -> Bool {
         let gen = generation

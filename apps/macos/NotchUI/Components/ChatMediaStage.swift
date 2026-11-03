@@ -90,7 +90,8 @@ private struct ChatMediaStageOverlay: View {
 private struct ChatVideoStageView: View {
     let video: ChatMediaStage.Video
     let onClose: () -> Void
-    @State private var player: AVPlayer
+    /// Waits for a file still coming in and says so when it cannot be played (`ChatVideoPlayback`).
+    @StateObject private var playback: ChatVideoPlayback
     @State private var window: NSWindow?
     /// The window fills its screen or its part of a split screen.
     @State private var fullScreen = false
@@ -100,15 +101,26 @@ private struct ChatVideoStageView: View {
     init(video: ChatMediaStage.Video, onClose: @escaping () -> Void) {
         self.video = video
         self.onClose = onClose
-        _player = State(initialValue: AVPlayer(url: video.url))
+        _playback = StateObject(wrappedValue: ChatVideoPlayback(url: video.url))
     }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Color.black.ignoresSafeArea()
-            StagePlayer(player: player)
-                .ignoresSafeArea()
-                .accessibilityLabel(video.name)
+            switch playback.phase {
+            case .ready:
+                StagePlayer(player: playback.player)
+                    .ignoresSafeArea()
+                    .accessibilityLabel(video.name)
+            case .loading:
+                ProgressView()
+                    .tint(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityLabel(tr("card.video.loading"))
+            case .failed:
+                ChatVideoFailure(url: video.url, retry: playback.retry)
+                    .ignoresSafeArea()
+            }
             HStack(spacing: NookTheme.Spacing.xs) {
                 // Split with another app the window is already full screen, in its own part: it stays that way.
                 if !fullScreen || enteredFullScreen {
@@ -131,14 +143,9 @@ private struct ChatVideoStageView: View {
             fullScreen = false
             enteredFullScreen = false
         }
-        .onAppear {
-            if video.time.isValid, video.time.seconds > 0 {
-                player.seek(to: video.time, toleranceBefore: .zero, toleranceAfter: .zero)
-            }
-            player.play()
-        }
+        .onAppear { playback.start(at: video.time) }
         .onDisappear {
-            player.pause()
+            playback.stop()
             if enteredFullScreen, let window, window.styleMask.contains(.fullScreen) { window.toggleFullScreen(nil) }
         }
     }

@@ -1830,6 +1830,7 @@ private struct ChatsDetail: View, Equatable {
                                    onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil,
                                    typing: typing.line(entry.id), newFrom: newFrom)
                         .equatable()
+                        .environment(\.chatFetchFile) { [entry] in await app.fetchChatFile($0, in: entry) }
                         .padding(.horizontal, NookTheme.Spacing.xs)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
