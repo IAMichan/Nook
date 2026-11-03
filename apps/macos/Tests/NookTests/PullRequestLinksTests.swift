@@ -17,6 +17,15 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertNotNil(PullRequestRef.gitHubItem(try XCTUnwrap(URL(string: "https://github.com/acme/app/pull/12/files"))))
     }
 
+    func testLinkWithTrailingPunctuationOrWwwOpensAsItem() throws {
+        for text in ["https://github.com/acme/app/pull/12.", "https://github.com/acme/app/pull/12),",
+                     "https://www.github.com/acme/app/pull/12", "https://github.com/acme/app/pull/12#issuecomment-1"] {
+            let item = try XCTUnwrap(PullRequestRef.gitHubItem(try XCTUnwrap(URL(string: text))), text)
+            XCTAssertEqual(item.number, 12, text)
+            XCTAssertEqual(item.url?.absoluteString, "https://github.com/acme/app/pull/12", text)
+        }
+    }
+
     func testOtherLinksStayInTheBrowser() throws {
         for text in ["https://gitlab.com/acme/app/-/merge_requests/3", "https://github.com/acme/app/issues/4",
                      "https://github.com/acme/app", "https://git.example.com/acme/app/pull/5"] {
