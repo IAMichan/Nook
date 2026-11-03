@@ -12,6 +12,9 @@ enum TranscriptFollow {
         case append(RunEvent)
         /// The event with this id becomes `event` (its id and date stay).
         case update(UUID, RunEvent)
+        /// A subagent started in the background, in a turn of the session or one taken over, ended
+        /// (`WorkspaceManager.noteBackgroundSubagent`).
+        case backgroundTask(BackgroundTaskUpdate)
     }
 
     /// What to add to or change in a session's `events` so it shows `messages` (the conversation as its transcript
@@ -45,6 +48,15 @@ enum TranscriptFollow {
             if event.kind == .tool, let call = event.callID { byCall[call] = event }
         }
         var changes: [Change] = []
+        // Background work that ended from the anchor on: its subagent was often started in a turn Nook ran itself, and
+        // the agent woke up for the result in a turn Nook only reads here. Only those still shown as running.
+        for message in messages[anchor...] {
+            for update in message.finishedTasks {
+                guard let launch = Subagents.event(for: update, in: events), launch.state == .running || launch.state == nil
+                else { continue }
+                changes.append(.backgroundTask(update))
+            }
+        }
         // The turn being taken over: the message of yours it started with, when that came from outside Nook.
         var turn: [AgentChatMessage] = []
         func close(_ turn: [AgentChatMessage]) {
