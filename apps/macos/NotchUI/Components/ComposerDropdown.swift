@@ -347,6 +347,8 @@ struct AgentModelPicker: View {
     var comparing: Binding<[ComparisonTarget]>? = nil
     /// This Mac's models in front of the agents (Nook's own brain); nil for an agent.
     var local: ModelPickerLocal? = nil
+    /// "Auto" on top of each agent's models: Nook picks one per turn (see `AutoModel`). Off for Nook's own brain.
+    var offersAuto = true
     let choose: (RunProvider, String?, String?) -> Void
     /// Picking a model adds it to the comparison instead of replacing the chosen one.
     @State private var multi = false
@@ -429,7 +431,21 @@ struct AgentModelPicker: View {
                 choose(current.provider, pickedProfile(current), custom)
             })
         }
-        return ModelPickerList(models: filtered(current, query: query).map { modelRow($0, of: current) }, actions: actions)
+        let auto = autoRow(of: current, query: query).map { [$0] } ?? []
+        return ModelPickerList(models: auto + filtered(current, query: query).map { modelRow($0, of: current) }, actions: actions)
+    }
+
+    /// "Auto": Nook picks the model for each turn from the ones allowed in Settings, by the task and the limits.
+    private func autoRow(of place: Place, query: String) -> ModelPickerItem? {
+        let title = tr("auto.model")
+        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard offersAuto, !multi, needle.isEmpty || title.lowercased().contains(needle) else { return nil }
+        let count = app.workspace.autoCandidates(for: place.provider, profileID: profileOf(place)).count
+        return ModelPickerItem(id: AutoModel.id, title: title, symbol: "wand.and.stars",
+                               detail: count > 0 ? tr("auto.model.detail", count) : tr("auto.model.none"),
+                               chosen: isChosen(place) && model == AutoModel.id) {
+            choose(place.provider, pickedProfile(place), AutoModel.id)
+        }
     }
 
     private func modelRow(_ option: String, of place: Place) -> ModelPickerItem {

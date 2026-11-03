@@ -495,6 +495,7 @@ struct WorkspaceSettingsSection: View {
             // Off: the model list that came with the app is used, and nothing goes online for it.
             SettingToggle(tr("settings.ws.onlineModels"), detail: onlineModelsDetail, isOn: $ws.onlineModelList)
         }
+        autoModelChoice
         Picker(tr("settings.ws.mode"), selection: $ws.defaultMode) {
             ForEach(ExecutionMode.allCases) { Text($0.label).tag($0) }
         }
@@ -619,9 +620,41 @@ struct WorkspaceSettingsSection: View {
     /// The models to pick a default from: the composer's menu without older models, with the saved one under its own
     /// name ("opus" stays "opus", so the picker shows it chosen).
     private func defaultModelChoices(_ provider: RunProvider, saved: String) -> [String] {
-        app.workspace.menuModelIDs(for: provider, extra: [saved])
+        [AutoModel.id] + app.workspace.menuModelIDs(for: provider, extra: [saved == AutoModel.id ? "" : saved])
             .filter { !app.workspace.hidesLegacyModel($0, for: provider, chosen: saved) }
             .map { app.workspace.sameModel($0, saved, for: provider) ? saved : $0 }
+    }
+
+    /// Which models "Auto" may pick, per agent (see `AutoModel`): a menu of the agent's current models with a tick for
+    /// each one allowed and its weight beside it. None ticked means all of them, also the ones that come later.
+    private var autoModelChoice: some View {
+        DisclosureGroup(tr("settings.ws.autoModels")) {
+            SettingNote(tr("settings.ws.autoModelsDetail"))
+            ForEach(app.connectedProviders.filter { $0 != .acp }) { provider in
+                let all = AutoModel.candidates(app.workspace.modelChoices(for: provider), allowed: [],
+                                               same: { app.workspace.sameModel($0, $1, for: provider) })
+                if !all.isEmpty {
+                    let allowed = ws.autoModels(for: provider)
+                    let picked = allowed.isEmpty ? all.map(\.id) : all.map(\.id).filter(allowed.contains)
+                    LabeledContent {
+                        Menu(allowed.isEmpty ? tr("settings.ws.autoModels.all") : tr("settings.ws.autoModels.count", picked.count, all.count)) {
+                            ForEach(all, id: \.id) { candidate in
+                                Toggle(candidate.name + " · " + tr(AutoModel.tier(of: candidate).key), isOn: Binding(
+                                    get: { picked.contains(candidate.id) },
+                                    set: { _ in ws.toggleAutoModel(candidate.id, for: provider, all: all.map(\.id)) }))
+                            }
+                            if !allowed.isEmpty {
+                                Divider()
+                                Button(tr("settings.ws.autoModels.reset")) { ws.resetAutoModels(for: provider) }
+                            }
+                        }
+                        .fixedSize()
+                    } label: {
+                        Label { Text(provider.displayName) } icon: { LogoImage.agent(provider.kind) }
+                    }
+                }
+            }
+        }
     }
 
     /// Where the model list comes from, and how old it is.

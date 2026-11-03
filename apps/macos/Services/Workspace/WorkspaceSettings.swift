@@ -27,6 +27,10 @@ final class WorkspaceSettings: ObservableObject {
     @Published var favoriteModels: [String: [String]] {
         didSet { defaults.set(favoriteModels, forKey: "ws.favoriteModels") }
     }
+    /// The models "Auto" may pick per agent (see `AutoModel`); none: every current model the agent offers.
+    @Published var autoModels: [String: [String]] {
+        didSet { defaults.set(autoModels, forKey: "ws.autoModels") }
+    }
     /// Model ids you typed yourself per agent, newest first (see `ModelPreferences`).
     @Published var customModels: [String: [String]] {
         didSet { defaults.set(customModels, forKey: "ws.customModels") }
@@ -151,6 +155,7 @@ final class WorkspaceSettings: ObservableObject {
         defaultEfforts = (defaults.dictionary(forKey: "ws.defaultEfforts") as? [String: String]) ?? [:]
         favoriteModels = (defaults.dictionary(forKey: "ws.favoriteModels") as? [String: [String]]) ?? [:]
         customModels = (defaults.dictionary(forKey: "ws.customModels") as? [String: [String]]) ?? [:]
+        autoModels = (defaults.dictionary(forKey: "ws.autoModels") as? [String: [String]]) ?? [:]
         onlineModelList = defaults.object(forKey: "ws.onlineModelList") as? Bool ?? true
         defaultMode = ExecutionMode(rawValue: defaults.string(forKey: "ws.defaultMode") ?? "") ?? .agent
         defaultIsolation = IsolationMode(rawValue: defaults.string(forKey: "ws.defaultIsolation") ?? "") ?? .worktree
@@ -225,6 +230,19 @@ final class WorkspaceSettings: ObservableObject {
     func toggleFavoriteModel(_ model: String, forKey key: String) {
         favoriteModels[key] = ModelPreferences.toggling(model, in: favoriteModels(forKey: key))
     }
+
+    func autoModels(for provider: RunProvider) -> [String] { autoModels[provider.rawValue] ?? [] }
+
+    /// Allows or forbids `model` for "Auto". The first change starts from `all` (every current model), so unticking one
+    /// keeps the others; allowing every current model again stores none, which also takes in models that come later.
+    func toggleAutoModel(_ model: String, for provider: RunProvider, all: [String]) {
+        var allowed = autoModels(for: provider)
+        if allowed.isEmpty { allowed = all }
+        if let index = allowed.firstIndex(of: model) { allowed.remove(at: index) } else { allowed.append(model) }
+        autoModels[provider.rawValue] = Set(allowed) == Set(all) ? nil : allowed
+    }
+
+    func resetAutoModels(for provider: RunProvider) { autoModels[provider.rawValue] = nil }
 
     func customModels(for provider: RunProvider) -> [String] { customModels[provider.rawValue] ?? [] }
 

@@ -164,6 +164,11 @@ extension WorkspaceManager {
     @discardableResult
     func applySelection(_ id: UUID, provider: RunProvider, profileID: String, model: String) -> SelectionTransition {
         guard let run = run(id) else { return .reject("busy") }
+        // "Auto" keeps the model in use (none on another agent) and lets the next turn pick (see `applyAutoModel`); any
+        // other model is your own choice again.
+        let auto = model.trimmingCharacters(in: .whitespacesAndNewlines) == AutoModel.id
+        let model = auto ? (provider == run.provider ? run.model : "") : model
+        if (run.autoModel == true) != auto { update(id) { $0.autoModel = auto ? true : nil } }
         // While a turn runs only the model changes (see `configure`); another agent or account waits until it is idle.
         if !canTransfer(id) {
             guard provider == run.provider, profileID == run.profileID else { return .reject("busy") }

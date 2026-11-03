@@ -1309,7 +1309,10 @@ struct AgentRunPanel: View {
     private func modelMenu(_ run: WorkspaceRun) -> some View {
         let profile = app.profile(for: run)
         let account = profile.map { AccountLabel.name($0, app: app) }
-        let model = run.model.isEmpty ? nil : app.modelMenuName(run.model, for: run.provider, profileID: run.profileID)
+        let picked = run.model.isEmpty ? nil : app.modelMenuName(run.model, for: run.provider, profileID: run.profileID)
+        // On Auto: "Auto · Claude Sonnet 5.5", the model it picked last.
+        let model = run.autoModel == true ? [tr("auto.model"), picked].compactMap { $0 }.joined(separator: " · ") : picked
+        let chosenModel = run.autoModel == true ? AutoModel.id : run.model
         let idle = workspace.canTransfer(runID)
         let providers = idle ? app.connectedProviders : [run.provider]
         return ModelPickerDropdown {
@@ -1317,9 +1320,9 @@ struct AgentRunPanel: View {
                          text: [run.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "),
                          short: model ?? run.provider.displayName)
         } content: {
-            AgentModelPicker(providers: providers, provider: run.provider, profileID: run.profileID, model: run.model, showsAccounts: idle) { provider, accountID, option in
+            AgentModelPicker(providers: providers, provider: run.provider, profileID: run.profileID, model: chosenModel, showsAccounts: idle) { provider, accountID, option in
                 let profileID = accountID ?? (provider == run.provider ? run.profileID : app.connectedProfiles(for: provider).first?.id ?? run.profileID)
-                let chosen = option ?? (provider == run.provider ? run.model : workspace.settings.model(for: provider))
+                let chosen = option ?? (provider == run.provider ? chosenModel : workspace.settings.model(for: provider))
                 workspace.applySelection(runID, provider: provider, profileID: profileID, model: chosen)
             }
         }

@@ -208,6 +208,12 @@ extension AppModel {
             return self.profiles.launchEnvironment(profile)
         }
         workspace.accountHome = { [weak self] profileID in self?.profiles.profile(id: profileID)?.homeURL.path ?? profileID }
+        // "Auto" picks a lighter model as an account's 5-hour or weekly window runs full.
+        workspace.usageWindows = { [weak self] profileID in
+            guard let self, let profile = self.profiles.profile(id: profileID) else { return [] }
+            let now = Date()
+            return self.quota.limits(for: profile).map { AutoModel.Window(percent: $0.percent, elapsed: $0.elapsed(at: now)) }
+        }
         workspace.onApproval = { [weak self] run, pending in self?.presentWorkspaceApproval(run, pending) }
         workspace.onApprovalGone = { [weak self] requestID in
             SystemNotifier.shared.withdraw("wsapproval-" + requestID)
