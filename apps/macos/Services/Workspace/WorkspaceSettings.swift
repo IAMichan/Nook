@@ -234,12 +234,14 @@ final class WorkspaceSettings: ObservableObject {
     func autoModels(for provider: RunProvider) -> [String] { autoModels[provider.rawValue] ?? [] }
 
     /// Allows or forbids `model` for "Auto". The first change starts from `all` (every current model), so unticking one
-    /// keeps the others; allowing every current model again stores none, which also takes in models that come later.
+    /// keeps the others; allowing every current model again stores nothing, which also takes in models that come later,
+    /// and unticking the last one stores `AutoModel.none`, which leaves the agent out of Auto.
     func toggleAutoModel(_ model: String, for provider: RunProvider, all: [String]) {
         var allowed = autoModels(for: provider)
         if allowed.isEmpty { allowed = all }
+        allowed.removeAll(where: \.isEmpty)
         if let index = allowed.firstIndex(of: model) { allowed.remove(at: index) } else { allowed.append(model) }
-        autoModels[provider.rawValue] = Set(allowed) == Set(all) ? nil : allowed
+        autoModels[provider.rawValue] = Set(allowed) == Set(all) ? nil : allowed.isEmpty ? AutoModel.none : allowed
     }
 
     func resetAutoModels(for provider: RunProvider) { autoModels[provider.rawValue] = nil }

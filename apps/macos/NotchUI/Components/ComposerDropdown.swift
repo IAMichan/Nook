@@ -435,14 +435,15 @@ struct AgentModelPicker: View {
         return ModelPickerList(models: auto + filtered(current, query: query).map { modelRow($0, of: current) }, actions: actions)
     }
 
-    /// "Auto": Nook picks the model for each turn from the ones allowed in Settings, by the task and the limits.
+    /// "Auto": Nook picks the agent, account and model for each turn from every model allowed in Settings, by the task
+    /// and the limits. The same row under every agent: picking it there starts from that agent.
     private func autoRow(of place: Place, query: String) -> ModelPickerItem? {
         let title = tr("auto.model")
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard offersAuto, !multi, needle.isEmpty || title.lowercased().contains(needle) else { return nil }
-        let count = app.workspace.autoCandidates(for: place.provider, profileID: profileOf(place)).count
+        let reach = app.workspace.autoReach()
         return ModelPickerItem(id: AutoModel.id, title: title, symbol: "wand.and.stars",
-                               detail: count > 0 ? tr("auto.model.detail", count) : tr("auto.model.none"),
+                               detail: reach.models > 0 ? tr("auto.model.detail", reach.models, reach.agents) : tr("auto.model.none"),
                                chosen: isChosen(place) && model == AutoModel.id) {
             choose(place.provider, pickedProfile(place), AutoModel.id)
         }
