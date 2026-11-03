@@ -916,4 +916,7 @@ enum ReplyContext {
     /// What Nook itself adds to this one question, never shown in the chat: how a Double Tap without a cursor in a text
     /// asked about the window in front (`DoubleTapLogic.windowNote`).
     @TaskLocal static var note = ""
+    /// The question brings its own material (words selected in Nook, `SelectionAsk`): no screen and no dropped file go
+    /// with it unless it asks about the screen itself.
+    @TaskLocal static var selfContained = false
 }

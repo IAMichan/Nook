@@ -21,6 +21,7 @@ extension SettingsView {
                 }
             }
             Section(tr("settings.assistant.thinkAlong")) {
+                SettingToggle(tr("settings.assistant.selectionAsk"), detail: tr("settings.assistant.selectionAskDetail"), isOn: $settings.selectionAsk)
                 SettingToggle(tr("settings.assistant.webSearch"), detail: tr("settings.assistant.webSearchDetail"), isOn: $settings.webSearch)
                 SettingToggle(tr("settings.assistant.thinkAlongToggle"), detail: tr("settings.assistant.thinkAlongDetail"), isOn: $settings.autoWatch)
                 .disabled(settings.useLocal)

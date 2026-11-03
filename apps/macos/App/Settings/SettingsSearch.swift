@@ -64,6 +64,7 @@ enum SettingsSearch {
         ("settings.quality.title", .brain),
         ("settings.assistant.trackAllScreens", .assistant),
         ("settings.assistant.useScreensEveryQuestion", .assistant),
+        ("settings.assistant.selectionAsk", .assistant),
         ("settings.assistant.webSearch", .assistant),
         ("settings.assistant.thinkAlongToggle", .assistant),
         ("nookAccess.title", .assistant),
