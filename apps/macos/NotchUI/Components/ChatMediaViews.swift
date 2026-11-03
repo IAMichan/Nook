@@ -667,6 +667,95 @@ final class ChatAudioPlayer: ObservableObject {
     }
 }
 
+/// The controls over a video playing in a chat bubble, small enough for a narrow bubble: a play button in the middle
+/// while it is paused, and along the bottom on a soft shade the time it is at, a bar to scrub and how long it lasts.
+/// They show while the pointer is on the video or it is paused, and step aside while it plays.
+struct ChatVideoControls: View {
+    @ObservedObject var playback: ChatVideoPlayback
+    let hovering: Bool
+    let name: String
+    @State private var scrubbing = false
+
+    private var visible: Bool { hovering || !playback.playing || scrubbing }
+    private var label: String { tr(playback.playing ? "chat.media.pause" : "chat.media.play") }
+
+    var body: some View {
+        ZStack {
+            if !playback.playing {
+                Button(action: playback.toggle) {
+                    Image(systemName: "play.fill")
+                        .font(NookTheme.font(18, .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(Circle().fill(Color.black.opacity(0.5)))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help(label)
+                .accessibilityLabel("\(label): \(name)")
+            }
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                bar
+            }
+        }
+        .opacity(visible ? 1 : 0)
+        .allowsHitTesting(visible)
+        .animation(NookTheme.hover, value: visible)
+    }
+
+    private var bar: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            Button(action: playback.toggle) {
+                Image(systemName: playback.playing ? "pause.fill" : "play.fill")
+                    .font(NookTheme.font(11, .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(label)
+            .accessibilityLabel("\(label): \(name)")
+            Text(ChatAudioPlayer.clock(playback.elapsed))
+                .font(NookTheme.TextStyle.caption)
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .fixedSize()
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.3))
+                    Capsule().fill(Color.white)
+                        .frame(width: geometry.size.width * playback.progress)
+                }
+                .frame(height: scrubbing ? 5 : 3)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0)
+                    .onChanged { drag in
+                        scrubbing = true
+                        playback.seek(to: drag.location.x / max(1, geometry.size.width))
+                    }
+                    .onEnded { _ in scrubbing = false })
+            }
+            .frame(height: 14)
+            if let duration = playback.duration {
+                Text(ChatAudioPlayer.clock(duration))
+                    .font(NookTheme.TextStyle.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.75))
+                    .fixedSize()
+            }
+        }
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .padding(.top, NookTheme.Spacing.lg)
+        .padding(.bottom, NookTheme.Spacing.sm)
+        .background(
+            LinearGradient(colors: [.clear, Color.black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
+                .allowsHitTesting(false)
+        )
+    }
+}
+
 /// A call in a chat, the same for every app: a round mark with its kind (an arrow in or out, a camera for video, a
 /// hung-up phone in coral for one you missed), what it was ("Missed voice call") and under it who rang and how long it
 /// lasted ("Incoming · 2:13").

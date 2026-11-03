@@ -67,12 +67,55 @@ final class ChatVideoPlayback: ObservableObject {
     let url: URL
     let player = AVPlayer()
     @Published private(set) var phase: Phase = .loading
+    /// What `ChatVideoControls` draws from: whether it plays, where it is and how long it lasts.
+    @Published private(set) var playing = false
+    @Published private(set) var elapsed: Double = 0
+    @Published private(set) var duration: Double?
     private var task: Task<Void, Never>?
     private var watching: Set<AnyCancellable> = []
     private var retried = false
+    private var observer: Any?
+    private var status: AnyCancellable?
+
+    var progress: CGFloat {
+        guard let duration, duration > 0 else { return 0 }
+        return CGFloat(min(1, max(0, elapsed / duration)))
+    }
 
     init(url: URL) {
         self.url = url
+        observer = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main) { [weak self] time in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.elapsed = time.seconds.isFinite ? time.seconds : 0
+                if let length = self.player.currentItem?.duration.seconds, length.isFinite, length > 0 { self.duration = length }
+            }
+        }
+        status = player.publisher(for: \.timeControlStatus)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] status in self?.playing = status != .paused }
+    }
+
+    deinit {
+        if let observer { player.removeTimeObserver(observer) }
+    }
+
+    /// Plays or pauses once it is ready; a video that played to its end starts over.
+    func toggle() {
+        guard phase == .ready else { return }
+        if playing {
+            player.pause()
+        } else {
+            if let duration, elapsed >= duration - 0.05 { player.seek(to: .zero) }
+            player.play()
+        }
+    }
+
+    func seek(to fraction: CGFloat) {
+        guard let duration, duration > 0 else { return }
+        let time = CMTime(seconds: duration * Double(max(0, min(1, fraction))), preferredTimescale: 600)
+        player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
+        elapsed = time.seconds
     }
 
     /// Plays the video from `time` as soon as its file is ready.
