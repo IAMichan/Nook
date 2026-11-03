@@ -366,6 +366,160 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertEqual(acp, #"exec "${SHELL:-/bin/sh}" -lc 'export K_MODE=acp; cd /srv/app && exec npx -y @k/acp@1.0.0'"#)
     }
 
+    func testRemoteKeyFileGoesAlongOnEverySSHCall() {
+        let machine = RemoteMachine(id: "m1", name: "pi", host: "michan@raspberrypi", port: nil,
+                                    identityFile: "~/.ssh/raspberrypi_ed25519")
+        let target = RemoteTarget(machine: machine, directory: "~/app")
+        XCTAssertEqual(target.identityFile, "~/.ssh/raspberrypi_ed25519")
+        let key = ["-i", "~/.ssh/raspberrypi_ed25519", "-o", "IdentitiesOnly=yes"]
+        let spec = LaunchSpec(executable: "/opt/homebrew/bin/claude", arguments: ["-p"], extraEnvironment: [:],
+                              workingDirectory: "/tmp", initialInput: [], keepsInputOpen: false)
+        let wrapped = RemoteLaunch.wrap(spec, target: target).arguments
+        XCTAssertEqual(Array(wrapped.dropFirst(7).prefix(6)), key + ["--", "michan@raspberrypi"])
+        let git = RemoteLaunch.git(["status"], target: target, directory: "~/app")
+        XCTAssertEqual(Array(git.suffix(7).prefix(4)), key)
+        // A key file that is not a path on this Mac is left out rather than handed to ssh.
+        var bad = target
+        bad.identityFile = "-oProxyCommand=evil"
+        XCTAssertEqual(RemoteLaunch.destination(port: 2222, identityFile: bad.identityFile), ["-p", "2222"])
+        XCTAssertFalse(RemoteMachines.isValidIdentityFile("id_ed25519"))
+        XCTAssertTrue(RemoteMachines.isValidIdentityFile("/Users/me/.ssh/id_ed25519"))
+    }
+
+    func testTypedPasswordGoesToSSHThroughAskpassOnly() throws {
+        let machine = RemoteMachine(id: "pw-\(UUID().uuidString)", name: "nas", host: "admin@nas")
+        let target = RemoteTarget(machine: machine, directory: "~")
+        defer { RemotePasswords.shared.set(nil, for: machine.id) }
+        // Without a password nothing ever prompts.
+        XCTAssertTrue(RemoteLaunch.run("true", [], target: target, directory: nil).contains("BatchMode=yes"))
+        XCTAssertEqual(RemoteLaunch.askpassEnvironment(password: nil, askpass: "/x"), [:])
+        XCTAssertTrue(RemotePasswords.shared.isUnlocked(machine))
+        var locked = machine
+        locked.passwordLogin = true
+        XCTAssertFalse(RemotePasswords.shared.isUnlocked(locked))
+
+        RemotePasswords.shared.set("s3cret 'x'", for: machine.id)
+        XCTAssertTrue(RemotePasswords.shared.isUnlocked(locked))
+        let arguments = RemoteLaunch.run("true", [], target: target, directory: nil)
+        XCTAssertTrue(arguments.contains("BatchMode=no"))
+        XCTAssertTrue(arguments.contains("NumberOfPasswordPrompts=1"))
+        // The password is never on the command line, only in ssh's environment.
+        XCTAssertFalse(arguments.joined(separator: " ").contains("s3cret"))
+        let environment = RemoteLaunch.askpassEnvironment(password: "s3cret 'x'", askpass: "/x/ssh-askpass")
+        XCTAssertEqual(environment["SSH_ASKPASS"], "/x/ssh-askpass")
+        XCTAssertEqual(environment["SSH_ASKPASS_REQUIRE"], "force")
+        XCTAssertEqual(environment[RemoteAskpass.variable], "s3cret 'x'")
+        let spec = LaunchSpec(executable: "/opt/homebrew/bin/claude", arguments: ["-p"], extraEnvironment: [:],
+                              workingDirectory: "/tmp", initialInput: [], keepsInputOpen: false)
+        let wrapped = RemoteLaunch.wrap(spec, target: target)
+        XCTAssertEqual(wrapped.extraEnvironment[RemoteAskpass.variable], "s3cret 'x'")
+        XCTAssertFalse(wrapped.arguments.joined(separator: " ").contains("s3cret"))
+        RemotePasswords.shared.set("", for: machine.id)
+        XCTAssertNil(RemotePasswords.shared.password(for: machine.id))
+    }
+
+    func testKeptPasswordComesBackAfterARestart() {
+        final class FakeKeychain: @unchecked Sendable {
+            let lock = NSLock()
+            var items: [String: String] = [:]
+            var reads = 0
+            var refuses = false
+            var keychain: RemotePasswords.Keychain {
+                RemotePasswords.Keychain(
+                    read: { account in self.lock.lock(); defer { self.lock.unlock() }; self.reads += 1; return self.items[account] },
+                    write: { account, value in
+                        self.lock.lock(); defer { self.lock.unlock() }
+                        guard !self.refuses else { return false }
+                        self.items[account] = value
+                        return true
+                    },
+                    remove: { account in self.lock.lock(); self.items[account] = nil; self.lock.unlock() })
+            }
+        }
+        let store = FakeKeychain()
+        let account = RemotePasswords.keychainAccount("nas")
+        // Typed without keeping: memory only.
+        let first = RemotePasswords(keychain: store.keychain)
+        XCTAssertTrue(first.set(" pass word ", for: "nas"))
+        XCTAssertNil(store.items[account])
+        XCTAssertFalse(first.isKept("nas"))
+        // Kept: in the Keychain, never as plain text, and back after a restart with its spaces.
+        XCTAssertTrue(first.set(" pass word ", for: "nas", keep: true))
+        XCTAssertNotNil(store.items[account])
+        XCTAssertNotEqual(store.items[account], " pass word ")
+        let restarted = RemotePasswords(keychain: store.keychain)
+        XCTAssertEqual(restarted.password(for: "nas"), " pass word ")
+        XCTAssertTrue(restarted.isKept("nas"))
+        var machine = RemoteMachine(id: "nas", name: "nas", host: "admin@nas")
+        machine.passwordLogin = true
+        XCTAssertTrue(restarted.isUnlocked(machine))
+        // A machine without a kept password is looked up once, not on every ssh call.
+        let before = store.reads
+        XCTAssertNil(restarted.password(for: "other"))
+        XCTAssertNil(restarted.password(for: "other"))
+        XCTAssertEqual(store.reads, before + 1)
+        // Typing it again without keeping takes it out of the Keychain.
+        XCTAssertTrue(restarted.set("new", for: "nas"))
+        XCTAssertNil(store.items[account])
+        // Lock forgets it everywhere.
+        XCTAssertTrue(restarted.set("new", for: "nas", keep: true))
+        restarted.set(nil, for: "nas")
+        XCTAssertNil(store.items[account])
+        XCTAssertNil(RemotePasswords(keychain: store.keychain).password(for: "nas"))
+        // Typed without keeping before the Keychain was ever looked at: an older kept one goes too.
+        XCTAssertTrue(RemotePasswords(keychain: store.keychain).set("old", for: "nas", keep: true))
+        XCTAssertTrue(RemotePasswords(keychain: store.keychain).set("fresh", for: "nas"))
+        XCTAssertNil(store.items[account])
+        // A Keychain that refuses: it still works for this run.
+        store.refuses = true
+        let refused = RemotePasswords(keychain: store.keychain)
+        XCTAssertFalse(refused.set("x", for: "nas", keep: true))
+        XCTAssertEqual(refused.password(for: "nas"), "x")
+        XCTAssertFalse(refused.isKept("nas"))
+    }
+
+    func testAskpassAnswersOnlyAPasswordPrompt() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("nook-askpass-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let program = try XCTUnwrap(RemoteAskpass.path(in: folder))
+        XCTAssertEqual(RemoteAskpass.path(in: folder), program)
+        func ask(_ prompt: String) throws -> (Int32, String) {
+            let output = try ProcessRunner.run(program, [prompt], environment: [RemoteAskpass.variable: "pa$$ word"], timeout: 10)
+            return (output.status, output.stdout)
+        }
+        XCTAssertEqual(try ask("admin@nas's password: ").1, "pa$$ word\n")
+        XCTAssertEqual(try ask("(admin@nas) Password: ").0, 0)
+        // A new host key is never accepted on your behalf.
+        XCTAssertNotEqual(try ask("Are you sure you want to continue connecting (yes/no/[fingerprint])? ").0, 0)
+        XCTAssertNotEqual(try ProcessRunner.run(program, ["Password: "], environment: [:], timeout: 10).status, 0)
+    }
+
+    func testSavedMachinesWithoutNewFieldsStillLoad() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "RemoteMachinesTests"))
+        defaults.removePersistentDomain(forName: "RemoteMachinesTests")
+        defaults.set(Data(#"[{"id":"m1","name":"box","host":"me@box","port":2222}]"#.utf8), forKey: RemoteMachines.defaultsKey)
+        let loaded = RemoteMachines.load(defaults: defaults)
+        XCTAssertEqual(loaded.map(\.host), ["me@box"])
+        XCTAssertNil(loaded.first?.identityFile)
+        XCTAssertNil(loaded.first?.lastUsedAt)
+        let when = Date(timeIntervalSince1970: 1_800_000_000)
+        RemoteMachines.markUsed(id: "m1", at: when, defaults: defaults)
+        RemoteMachines.markUsed(id: "missing", defaults: defaults)
+        XCTAssertEqual(RemoteMachines.load(defaults: defaults).map(\.lastUsedAt), [when])
+        defaults.removePersistentDomain(forName: "RemoteMachinesTests")
+    }
+
+    func testAgentCheckLooksInTheLoginShell() {
+        let target = RemoteTarget(machine: RemoteMachine(name: "box", host: "box"), directory: "~")
+        let line = RemoteShell.agentCheck(["claude", "codex", "bad;name"], target: target).last ?? ""
+        XCTAssertTrue(line.hasPrefix(#"exec "${SHELL:-/bin/sh}" -lc "#))
+        XCTAssertTrue(line.contains("for c in claude codex;"))
+        XCTAssertFalse(line.contains("bad;name"))
+        XCTAssertEqual(RemoteShell.foundAgents("codex\n/usr/bin/x\nclaude\n", asked: ["claude", "gemini", "codex"]),
+                       ["claude", "codex"])
+    }
+
     func testRemoteWrapGoesThroughSSH() {
         let machine = RemoteMachine(id: "m1", name: "buildbox", host: "me@buildbox", port: 2222)
         let spec = LaunchSpec(executable: "/usr/local/bin/codex", arguments: ["app-server"],

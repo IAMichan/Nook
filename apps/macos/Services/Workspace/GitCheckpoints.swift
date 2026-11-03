@@ -66,7 +66,7 @@ extension GitService {
             for start in stride(from: 0, to: gone.count, by: 200) {
                 let batch = Array(gone[start..<min(start + 200, gone.count)])
                 _ = try? ProcessRunner.run(RemoteLaunch.ssh, RemoteLaunch.run("rm", ["-f", "--"] + batch, target: remote, directory: directory),
-                                           environment: ProcessInfo.processInfo.environment, timeout: 120)
+                                           environment: RemoteLaunch.environment(for: remote), timeout: 120)
             }
             return
         }
@@ -98,7 +98,7 @@ extension GitService {
             let index = "/tmp/nook-index-\(UUID().uuidString)"
             defer {
                 _ = try? ProcessRunner.run(RemoteLaunch.ssh, RemoteLaunch.run("rm", ["-f", "--", index], target: remote, directory: nil),
-                                           environment: ProcessInfo.processInfo.environment, timeout: 30)
+                                           environment: RemoteLaunch.environment(for: remote), timeout: 30)
             }
             return try body(["GIT_INDEX_FILE": index])
         }
@@ -126,7 +126,7 @@ extension GitService {
             for key in ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"] { variables[key] = env[key] }
             output = try ProcessRunner.run(RemoteLaunch.ssh, RemoteLaunch.git(["-C", directory] + arguments, target: remote, directory: directory,
                                                                                environment: variables),
-                                           environment: ProcessInfo.processInfo.environment, timeout: 120)
+                                           environment: RemoteLaunch.environment(for: remote), timeout: 120)
         } else {
             output = try ProcessRunner.run(executable, ["-C", directory] + arguments, in: directory, environment: env, timeout: 120)
         }

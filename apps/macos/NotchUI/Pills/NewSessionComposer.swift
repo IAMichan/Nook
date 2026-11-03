@@ -81,6 +81,11 @@ struct NewSessionComposer: View {
             heading
             if showClone { cloneRow }
             if remoteMachine != nil { remoteRow }
+            // A machine that logs in with a password asks for it once, before its first session in this run of Nook.
+            if let machine = remoteMachine, !RemotePasswords.shared.isUnlocked(machine) {
+                RemotePasswordField(machine: machine) { remoteMachine = $0 }
+                    .frame(maxWidth: 640)
+            }
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 // Where it works and the branch it starts from sit in a tray tucked under the box.
                 VStack(spacing: 0) {
@@ -535,7 +540,9 @@ struct NewSessionComposer: View {
     private var blockingReason: String? {
         if let problem = checkedConfig.problem { return tr("ws.error.config." + problem.rawValue) }
         // On another machine the agent is looked up there, not on this Mac.
-        if remoteMachine != nil { return nil }
+        if let machine = remoteMachine {
+            return RemotePasswords.shared.isUnlocked(machine) ? nil : tr("remote.password.needed", machine.name)
+        }
         if project?.verdict != .ok { return tr("ws.error.config.missingWorkspace") }
         if config.provider == .antigravity, antigravity.installed == nil { return tr("ws.antigravity.installFirst") }
         if workspace.executable(config.provider) == nil { return tr("ws.error.noExecutable", config.provider.displayName) }
