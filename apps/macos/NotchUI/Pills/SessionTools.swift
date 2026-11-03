@@ -906,7 +906,7 @@ private struct SessionToolPanel: View {
     }
 }
 
-/// An open panel before any tab "Open a surface": the tools, one row each with the key that opens it.
+/// An open panel before any tab: the tools, one row each with the key that opens it.
 /// A tool the session cannot use (a terminal or changes without a folder) is dimmed and says why.
 private struct SessionToolPicker: View {
     let directory: String

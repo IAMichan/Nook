@@ -1,6 +1,6 @@
 # nook-chatd
 
-Nook's own chat helper. It links **WhatsApp, Telegram, Signal, Messenger, Instagram, X, LinkedIn and Slack** on this Mac, without Beeper, and
+Nook's own chat helper. It links **WhatsApp, Telegram, Signal, Messenger, Instagram, X, LinkedIn and Slack** on this Mac and
 serves them to Nook's Chats tab. Licensed under the **AGPL-3.0** (see [LICENSE](LICENSE)), separate from Nook's MIT
 license, because it is built on the [mautrix](https://github.com/mautrix) bridgev2 network connectors. Why and how:
 [docs/ADR-CHAT-LINKS.md](../../docs/ADR-CHAT-LINKS.md).
@@ -12,9 +12,9 @@ license, because it is built on the [mautrix](https://github.com/mautrix) bridge
 - There is no Matrix server. `LocalMatrix` (`matrix.go`) answers in its place and keeps rooms, members, messages,
   reactions and media in `chats.db` (`store.go`). You are the one local user (`@me:nook.local`), a double puppet, so
   your own messages from other devices show as yours.
-- `api.go` serves the part of Beeper's Client API that Nook already reads (`/v1/bridges`, login sessions, `/v1/chats`,
+- `api.go` serves the local API that Nook reads (`/v1/bridges`, login sessions, `/v1/chats`,
   messages, send, edit, delete, reactions, read/unread, pin, mute, archive, assets) and `live.go` the `/v1/ws` live line.
-  `POST /v1/chats/{chat}/paginate` brings in a chat's next batch of older messages when you scroll back, as Beeper does
+  `POST /v1/chats/{chat}/paginate` brings in a chat's next batch of older messages when you scroll back
   (the bridges' manual backfill), and `GET /v1/chats/{chat}/messages?before=<ms>` reads the batch before the oldest
   message Nook shows, so scrolling back has no end but the chat's start.
   It listens on `127.0.0.1` only, behind a token Nook makes at each start (`NOOK_CHATD_TOKEN`).

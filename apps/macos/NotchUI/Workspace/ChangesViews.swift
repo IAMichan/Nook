@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Review changes, laid out(`StackedDiffList`): a toolbar, then every changed file in one
+/// Review changes, laid out as a stacked diff (`StackedDiffList`): a toolbar, then every changed file in one
 /// scroll, folded until you open it; the file you came for opens at once. Hovering a line offers a comment for the agent;
 /// the comments go to it together from the bar at the bottom.
 struct ChangesSheet: View {

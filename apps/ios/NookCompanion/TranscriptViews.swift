@@ -644,8 +644,8 @@ struct ToolTally {
 
 // MARK: Floating status
 
-/// What the session is doing, floating over the end of the conversation right above the composer
-/// shows it: "Working for 12s" while the agent works, "Snoozed" with Wake while it sleeps, and an arrow back to the
+/// What the session is doing, floating over the end of the conversation right above the composer:
+/// "Working for 12s" while the agent works, "Snoozed" with Wake while it sleeps, and an arrow back to the
 /// newest message once you scrolled up. Glass on iOS 26, a material before.
 struct FloatingWorkingControl: View {
     var workingSince: Date?

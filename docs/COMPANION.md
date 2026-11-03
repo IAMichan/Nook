@@ -22,7 +22,7 @@ While a session Nook runs works, its composer offers **Steer now** (into the run
 steers) or **After this turn** (in line); the choice is remembered (`CompanionRequest.steer`, `SessionDigest.canSteer`,
 `CompanionFeature.steer`). An approval or a question is docked right above the composer, in sight however far up you
 read. The Agents list has search and a project filter, and touching and holding the app's icon offers New session, Ask
-Nook, Answer a chat and the two sessions that need you most (`AppShortcut`). These follow phone app.
+Nook, Answer a chat and the two sessions that need you most (`AppShortcut`).
 
 **Live conversation.** With a current Mac, an open session no longer asks every few seconds: the phone says which
 session is on screen (`CompanionOp.watch`), the Mac answers with its recent conversation and from then on sends only

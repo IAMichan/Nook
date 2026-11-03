@@ -13,7 +13,7 @@ extension PullRequestDetailView {
         let hidden = total - PullRequestConversation.commentCount(
             PullRequestConversation.filtered(conversation, bots: showBotComments, finished: showFinishedComments))
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            // A few quiet lines, as on: where it stands, who reviews, which labels. The rest folds below.
+            // A few quiet lines: where it stands, who reviews, which labels. The rest folds below.
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 if let readiness = PullRequestReadiness(detail) {
                     metaRow(symbol: "checklist", title: tr("agents.pr.status.state")) { readinessLine(readiness, detail: detail) }

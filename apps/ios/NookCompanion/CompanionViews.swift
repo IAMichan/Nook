@@ -288,7 +288,7 @@ struct SessionListView: View {
     }
 
     var body: some View {
-        // A list, not a stack, so a row swipes to its actions as in Mail and in app.
+        // A list, not a stack, so a row swipes to its actions as in Mail.
         List {
             Group {
                 PanelHeader(title: "Agents", count: needsYou.count, subtitle: client.macName.isEmpty ? nil : client.macName) {
@@ -331,7 +331,7 @@ struct SessionListView: View {
                 .buttonStyle(.borderless)
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     ConnectionLine()
-                    // Finding one among many: words, and the project as chips.
+                    // Finding one among many by search and project scope: words, and the project as chips.
                     if client.sessions.count > 4 {
                         NookSearchField(prompt: "Search sessions", text: $query)
                         if projects.count > 1 {

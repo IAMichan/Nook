@@ -12,7 +12,7 @@ struct PullRequestOpenRequest: Equatable {
 /// search that takes qualifiers (`label:bug`), Sort and Filters beside it (see PullRequestFilterMenu), and flat rows
 /// under a heading per group. Open ones by default; the filters also show closed and merged ones. A click opens the pull
 /// request in Nook (see PullRequestDetailView), where it can be read in full and merged: beside the list when the page
-/// is wide enough, as a side panel opens one (half the page, its edge dragged wider or narrower, and a
+/// is wide enough, as a side panel (half the page, its edge dragged wider or narrower, and a
 /// button that makes it fill the page), else in its place.
 struct PullRequestsPanel: View {
     @EnvironmentObject private var app: AppModel

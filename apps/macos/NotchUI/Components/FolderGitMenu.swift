@@ -325,7 +325,7 @@ struct DockedSessionPanel: View {
     }
 }
 
-/// The changes in a folder, laid out(`StackedDiffList`): a toolbar with the number of files,
+/// The changes in a folder, laid out as a stacked diff (`StackedDiffList`): a toolbar with the number of files,
 /// the lines and the buttons that fold every file or show the tree, then every file in one scroll, folded until you
 /// open it.
 struct FolderChangesSheet: View {

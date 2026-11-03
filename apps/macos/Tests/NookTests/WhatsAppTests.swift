@@ -848,13 +848,13 @@ final class WhatsAppTests: XCTestCase {
             WAMember(ids: ["31600000002@s.whatsapp.net"], name: ""),
             // Matches Jan's number too, but comes second: Jan's own (empty) entry wins and his written name is used.
             WAMember(ids: ["31600000002@c.us"], name: "Not Jan"),
-            WAMember(ids: ["@beeper-user:beeper.com"], name: ""),
+            WAMember(ids: ["@me:nook.local"], name: ""),
             WAMember(ids: ["31600000004:12@s.whatsapp.net"], name: ""),
         ]
         conversation.messages = [
             written("31600000002@s.whatsapp.net", "Jan old"),
             written("31600000002@c.us", "Jan"),
-            written("@beeper-user:beeper.com", "Bee"),
+            written("@me:nook.local", "Bee"),
             written("31600000004@s.whatsapp.net", ""),
             written("31600000005@s.whatsapp.net", "Mine", fromMe: true),
         ]
@@ -866,7 +866,7 @@ final class WhatsAppTests: XCTestCase {
             }) { return message.senderName }
             return WAJID.displayNumber(id)
         }
-        let ids = ["123@lid", "31600000001@c.us", "31600000002@s.whatsapp.net", "31600000002", "@beeper-user:beeper.com",
+        let ids = ["123@lid", "31600000001@c.us", "31600000002@s.whatsapp.net", "31600000002", "@me:nook.local",
                    "31600000004@s.whatsapp.net", "31600000005@s.whatsapp.net", "999@lid", ""]
         var index = WAMemberIndex(conversation)
         for id in ids {

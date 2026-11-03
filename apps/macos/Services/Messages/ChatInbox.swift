@@ -1351,6 +1351,28 @@ struct ChatInbox: Codable, Equatable, Sendable {
         return copy
     }
 
+    /// Gives the messages stored under an earlier id prefix the current one (`ChatServiceData.idPrefix`), the answered
+    /// message and a reaction's message included, so a chat read again matches what it already holds. True when
+    /// something changed.
+    @discardableResult
+    mutating func renameMessageIDs(from old: String = ChatServiceData.earlierIDPrefix,
+                                   to new: String = ChatServiceData.idPrefix) -> Bool {
+        func renamed(_ id: String) -> String { id.hasPrefix(old) ? new + id.dropFirst(old.count) : id }
+        var changed = false
+        for (key, thread) in threads {
+            var copy = thread
+            for index in copy.messages.indices {
+                copy.messages[index].id = renamed(copy.messages[index].id)
+                if let quoted = copy.messages[index].quote?.id { copy.messages[index].quote?.id = renamed(quoted) }
+            }
+            if let message = copy.reaction?.message { copy.reaction?.message = renamed(message) }
+            guard copy != thread else { continue }
+            threads[key] = copy
+            changed = true
+        }
+        return changed
+    }
+
     /// Lets go of the messages of these chats in memory too (their app was turned off): only what Nook knows of each
     /// chat itself stays, as on disk.
     mutating func forgetMessages(of ids: Set<String>) {

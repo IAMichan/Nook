@@ -16,7 +16,7 @@ struct TurnChangesCard: View {
     let turn: TurnDiff
     let directory: String?
     let open: (_ file: String?) -> Void
-    /// Folders you opened; as on every folder starts closed, so a big turn stays one short list.
+    /// Folders you opened; every folder starts closed, so a big turn stays one short list.
     @State private var opened: Set<String> = []
     @State private var folded = false
 
@@ -132,7 +132,7 @@ private struct TurnChangesRow: View {
     }
 }
 
-/// The diff panel next to a conversation, laid out: pick a turn or the whole session at the top, then
+/// The diff panel next to a conversation: pick a turn or the whole session at the top, then
 /// every file of that choice in one scroll under sticky headers (`StackedDiffList`), folded until you open one; a file
 /// picked in a turn's changed-files card opens and scrolls into view. Made from the agent's own edits, so it shows what
 /// each turn did, also for a session whose folder is not on this Mac.
