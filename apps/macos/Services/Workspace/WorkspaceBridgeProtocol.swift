@@ -183,9 +183,9 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .runScheduledTaskNow:
             return "Runs a scheduled task once now, with its own prompt, after the user's approval. Returns started, busy (it is running already) or not available (scheduled tasks are switched off). Pass client_request_id so a retry does not run it twice."
         case .watchPullRequest:
-            return "Watches a pull request (GitHub) or merge request (GitLab) for this session, the same watch the user can switch on in Nook: CI, reviews, comments and the merge show in your session's timeline, and what you can act on (failed CI, a review, a comment) comes to you as a message. Without url or number it takes the open pull request of your branch. After the call, end your turn; do not call it again when an update arrives. A session watches one pull request at a time; stop: true ends the watch. Only for sessions Nook started."
+            return "Watches a pull request (GitHub) or merge request (GitLab) for this session, the same watch the user can switch on in Nook: CI, merge conflicts, reviews, comments and the merge show in your session's timeline, and what you can act on (failed CI, a merge conflict, a review, a comment) comes to you as a message. Without url or number it takes the open pull request of your branch. After the call, end your turn; do not call it again when an update arrives. A session watches one pull request at a time; stop: true ends the watch. Only for sessions Nook started."
         case .getPullRequestStatus:
-            return "Reads a pull request's status now, the way Nook's watch sees it: state, CI (with the failed checks), each reviewer's verdict and the number of comments. GitHub (with the user's GitHub connection) and GitLab (with its token in Nook). Without url or number it takes the open pull request of your branch."
+            return "Reads a pull request's status now, the way Nook's watch sees it: state, CI (with the failed checks), each reviewer's verdict, the number of comments and whether it has merge conflicts. GitHub (with the user's GitHub connection) and GitLab (with its token in Nook). Without url or number it takes the open pull request of your branch."
         case .requestSecret:
             return "Asks the user for a secret by name (an API key or token you need for this task). The user sees the name and your reason in Nook and allows it, using the value stored in Nook's keychain under that name or pasting one. The value comes back only to you, between <nook-secret> markers; Nook hides it in its own timeline and records only the name in its audit log. Do not print it, write it into files in the repository or send it anywhere the task does not need it."
         case .sessionRead:
@@ -494,7 +494,7 @@ struct BridgeLaunch: Equatable, Sendable {
     through task_status (or Nook tells you when it has finished). For an iOS app, device_open shows an iOS Simulator in \
     Nook (the user watches it live) and gives you the agent-device command to drive it; device_screenshot shows you the screen. \
     In Nook's browser, browser_snapshot lists the elements with refs for browser_click and browser_type. After opening a pull \
-    request, watch_pull_request tells you when checks fail or pass, reviews arrive or it is merged. schedule_task proposes \
+    request, watch_pull_request tells you when checks fail or pass, a merge conflict appears, reviews arrive or it is merged. schedule_task proposes \
     recurring work (the user approves it), and request_secret asks the user for an API key by name instead of you asking \
     them to paste it into the chat.
     """
