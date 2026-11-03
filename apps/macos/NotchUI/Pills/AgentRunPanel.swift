@@ -274,6 +274,7 @@ struct AgentRunPanel: View {
         }
         .font(NookTheme.TextStyle.body)
         .frame(height: 30)
+        .conversationHeaderBackground()
     }
 
     /// Everything else you can do with this session: settings for the next turn, retry, archive, delete.
