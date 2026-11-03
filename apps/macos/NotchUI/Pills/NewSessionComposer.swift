@@ -33,7 +33,9 @@ struct NewSessionComposer: View {
     /// On another machine over SSH (see RemoteMachines): which one, and the folder there.
     @State private var remoteMachine: RemoteMachine?
     @State private var remoteFolder = ""
-    @StateObject private var composerModel = ComposerModel()
+    /// Held, not observed: only its suggestion list watches it (`ComposerSuggestionSlot`), so a key that changes the
+    /// list does not redraw this whole panel.
+    @State private var composerModel = ComposerModel()
     @ObservedObject private var promptLinks = PromptLinkInbox.shared
     @State private var linkNotice: String?
     /// Set once the session started: what is left in the box then is not worth bringing back.

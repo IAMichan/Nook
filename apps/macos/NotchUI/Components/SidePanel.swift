@@ -42,6 +42,38 @@ enum SidePanelMetrics {
     static let sidebarGap: CGFloat = PanelSidebarMetrics.inset - CGFloat(PanelSplit.handle) / 2
 }
 
+extension EnvironmentValues {
+    /// How far a line that spans its whole column (a column's drag line, the line under a panel's toolbar) runs on past
+    /// that column on each side: to the window's edge, or to the drag line beside it. The window keeps its margins
+    /// for text and buttons, but its lines meet each other and the edges instead of stopping short.
+    @Entry var lineBleed = EdgeInsets()
+}
+
+extension View {
+    /// Lets a full-width line run on past its column by `lineBleed` (see there).
+    func bleedsHorizontally(_ bleed: EdgeInsets) -> some View {
+        padding(.leading, -bleed.leading).padding(.trailing, -bleed.trailing)
+    }
+
+    /// Lets a full-height line run on past its column by `lineBleed`.
+    func bleedsVertically(_ bleed: EdgeInsets) -> some View {
+        padding(.top, -bleed.top).padding(.bottom, -bleed.bottom)
+    }
+}
+
+/// A side panel's lines reach its drag line across the gap between them; on the far side they keep what is outside.
+private struct SidePanelBleed: ViewModifier {
+    let edge: HorizontalEdge
+    let gap: CGFloat
+    @Environment(\.lineBleed) private var outer
+
+    func body(content: Content) -> some View {
+        var bleed = outer
+        if edge == .leading { bleed.trailing = gap } else { bleed.leading = gap }
+        return content.environment(\.lineBleed, bleed)
+    }
+}
+
 extension View {
     /// Makes this a side panel on `edge` of the conversation: `SidePanelMetrics.gap` from the drag line on the
     /// conversation's side, as wide as `width` (see `resizablePanel`), sliding in from its own edge.
@@ -49,7 +81,8 @@ extension View {
                    minimum: Double = PanelLayout.minimumPanel, available: Double, rest: Double,
                    gap: CGFloat = SidePanelMetrics.gap) -> some View {
         let leading = edge == .leading
-        return padding(leading ? Edge.Set.trailing : Edge.Set.leading, gap)
+        return modifier(SidePanelBleed(edge: edge, gap: gap))
+            .padding(leading ? Edge.Set.trailing : Edge.Set.leading, gap)
             .resizablePanel(width: width, defaultWidth: defaultWidth, minimum: minimum, available: available, rest: rest,
                             edge: leading ? HorizontalEdge.trailing : HorizontalEdge.leading, divider: true)
             .transition(.move(edge: leading ? Edge.leading : Edge.trailing).combined(with: .opacity))
@@ -74,7 +107,8 @@ extension View {
     func fixedSidePanel(width: CGFloat) -> some View {
         HStack(spacing: 0) {
             Color.clear.frame(width: CGFloat(PanelSplit.handle))
-            self.frame(width: width).padding(.leading, SidePanelMetrics.gap)
+            self.modifier(SidePanelBleed(edge: .trailing, gap: SidePanelMetrics.gap))
+                .frame(width: width).padding(.leading, SidePanelMetrics.gap)
         }
         .transition(.move(edge: .trailing).combined(with: .opacity))
     }
@@ -140,6 +174,7 @@ extension SidePanelHeader where Actions == EmptyView {
 struct SidePanelToolbar<Content: View>: View {
     var divider = true
     @ViewBuilder var content: () -> Content
+    @Environment(\.lineBleed) private var bleed
 
     var body: some View {
         VStack(spacing: 0) {
@@ -147,7 +182,7 @@ struct SidePanelToolbar<Content: View>: View {
                 .padding(.horizontal, NookTheme.Spacing.sm)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(height: SidePanelMetrics.toolbar)
-            if divider { NookDivider() }
+            if divider { NookDivider().bleedsHorizontally(bleed) }
         }
     }
 }

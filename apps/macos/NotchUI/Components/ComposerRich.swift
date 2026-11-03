@@ -286,9 +286,10 @@ final class ComposerModel: ObservableObject {
         if rows.map(\.id) != suggestions.map(\.id) { publish(rows) }
     }
 
+    /// Publishes only a real change: every key passes through here, and each write redraws whoever watches the list.
     private func publish(_ rows: [ComposerSuggestion]) {
-        suggestions = rows
-        selection = 0
+        if rows != suggestions { suggestions = rows }
+        if selection != 0 { selection = 0 }
     }
 
     func move(_ delta: Int) {
@@ -326,6 +327,18 @@ final class ComposerModel: ObservableObject {
         excerpts[id] = parts.inserted
         let ref = ContextRef(kind: .paste, id: id, label: PasteRule.fileName(for: parts.inserted))
         return parts.prefix + ContextRefs.link(ref) + parts.suffix
+    }
+}
+
+/// The list under the text while it has lines, and nothing otherwise. The one view that observes the model, so only it
+/// redraws as the list changes.
+struct ComposerSuggestionSlot: View {
+    @ObservedObject var model: ComposerModel
+    let tint: Color
+    let accept: (ComposerSuggestion) -> Void
+
+    var body: some View {
+        if model.isOpen { ComposerSuggestionList(model: model, tint: tint, accept: accept) }
     }
 }
 

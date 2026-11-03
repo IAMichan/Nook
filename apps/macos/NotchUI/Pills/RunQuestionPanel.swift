@@ -227,7 +227,7 @@ private struct QuestionOptionRow: View {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     HStack(spacing: NookTheme.Spacing.xs) {
                         Text(parsedLabel.title)
-                            .font(NookTheme.font(13.5, .semibold))
+                            .font(NookTheme.font(13, .semibold))
                             .foregroundStyle(isPicked ? NookTheme.paper : (isHovered ? NookTheme.paper : NookTheme.paper.opacity(0.92)))
 
                         if let badge = parsedLabel.badge {
@@ -305,7 +305,7 @@ private struct QuestionOptionRow: View {
     private var trailingIndicator: some View {
         if multiSelect {
             Image(systemName: isPicked ? "checkmark.square.fill" : "square")
-                .font(NookTheme.font(14, .medium))
+                .font(NookTheme.font(13, .medium))
                 .foregroundStyle(isPicked ? NookTheme.amber : (isHovered ? NookTheme.paper : NookTheme.textTertiary))
                 .padding(.top, 2)
         } else {

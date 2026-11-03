@@ -391,6 +391,8 @@ struct SessionWorkbench<Conversation: View>: View {
                         .transition(.opacity)
                 }
             }
+            // Over a bottom panel the columns' lines end at its line instead of running on to the window's bottom.
+            .transformEnvironment(\.lineBleed) { if bottom != .conversation { $0.bottom = 0 } }
             // The bottom panel runs the full width of the workbench, under the docked session panel and the side panel too.
             if bottom != .conversation {
                 VStack(spacing: 0) {
@@ -403,6 +405,8 @@ struct SessionWorkbench<Conversation: View>: View {
                     panel(.bottom, tool: bottom)
                 }
                 .frame(height: CGFloat(BottomPanelLayout.height(liveBottomHeight ?? bottomHeight, available: totalHeight)))
+                // Its own columns' lines start at its line, not above it.
+                .transformEnvironment(\.lineBleed) { $0.top = 0 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -651,10 +655,11 @@ private struct BottomSplitHandle: View {
     let onReset: () -> Void
     @State private var hovering = false
     @State private var dragging = false
+    @Environment(\.lineBleed) private var bleed
 
     var body: some View {
         ZStack {
-            NookDivider()
+            NookDivider().bleedsHorizontally(bleed)
             Capsule()
                 .fill(hovering || dragging ? NookTheme.textSecondary : NookTheme.line2)
                 .frame(width: 36, height: 4)

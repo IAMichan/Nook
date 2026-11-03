@@ -529,10 +529,12 @@ struct EmbeddedSplitHandle: View {
     let onReset: () -> Void
     @State private var hovering = false
     @State private var dragging = false
+    @Environment(\.lineBleed) private var bleed
 
     var body: some View {
         ZStack {
-            if divider { NookDivider(vertical: true) }
+            // A column's line runs from the window's top to its bottom, past the window's margins.
+            if divider { NookDivider(vertical: true).bleedsVertically(bleed) }
             Capsule()
                 .fill(hovering || dragging ? NookTheme.textSecondary : NookTheme.line2)
                 .frame(width: 4, height: 36)

@@ -142,7 +142,7 @@ struct PullRequestCommentCard: View {
                     .padding(.top, NookTheme.Spacing.md)
             }
             if !event.body.isEmpty {
-                MarkdownView(text: event.body, size: 13.5)
+                MarkdownView(text: event.body, size: 13)
                     .padding(NookTheme.Spacing.lg)
             } else if !reply, case .lineComment = event.kind {
                 Color.clear.frame(height: NookTheme.Spacing.md)
@@ -305,7 +305,7 @@ private struct FoldedConversation: View {
                 .padding(.horizontal, NookTheme.Spacing.lg)
             if open {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                    if !item.root.body.isEmpty { MarkdownView(text: item.root.body, size: 13.5) }
+                    if !item.root.body.isEmpty { MarkdownView(text: item.root.body, size: 13) }
                     if !item.replies.isEmpty { PullRequestReplies(replies: item.replies, now: now) }
                 }
                 .padding(NookTheme.Spacing.lg)

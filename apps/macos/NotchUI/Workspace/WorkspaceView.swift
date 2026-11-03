@@ -21,10 +21,12 @@ struct WorkspaceView: View {
         // The notch's margins, or with the sidebar none on its side and less elsewhere. On top the content runs up into
         // the title bar's row (its empty toolbar puts the traffic lights in the middle of a 52 pt band): with the sidebar
         // its head fills that row and a session's header is centered on it; without, the header starts below it.
+        // The lines between columns and under toolbars still run to the window's edges, past these margins (`lineBleed`).
+        .environment(\.lineBleed, WindowLayout.margins(sidebar: sidebarShown))
         .padding(.top, sidebarShown ? PanelSidebarMetrics.contentTop : WindowLayout.belowTitleBar)
-        .padding(.leading, sidebarShown ? 0 : 28)
-        .padding(.trailing, sidebarShown ? 20 : 28)
-        .padding(.bottom, sidebarShown ? 16 : 22)
+        .padding(.leading, WindowLayout.margins(sidebar: sidebarShown).leading)
+        .padding(.trailing, WindowLayout.margins(sidebar: sidebarShown).trailing)
+        .padding(.bottom, WindowLayout.margins(sidebar: sidebarShown).bottom)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea(.container, edges: .top)
         // The row with the traffic lights acts as the title bar where no content lies on it, so a double-click there
@@ -90,6 +92,13 @@ private enum WindowLayout {
     /// The content below starts under his ring (`PanelOrb.belowHeader`).
     /// Measured from the window's top: just past the title bar's row (`PanelSidebarMetrics.titleBand`).
     static let belowTitleBar: CGFloat = PanelSidebarMetrics.titleBand
+
+    /// The room between the window's edges and its content. With the sidebar its head fills the title bar's row, so a
+    /// column's line runs up to the window's top too; without it the tab capsule sits above the content.
+    static func margins(sidebar: Bool) -> EdgeInsets {
+        sidebar ? EdgeInsets(top: PanelSidebarMetrics.contentTop, leading: 0, bottom: 16, trailing: 20)
+                : EdgeInsets(top: 0, leading: 28, bottom: 22, trailing: 28)
+    }
 }
 
 /// Display name for an account: custom label, organization name, or "Personal".

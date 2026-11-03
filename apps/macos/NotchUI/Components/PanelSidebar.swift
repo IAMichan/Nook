@@ -146,7 +146,7 @@ private struct PanelSidebarRow: View {
                     }
                 if !compact {
                     Text(title)
-                        .font(NookTheme.font(14, .medium))
+                        .font(NookTheme.font(13, .medium))
                         .foregroundStyle(selected || hovering ? NookTheme.paper : NookTheme.textSecondary)
                         .lineLimit(1)
                     Spacer(minLength: NookTheme.Spacing.xs)
