@@ -2,10 +2,10 @@ import SwiftUI
 
 // The one model picker of Nook. The agents (a new session, a running one, a conversation continued in Nook) and Nook's
 // own brain in the chat open the same `ModelPicker`: one width, a rail of places on the left (this Mac's local models
-// first where the caller can run them, then one logo per agent or service, once per account when it has several) with a
-// "+" at its foot that opens Settings, and on the right the shown place's column: its name, the account, rows above the
-// search ("send to several models"), the search field, the models (a star for favorites, "New", a model of your own
-// typed in the search) and a link to Settings. Callers only hand over the places and the rows; the panel is drawn here.
+// first where the caller can run them, then choices that span every agent such as "Auto", then one logo per agent or
+// service, once per account when it has several) with a "+" at its foot that opens Settings, and on the right the shown
+// place's column: its name, the account, rows above the search ("send to several models"), the search field, the models
+// (a star for favorites, "New", a model of your own typed in the search) and a link to Settings. Callers only hand over the places and the rows; the panel is drawn here.
 
 enum ModelPickerStyle {
     static let width: CGFloat = 340
@@ -35,6 +35,8 @@ struct ModelPickerPlace: Hashable {
     var detail: String? = nil
     /// This Mac's own models, drawn as a laptop instead of a logo.
     var isLocal = false
+    /// A choice that spans every agent ("Auto"): drawn as this symbol in a group of its own, its column without a search.
+    var symbol: String? = nil
 }
 
 /// One row in a place's column: a model, or an action between the models ("Use model …", "Fetch models").
@@ -81,7 +83,8 @@ struct ModelPicker<Above: View>: View {
     @State private var query = ""
 
     var body: some View {
-        RailDropdown(groups: [places.filter(\.isLocal), places.filter { !$0.isLocal }], chosen: chosen,
+        RailDropdown(groups: [places.filter(\.isLocal), places.filter { !$0.isLocal && $0.symbol != nil },
+                              places.filter { !$0.isLocal && $0.symbol == nil }], chosen: chosen,
                      help: help(of:), onShow: { _ in query = "" },
                      icon: icon, footer: { ModelPickerAddButton(help: addHelp, add: openSettings) }) { place in
             column(place)
@@ -93,6 +96,11 @@ struct ModelPicker<Above: View>: View {
         if place.isLocal {
             Image(systemName: "laptopcomputer")
                 .font(NookTheme.font(13, .medium))
+                .foregroundStyle(NookTheme.paper)
+                .frame(width: ModelPickerStyle.markSize, height: ModelPickerStyle.markSize)
+        } else if let symbol = place.symbol {
+            NookSymbol(symbol, size: 13)
+                .font(NookTheme.TextStyle.label)
                 .foregroundStyle(NookTheme.paper)
                 .frame(width: ModelPickerStyle.markSize, height: ModelPickerStyle.markSize)
         } else {
@@ -118,7 +126,7 @@ struct ModelPicker<Above: View>: View {
                 .padding(.bottom, NookTheme.Spacing.xs)
         }
         above(place)
-        DropdownSearch(placeholder: tr("compose.searchModels"), text: $query)
+        if place.symbol == nil { DropdownSearch(placeholder: tr("compose.searchModels"), text: $query) }
         DropdownList(maxHeight: ModelPickerStyle.listHeight,
                      emptyNote: shown.models.isEmpty && shown.actions.isEmpty ? shown.emptyNote ?? tr("compose.noModels") : nil) {
             ForEach(shown.models + shown.actions) { item in
