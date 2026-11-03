@@ -341,6 +341,14 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertTrue(SessionBranches.rows(earlier: [], earlierLinks: [], current: "feat-b", currentPullRequest: current).isEmpty)
     }
 
+    func testOnlyABranchWithoutWorkCountsAsEmpty() {
+        // A question answered without changes, then the agent branched off for the change: the first branch is empty.
+        XCTAssertTrue(SessionBranches.isEmpty(aheadOfBase: 0, pushed: false))
+        XCTAssertFalse(SessionBranches.isEmpty(aheadOfBase: 2, pushed: false))
+        XCTAssertFalse(SessionBranches.isEmpty(aheadOfBase: 0, pushed: true))
+        XCTAssertFalse(SessionBranches.isEmpty(aheadOfBase: nil, pushed: false))
+    }
+
     func testAWatchedEarlierPullRequestIsNotShownTwice() {
         var first = link(1, head: "feat-a"); first.url = "https://github.com/a/b/pull/1"
         let watched = URL(string: first.url)!

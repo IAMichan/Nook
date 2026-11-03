@@ -427,6 +427,12 @@ enum SessionBranches {
         return list.isEmpty ? nil : list
     }
 
+    /// A branch the session left is empty when it has no commits beyond the base and was never pushed: nothing was done
+    /// on it, so it is not listed as an earlier branch. Unknown (a failed read) counts as not empty.
+    static func isEmpty(aheadOfBase: Int?, pushed: Bool) -> Bool {
+        aheadOfBase == 0 && !pushed
+    }
+
     /// The pull requests of a branch the session left, added to the ones it left before (a newer read of the same
     /// request replaces the older one).
     static func keeping(_ left: [PullRequestLink], in earlier: [PullRequestLink]) -> [PullRequestLink] {
