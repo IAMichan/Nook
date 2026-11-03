@@ -100,7 +100,8 @@ struct PanelView: View {
                             }
                     }
                 }
-                .animation(NookTheme.reveal, value: splitTab)
+                // The second tab opens and closes at once, the main tab taking its new width in the same frame.
+                .sidePanelsOpenAtOnce(splitTab)
                 // In layout steps (`onLayoutWidthChange`), and as state only while a split tab shows: it is read only
                 // by the split pane, and otherwise every step of a window resize ran this whole body again.
                 .onLayoutWidthChange { width in

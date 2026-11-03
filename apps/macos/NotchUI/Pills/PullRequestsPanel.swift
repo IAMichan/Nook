@@ -87,6 +87,8 @@ struct PullRequestsPanel: View {
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+            // A pull request opens beside the list, and closes, at once.
+            .sidePanelsOpenAtOnce(beside)
         }
         .onReceive(app.viewModel.$pullRequestToOpen) { take($0) }
         // ⇧⌘T: the pull request tab closed last opens again; the key goes on when there is none.
