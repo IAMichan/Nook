@@ -109,7 +109,8 @@ private struct SidePanelTab<Value: Hashable>: View {
             .fill(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear)))
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
-        .onHover { hovering = $0 }
+        // In the main window the tabs lie in the title bar's row, where `onHover` hears nothing.
+        .trackedHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(active ? .isSelected : [])
