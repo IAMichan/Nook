@@ -193,11 +193,12 @@ enum WAMultipart {
 }
 
 /// What Nook asks the gateways to do with a message or chat that is already there: change your message's text, delete it
-/// for everyone, pin or unpin the chat, archive it. Foundation only, like `WASend`, so every request can be tested;
+/// for everyone, pin or unpin the chat, archive it, delete it. Foundation only, like `WASend`, so every request can be tested;
 /// the providers in WhatsAppProvider.swift send them. Field names follow each gateway's docs:
 ///   GOWA   — docs/openapi.yaml (/message/{message_id}/update, /message/{message_id}/revoke, /chat/{chat_jid}/pin,
 ///            /chat/{chat_jid}/archive; an older GOWA without the chat routes answers 404)
-///   OpenWA — docs/06-api-specification.md (/messages/edit, /messages/delete, /chats/pin, /chats/archive)
+///   OpenWA — docs/06-api-specification.md (/messages/edit, /messages/delete, /chats/pin, /chats/archive, /chats/delete;
+///            GOWA has no call to delete a chat)
 enum WAAction {
     // MARK: GOWA
 
@@ -243,6 +244,11 @@ enum WAAction {
 
     static func openwaArchive(_ chatId: String) -> WASendRequest {
         WASendRequest(path: "/chats/archive", json: ["chatId": chatId, "archive": true])
+    }
+
+    /// Deletes the chat from the phone's chat list, for you alone; WhatsApp takes a group only once you left it.
+    static func openwaDeleteChat(_ chatId: String) -> WASendRequest {
+        WASendRequest(path: "/chats/delete", json: ["chatId": chatId])
     }
 
     /// OpenWA answers a pin or archive WhatsApp turned down with `200 {"success": false}` (a fourth pinned chat, a chat

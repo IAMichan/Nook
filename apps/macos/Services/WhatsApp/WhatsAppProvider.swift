@@ -79,6 +79,9 @@ protocol WhatsAppProvider: Sendable {
     func setPinned(_ pinned: Bool, chat: String) async throws
     /// Archives the chat on the phone.
     func archive(_ chat: String) async throws
+    /// Whether this gateway can delete a whole chat on the phone, for you alone, and deletes it.
+    var canDeleteChat: Bool { get }
+    func deleteChat(_ chat: String) async throws
     /// Whether this gateway can mute a chat on the phone, and mutes it (for good) or unmutes it.
     var canMute: Bool { get }
     func setMuted(_ muted: Bool, chat: String) async throws
@@ -111,6 +114,8 @@ extension WhatsAppProvider {
     func delete(_ message: String, chat: String) async throws { throw WAError.refused("delete") }
     func setPinned(_ pinned: Bool, chat: String) async throws { throw WAError.refused("pin") }
     func archive(_ chat: String) async throws { throw WAError.refused("archive") }
+    var canDeleteChat: Bool { false }
+    func deleteChat(_ chat: String) async throws { throw WAError.refused("delete chat") }
     var canMute: Bool { false }
     func setMuted(_ muted: Bool, chat: String) async throws { throw WAError.refused("mute") }
 }
@@ -763,6 +768,13 @@ actor OpenWAProvider: WhatsAppProvider {
 
     func archive(_ chat: String) async throws {
         try await perform(WAAction.openwaArchive(Self.openwaId(chat)))
+    }
+
+    // Deleting a whole chat: OpenWA's /chats/delete. GOWA has no such call.
+    nonisolated var canDeleteChat: Bool { true }
+
+    func deleteChat(_ chat: String) async throws {
+        try await perform(WAAction.openwaDeleteChat(Self.openwaId(chat)))
     }
 
     /// A `200` with `success: false` is WhatsApp saying no (see `WAAction.openwaSucceeded`): refused without a reason

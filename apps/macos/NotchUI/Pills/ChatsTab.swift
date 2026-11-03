@@ -1691,8 +1691,9 @@ private struct ChatsDetail: View, Equatable {
     @ObservedObject private var outbox = ChatOutbox.shared
     /// Who is typing in this chat, under its last message.
     @ObservedObject private var typing = ChatTypingCenter.shared
-    /// The collected chat whose removal waits for a yes.
+    /// The collected chat whose removal waits for a yes, and whether it goes in its app too (else from Nook only).
     @State private var removing: String?
+    @State private var removingInApp = false
     /// The message being forwarded and the chats it can go to, while the picker is open over the chat.
     @State private var forwarding: (bubble: ChatBubble, forward: ChatForward, targets: [ChatForwardPicker.Target])?
     /// The chats Nook writes in through the linked chat service, for what can be done in this one.
@@ -2193,7 +2194,7 @@ private struct ChatsDetail: View, Equatable {
     }
 
     /// Read or unread by hand, the same for every chat (as its row's menu), what its app lets Nook do there, and removing
-    /// a chat collected from notifications.
+    /// the chat: from Nook only, or deleted in its app as well where the app lets Nook (both after a yes).
     private var moreMenu: some View {
         Menu {
             if entry.read.isUnread {
@@ -2229,7 +2230,16 @@ private struct ChatsDetail: View, Equatable {
             }
             if let thread = app.chatThread(entry) {
                 Divider()
-                Button(tr("chats.remove"), role: .destructive) { removing = thread }
+                Button(tr("chats.remove"), role: .destructive) {
+                    removingInApp = false
+                    removing = thread
+                }
+                if route != nil, abilities.deleteChat {
+                    Button(tr("chats.deleteInApp", appName), role: .destructive) {
+                        removingInApp = true
+                        removing = thread
+                    }
+                }
             }
         } label: {
             Image(systemName: "ellipsis")
@@ -2242,7 +2252,14 @@ private struct ChatsDetail: View, Equatable {
         .help(tr("chat.moreActions"))
         .accessibilityLabel(tr("chat.moreActions"))
         .confirmDelete($removing, question: { _ in tr("confirm.deleteChat", entry.name) },
-                       detail: tr("confirm.deleteChat.detail"), confirmTitle: tr("chats.remove")) { capture.remove($0) }
+                       detail: removingInApp ? tr("chats.deleteInApp.detail", appName) : tr("confirm.deleteChat.detail"),
+                       confirmTitle: removingInApp ? tr("chats.deleteInApp", appName) : tr("chats.remove")) { thread in
+            guard removingInApp, let route else { return capture.remove(thread) }
+            change {
+                try await app.deleteChatInApp(route: route, thread: thread, name: entry.name)
+                onClose()
+            }
+        }
     }
 
     /// One field for every chat: what you type goes to a chat Nook can write in (WhatsApp, Telegram, an app the chat helper links),

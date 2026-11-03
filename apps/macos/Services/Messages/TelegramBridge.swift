@@ -652,6 +652,12 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         try act(TelegramData.archive(chat: chat), chat: chat)
     }
 
+    /// Deletes the chat for you alone, after your own click and confirmation; a group you leave, as in the Telegram app.
+    func deleteChat(_ chat: Int64) throws {
+        guard let known = chats[chat] else { throw NookError(tr("chat.compose.telegramOff")) }
+        for request in TelegramData.deleteChat(known) { try act(request, chat: chat) }
+    }
+
     /// The new text of your message (its id in Nook); the chat shows it once Telegram has it (`updateMessageContent`).
     func edit(_ id: String, to text: String) throws {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
