@@ -29,7 +29,7 @@ extension EnvironmentValues {
 /// can run across several paragraphs. SwiftUI only selects within a single `Text`, so a drag stopped at every paragraph.
 struct SelectableProse: NSViewRepresentable {
     let blocks: [MarkdownBlock]
-    var size: CGFloat = 14
+    var size: CGFloat = 13
 
     /// Whether a block is plain text that can join a selectable run.
     static func joins(_ block: MarkdownBlock) -> Bool {
@@ -69,6 +69,11 @@ struct SelectableProse: NSViewRepresentable {
         view.textContainer?.lineFragmentPadding = 0
         view.textContainer?.widthTracksTextView = true
         view.delegate = context.coordinator
+        view.linkTextAttributes = [
+            // Links in the link blue without an underline; the pointer says they are links.
+            .foregroundColor: NSColor(NookTheme.blue),
+            .cursor: NSCursor.pointingHand,
+        ]
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return view
@@ -79,12 +84,13 @@ struct SelectableProse: NSViewRepresentable {
         context.coordinator.pullRequestLinksBeside = context.environment.pullRequestLinksBeside
         context.coordinator.quote = context.environment.quoteSelection
         context.coordinator.ask = context.environment.askAboutSelection
-        view.linkTextAttributes = [
-            // Links in the link blue without an underline; the pointer says they are links.
-            .foregroundColor: NSColor(NookTheme.blue),
-            .cursor: NSCursor.pointingHand,
-        ]
-        let text = Self.attributed(blocks, size: size, files: context.environment.fileLinkBase != nil)
+        let files = context.environment.fileLinkBase != nil
+        // The same blocks as last time (a redraw on hover or while scrolling): nothing to build or compare. Comparing the
+        // blocks is cheap next to describing them all for the cache key.
+        let input = Coordinator.Input(blocks: blocks, size: size, files: files, accent: NookTheme.accentHex)
+        guard input != context.coordinator.input else { return }
+        context.coordinator.input = input
+        let text = Self.attributed(blocks, size: size, files: files)
         // The cache hands back the same text for the same blocks: skip comparing it character by character on every
         // redraw (hover, scrolling, another message streaming in).
         guard text !== context.coordinator.shown else { return }
@@ -113,6 +119,14 @@ struct SelectableProse: NSViewRepresentable {
     /// Measures on its own layout stack: probing sizes on the text view's container would leave it at a probed width.
     final class Coordinator: NSObject, NSTextViewDelegate {
         let measure = NSTextStorage()
+        /// What the text was last built from.
+        struct Input: Equatable {
+            let blocks: [MarkdownBlock]
+            let size: CGFloat
+            let files: Bool
+            let accent: UInt32
+        }
+        var input: Input?
         /// The text last put in the view, so an unchanged redraw returns at once.
         var shown: NSAttributedString?
         /// The last measured width and its size: SwiftUI asks again for the same width on every layout pass.

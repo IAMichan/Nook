@@ -13,6 +13,7 @@ struct PanelView: View {
     /// header's empty space moves the window, and the traffic lights take the place of the close button.
     var inWindow = false
     @EnvironmentObject private var app: AppModel
+    @Environment(\.lineBleed) private var lineBleed
     /// The width of the Agents session list, which the footer takes on a tab without a list of its own.
     @AppStorage("nook.agents.listWidth") private var agentsListWidth = PanelLayout.agentsList
     /// Search everything is open over the tab (⌘K or ⇧⌘F, or the magnifying glass in the header).
@@ -189,6 +190,7 @@ struct PanelView: View {
             .padding(.trailing, PanelSidebarMetrics.inset)
             .frame(width: agentsListWidth)
             NookDivider(vertical: true)
+                .bleedsVertically(lineBleed)
                 .padding(.trailing, NookTheme.Spacing.xl)
         }
     }

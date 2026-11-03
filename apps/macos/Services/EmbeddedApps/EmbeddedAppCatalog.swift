@@ -254,7 +254,8 @@ enum EmbeddedAppCatalog {
     /// whats" filters. Nil when the text is no "@open …", or once it is a whole command (a way after the name, a web
     /// address, or a space after a name Nook knows), so Return sends it instead of choosing from the list.
     static func openQuery(in text: String, installed: [EmbeddedApp] = InstalledMacApps.all) -> String? {
-        guard let verb = text.range(of: #"^@(?:open|openen|öffne|oeffne|ouvre|ouvrir|abre|abrir)\s+"#,
+        // Asked on every key in the composer: only a text that starts with "@" can be a command.
+        guard text.hasPrefix("@"), let verb = text.range(of: #"^@(?:open|openen|öffne|oeffne|ouvre|ouvrir|abre|abrir)\s+"#,
                                     options: [.regularExpression, .caseInsensitive]) else { return nil }
         let query = String(text[verb.upperBound...])
         guard !query.contains(where: \.isNewline) else { return nil }
@@ -339,9 +340,12 @@ enum EmbeddedAppCatalog {
 
     /// What is typed after "@chat " (or "@open chat "), for the list of chats under the text; nil when the text is no
     /// such command. Empty right after the space, so the list shows every chat.
+    private static let chatPattern = try? NSRegularExpression(
+        pattern: #"^@(?:open\s+)?chat\s+(?:(?:met|with|mit|avec|con)\s+)?(.*)$"#, options: [.caseInsensitive])
+
     static func chatQuery(in text: String) -> String? {
-        let pattern = #"^@(?:open\s+)?chat\s+(?:(?:met|with|mit|avec|con)\s+)?(.*)$"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+        // Asked on every key in the composer: compiled once, and only for a text that starts with "@".
+        guard text.hasPrefix("@"), let regex = chatPattern,
               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               let range = Range(match.range(at: 1), in: text) else { return nil }
         return String(text[range])

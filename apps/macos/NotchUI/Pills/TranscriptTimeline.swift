@@ -564,7 +564,12 @@ struct TranscriptPromptRail: View {
                 // A fully transparent view is not hit-tested, so this layer keeps the hidden rail hoverable.
                 Color.clear.contentShape(Rectangle())
                 Group {
-                    thumb(travel: travel)
+                    // Its own view, and only while the rail shows: it reads where the conversation is scrolled, which
+                    // changes on every frame of a scroll, and that should not redraw the marks or the rest of the rail.
+                    if shown {
+                        RailThumb(viewport: viewport, dragStart: dragStart, dragging: dragging, travel: travel,
+                                  target: Self.target, width: Self.width)
+                    }
                     marksLayer(travel: travel)
                 }
                 .opacity(shown ? 1 : 0)
@@ -597,18 +602,6 @@ struct TranscriptPromptRail: View {
         .animation(NookTheme.hover, value: shown)
     }
 
-    /// The part of the conversation in view, behind the marks.
-    private func thumb(travel: CGFloat) -> some View {
-        let part = (dragStart.map { viewport.frame.measured(over: $0) } ?? viewport.frame).thumb
-        let height = max(Self.target, CGFloat(part.length) * travel)
-        let top = min(Self.target / 2 + CGFloat(part.start) * travel, Self.target / 2 + travel - height)
-        return RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-            .fill(NookTheme.textTertiary.opacity(dragging ? 0.32 : 0.18))
-            .frame(width: Self.width - NookTheme.Spacing.sm * 2, height: height)
-            .offset(x: NookTheme.Spacing.sm, y: max(0, top))
-            .allowsHitTesting(false)
-    }
-
     private func marksLayer(travel: CGFloat) -> some View {
         ForEach(marks) { mark in
             let lit = hovered == mark.id
@@ -632,6 +625,27 @@ struct TranscriptPromptRail: View {
     private static func prompt(_ text: String) -> String {
         let words = ImageAttachment.splittingPaths(from: text).text.trimmingCharacters(in: .whitespacesAndNewlines)
         return words.count > 600 ? String(words.prefix(599)) + "…" : words
+    }
+}
+
+/// The part of the conversation in view, behind the rail's marks.
+private struct RailThumb: View {
+    let viewport: TimelineViewport
+    let dragStart: ScrollFrame?
+    let dragging: Bool
+    let travel: CGFloat
+    let target: CGFloat
+    let width: CGFloat
+
+    var body: some View {
+        let part = (dragStart.map { viewport.frame.measured(over: $0) } ?? viewport.frame).thumb
+        let height = max(target, CGFloat(part.length) * travel)
+        let top = min(target / 2 + CGFloat(part.start) * travel, target / 2 + travel - height)
+        RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+            .fill(NookTheme.textTertiary.opacity(dragging ? 0.32 : 0.18))
+            .frame(width: width - NookTheme.Spacing.sm * 2, height: height)
+            .offset(x: NookTheme.Spacing.sm, y: max(0, top))
+            .allowsHitTesting(false)
     }
 }
 

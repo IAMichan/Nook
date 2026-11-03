@@ -148,7 +148,7 @@ private struct ChatErrorCard: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
                 Image(systemName: "exclamationmark.circle.fill")
-                    .font(NookTheme.font(14, .semibold))
+                    .font(NookTheme.font(13, .semibold))
                     .foregroundStyle(NookTheme.coralSoft)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(tr("chat.error.title"))

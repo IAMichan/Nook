@@ -34,7 +34,9 @@ struct NookChatView: View {
         nonmutating set { composerState.images = newValue }
     }
     @State private var dropTargeted = false
-    @StateObject private var composerModel = ComposerModel()
+    /// Held, not observed: only its suggestion list watches it (`ComposerSuggestionSlot`), so a key that changes the
+    /// list does not redraw this whole panel.
+    @State private var composerModel = ComposerModel()
     @FocusState private var inputFocused: Bool
     /// Follows the answer while it streams, until you scroll away; the same rules as an agent session.
     @State private var scroll = ScrollModel()
@@ -444,13 +446,13 @@ struct NookChatView: View {
                         withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
                     }
             }
-            // A soft fade under the header, so text scrolls away instead of being cut off.
-            .mask(
-                VStack(spacing: 0) {
-                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: 10)
-                    Color.black
-                }
-            )
+            // A soft fade under the header, so text scrolls away instead of being cut off. A strip in the canvas's color
+            // on top, not a mask: a mask renders the whole scrolling conversation offscreen again on every frame.
+            .overlay(alignment: .top) {
+                LinearGradient(colors: [NookTheme.notch, NookTheme.notch.opacity(0)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 10)
+                    .allowsHitTesting(false)
+            }
             // A mark per question of yours along the edge, as in an agent's transcript: it jumps and scrolls.
             .overlay(alignment: .trailing) {
                 let shown = marks.update(chat.messages)
