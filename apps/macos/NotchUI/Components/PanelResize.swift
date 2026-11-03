@@ -229,4 +229,25 @@ extension View {
             bar().padding(.top, spacing)
         }
     }
+
+    /// Hangs `content` just outside `edge`, `spacing` away, without taking room from this view (the pill above a
+    /// composer, the react and reply buttons beside a bubble). It grows out from a zero-size strip along that edge:
+    /// an alignment guide on conditional content was ignored and put it on top of this view instead.
+    func outside<Content: View>(_ edge: Edge, spacing: CGFloat, @ViewBuilder _ content: () -> Content) -> some View {
+        // Along `edge` of this view, and the content's side that faces this view against it.
+        let (strip, facing, gap): (Alignment, Alignment, Edge.Set) = switch edge {
+        case .top: (.top, .bottom, .bottom)
+        case .bottom: (.bottom, .top, .top)
+        case .leading: (.leading, .trailing, .trailing)
+        case .trailing: (.trailing, .leading, .leading)
+        }
+        let horizontal = edge == .leading || edge == .trailing
+        return overlay(alignment: strip) {
+            Color.clear
+                .frame(width: horizontal ? 0 : nil, height: horizontal ? nil : 0)
+                .overlay(alignment: facing) {
+                    content().fixedSize().padding(gap, spacing)
+                }
+        }
+    }
 }
