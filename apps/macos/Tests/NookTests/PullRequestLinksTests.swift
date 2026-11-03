@@ -302,6 +302,22 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(kept.first?.state, .merged)
     }
 
+    func testSessionPullRequestsKeepAnEarlierBranchsRequestInView() {
+        var merged = link(1, head: "feat-a"); merged.state = .merged
+        let moved = SessionPullRequests(current: [], earlier: [merged])
+        XCTAssertEqual(moved.badge, PullRequestBadge(glyph: .merged, label: .number(1)), "a new worktree without a request still shows the last one")
+        let both = SessionPullRequests(current: [link(2, head: "feat-b")], earlier: [merged, link(2, head: "feat-b")])
+        XCTAssertEqual(both.current.map(\.number), [2])
+        XCTAssertEqual(both.earlier.map(\.number), [1], "a request of the current branch is not listed again")
+        XCTAssertEqual(both.badge, PullRequestBadge(glyph: .open, label: .numberPlus(2, extra: 1)))
+    }
+
+    func testSessionPullRequestsListEarlierOnesNewestFirst() {
+        var old = link(1, head: "a"); old.updatedAt = Date(timeIntervalSince1970: 100)
+        var new = link(2, head: "b"); new.updatedAt = Date(timeIntervalSince1970: 200)
+        XCTAssertEqual(SessionPullRequests(current: [], earlier: [old, new]).earlier.map(\.number), [2, 1])
+    }
+
     func testRowsListEveryBranchWithItsPullRequest() {
         var first = link(1, head: "feat-a"); first.url = "https://github.com/a/b/pull/1"
         let current = URL(string: "https://github.com/a/b/pull/2")!
