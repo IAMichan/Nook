@@ -277,7 +277,8 @@ extension AppModel {
             return try await ScreenBrain.$routed.withValue(worker) { try await takeOver(task, messageID: messageID) }
         }
         let state = TakeoverState.shared
-        guard !state.isRunning else { throw NookError(tr("takeover.busy")) }
+        // One mouse and one keyboard: not while a coding agent has the screen (`take_over_screen`).
+        guard !state.isRunning, WorkspaceBridge.shared.screenHolder == nil else { throw NookError(tr("takeover.busy")) }
         state.isRunning = true
         state.stopRequested = false
         state.messageID = messageID
