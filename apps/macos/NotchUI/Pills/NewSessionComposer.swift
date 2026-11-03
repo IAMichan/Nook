@@ -365,7 +365,7 @@ struct NewSessionComposer: View {
         if let profile = app.profiles.profile(id: config.profileID) {
             let limits = app.quota.limits(for: profile)
             if !limits.isEmpty {
-                ComposerUsageRing(limits: limits, account: AccountLabel.name(profile, app: app), accent: profile.kind.color)
+                ComposerUsageRing(limits: limits, account: AccountLabel.name(profile, app: app))
             }
         }
     }

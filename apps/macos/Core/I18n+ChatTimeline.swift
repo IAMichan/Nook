@@ -5,10 +5,7 @@ import Foundation
 
 let chatTimelineTranslations: [AppLanguage: [String: String]] = [
     .nl: [
-        "compose.limits.title": "Gebruikslimieten",
         "compose.limits.help": "Limieten van %@: %@",
-        "compose.limits.note": "Wat dit account (niet alleen deze sessie) van zijn abonnement heeft gebruikt.",
-        "compose.limits.pace": "De witte streep laat zien waar je bij een gelijkmatig tempo zou zitten.",
         "selection.ask": "Vraag hierover",
         "compose.quote.remove": "Citaat weghalen",
         "compose.quote.full": "Er gaan al vijf citaten mee; haal er een weg om een ander toe te voegen.",
@@ -16,10 +13,7 @@ let chatTimelineTranslations: [AppLanguage: [String: String]] = [
         "compose.context.nearlyFull": "Het contextvenster raakt vol: /compact vat het gesprek samen.",
     ],
     .en: [
-        "compose.limits.title": "Usage limits",
         "compose.limits.help": "Limits of %@: %@",
-        "compose.limits.note": "What this account (not just this session) has used of its subscription.",
-        "compose.limits.pace": "The white line shows where an even pace would be.",
         "selection.ask": "Ask About This",
         "compose.quote.remove": "Remove quote",
         "compose.quote.full": "Five quotes already go with this message; remove one to add another.",
@@ -27,10 +21,7 @@ let chatTimelineTranslations: [AppLanguage: [String: String]] = [
         "compose.context.nearlyFull": "The context window is filling up: /compact summarizes the conversation.",
     ],
     .de: [
-        "compose.limits.title": "Nutzungslimits",
         "compose.limits.help": "Limits von %@: %@",
-        "compose.limits.note": "Was dieses Konto (nicht nur diese Sitzung) von seinem Abo verbraucht hat.",
-        "compose.limits.pace": "Der weiße Strich zeigt, wo ein gleichmäßiges Tempo läge.",
         "selection.ask": "Hierzu fragen",
         "compose.quote.remove": "Zitat entfernen",
         "compose.quote.full": "Es gehen schon fünf Zitate mit; entferne eins, um ein anderes hinzuzufügen.",
@@ -38,10 +29,7 @@ let chatTimelineTranslations: [AppLanguage: [String: String]] = [
         "compose.context.nearlyFull": "Das Kontextfenster wird voll: /compact fasst das Gespräch zusammen.",
     ],
     .fr: [
-        "compose.limits.title": "Limites d'utilisation",
         "compose.limits.help": "Limites de %@ : %@",
-        "compose.limits.note": "Ce que ce compte (pas seulement cette session) a utilisé de son abonnement.",
-        "compose.limits.pace": "Le trait blanc montre où se situerait un rythme régulier.",
         "selection.ask": "Poser une question à ce sujet",
         "compose.quote.remove": "Retirer la citation",
         "compose.quote.full": "Cinq citations accompagnent déjà ce message ; retires-en une pour en ajouter une autre.",
@@ -49,10 +37,7 @@ let chatTimelineTranslations: [AppLanguage: [String: String]] = [
         "compose.context.nearlyFull": "La fenêtre de contexte se remplit : /compact résume la conversation.",
     ],
     .es: [
-        "compose.limits.title": "Límites de uso",
         "compose.limits.help": "Límites de %@: %@",
-        "compose.limits.note": "Lo que esta cuenta (no solo esta sesión) ha usado de su suscripción.",
-        "compose.limits.pace": "La línea blanca muestra dónde estaría un ritmo uniforme.",
         "selection.ask": "Preguntar sobre esto",
         "compose.quote.remove": "Quitar cita",
         "compose.quote.full": "Ya van cinco citas con este mensaje; quita una para añadir otra.",

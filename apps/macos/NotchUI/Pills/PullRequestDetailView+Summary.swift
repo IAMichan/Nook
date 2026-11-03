@@ -66,7 +66,7 @@ extension PullRequestDetailView {
                     if detail.body.isEmpty {
                         Text(tr("agents.pr.noDescription")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textTertiary)
                     } else {
-                        MarkdownView(text: detail.body, size: 13.5)
+                        MarkdownView(text: detail.body, size: 14)
                     }
                 }
                 .padding(.horizontal, NookTheme.Spacing.xs)

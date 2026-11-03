@@ -107,7 +107,7 @@ struct ApprovalView: View {
         } else if approval.prose {
             // A pull request, a brief or a message: read as the text it is, headings and lists included.
             ScrollView(showsIndicators: true) {
-                MarkdownView(text: approval.command, size: 12.5)
+                MarkdownView(text: approval.command, size: 13)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -225,7 +225,7 @@ struct ApprovalView: View {
             if !pr.body.isEmpty {
                 Divider().opacity(0.12)
                 ScrollView(showsIndicators: true) {
-                    MarkdownView(text: pr.body, size: 12.5)
+                    MarkdownView(text: pr.body, size: 13)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }

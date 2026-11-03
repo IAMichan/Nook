@@ -68,6 +68,27 @@ enum AgentFormat {
         return tr("agents.resetOn", formatDay(date))
     }
 
+    /// When a limit resets, as a clock time: "17:30" today, "Tue 4 Nov 17:30" later.
+    static func upcoming(_ date: Date, now: Date = Date()) -> String {
+        Calendar.current.isDate(date, inSameDayAs: now) ? formatTime(date) : "\(formatDay(date)) \(formatTime(date))"
+    }
+
+    /// How long until a limit resets, compact: "2d 3h", "2h 14m", "14m".
+    static func compactDuration(_ interval: TimeInterval) -> String {
+        let minutes = Int(max(0, interval) / 60)
+        let (days, hours) = (minutes / 1440, minutes % 1440 / 60)
+        if days > 0 { return tr("limits.duration.days", days, hours) }
+        if hours > 0 { return tr("limits.duration.hours", hours, minutes % 60) }
+        return tr("limits.duration.minutes", minutes)
+    }
+
+    /// "resets in 2h 14m", "resets now", or nil without a reset time.
+    static func resetsIn(_ date: Date?, now: Date = Date()) -> String? {
+        guard let date else { return nil }
+        if date <= now { return tr("limits.resetsNow") }
+        return tr("limits.resetsIn", compactDuration(date.timeIntervalSince(now)))
+    }
+
     static func weekdayLetter(_ date: Date) -> String {
         formatterLock.lock()
         defer { formatterLock.unlock() }
