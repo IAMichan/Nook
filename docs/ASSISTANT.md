@@ -230,7 +230,7 @@ Legend: ✅ supported & tested · ⚠️ supported with caveats · ❌ not built
 | Terminal | In Nook | – | ✅ `run_command`: full command in plan, dangerous commands blocked, runs in visible workspace terminal |
 | MCP Servers | stdio or HTTP | ✅ server read tools | ✅ server write tools, always gated by approval |
 | Messages (iMessage & SMS) | On your Mac (Full Disk Access) | ✅ `search_messages`, `read_messages`, `messages_open_chats` | – |
-| WhatsApp | On your Mac (Full Disk Access) or local bridge | ✅ `search_whatsapp`, `read_whatsapp`, `whatsapp_open_chats`, `whatsapp_live` | ✅ `whatsapp_send` to existing chats (rate-limited to 6/min), or through WhatsApp Web beside the chat when no phone is linked |
+| WhatsApp | On your Mac (Full Disk Access) or local bridge | ✅ `search_whatsapp`, `read_whatsapp`, `whatsapp_open_chats`, `whatsapp_live` | ✅ `whatsapp_send` to existing chats, or through WhatsApp Web beside the chat when no phone is linked |
 | Chats from other apps | On your Mac (Full Disk Access), off by default | ✅ `chat_inbox`: WhatsApp, Telegram, Instagram, Messenger, Signal, Messages, Teams, Slack, Discord… as Nook has them; `query` searches every chat, your own sent messages included (only incoming ones for an app Nook knows from notifications alone) | ✅ `chat_send` to an existing chat in every app Nook can write in (the same routes and checks as the Chats tab: WhatsApp, Telegram, Slack, Teams, Messages, Snapchat, Mail and the apps the chat helper links); a chat Nook only reads says so instead |
 | Bear | On your Mac | ✅ `search_bear`, `read_bear` | – |
 | Things | On your Mac | ✅ `search_things` | – |
