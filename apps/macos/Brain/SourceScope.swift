@@ -148,7 +148,7 @@ enum SourceCatalog {
         "search_files": "files", "read_file": "files",
         "read_browser_tab": "browser", "read_nook_browser": "browser", "open_in_nook_browser": "browser", "read_open_app": "browser",
         "run_command": "terminal",
-        "list_agent_sessions": "agents", "read_agent_session": "agents", "message_agent_session": "agents", "start_agent_session": "agents",
+        "list_agent_sessions": "agents", "read_agent_session": "agents", "message_agent_session": "agents", "start_agent_session": "agents", "list_remote_machines": "agents", "add_remote_machine": "agents",
         "read_screen": screen, "read_app": screen,
         "list_running_apps": screen, "get_active_app": screen, "list_app_menu": screen, "app_menu_command": screen,
         "read_ui": screen, "look_ui": screen, "control_ui": screen, "take_over": screen,

@@ -148,7 +148,7 @@ struct GitService: Sendable {
     func raw(_ arguments: [String], in directory: String?, timeout: TimeInterval = 60) throws -> ProcessRunner.Output {
         if let remote {
             return try ProcessRunner.run(RemoteLaunch.ssh, RemoteLaunch.git(arguments, target: remote, directory: directory),
-                                         environment: ProcessInfo.processInfo.environment, timeout: timeout)
+                                         environment: RemoteLaunch.environment(for: remote), timeout: timeout)
         }
         return try ProcessRunner.run(executable, arguments, in: directory, environment: environment, timeout: timeout)
     }
