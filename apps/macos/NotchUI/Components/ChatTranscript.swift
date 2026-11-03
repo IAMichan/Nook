@@ -462,6 +462,7 @@ private struct ChatBubbleView: View, Equatable {
     @State private var showingInfo = false
     /// The bubble is in view or close to it: only then does its media load, play or move (`chatMediaLive`).
     @State private var near = false
+    @Environment(\.chatFetchFile) private var fetchFile
     /// A document's first page, made once the bubble comes near view.
     @State private var filePreview: NSImage?
 
@@ -648,6 +649,16 @@ private struct ChatBubbleView: View, Equatable {
         .onHover { hovering = $0 }
         .environment(\.chatMediaLive, near)
         .chatNearView($near)
+        // A file the chat names but Nook does not have yet (it came in while the chat was open, or fetching it failed)
+        // is asked of its app as the bubble comes into view, and again a few times while it stays there.
+        .task(id: near && bubble.file == nil && bubble.attachment != nil ? bubble.id : nil) {
+            guard near, bubble.file == nil, bubble.attachment != nil, let fetchFile else { return }
+            for wait in [0.0, 4, 12, 30] {
+                if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+                if Task.isCancelled { return }
+                await fetchFile(bubble.id)
+            }
+        }
         .task(id: near ? bubble.file : nil) {
             guard near, case .file = bubble.media, let file = bubble.file, bubble.image == nil, filePreview == nil else { return }
             filePreview = await ChatFileThumbnails.shared.image(file, kind: .file)
@@ -1420,7 +1431,9 @@ struct VideoTile: View {
     let name: String
     /// How tall it may be: a chat bubble's height, or taller where a video stands on its own (a file the agent made).
     var maxHeight = PhotoButton.maxHeight
-    @State private var player: AVPlayer?
+    /// The video playing in the bubble, once you clicked it: it waits for a file still coming in and says so when it
+    /// cannot be played (`ChatVideoPlayback`).
+    @State private var playback: ChatVideoPlayback?
     @State private var hovering = false
     @State private var isPaused = false
     /// A frame of the video itself, when its app sent no picture of it: never a black box.
@@ -1430,7 +1443,7 @@ struct VideoTile: View {
 
     private var picture: NSImage? { poster ?? still?.image }
     private var enlargeLabel: String { tr(stage == nil ? "card.video.enlarge" : "card.video.fullScreen") }
-    private var showEnlarge: Bool { hovering || player == nil || isPaused }
+    private var showEnlarge: Bool { hovering || playback == nil || isPaused }
 
     private var size: CGSize {
         guard let poster = picture, poster.size.width > 0, poster.size.height > 0 else {
@@ -1442,8 +1455,9 @@ struct VideoTile: View {
 
     var body: some View {
         ZStack {
-            if let player {
-                InlinePlayer(player: player, onHover: { hovering = $0 }, onPaused: { isPaused = $0 }, onDoubleClick: enlarge)
+            if let playback {
+                ChatVideoPlaybackView(playback: playback, poster: picture, onHover: { hovering = $0 },
+                                      onPaused: { isPaused = $0 }, onDoubleClick: enlarge)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Button { play() } label: {
@@ -1486,7 +1500,7 @@ struct VideoTile: View {
         }
         .overlay(alignment: .bottomLeading) {
             // How long it lasts, on the picture, as a chat app shows it.
-            if player == nil, let seconds = still?.seconds, seconds > 0 {
+            if playback == nil, let seconds = still?.seconds, seconds > 0 {
                 Text(ChatAudioPlayer.clock(seconds))
                     .font(NookTheme.TextStyle.caption)
                     .monospacedDigit()
@@ -1501,7 +1515,7 @@ struct VideoTile: View {
         .fittedMedia(size)
         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
         .onHover { hovering = $0 }
-        .onDisappear { player?.pause() }
+        .onDisappear { playback?.pause() }
         // Its frame is read once its message comes near view, not for every video in the history at once.
         .task(id: live ? url : nil) {
             guard live, still == nil else { return }
@@ -1510,22 +1524,57 @@ struct VideoTile: View {
     }
 
     private func play() {
-        let player = AVPlayer(url: url)
-        self.player = player
+        let playback = ChatVideoPlayback(url: url)
+        self.playback = playback
         isPaused = false
-        player.play()
+        playback.start()
     }
 
     /// The video big, from where the bubble was; the bubble stops so it never plays twice.
     private func enlarge() {
-        let time = player?.currentTime() ?? .zero
-        player?.pause()
-        player = nil
+        let time = playback?.currentTime ?? .zero
+        playback?.stop()
+        playback = nil
         isPaused = false
         if let stage {
             stage.show(url, name: name, at: time)
         } else {
             VideoWindow.shared.show(url, title: name, at: time, aspect: picture?.size)
+        }
+    }
+}
+
+/// A bubble's video once you clicked it: its picture with a spinner while its file is still coming in, then the
+/// system's player, or why it cannot be played with a way to try again or open it elsewhere.
+private struct ChatVideoPlaybackView: View {
+    @ObservedObject var playback: ChatVideoPlayback
+    let poster: NSImage?
+    var onHover: ((Bool) -> Void)?
+    var onPaused: ((Bool) -> Void)?
+    var onDoubleClick: (() -> Void)?
+
+    var body: some View {
+        switch playback.phase {
+        case .ready:
+            InlinePlayer(player: playback.player, onHover: onHover, onPaused: onPaused, onDoubleClick: onDoubleClick)
+        case .loading, .failed:
+            ZStack {
+                Color.black
+                if let poster {
+                    Image(nsImage: poster)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                }
+                if playback.phase == .loading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                        .accessibilityLabel(tr("card.video.loading"))
+                } else {
+                    ChatVideoFailure(url: playback.url, retry: playback.retry)
+                }
+            }
         }
     }
 }
@@ -1894,8 +1943,8 @@ struct ChatPhotoLoader: View {
         _image = State(initialValue: ChatMediaImages.cached(url))
     }
 
-    private static let tries = 12
-    private static let pause: Duration = .seconds(2)
+    /// The waits between tries while its app may still be writing it: about a minute and a half in all.
+    private static let waits: [Double] = [0, 0.5, 1, 2, 3, 5, 8, 13, 20, 30]
 
     var body: some View {
         Group {
@@ -1908,16 +1957,20 @@ struct ChatPhotoLoader: View {
             }
         }
         // Decoded once its message comes near view: scrolling back does not decode the whole history's photos.
+        // One that failed before is tried again each time it comes back into view: its file may be whole by now.
         .task(id: live ? url : nil) {
             guard live, image == nil else { return }
-            for attempt in 0..<Self.tries {
+            for wait in Self.waits {
+                if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+                if Task.isCancelled { return }
+                // A file still being written is not decoded yet: a half photo would be cached and shown as it is.
+                guard ChatMedia.isSettled(url) else { continue }
                 let url = url
                 if let loaded = await Task.detached(priority: .utility, operation: { ChatMediaImages.image(url) }).value {
                     image = loaded
+                    failed = false
                     return
                 }
-                if attempt < Self.tries - 1 { try? await Task.sleep(for: Self.pause) }
-                if Task.isCancelled { return }
             }
             failed = true
         }

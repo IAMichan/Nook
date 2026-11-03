@@ -101,6 +101,34 @@ extension AppModel {
         }
     }
 
+    /// A message's file the chat names but Nook does not have yet, asked of its app as its bubble comes into view: a
+    /// photo that came in while the chat was open, or one whose fetch failed. WhatsApp's gateway is asked for that one
+    /// file; every other app's chat is read again, which fetches the files its messages hold (each bridge's own way),
+    /// at most once per `fileReadPause` per chat however many bubbles ask.
+    func fetchChatFile(_ message: String, in entry: ChatsEntry) async {
+        if case .whatsApp(let key) = chatRoute(for: entry) {
+            let (link, jid) = WhatsAppAccounts.shared.route(key)
+            guard link.preview(message) == nil,
+                  let found = link.inbox.conversations[WAJID.normalized(jid)]?.messages.first(where: { $0.id == message }),
+                  Self.whatsAppPreviews(found.media) else { return }
+            _ = await link.loadPreviews([message], chat: jid)
+            return
+        }
+        if let last = Self.fileReads[entry.id], Date().timeIntervalSince(last) < Self.fileReadPause { return }
+        Self.fileReads[entry.id] = Date()
+        ChatCaptureService.shared.refresh(entry.id)
+    }
+
+    /// `fetchChatFile` for the chat of a message card.
+    func fetchCardChatFile(_ message: String, card: NookCard) async {
+        guard let id = Self.chatCardThread(card), let thread = ChatCaptureService.shared.loadedInbox.threads[id] else { return }
+        await fetchChatFile(message, in: ChatsEntry.entry(thread))
+    }
+
+    /// When each chat was last read again for a file its bubbles asked for.
+    private static var fileReads: [String: Date] = [:]
+    private static let fileReadPause: TimeInterval = 8
+
     /// Every chat can be removed from Nook; it comes back with its app's next message.
     func canRemoveChat(_ entry: ChatsEntry) -> Bool { true }
 }
