@@ -882,8 +882,8 @@ final class WorkspaceManager: ObservableObject {
     }
 
     /// Changes how the next turn runs: mode, permissions, and model. Also while a turn runs (a session Nook took over as
-    /// much as one it started): a running Claude Code takes them over at once (see `applyLive`), other agents from their
-    /// next turn. Rights count right away either way: Nook answers what they now cover itself (see `LiveRights`),
+    /// much as one it started): an agent with `liveSettings` takes them over at once (see `applyLive`), Codex and
+    /// Antigravity from their next turn. Rights count right away either way: Nook answers what they now cover itself (see `LiveRights`),
     /// the requests already waiting included.
     func configure(_ id: UUID, mode: ExecutionMode? = nil, permission: PermissionPolicy? = nil, model: String? = nil) {
         guard let run = run(id) else { return }
