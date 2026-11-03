@@ -12,9 +12,10 @@ final class TimelineVisitsTests: XCTestCase {
         XCTAssertEqual(TimelineLanding.decide(rows, visit: nil), .end)
     }
 
-    func testLeftAtTheEndComesBackToWhatIsNew() {
+    func testLeftAtTheEndComesBackToTheEndAlsoWithSomethingNew() {
         let visit = TimelineVisit(anchorID: "a", open: [], atEnd: true, lastViewedAt: at(15))
-        XCTAssertEqual(TimelineLanding.decide(rows, visit: visit), .newSince("c"))
+        XCTAssertEqual(TimelineLanding.decide(rows, visit: visit), .end, "the latest results, not the first new row")
+        XCTAssertEqual(TimelineLanding.firstNew(rows, since: visit.lastViewedAt), "c", "the new line still marks it")
         let nothingNew = TimelineVisit(anchorID: "a", open: [], atEnd: true, lastViewedAt: at(40))
         XCTAssertEqual(TimelineLanding.decide(rows, visit: nothingNew), .end)
     }

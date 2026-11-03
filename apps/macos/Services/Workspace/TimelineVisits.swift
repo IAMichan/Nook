@@ -1,7 +1,7 @@
 import Foundation
 
-// Where you left each session's conversation and when you last looked at it, so coming back lands where you were (or
-// at what is new since) instead of always at the end. Stored, so decoding is tolerant.
+// Where you left each session's conversation and when you last looked at it, so coming back lands where you were
+// reading, or at the end with a line above what is new since. Stored, so decoding is tolerant.
 
 struct TimelineVisit: Codable, Equatable, Sendable {
     /// The row at the top of the conversation when you left it; nil when unknown.
@@ -62,10 +62,8 @@ struct TimelineVisits: Codable, Equatable, Sendable {
 
 /// Where a conversation opens when you come back to it.
 enum TimelineLanding: Equatable, Sendable {
-    /// The newest message, following what comes in.
+    /// The very end of the conversation (the latest results, not the latest prompt), following what comes in.
     case end
-    /// The "New since your last visit" line, right above the row with this id.
-    case newSince(String)
     /// The row that was at the top when you left.
     case row(String)
 
@@ -79,13 +77,10 @@ enum TimelineLanding: Equatable, Sendable {
         return rows[index].id
     }
 
-    /// Never seen: the end. Left at the end: what came in since, else the end. Left higher up: that row, while it is
-    /// still there.
+    /// Never seen or left at the end: the end, also when something came in since (its "New since your last visit"
+    /// line stays above it to scroll back to). Left higher up: that row, while it is still there.
     static func decide(_ rows: [Row], visit: TimelineVisit?) -> TimelineLanding {
-        guard let visit else { return .end }
-        if visit.atEnd {
-            return firstNew(rows, since: visit.lastViewedAt).map(TimelineLanding.newSince) ?? .end
-        }
+        guard let visit, !visit.atEnd else { return .end }
         if let anchor = visit.anchorID, rows.contains(where: { $0.id == anchor }) { return .row(anchor) }
         return .end
     }
