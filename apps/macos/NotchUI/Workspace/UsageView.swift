@@ -39,7 +39,10 @@ struct UsageView: View {
             HStack {
                 Text(tr("settings.agents.subscriptions"))
                 Spacer()
-                SmallGhostButton(title: tr("limits.all")) { showLimits = true }
+                SmallGhostButton(title: tr("limits.all")) {
+                    UserDefaults.standard.set(UsageModalTab.limits.rawValue, forKey: UsageModalTab.storageKey)
+                    showLimits = true
+                }
                     .help(tr("limits.openHelp"))
                     .sheet(isPresented: $showLimits) { UsageLimitsModal { showLimits = false }.frame(width: 720).environmentObject(app) }
                 UsageRefreshButton()
