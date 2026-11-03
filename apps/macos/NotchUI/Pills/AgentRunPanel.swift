@@ -1297,8 +1297,8 @@ struct AgentRunPanel: View {
         }
     }
 
-    /// The agent with its account and the model. A model counts from the next turn (a running Claude Code switches at
-    /// once); another account or agent moves the session there with a summary of what happened (shown in the timeline),
+    /// The agent with its account and the model. A running agent with `liveSettings` switches at once, Codex and
+    /// Antigravity from the next turn; another account or agent moves the session there with a summary of what happened (shown in the timeline),
     /// which waits until the agent is idle.
     private func modelMenu(_ run: WorkspaceRun) -> some View {
         let profile = app.profile(for: run)

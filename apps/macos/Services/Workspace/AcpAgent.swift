@@ -493,7 +493,7 @@ enum AgentLogLines {
 }
 
 /// The requests that bring an ACP session's model, effort and mode in line with the run, sent one after the other and
-/// answered before the prompt goes. Antigravity restarts its agent session to switch models: a prompt sent before that is
+/// answered before the prompt goes, or right away when you change them during a turn. Antigravity restarts its agent session to switch models: a prompt sent before that is
 /// done ends at once without a word.
 enum AcpSessionSettings {
     enum Target: Equatable, Sendable {
