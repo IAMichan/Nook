@@ -175,7 +175,8 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `NookSearchField` | `PanelBlocks.swift` | The one search field (panel lists, Settings rows, menus, the command palette): magnifying glass, text, a clear button, Escape clears and then calls `onEscape`. `panel`, `inline` (in a Settings form or a menu) and `large` (a palette). Never build a search field by hand |
 | `.focusOnAppear(_:)` | `PanelBlocks.swift` | Puts the keyboard in a palette's field as it opens (⌘K search, the command palette), also when it appears with a transition or the panel takes the keyboard later. Use it instead of `.onAppear { focused = true }` on a field that must take typing at once |
 | `QRCodeView`, `QRCode` | `QRCode.swift` | The one QR code for a phone to scan (linking a chat app, WhatsApp, pairing the companion): crisp pixels on a light card, with a label for VoiceOver. Never draw a QR image by hand |
-| `PanelSidebarTop`, `.panelSidebarColumn()` | `PanelSidebar.swift` | The head of the main window's sidebar (Nook, the tabs and Search as rows) at the top of a tab's first column, and the inset that column keeps from the window's edge; nothing in the notch |
+| `NookSearchLauncher`, `NookKeyHint` | `PanelBlocks.swift` | A button drawn as a `NookSearchField` that opens a search (the sidebar's Search, ⌘K), and a shortcut as a small key cap |
+| `PanelSidebarTop`, `.panelSidebarColumn()` | `PanelSidebar.swift` | The head of the main window's sidebar (the title bar's row, Search, the tabs with their status) at the top of a tab's first column, and the inset that column keeps from the window's edge; nothing in the notch |
 | `PanelListHeader`, `PanelNewButton` | `PanelBlocks.swift` | The title row on top of every tab's list (Nook, Agents, Chats, Pull requests): name, `NookCountBadge`, the list's actions; `PanelNewButton` is the "new" in it, lit while the new one is open |
 | `NookCountBadge` | `PanelBlocks.swift` | How many wait for you: a small amber count, on a tab or a list title |
 | `PullRequestRow`, `PullRequestTag`, `PullRequestLineCounts` | `NotchUI/Pills/PullRequestRow.swift` | One pull request in a list: state mark, then the title (so titles line up), checks and review, lines changed; under it the repository and number, author, labels, stack position, age, with its quick actions. The Pull requests page and the side panel's picker both draw their rows with it; never build a second pull request row. `PullRequestLineCounts` is the "+120 −8" of a row, the pull request page's header and a changed file: grouped numbers and a real minus sign, never drawn by hand |
@@ -277,7 +278,13 @@ button, the window remembers its tab (and opens at an agent that waits for you),
 
 In the window the tabs live in a sidebar along the left edge (`PanelSidebar.swift`): `PanelView` hands
 the tab a `PanelSidebarContext` through the environment, and the tab's first column starts with `PanelSidebarTop`
-(Nook with talk and split view, the tabs and Search as rows) and carries `.panelSidebarColumn()`. The tab's list
+(the title bar's row with talk and split view, Search as a `NookSearchLauncher`, then the tabs as rows: the selected
+one with a filled mark on `rowSelected` and a hairline edge, and at the end what goes on there — waiting sessions in
+amber or a pulse while one works, unread chats, the bars while music plays — or its shortcut under the pointer) and carries `.panelSidebarColumn()`.
+The window has an empty unified toolbar, so its title bar is a 52 pt row (`PanelSidebarMetrics.titleBand`) with the
+traffic lights in the middle: the sidebar's column runs up into it, a session's header is centered on it, and
+`WorkspaceView` draws Nook there, past the traffic lights, over the panel rather than inside the column, which would
+clip his ring and its hover labels. The tab's list
 follows under it, with its `PanelListHeader` as a quiet section label (`sidebarTitle`, "Sessions" under Agents), and
 the `PanelFooter` at the bottom. A tab without a list (Music) gets the column from `PanelView`. While a tab draws the
 head (`PanelSidebarShown`), the panel leaves out its floating capsule and the window its left margin and its own Nook;

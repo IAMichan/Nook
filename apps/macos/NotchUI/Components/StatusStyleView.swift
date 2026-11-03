@@ -33,6 +33,8 @@ struct AgentStatusBadge: View {
     let state: AgentDisplayState
     var detail: String? = nil
     var long = false
+    /// Only the mark, for a row too narrow for the word: the word and the detail move to its tooltip.
+    var markOnly = false
 
     /// Approval, input and failure: the ones you have to act on.
     private var needsYou: Bool { AgentStatusStyle.priority(state) >= AgentStatusStyle.priority(.failed) }
@@ -49,11 +51,13 @@ struct AgentStatusBadge: View {
             }
             .foregroundStyle(tint)
             .frame(width: 10, height: 10)
-            Text(long ? state.longWord : state.word)
-                .font(NookTheme.TextStyle.label)
-                .foregroundStyle(needsYou ? NookTheme.paper : NookTheme.textSecondary)
-                .lineLimit(1)
-            if let detail {
+            if !markOnly {
+                Text(long ? state.longWord : state.word)
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(needsYou ? NookTheme.paper : NookTheme.textSecondary)
+                    .lineLimit(1)
+            }
+            if let detail, !markOnly {
                 Text("· \(detail)")
                     .font(NookTheme.TextStyle.caption.monospacedDigit())
                     .foregroundStyle(NookTheme.textTertiary)
@@ -61,6 +65,7 @@ struct AgentStatusBadge: View {
             }
         }
         .modifier(RowBadgeBackground())
+        .help(markOnly ? [state.longWord, detail].compactMap { $0 }.joined(separator: " · ") : "")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([state.longWord, detail].compactMap { $0 }.joined(separator: " "))
     }

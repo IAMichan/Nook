@@ -593,6 +593,10 @@ struct AgentListRow: View {
     @State private var hovering = false
     /// The pointer is on the hover buttons.
     @State private var onActions = false
+    /// Too narrow for the status's word beside the name (a narrow sidebar): the status is only its mark.
+    @State private var narrow = false
+    /// Below this width a one-line row keeps the name readable by showing the status as its mark only.
+    static let narrowWidth: CGFloat = 240
 
     /// No fill at rest: the rows read as one list, and only the one under the pointer or the selected one lifts.
     private var background: Color { NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear) }
@@ -645,6 +649,8 @@ struct AgentListRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: oneLine ? NookTheme.Radius.control : NookTheme.Radius.card,
                                      style: .continuous).fill(background))
+        // Only whether it is narrow is kept, so resizing the list redraws a row only when that flips.
+        .onGeometryChange(for: Bool.self) { $0.size.width < Self.narrowWidth } action: { narrow = $0 }
         .selectionMark(selected)
         .contentShape(Rectangle())
         .opacity(restOpacity)
@@ -710,7 +716,9 @@ struct AgentListRow: View {
                 .font(receded ? NookTheme.TextStyle.body : NookTheme.TextStyle.strong)
                 .foregroundStyle(dimmed || receded ? NookTheme.textSecondary : NookTheme.paper)
                 .lineLimit(1)
-            Spacer(minLength: NookTheme.Spacing.sm)
+                // The name gives way last: the status and the pull request shrink to their marks first.
+                .layoutPriority(1)
+            Spacer(minLength: NookTheme.Spacing.xs)
             if let pullRequest { PullRequestPill(badge: pullRequest, compact: true) }
             slot.opacity(hovering && actions != nil ? 0 : 1)
         }
@@ -745,19 +753,23 @@ struct AgentListRow: View {
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.textSecondary)
                 .lineLimit(1)
-            Spacer(minLength: 6)
+                .layoutPriority(1)
+            Spacer(minLength: NookTheme.Spacing.xs)
             if let pullRequest { PullRequestPill(badge: pullRequest, compact: true) }
             slot.opacity(hovering && actions != nil ? 0 : 1)
         }
     }
 
+    /// A one-line row in a narrow list shows its status as a mark only.
+    private var compactStatus: Bool { oneLine && narrow }
+
     /// The right slot: the wake time of a snoozed row, "Wakker" for one that woke, otherwise the status or how long ago.
     @ViewBuilder
     private var slot: some View {
         if let wakeLabel {
-            AgentStatusBadge(state: .snoozed, detail: wakeLabel)
+            AgentStatusBadge(state: .snoozed, detail: wakeLabel, markOnly: compactStatus)
         } else if woke {
-            AgentStatusBadge(state: .woke)
+            AgentStatusBadge(state: .woke, markOnly: compactStatus)
         } else {
             time
         }
@@ -806,17 +818,17 @@ struct AgentListRow: View {
     private var time: some View {
         switch item.status {
         case .working:
-            AgentStatusBadge(state: .working, detail: item.started.map { AgentFormat.short(now.timeIntervalSince($0)) })
+            AgentStatusBadge(state: .working, detail: item.started.map { AgentFormat.short(now.timeIntervalSince($0)) }, markOnly: compactStatus)
         case .waiting:
-            AgentStatusBadge(state: .approval)
+            AgentStatusBadge(state: .approval, markOnly: compactStatus)
         case .input:
-            AgentStatusBadge(state: .input)
+            AgentStatusBadge(state: .input, markOnly: compactStatus)
         case .failed:
-            AgentStatusBadge(state: .failed)
+            AgentStatusBadge(state: .failed, markOnly: compactStatus)
         case .limited:
-            AgentStatusBadge(state: .limited)
+            AgentStatusBadge(state: .limited, markOnly: compactStatus)
         case .idle where item.unseen:
-            AgentStatusBadge(state: .ready)
+            AgentStatusBadge(state: .ready, markOnly: compactStatus)
         case .idle, .finished:
             if let started = item.started {
                 Text(AgentFormat.short(now.timeIntervalSince(started)))

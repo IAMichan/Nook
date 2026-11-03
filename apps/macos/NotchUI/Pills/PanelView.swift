@@ -170,9 +170,7 @@ struct PanelView: View {
             tabs: tabItems, selected: onSide ? side ?? main : main, beside: onSide ? main : side, current: tab,
             select: { value in if value == side { swapSplit(value) } else { select(value) } },
             search: { searching.toggle() },
-            talk: { viewModel.startListening() },
-            orb: AnyView(PanelOrb(viewModel: viewModel, mood: viewModel.mood(for: tab), size: PanelSidebarMetrics.orb,
-                                  inWindow: true)))
+            talk: { viewModel.startListening() })
     }
 
     /// The tab draws the sidebar now: no header of the panel's own.
