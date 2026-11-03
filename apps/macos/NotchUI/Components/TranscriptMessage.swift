@@ -9,7 +9,7 @@ import AppKit
 /// The measurements every conversation shares, so the Nook chat and the agents read alike.
 enum TranscriptStyle {
     /// The size of the words of a message, yours and the answer's.
-    static let textSize: CGFloat = 13
+    static let textSize: CGFloat = 14
     /// The room above each of your messages: every turn starts as a block of its own.
     static let turnGap = NookTheme.Spacing.xxl
     /// Your words stay narrower than the answer, so the thread reads as a conversation at a glance.

@@ -334,9 +334,9 @@ struct CICheckLogView: View {
                         Text(report.title).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textStrong)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    if !report.summary.isEmpty { MarkdownView(text: report.summary, size: 12.5) }
+                    if !report.summary.isEmpty { MarkdownView(text: report.summary, size: 13) }
                     if !report.annotations.isEmpty { annotations(report.annotations) }
-                    if !report.text.isEmpty { MarkdownView(text: report.text, size: 12.5) }
+                    if !report.text.isEmpty { MarkdownView(text: report.text, size: 13) }
                     if !report.notes.isEmpty { notes(report.notes) }
                 }
                 .textSelection(.enabled)
@@ -393,7 +393,7 @@ struct CICheckLogView: View {
                             ToolbarIconButton("arrow.up.right.square", tr("ws.ci.open")) { NSWorkspace.shared.open(url) }
                         }
                     }
-                    MarkdownView(text: note.body, size: 12.5)
+                    MarkdownView(text: note.body, size: 13)
                 }
             }
         }

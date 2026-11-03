@@ -2,12 +2,13 @@ import SwiftUI
 import Charts
 
 /// Settings › Coding agents: the plan limits of every connected account, then what the sessions Nook started used, per day and
-/// per model. Plain Settings rows in the Nook palette; limits look exactly like in the notch (see UsageTone, UsageBar).
+/// per model. Plain Settings rows in the Nook palette; limits look exactly like in the composer (see UsageLimitRows).
 struct UsageView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
     @AppStorage("ws.usage.range") private var range: UsageRange = .week
     @State private var provider: RunProvider?
+    @State private var showLimits = false
 
     var body: some View {
         let report = UsageReport.make(runs: workspace.runs, filter: UsageReport.Filter(range: range, provider: provider, model: nil, project: nil))
@@ -31,10 +32,6 @@ struct UsageView: View {
                 Text(tr("agents.noneConnected"))
                     .foregroundStyle(NookTheme.textSecondary)
             }
-            // Several accounts of one agent read as one pool first, then each account on its own.
-            ForEach(UsagePools.entries(app)) { entry in
-                UsageLimitPoolView(kind: entry.kind, pool: entry.pool)
-            }
             ForEach(app.connectedProfiles) { profile in
                 accountRow(profile)
             }
@@ -42,6 +39,9 @@ struct UsageView: View {
             HStack {
                 Text(tr("settings.agents.subscriptions"))
                 Spacer()
+                SmallGhostButton(title: tr("limits.all")) { showLimits = true }
+                    .help(tr("limits.openHelp"))
+                    .sheet(isPresented: $showLimits) { UsageLimitsSheet().environmentObject(app) }
                 UsageRefreshButton()
             }
         } footer: {
@@ -49,17 +49,10 @@ struct UsageView: View {
         }
     }
 
-    /// One account: logo, agent and account name, then each limit it reports, lined up under the name. Read again every
-    /// minute, so reset times count down and a window that has reset reads as idle.
+    /// One account: logo, agent and account name, then a line per limit it reports (`UsageLimitRows`). Read again every
+    /// minute, so the reset times in the tooltips count down.
     private func accountRow(_ profile: AgentProfile) -> some View {
-        TimelineView(.nookTicks(every: 60)) { context in
-            accountRow(profile, now: context.date)
-        }
-    }
-
-    private func accountRow(_ profile: AgentProfile, now: Date) -> some View {
-        let limits = app.quota.limits(for: profile)
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             HStack(spacing: NookTheme.Spacing.lg) {
                 AgentLogo(profile.kind, size: 22)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -72,60 +65,15 @@ struct UsageView: View {
                 Spacer(minLength: 0)
             }
             Group {
-                if limits.isEmpty {
-                    Text(fallbackSummary(profile))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-                        ForEach(QuotaLimit.grouped(limits), id: \.name) { group in
-                            // Antigravity's groups ("Gemini", "Claude & GPT") each read like Claude's windows, under their name.
-                            if !group.name.isEmpty, group.limits.allSatisfy({ $0.duration != nil }) {
-                                Text(group.name)
-                                    .font(NookTheme.TextStyle.detail)
-                                    .foregroundStyle(NookTheme.textSecondary)
-                                    .lineLimit(1)
-                                ForEach(group.limits) { limit in
-                                    limitRow(limit, title: limit.window, accent: profile.kind.color, now: now)
-                                }
-                            } else {
-                                ForEach(group.limits) { limit in
-                                    limitRow(limit, title: limit.label, accent: profile.kind.color, now: now)
-                                }
-                            }
-                        }
-                    }
+                TimelineView(.nookTicks(every: 60)) { context in
+                    UsageLimitRows(limits: app.quota.limits(for: profile), unavailable: fallbackSummary(profile), now: context.date)
                 }
                 ResetCreditRow(profile: profile)
             }
-            .padding(.leading, 34)
+            // The rows' own inset lines their labels up with the account's name.
+            .padding(.leading, 34 - NookTheme.Spacing.md - NookTheme.Spacing.xxs)
         }
         .padding(.vertical, NookTheme.Spacing.xs)
-    }
-
-
-    private func limitRow(_ limit: QuotaLimit, title: String, accent: Color, now: Date) -> some View {
-        let pace = limit.elapsed(at: now)
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-                Text(title)
-                    .font(NookTheme.TextStyle.body)
-                    .lineLimit(1)
-                if let note = limit.note ?? AgentFormat.reset(limit.resetsAt) {
-                    Text(note)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: NookTheme.Spacing.sm)
-                Text("\(Int(limit.percent.rounded()))%")
-                    .font(NookTheme.TextStyle.strong.monospacedDigit())
-                    .foregroundStyle(UsageTone.text(limit.percent))
-            }
-            UsageBar(fraction: limit.percent / 100, color: UsageTone.fill(limit.percent, accent: accent), pace: pace)
-                .help(pace.map { tr("agents.usage.pace", Int(($0 * 100).rounded())) } ?? "")
-        }
     }
 
     /// Without limits: today's and this week's tokens from the agent's conversations, or why nothing is known.

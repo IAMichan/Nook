@@ -2,9 +2,19 @@ import XCTest
 
 final class LimitPoolTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
+    private let fiveHours: TimeInterval = 5 * 3600
+    private let week: TimeInterval = 7 * 86_400
 
-    func testOneAccountNeedsNoPool() {
-        XCTAssertNil(LimitPool.make([LimitPool.Account(id: "a", name: "a", limits: [.init(label: "5 hours", used: 10, resetsAt: nil)])], now: now))
+    func testNoLimitsNoPool() {
+        XCTAssertNil(LimitPool.make([LimitPool.Account(id: "a", name: "a", limits: [])], now: now))
+    }
+
+    func testOneAccountIsAPoolOfOne() throws {
+        let pool = try XCTUnwrap(LimitPool.make([LimitPool.Account(id: "a", name: "a", limits: [
+            .init(label: "5 hours", used: 38, resetsAt: now.addingTimeInterval(3600), duration: fiveHours),
+        ])], now: now))
+        XCTAssertEqual(pool.windows.map(\.left), [62])
+        XCTAssertEqual(pool.windows[0].columns.map(\.left), [62])
     }
 
     func testThePoolAveragesAndKeepsColumns() throws {
@@ -18,14 +28,49 @@ final class LimitPoolTests: XCTestCase {
         let pool = try XCTUnwrap(LimitPool.make([personal, work], now: now))
         XCTAssertEqual(pool.windows.map(\.label), ["5 hours", "Week"])
         // Work refills first, so it comes first in every window.
-        XCTAssertEqual(pool.windows[0].segments.map(\.name), ["Work", "Personal"])
-        XCTAssertEqual(pool.windows[1].segments.map(\.name), ["Work", "Personal"])
-        XCTAssertEqual(pool.windows[0].left, 50, accuracy: 1e-9)
+        XCTAssertEqual(pool.windows[0].columns.map(\.name), ["Work", "Personal"])
+        XCTAssertEqual(pool.windows[1].columns.map(\.name), ["Work", "Personal"])
+        XCTAssertEqual(pool.windows[0].left, 50)
         // Personal reports no weekly window: a gap, not zero.
-        XCTAssertNil(pool.windows[1].segments[1].left)
-        XCTAssertEqual(pool.windows[1].left, 50, accuracy: 1e-9)
+        XCTAssertNil(pool.windows[1].columns[1].left)
+        XCTAssertEqual(pool.windows[1].left, 50)
         // Work's 5-hour reset hands back its 80 % of one of two accounts: 40 % of the pool.
-        XCTAssertEqual(pool.windows[0].nextReset, now.addingTimeInterval(600))
-        XCTAssertEqual(pool.windows[0].restores, 40, accuracy: 1e-9)
+        XCTAssertEqual(pool.windows[0].nextRefill, LimitPool.Reset(accountID: "w", at: now.addingTimeInterval(600), restores: 40))
+    }
+
+    func testPaceComparesSpendingWithTheClock() throws {
+        // Two hours into five, 40 % elapsed: 60 % used is ahead, 40 % on pace, 10 % under.
+        let reset = now.addingTimeInterval(3 * 3600)
+        func pace(_ used: Double) -> LimitPool.Pace? {
+            LimitPool.pace(.init(label: "5 hours", used: used, resetsAt: reset, duration: fiveHours), now: now)
+        }
+        XCTAssertEqual(pace(60), .ahead)
+        XCTAssertEqual(pace(40), .on)
+        XCTAssertEqual(pace(10), .under)
+        XCTAssertEqual(LimitPool.timeLeft(.init(label: "5 hours", used: 0, resetsAt: reset, duration: fiveHours), now: now), 60)
+        // Without a reset time there is no clock, so no pace.
+        XCTAssertNil(LimitPool.pace(.init(label: "5 hours", used: 1, resetsAt: nil, duration: fiveHours), now: now))
+    }
+
+    func testASpentWeekEmptiesTheSessionWindow() throws {
+        let account = LimitPool.Account(id: "a", name: "a", limits: [
+            .init(label: "5 hours", used: 20, resetsAt: now.addingTimeInterval(3600), duration: fiveHours),
+            .init(label: "Week", used: 100, resetsAt: now.addingTimeInterval(86_400), duration: week),
+        ])
+        let pool = try XCTUnwrap(LimitPool.make([account], now: now))
+        let session = try XCTUnwrap(pool.windows.first { $0.kind == .session })
+        XCTAssertEqual(session.left, 0)
+        XCTAssertNil(session.pace)
+        // The session resets first but the week still blocks it: it comes back with the week, all of it.
+        XCTAssertEqual(session.columns[0].limit?.resetsAt, now.addingTimeInterval(86_400))
+        XCTAssertEqual(session.columns[0].refill, 100)
+    }
+
+    func testSessionWindowsSortBeforeTheWeek() throws {
+        let account = LimitPool.Account(id: "a", name: "a", limits: [
+            .init(label: "Week", used: 10, resetsAt: now.addingTimeInterval(86_400), duration: week),
+            .init(label: "5 hours", used: 10, resetsAt: now.addingTimeInterval(3600), duration: fiveHours),
+        ])
+        XCTAssertEqual(try XCTUnwrap(LimitPool.make([account], now: now)).windows.map(\.label), ["5 hours", "Week"])
     }
 }
