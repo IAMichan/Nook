@@ -2046,7 +2046,9 @@ final class WorkspaceManager: ObservableObject {
         guard processes[id] == nil, !run.status.isActive else { throw StartError.git(tr("ws.error.busy")) }
         let others = runs.filter { $0.id != id && $0.status.isActive && $0.workingDirectory == worktree }
         guard others.isEmpty else { throw StartError.git(tr("ws.error.busy")) }
+        let local = !run.isRemote
         try await FolderLease.shared.run(FolderLease.key(worktree, machine: run.remote?.machineID), priority: .userInitiated) {
+            if local { WorktreeArchive.save(worktree: worktree) }
             try git.removeWorktree(repo: repo, path: worktree, force: force)
         }
         append(id, RunEvent(kind: .system, text: tr("ws.event.worktreeRemoved", AgentPathFormat.tilde(worktree))))
@@ -2139,6 +2141,7 @@ final class WorkspaceManager: ObservableObject {
             throw StartError.git(tr("ws.error.busy"))
         }
         try await FolderLease.shared.run(FolderLease.key(path), priority: .userInitiated) {
+            WorktreeArchive.save(worktree: path)
             try git.removeWorktree(repo: repo, path: path, force: force)
         }
         for run in runs where WorkspacePathPolicy.normalize(run.workingDirectory) == target {
@@ -2166,7 +2169,15 @@ final class WorkspaceManager: ObservableObject {
     func openFile(_ target: FileTarget) {
         let url = URL(fileURLWithPath: target.path)
         guard FileManager.default.fileExists(atPath: target.path) else {
-            ToastCenter.shared.info(tr("ws.file.missing", AgentPathFormat.tilde(target.path)))
+            Task {
+                guard let found = await recoverFile(target.path) else {
+                    ToastCenter.shared.info(tr("ws.file.missing", AgentPathFormat.tilde(target.path)))
+                    return
+                }
+                var copy = target
+                copy.path = found
+                openFile(copy)
+            }
             return
         }
         let chosen = settings.editorBundleID.isEmpty ? nil : settings.editorBundleID
