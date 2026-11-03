@@ -227,6 +227,8 @@ final class WorkspaceManager: ObservableObject {
     var accountEnvironment: (String) -> [String: String] = { _ in [:] }
     /// The folder an account keeps its login in; two accounts with the same folder share conversations.
     var accountHome: (String) -> String? = { $0 }
+    /// The usage windows of an account, for "Auto" to pick a model by (see `AutoModel`); configured by AppModel.
+    var usageWindows: (String) -> [AutoModel.Window] = { _ in [] }
     /// Runs a project script in a visible terminal (folder, command, title); configured by AppModel.
     var runScript: ((String, String, String) -> Void)?
     /// Nook's workspace bridge for the agent's command line; nil when agents may not use it.
@@ -661,6 +663,11 @@ final class WorkspaceManager: ObservableObject {
         )
         run.effort = config.effort
         run.lineage = config.lineage
+        // "Auto": the model is picked for each turn as it starts (see `applyAutoModel`).
+        if config.model == AutoModel.id {
+            run.autoModel = true
+            run.model = ""
+        }
         runs.insert(run, at: 0)
         events[id] = []
         settings.rememberProject(repoRoot ?? projectPath)
@@ -869,7 +876,12 @@ final class WorkspaceManager: ObservableObject {
                 $0.permission = permission
                 if permission != run.permission { sessionApprovals[id]?.modeChanged(to: permission) }
             }
-            if let model { $0.model = model.trimmingCharacters(in: .whitespacesAndNewlines) }
+            if let model {
+                let clean = model.trimmingCharacters(in: .whitespacesAndNewlines)
+                // "Auto" keeps the model in use until the next turn picks one.
+                $0.autoModel = clean == AutoModel.id ? true : nil
+                if clean != AutoModel.id { $0.model = clean }
+            }
         }
         if run.status.isActive, let updated = self.run(id) { applyLive(id, from: run, to: updated) }
         if let updated = self.run(id), updated.permission != run.permission || updated.mode != run.mode { allowCovered(id) }
@@ -1268,6 +1280,7 @@ final class WorkspaceManager: ObservableObject {
         clearUsageLimit(id)
         // A task list that was all done belongs to the previous work; one still open stays until the agent updates it.
         if let tasks = self.run(id)?.tasks, RunTasks.isFinished(tasks) { update(id) { $0.tasks = nil } }
+        applyAutoModel(id, prompt: prompt)
         guard var run = run(id) else { return }
         // Codex speaks app-server when it can: approvals, questions, steering and live reasoning.
         if usesCodexServer(run, executable) {
