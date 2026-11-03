@@ -1,8 +1,8 @@
 import SwiftUI
 
 // The main window's sidebar: one column along the window's left edge, from the top of the window to the
-// bottom. Its head is the title bar's row: the traffic lights, and talk and split view. Nook himself stays in the notch.
-// Then the tabs (Nook, Agents, Chats, Music) and Search as rows, then the list of
+// bottom. Its head is the title bar's row: the traffic lights, and search, talk and split view. Nook himself stays in the notch.
+// Then the tabs (Nook, Agents, Chats, Music) as rows, then the list of
 // the tab you are on (its sessions, its Nooks, its chats), and the footer at the bottom.
 //
 // The list belongs to its tab, so the tab draws the column; `PanelView` hands it what goes on top through the
@@ -71,7 +71,7 @@ struct PanelSidebarShown: PreferenceKey {
     static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
 }
 
-/// The head of the sidebar: the title bar's row with talk and split view, Search as a field, and the tabs. Nothing
+/// The head of the sidebar: the title bar's row with search, talk and split view, and the tabs. Nothing
 /// outside the main window. `compact` is the rail of icons the Chats tab folds its sidebar into.
 struct PanelSidebarTop: View {
     var compact = false
@@ -81,10 +81,12 @@ struct PanelSidebarTop: View {
         if let context {
             VStack(alignment: compact ? .center : .leading, spacing: NookTheme.Spacing.xxs) {
                 head(context)
-                // Search everything, as a field at the top of the sidebar: it opens the search over the tab (⌘K).
-                NookSearchLauncher(prompt: tr("search.sidebar"), shortcut: "⌘K", help: tr("search.button"),
-                                   compact: compact, height: PanelSidebarMetrics.row, action: context.search)
-                    .padding(.bottom, NookTheme.Spacing.sm)
+                // The rail of icons has no room for the head's buttons: Search everything is a glyph on top of it.
+                if compact {
+                    NookSearchLauncher(prompt: tr("search.sidebar"), shortcut: "⌘K", help: tr("search.button"),
+                                       compact: true, height: PanelSidebarMetrics.row, action: context.search)
+                        .padding(.bottom, NookTheme.Spacing.sm)
+                }
                 ForEach(Array(context.tabs.enumerated()), id: \.element.id) { index, item in
                     PanelSidebarRow(tab: item.value, title: item.title, count: item.count,
                                     shortcut: "⌘\(index + 1)", selected: item.value == context.selected,
@@ -100,13 +102,15 @@ struct PanelSidebarTop: View {
         }
     }
 
-    /// The title bar's row: room for the traffic lights, then talk and split view.
+    /// The title bar's row: room for the traffic lights, then search (⌘K), talk and split view.
     private func head(_ context: PanelSidebarContext) -> some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
             Color.clear
                 .frame(width: PanelSidebarMetrics.trafficLights - PanelSidebarMetrics.inset)
             Spacer(minLength: 0)
             if !compact {
+                NookIconButton(systemName: "magnifyingglass", label: tr("search.button"), size: 28, action: context.search)
+                    .help(tr("search.button"))
                 NookIconButton(systemName: "mic", label: tr("button.talk"), size: 28, action: context.talk)
                 PanelSplitButton(current: context.current)
             }
