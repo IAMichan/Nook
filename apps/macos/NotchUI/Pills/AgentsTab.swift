@@ -64,6 +64,8 @@ struct AgentsTab: View {
         HStack(alignment: .top, spacing: 0) {
             if listShown {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                    // In the main window the list is the sidebar: the tabs and Search on top of it.
+                    PanelSidebarTop()
                     listHeader(selection)
                     sessionList(entries, selection: selection)
                     if !app.demoMode {
@@ -72,6 +74,7 @@ struct AgentsTab: View {
                                     onBack: { viewModel.selectedAgentID = beforeFooterPage })
                     }
                 }
+                .panelSidebarColumn()
                 .listPanel(stacked: stacked, width: $listWidth, defaultWidth: PanelLayout.agentsList, available: totalWidth,
                            rest: PanelLayout.minimumConversation + PanelSplit.handle + besideRoom)
             }
@@ -198,7 +201,7 @@ struct AgentsTab: View {
     /// (the same close button every side panel ends with); the left toggle in the session's header brings it back.
     private func listHeader(_ selection: Selection) -> some View {
         let isNew: Bool = { if case .new = selection { return true }; return false }()
-        return PanelListHeader(tr("tab.agents")) {
+        return PanelListHeader(tr("tab.agents"), sidebarTitle: tr("sidebar.sessions")) {
             if !app.demoMode {
                 PanelNewButton(label: tr("agents.newSession"), active: isNew) { open("new") }
             }
@@ -578,6 +581,9 @@ struct AgentListRow: View {
     var woke = false
     /// One line, for the snoozed and settled shelves.
     var slim = false
+    /// Under its project's header, which already names the folder: one line, the agent's logo, the name and the status,
+    /// as a thread sits under its project in a sidebar. The branch and the rest are in the hover card.
+    var grouped = false
     /// When a snoozed row wakes, as text ("tot 9:00").
     var wakeLabel: String? = nil
     var actions: AgentRowActions? = nil
@@ -588,7 +594,10 @@ struct AgentListRow: View {
     /// The pointer is on the hover buttons.
     @State private var onActions = false
 
-    private var background: Color { NookTheme.rowFill(selected: selected, hovering: hovering) }
+    /// No fill at rest: the rows read as one list, and only the one under the pointer or the selected one lifts.
+    private var background: Color { NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear) }
+    /// One line: a shelf row, or a row under its project's header.
+    private var oneLine: Bool { slim || grouped }
     private var dimmed: Bool { item.status == .finished || slim }
     private var restOpacity: Double { receded && item.status == .working && !hovering && !selected ? 0.7 : 1 }
 
@@ -599,7 +608,7 @@ struct AgentListRow: View {
             if let actions {
                 hoverActions(actions)
                     .rowActionsBackdrop(background)
-                    .padding(.top, slim ? NookTheme.Spacing.sm : NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
+                    .padding(.top, oneLine ? NookTheme.Spacing.xs : NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
                     .padding(.trailing, NookTheme.Spacing.md)
                     .opacity(hovering ? 1 : 0)
                     .allowsHitTesting(hovering)
@@ -629,12 +638,13 @@ struct AgentListRow: View {
 
     private var content: some View {
         Group {
-            if slim { slimBody } else { fullBody }
+            if slim { slimBody } else if grouped { groupedBody } else { fullBody }
         }
-        .padding(.horizontal, NookTheme.Spacing.lg)
-        .padding(.vertical, slim ? NookTheme.Spacing.md : NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+        .padding(.horizontal, oneLine ? NookTheme.Spacing.md : NookTheme.Spacing.lg)
+        .padding(.vertical, oneLine ? NookTheme.Spacing.sm : NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(background))
+        .background(RoundedRectangle(cornerRadius: oneLine ? NookTheme.Radius.control : NookTheme.Radius.card,
+                                     style: .continuous).fill(background))
         .selectionMark(selected)
         .contentShape(Rectangle())
         .opacity(restOpacity)
@@ -645,23 +655,7 @@ struct AgentListRow: View {
     private var fullBody: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                if pinned {
-                    Image(systemName: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
-                }
-                if item.forked {
-                    Image(systemName: "arrow.triangle.branch")
-                        .font(NookTheme.font(10))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .help(tr("lineage.forked"))
-                        .accessibilityLabel(tr("lineage.forked"))
-                }
-                if item.comparison > 0 {
-                    Image(systemName: "square.stack.3d.up")
-                        .font(NookTheme.font(10))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .help(tr("compare.group", item.comparison + 1))
-                        .accessibilityLabel(tr("compare.group", item.comparison + 1))
-                }
+                marks
                 Text(item.title)
                     .font(receded ? NookTheme.TextStyle.body : NookTheme.TextStyle.strong)
                     .foregroundStyle(dimmed || receded ? NookTheme.textSecondary : NookTheme.paper)
@@ -702,6 +696,46 @@ struct AgentListRow: View {
         }
         .help(AgentPathFormat.tilde(item.path))
         .accessibilityElement(children: .combine)
+    }
+
+    /// One line under the project's header: the agent's logo, the name with the marks before it, and the status or how
+    /// long ago on the right.
+    private var groupedBody: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            AgentMark(agent: item.agent, account: item.account, size: 13, dimmed: dimmed, ring: background,
+                      quiet: !hovering && !selected)
+                .padding(.trailing, item.account == nil ? 0 : 3)
+            marks
+            Text(item.title)
+                .font(receded ? NookTheme.TextStyle.body : NookTheme.TextStyle.strong)
+                .foregroundStyle(dimmed || receded ? NookTheme.textSecondary : NookTheme.paper)
+                .lineLimit(1)
+            Spacer(minLength: NookTheme.Spacing.sm)
+            if let pullRequest { PullRequestPill(badge: pullRequest, compact: true) }
+            slot.opacity(hovering && actions != nil ? 0 : 1)
+        }
+    }
+
+    /// Pinned, forked, or the first of a model comparison: a quiet mark before the name.
+    @ViewBuilder
+    private var marks: some View {
+        if pinned {
+            Image(systemName: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
+        }
+        if item.forked {
+            Image(systemName: "arrow.triangle.branch")
+                .font(NookTheme.font(10))
+                .foregroundStyle(NookTheme.textTertiary)
+                .help(tr("lineage.forked"))
+                .accessibilityLabel(tr("lineage.forked"))
+        }
+        if item.comparison > 0 {
+            Image(systemName: "square.stack.3d.up")
+                .font(NookTheme.font(10))
+                .foregroundStyle(NookTheme.textTertiary)
+                .help(tr("compare.group", item.comparison + 1))
+                .accessibilityLabel(tr("compare.group", item.comparison + 1))
+        }
     }
 
     private var slimBody: some View {

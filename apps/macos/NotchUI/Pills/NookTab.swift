@@ -84,9 +84,12 @@ struct NookChatView: View {
             HStack(alignment: .top, spacing: 0) {
                 if listShown {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                        // In the main window the list is the sidebar: the tabs and Search on top of it.
+                        PanelSidebarTop()
                         NookList(chat: chat)
                         footer
                     }
+                    .panelSidebarColumn()
                     .listPanel(stacked: stacked, width: compact ? $listWidth : $windowListWidth,
                                defaultWidth: compact ? PanelLayout.chatList : PanelLayout.chatListWindow,
                                available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle)

@@ -105,32 +105,38 @@ struct NookCountBadge: View {
 struct PanelListHeader<Trailing: View>: View {
     let title: String
     var count: Int = 0
+    /// What the list holds, said in the main window's sidebar, where the tab's own name is already a row above it
+    /// ("Sessions" under Agents). There the title is a quiet section label.
+    var sidebarTitle: String? = nil
     @ViewBuilder var trailing: () -> Trailing
+    @Environment(\.inPanelSidebar) private var inSidebar
 
-    init(_ title: String, count: Int = 0, @ViewBuilder trailing: @escaping () -> Trailing) {
+    init(_ title: String, count: Int = 0, sidebarTitle: String? = nil, @ViewBuilder trailing: @escaping () -> Trailing) {
         self.title = title
         self.count = count
+        self.sidebarTitle = sidebarTitle
         self.trailing = trailing
     }
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            Text(title)
-                .font(NookTheme.TextStyle.title)
-                .foregroundStyle(NookTheme.paper)
+            Text(inSidebar ? sidebarTitle ?? title : title)
+                .font(inSidebar ? NookTheme.TextStyle.label : NookTheme.TextStyle.title)
+                .foregroundStyle(inSidebar ? NookTheme.textTertiary : NookTheme.paper)
                 .lineLimit(1)
             NookCountBadge(count: count)
             Spacer(minLength: NookTheme.Spacing.xs)
             HStack(spacing: NookTheme.Spacing.xxs) { trailing() }
         }
         .frame(height: 30)
-        .padding(.leading, NookTheme.Spacing.lg)
+        // In the sidebar the label lines up with the marks of the tab rows above it.
+        .padding(.leading, inSidebar ? NookTheme.Spacing.md : NookTheme.Spacing.lg)
     }
 }
 
 extension PanelListHeader where Trailing == EmptyView {
-    init(_ title: String, count: Int = 0) {
-        self.init(title, count: count) { EmptyView() }
+    init(_ title: String, count: Int = 0, sidebarTitle: String? = nil) {
+        self.init(title, count: count, sidebarTitle: sidebarTitle) { EmptyView() }
     }
 }
 
