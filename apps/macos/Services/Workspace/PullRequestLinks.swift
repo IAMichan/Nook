@@ -59,8 +59,13 @@ struct PullRequestRef: Equatable, Sendable {
     }
 
     private static func parseURL(_ text: String) -> PullRequestRef? {
-        guard let c = URLComponents(string: text), let scheme = c.scheme?.lowercased(), scheme == "http" || scheme == "https",
-              let hostRaw = c.host, !hostRaw.isEmpty else { return nil }
+        // Prose leaves punctuation on a link ("see …/pull/12." or "(…/pull/12)"); no pull request URL ends in it.
+        var trimmed = Substring(text)
+        while let last = trimmed.last, ".,;:!?)]}>'\"".contains(last) { trimmed.removeLast() }
+        guard let c = URLComponents(string: String(trimmed)), let scheme = c.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              var hostRaw = c.host, !hostRaw.isEmpty else { return nil }
+        // www.github.com serves the same pages as github.com.
+        if hostRaw.lowercased().hasPrefix("www.") { hostRaw = String(hostRaw.dropFirst(4)) }
         let segments = c.path.split(separator: "/").map(String.init)
         let detected = SourceControlHost.classify(hostName: hostRaw.lowercased())
         var kind = detected

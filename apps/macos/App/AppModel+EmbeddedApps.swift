@@ -135,10 +135,16 @@ extension AppModel {
     /// A github.com pull request link opens in Nook, read with the account that lists it (else the first GitHub
     /// account): in the session's side panel when clicked in an agent's conversation (`beside`), else on the Pull
     /// requests page. Its top bar opens it on GitHub. Returns false when Nook cannot read it (another forge, GitHub
-    /// not connected), so the link opens in the browser instead.
+    /// not connected), so the link opens in the browser instead. A github.com pull request that only fails because
+    /// GitHub is not connected (or its token cannot be read) says so, so the web page does not open unexplained.
     @discardableResult
     func openPullRequestLink(_ url: URL, beside: Bool = false) -> Bool {
-        guard let request = pullRequestRequest(for: url) else { return false }
+        guard let request = pullRequestRequest(for: url) else {
+            if !demoMode, !GitHubPullRequestList.isAvailable, PullRequestRef.gitHubItem(url) != nil {
+                ToastCenter.shared.info(tr("agents.pr.openUnavailable"))
+            }
+            return false
+        }
         // GitHub is asked now, not once the page has slid in and appeared; the page picks up the read that runs.
         PullRequestDetailModel.prefetch(accountID: request.account, item: request.item)
         if beside {
