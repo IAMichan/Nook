@@ -313,6 +313,7 @@ struct NookChatView: View {
             }
             .frame(height: 30)
             .padding(.leading, NookTheme.Spacing.xxs)
+            .conversationHeaderBackground()
             .onChange(of: chat.activeID) { _, _ in renaming = false }
         }
     }
