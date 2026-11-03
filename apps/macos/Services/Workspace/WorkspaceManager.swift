@@ -235,6 +235,8 @@ final class WorkspaceManager: ObservableObject {
     var accountHome: (String) -> String? = { $0 }
     /// The usage windows of an account, for "Auto" to pick a model by (see `AutoModel`); configured by AppModel.
     var usageWindows: (String) -> [AutoModel.Window] = { _ in [] }
+    /// The connected agents with their accounts, for "Auto" to pick among (see `AutoModel`); configured by AppModel.
+    var autoAccounts: () -> [AutoModel.Account] = { [] }
     /// Runs a project script in a visible terminal (folder, command, title); configured by AppModel.
     var runScript: ((String, String, String) -> Void)?
     /// Nook's workspace bridge for the agent's command line; nil when agents may not use it.
@@ -598,6 +600,8 @@ final class WorkspaceManager: ObservableObject {
     /// with "Retry" without duplicating the session.
     @discardableResult
     func start(_ config: NewRunConfig, allowSharedFolder: Bool = false) async throws -> UUID {
+        // "Auto": the agent and account that fit the task and limits best (see `autoTarget`).
+        let config = config.model == AutoModel.id ? autoTarget(config) : config
         if let problem = config.problem { throw StartError.config(problem) }
         // On another machine: no folder, git or worktree to prepare here.
         if let remote = config.remote { return try await startRemote(config, on: remote) }
@@ -967,7 +971,7 @@ final class WorkspaceManager: ObservableObject {
     @discardableResult
     private func send(_ id: UUID, text: String, shown: Bool) -> Bool {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty, let run = run(id) else { return false }
+        guard !clean.isEmpty, var run = run(id) else { return false }
         // You carry on yourself: whatever waited behind a failure or a stop goes on after this turn.
         if var held = queued[id], held.isHeld { held.resume(); queued[id] = held }
         // Its worktree is being made again for an earlier message: this one follows that turn.
@@ -980,6 +984,9 @@ final class WorkspaceManager: ObservableObject {
             return true
         }
         guard run.canContinue || (shown && run.status == .preparing), processes[id] == nil else { return false }
+        // "Auto" may move the session to another agent or account first (see `autoMove`).
+        autoMove(id, prompt: clean)
+        if let moved = self.run(id) { run = moved }
         guard let executable = launchExecutable(run) else {
             update(id) { $0.statusDetail = StartError.noExecutable(run.provider).errorDescription }
             return false

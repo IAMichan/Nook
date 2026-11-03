@@ -1,10 +1,11 @@
 import Foundation
 
-/// "Auto" in an agent's model menu: Nook picks the model for each turn itself, among the models you allow in
-/// Settings › Workspace › Auto model choice, from what the turn asks for and how much room the account's usage limits
-/// leave. A light question goes to a light model, heavy work to a strong one, and when a 5-hour or weekly window runs
-/// full (or fills faster than it resets) Nook steps down to spare it. The same for every agent: a model's weight is read
-/// from its name, so it also works for the models an ACP agent lists itself. Depends only on Foundation so tests can use it.
+/// "Auto" in the model menu: Nook picks the agent, account and model for each turn itself, over every model of every
+/// connected agent you allow in Settings › Workspace › Auto model choice, from what the turn asks for and how much room
+/// each account's usage limits leave. A light question goes to a light model, heavy work to a strong one, and when an
+/// account's 5-hour or weekly window runs full (or fills faster than it resets) Nook spares it: it moves to another agent
+/// or account with room, or steps down to a lighter model. A model's weight is read from its name, so this works the same
+/// for every agent, also for the models an ACP agent lists itself. Depends only on Foundation so tests can use it.
 enum AutoModel {
     /// The value "Auto" is stored under, as a session's or Settings' model.
     static let id = "auto"
@@ -32,14 +33,28 @@ enum AutoModel {
         var elapsed: Double?
     }
 
-    /// A model Nook may pick, in the order of the agent's menu.
+    /// A model Nook may pick: under which agent and account, with that account's usage windows. In order of preference
+    /// (the agent in use first, then the others), and per agent in the order of its menu.
     struct Candidate: Equatable, Sendable {
         var id: String
         var name: String
+        var provider: RunProvider = .claude
+        var profileID: String = ""
+        var windows: [Window] = []
+
+        func runs(on account: Account?) -> Bool { account.map { $0.provider == provider && $0.profileID == profileID } ?? true }
+    }
+
+    /// An agent with one of its accounts.
+    struct Account: Equatable, Hashable, Sendable {
+        var provider: RunProvider
+        var profileID: String
     }
 
     /// What Nook picked and why.
     struct Decision: Equatable, Sendable {
+        var provider: RunProvider
+        var profileID: String
         var model: String
         /// The tier of the picked model.
         var tier: Tier
@@ -128,38 +143,52 @@ enum AutoModel {
 
     // MARK: Picking
 
-    /// The model for a turn: what it asks for, capped at standard when the limits are tight and light when they are
-    /// critical; of the allowed models the one closest to that, a lighter one before a heavier one at equal distance
-    /// under pressure, and the first in menu order among equals. Nil when nothing is allowed: the agent's own default runs.
-    static func pick(_ candidates: [Candidate], need: Tier, windows: [Window]) -> Decision? {
-        let pressure = pressure(windows)
-        let target: Tier
-        switch pressure {
-        case .relaxed: target = need
-        case .tight: target = min(need, .standard)
-        case .critical: target = .light
+    /// The model for a turn, over every candidate. Each one scores by how far its weight is from what the turn asks for,
+    /// plus twice how far it goes over what its account can spare (standard when its limits are tight, light when they are
+    /// critical), plus one for leaving `current` (moving a session to another agent or account hands its conversation
+    /// over, so it moves only for a clear gain). The lowest score wins; among equals the agent in use, then the account with
+    /// more room, then a stronger model while it has room and a lighter one under pressure, then the order given. Nil when
+    /// nothing is allowed.
+    static func pick(_ candidates: [Candidate], need: Tier, current: Account? = nil) -> Decision? {
+        let rated = candidates.enumerated().map { entry -> (index: Int, candidate: Candidate, tier: Tier, pressure: Pressure, score: Int) in
+            let tier = tier(of: entry.element)
+            let pressure = pressure(entry.element.windows)
+            let spare: Tier = pressure == .relaxed ? .strong : pressure == .tight ? .standard : .light
+            let score = abs(tier.rawValue - need.rawValue) + 2 * max(0, tier.rawValue - spare.rawValue)
+                + (current != nil && !entry.element.runs(on: current) ? 1 : 0)
+            return (entry.offset, entry.element, tier, pressure, score)
         }
-        let rated = candidates.enumerated().map { (index: $0.offset, candidate: $0.element, tier: tier(of: $0.element)) }
         let best = rated.min { a, b in
-            let distanceA = abs(a.tier.rawValue - target.rawValue), distanceB = abs(b.tier.rawValue - target.rawValue)
-            if distanceA != distanceB { return distanceA < distanceB }
-            if a.tier != b.tier { return pressure == .relaxed ? a.tier > b.tier : a.tier < b.tier }
+            if a.score != b.score { return a.score < b.score }
+            let stayA = current != nil && a.candidate.runs(on: current), stayB = current != nil && b.candidate.runs(on: current)
+            if stayA != stayB { return stayA }
+            if a.pressure != b.pressure { return a.pressure < b.pressure }
+            if a.tier != b.tier { return a.pressure == .relaxed ? a.tier > b.tier : a.tier < b.tier }
             return a.index < b.index
         }
         guard let best else { return nil }
-        return Decision(model: best.candidate.id, tier: best.tier, need: need, pressure: pressure,
-                        fullest: windows.map(\.percent).max() ?? 0)
+        return Decision(provider: best.candidate.provider, profileID: best.candidate.profileID, model: best.candidate.id,
+                        tier: best.tier, need: need, pressure: best.pressure,
+                        fullest: best.candidate.windows.map(\.percent).max() ?? 0)
     }
 
     /// The models Nook may pick from: the ones you allowed that the agent still offers, or, when you allowed none, every
     /// current model it offers. Models waiting on an agent update and older ones are never picked on their own.
-    static func candidates(_ choices: [ModelChoice], allowed: [String], same: (String, String) -> Bool) -> [Candidate] {
+    /// An agent whose models you all untick stores `none`, so Auto leaves it out.
+    static func candidates(_ choices: [ModelChoice], allowed: [String], same: (String, String) -> Bool,
+                           account: Account? = nil, windows: [Window] = []) -> [Candidate] {
         let usable = choices.filter { !$0.id.isEmpty && !$0.needsUpdate }
         let picked = allowed.isEmpty
             ? usable.filter { !$0.isLegacy }
-            : usable.filter { choice in allowed.contains { same($0, choice.id) } }
-        return picked.map { Candidate(id: $0.id, name: $0.name) }
+            : usable.filter { choice in allowed.contains { !$0.isEmpty && same($0, choice.id) } }
+        return picked.map {
+            Candidate(id: $0.id, name: $0.name, provider: account?.provider ?? .claude, profileID: account?.profileID ?? "",
+                      windows: windows)
+        }
     }
+
+    /// What Settings stores for an agent of which you allow no model at all.
+    static let none = [""]
 
     /// The key of the reason Nook gives in the session (`auto.reason.*`).
     static func reasonKey(_ decision: Decision) -> String {
