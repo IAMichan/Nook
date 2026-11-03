@@ -134,11 +134,14 @@ private struct MusicPlayerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             sectionBar
+                .zIndex(1)
             ZStack(alignment: .bottom) {
                 if !expanded {
                     stage
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .padding(.bottom, MusicDock.barHeight + NookTheme.Spacing.lg)
+                        .clipped()
+                        .contentShape(Rectangle())
                         .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
                 }
                 MusicDock(

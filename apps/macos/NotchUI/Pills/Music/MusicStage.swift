@@ -80,6 +80,8 @@ private struct SyncedLyrics: View, Equatable {
                 .frame(maxWidth: .infinity)
             }
             .mask(fade)
+            .clipped()
+            .contentShape(Rectangle())
             .onAppear { scroll(proxy, animated: false) }
             .onChange(of: active) { scroll(proxy, animated: true) }
         }
@@ -170,6 +172,8 @@ private struct PlainLyrics: View {
             .textSelection(.enabled)
             .padding(.vertical, NookTheme.Spacing.lg)
         }
+        .clipped()
+        .contentShape(Rectangle())
     }
 }
 
