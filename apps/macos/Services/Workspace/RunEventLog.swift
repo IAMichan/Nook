@@ -1,7 +1,7 @@
 import Foundation
 import SQLite3
 
-/// Session timelines as an append-only log in SQLite (`runs.sqlite`, WAL), after t3code's orchestration event table.
+/// Session timelines as an append-only log in SQLite (`runs.sqlite`, WAL).
 ///
 /// Every change to a timeline is one new row, never a rewrite of what is already there:
 /// - `event`: an event that was not in the timeline yet (its JSON);

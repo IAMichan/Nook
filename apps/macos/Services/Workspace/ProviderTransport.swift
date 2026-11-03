@@ -3,7 +3,7 @@ import Foundation
 // The seam between `AgentProcess` and the agent's process: bytes to stdin, bytes from stdout and stderr, an exit and
 // signals. In the app it is a real child process (`SpawnedProcess`); in tests a recorded transcript (`ReplayTransport`)
 // plays the agent, so the real line handling and stream parsers run against what an agent really sent, without one
-// installed (after t3code's replay transport, docs/orchestration-v2/testing-strategy.md).
+// installed.
 //
 // The transcript format is NDJSON, one entry per line; a traffic log (`ProviderTrafficLog`) writes the same format, so a
 // recorded session can be saved as a fixture as it is:

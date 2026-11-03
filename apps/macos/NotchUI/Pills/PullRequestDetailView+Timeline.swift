@@ -39,7 +39,7 @@ extension PullRequestDetailView {
     func timelineEntry(_ entry: PullRequestTimelineEntry, detail: PullRequestDetail, now: Date, last: Bool) -> some View {
         switch entry {
         case .commits(let run):
-            // Each commit its own entry with its author's picture, as on t3code's timeline.
+            // Each commit its own entry with its author's picture.
             ForEach(Array(run.enumerated()), id: \.element.id) { index, event in
                 PullRequestTimelineRail(last: last && index == run.count - 1) {
                     GitHubAvatar(login: event.author, size: 28)
@@ -68,7 +68,7 @@ extension PullRequestDetailView {
         }
     }
 
-    /// "ada labeled bug", the time under it, the way t3code writes an event.
+    /// "ada labeled bug", the time under it.
     func activityLine(author: String, sentence: String, date: Date?, now: Date) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             (Text(author + " ").font(NookTheme.font(12, .semibold)).foregroundStyle(NookTheme.paper)

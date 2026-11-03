@@ -1,6 +1,6 @@
 import XCTest
 
-/// Going on after a restart (t3code's restart continuation): which sessions qualify, and the cap on a chain.
+/// Going on after a restart (restart continuation): which sessions qualify, and the cap on a chain.
 final class RestartContinuationTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 

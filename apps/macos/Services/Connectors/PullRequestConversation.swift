@@ -23,7 +23,7 @@ struct PullRequestConversationItem: Identifiable, Equatable, Sendable {
     }
 }
 
-/// The Summary's conversation, read the way t3code reads it: threads on lines keep their replies together, finished
+/// The Summary's conversation, read as threads: threads on lines keep their replies together, finished
 /// ones fold, bots and finished threads can be filtered out, and the most recent ones show first a page at a time.
 /// Foundation only, so tests can use it.
 enum PullRequestConversation {

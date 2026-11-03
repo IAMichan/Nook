@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// What a session changed in its folder, to review from the phone as t3code's review sheet does: every changed file with
+/// What a session changed in its folder, to review from the phone: every changed file with
 /// its lines added and removed, the patch a tap away, and lines to comment on. A comment goes into the session's composer
 /// as a `<review_comment>`, the same block the Mac's review sends, so a review becomes the agent's next instruction.
 struct SessionChangesView: View {

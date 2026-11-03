@@ -20,8 +20,8 @@ import (
 	"maunium.net/go/mautrix/id"
 )
 
-// API is the local HTTP and WebSocket API Nook reads, on 127.0.0.1 only and behind a token. Its routes and JSON follow
-// the part of Beeper's Client API that Nook already speaks (BeeperData, ChatLinkData), so Nook needs one client for both.
+// API is the local HTTP and WebSocket API Nook reads, on 127.0.0.1 only and behind a token. Its routes and JSON are
+// the ones Nook's client reads (ChatServiceData, ChatLinkData).
 type API struct {
 	token   string
 	store   *Store
@@ -394,7 +394,7 @@ func (a *API) messages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
-// paginate brings in the chat's next batch of older messages from its network (what Beeper does when you scroll back):
+// paginate brings in the chat's next batch of older messages from its network when you scroll back:
 // `{"hasMore": bool}` once they are in the chat's messages. A network that has to ask the phone first (WhatsApp, for
 // what is older than its first sync) answers `hasMore` while the phone sends them; they come in shortly after.
 func (a *API) paginate(w http.ResponseWriter, r *http.Request) {
@@ -543,7 +543,7 @@ func (a *API) messageJSON(ctx context.Context, net *Network, room *Room, e *Stor
 		if e.Status != "" && e.Status != string(event.MessageStatusSuccess) {
 			out["sendStatus"] = map[string]any{"status": e.Status, "message": e.StatusText}
 		}
-		// Who read it and when, as Beeper says it: a time in a private chat, a time per person in a group. A read
+		// Who read it and when: a time in a private chat, a time per person in a group. A read
 		// from before the chat helper kept them per person only says that it was read.
 		readBy := ReadBy(reads, e.TS)
 		for user := range readBy {
