@@ -491,7 +491,7 @@ private struct ProseDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             ScrollView(.vertical) {
-                MarkdownView(text: text, size: 13)
+                MarkdownView(text: text, size: 14)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxHeight: 120)

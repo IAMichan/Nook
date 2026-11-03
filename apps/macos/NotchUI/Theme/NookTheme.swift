@@ -47,7 +47,7 @@ enum NookTheme {
     static let ink = Color(hex: 0x0B0B0D)
     static let eyeInk = Color(hex: 0x050507)
     static let textSecondary = Color(hex: 0xA8A8A8)
-    static let textTertiary = Color(hex: 0x8C8C8C)
+    static let textTertiary = Color(hex: 0x949494)
 
     /// Nook's own color. Soft white by default; the user can pick another in Settings › Appearance.
     static let defaultAccentHex: UInt32 = 0xF4F3F7
@@ -185,7 +185,8 @@ enum NookTheme {
 
     /// The type scale: each kind of text with its size and weight, so two panels never show the same kind of text at
     /// different sizes. Running text is a `TextStyle`; use `font(_:_:)` only for a symbol's size or a numeral the scale
-    /// does not cover. Sizes stay compact: a 13 pt body and 11.5 pt metadata fit more on screen while staying readable.
+    /// does not cover. The sizes follow: what you read is 14 pt (its `text-sm`), the dense UI around it 12 pt
+    /// (`text-xs`), badges 11.5 and the smallest metadata 10.5, so reading text stands a clear step above the chrome.
     ///
     /// Picking one: a timestamp or a count is `caption`; the line under a title (a hint, a setting's explanation, a
     /// row's second line) is `detail`; a badge, a chip or metadata is `label`; what you read is `body`; a row's title
@@ -195,21 +196,21 @@ enum NookTheme {
         /// Timestamps, counts, and the smallest metadata.
         static var caption: Font { NookTheme.font(10.5, .medium) }
         /// The line under a title: a setting's explanation, a hint, a row's second line, or an error message.
-        static var detail: Font { NookTheme.font(11.5) }
+        static var detail: Font { NookTheme.font(12) }
         /// Secondary labels, badges, chips, and metadata.
         static var label: Font { NookTheme.font(11.5, .medium) }
         /// Body text in rows, cards, chat, and the composer.
-        static var body: Font { NookTheme.font(13) }
+        static var body: Font { NookTheme.font(14) }
         /// A row title or a button: medium rather than bold, so a list of titles stays calm and the text carries it.
-        static var strong: Font { NookTheme.font(13, .medium) }
+        static var strong: Font { NookTheme.font(14, .medium) }
         /// The title of a panel, a list, or a card.
-        static var title: Font { NookTheme.font(14, .semibold) }
+        static var title: Font { NookTheme.font(15, .semibold) }
         /// The heading of a sheet or a setup step.
-        static var heading: Font { NookTheme.font(16, .semibold) }
+        static var heading: Font { NookTheme.font(18, .semibold) }
         /// The one large line of a page: home's greeting, a settings page's title.
-        static var display: Font { NookTheme.font(20, .semibold) }
+        static var display: Font { NookTheme.font(22, .semibold) }
         /// Inline code and paths at body size.
-        static var code: Font { NookTheme.mono(12) }
+        static var code: Font { NookTheme.mono(13) }
     }
 
     // Typography: SF Pro for text, SF Mono for code and paths.
