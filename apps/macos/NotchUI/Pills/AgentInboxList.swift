@@ -252,7 +252,10 @@ struct AgentInboxList: View {
         case .working, .snoozed, .settled:
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 shelfHeader(section, sections: sections, byID: byID)
-                ForEach(rows(of: section)) { entry in entryRow(entry, in: section, sections: sections, byID: byID, shown: shown) }
+                ForEach(rows(of: section)) { entry in
+                    entryRow(entry, in: section, sections: sections, byID: byID, shown: shown)
+                        .padding(.leading, store.groupByProject ? NookTheme.Spacing.xl : 0)
+                }
             }
             .padding(.top, NookTheme.Spacing.md)
             .modifier(DropTarget(kind: section.kind, section: section, list: self, sections: sections, byID: byID, row: nil))
@@ -388,7 +391,11 @@ struct AgentInboxList: View {
                               shown: [String]) -> some View {
         let open = !collapsed.contains(section.kind)
         let list = VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-            ForEach(rows(of: section)) { entry in entryRow(entry, in: section, sections: sections, byID: byID, shown: shown) }
+            ForEach(rows(of: section)) { entry in
+                entryRow(entry, in: section, sections: sections, byID: byID, shown: shown)
+                    // Under its header as a session sits under its project's: the same indent, so the shelf is no wider.
+                    .padding(.leading, store.groupByProject ? NookTheme.Spacing.xl : 0)
+            }
             if open && section.hiddenCount > 0 {
                 Button { settledLimit += InboxLayout.settledPage } label: {
                     Text(tr("inbox.moreSettled", min(section.hiddenCount, InboxLayout.settledPage)))

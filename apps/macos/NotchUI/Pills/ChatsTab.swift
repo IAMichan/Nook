@@ -454,9 +454,13 @@ struct ChatsTab: View {
         ChatCaptureService.shared.visibleUnread
     }
 
+    /// Set in the main window, where this tab's first column heads the sidebar (`PanelSidebarTop`).
+    @Environment(\.panelSidebar) private var sidebarContext
     /// The sidebar folds to a rail of icons when the panel is narrow, so the list and the chat keep their room.
     /// Dragged narrower than `chatsSidebarFold`, it is the rail too.
     private var compactSidebar: Bool {
+        // Heading the main window's sidebar, the column holds the traffic lights and Nook: a rail is too narrow for them.
+        if sidebarContext != nil { return false }
         if sidebarSize > 0 { return sidebarSize < PanelLayout.chatsSidebarFold }
         return totalWidth > 0 && totalWidth < PanelLayout.chatsSidebarRoom
     }
