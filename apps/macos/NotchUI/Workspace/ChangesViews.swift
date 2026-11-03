@@ -83,22 +83,15 @@ struct ChangesSheet: View {
             if files.isEmpty {
                 StackedDiffNote(text: tr("ws.changes.noDiffDetail"))
             } else {
-                StackedDiffList(files: files, scope: runID.uuidString, expanded: $expanded, showsTree: showsTree,
+                ChangesDiffList(workspace: workspace, runID: runID, files: files,
+                                comments: workspace.reviewComments[runID] ?? [], expanded: $expanded, showsTree: showsTree,
                                 focus: initialFile?.path) { file in
                     guard let change = self.files.first(where: { $0.path == file.path }) else { return "" }
                     return try await diff(change)
-                } content: { file, text in
-                    DiffText(text: text, comments: (workspace.reviewComments[runID] ?? []).filter { $0.path == file.path },
-                             onComment: { line, code, comment in
-                                 workspace.addReviewComment(runID, ReviewComment(path: file.path, line: line, code: code, text: comment))
-                             },
-                             onRemoveComment: { workspace.removeReviewComment(runID, $0) }, stacked: true, path: file.path,
-                             scope: runID.uuidString + "\n" + file.path)
-                        // The sheet redraws with every change to the sessions (an agent streaming next to it); the diff
-                        // only when it or its comments changed.
-                        .equatable()
-                        .sessionFileMenu(workspace, runID: runID, path: file.path)
                 }
+                // The sheet redraws with every change to the sessions (an agent streaming in another window); the list of
+                // files, hundreds of them after a big change, only when they, the comments or the folding changed.
+                .equatable()
             }
             // Comments on the diff go to the agent together.
             if let comments = workspace.reviewComments[runID], !comments.isEmpty {
@@ -125,6 +118,40 @@ struct ChangesSheet: View {
         .task(id: directory) { await readBranch() }
         // The agent wrote or committed: read the branch again.
         .onChange(of: uncommitted) { _, _ in Task { await readBranch() } }
+    }
+}
+
+/// The stacked diff of a session's changes, with comments on its lines. Equatable on what it shows, so the sheet
+/// redrawing around it does not lay out every file's header again.
+private struct ChangesDiffList: View, Equatable {
+    /// Passed, not observed: its every change would redraw the list.
+    let workspace: WorkspaceManager
+    let runID: UUID
+    let files: [StackedDiffFile]
+    let comments: [ReviewComment]
+    @Binding var expanded: Set<String>
+    let showsTree: Bool
+    let focus: String?
+    let diff: (StackedDiffFile) async throws -> String
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.runID == rhs.runID && lhs.files == rhs.files && lhs.comments == rhs.comments
+            && lhs.expanded == rhs.expanded && lhs.showsTree == rhs.showsTree && lhs.focus == rhs.focus
+    }
+
+    var body: some View {
+        StackedDiffList(files: files, scope: runID.uuidString, expanded: $expanded, showsTree: showsTree,
+                        focus: focus, diff: diff) { file, text in
+            DiffText(text: text, comments: comments.filter { $0.path == file.path },
+                     onComment: { line, code, comment in
+                         workspace.addReviewComment(runID, ReviewComment(path: file.path, line: line, code: code, text: comment))
+                     },
+                     onRemoveComment: { workspace.removeReviewComment(runID, $0) }, stacked: true, path: file.path,
+                     scope: runID.uuidString + "\n" + file.path)
+                // Only when the diff or its comments changed.
+                .equatable()
+                .sessionFileMenu(workspace, runID: runID, path: file.path)
+        }
     }
 }
 
