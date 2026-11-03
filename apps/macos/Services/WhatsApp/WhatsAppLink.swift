@@ -667,6 +667,12 @@ final class WhatsAppLink: ObservableObject {
             if let changed = inbox.applyReaction(emoji, message: message, chat: chat, sender: sender, fromMe: fromMe) {
                 onReceipt?(chatKey(changed))
             }
+        case .edited(let chat, let message, let text)?:
+            // Changed on a phone: the chat shows the new text, marked as edited, without bringing a card up.
+            if let changed = inbox.applyEdit(text, message: message, chat: chat) { onReceipt?(chatKey(changed)) }
+        case .revoked(let chat, let message)?:
+            // Deleted for everyone on a phone: the chat shows it as deleted.
+            if let changed = inbox.applyDelete(message: message, chat: chat) { onReceipt?(chatKey(changed)) }
         default:
             break
         }
@@ -1595,7 +1601,7 @@ final class WhatsAppLink: ObservableObject {
         Log.connectors.info("WhatsApp: message edited")
     }
 
-    /// Deletes a message for everyone, after you confirmed it; it leaves the chat in Nook at once, as on the phone.
+    /// Deletes a message for everyone, after you confirmed it; the chat in Nook shows it as deleted at once, as the phone does.
     /// Throws with a sentence the user can act on.
     func delete(_ message: String, chat: String) async throws {
         guard let provider, isConnected else { throw NookError(statusLine) }

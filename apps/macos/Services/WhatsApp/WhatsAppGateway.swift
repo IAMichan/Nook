@@ -73,11 +73,30 @@ struct WAMessage: Identifiable, Equatable, Sendable {
     var poll: WAPoll? = nil
     /// A vote on a poll: not shown as a message of its own, it moves that poll's counts.
     var pollVote: WAPollVote? = nil
+    /// Changed after it was sent (by you from Nook, or by whoever wrote it on their phone).
+    var edited = false
+    /// Deleted for everyone: it keeps its place in the chat, with nothing of what it said (`withdrawn()`).
+    var deleted = false
+
+    /// What stays of it once it was deleted for everyone.
+    func withdrawn() -> WAMessage {
+        var gone = self
+        gone.deleted = true
+        gone.edited = false
+        gone.text = ""
+        gone.media = .none
+        gone.poll = nil
+        gone.reactions = []
+        gone.replyTo = nil
+        gone.quotedText = nil
+        gone.mentionsMe = false
+        return gone
+    }
 
     /// Nothing to show: no text, no attachment, no poll (a reaction or another protocol message the gateway passed on
     /// as a message). It never becomes a bubble of its own.
     var isBlank: Bool {
-        ChatFormat.isBlank(text) && media == .none && poll == nil && pollVote == nil
+        !deleted && ChatFormat.isBlank(text) && media == .none && poll == nil && pollVote == nil
     }
 }
 
@@ -839,7 +858,7 @@ struct WAInbox: Equatable, Sendable {
         conversation.lastActivity = max(conversation.lastActivity, message.date)
 
         let outcome: Outcome
-        if history || (!message.fromMe && quietBefore.map { message.date < $0 } == true) {
+        if history || message.deleted || (!message.fromMe && quietBefore.map { message.date < $0 } == true) {
             outcome = .quiet
         } else if message.fromMe {
             // You answered from the phone: it is read there.
@@ -922,6 +941,17 @@ struct WAInbox: Equatable, Sendable {
         guard var conversation = conversations[chat],
               let index = conversation.messages.firstIndex(where: { $0.id == message.id }) else { return }
         var kept = conversation.messages[index]
+        guard !kept.deleted else { return }
+        // Deleted or edited since it was kept: a history that says so shows it.
+        if message.deleted {
+            conversation.messages[index] = kept.withdrawn()
+            conversations[chat] = conversation
+            return
+        }
+        if message.edited, !message.text.isEmpty {
+            kept.text = message.text
+            kept.edited = true
+        }
         if !message.reactions.isEmpty { kept.reactions = message.reactions }
         if kept.fromMe, let receipt = message.receipt {
             kept.receipt = kept.receipt.map { $0.advanced(to: receipt) } ?? receipt
@@ -1031,8 +1061,8 @@ struct WAInbox: Equatable, Sendable {
         return nil
     }
 
-    /// Your message's new text, once the gateway took the edit. The chat that changed, nil when Nook does not keep that
-    /// message.
+    /// A message's new text: yours once the gateway took the edit, or anyone's edited on their phone. It says "Edited"
+    /// from then on. The chat that changed, nil when Nook does not keep that message.
     @discardableResult
     mutating func applyEdit(_ text: String, message id: String, chat: String) -> String? {
         let key = WAJID.normalized(chat)
@@ -1040,16 +1070,18 @@ struct WAInbox: Equatable, Sendable {
         for chatKey in keys {
             guard var conversation = conversations[chatKey],
                   let index = conversation.messages.firstIndex(where: { $0.id == id }) else { continue }
-            guard conversation.messages[index].text != text else { return nil }
+            guard !conversation.messages[index].deleted, conversation.messages[index].text != text else { return nil }
             conversation.messages[index].text = text
+            conversation.messages[index].edited = true
             conversations[chatKey] = conversation
             return chatKey
         }
         return nil
     }
 
-    /// A message deleted for everyone: it leaves the chat, as it leaves the chat on the phone, and a later history does
-    /// not bring it back. The chat that changed, nil when Nook did not keep that message.
+    /// A message deleted for everyone (by you from Nook, or by whoever wrote it): it stays in the chat as deleted, as on
+    /// the phone, and a later history does not bring back what it said. The chat that changed, nil when Nook did not keep
+    /// that message.
     @discardableResult
     mutating func applyDelete(message id: String, chat: String) -> String? {
         deletedIds.insert(id)
@@ -1059,7 +1091,8 @@ struct WAInbox: Equatable, Sendable {
         for chatKey in keys {
             guard var conversation = conversations[chatKey],
                   let index = conversation.messages.firstIndex(where: { $0.id == id }) else { continue }
-            conversation.messages.remove(at: index)
+            guard !conversation.messages[index].deleted else { return nil }
+            conversation.messages[index] = conversation.messages[index].withdrawn()
             conversations[chatKey] = conversation
             return chatKey
         }
@@ -1288,6 +1321,10 @@ enum WAWebhookEvent: Equatable, Sendable {
     case typing(chat: String, people: [WATyping])
     /// Someone (you too, from the phone) put an emoji on a message, or took it back (an empty emoji).
     case reaction(chat: String, message: String, emoji: String, sender: String, fromMe: Bool)
+    /// Someone (you too, from the phone) changed a message's text.
+    case edited(chat: String, message: String, text: String)
+    /// Someone (you too, from the phone) deleted a message for everyone.
+    case revoked(chat: String, message: String)
     /// A valid delivery Nook has no use for (a revoked message, a test ping…).
     case ignored
 }
@@ -1439,10 +1476,17 @@ enum WAWebhook {
         if json["event"] as? String == "message.ack" { return parseGOWAReceipt(json, me: me ?? (json["device_id"] as? String)) }
         if json["event"] as? String == "message.reaction" { return parseGOWAReaction(json) }
         if json["event"] as? String == "chat_presence" { return parseGOWAPresence(json) }
+        if ["message.edited", "message.revoked", "message.deleted"].contains(json["event"] as? String ?? "") {
+            guard let p = json["payload"] as? [String: Any], let chat = nonEmpty(p["chat_id"]) ?? nonEmpty(p["revoked_chat"]) else {
+                return .ignored
+            }
+            return gowaChange(json, payload: p, chat: chat) ?? .ignored
+        }
         guard json["event"] as? String == "message",
               let p = json["payload"] as? [String: Any],
               let id = p["id"] as? String, !id.isEmpty,
               let chat = p["chat_id"] as? String, !chat.isEmpty else { return .ignored }
+        if let change = gowaChange(json, payload: p, chat: chat) { return change }
         if WAPollData.isChange(p["poll"]) { return .ignored }
         // A reaction some GOWA versions send as a message: it goes on the message it is about, never in a bubble.
         if let reaction = gowaReaction(p, chat: chat) { return reaction }
@@ -1467,6 +1511,27 @@ enum WAWebhook {
         message.replyTo = nonEmpty(p["replied_to_id"])
         message.quotedText = nonEmpty(p["quoted_body"])
         return .message(message)
+    }
+
+    /// A message changed or deleted for everyone, as GOWA passes WhatsApp's protocol message on: `action:
+    /// "message_edited"` with `edited_text`, or `action: "message_revoked"` with `revoked_message_id` (newer versions
+    /// name the event itself `message.edited` / `message.revoked`). The message it is about goes by its own id
+    /// (`original_message_id`, `revoked_message_id`…). Nil for any other message.
+    static func gowaChange(_ json: [String: Any], payload p: [String: Any], chat: String) -> WAWebhookEvent? {
+        let event = (json["event"] as? String) ?? ""
+        let action = nonEmpty(p["action"]) ?? nonEmpty(json["action"]) ?? ""
+        let chatID = nonEmpty(p["revoked_chat"]) ?? chat
+        if action == "message_revoked" || event == "message.revoked" || event == "message.deleted" {
+            guard let target = nonEmpty(p["revoked_message_id"]) ?? nonEmpty(p["original_message_id"])
+                    ?? nonEmpty(p["deleted_message_id"]) ?? nonEmpty(p["id"]) else { return .ignored }
+            return .revoked(chat: chatID, message: target)
+        }
+        if action == "message_edited" || event == "message.edited" {
+            guard let target = nonEmpty(p["original_message_id"]) ?? nonEmpty(p["edited_message_id"]) ?? nonEmpty(p["id"]),
+                  let text = nonEmpty(p["edited_text"]) ?? nonEmpty(p["body"]) else { return .ignored }
+            return .edited(chat: chatID, message: target, text: text)
+        }
+        return nil
     }
 
     /// `{"event":"chat_presence","payload":{from, sender_display_name, chat_id, state: "composing"|"paused", media: ""|"audio",
@@ -1550,6 +1615,7 @@ enum WAWebhook {
         if event == "message.ack" || event == "message.failed" || event == "message.receipt" { return parseOpenWAReceipt(json) }
         if event == "presence.update" { return parseOpenWAPresence(json) }
         if event == "message.reaction" { return parseOpenWAReaction(json, me: me) }
+        if let change = openwaChange(json) { return change }
         guard event == "message.received" || event == "message.sent",
               let d = json["data"] as? [String: Any],
               let id = d["id"] as? String, !id.isEmpty,
@@ -1581,6 +1647,26 @@ enum WAWebhook {
         message.replyTo = nonEmpty(quoted?["id"])
         message.quotedText = nonEmpty(quoted?["body"])
         return .message(message)
+    }
+
+    /// A message changed or deleted for everyone: `message.edited` (`data: {id, chatId, body|newBody}`), and
+    /// `message.revoked` or a message of `type: "revoked"` (`data: {id, chatId}`), the id the message's own. Nil for
+    /// any other delivery.
+    static func openwaChange(_ json: [String: Any]) -> WAWebhookEvent? {
+        let event = (json["event"] as? String) ?? ""
+        guard let d = json["data"] as? [String: Any] else { return nil }
+        let chat = nonEmpty(d["chatId"]) ?? nonEmpty(d["from"])
+        let target = nonEmpty(d["messageId"]) ?? nonEmpty(d["id"])
+        if event == "message.edited" || event == "message.edit" {
+            guard let chat, let target, let text = nonEmpty(d["newBody"]) ?? nonEmpty(d["body"]) else { return .ignored }
+            return .edited(chat: chat, message: target, text: text)
+        }
+        let revokedType = (event == "message.received" || event == "message.sent") && d["type"] as? String == "revoked"
+        if event == "message.revoked" || event == "message.deleted" || revokedType {
+            guard let chat, let target = nonEmpty(d["revokedMessageId"]) ?? target else { return .ignored }
+            return .revoked(chat: chat, message: target)
+        }
+        return nil
     }
 
     /// `{"event":"message.reaction","data":{messageId, chatId, reaction, senderId}}`; an empty `reaction` takes it back.
@@ -2050,7 +2136,6 @@ enum WAOpenWA {
             guard let id = nonEmpty(m["waMessageId"]) ?? nonEmpty(m["id"]),
                   let chat = m["chatId"] as? String, !chat.isEmpty else { return nil }
             let type = (m["type"] as? String) ?? "text"
-            guard type != "revoked" else { return nil }
             let metadata = m["metadata"] as? [String: Any]
             let media = metadata?["media"] as? [String: Any]
             var msg = WAMessage(
@@ -2070,7 +2155,8 @@ enum WAOpenWA {
                 msg.media = .none
                 msg.text = ""
             }
-            return msg
+            // Deleted for everyone: it keeps its place, with nothing of what it said.
+            return type == "revoked" ? msg.withdrawn() : msg
         }
     }
 
