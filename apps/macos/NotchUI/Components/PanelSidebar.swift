@@ -41,6 +41,9 @@ enum PanelSidebarMetrics {
     static let mark: CGFloat = 18
     /// Room between the window's edge and the sidebar's rows, and the same between its rows and the line on its right.
     static let inset: CGFloat = NookTheme.Spacing.lg
+    /// The narrowest the head fits in: the room for the traffic lights, then search and talk (28 pt) and split view
+    /// (30 pt), with the row's spacing between them. A column narrower than this would push its rows off the left edge.
+    static let headWidth: CGFloat = trafficLights - inset + 28 + 28 + 30 + NookTheme.Spacing.xxs * 4
 }
 
 private struct PanelSidebarKey: EnvironmentKey {

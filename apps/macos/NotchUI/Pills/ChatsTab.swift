@@ -466,10 +466,14 @@ struct ChatsTab: View {
     }
     private var sidebarWidth: Double {
         if compactSidebar { return Double(PanelLayout.chatsRail) }
-        guard sidebarSize > 0 else { return Double(PanelLayout.chatsSidebar) }
+        // Heading the main window's sidebar, the column is never narrower than its head, or its rows would be pushed
+        // against the window's left edge.
+        let narrowest = sidebarContext == nil ? PanelLayout.chatsSidebarFold
+            : max(PanelLayout.chatsSidebarFold, Double(PanelSidebarMetrics.headWidth))
+        guard sidebarSize > 0 else { return max(Double(PanelLayout.chatsSidebar), narrowest) }
         // However wide you made it, the list keeps its narrowest width beside it.
         let room = totalWidth > 0 ? totalWidth - PanelLayout.minimumList - PanelSplit.handle : PanelLayout.chatsSidebarMax
-        return max(PanelLayout.chatsSidebarFold, min(sidebarSize, PanelLayout.chatsSidebarMax, room))
+        return max(narrowest, min(sidebarSize, PanelLayout.chatsSidebarMax, room))
     }
     /// Too narrow for the list and a chat side by side: one of them at a time (`PanelLayout.stacks`).
     private var stacked: Bool { PanelLayout.stacks(totalWidth - sidebarWidth) }
@@ -901,14 +905,16 @@ struct ChatsTab: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             // In the main window the tabs and Search head this column, which runs along the window's left edge.
+            // Leading, as the Agents list: anything wider than the column runs out on the right instead of the whole
+            // column being centered on it and pushed against the window's left edge.
             PanelSidebarTop(compact: compactSidebar)
-                .frame(width: sidebarWidth)
+                .frame(width: sidebarWidth, alignment: .leading)
             ChatsSidebar(compact: compactSidebar, width: sidebarWidth, view: $view, app: appChoice, account: $account, counts: viewCounts, apps: apps,
                          newByApp: newByApp, accounts: accounts, newByAccount: newByAccount,
                          accountPictures: accountPictures,
                          addSource: { app.openConnections(.add(.chats)) })
             footer
-                .frame(width: sidebarWidth)
+                .frame(width: sidebarWidth, alignment: compactSidebar ? .center : .leading)
         }
         .padding(.trailing, compactSidebar ? NookTheme.Spacing.xs
                   : sidebarContext == nil ? NookTheme.Spacing.sm : SidePanelMetrics.sidebarGap)
