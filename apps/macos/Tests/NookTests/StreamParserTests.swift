@@ -48,7 +48,8 @@ final class ClaudeStreamParserTests: XCTestCase {
         XCTAssertEqual(events, [.subagentStep(parent: "toolu_parent", SubagentStep(kind: .text, text: "sub")),
                                 .toolUse(id: "t2", name: "Read", input: JSONBox(["file_path": "/a"]), nested: true),
                                 .subagentStep(parent: "toolu_parent", SubagentStep(kind: .tool,
-                                                                                    text: ToolSummary.describe(tool: "Read", input: ["file_path": "/a"])))],
+                                                                                    text: ToolSummary.describe(tool: "Read", input: ["file_path": "/a"]),
+                                                                                    tool: "Read"))],
                        "text and tokens from subagents do not count as top-level response; they go with the subagent")
     }
 

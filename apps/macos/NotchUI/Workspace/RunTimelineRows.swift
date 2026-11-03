@@ -284,7 +284,7 @@ struct SharedFileTile: View {
 }
 
 /// A subagent the agent started, as its own row: "Subagent running · Audit the chats" shimmering while it works (also in
-/// the background after the turn), with its kind and time; it opens to its task and its answer.
+/// the background after the turn), with its kind and time; it opens to what it went through (`SubagentTranscript`).
 struct SubagentRow: View {
     let event: RunEvent
     let expanded: Bool
@@ -301,23 +301,10 @@ struct SubagentRow: View {
                     SubagentElapsed(agent: agent)
                 }
                 if expanded {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                        Text(agent.kind + (agent.background ? " · " + tr("ws.subagent.background") : ""))
-                            .font(NookTheme.mono(10.5, .medium))
-                            .foregroundStyle(NookTheme.textTertiary)
-                        if !agent.prompt.isEmpty {
-                            Text(agent.prompt)
-                                .font(NookTheme.TextStyle.detail)
-                                .foregroundStyle(NookTheme.textSecondary)
-                                .lineLimit(12)
-                        }
-                        if let answer = agent.answer {
-                            MarkdownView(text: answer, size: 12.5)
-                        }
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                        SubagentMeta(agent: agent)
+                        SubagentTranscript(agent: agent)
                     }
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, TranscriptStyle.workIndent)
                     .padding(.bottom, NookTheme.Spacing.xs)
                 }

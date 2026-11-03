@@ -136,6 +136,22 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertNil((try? JSONDecoder().decode(RunEvent.self, from: Data(old.utf8)))?.subagentSteps, "older timelines still load")
     }
 
+    func testSubagentStepsReadAsTheAgentsOwnWork() {
+        let named = SubagentStep(kind: .tool, text: "Bash · ls -la", tool: "Bash")
+        XCTAssertEqual(named.toolName, "Bash")
+        XCTAssertEqual(named.toolDetail, "ls -la")
+        let old = SubagentStep(kind: .tool, text: "Read · a.swift")
+        XCTAssertEqual(old.toolName, "Read", "a step kept before the name was stored reads it from its text")
+        XCTAssertEqual(old.toolDetail, "a.swift")
+        let labelled = SubagentStep(kind: .tool, text: "GitHub › Create issue · Title: x")
+        XCTAssertEqual(labelled.toolName, labelled.text, "a label with spaces is not a tool name")
+        XCTAssertEqual(SubagentStep(kind: .tool, text: "TodoWrite", tool: "TodoWrite").toolDetail, "")
+
+        let steps = [SubagentStep(kind: .thinking, text: "Plan"), named, old, SubagentStep(kind: .text, text: "Found it"), named]
+        XCTAssertEqual(SubagentSteps.blocks(steps).map(\.steps.count), [1, 2, 1, 1],
+                       "tool calls in a row form one group, as the agent's own do")
+    }
+
     // MARK: Pull request watch
 
     func testPullRequestNews() {

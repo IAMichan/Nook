@@ -204,7 +204,7 @@ enum ClaudeStreamParser {
                         events.append(.toolUse(id: id, name: name, input: JSONBox(input), nested: nested))
                         if let parent {
                             let title = ToolSummary.describe(tool: name, input: (input as? [String: Any]) ?? [:])
-                            events.append(.subagentStep(parent: parent, SubagentStep(kind: .tool, text: title)))
+                            events.append(.subagentStep(parent: parent, SubagentStep(kind: .tool, text: title, tool: name)))
                         }
                     }
                 default:
