@@ -93,6 +93,23 @@ struct AgentInboxList: View {
         return reply.flatMap(MarkdownBlock.lastGitHubPullRequest(in:)).flatMap(linkBadge)
     }
 
+    /// The pull requests behind the badge, for its hover card: the ones the branch sync found, else the one link the badge
+    /// was made from. Same order of sources as `pullRequestBadge`.
+    private func pullRequestLinks(_ item: AgentListItem) -> [PullRequestLink] {
+        if let id = runID(item) {
+            if let links = pullRequests.links[id], !links.isEmpty { return pullRequestStatuses.current(links) }
+            return knownPullRequest(run: id).flatMap(PullRequestLink.init(url:)).map { [$0] } ?? []
+        }
+        if let branch = item.branch,
+           let links = pullRequests.folderLinks[PullRequestSync.folderKey(path: item.path, branch: branch)], !links.isEmpty {
+            return pullRequestStatuses.current(links)
+        }
+        let reply = item.id.hasPrefix("past:")
+            ? pastSession(item.id)?.lastReply
+            : app.hub.sessions.first { $0.id == item.id }?.lastReply
+        return reply.flatMap(MarkdownBlock.lastGitHubPullRequest(in:)).flatMap(PullRequestLink.init(url:)).map { [$0] } ?? []
+    }
+
     /// The past session of a row ("past:" and the session's id, "agent:session"), compared by its parts: making the id
     /// of every session in the history, for every row, on every redraw of the list was most of what drawing it cost.
     private func pastSession(_ rowID: String) -> PastSession? {
@@ -489,7 +506,8 @@ struct AgentInboxList: View {
                     onSettle: { entry.row.settled ? store.unsettle([item]) : store.settle([item]) },
                     onSnooze: isRun ? { snooze(item, $0) } : nil,
                     onWake: isRun && snoozeActive ? { wake(item) } : nil),
-                pullRequest: pullRequestBadge(item)
+                pullRequest: pullRequestBadge(item),
+                pullRequestLinks: pullRequestLinks(item)
             ) {
                 click(item, entry, shown: shown)
             }
