@@ -1848,6 +1848,8 @@ private struct ChatsDetail: View, Equatable {
                 if MailChatData.apps.contains(entry.app) {
                     mailThread
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        // As the chat transcript: the messages stay under the header, not over it.
+                        .clipped()
                 } else {
                     ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
                                    onOpen: { open($0) }, onZoom: { zoom($0) },
