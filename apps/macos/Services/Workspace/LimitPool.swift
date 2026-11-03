@@ -49,6 +49,8 @@ struct LimitPool: Equatable, Sendable {
 
         /// Left, 0...100, rounded as it is shown; nil for a gap.
         var left: Int? { limit.map { LimitPool.left($0.used) } }
+        /// Used, 0...100, as the modal shows it; nil for a gap.
+        var used: Int? { left.map { 100 - $0 } }
     }
 
     struct Reset: Equatable, Sendable {
@@ -69,6 +71,8 @@ struct LimitPool: Equatable, Sendable {
         /// The coming resets, soonest first.
         var resets: [Reset]
         var id: String { label }
+        /// Used of the whole pool, 0...100, as the modal shows it.
+        var used: Int { 100 - left }
 
         /// The first reset that gives anything back.
         var nextRefill: Reset? { resets.first { $0.restores > 0 } }
@@ -167,6 +171,11 @@ struct LimitPool: Equatable, Sendable {
     /// The window's time still to come, 0...100: where the even-pace line sits on a bar that shows what is left.
     static func timeLeft(_ limit: Limit, now: Date) -> Int? {
         elapsedShare(limit, now: now).map { Int(((1 - $0) * 100).rounded()) }
+    }
+
+    /// The window's time gone by, 0...100: where the even-pace line sits on a bar that shows what was used.
+    static func timeElapsed(_ limit: Limit, now: Date) -> Int? {
+        timeLeft(limit, now: now).map { 100 - $0 }
     }
 
     static func pace(_ limit: Limit, now: Date) -> Pace? {
