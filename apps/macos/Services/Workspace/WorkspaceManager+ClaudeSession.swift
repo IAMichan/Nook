@@ -33,21 +33,32 @@ extension WorkspaceManager {
         sendQueued(id)
     }
 
-    /// Settings changed while a turn runs. Claude Code takes the permission mode and the model over at once (control
-    /// requests on stdin); other agents read the rights live where they answer approvals in Nook, and the rest from
-    /// their next turn.
+    /// Settings changed while a turn runs. An agent with `liveSettings` takes the model, mode and effort over at once:
+    /// Claude Code the permission mode and the model (control requests on stdin; the rest by a fresh process after the
+    /// turn), an ACP agent everything `applyAcpSettings` sets. The others read the rights live where they answer approvals
+    /// in Nook, and the rest from their next turn.
     func applyLive(_ id: UUID, from old: WorkspaceRun, to new: WorkspaceRun) {
-        guard new.provider == .claude, let process = processes[id], process.isRunning else { return }
-        let oldMode = AgentCommand.claudePermissionMode(mode: old.mode, permission: old.permission)
-        let newMode = AgentCommand.claudePermissionMode(mode: new.mode, permission: new.permission)
-        if oldMode != newMode {
-            process.send(ClaudeStreamParser.setPermissionModeRequest(id: "nook-mode-" + UUID().uuidString.prefix(8), mode: newMode))
-        }
-        if old.model != new.model {
-            process.send(ClaudeStreamParser.setModelRequest(id: "nook-model-" + UUID().uuidString.prefix(8), model: new.model))
-        }
-        if oldMode != newMode || old.model != new.model || old.instructions != new.instructions || old.effort != new.effort {
-            claudeChangedDuringTurn.insert(id)
+        guard new.provider.capabilities.liveSettings else { return }
+        switch new.provider {
+        case .claude:
+            guard let process = processes[id], process.isRunning else { return }
+            let oldMode = AgentCommand.claudePermissionMode(mode: old.mode, permission: old.permission)
+            let newMode = AgentCommand.claudePermissionMode(mode: new.mode, permission: new.permission)
+            if oldMode != newMode {
+                process.send(ClaudeStreamParser.setPermissionModeRequest(id: "nook-mode-" + UUID().uuidString.prefix(8), mode: newMode))
+            }
+            if old.model != new.model {
+                process.send(ClaudeStreamParser.setModelRequest(id: "nook-model-" + UUID().uuidString.prefix(8), model: new.model))
+            }
+            if oldMode != newMode || old.model != new.model || old.instructions != new.instructions || old.effort != new.effort {
+                claudeChangedDuringTurn.insert(id)
+            }
+        case .gemini, .opencode, .cursor, .grok, .antigravity, .acp:
+            guard old.model != new.model || old.mode != new.mode || old.permission != new.permission || old.effort != new.effort,
+                  let client = acpClients[id], client.isRunning, client.sessionID != nil else { return }
+            applyAcpSettings(id, client) {}
+        case .codex:
+            break
         }
     }
 

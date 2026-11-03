@@ -68,6 +68,7 @@ extension WorkspaceManager {
         let offered = effortLevels(for: run.provider, profileID: run.profileID, model: run.model)
         let resolution = EffortResolution.resolve(stored: effort, offered: offered)
         update(id) { $0.effort = resolution.outcome == .use ? resolution.effort : nil }
+        if run.status.isActive, let updated = self.run(id) { applyLive(id, from: run, to: updated) }
         if !run.status.isActive { refreshWarmSession(id) }
     }
 }

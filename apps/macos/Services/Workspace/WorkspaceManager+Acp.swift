@@ -194,7 +194,7 @@ extension WorkspaceManager {
     }
 
     /// What the session offers and starts with. The run's model, effort and mode are set before each prompt (see
-    /// `applyAcpSettings`), so a model or level you pick while the session stays open counts from your next message.
+    /// `applyAcpSettings`), and at once when you pick one during a turn (see `applyLive`).
     private func configureAcpSession(_ id: UUID, _ client: AcpClient, _ response: [String: Any]) {
         client.sessionInfo = response
         client.appliedModel = AcpSessionSettings.currentModel(response)
