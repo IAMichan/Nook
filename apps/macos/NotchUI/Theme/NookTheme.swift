@@ -83,12 +83,12 @@ enum NookTheme {
     static let surface = Color(hex: 0x121212)
     /// The faintest divider between regions of a panel.
     static let hairline = Color(hex: 0x1E1E1E)
-    /// The line between a window's columns and panels (the sidebar, the side panel, a pane's header): a light grey that
-    /// reads clearly on the black canvas without drawing the eye.
-    static let border = Color(hex: 0x383838)
+    /// The line between a window's columns and panels (the sidebar, the side panel, a pane's header): a hairline that
+    /// is there when you look for it and gone when you don't, so regions read by their layout rather than their frames.
+    static let border = Color(hex: 0x2A2A2A)
     /// The line between the items of a list (a chat in the Chats tab): a step brighter than `border`, so
     /// each item reads as its own.
-    static let separator = Color(hex: 0x3E3E3E)
+    static let separator = Color(hex: 0x323232)
     /// The stroke of a text field or tray at rest.
     static let fieldStroke = Color(hex: 0x282828)
     /// Body text that reads a little softer than `paper`, without dropping to `textSecondary`.
@@ -198,10 +198,10 @@ enum NookTheme {
         static var detail: Font { NookTheme.font(12) }
         /// Secondary labels, badges, chips, and metadata.
         static var label: Font { NookTheme.font(12, .medium) }
-        /// Body text in rows, cards, and chat.
-        static var body: Font { NookTheme.font(13.5) }
-        /// A row title or a button.
-        static var strong: Font { NookTheme.font(13.5, .semibold) }
+        /// Body text in rows, cards, chat, and the composer.
+        static var body: Font { NookTheme.font(14) }
+        /// A row title or a button: medium rather than bold, so a list of titles stays calm and the text carries it.
+        static var strong: Font { NookTheme.font(14, .medium) }
         /// The title of a panel, a list, or a card.
         static var title: Font { NookTheme.font(15, .semibold) }
         /// The heading of a sheet or a setup step.
@@ -209,7 +209,7 @@ enum NookTheme {
         /// The one large line of a page: home's greeting, a settings page's title.
         static var display: Font { NookTheme.font(22, .semibold) }
         /// Inline code and paths at body size.
-        static var code: Font { NookTheme.mono(12.5) }
+        static var code: Font { NookTheme.mono(13) }
     }
 
     // Typography: SF Pro for text, SF Mono for code and paths.
