@@ -436,6 +436,27 @@ struct GitService: Sendable {
         try run(arguments, in: repo, timeout: 120)
     }
 
+    /// Writes `path` as it is in `ref` to `destination`, byte for byte (`run` decodes its output as text, which would
+    /// spoil an image). False when `ref` has no such file; on this Mac only.
+    func exportFile(repo: String, ref: String, path: String, to destination: URL) -> Bool {
+        guard remote == nil, !ref.hasPrefix("-"), (try? run(["cat-file", "-e", "\(ref):\(path)"], in: repo)) != nil else { return false }
+        let fm = FileManager.default
+        try? fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard fm.createFile(atPath: destination.path, contents: nil), let handle = try? FileHandle(forWritingTo: destination) else { return false }
+        defer { try? handle.close() }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = ["-C", repo, "cat-file", "blob", "\(ref):\(path)"]
+        process.environment = environment
+        process.standardOutput = handle
+        process.standardError = FileHandle.nullDevice
+        process.standardInput = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return false }
+        process.waitUntilExit()
+        if process.terminationStatus != 0 { try? fm.removeItem(at: destination) }
+        return process.terminationStatus == 0
+    }
+
     /// Deletes a branch only if already merged (`git branch -d`, never -D).
     func deleteMergedBranch(repo: String, branch: String) throws {
         try run(["branch", "-d", branch], in: repo)
