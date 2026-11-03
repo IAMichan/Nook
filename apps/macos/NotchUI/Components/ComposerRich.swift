@@ -595,7 +595,7 @@ struct ComposerUsageRing: View {
             }
             SmallGhostButton(title: tr("limits.all")) {
                 open = false
-                app.usageModalOpen = true
+                app.openUsageModal(.limits)
             }
         }
         .padding(NookTheme.Spacing.md)

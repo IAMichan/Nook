@@ -619,3 +619,30 @@ struct UsageModelSheet: View {
     }
 }
 
+/// Cost and Tokens in the usage modal (`UsageLimitsModal`): the same blocks as Settings › Coding agents, with a model's
+/// details in a sheet of their own.
+struct UsageInsightsPanel: View {
+    @ObservedObject var history: AgentHistory
+    let metric: UsageMetric
+    let window: UsageWindow
+    @State private var byDay = false
+    @State private var openModel: UsageInsights.ModelTotal?
+    @State private var prices = UsagePrices.load()
+
+    var body: some View {
+        let insights = UsageInsights.make(history.ledger, window: window, prices: prices)
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+            UsageOverviewBlocks(insights: insights, metric: metric, window: window, loading: history.loading, byDay: $byDay) {
+                openModel = $0
+            }
+            Text(tr("usage.footer"))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .sheet(item: $openModel) { model in
+            UsageModelSheet(model: model, ledger: history.ledger, window: window, metric: metric, prices: $prices) { openModel = nil }
+        }
+        .onAppear { history.refresh(minimumInterval: 60) }
+    }
+}

@@ -555,6 +555,12 @@ final class AppModel: ObservableObject {
     /// The usage modal (limits, cost, tokens) is open over the panel: from the footer's usage button, the command palette,
     /// search and the composer's limits.
     @Published var usageModalOpen = false
+
+    /// Opens the usage modal; with `tab`, on that part (the limits, from "All limits").
+    func openUsageModal(_ tab: UsageModalTab? = nil) {
+        if let tab { UserDefaults.standard.set(tab.rawValue, forKey: UsageModalTab.storageKey) }
+        usageModalOpen = true
+    }
     /// The step the first-run flow opens on (0: the start; the empty Agents tab opens the coding agents step).
     @Published var onboardingStep = 0
     /// The Settings window (created on first use).

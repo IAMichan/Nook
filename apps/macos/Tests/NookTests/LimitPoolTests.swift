@@ -14,6 +14,7 @@ final class LimitPoolTests: XCTestCase {
             .init(label: "5 hours", used: 38, resetsAt: now.addingTimeInterval(3600), duration: fiveHours),
         ])], now: now))
         XCTAssertEqual(pool.windows.map(\.left), [62])
+        XCTAssertEqual(pool.windows.map(\.used), [38])
         XCTAssertEqual(pool.windows[0].columns.map(\.left), [62])
     }
 
@@ -48,6 +49,7 @@ final class LimitPoolTests: XCTestCase {
         XCTAssertEqual(pace(40), .on)
         XCTAssertEqual(pace(10), .under)
         XCTAssertEqual(LimitPool.timeLeft(.init(label: "5 hours", used: 0, resetsAt: reset, duration: fiveHours), now: now), 60)
+        XCTAssertEqual(LimitPool.timeElapsed(.init(label: "5 hours", used: 0, resetsAt: reset, duration: fiveHours), now: now), 40)
         // Without a reset time there is no clock, so no pace.
         XCTAssertNil(LimitPool.pace(.init(label: "5 hours", used: 1, resetsAt: nil, duration: fiveHours), now: now))
     }

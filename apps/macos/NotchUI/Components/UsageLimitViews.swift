@@ -1,7 +1,7 @@
 import SwiftUI
 
-// Subscription limits, drawn as t3code draws them. The modal reads as room left ("62% left", a bar that drains), a
-// line on the bar marks where even spending would be by now, color only once little is left, and the details (reset
+// Subscription limits, drawn as t3code draws them but counted as Nook's composer counts them: how full a limit is ("38%
+// used", a bar that fills), a line on the bar marks where even spending would be by now, color only once it gets full, and the details (reset
 // time, pace) one hover or click away instead of in a footnote. Two shapes share these rules: `UsageLimitRows`, one line
 // per window for one account (the composer's popover, Settings › Coding agents), and `UsageLimitsModal`, the modal with
 // every agent's accounts as one pool per window.
@@ -61,7 +61,7 @@ struct LimitPaceIcon: View {
 // MARK: - One account, one line per window
 
 /// One account's windows, a line each: the window's name, a hairline bar of how full it is, and the percentage used, as
-/// the composer's ring counts them (the usage limits modal shows what is left instead). The reset time and the pace are in
+/// the composer's ring and the usage modal count them. The reset time and the pace are in
 /// the row's tooltip; the row lights up under the pointer. An account that reports no limits
 /// shows one "Unavailable" line with the reason in its tooltip.
 struct UsageLimitRows: View {
@@ -213,46 +213,96 @@ extension UsageLimitSection {
     }
 }
 
-/// The usage limits of every connected account, as a modal: per agent, a card per window with what is left of the pool
+/// Which part of the usage modal shows: what the agents on this Mac would cost at API prices, their tokens, or the
+/// subscription limits. Remembered; "All limits" opens it on Limits.
+enum UsageModalTab: String, CaseIterable, Hashable {
+    case cost, tokens, limits
+
+    static let storageKey = "usage.modal.tab"
+}
+
+/// Usage as a modal, as t3code's Usage: Cost and Tokens show every agent's usage on this Mac (`UsageInsightsPanel`), and
+/// Limits shows the usage limits of every connected account: per agent, a card per window with how much of the pool is used
 /// in large type and its pace, beside a bar with a segment per account. The one component for every way in: the footer's
 /// usage button bottom left, "All limits" under the composer's ring, the command palette and search (over the panel,
 /// `UsageModal`) and Settings › Coding agents (as a sheet).
 struct UsageLimitsModal: View {
     @EnvironmentObject private var app: AppModel
     let close: () -> Void
+    @AppStorage(UsageModalTab.storageKey) private var tabRaw = UsageModalTab.limits.rawValue
+    @AppStorage("usage.window") private var windowRaw = UsageWindow.week.rawValue
+
+    private var tab: UsageModalTab { UsageModalTab(rawValue: tabRaw) ?? .limits }
+    private var window: UsageWindow { UsageWindow(rawValue: windowRaw) ?? .week }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: NookTheme.Spacing.md) {
-                Text(tr("limits.title"))
-                    .font(NookTheme.TextStyle.heading)
-                    .foregroundStyle(NookTheme.paper)
-                Spacer(minLength: NookTheme.Spacing.md)
-                UsageRefreshButton()
-                NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30, action: close)
-                    .keyboardShortcut(.cancelAction)
+            // As t3code's Usage: the title, then Cost, Tokens and Limits as one segmented control, the range for Cost and
+            // Tokens as a second one beside it (on a line of its own when the modal is too narrow), refresh and close.
+            ViewThatFits(in: .horizontal) {
+                header(range: true)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                    header(range: false)
+                    if tab != .limits { rangePicker }
+                }
             }
             .padding(.horizontal, NookTheme.Spacing.xxl)
-            .padding(.top, NookTheme.Spacing.xl)
-            .padding(.bottom, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.lg)
+            NookDivider()
 
             ScrollView(showsIndicators: false) {
-                // Once a minute the reset times count down and the pace line moves on.
-                TimelineView(.nookTicks(every: 60)) { context in
-                    let read = UsageLimitSection.make(app, now: context.date)
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxxl) {
-                        UsageLimitPools(sections: read.sections, notices: read.notices, now: context.date)
-                        credits
+                Group {
+                    switch tab {
+                    case .limits:
+                        // Once a minute the reset times count down and the pace line moves on.
+                        TimelineView(.nookTicks(every: 60)) { context in
+                            let read = UsageLimitSection.make(app, now: context.date)
+                            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxxl) {
+                                UsageLimitPools(sections: read.sections, notices: read.notices, now: context.date)
+                                credits
+                            }
+                        }
+                    case .cost, .tokens:
+                        UsageInsightsPanel(history: app.history, metric: tab == .cost ? .cost : .tokens, window: window)
                     }
                 }
                 .padding(.horizontal, NookTheme.Spacing.xxl)
-                .padding(.bottom, NookTheme.Spacing.xxl)
+                .padding(.vertical, NookTheme.Spacing.xl)
             }
         }
         .frame(maxWidth: 720)
         .frame(minHeight: 320, idealHeight: 560, maxHeight: 760)
-        .background(NookTheme.canvas)
+        .background(NookTheme.surface)
         .task { await app.watchQuotas() }
+    }
+
+    private func header(range: Bool) -> some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            Text(tr("agents.footer.usage"))
+                .font(NookTheme.TextStyle.heading)
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(1)
+                .fixedSize()
+            Spacer(minLength: NookTheme.Spacing.md)
+            NookTabBar<UsageModalTab>(items: [
+                .init(value: .cost, title: tr("usage.metric.cost")),
+                .init(value: .tokens, title: tr("usage.metric.tokens")),
+                .init(value: .limits, title: tr("limits.limits")),
+            ], selected: tab, onSelect: { value in withAnimation(NookTheme.swap) { tabRaw = value.rawValue } }, segmented: true)
+                .fixedSize()
+            if range && tab != .limits { rangePicker }
+            UsageRefreshButton()
+            NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30, action: close)
+                .keyboardShortcut(.cancelAction)
+        }
+    }
+
+    /// The range Cost and Tokens count over: 24 hours, 7, 30 or 90 days.
+    private var rangePicker: some View {
+        NookTabBar<UsageWindow>(items: UsageWindow.allCases.map { .init(value: $0, title: tr("usage.window." + $0.rawValue)) },
+                                selected: window, onSelect: { value in withAnimation(NookTheme.swap) { windowRaw = value.rawValue } },
+                                segmented: true)
+            .fixedSize()
     }
 
     /// Reset credits are spent after a confirmation, so they stay out of the bar's popovers.
@@ -379,7 +429,7 @@ private struct LimitPoolSectionView: View {
     }
 }
 
-/// One window of the pool: its name, what is left in large type with the pace, and the next refill when the pool has
+/// One window of the pool: its name, how much is used in large type with the pace, and what the next reset frees when the pool has
 /// several accounts, beside the bar.
 private struct LimitWindowCard: View {
     let window: LimitPool.Window
@@ -394,18 +444,18 @@ private struct LimitWindowCard: View {
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(2)
                 HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-                    Text("\(window.left)%")
+                    Text("\(window.used)%")
                         .font(NookTheme.font(30, .semibold).monospacedDigit())
                         .foregroundStyle(NookTheme.paper)
                     HStack(spacing: NookTheme.Spacing.md) {
-                        Text(tr("limits.leftWord"))
+                        Text(tr("limits.usedWord"))
                             .font(NookTheme.TextStyle.body)
                             .foregroundStyle(NookTheme.textSecondary)
                         if let pace = window.pace { LimitPaceIcon(pace: pace) }
                     }
                 }
                 if window.columns.count > 1, let refill = window.nextRefill {
-                    Text("↻ +\(refill.restores)%")
+                    Text("↻ −\(refill.restores)%")
                         .font(NookTheme.TextStyle.label.monospacedDigit())
                         .foregroundStyle(NookTheme.paper)
                 }
@@ -454,8 +504,8 @@ private struct LimitPoolBar: View {
     }
 }
 
-/// One account's part of the pool bar. What is left fills it in the agent's color, what the account's next reset gives
-/// back is hatched, and the even-pace line sits in a slot cut from the bar. Click for the account's details.
+/// One account's part of the pool bar. What was used fills it in the agent's color, hatched where the account's next
+/// reset frees only part of it, and the even-pace line sits in a slot cut from the bar. Click for the account's details.
 private struct LimitSegment: View {
     let member: LimitPool.Member
     let window: LimitPool.Window
@@ -468,9 +518,9 @@ private struct LimitSegment: View {
     @State private var hovering = false
 
     var body: some View {
-        if let limit = member.limit, let left = member.left {
+        if let limit = member.limit, let used = member.used {
             let color = section.kind.color
-            let timeLeft = LimitPool.timeLeft(limit, now: now)
+            let elapsed = LimitPool.timeElapsed(limit, now: now)
             let reset = window.resets.first { $0.accountID == member.accountID }
             let resetsIn = AgentFormat.resetsIn(limit.resetsAt, now: now)
             let credits = section.details[member.accountID]?.credits ?? 0
@@ -480,23 +530,27 @@ private struct LimitSegment: View {
                         let width = proxy.size.width
                         ZStack(alignment: .leading) {
                             Rectangle().fill(Color.white.opacity(0.05))
+                            // A reset usually frees all that was used. Only when it frees part of it (a spent week
+                            // holds the session window) is that part hatched, so the rest reads as still blocked.
+                            let freed = reset != nil ? min(Double(used), member.refill) : 0
+                            let partial = freed > 0 && freed < Double(used)
                             Rectangle()
                                 .fill(color.opacity(0.35))
-                                .frame(width: width * CGFloat(left) / 100)
-                            if left < 100, reset != nil, member.refill > 0 {
+                                .frame(width: width * CGFloat(Double(used) - (partial ? freed : 0)) / 100)
+                            if partial {
                                 LimitHatch(color: color)
-                                    .opacity(0.2)
-                                    .frame(width: width * CGFloat(min(Double(100 - left), member.refill)) / 100)
-                                    .frame(maxWidth: .infinity, alignment: .trailing)
+                                    .opacity(0.45)
+                                    .frame(width: width * CGFloat(freed) / 100)
+                                    .offset(x: width * CGFloat(Double(used) - freed) / 100)
                             }
                         }
-                        .mask(PaceSlot(at: timeLeft.map { Self.position($0, width: width) }))
-                        if let timeLeft, width >= 6 {
+                        .mask(PaceSlot(at: elapsed.map { Self.position($0, width: width) }))
+                        if let elapsed, width >= 6 {
                             Capsule()
                                 .fill(NookTheme.paper)
                                 .frame(width: 2)
                                 .padding(.vertical, NookTheme.Spacing.xxs)
-                                .offset(x: Self.position(timeLeft, width: width) - 1)
+                                .offset(x: Self.position(elapsed, width: width) - 1)
                         }
                     }
                     if wide {
@@ -507,7 +561,7 @@ private struct LimitSegment: View {
                                     .foregroundStyle(NookTheme.paper)
                                     .lineLimit(1)
                                     .truncationMode(.tail)
-                                Text("\(left)%")
+                                Text("\(used)%")
                                     .font(NookTheme.TextStyle.detail.weight(.semibold).monospacedDigit())
                                     .foregroundStyle(NookTheme.paper)
                                     .fixedSize()
@@ -535,8 +589,8 @@ private struct LimitSegment: View {
             }
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
-            .help(summary(left: left, timeLeft: timeLeft, resetsIn: resetsIn, credits: credits))
-            .accessibilityLabel(summary(left: left, timeLeft: timeLeft, resetsIn: resetsIn, credits: credits))
+            .help(summary(used: used, elapsed: elapsed, resetsIn: resetsIn, credits: credits))
+            .accessibilityLabel(summary(used: used, elapsed: elapsed, resetsIn: resetsIn, credits: credits))
             .popover(isPresented: $open, arrowEdge: .top) {
                 LimitSegmentDetails(member: member, window: window, details: section.details[member.accountID], reset: reset, now: now)
             }
@@ -551,10 +605,10 @@ private struct LimitSegment: View {
         min(max(3, width * CGFloat(percent) / 100), max(3, width - 3))
     }
 
-    private func summary(left: Int, timeLeft: Int?, resetsIn: String?, credits: Int) -> String {
-        var parts = [tr("limits.segment", member.name, left)]
+    private func summary(used: Int, elapsed: Int?, resetsIn: String?, credits: Int) -> String {
+        var parts = [tr("limits.segment", member.name, used)]
         if let resetsIn { parts.append(resetsIn) }
-        if let timeLeft { parts.append(tr("limits.windowLeft", timeLeft)) }
+        if let elapsed { parts.append(tr("limits.windowElapsed", elapsed)) }
         if credits > 0 { parts.append(tr("agents.reset.credits", credits)) }
         return parts.joined(separator: ", ")
     }
@@ -589,7 +643,7 @@ private struct LimitResetChip: View {
     }
 }
 
-/// A narrow bar's legend: a row per account with its number, name, what is left and its reset. Click for its details.
+/// A narrow bar's legend: a row per account with its number, name, how much it used and its reset. Click for its details.
 private struct LimitLegendRow: View {
     let member: LimitPool.Member
     let window: LimitPool.Window
@@ -612,7 +666,7 @@ private struct LimitLegendRow: View {
                     .font(NookTheme.TextStyle.detail.weight(.medium))
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
-                Text("\(member.left ?? 0)%")
+                Text("\(member.used ?? 0)%")
                     .font(NookTheme.TextStyle.detail.weight(.semibold).monospacedDigit())
                     .foregroundStyle(NookTheme.paper)
                 Spacer(minLength: NookTheme.Spacing.sm)
@@ -647,8 +701,8 @@ private struct LimitLegendRow: View {
     }
 }
 
-/// An account's details in one window: who it is, its plan, what is left, when it resets, where even spending would be
-/// and what the reset gives back to the pool.
+/// An account's details in one window: who it is, its plan, how much it used, when it resets, where even spending would
+/// be and what the reset frees in the pool.
 private struct LimitSegmentDetails: View {
     let member: LimitPool.Member
     let window: LimitPool.Window
@@ -671,14 +725,14 @@ private struct LimitSegmentDetails: View {
                 group { row(tr("limits.row.plan"), plan) }
             }
             group {
-                row(tr("limits.row.left"), "\(member.left ?? 0)%")
+                row(tr("limits.row.used"), "\(member.used ?? 0)%")
                 if let at = member.limit?.resetsAt {
                     row(tr("limits.row.resets"), at > now
                         ? "\(AgentFormat.upcoming(at, now: now)) · \(tr("limits.in", AgentFormat.compactDuration(at.timeIntervalSince(now))))"
                         : tr("limits.resetsNow"))
                 }
-                if let limit = member.limit, let timeLeft = LimitPool.timeLeft(limit, now: now) {
-                    row(tr("limits.row.evenPace"), tr("limits.row.evenPaceValue", timeLeft))
+                if let limit = member.limit, let elapsed = LimitPool.timeElapsed(limit, now: now) {
+                    row(tr("limits.row.evenPace"), tr("limits.row.evenPaceValue", elapsed))
                 }
                 if let reset, reset.restores > 0, window.columns.count > 1 {
                     row(tr("limits.row.restores"), tr("limits.row.restoresValue", reset.restores))
