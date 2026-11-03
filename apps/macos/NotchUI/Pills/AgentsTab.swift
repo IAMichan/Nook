@@ -418,7 +418,9 @@ struct AgentsTab: View {
             parentID: (run.delegation?.parentID ?? run.lineage?.parentID).map { "run:" + $0.uuidString },
             firstPrompt: run.task,
             comparison: app.workspace.runs.filter { $0.lineage?.kind == .comparison && $0.lineage?.parentID == run.id }.count,
-            forked: run.lineage?.kind == .fork
+            forked: run.lineage?.kind == .fork,
+            worktree: run.isolation == .worktree || run.worktreePath != nil,
+            changedFiles: run.changedFiles
         )
     }
 
@@ -456,7 +458,10 @@ struct AgentsTab: View {
             model: known?.model ?? "",
             accountName: accountName(app.profile(for: session)),
             firstPrompt: known?.firstPrompt ?? "",
-            spawnedTasks: known?.spawnedTasks ?? []
+            spawnedTasks: known?.spawnedTasks ?? [],
+            worktree: GitHead.isWorktree(session.cwd),
+            linesAdded: session.linesAdded,
+            linesRemoved: session.linesRemoved
         )
     }
 
@@ -476,7 +481,9 @@ struct AgentsTab: View {
             model: session.model,
             accountName: accountName(app.profile(for: session)),
             firstPrompt: session.firstPrompt,
-            spawnedTasks: session.spawnedTasks
+            spawnedTasks: session.spawnedTasks,
+            // No file is read for the history's many rows: the worktrees agents make sit in a "worktrees" folder.
+            worktree: session.cwd.contains("/worktrees/")
         )
     }
 
@@ -520,7 +527,7 @@ struct AgentListItem: Identifiable {
     /// The agent's display name, for its logo.
     let agent: String
     let account: AccountKind?
-    let status: Status
+    var status: Status
     /// Working or waiting: when it started. Otherwise: when it was last active.
     let started: Date?
     let path: String
@@ -545,16 +552,23 @@ struct AgentListItem: Identifiable {
     var comparison = 0
     /// Forked from another session (/fork): a branch mark before its name.
     var forked = false
+    /// Works in a linked git worktree rather than the repository's own folder: its branch shows a worktree mark.
+    var worktree = false
+    /// The lines it added and removed (sessions the hooks report), or the files it changed (sessions Nook runs).
+    var linesAdded = 0
+    var linesRemoved = 0
+    var changedFiles: Int? = nil
 
     /// Busy or waiting for you: it cannot be marked as finished yet.
     var isBusy: Bool { status == .working || status == .waiting || status == .input }
 
     func markedFinished() -> AgentListItem {
-        AgentListItem(id: id, folder: folder, title: title, branch: branch, agent: agent, account: account, status: .finished,
-                      started: started, path: path, finishKey: finishKey,
-                      machine: machine, model: model, accountName: accountName,
-                      parentID: parentID, firstPrompt: firstPrompt, spawnedTasks: spawnedTasks, comparison: comparison,
-                      forked: forked)
+        var finished = self
+        finished.status = .finished
+        finished.unseen = false
+        finished.snoozedUntil = nil
+        finished.snoozedAt = nil
+        return finished
     }
 }
 
@@ -570,8 +584,9 @@ struct AgentRowActions {
     var onWake: (() -> Void)? = nil
 }
 
-/// The name of the session with its status, and where it works with the agent's logo underneath. A row that
-/// asks nothing of you recedes (lighter text, normal weight, working rows dimmed) so what needs you is the only loud thing.
+/// A session as t3code shows a thread: its folder with the status or how long ago, its name, and a line of what it did
+/// (branch, changes, pull request) with the agent's logo. A row that asks nothing of you recedes (lighter text, normal
+/// weight, working rows dimmed) so what needs you is the only loud thing.
 struct AgentListRow: View {
     let item: AgentListItem
     let now: Date
@@ -581,8 +596,8 @@ struct AgentListRow: View {
     var woke = false
     /// One line, for the snoozed and settled shelves.
     var slim = false
-    /// Under its project's header, which already names the folder: one line, the agent's logo, the name and the status,
-    /// as a thread sits under its project in a sidebar. The branch and the rest are in the hover card.
+    /// Under its project's header, which already names the folder: the agent's logo, the name and the status, and under
+    /// it the branch, changes and pull request when there are any, as a thread sits under its project in t3code.
     var grouped = false
     /// When a snoozed row wakes, as text ("tot 9:00").
     var wakeLabel: String? = nil
@@ -600,8 +615,8 @@ struct AgentListRow: View {
 
     /// No fill at rest: the rows read as one list, and only the one under the pointer or the selected one lifts.
     private var background: Color { NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear) }
-    /// One line: a shelf row, or a row under its project's header.
-    private var oneLine: Bool { slim || grouped }
+    /// A tighter row: a shelf row, or a row under its project's header.
+    private var compact: Bool { slim || grouped }
     private var dimmed: Bool { item.status == .finished || slim }
     private var restOpacity: Double { receded && item.status == .working && !hovering && !selected ? 0.7 : 1 }
 
@@ -615,7 +630,8 @@ struct AgentListRow: View {
                     // one-line row in a narrow list was "on the buttons" nearly everywhere and never showed its card.
                     .onHover { onActions = $0 }
                     .rowActionsBackdrop(background)
-                    .padding(.top, oneLine ? NookTheme.Spacing.xs : NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
+                    // Level with the first line, where the status they replace sits.
+                    .padding(.top, compact ? NookTheme.Spacing.xs : NookTheme.Spacing.xxs + NookTheme.Spacing.xxs)
                     .padding(.trailing, NookTheme.Spacing.md)
                     .opacity(hovering ? 1 : 0)
                     .allowsHitTesting(hovering)
@@ -646,10 +662,10 @@ struct AgentListRow: View {
         Group {
             if slim { slimBody } else if grouped { groupedBody } else { fullBody }
         }
-        .padding(.horizontal, oneLine ? NookTheme.Spacing.md : NookTheme.Spacing.lg)
-        .padding(.vertical, oneLine ? NookTheme.Spacing.sm : NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+        .padding(.horizontal, compact ? NookTheme.Spacing.md : NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+        .padding(.vertical, compact ? NookTheme.Spacing.sm : NookTheme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: oneLine ? NookTheme.Radius.control : NookTheme.Radius.card,
+        .background(RoundedRectangle(cornerRadius: compact ? NookTheme.Radius.control : NookTheme.Radius.card,
                                      style: .continuous).fill(background))
         // Only whether it is narrow is kept, so resizing the list redraws a row only when that flips.
         .onGeometryChange(for: Bool.self) { $0.size.width < Self.narrowWidth } action: { narrow = $0 }
@@ -658,71 +674,124 @@ struct AgentListRow: View {
         .opacity(restOpacity)
     }
 
-    /// Two lines: the session's name with its status on the right, and where it works (folder and branch) with the
-    /// agent's logo underneath. One quiet line of context is enough to tell sessions apart; the hover card has the rest.
+    /// Three lines, as a thread card in t3code: the folder with the status or how long ago on the right; the session's
+    /// name; and the branch, its changes, the pull request and the agent's logo. Without any of those the logo moves up
+    /// beside the name and the row keeps two lines. The hover card has the rest.
     private var fullBody: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                marks
-                Text(item.title)
-                    .font(receded ? NookTheme.TextStyle.body : NookTheme.TextStyle.strong)
-                    .foregroundStyle(dimmed || receded ? NookTheme.textSecondary : NookTheme.paper)
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                NookSymbol("folder", size: 10).font(NookTheme.font(9.5, .semibold))
+                Text(item.folder)
                     .lineLimit(1)
+                    .help(AgentPathFormat.tilde(item.path))
                 Spacer(minLength: NookTheme.Spacing.sm)
                 slot.opacity(hovering && actions != nil ? 0 : 1)
             }
-
-            HStack(spacing: NookTheme.Spacing.sm) {
-                contextLine
-                if let pullRequest { PullRequestPill(badge: pullRequest, compact: true) }
-                Spacer(minLength: NookTheme.Spacing.sm)
-                AgentMark(agent: item.agent, account: item.account, size: 14, dimmed: dimmed, ring: background,
-                          quiet: !hovering && !selected)
-                    .padding(.trailing, item.account == nil ? 0 : 3)
-            }
             .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
-        }
-    }
+            .frame(height: 18)
 
-    /// "[folder] nook  [branch] feature/calm-ui": the folder, and the branch when there is one. The folder stays whole
-    /// and goes first: a long branch gives way, cut in the middle.
-    private var contextLine: some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
-            NookSymbol("folder", size: 10).font(NookTheme.font(9.5, .semibold))
-            Text(item.folder)
-                .foregroundStyle(NookTheme.textSecondary)
-                .lineLimit(1)
-                .layoutPriority(1)
-            if let branch = item.branch, !branch.isEmpty, branch != item.folder {
-                NookSymbol("arrow.triangle.branch", size: 10).font(NookTheme.font(9.5, .semibold))
-                    .padding(.leading, NookTheme.Spacing.xs)
-                Text(branch)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+            HStack(spacing: NookTheme.Spacing.sm) {
+                marks
+                title
+                Spacer(minLength: NookTheme.Spacing.xs)
+                if !hasMeta { logo(size: 14) }
+            }
+
+            if hasMeta {
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    metaLine
+                    logo(size: 14)
+                }
+                .padding(.top, NookTheme.Spacing.xxs)
             }
         }
-        .help(AgentPathFormat.tilde(item.path))
-        .accessibilityElement(children: .combine)
     }
 
-    /// One line under the project's header: the agent's logo, the name with the marks before it, and the status or how
-    /// long ago on the right.
-    private var groupedBody: some View {
+    private var title: some View {
+        Text(item.title)
+            .font(receded ? NookTheme.TextStyle.body : NookTheme.TextStyle.strong)
+            .foregroundStyle(dimmed || receded ? NookTheme.textSecondary : NookTheme.paper)
+            .lineLimit(1)
+            // The name gives way last: the status and the pull request shrink to their marks first.
+            .layoutPriority(1)
+    }
+
+    private func logo(size: CGFloat) -> some View {
+        AgentMark(agent: item.agent, account: item.account, size: size, dimmed: dimmed, ring: background,
+                  quiet: !hovering && !selected)
+            .padding(.trailing, item.account == nil ? 0 : 3)
+    }
+
+    private var shownBranch: String? {
+        guard let branch = item.branch, !branch.isEmpty, branch != item.folder else { return nil }
+        return branch
+    }
+
+    private var hasChanges: Bool { item.linesAdded + item.linesRemoved > 0 || (item.changedFiles ?? 0) > 0 }
+
+    /// Anything for the line under the name: a branch, changes, or a pull request.
+    private var hasMeta: Bool { shownBranch != nil || hasChanges || pullRequest != nil }
+
+    /// "[worktree] feature/calm-ui  +120 −8  [#12]": the branch (a worktree's with the worktree mark), cut in the middle
+    /// when it is long, then what the session changed and its pull request.
+    private var metaLine: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            AgentMark(agent: item.agent, account: item.account, size: 13, dimmed: dimmed, ring: background,
-                      quiet: !hovering && !selected)
-                .padding(.trailing, item.account == nil ? 0 : 3)
-            marks
-            Text(item.title)
-                .font(receded ? NookTheme.TextStyle.body : NookTheme.TextStyle.strong)
-                .foregroundStyle(dimmed || receded ? NookTheme.textSecondary : NookTheme.paper)
-                .lineLimit(1)
-                // The name gives way last: the status and the pull request shrink to their marks first.
-                .layoutPriority(1)
-            Spacer(minLength: NookTheme.Spacing.xs)
+            if let branch = shownBranch {
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    NookSymbol(item.worktree ? "arrow.triangle.branch.square" : "arrow.triangle.branch", size: 10)
+                        .font(NookTheme.font(9.5, .semibold))
+                        .help(item.worktree ? tr("agents.row.worktree") : tr("agents.row.branch"))
+                    Text(branch)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .accessibilityElement(children: .combine)
+            }
+            Spacer(minLength: 0)
+            changes
             if let pullRequest { PullRequestPill(badge: pullRequest, compact: true) }
-            slot.opacity(hovering && actions != nil ? 0 : 1)
+        }
+        .font(NookTheme.TextStyle.detail)
+        .foregroundStyle(NookTheme.textTertiary)
+    }
+
+    /// "+120 −8" for a session whose lines the hooks counted; the number of changed files for one Nook runs.
+    @ViewBuilder
+    private var changes: some View {
+        if item.linesAdded + item.linesRemoved > 0 {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Text("+\(item.linesAdded)").foregroundStyle(dimmed ? NookTheme.textTertiary : NookTheme.mint)
+                Text("−\(item.linesRemoved)").foregroundStyle(dimmed ? NookTheme.textTertiary : NookTheme.coral)
+            }
+            .font(NookTheme.mono(10.5))
+            .fixedSize()
+        } else if let files = item.changedFiles, files > 0 {
+            HStack(spacing: 3) {
+                NookSymbol("doc", size: 10).font(NookTheme.font(9.5, .semibold))
+                Text("\(files)").monospacedDigit()
+            }
+            .fixedSize()
+            .help(tr("agents.git.changes", files))
+            .accessibilityLabel(tr("agents.git.changes", files))
+        }
+    }
+
+    /// Under the project's header: the agent's logo, the name with the marks before it, and the status or how long ago on
+    /// the right; under it, lined up with the name, the branch, changes and pull request when there are any.
+    private var groupedBody: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                logo(size: 13)
+                marks
+                title
+                Spacer(minLength: NookTheme.Spacing.xs)
+                slot.opacity(hovering && actions != nil ? 0 : 1)
+            }
+            if hasMeta {
+                metaLine
+                    .padding(.leading, 13 + NookTheme.Spacing.sm + (item.account == nil ? 0 : 3))
+            }
         }
     }
 
@@ -763,7 +832,7 @@ struct AgentListRow: View {
     }
 
     /// A one-line row in a narrow list shows its status as a mark only.
-    private var compactStatus: Bool { oneLine && narrow }
+    private var compactStatus: Bool { compact && narrow }
 
     /// The right slot: the wake time of a snoozed row, "Wakker" for one that woke, otherwise the status or how long ago.
     @ViewBuilder
