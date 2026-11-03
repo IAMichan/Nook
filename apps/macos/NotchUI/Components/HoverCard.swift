@@ -82,6 +82,20 @@ private struct HoverCardModifier<Card: View>: ViewModifier {
 }
 
 extension View {
+    /// A part of a row with its own card (the changed files, the pull request): while the pointer is on it, `onDetail`
+    /// is set so the row holds its own card back, and this part's card opens instead. Off: the view as it is.
+    @ViewBuilder
+    func detailCard<Card: View>(enabled: Bool = true, onDetail: Binding<Bool>,
+                                @ViewBuilder _ card: @escaping () -> Card) -> some View {
+        if enabled {
+            contentShape(Rectangle())
+                .onHover { onDetail.wrappedValue = $0 }
+                .hoverCard(card)
+        } else {
+            self
+        }
+    }
+
     /// Shows `card` in a popover after the pointer rests on this view for a moment, unless `suppressed`.
     func hoverCard<Card: View>(arrowEdge: Edge = .trailing, suppressed: Bool = false,
                                @ViewBuilder _ card: @escaping () -> Card) -> some View {

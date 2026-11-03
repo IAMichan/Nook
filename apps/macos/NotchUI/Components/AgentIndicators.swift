@@ -111,6 +111,8 @@ struct ShimmerText: View {
 struct PullRequestPill: View {
     let badge: PullRequestBadge
     var compact = false
+    /// Off where the pill opens a hover card of its own, so the system tooltip does not cover it.
+    var tooltip = true
 
     private var status: String { tr("inbox.pr.state." + badge.glyph.rawValue) }
 
@@ -124,7 +126,7 @@ struct PullRequestPill: View {
             }
         }
         .modifier(RowBadgeBackground(horizontal: compact ? 3 : 5))
-        .help(label.isEmpty ? status : "\(label) · \(status)")
+        .help(tooltip ? (label.isEmpty ? status : "\(label) · \(status)") : "")
         .accessibilityLabel(label.isEmpty ? status : "\(label), \(status)")
     }
 
