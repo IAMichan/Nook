@@ -521,30 +521,28 @@ struct ComposerContextRing: View {
     }
 }
 
-/// How much of its subscription the session's account has left, at the right end of the choices under the composer: a
-/// small ring filled to the window with the least room left, with its percentage beside it, amber or coral once little is
-/// left. Click for every window as one line each (`UsageLimitRows`, reset and pace in their tooltips) and "All limits",
-/// the modal with every account. Every agent that reports limits gets it.
+/// How much of its subscription the session's account has used, at the right end of the choices under the composer: a
+/// small ring filled to the window that runs out first, with its percentage beside it, amber from 75 % and coral from 90 %. Click for every window as one line each (`UsageLimitRows`, reset and pace in their tooltips) and "All limits",
+/// the usage limits modal with every account (`UsageModal`). Every agent that reports limits gets it.
 struct ComposerUsageRing: View {
     @EnvironmentObject private var app: AppModel
     let limits: [QuotaLimit]
     let account: String
     @State private var open = false
-    @State private var showAll = false
     @State private var hovering = false
     private static let shownLimits = 6
 
-    /// The least room left in any window: a spent window only counts once every window is spent.
-    private var left: Int {
-        LimitPool.left(UsageLimits.effectiveHighestPercent(limits.map(\.percent)))
+    /// The fullest window: only shows 100 % once every window is full; otherwise the fullest one that is not (at most 99 %).
+    private var used: Int {
+        Int(UsageLimits.effectiveHighestPercent(limits.map(\.percent)).rounded())
     }
 
-    /// "Limits of Work: 5 hours 62% left · Week 88% left".
+    /// "Limits of Work: 5 hours: 38% used · Week: 12% used".
     private var help: String {
-        tr("compose.limits.help", account, limits.map { tr("limits.rowLeft", $0.label, LimitPool.left($0.percent)) }.joined(separator: " · "))
+        tr("compose.limits.help", account, limits.map { tr("limits.rowUsed", $0.label, UsageLimitRows.used($0)) }.joined(separator: " · "))
     }
 
-    /// The windows with the least room left when there are many (an agent with a quota per model), in the agent's order.
+    /// The fullest windows when there are many (an agent with a quota per model), in the agent's order.
     private var shown: [QuotaLimit] {
         guard limits.count > Self.shownLimits else { return limits }
         let busiest = Set(limits.sorted { $0.percent > $1.percent }.prefix(Self.shownLimits).map(\.id))
@@ -552,13 +550,13 @@ struct ComposerUsageRing: View {
     }
 
     var body: some View {
-        let tint = UsageTone.fill(left: left, calm: NookTheme.textSecondary)
+        let tint = UsageTone.fill(used: used, calm: NookTheme.textSecondary)
         Button { open.toggle() } label: {
             HStack(spacing: NookTheme.Spacing.sm) {
                 ring(tint: tint)
-                Text("\(left)%")
+                Text("\(used)%")
                     .font(NookTheme.TextStyle.label.monospacedDigit())
-                    .foregroundStyle(UsageTone.level(left: left) == .calm ? (hovering ? NookTheme.paper : NookTheme.textSecondary) : UsageTone.text(left: left))
+                    .foregroundStyle(UsageTone.level(used: used) == .calm ? (hovering ? NookTheme.paper : NookTheme.textSecondary) : UsageTone.text(used: used))
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .frame(height: 28)
@@ -572,13 +570,12 @@ struct ComposerUsageRing: View {
         .help(help)
         .accessibilityLabel(help)
         .popover(isPresented: $open, arrowEdge: .top) { panel }
-        .sheet(isPresented: $showAll) { UsageLimitsSheet().environmentObject(app) }
     }
 
     private func ring(tint: Color) -> some View {
         ZStack {
             Circle().stroke(NookTheme.line2, lineWidth: 2)
-            Circle().trim(from: 0, to: CGFloat(left) / 100)
+            Circle().trim(from: 0, to: CGFloat(used) / 100)
                 .stroke(tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                 .rotationEffect(.degrees(-90))
         }
@@ -598,7 +595,7 @@ struct ComposerUsageRing: View {
             }
             SmallGhostButton(title: tr("limits.all")) {
                 open = false
-                showAll = true
+                app.usageModalOpen = true
             }
         }
         .padding(NookTheme.Spacing.md)

@@ -9,7 +9,7 @@ enum UsageMetric: String, CaseIterable, Identifiable {
 
 /// Settings › Coding agents, the overview: what every agent on this Mac used, read from their own
 /// transcripts (also the sessions you run in a terminal), as cost at API prices or as tokens, over the last 24 hours or
-/// 7, 30 or 90 days. The same blocks (`UsageOverviewBlocks`) make the Usage page in the Agents tab.
+/// 7, 30 or 90 days. Shown in Settings › Coding agents (`UsageOverviewBlocks`).
 struct UsageInsightsView: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject var history: AgentHistory
@@ -74,7 +74,7 @@ struct UsageWindowPicker: View {
     }
 }
 
-/// The Usage page itself, from the large total to the breakdown, wherever it shows (Settings › Coding agents, Agents › Usage):
+/// The Usage page itself, from the large total to the breakdown, in Settings › Coding agents:
 /// each agent's share, the chart, the totals, the split by type, and the table per model or per day. `open` opens a
 /// model's sheet.
 struct UsageOverviewBlocks: View {
@@ -619,29 +619,3 @@ struct UsageModelSheet: View {
     }
 }
 
-/// Cost and Tokens on the Usage page in the Agents tab: the same blocks as Settings › Coding agents, in the panel's own column.
-struct UsageInsightsPanel: View {
-    @ObservedObject var history: AgentHistory
-    let metric: UsageMetric
-    let window: UsageWindow
-    @State private var byDay = false
-    @State private var openModel: UsageInsights.ModelTotal?
-    @State private var prices = UsagePrices.load()
-
-    var body: some View {
-        let insights = UsageInsights.make(history.ledger, window: window, prices: prices)
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            UsageOverviewBlocks(insights: insights, metric: metric, window: window, loading: history.loading, byDay: $byDay) {
-                openModel = $0
-            }
-            Text(tr("usage.footer"))
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .sheet(item: $openModel) { model in
-            UsageModelSheet(model: model, ledger: history.ledger, window: window, metric: metric, prices: $prices) { openModel = nil }
-        }
-        .onAppear { history.refresh(minimumInterval: 60) }
-    }
-}
