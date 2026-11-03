@@ -85,12 +85,43 @@ extension WorkspaceManager {
     /// the session's branch from here on, and the one it left stays listed above the composer with its pull request.
     func followBranch(_ id: UUID, to branch: String) {
         guard !branch.isEmpty, let run = run(id), run.branch != branch else { return }
+        let left = run.branch
+        let sync = PullRequestSync.shared
+        let hadPullRequest = left.map { old in
+            openPullRequests[id] != nil
+                || ((sync.links[id] ?? []) + (sync.earlier[id] ?? [])).contains { $0.headBranch == old }
+        } ?? true
         update(id) {
             $0.earlierBranches = SessionBranches.leaving($0.branch, for: branch, earlier: $0.earlierBranches, base: $0.baseBranch)
             $0.branch = branch
         }
         openPullRequests[id] = nil
-        PullRequestSync.shared.forget(id)
+        sync.forget(id)
+        if let left, !hadPullRequest { dropIfEmpty(id, branch: left, now: branch) }
+    }
+
+    /// The branch the session left never got work of its own: a question answered without changes, after which the
+    /// agent made a branch with a better name for the change it was then asked for. It is not an earlier branch of the
+    /// chat but the same one renamed, so its row goes and, in a worktree Nook made, the empty branch itself too.
+    private func dropIfEmpty(_ id: UUID, branch old: String, now current: String) {
+        guard let run = run(id), let git = sessionGit(for: run), let base = run.baseBranch, !base.isEmpty else { return }
+        let directory = run.workingDirectory
+        let ownsBranch = !run.isRemote && run.isolation == .worktree
+        Task { [weak self] in
+            let empty = await Task.detached(priority: .utility) { () -> Bool in
+                let pushed = git.remotes(directory).contains { git.refExists("refs/remotes/\($0)/\(old)", in: directory) }
+                let ahead = try? git.run(["rev-list", "--count", base + ".." + old], in: directory)
+                let isEmpty = SessionBranches.isEmpty(aheadOfBase: ahead.flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) },
+                                                      pushed: pushed)
+                if isEmpty, ownsBranch { try? git.deleteMergedBranch(repo: directory, branch: old) }
+                return isEmpty
+            }.value
+            guard empty, let self, self.run(id)?.branch == current else { return }
+            self.update(id) { run in
+                let list = (run.earlierBranches ?? []).filter { $0 != old }
+                run.earlierBranches = list.isEmpty ? nil : list
+            }
+        }
     }
 
     /// A conversation links a pull request: the first time Nook sees it, the answers kept for a minute no longer count,
