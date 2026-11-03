@@ -611,10 +611,7 @@ private struct ChatBubbleView: View, Equatable {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            if bubble.fromMe {
-                Spacer(minLength: 70)
-                actions
-            }
+            if bubble.fromMe { Spacer(minLength: 70) }
             CappedWidth(maximum: Self.maxWidth) {
                 VStack(alignment: bubble.fromMe ? .trailing : .leading, spacing: NookTheme.Spacing.xxs) {
                     content
@@ -639,10 +636,15 @@ private struct ChatBubbleView: View, Equatable {
                     }
                 }
             }
-            if !bubble.fromMe {
+            // Beside the bubble, in the room the spacer keeps free, not in its row: the bubble is as wide once it has
+            // arrived (and has these) as while it was on its way (without them), so its text does not wrap anew.
+            .overlay(alignment: bubble.fromMe ? .leading : .trailing) {
                 actions
-                Spacer(minLength: 70)
+                    .fixedSize()
+                    .alignmentGuide(.leading) { $0[.trailing] + NookTheme.Spacing.sm }
+                    .alignmentGuide(.trailing) { $0[.leading] - NookTheme.Spacing.sm }
             }
+            if !bubble.fromMe { Spacer(minLength: 70) }
         }
         .onHover { hovering = $0 }
         .environment(\.chatMediaLive, near)
@@ -1433,6 +1435,7 @@ struct VideoTile: View {
     /// cannot be played (`ChatVideoPlayback`).
     @State private var playback: ChatVideoPlayback?
     @State private var hovering = false
+    @State private var isPaused = false
     /// A frame of the video itself, when its app sent no picture of it: never a black box.
     @State private var still: ChatVideoStills.Still?
     @Environment(\.chatMediaLive) private var live
@@ -1440,6 +1443,7 @@ struct VideoTile: View {
 
     private var picture: NSImage? { poster ?? still?.image }
     private var enlargeLabel: String { tr(stage == nil ? "card.video.enlarge" : "card.video.fullScreen") }
+    private var showEnlarge: Bool { hovering || playback == nil || isPaused }
 
     private var size: CGSize {
         guard let poster = picture, poster.size.width > 0, poster.size.height > 0 else {
@@ -1450,9 +1454,11 @@ struct VideoTile: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             if let playback {
-                ChatVideoPlaybackView(playback: playback, poster: picture)
+                ChatVideoPlaybackView(playback: playback, poster: picture, onHover: { hovering = $0 },
+                                      onPaused: { isPaused = $0 }, onDoubleClick: enlarge)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Button { play() } label: {
                     ZStack {
@@ -1475,7 +1481,9 @@ struct VideoTile: View {
                 .help(tr("card.video.play"))
                 .accessibilityLabel("\(tr("card.video.play")): \(name)")
             }
-            if hovering || playback == nil {
+        }
+        .overlay(alignment: .topTrailing) {
+            if showEnlarge {
                 Button { enlarge() } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(NookTheme.font(11, .semibold))
@@ -1518,6 +1526,7 @@ struct VideoTile: View {
     private func play() {
         let playback = ChatVideoPlayback(url: url)
         self.playback = playback
+        isPaused = false
         playback.start()
     }
 
@@ -1526,6 +1535,7 @@ struct VideoTile: View {
         let time = playback?.currentTime ?? .zero
         playback?.stop()
         playback = nil
+        isPaused = false
         if let stage {
             stage.show(url, name: name, at: time)
         } else {
@@ -1539,11 +1549,14 @@ struct VideoTile: View {
 private struct ChatVideoPlaybackView: View {
     @ObservedObject var playback: ChatVideoPlayback
     let poster: NSImage?
+    var onHover: ((Bool) -> Void)?
+    var onPaused: ((Bool) -> Void)?
+    var onDoubleClick: (() -> Void)?
 
     var body: some View {
         switch playback.phase {
         case .ready:
-            InlinePlayer(player: playback.player)
+            InlinePlayer(player: playback.player, onHover: onHover, onPaused: onPaused, onDoubleClick: onDoubleClick)
         case .loading, .failed:
             ZStack {
                 Color.black
@@ -1571,23 +1584,130 @@ struct InlinePlayer: NSViewRepresentable {
     let player: AVPlayer
     /// Its own full-screen button; in a bubble full screen happens in the video's own window instead.
     var fullScreen = false
+    var onHover: ((Bool) -> Void)?
+    var onPaused: ((Bool) -> Void)?
+    var onDoubleClick: (() -> Void)?
 
-    func makeNSView(context: Context) -> AVPlayerView {
-        let view = AVPlayerView()
-        view.controlsStyle = .inline
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPaused: onPaused)
+    }
+
+    func makeNSView(context: Context) -> InlineAVPlayerView {
+        let view = InlineAVPlayerView()
+        view.controlsStyle = .floating
         view.videoGravity = .resizeAspect
         view.showsFullScreenToggleButton = fullScreen
         view.player = player
+        view.onHover = onHover
+        view.onDoubleClick = onDoubleClick
+        context.coordinator.attach(player: player)
         return view
     }
 
-    func updateNSView(_ view: AVPlayerView, context: Context) {
-        if view.player !== player { view.player = player }
+    func updateNSView(_ view: InlineAVPlayerView, context: Context) {
+        view.onHover = onHover
+        view.onDoubleClick = onDoubleClick
+        if view.player !== player {
+            view.player = player
+            context.coordinator.attach(player: player)
+        }
     }
 
-    static func dismantleNSView(_ view: AVPlayerView, coordinator: ()) {
+    static func dismantleNSView(_ view: InlineAVPlayerView, coordinator: Coordinator) {
+        coordinator.detach()
         view.player?.pause()
         view.player = nil
+    }
+
+    final class Coordinator: NSObject {
+        var onPaused: ((Bool) -> Void)?
+        private var observation: NSKeyValueObservation?
+
+        init(onPaused: ((Bool) -> Void)?) {
+            self.onPaused = onPaused
+        }
+
+        func attach(player: AVPlayer) {
+            observation = player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] player, _ in
+                let paused = player.timeControlStatus == .paused
+                DispatchQueue.main.async {
+                    self?.onPaused?(paused)
+                }
+            }
+        }
+
+        func detach() {
+            observation?.invalidate()
+            observation = nil
+        }
+    }
+}
+
+final class InlineAVPlayerView: AVPlayerView {
+    var onHover: ((Bool) -> Void)?
+    var onDoubleClick: (() -> Void)?
+    private var trackingArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+        let options: NSTrackingArea.Options = [
+            .mouseEnteredAndExited,
+            .mouseMoved,
+            .activeInKeyWindow,
+            .inVisibleRect
+        ]
+        let area = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
+        addTrackingArea(area)
+        trackingArea = area
+
+        checkHover()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            checkHover()
+        }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        onHover?(true)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        onHover?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        guard let window else {
+            onHover?(false)
+            return
+        }
+        let pt = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        if !bounds.contains(pt) {
+            onHover?(false)
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        super.mouseUp(with: event)
+        if event.clickCount == 2 {
+            onDoubleClick?()
+        }
+    }
+
+    private func checkHover() {
+        guard let window else { return }
+        let pt = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        if bounds.contains(pt) {
+            onHover?(true)
+        }
     }
 }
 

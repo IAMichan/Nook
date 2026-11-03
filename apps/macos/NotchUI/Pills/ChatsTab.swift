@@ -381,6 +381,7 @@ struct ChatsTab: View {
     var openOnAgents: ((String) -> Void)?
     /// In the main window rather than the notch: each has its own open chat, read only while that one is in sight.
     var inWindow = false
+    @StateObject private var panelMediaStage = ChatMediaStage()
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var capture = ChatCaptureService.shared
     @ObservedObject private var whatsApp = WhatsAppAccounts.shared
@@ -470,6 +471,17 @@ struct ChatsTab: View {
     private var stacked: Bool { PanelLayout.stacks(totalWidth - sidebarWidth) }
 
     var body: some View {
+        Group {
+            if inWindow {
+                panelContent
+                    .chatMediaStage(panelMediaStage)
+            } else {
+                panelContent
+            }
+        }
+    }
+
+    private var panelContent: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             if capture.status == .needsAccess { accessBar }
             if case .failed(let why) = capture.status { failedBar(why) }

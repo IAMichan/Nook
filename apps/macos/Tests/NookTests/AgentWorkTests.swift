@@ -428,6 +428,10 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertEqual(last?.before, third)
         XCTAssertNil(last?.after)
         XCTAssertNil(TurnChanges.checkpoints(all, start: Date(timeIntervalSince1970: 5), end: Date(timeIntervalSince1970: 8)))
+        // The first snapshot is made in the background while the first turn runs: it is still that turn's "before".
+        let opening = TurnChanges.checkpoints(all, start: Date(timeIntervalSince1970: 8), end: Date(timeIntervalSince1970: 40))
+        XCTAssertEqual(opening?.before, first)
+        XCTAssertEqual(opening?.after, second)
     }
 
     func testBackgroundWakeStartsATurn() {
