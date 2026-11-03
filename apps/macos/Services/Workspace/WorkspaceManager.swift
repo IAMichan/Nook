@@ -1847,13 +1847,10 @@ final class WorkspaceManager: ObservableObject {
     private func pullRequestChanged(_ id: UUID, old: PullRequestWatch, new: PullRequestSnapshot) {
         let now = Date()
         if let url = URL(string: old.url) { PullRequestStatusStore.shared.record(url: url, snapshot: new, at: now) }
-        // The first look only sets what counts as seen.
-        guard old.checkedAt != nil else {
-            update(id) { $0.prWatch = PullRequestNews.updated(old, with: new, at: now) }
-            return
-        }
-        let lines = PullRequestNews.lines(old: old, new: new)
-        let wake = old.wakeAgent && PullRequestNews.needsAgent(old: old, new: new)
+        // The first look only sets what counts as seen, but for a conflict that is already there.
+        let first = old.checkedAt == nil
+        let lines = first ? PullRequestNews.firstLook(new) : PullRequestNews.lines(old: old, new: new)
+        let wake = old.wakeAgent && (first ? !lines.isEmpty : PullRequestNews.needsAgent(old: old, new: new))
         update(id) { $0.prWatch = PullRequestNews.updated(old, with: new, at: now) }
         guard !lines.isEmpty else { return }
         append(id, RunEvent(kind: .system, text: tr("ws.prwatch.news") + "\n" + lines.joined(separator: "\n"), tool: "prwatch"))

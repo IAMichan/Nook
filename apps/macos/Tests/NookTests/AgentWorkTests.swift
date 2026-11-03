@@ -162,6 +162,41 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertFalse(PullRequestNews.needsAgent(old: seen, new: merged))
     }
 
+    func testPullRequestConflictNews() {
+        var watch = PullRequestWatch(url: "https://github.com/o/r/pull/1", checkedAt: Date())
+        watch.conflicted = false
+        var conflicted = PullRequestSnapshot(state: "open", checks: "", failedChecks: [], reviews: [], comments: [], conflicted: true)
+        XCTAssertEqual(PullRequestNews.lines(old: watch, new: conflicted), ["The pull request has merge conflicts with its base branch."])
+        XCTAssertTrue(PullRequestNews.needsAgent(old: watch, new: conflicted), "a conflict is for the agent to fix")
+        XCTAssertEqual(PullRequestNews.firstLook(conflicted), ["The pull request has merge conflicts with its base branch."],
+                       "a conflict that is already there counts on the first look")
+
+        let seen = PullRequestNews.updated(watch, with: conflicted, at: Date())
+        XCTAssertEqual(seen.conflicted, true)
+        XCTAssertEqual(PullRequestNews.lines(old: seen, new: conflicted), [])
+        XCTAssertFalse(PullRequestNews.needsAgent(old: seen, new: conflicted))
+
+        // After a push GitHub works out mergeability again: no answer yet is no news, and the conflict stays remembered.
+        var computing = conflicted
+        computing.conflicted = false
+        computing.mergeabilityKnown = false
+        XCTAssertEqual(PullRequestNews.lines(old: seen, new: computing), [])
+        XCTAssertEqual(PullRequestNews.updated(seen, with: computing, at: Date()).conflicted, true)
+
+        conflicted.conflicted = false
+        XCTAssertEqual(PullRequestNews.lines(old: seen, new: conflicted), ["The merge conflicts are resolved."])
+        XCTAssertFalse(PullRequestNews.needsAgent(old: seen, new: conflicted))
+        XCTAssertEqual(PullRequestNews.firstLook(conflicted), [])
+
+        XCTAssertTrue(PullRequestMergeability.githubKnown(["mergeable": false]))
+        XCTAssertFalse(PullRequestMergeability.githubKnown(["mergeable": NSNull(), "mergeable_state": "unknown"]))
+        XCTAssertFalse(PullRequestMergeability.gitlabKnown(["has_conflicts": false, "detailed_merge_status": "checking"]))
+        XCTAssertTrue(PullRequestMergeability.gitlabKnown(["has_conflicts": false, "detailed_merge_status": "mergeable"]))
+
+        let old = #"{"url":"u","state":"open","checks":"","reviewCount":0,"commentCount":0,"wakeAgent":true}"#
+        XCTAssertNil(try JSONDecoder().decode(PullRequestWatch.self, from: Data(old.utf8)).conflicted, "older watches still load")
+    }
+
     // MARK: Review comments
 
     func testNewLineNumbers() {
