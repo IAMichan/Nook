@@ -19,8 +19,9 @@ enum RemoteHostDiscovery {
     // MARK: ~/.ssh/config
 
     /// Each concrete `Host` alias (no wildcards or negations), with its `HostName` and `User` as detail. ssh reads the
-    /// rest of the block itself, so the alias is all Nook needs.
-    static func sshConfig(_ text: String) -> [Suggestion] {
+    /// rest of the block itself, so the alias is all Nook needs. `Include` lines are followed through `include`, which
+    /// gives the text of the files a pattern names (see `includedFiles`); ssh stops at 16 levels, so does this.
+    static func sshConfig(_ text: String, include: (String) -> [String] = { _ in [] }, depth: Int = 0) -> [Suggestion] {
         var result: [Suggestion] = []
         var aliases: [String] = []
         var hostName: String?
@@ -44,6 +45,10 @@ enum RemoteHostDiscovery {
                 aliases = value.split(whereSeparator: \.isWhitespace).map(String.init).filter { !isPattern($0) && RemoteMachines.isValidHost($0) }
             case "match":
                 flush()
+            case "include" where depth < 16:
+                for pattern in value.split(whereSeparator: \.isWhitespace).map(String.init) {
+                    for file in include(pattern) { result += sshConfig(file, include: include, depth: depth + 1) }
+                }
             case "hostname":
                 hostName = value
             case "user":
@@ -54,6 +59,39 @@ enum RemoteHostDiscovery {
         }
         flush()
         return result
+    }
+
+    /// The files an `Include` pattern names, as ssh finds them: from your home with `~/`, from ~/.ssh when relative,
+    /// with `*` and `?` expanded, in sorted order.
+    static func includedFiles(_ pattern: String, sshDirectory: String, home: String) -> [String] {
+        let path: String
+        if pattern.hasPrefix("~/") {
+            path = (home as NSString).appendingPathComponent(String(pattern.dropFirst(2)))
+        } else if pattern.hasPrefix("/") {
+            path = pattern
+        } else {
+            path = (sshDirectory as NSString).appendingPathComponent(pattern)
+        }
+        guard path.contains("*") || path.contains("?") else { return [path] }
+        let folder = (path as NSString).deletingLastPathComponent
+        let name = (path as NSString).lastPathComponent
+        // Only the last part may hold a pattern (`config.d/*`), which is how includes are written in practice.
+        guard !folder.contains("*"), !folder.contains("?"),
+              let entries = try? FileManager.default.contentsOfDirectory(atPath: folder) else { return [] }
+        return entries.filter { !$0.hasPrefix(".") && matches($0, pattern: name) }.sorted()
+            .map { (folder as NSString).appendingPathComponent($0) }
+    }
+
+    /// `*` and `?` as in a shell glob, for one file name.
+    static func matches(_ name: String, pattern: String) -> Bool {
+        let expression = "^" + pattern.map { character -> String in
+            switch character {
+            case "*": return ".*"
+            case "?": return "."
+            default: return NSRegularExpression.escapedPattern(for: String(character))
+            }
+        }.joined() + "$"
+        return name.range(of: expression, options: .regularExpression) != nil
     }
 
     // MARK: ~/.ssh/known_hosts

@@ -1,13 +1,17 @@
 import SwiftUI
 
 /// Settings › Agents › Workspace › Machines: the machines sessions can run on over SSH (see RemoteMachines). Nook uses
-/// your own `ssh`, so an alias from ~/.ssh/config works, and so does a key in your SSH agent. A connection test shows at
-/// once whether a session would start.
+/// your own `ssh`, so an alias from ~/.ssh/config works, and so does a key in your SSH agent or a key file per machine. A
+/// connection test shows at once whether a session would start, and which agents that machine has. A machine that only
+/// takes a password gets a field for it here (see RemotePasswordField), kept in memory until Nook quits, or in the
+/// Keychain when you chose that; Lock forgets it in both.
 struct RemoteMachinesSection: View {
     @State private var machines = RemoteMachines.load()
     @State private var adding = false
     @State private var results: [String: (ok: Bool, text: String)] = [:]
     @State private var testing: Set<String> = []
+    /// Machines whose last test was turned away for want of a password.
+    @State private var askPassword: Set<String> = []
 
     var body: some View {
         Section {
@@ -15,30 +19,63 @@ struct RemoteMachinesSection: View {
                 Text(tr("remote.empty")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
             }
             ForEach(machines) { machine in
-                HStack(spacing: 10) {
-                    Image(systemName: "server.rack").foregroundStyle(NookTheme.textSecondary)
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                        Text(machine.name).font(NookTheme.TextStyle.strong)
-                        Text(machine.host + (machine.port.map { ":\($0)" } ?? ""))
-                            .font(NookTheme.mono(11))
-                            .foregroundStyle(NookTheme.textSecondary)
-                        if let result = results[machine.id] {
-                            SettingNote(result.text, tone: result.ok ? .success : .warning)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "server.rack").foregroundStyle(NookTheme.textSecondary)
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                            Text(machine.name).font(NookTheme.TextStyle.strong)
+                            Text(machine.host + (machine.port.map { ":\($0)" } ?? ""))
+                                .font(NookTheme.mono(11))
+                                .foregroundStyle(NookTheme.textSecondary)
+                            if let key = machine.identityFile {
+                                Text(tr("remote.keyFile.shown", key))
+                                    .font(NookTheme.mono(11))
+                                    .foregroundStyle(NookTheme.textSecondary)
+                            }
+                            if machine.usesPassword, RemotePasswords.shared.isKept(machine.id) {
+                                Text(tr("remote.password.inKeychain"))
+                                    .font(NookTheme.TextStyle.caption)
+                                    .foregroundStyle(NookTheme.textSecondary)
+                            }
+                            Text(machine.lastUsedAt.map { tr("remote.lastUsed", $0.formatted(.relative(presentation: .named))) }
+                                 ?? tr("remote.neverUsed"))
+                                .font(NookTheme.TextStyle.caption)
+                                .foregroundStyle(NookTheme.textSecondary)
+                            if let result = results[machine.id] {
+                                SettingNote(result.text, tone: result.ok ? .success : .warning)
+                            }
                         }
+                        Spacer()
+                        if machine.usesPassword, RemotePasswords.shared.password(for: machine.id) != nil {
+                            Button(tr("remote.password.lock")) {
+                                RemotePasswords.shared.set(nil, for: machine.id)
+                                results[machine.id] = nil
+                                machines = RemoteMachines.load()
+                            }
+                            .help(tr("remote.password.lock.help"))
+                        }
+                        if testing.contains(machine.id) {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Button(tr("remote.test")) { test(machine) }
+                        }
+                        ConfirmedButton(symbol: "trash", title: tr("remote.remove"), question: tr("confirm.remove", machine.name),
+                                        detail: tr("confirm.removeMachine.detail")) {
+                            RemoteMachines.remove(id: machine.id)
+                            RemotePasswords.shared.set(nil, for: machine.id)
+                            machines = RemoteMachines.load()
+                        }
+                        .labelled(tr("remote.remove"))
+                        .buttonStyle(.borderless)
                     }
-                    Spacer()
-                    if testing.contains(machine.id) {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Button(tr("remote.test")) { test(machine) }
+                    if askPassword.contains(machine.id) || !RemotePasswords.shared.isUnlocked(machine) {
+                        RemotePasswordField(machine: machine) { _ in
+                            askPassword.remove(machine.id)
+                            machines = RemoteMachines.load()
+                            test(machine)
+                        }
+                        .padding(.leading, NookTheme.Spacing.xxl)
                     }
-                    ConfirmedButton(symbol: "trash", title: tr("remote.remove"), question: tr("confirm.remove", machine.name),
-                                    detail: tr("confirm.removeMachine.detail")) {
-                        RemoteMachines.remove(id: machine.id)
-                        machines = RemoteMachines.load()
-                    }
-                    .labelled(tr("remote.remove"))
-                    .buttonStyle(.borderless)
                 }
             }
             Button { adding = true } label: { Label(tr("remote.add"), systemImage: "plus") }
@@ -54,36 +91,34 @@ struct RemoteMachinesSection: View {
         }
     }
 
-    /// `ssh -o BatchMode=yes host true`: without a password prompt, as a session would connect.
+    /// One ssh login as a session would connect (with the password typed in this run, or else never prompting), that
+    /// also looks for the agents' CLIs in the login shell there.
     private func test(_ machine: RemoteMachine) {
         testing.insert(machine.id)
         results[machine.id] = nil
+        let commands = AppModel.remoteAgentCommands
         Task {
-            let outcome = await Task.detached(priority: .userInitiated) { Self.probe(machine) }.value
-            results[machine.id] = outcome
+            let outcome = await Task.detached(priority: .userInitiated) { Self.probe(machine, commands: commands) }.value
+            if outcome.ok {
+                RemoteMachines.markUsed(id: machine.id)
+                machines = RemoteMachines.load()
+            }
+            if outcome.needsPassword { askPassword.insert(machine.id) } else { askPassword.remove(machine.id) }
+            results[machine.id] = (outcome.ok, outcome.text)
             testing.remove(machine.id)
         }
     }
 
-    nonisolated private static func probe(_ machine: RemoteMachine) -> (ok: Bool, text: String) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: RemoteLaunch.ssh)
-        var arguments = ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8"]
-        if let port = machine.port { arguments += ["-p", String(port)] }
-        process.arguments = arguments + ["--", machine.host, "true"]
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.nullDevice
-        let errors = Pipe()
-        process.standardError = errors
-        do { try process.run() } catch { return (false, error.localizedDescription) }
-        let stop = DispatchWorkItem { if process.isRunning { process.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 15, execute: stop)
-        let data = errors.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        stop.cancel()
-        if process.terminationStatus == 0 { return (true, tr("remote.test.ok")) }
-        let message = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        return (false, message.isEmpty ? tr("remote.test.failed", Int(process.terminationStatus)) : String(message.prefix(300)))
+    /// With the password typed for it in this run, if any (RemoteShell.check takes it from RemotePasswords).
+    nonisolated private static func probe(_ machine: RemoteMachine, commands: [String]) -> (ok: Bool, text: String, needsPassword: Bool) {
+        switch RemoteShell.check(machine, password: nil, commands: commands) {
+        case .success(let found):
+            let names = AppModel.agentNames(found)
+            return (true, names.isEmpty ? tr("remote.test.noAgents") : tr("remote.test.agents", names.joined(separator: ", ")), false)
+        case .failure(let error):
+            if error.needsPassword { return (false, tr("remote.password.needed", machine.name), true) }
+            return (false, error.message.isEmpty ? tr("remote.test.failed", Int(error.status)) : error.message, false)
+        }
     }
 }
 
@@ -93,13 +128,16 @@ private struct AddMachineSheet: View {
     @State private var name = ""
     @State private var host = ""
     @State private var port = ""
+    @State private var identityFile = ""
     /// Machines from ~/.ssh/config, ~/.ssh/known_hosts and your tailnet, to fill the form with one click.
     @State private var suggestions: [RemoteHostDiscovery.Suggestion] = []
 
     private var portNumber: Int? { Int(port.trimmingCharacters(in: .whitespaces)).flatMap { (1...65535).contains($0) ? $0 : nil } }
+    private var cleanIdentityFile: String { identityFile.trimmingCharacters(in: .whitespaces) }
     private var canAdd: Bool {
         RemoteMachines.isValidHost(host.trimmingCharacters(in: .whitespaces))
             && (port.trimmingCharacters(in: .whitespaces).isEmpty || portNumber != nil)
+            && (cleanIdentityFile.isEmpty || RemoteMachines.isValidIdentityFile(cleanIdentityFile))
     }
 
     var body: some View {
@@ -127,8 +165,13 @@ private struct AddMachineSheet: View {
             TextField(tr("remote.host"), text: $host, prompt: Text("me@buildbox.local")).textFieldStyle(.roundedBorder)
                 .font(NookTheme.TextStyle.code)
             TextField(tr("remote.port"), text: $port, prompt: Text("22")).textFieldStyle(.roundedBorder)
+            TextField(tr("remote.keyFile"), text: $identityFile, prompt: Text("~/.ssh/id_ed25519")).textFieldStyle(.roundedBorder)
+                .font(NookTheme.TextStyle.code)
             if !host.isEmpty, !RemoteMachines.isValidHost(host.trimmingCharacters(in: .whitespaces)) {
                 SettingNote(tr("remote.badHost"), tone: .warning)
+            }
+            if !cleanIdentityFile.isEmpty, !RemoteMachines.isValidIdentityFile(cleanIdentityFile) {
+                SettingNote(tr("remote.badKeyFile"), tone: .warning)
             }
             HStack {
                 Spacer()
@@ -136,7 +179,8 @@ private struct AddMachineSheet: View {
                 Button(tr("remote.add")) {
                     let cleanHost = host.trimmingCharacters(in: .whitespaces)
                     let cleanName = name.trimmingCharacters(in: .whitespaces)
-                    add(RemoteMachine(name: cleanName.isEmpty ? cleanHost : cleanName, host: cleanHost, port: portNumber))
+                    add(RemoteMachine(name: cleanName.isEmpty ? cleanHost : cleanName, host: cleanHost, port: portNumber,
+                                      identityFile: cleanIdentityFile.isEmpty ? nil : cleanIdentityFile))
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -151,11 +195,17 @@ private struct AddMachineSheet: View {
         }
     }
 
-    /// Reads ~/.ssh/config and ~/.ssh/known_hosts, and asks the Tailscale app for the devices of your tailnet. Nothing
+    /// Reads ~/.ssh/config (and the files it includes) and ~/.ssh/known_hosts, and asks the Tailscale app for the devices of your tailnet. Nothing
     /// is contacted on the network.
     nonisolated private static func discover(existing: [RemoteMachine]) -> [RemoteHostDiscovery.Suggestion] {
-        let ssh = (NSHomeDirectory() as NSString).appendingPathComponent(".ssh")
-        let config = (try? String(contentsOfFile: ssh + "/config", encoding: .utf8)).map(RemoteHostDiscovery.sshConfig) ?? []
+        let home = NSHomeDirectory()
+        let ssh = (home as NSString).appendingPathComponent(".ssh")
+        let include: (String) -> [String] = { pattern in
+            RemoteHostDiscovery.includedFiles(pattern, sshDirectory: ssh, home: home)
+                .compactMap { try? String(contentsOfFile: $0, encoding: .utf8) }
+        }
+        let config = (try? String(contentsOfFile: ssh + "/config", encoding: .utf8))
+            .map { RemoteHostDiscovery.sshConfig($0, include: include) } ?? []
         let known = (try? String(contentsOfFile: ssh + "/known_hosts", encoding: .utf8)).map(RemoteHostDiscovery.knownHosts) ?? []
         return RemoteHostDiscovery.merge(tailscale: tailnet(), sshConfig: config, knownHosts: known, existing: existing)
     }
