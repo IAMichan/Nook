@@ -1,9 +1,8 @@
 import SwiftUI
 
-/// Shows which model Nook thinks with, and whether that is on this Mac or with an external service.
-/// Opens the same `ModelPicker` as the agents: on the left a rail with "On your Mac" and every external AI that is set
-/// up, on the right its models. Switching to an external AI happens right here; adding one (a key) still happens in
-/// Settings › Brain.
+/// Shows which model Nook thinks with, and whether that is on this Mac or with an agent.
+/// Opens the agents' own picker (`AgentModelPicker`), the same rail of agents and accounts with the same model rows; the
+/// one difference is "On your Mac" in front of them. A service with an API key is set up in Settings › Brain.
 struct BrainChip: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var settings = AppSettings.shared
@@ -17,18 +16,30 @@ struct BrainChip: View {
 
     var body: some View {
         ModelPickerDropdown {
-            if settings.isLocalBrain {
-                ComposerPill(symbol: localLogo == nil ? "cpu" : nil, brand: localLogo, text: settings.brainLabel)
-            } else {
-                ComposerPill(agent: BrainPicker.shortTitle(settings.provider),
-                             account: BrainPicker.account(of: settings.provider, app: app), text: settings.brainLabel,
-                             short: settings.activeProviderModel.isEmpty ? nil : settings.activeProviderModel)
-            }
+            pill
         } content: {
             BrainPicker(servers: servers)
         }
         .help(tr("brain.chip.help"))
         .task { servers = await app.localServerModels() }
+    }
+
+    /// The agent's pill as the agents' composer draws it ("Claude Code · Work · Claude Opus 5.5"), else the brain's label.
+    @ViewBuilder
+    private var pill: some View {
+        if let kind = settings.provider.subscriptionAgent, let agent = RunProvider(kind: kind), !settings.isLocalBrain {
+            let profile = app.profiles.preferredProfile(kind)
+            let model = settings.activeProviderModel
+            let name = model.isEmpty ? nil : app.modelMenuName(model, for: agent, profileID: profile.id)
+            ComposerPill(agent: agent.displayName, account: AccountKind.of(profile, app: app),
+                         text: [agent.displayName, AccountLabel.name(profile, app: app), name].compactMap { $0 }.joined(separator: " · "),
+                         short: name ?? agent.displayName)
+        } else if settings.isLocalBrain {
+            ComposerPill(symbol: localLogo == nil ? "cpu" : nil, brand: localLogo, text: settings.brainLabel)
+        } else {
+            ComposerPill(agent: BrainPicker.shortTitle(settings.provider), account: .apiKey, text: settings.brainLabel,
+                         short: settings.activeProviderModel.isEmpty ? nil : settings.activeProviderModel)
+        }
     }
 }
 
@@ -40,43 +51,38 @@ private struct BrainPicker: View {
     /// Favorites live with the agents' (`WorkspaceSettings`): a star redraws the menu at once.
     @ObservedObject private var ws = WorkspaceSettings.shared
     let servers: [ServerModel]
-    @State private var fetched: [AIProvider: [String]] = [:]
-    @State private var fetching = false
-    @State private var fetchError: String?
 
     private static let macID = "mac"
 
-    /// External services that can answer right now: a key is saved, or the coding agent of a subscription is installed.
-    private var externals: [AIProvider] {
-        AIProvider.allCases.filter { provider in
-            guard !provider.isLocalServer else { return false }
-            if provider.isSubscription { return SubscriptionBrain.executable(provider) != nil }
-            return settings.hasKey(for: provider)
-        }
+    /// The brain that thinks through an agent: Claude Code, Codex, Gemini CLI and Grok. OpenCode, Cursor, Antigravity and
+    /// ACP agents have no such brain, so they stay out of this rail.
+    private static func brain(for agent: RunProvider) -> AIProvider? {
+        AIProvider.allCases.first { $0.subscriptionAgent.flatMap(RunProvider.init(kind:)) == agent }
+    }
+
+    /// The agent in use, when Nook thinks through one.
+    private var agentInUse: (provider: RunProvider, kind: AgentKind)? {
+        guard !settings.isLocalBrain, let kind = settings.provider.subscriptionAgent, let agent = RunProvider(kind: kind) else { return nil }
+        return (agent, kind)
     }
 
     private var macPlace: ModelPickerPlace {
         ModelPickerPlace(id: Self.macID, name: tr("brain.chip.installed"), detail: tr("brain.chip.localDetail"), isLocal: true)
     }
 
-    private func place(_ provider: AIProvider) -> ModelPickerPlace {
-        ModelPickerPlace(id: provider.rawValue, name: Self.shortTitle(provider), account: Self.account(of: provider, app: app))
-    }
-
     var body: some View {
-        ModelPicker(places: [macPlace] + externals.map(place), chosen: settings.isLocalBrain ? macPlace : place(settings.provider),
-                    addHelp: tr("brain.chip.addExternal"), settingsTitle: tr("brain.chip.settings"),
-                    openSettings: { app.openSettings(section: .brain) }) { shown, query in
-            if let provider = AIProvider(rawValue: shown.id) { return externalModels(provider, query: query) }
-            return macModels(query: query)
+        let agents = app.connectedProviders.filter { Self.brain(for: $0) != nil }
+        let inUse = agentInUse
+        AgentModelPicker(providers: agents, provider: inUse?.provider ?? agents.first ?? .claude,
+                         profileID: inUse.map { app.profiles.preferredProfile($0.kind).id },
+                         model: inUse == nil ? "" : settings.activeProviderModel,
+                         local: ModelPickerLocal(place: macPlace, chosen: inUse == nil, list: macModels)) { agent, accountID, model in
+            guard let provider = Self.brain(for: agent) else { return }
+            // The brain thinks under the agent's preferred account: another account becomes that one.
+            if let accountID, let profile = app.profiles.profile(id: accountID) { app.profiles.setPreferred(profile) }
+            settings.selection = BrainSelection(runtime: .external, provider: provider,
+                                                model: model ?? settings.providerModel(for: provider))
         }
-    }
-
-    /// How a service is reached: through your account (personal or work) for a subscription, else an API key.
-    /// Tells apart the two marks of one maker in the rail (Claude Code and the Claude API, ChatGPT and the OpenAI API…).
-    static func account(of provider: AIProvider, app: AppModel) -> AccountKind {
-        guard let kind = provider.subscriptionAgent else { return .apiKey }
-        return AccountKind.of(app.profiles.preferredProfile(kind), app: app)
     }
 
     // MARK: On this Mac
@@ -108,56 +114,6 @@ private struct BrainPicker: View {
             && !ModelAdvisor.catalog.contains { local.installed.contains($0.id) }
         return ModelPickerList(models: favoritesFirst(models, place: Self.macID),
                                emptyNote: nothingInstalled ? tr("brain.chip.noLocal") : nil)
-    }
-
-    // MARK: External
-
-    private func externalModels(_ provider: AIProvider, query: String) -> ModelPickerList {
-        let list = models(for: provider)
-        let models = list.filter { ModelSearch.matches(query, $0) }.map { id in
-            item(id, title: id, brand: BrandLogo.forName(id) ?? BrandLogo.forProvider(provider), place: provider.rawValue,
-                 chosen: !settings.isLocalBrain && settings.provider == provider && settings.activeProviderModel == id) {
-                settings.selection = BrainSelection(runtime: .external, provider: provider, model: id)
-            }
-        }
-        var actions: [ModelPickerItem] = []
-        // The search text as a model id of your own, when no listed model goes by that name.
-        if let custom = ModelPreferences.customID(query), !list.contains(where: { $0.caseInsensitiveCompare(custom) == .orderedSame }) {
-            actions.append(ModelPickerItem(id: "custom:" + custom, title: tr("compose.useModel", custom), symbol: "plus",
-                                           detail: tr("compose.useModelDetail")) {
-                settings.selection = BrainSelection(runtime: .external, provider: provider, model: custom)
-            })
-        }
-        if !provider.isSubscription && fetched[provider] == nil {
-            actions.append(ModelPickerItem(id: "fetch", title: tr("button.fetchModels"),
-                                           symbol: fetching ? "hourglass" : "arrow.clockwise", detail: fetchError,
-                                           staysOpen: true) {
-                Task { await fetchModels(provider) }
-            })
-        }
-        return ModelPickerList(models: favoritesFirst(models, place: provider.rawValue), actions: actions)
-    }
-
-    /// The models to offer for a service: the one it uses now, then the fetched list or the well-known ones.
-    private func models(for provider: AIProvider) -> [String] {
-        let chosen = settings.providerModel(for: provider)
-        var list = fetched[provider] ?? provider.suggestedModels
-        if !chosen.isEmpty, !list.contains(chosen) { list.insert(chosen, at: 0) }
-        return list
-    }
-
-    private func fetchModels(_ provider: AIProvider) async {
-        guard !fetching else { return }
-        fetching = true
-        fetchError = nil
-        defer { fetching = false }
-        do {
-            let list = try await provider.listModels(key: settings.key(for: provider))
-            fetched[provider] = list.isEmpty ? nil : list
-            if list.isEmpty { fetchError = tr("settings.brain.noModelsFound") }
-        } catch {
-            fetchError = error.localizedDescription
-        }
     }
 
     // MARK: Rows
