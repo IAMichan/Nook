@@ -6,7 +6,8 @@ import SwiftUI
 //
 // - Each sits flat on the canvas with a line on the side of what it sits beside: a drag line (drag to resize,
 //   double-click for its usual width, `.sidePanel(_:width:…)`), or, for a panel of fixed width, only the same room
-//   without a line (`.fixedSidePanel(width:)`). Each slides in from its own edge.
+//   without a line (`.fixedSidePanel(width:)`). A list on the left slides in from its edge; a panel on the right opens
+//   and closes at once (`sidePanelsOpenAtOnce`).
 // - Each starts with a header of the same height (`SidePanelHeader`, or `SidePanelTabBar` for the tool panel) that
 //   ends in the same close button: a cross (`SidePanelCloseButton`).
 // - What a tab shows starts with one bar of the same height under that header (`SidePanelToolbar`): the browser's
@@ -76,7 +77,8 @@ private struct SidePanelBleed: ViewModifier {
 
 extension View {
     /// Makes this a side panel on `edge` of the conversation: `SidePanelMetrics.gap` from the drag line on the
-    /// conversation's side, as wide as `width` (see `resizablePanel`), sliding in from its own edge.
+    /// conversation's side, as wide as `width` (see `resizablePanel`). On the left it slides in from its edge; on the right
+    /// it is there at once (`sidePanelsOpenAtOnce`).
     func sidePanel(_ edge: HorizontalEdge, width: Binding<Double>, defaultWidth: Double,
                    minimum: Double = PanelLayout.minimumPanel, available: Double, rest: Double,
                    gap: CGFloat = SidePanelMetrics.gap) -> some View {
@@ -85,7 +87,19 @@ extension View {
             .padding(leading ? Edge.Set.trailing : Edge.Set.leading, gap)
             .resizablePanel(width: width, defaultWidth: defaultWidth, minimum: minimum, available: available, rest: rest,
                             edge: leading ? HorizontalEdge.trailing : HorizontalEdge.leading, divider: true)
-            .transition(.move(edge: leading ? Edge.leading : Edge.trailing).combined(with: .opacity))
+            .transition(leading ? AnyTransition.move(edge: .leading).combined(with: .opacity) : .identity)
+    }
+
+    /// Opens and closes the side panels on the right of this view at once, without a slide: put it on the row that
+    /// holds them and what they sit beside, with `shown` saying which of them show. When it changes, nothing in the row
+    /// animates: the panel is simply there (or gone) and what sits beside it takes its new width in the same frame.
+    /// A slide laid both out again on every frame (the conversation's text wrapped anew, a page in the panel resized),
+    /// which made opening a panel stutter.
+    func sidePanelsOpenAtOnce<Shown: Equatable>(_ shown: Shown) -> some View {
+        transaction(value: shown) { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+        }
     }
 
     /// Makes this a tab's list on the left: a side panel beside the conversation (`sidePanel`), or the whole width while
@@ -110,7 +124,7 @@ extension View {
             self.modifier(SidePanelBleed(edge: .trailing, gap: SidePanelMetrics.gap))
                 .frame(width: width).padding(.leading, SidePanelMetrics.gap)
         }
-        .transition(.move(edge: .trailing).combined(with: .opacity))
+        .transition(.identity)
     }
 }
 
