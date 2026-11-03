@@ -114,6 +114,7 @@ struct AgentSessionDetail: View {
         }
         .font(NookTheme.TextStyle.body)
         .frame(height: 30)
+        .conversationHeaderBackground()
     }
 
     // MARK: Live session

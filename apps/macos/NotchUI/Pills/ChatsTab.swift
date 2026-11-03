@@ -1408,12 +1408,13 @@ private struct ChatsRow: View, Equatable {
                 ChatMarkButton(to: rowAction.to, title: rowAction.title, help: rowAction.label, compact: true,
                                action: rowAction.perform)
                     .pointerStyle(.link)
+                    // Only the button itself holds the card back, not the backdrop's fade or the padding around it.
+                    .onHover { onActions = $0 }
                     .rowActionsBackdrop(NookTheme.rowFill(selected: selected, hovering: true, rest: .clear))
                     .padding(.top, NookTheme.Spacing.sm)
                     .padding(.trailing, NookTheme.Spacing.sm)
                     .transition(.opacity)
                     .accessibilityHidden(true)
-                    .onHover { onActions = $0 }
             }
         }
         .hoverCard(suppressed: onActions) {

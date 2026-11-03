@@ -270,8 +270,8 @@ Workspace-only blocks (`InfoRow`, `WSEmptyState`, `WSSectionTitle`, `StatusBadge
 ## The panel — notch and main window
 
 The main window (`WorkspaceView`) is the open notch with more room: it shows the same `PanelView` (with
-`inWindow: true`, which uses `windowTab`/`windowSheet` and lets the close button close the window) and the same
-`PanelOrb` (Nook with his task ring, next to the tabs). Change the panel once and both follow; do not build a separate
+`inWindow: true`, which uses `windowTab`/`windowSheet` and lets the close button close the window). Nook himself
+(`PanelOrb`, with his task ring) stays in the notch; the window is the place to work and has no Nook of its own. Change the panel once and both follow; do not build a separate
 window layout. In the window the header's empty space (`WindowTitleBarArea`) moves the window and zooms it on a double-click, the traffic lights replace the close
 button, the window remembers its tab (and opens at an agent that waits for you), and the chat keeps a readable width
 (`PanelLayout.readableChat`). In the notch, the window button continues on the same tab in the window.
@@ -282,9 +282,9 @@ the tab a `PanelSidebarContext` through the environment, and the tab's first col
 one with a filled mark on `rowSelected` and a hairline edge, and at the end what goes on there — waiting sessions in
 amber or a pulse while one works, unread chats, the bars while music plays — or its shortcut under the pointer) and carries `.panelSidebarColumn()`.
 The window has an empty unified toolbar, so its title bar is a 52 pt row (`PanelSidebarMetrics.titleBand`) with the
-traffic lights in the middle: the sidebar's column runs up into it, a session's header is centered on it, and
-`WorkspaceView` draws Nook there, past the traffic lights, over the panel rather than inside the column, which would
-clip his ring and its hover labels. The tab's list
+traffic lights in the middle: the sidebar's column runs up into it and a session's header is centered on it. A scroll
+view may draw past its top into that row, so a conversation's header stands on the canvas above it
+(`.conversationHeaderBackground()`); every header of a conversation uses it. The tab's list
 follows under it, with its `PanelListHeader` as a quiet section label (`sidebarTitle`, "Sessions" under Agents), and
 the `PanelFooter` at the bottom. A tab without a list (Music) gets the column from `PanelView`. While a tab draws the
 head (`PanelSidebarShown`), the panel leaves out its floating capsule and the window its left margin and its own Nook;
