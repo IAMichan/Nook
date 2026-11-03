@@ -174,3 +174,41 @@ extension WorkspaceManager {
         }
     }
 }
+
+extension WorkspaceManager {
+    /// A file the conversation links to that is not at its path any more, found again. Its worktree was removed (after
+    /// the pull request merged, after it settled, or by hand), or made again without the drafts it had: its
+    /// `.scratch` copy from `WorktreeArchive`, else the file as committed on the session's branch or, once merged, its
+    /// base (written to the caches). A link by file name alone, resolved against the worktree's root, finds the render
+    /// of that name in `.scratch`. Nil when it is in none of those.
+    func recoverFile(_ path: String) async -> String? {
+        let candidates = runs.filter { !$0.isRemote && $0.repoRoot != nil }
+            .compactMap { run -> (run: WorkspaceRun, root: String, relative: String)? in
+                guard let root = run.worktreePath, let relative = WorktreeArchive.relativePath(path, in: root) else { return nil }
+                return (run, root, relative)
+            }
+        guard let match = candidates.first, let repo = match.run.repoRoot else { return nil }
+        let root = match.root
+        let relative = match.relative
+        let refs = [match.run.branch, match.run.baseBranch].compactMap { $0 }.flatMap { [$0, "origin/" + $0] }
+        let git = gitService
+        return await Task.detached(priority: .userInitiated) { () -> String? in
+            if let kept = WorktreeArchive.archived(path, worktree: root) { return kept }
+            if !relative.contains("/") {
+                let archive = WorktreeArchive.location(worktree: root).path
+                if let found = WorktreeArchive.scratchFile(named: relative, in: root) ?? WorktreeArchive.scratchFile(named: relative, in: archive) {
+                    return found
+                }
+            }
+            guard let git, FileManager.default.fileExists(atPath: repo) else { return nil }
+            let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Nook/Worktree files", isDirectory: true)
+            for ref in refs {
+                let destination = WorktreeArchive.location(worktree: root, root: caches).appendingPathComponent(ref)
+                    .appendingPathComponent(relative)
+                if git.exportFile(repo: repo, ref: ref, path: relative, to: destination) { return destination.path }
+            }
+            return nil
+        }.value
+    }
+}

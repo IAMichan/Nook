@@ -108,7 +108,16 @@ extension AppModel {
     func openFileInNook(_ target: FileTarget, beside: Bool) {
         var isFolder: ObjCBool = false
         guard FileManager.default.fileExists(atPath: target.path, isDirectory: &isFolder) else {
-            ToastCenter.shared.info(tr("ws.file.missing", AgentPathFormat.tilde(target.path)))
+            // Gone with its worktree (after the pull request merged, say): its kept copy, or the file from git.
+            Task {
+                guard let found = await workspace.recoverFile(target.path) else {
+                    ToastCenter.shared.info(tr("ws.file.missing", AgentPathFormat.tilde(target.path)))
+                    return
+                }
+                var copy = target
+                copy.path = found
+                openFileInNook(copy, beside: beside)
+            }
             return
         }
         if isFolder.boolValue {

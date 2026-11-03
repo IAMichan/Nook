@@ -406,6 +406,7 @@ targets:
       - path: Services/Workspace/FileViewing.swift
       - path: Services/Workspace/TerminalLinks.swift
       - path: Services/Workspace/WorktreeCleanup.swift
+      - path: Services/Workspace/WorktreeArchive.swift
       - path: Services/Workspace/DiskUsage.swift
       - path: Services/Workspace/BuildLeftovers.swift
       - path: Services/Workspace/ComposerLists.swift
