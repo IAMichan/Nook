@@ -169,8 +169,19 @@ final class WindowPresence: ObservableObject {
 /// say otherwise move the window: a click on a button there (a side panel's cross, the sidebar's head) that moved the
 /// pointer by a point dragged the window instead of pressing the button. Only `WindowTitleBarArea`, behind the empty
 /// parts of that row, moves the window.
+///
+/// The buttons in that row (the panel toggles, a side panel's tabs and cross, the sidebar's head) work on the first
+/// click, as a toolbar's do, also while the window is in the background: otherwise that click only brought the window
+/// forward and the button seemed not to respond. Below the row a first click still only activates the window.
 final class WorkspaceHostingView<Content: View>: NSHostingView<Content> {
     override var mouseDownCanMoveWindow: Bool { false }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        guard let event else { return super.acceptsFirstMouse(for: event) }
+        let point = convert(event.locationInWindow, from: nil)
+        let fromTop = isFlipped ? point.y : bounds.height - point.y
+        return fromTop <= PanelSidebarMetrics.titleBand || super.acceptsFirstMouse(for: event)
+    }
 }
 
 /// A kept window's root: `content` while the window is open, its background alone while it is closed or minimized.
