@@ -389,7 +389,7 @@ extension AppModel {
             viewModel.selectedAgentID = AgentsPage.pullRequests
             return .agents
         case "usage":
-            viewModel.selectedAgentID = AgentsPage.usage
+            usageModalOpen = true
             return .agents
         case "terminals":
             viewModel.selectedAgentID = AgentsPage.terminals

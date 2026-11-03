@@ -1,19 +1,18 @@
 import SwiftUI
 import AppKit
 
-/// The pages the Agents tab opens on the right: your pull requests, a repository's GitHub Actions and the usage of every
-/// account (from the buttons under the list), and the tools that are not tied to one session: every terminal, the browser, every worktree.
+/// The pages the Agents tab opens on the right: your pull requests and a repository's GitHub Actions (from the buttons
+/// under the list; usage opens as a modal), and the tools that are not tied to one session: every terminal, the browser, every worktree.
 enum AgentsPage {
     static let pullRequests = "pulls"
     /// A repository's GitHub Actions: its workflow runs (CI, a promote, a release) and their jobs and logs.
     static let actions = "actions"
-    static let usage = "usage"
     static let terminals = "terminals"
     static let browser = "browser"
     static let worktrees = "worktrees"
     static let simulator = "simulator"
     /// The pages the footer opens: on them a back button in the footer returns to what was open before.
-    static let footerPages: Set<String> = [pullRequests, actions, usage]
+    static let footerPages: Set<String> = [pullRequests, actions]
     /// The pages that are a tool you work in: the panel widens for them and stays open.
     static let tools: Set<String> = [terminals, browser, worktrees, simulator]
 }
@@ -21,10 +20,10 @@ enum AgentsPage {
 /// Settings, pull requests, Actions and usage as quiet icons, and one refresh button at the far end. It shows on every tab, under
 /// the tab's list (the sessions on Agents, the Nooks on the chat, the chats on Chats), taking the list's width so the
 /// button follows the line beside the list when you drag it. A tab without a list shows it at the bottom as wide as the
-/// list would be. On the other tabs, pull requests, Actions and usage open their page on Agents.
+/// list would be. On the other tabs, pull requests and Actions open their page on Agents; usage opens its modal over any tab.
 /// Refresh reads the session lists again and checks main for an update; while there is one (or it installs), the
 /// update button takes its place, so there is never a second round arrow beside it. On a page the footer opens (pull
-/// requests, Actions, usage) a back button replaces the icons and the refresh, and only the update button stays beside it.
+/// requests, Actions) a back button replaces the icons and the refresh, and only the update button stays beside it.
 struct PanelFooter: View {
     let selected: String
     let open: (String) -> Void
@@ -35,6 +34,7 @@ struct PanelFooter: View {
     /// Leaving a footer page for where you were; nil keeps the icons there too.
     var onBack: (() -> Void)? = nil
     @ObservedObject private var updater = AppUpdater.shared
+    @EnvironmentObject private var app: AppModel
 
     var body: some View {
         if AgentsPage.footerPages.contains(selected), let onBack {
@@ -62,8 +62,9 @@ struct PanelFooter: View {
                        action: { open(AgentsPage.pullRequests) }) { PullRequestGlyph() }
             FooterIcon(label: tr("actions.title"), hint: tr("actions.footerHint"), active: selected == AgentsPage.actions,
                        action: { open(AgentsPage.actions) }) { ToolGlyph(symbol: "play.circle") }
-            FooterIcon(label: tr("agents.footer.usage"), active: selected == AgentsPage.usage,
-                       action: { open(AgentsPage.usage) }) { UsageGlyph() }
+            // Usage opens as a modal over whatever is open, not as a page.
+            FooterIcon(label: tr("agents.footer.usage"), active: app.usageModalOpen,
+                       action: { app.usageModalOpen = true }) { UsageGlyph() }
             if !vertical { Spacer(minLength: 0) }
             UpdateFooterButton {
                 let busy = history.loading || updater.phase == .checking

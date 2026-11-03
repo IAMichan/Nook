@@ -141,6 +141,14 @@ struct PanelView: View {
             }
         }
         .animation(NookTheme.reveal, value: searching)
+        // Usage (limits, cost, tokens) as a modal over the panel, from the footer's usage button on any tab.
+        .overlay {
+            if app.usageModalOpen && !app.demoMode {
+                UsageModal { app.usageModalOpen = false }
+                    .transition(.opacity)
+            }
+        }
+        .animation(NookTheme.reveal, value: app.usageModalOpen)
         .background {
             // Native shortcuts for ⌘K and ⇧⌘F: never flip the search unseen while a sheet covers the tab.
             Button("") { searching.toggle() }.keyboardShortcut("k", modifiers: [.command])
