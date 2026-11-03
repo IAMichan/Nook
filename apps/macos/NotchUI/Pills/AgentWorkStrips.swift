@@ -298,76 +298,27 @@ struct SubagentList: View {
     }
 }
 
-/// One subagent in `SubagentList`: its state, title, kind and time; its task folded to a few lines, how it went about it
-/// (its steps, open while it works) and its answer.
+/// One subagent in `SubagentList`: its state, title, kind and time over what it went through, drawn as an agent's own
+/// conversation (`SubagentTranscript`).
 private struct SubagentCard: View {
     let agent: SubagentInfo
-    @State private var open = false
-    /// Whether its steps show; nil follows the subagent: open while it works, folded once it is done.
-    @State private var stepsOpen: Bool?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            HStack(spacing: NookTheme.Spacing.md) {
-                SubagentStatusMark(agent: agent, size: 11)
-                Text(agent.title)
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(NookTheme.textStrong)
-                    .lineLimit(2)
-                Spacer(minLength: NookTheme.Spacing.sm)
-                SubagentElapsed(agent: agent)
-            }
-            HStack(spacing: NookTheme.Spacing.sm) {
-                Text(agent.kind).font(NookTheme.mono(10.5, .medium))
-                if agent.background { Text("·"); Text(tr("ws.subagent.background")) }
-                Text("·")
-                Text(agent.started, style: .time)
-                if !agent.isRunning {
-                    Text("·")
-                    Text(tr(agent.failed ? "ws.subagent.failed" : "ws.subagent.done"))
-                        .foregroundStyle(agent.failed ? NookTheme.coralSoft : NookTheme.textTertiary)
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                HStack(spacing: NookTheme.Spacing.md) {
+                    SubagentStatusMark(agent: agent, size: 11)
+                    Text(agent.title)
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(NookTheme.textStrong)
+                        .lineLimit(2)
+                    Spacer(minLength: NookTheme.Spacing.sm)
+                    SubagentElapsed(agent: agent)
                 }
+                SubagentMeta(agent: agent)
+                    .padding(.leading, 20)
             }
-            .font(NookTheme.TextStyle.caption)
-            .foregroundStyle(NookTheme.textTertiary)
-            .padding(.leading, 20)
-            if !agent.prompt.isEmpty {
-                Button {
-                    withAnimation(NookTheme.reveal) { open.toggle() }
-                } label: {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                        HStack(spacing: NookTheme.Spacing.xs) {
-                            Text(tr("ws.subagent.task"))
-                            Image(systemName: "chevron.right")
-                                .font(NookTheme.font(8, .bold))
-                                .rotationEffect(.degrees(open ? 90 : 0))
-                        }
-                        .font(NookTheme.TextStyle.caption)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        Text(open ? agent.prompt : ToolSummary.oneLine(agent.prompt, 240))
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textSecondary)
-                            .lineLimit(open ? nil : 3)
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.leading, 20)
-            }
-            if !agent.steps.isEmpty { steps }
-            if let answer = agent.answer {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    Text(tr("ws.subagent.answer"))
-                        .font(NookTheme.TextStyle.caption)
-                        .foregroundStyle(NookTheme.textTertiary)
-                    MarkdownView(text: answer, size: 12.5)
-                        .textSelection(.enabled)
-                }
-                .padding(.leading, 20)
-            }
+            SubagentTranscript(agent: agent)
         }
         .padding(NookTheme.Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -381,79 +332,95 @@ private struct SubagentCard: View {
     }
 }
 
-extension SubagentCard {
-    /// "How it worked · 12 steps": what the subagent thought, wrote and did, in order, the newest at the bottom.
-    private var steps: some View {
-        let shown = stepsOpen ?? agent.isRunning
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-            Button {
-                withAnimation(NookTheme.reveal) { stepsOpen = !shown }
-            } label: {
-                HStack(spacing: NookTheme.Spacing.xs) {
-                    Text(tr("ws.subagent.steps"))
-                    Text("·")
-                    Text(tr("ws.subagent.stepCount", agent.steps.count))
-                    Image(systemName: "chevron.right")
-                        .font(NookTheme.font(8, .bold))
-                        .rotationEffect(.degrees(shown ? 90 : 0))
-                }
-                .font(NookTheme.TextStyle.caption)
-                .foregroundStyle(NookTheme.textTertiary)
-                .contentShape(Rectangle())
+/// "general-purpose · in the background · 08:45 · Subagent done": what kind of subagent it is, when it started and how it
+/// ended, in quiet caption text.
+struct SubagentMeta: View {
+    let agent: SubagentInfo
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            Text(agent.kind).font(NookTheme.mono(10.5, .medium))
+            if agent.background { Text("·"); Text(tr("ws.subagent.background")) }
+            if agent.started > .distantPast {
+                Text("·")
+                Text(agent.started, style: .time)
             }
-            .buttonStyle(.plain)
-            if shown {
-                LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                    ForEach(Array(agent.steps.enumerated()), id: \.offset) { _, step in
-                        SubagentStepRow(step: step)
-                    }
-                }
-                .textSelection(.enabled)
+            if !agent.isRunning {
+                Text("·")
+                Text(tr(agent.failed ? "ws.subagent.failed" : "ws.subagent.done"))
+                    .foregroundStyle(agent.failed ? NookTheme.coralSoft : NookTheme.textTertiary)
             }
         }
-        .padding(.leading, 20)
+        .font(NookTheme.TextStyle.caption)
+        .foregroundStyle(NookTheme.textTertiary)
+        .lineLimit(1)
     }
 }
 
-/// One step of a subagent: a thought quiet and italic, a message as written, a tool call as its one line.
-private struct SubagentStepRow: View {
-    let step: SubagentStep
+/// What a subagent went through, as an agent's own conversation reads: its task as the message it was sent, its work
+/// folded under "How it worked · 12 steps" (open while it works) with the same lines, thoughts and groups as the agent's,
+/// and its answer as a reply. The Subagents tab and the subagent's row in the timeline both show it.
+struct SubagentTranscript: View {
+    let agent: SubagentInfo
+    /// Whether its work shows; nil follows the subagent: open while it works, folded once it is done.
+    @State private var workOpen: Bool?
+    /// The thoughts and groups of steps that are open, by `SubagentSteps.Block.id`.
+    @State private var open: Set<Int> = []
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
-            Image(systemName: symbol)
-                .font(NookTheme.font(9.5, .semibold))
-                .foregroundStyle(NookTheme.textTertiary)
-                .frame(width: 12)
-                .help(tr("ws.subagent.step." + step.kind.rawValue))
-            switch step.kind {
-            case .thinking:
-                Text(step.text)
-                    .font(NookTheme.TextStyle.detail)
-                    .italic()
-                    .foregroundStyle(NookTheme.textTertiary)
-            case .text:
-                Text(step.text)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
-            case .tool:
-                Text(step.text)
-                    .font(NookTheme.mono(10.5))
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .lineLimit(2)
-                    .truncationMode(.middle)
+        let showsWork = workOpen ?? agent.isRunning
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            if !agent.prompt.isEmpty {
+                TranscriptUserMessage(text: agent.prompt, date: agent.started > .distantPast ? agent.started : nil)
+            }
+            if !agent.steps.isEmpty {
+                TranscriptFold(text: tr("ws.subagent.steps") + " · " + tr("ws.subagent.stepCount", agent.steps.count),
+                               open: showsWork, ruled: agent.answer != nil || showsWork,
+                               toggle: { withAnimation(NookTheme.reveal) { workOpen = !showsWork } }) {
+                    ForEach(SubagentSteps.blocks(agent.steps)) { block in
+                        blockView(block)
+                    }
+                }
+            }
+            if let answer = agent.answer {
+                TranscriptReply(text: answer)
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var symbol: String {
-        switch step.kind {
-        case .thinking: return "brain"
-        case .text: return "text.bubble"
-        case .tool: return "wrench.and.screwdriver"
+    @ViewBuilder
+    private func blockView(_ block: SubagentSteps.Block) -> some View {
+        let isOpen = open.contains(block.id)
+        let toggle = { withAnimation(NookTheme.reveal) { if isOpen { open.remove(block.id) } else { open.insert(block.id) } } }
+        if block.steps.count > 1 {
+            TranscriptWorkGroup(tally: SubagentSteps.tally(block.steps), open: isOpen, toggle: toggle) {
+                ForEach(Array(block.steps.enumerated()), id: \.offset) { _, step in
+                    SubagentToolLine(step: step)
+                }
+            }
+        } else if let step = block.steps.first {
+            switch step.kind {
+            case .thinking:
+                TranscriptThought(text: step.text, open: isOpen, toggle: toggle)
+            case .text:
+                TranscriptReply(text: step.text, footer: false)
+            case .tool:
+                SubagentToolLine(step: step)
+            }
         }
+    }
+}
+
+/// One tool call of a subagent, as a step of the agent's own reads: what it did as a verb, then what it did that to.
+private struct SubagentToolLine: View {
+    let step: SubagentStep
+
+    var body: some View {
+        let tool = AgentToolStep(id: "", name: step.toolName, summary: step.toolDetail, state: .done)
+        let text = TranscriptStepText.parts(tool)
+        TranscriptWorkLine(symbol: TranscriptSymbols.symbol(tool.name), label: text.verb, detail: text.detail, mono: text.mono)
+            .help(step.text)
     }
 }
 

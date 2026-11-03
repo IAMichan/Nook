@@ -636,6 +636,9 @@ struct SubagentStep: Codable, Equatable, Sendable {
 
     var kind: Kind
     var text: String
+    /// For a tool step: the tool's own name ("Bash", "Read"), so the step reads as the agent's own work does. Nil for
+    /// thoughts and messages, and for steps kept before Nook stored it (`toolName` reads those from their text).
+    var tool: String? = nil
 
     /// The steps kept per subagent, and the length of each: enough to follow its reasoning without the timeline
     /// growing without bound.
@@ -647,9 +650,49 @@ struct SubagentStep: Codable, Equatable, Sendable {
         var steps = steps ?? []
         let text = step.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return steps }
-        steps.append(SubagentStep(kind: step.kind, text: RunEvent.clip(text, textLimit)))
+        steps.append(SubagentStep(kind: step.kind, text: RunEvent.clip(text, textLimit), tool: step.tool))
         if steps.count > limit { steps.removeFirst(steps.count - limit) }
         return steps
+    }
+
+    /// The tool a tool step called: its stored name, else the word before " · " in its text ("Bash · ls").
+    var toolName: String {
+        if let tool, !tool.isEmpty { return tool }
+        guard let range = text.range(of: " · ") else { return text }
+        let head = String(text[..<range.lowerBound])
+        return head.contains(" ") ? text : head
+    }
+
+    /// What a tool step was done to (the command, the file, the pattern): its text after the tool's name or label.
+    var toolDetail: String {
+        guard let range = text.range(of: " · ") else { return "" }
+        return String(text[range.upperBound...])
+    }
+}
+
+/// A subagent's steps as the agent's own work reads: each thought and message on its own, tool calls in a row together.
+enum SubagentSteps {
+    struct Block: Identifiable, Equatable, Sendable {
+        /// The index of its first step, stable while steps join at the end.
+        var id: Int
+        var steps: [SubagentStep]
+    }
+
+    static func blocks(_ steps: [SubagentStep]) -> [Block] {
+        var blocks: [Block] = []
+        for (index, step) in steps.enumerated() {
+            if step.kind == .tool, let last = blocks.last, last.steps.last?.kind == .tool {
+                blocks[blocks.count - 1].steps.append(step)
+            } else {
+                blocks.append(Block(id: index, steps: [step]))
+            }
+        }
+        return blocks
+    }
+
+    /// The tool steps as the events a `ToolTally` counts ("Ran 3 commands, read 2 files").
+    static func tally(_ steps: [SubagentStep]) -> ToolTally {
+        ToolTally(steps.filter { $0.kind == .tool }.map { RunEvent(kind: .tool, text: $0.text, tool: $0.toolName) })
     }
 }
 
