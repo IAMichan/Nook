@@ -1,19 +1,30 @@
 import Foundation
 
-/// The branch a folder is on, read straight from `.git/HEAD` (no git process), so every row can show it cheaply.
+/// The branch a folder is on, and whether it is a linked worktree, read straight from `.git` (no git process), so every
+/// row can show them cheaply.
 @MainActor
 enum GitHead {
-    private static var cache: [String: (branch: String?, read: Date)] = [:]
+    private static var cache: [String: (head: Head, read: Date)] = [:]
 
-    static func branch(for path: String) -> String? {
-        guard !path.isEmpty else { return nil }
-        if let hit = cache[path], Date().timeIntervalSince(hit.read) < 30 { return hit.branch }
-        let branch = read(path)
-        cache[path] = (branch, Date())
-        return branch
+    private struct Head {
+        var branch: String?
+        var worktree = false
     }
 
-    private static func read(_ path: String) -> String? {
+    static func branch(for path: String) -> String? { head(path).branch }
+
+    /// A linked worktree (its `.git` is a file pointing at the repository), not the repository's own folder.
+    static func isWorktree(_ path: String) -> Bool { head(path).worktree }
+
+    private static func head(_ path: String) -> Head {
+        guard !path.isEmpty else { return Head() }
+        if let hit = cache[path], Date().timeIntervalSince(hit.read) < 30 { return hit.head }
+        let head = read(path)
+        cache[path] = (head, Date())
+        return head
+    }
+
+    private static func read(_ path: String) -> Head {
         let fm = FileManager.default
         var folder = URL(fileURLWithPath: path, isDirectory: true)
         for _ in 0..<12 {
@@ -24,19 +35,24 @@ enum GitHead {
                 if !isDirectory.boolValue {
                     // A worktree: ".git" is a file pointing at the real git directory.
                     guard let text = try? String(contentsOf: dotGit, encoding: .utf8),
-                          let line = text.split(separator: "\n").first(where: { $0.hasPrefix("gitdir:") }) else { return nil }
+                          let line = text.split(separator: "\n").first(where: { $0.hasPrefix("gitdir:") }) else { return Head() }
                     let target = line.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespaces)
                     gitDir = target.hasPrefix("/") ? URL(fileURLWithPath: target) : folder.appendingPathComponent(target)
                 }
-                guard let head = try? String(contentsOf: gitDir.appendingPathComponent("HEAD"), encoding: .utf8) else { return nil }
+                let worktree = !isDirectory.boolValue
+                guard let head = try? String(contentsOf: gitDir.appendingPathComponent("HEAD"), encoding: .utf8) else {
+                    return Head(worktree: worktree)
+                }
                 let trimmed = head.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.hasPrefix("ref: refs/heads/") { return String(trimmed.dropFirst("ref: refs/heads/".count)) }
-                return trimmed.isEmpty ? nil : String(trimmed.prefix(7))
+                if trimmed.hasPrefix("ref: refs/heads/") {
+                    return Head(branch: String(trimmed.dropFirst("ref: refs/heads/".count)), worktree: worktree)
+                }
+                return Head(branch: trimmed.isEmpty ? nil : String(trimmed.prefix(7)), worktree: worktree)
             }
             let parent = folder.deletingLastPathComponent()
             if parent.path == folder.path { break }
             folder = parent
         }
-        return nil
+        return Head()
     }
 }

@@ -50,9 +50,11 @@ and a selected row stands a full step above a hovered one with a `selectionMark`
   and the panel header's rarer buttons (talk, the window) appear under the pointer. A finished turn is folded
   into "Worked for …"; a thought shows two lines; a successful step has no mark (only a failure does).
 - **Lists are a sidebar, not a stack of cards.** A row has no fill at rest (`rowFill(…, rest: .clear)`); only the
-  row under the pointer and the selected one lift. Under a project's header a session is one line (logo, name, status
-  or time), indented so its logo sits under the folder's mark, as a thread sits under its project in; the
-  branch and the rest are in its hover card.
+  row under the pointer and the selected one lift. A session row reads as a thread in (`AgentListRow`): the
+  folder with the status or time, the name, and a line with the branch (a worktree's with its own mark), the changes
+  (`+12 −3`, or the changed files) and the pull request, with the agent's logo at its end. Under a project's header the
+  folder line goes, the logo moves before the name (under the folder's mark), and the second line shows only when there
+  is a branch, a change or a pull request. Model, machine and the first prompt are in the hover card.
 - **No boxes around groups.** Toolbar groups (`.toolbarGroup()`) and the composer's choices have no fill or stroke of
   their own; a gap separates them (`ComposerDivider`), and a button gets a fill only under the pointer. Badges in a
   row (`RowBadgeBackground`) have no fill: a mark and a word. A card that reports a problem (recovery, an error, a
