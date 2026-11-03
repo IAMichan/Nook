@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 
 // Integrations with online services: GitHub, Vercel, Stripe, Notion, Cal.com, n8n, and Resend.
 // Connectors are read-only, except GitHub: Nook can review and merge pull requests there, always subject to your approval.
@@ -2253,6 +2254,46 @@ final class ResendConnector: CloudConnectorConfig {
 
 // MARK: Pull requests from workspace
 
+/// The GitHub CLI's login, read with `gh auth token` at most every few minutes and never on the caller's thread: the
+/// fallback for someone who uses `gh` but never connected GitHub in Nook.
+enum GitHubCLILogin {
+    private struct State {
+        var token: String?
+        var read: Date?
+        var reading = false
+    }
+
+    private static let state = OSAllocatedUnfairLock(initialState: State())
+    private static let lifetime: TimeInterval = 10 * 60
+
+    /// The last token read; a stale or missing answer is read again in the background.
+    static var cached: String? {
+        let (token, due) = state.withLock { s -> (String?, Bool) in
+            let due = !s.reading && (s.read.map { Date().timeIntervalSince($0) > lifetime } ?? true)
+            if due { s.reading = true }
+            return (s.token, due)
+        }
+        if due { Task.detached(priority: .utility) { finish(GitHubSignIn.cliToken()) } }
+        return token
+    }
+
+    /// Reads the token now unless a recent answer is known, for a request that is about to go out.
+    static func read() async {
+        let fresh = state.withLock { s in s.read.map { Date().timeIntervalSince($0) <= lifetime } ?? false }
+        guard !fresh else { return }
+        let result = await Task.detached(priority: .userInitiated) { GitHubSignIn.cliToken() }.value
+        finish(result)
+    }
+
+    private static func finish(_ result: Result<String, GitHubSignIn.CLIError>) {
+        state.withLock { s in
+            s.token = try? result.get()
+            s.read = Date()
+            s.reading = false
+        }
+    }
+}
+
 /// Open a pull request using the existing GitHub connection. Only after explicit user action in the workspace.
 enum GitHubPullRequests {
     /// Whether the GitHub connector is active and has a token. Otherwise Nook opens the compare page on github.com.
@@ -2260,9 +2301,11 @@ enum GitHubPullRequests {
         ConnectorToggle.isOn("github") && !tokens.isEmpty
     }
 
-    /// Tokens of all GitHub accounts, primary first.
+    /// Tokens of all GitHub accounts, primary first. Without any, the GitHub CLI's own login (`gh auth token`), so a
+    /// pull request still opens and is followed through the API instead of GitHub's page in a browser.
     static var tokens: [String] {
-        AccountRegistry.shared.accounts(for: "github").compactMap { CloudHelp.secret($0.key("token")) }
+        let accounts = AccountRegistry.shared.accounts(for: "github").compactMap { CloudHelp.secret($0.key("token")) }
+        return accounts.isEmpty ? GitHubCLILogin.cached.map { [$0] } ?? [] : accounts
     }
 
     /// "owner/repo" and the number of a pull request link ("https://github.com/owner/repo/pull/12").
@@ -2319,18 +2362,67 @@ enum GitHubPullRequests {
     }
 
     /// Tries the accounts in order: the first one with access to the repository opens the pull request.
+    /// When GitHub answers that its REST limit is reached, the same request goes through its GraphQL API, which counts
+    /// against a limit of its own (and the other way round for an agent whose `gh` hit the GraphQL one).
     static func create(repo: String, title: String, body: String, head: String, base: String, draft: Bool) async throws -> URL {
-        let available = tokens
+        await GitHubCLILogin.read()
+        // The GitHub CLI's login as well, after the accounts: another way in when theirs are refused.
+        var available = tokens
+        if let cli = GitHubCLILogin.cached, !available.contains(cli) { available.append(cli) }
         guard ConnectorToggle.isOn("github"), !available.isEmpty else { throw CloudHelp.notSetUp("GitHub") }
         var lastError: Error = CloudHelp.notSetUp("GitHub")
+        var limited = false
         for token in available {
             do {
                 return try await create(repo: repo, title: title, body: body, head: head, base: base, draft: draft, token: token)
             } catch {
                 lastError = error
+                if ConnectorErrorKind.classify(error) == .rateLimited { limited = true }
+            }
+        }
+        guard limited else { throw lastError }
+        for token in available {
+            do {
+                return try await createViaGraphQL(repo: repo, title: title, body: body, head: head, base: base, draft: draft, token: token)
+            } catch {
+                lastError = error
             }
         }
         throw lastError
+    }
+
+    private static func createViaGraphQL(repo: String, title: String, body: String, head: String, base: String, draft: Bool,
+                                         token: String) async throws -> URL {
+        let parts = repo.split(separator: "/").map(String.init)
+        guard parts.count == 2 else { throw NookError("GitHub: \(repo) is not owner/name.") }
+        func ask(_ query: String, _ variables: [String: Any]) async throws -> [String: Any] {
+            var request = URLRequest(url: try CloudHelp.url("https://api.github.com/graphql"))
+            request.httpMethod = "POST"
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["query": query, "variables": variables])
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Nook", forHTTPHeaderField: "User-Agent")
+            let (data, response) = try await ConnectorHTTP.session.data(for: request)
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+            let errors = (object["errors"] as? [[String: Any]])?.compactMap { $0["message"] as? String } ?? []
+            if let limited = GitHubRateLimit.message(response as? HTTPURLResponse, (object["message"] as? String) ?? errors.first) {
+                throw NookError(limited, kind: .rateLimited)
+            }
+            guard errors.isEmpty, let answer = object["data"] as? [String: Any] else {
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                throw NookError("GitHub: " + (errors.isEmpty ? (object["message"] as? String) ?? "GitHub returned an error (\(status))." : errors.joined(separator: " ")))
+            }
+            return answer
+        }
+        let found = try await ask("query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { id } }",
+                                  ["owner": parts[0], "name": parts[1]])
+        guard let id = (found["repository"] as? [String: Any])?["id"] as? String else { throw NookError("GitHub: \(repo) was not found.") }
+        let made = try await ask("""
+            mutation($input: CreatePullRequestInput!) { createPullRequest(input: $input) { pullRequest { url } } }
+            """, ["input": ["repositoryId": id, "baseRefName": base, "headRefName": head, "title": title, "body": body, "draft": draft]])
+        guard let link = ((made["createPullRequest"] as? [String: Any])?["pullRequest"] as? [String: Any])?["url"] as? String,
+              let url = URL(string: link) else { throw NookError("GitHub did not return the new pull request.") }
+        return url
     }
 
     /// The open pull request whose head is `branch` (for the git button), asked with the first account that can see the
@@ -2447,7 +2539,9 @@ enum GitHubPullRequests {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         guard (200..<300).contains(status), let link = object["html_url"] as? String, let result = URL(string: link) else {
-            if let limited = GitHubRateLimit.message(response as? HTTPURLResponse, object["message"] as? String) { throw NookError(limited) }
+            if let limited = GitHubRateLimit.message(response as? HTTPURLResponse, object["message"] as? String) {
+                throw NookError(limited, kind: .rateLimited)
+            }
             var message = (object["message"] as? String) ?? "GitHub returned an error (\(status))."
             if let errors = object["errors"] as? [[String: Any]] {
                 let details = errors.compactMap { $0["message"] as? String }
