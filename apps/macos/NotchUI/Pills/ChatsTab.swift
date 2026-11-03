@@ -910,7 +910,8 @@ struct ChatsTab: View {
             footer
                 .frame(width: sidebarWidth)
         }
-        .padding(.trailing, compactSidebar ? NookTheme.Spacing.xs : NookTheme.Spacing.sm)
+        .padding(.trailing, compactSidebar ? NookTheme.Spacing.xs
+                  : sidebarContext == nil ? NookTheme.Spacing.sm : SidePanelMetrics.sidebarGap)
         .panelSidebarColumn()
     }
 
