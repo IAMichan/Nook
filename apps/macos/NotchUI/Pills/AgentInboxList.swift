@@ -82,32 +82,30 @@ struct AgentInboxList: View {
         item.id.hasPrefix("run:") ? UUID(uuidString: String(item.id.dropFirst(4))) : nil
     }
 
-    /// The state of the pull request the agent opened from its branch: a session Nook runs by id, any other by folder.
-    /// Until that sync has found one, the pull request the chat itself shows: the same one as the tray above its composer.
-    private func pullRequestBadge(_ item: AgentListItem) -> PullRequestBadge? {
-        if let id = runID(item) { return pullRequests.badge(id) ?? knownPullRequest(run: id).flatMap(linkBadge) }
-        if let badge = pullRequests.badge(path: item.path, branch: item.branch) { return badge }
-        let reply = item.id.hasPrefix("past:")
-            ? pastSession(item.id)?.lastReply
-            : app.hub.sessions.first { $0.id == item.id }?.lastReply
-        return reply.flatMap(MarkdownBlock.lastGitHubPullRequest(in:)).flatMap(linkBadge)
-    }
-
-    /// The pull requests behind the badge, for its hover card: the ones the branch sync found, else the one link the badge
-    /// was made from. Same order of sources as `pullRequestBadge`.
-    private func pullRequestLinks(_ item: AgentListItem) -> [PullRequestLink] {
+    /// The pull requests of a row, for its badge and the card that badge opens on hover: the ones the branch sync found for
+    /// the session's branch (a session Nook runs by id, any other by folder), and for a session Nook runs also the ones of
+    /// the branches and worktrees it worked on before, so a pull request it opened stays in view after it moved on. Until
+    /// the sync has found one, the pull request the chat itself shows: the same one as the tray above its composer.
+    private func sessionPullRequests(_ item: AgentListItem) -> SessionPullRequests {
         if let id = runID(item) {
-            if let links = pullRequests.links[id], !links.isEmpty { return pullRequestStatuses.current(links) }
-            return knownPullRequest(run: id).flatMap(PullRequestLink.init(url:)).map { [$0] } ?? []
+            let earlier = pullRequestStatuses.current(pullRequests.earlier[id] ?? [])
+            if let links = pullRequests.links[id], !links.isEmpty {
+                return SessionPullRequests(current: pullRequestStatuses.current(links), earlier: earlier)
+            }
+            // The watched one may be one of an earlier branch: it is listed there, not as this branch's.
+            let known = knownPullRequest(run: id).flatMap(PullRequestLink.init(url:)).map { [$0] } ?? []
+            return SessionPullRequests(current: pullRequestStatuses.current(known.filter { link in !earlier.contains { $0.id == link.id } }),
+                                       earlier: earlier)
         }
         if let branch = item.branch,
            let links = pullRequests.folderLinks[PullRequestSync.folderKey(path: item.path, branch: branch)], !links.isEmpty {
-            return pullRequestStatuses.current(links)
+            return SessionPullRequests(current: pullRequestStatuses.current(links))
         }
         let reply = item.id.hasPrefix("past:")
             ? pastSession(item.id)?.lastReply
             : app.hub.sessions.first { $0.id == item.id }?.lastReply
-        return reply.flatMap(MarkdownBlock.lastGitHubPullRequest(in:)).flatMap(PullRequestLink.init(url:)).map { [$0] } ?? []
+        let printed = reply.flatMap(MarkdownBlock.lastGitHubPullRequest(in:)).flatMap(PullRequestLink.init(url:)).map { [$0] } ?? []
+        return SessionPullRequests(current: pullRequestStatuses.current(printed))
     }
 
     /// The past session of a row ("past:" and the session's id, "agent:session"), compared by its parts: making the id
@@ -126,10 +124,6 @@ struct AgentInboxList: View {
         if let opened = workspace.openPullRequests[id] { return opened }
         guard let events = workspace.events[id], !events.isEmpty else { return nil }
         return RunPullRequestLinks.shared.url(id, events: events)
-    }
-
-    private func linkBadge(_ url: URL) -> PullRequestBadge? {
-        PullRequestBadge.link(url, glyph: pullRequestStatuses.status(url)?.glyph)
     }
 
     /// Folder and branch of every agent Nook did not start, for `PullRequestSync`: the ones running now and the earlier
@@ -506,8 +500,7 @@ struct AgentInboxList: View {
                     onSettle: { entry.row.settled ? store.unsettle([item]) : store.settle([item]) },
                     onSnooze: isRun ? { snooze(item, $0) } : nil,
                     onWake: isRun && snoozeActive ? { wake(item) } : nil),
-                pullRequest: pullRequestBadge(item),
-                pullRequestLinks: pullRequestLinks(item)
+                pullRequests: sessionPullRequests(item)
             ) {
                 click(item, entry, shown: shown)
             }
