@@ -557,7 +557,9 @@ struct NextTurnSettings: View {
         Picker(tr("agents.run.permission"), selection: Binding(get: { run.permission }, set: { workspace.configure(run.id, permission: $0) })) {
             ForEach(capabilities.policies) { Text($0.label).tag($0) }
         }
-        Picker(tr("agents.run.model"), selection: Binding(get: { run.model }, set: { workspace.configure(run.id, model: $0) })) {
+        Picker(tr("agents.run.model"), selection: Binding(get: { run.autoModel == true ? AutoModel.id : run.model },
+                                                          set: { workspace.configure(run.id, model: $0) })) {
+            Text(tr("auto.model")).tag(AutoModel.id)
             ForEach(modelChoices, id: \.self) { model in
                 let choice = workspace.modelChoice(model, for: run.provider, profileID: run.profileID)
                 let name = model.isEmpty ? tr("ws.model.default") : choice?.name ?? model

@@ -184,6 +184,7 @@ targets:
       - path: Core/I18n+SettingsHub.swift
       - path: Core/I18n+Workspace.swift
       - path: Core/I18n+Energy.swift
+      - path: Core/I18n+AutoModel.swift
       - path: Core/I18n+WhatsAppAccounts.swift
       - path: Core/I18n+Privacy.swift
       - path: Core/I18n+Toast.swift
@@ -417,6 +418,7 @@ targets:
       - path: Services/Workspace/AcpAgent.swift
       - path: Services/Workspace/AgentModelCatalog.swift
       - path: Services/Workspace/AgentModelMenu.swift
+      - path: Services/Workspace/AutoModel.swift
       - path: Services/Workspace/ModelManifest.swift
       - path: Services/Workspace/TextGeneration.swift
       - path: Services/Workspace/GitCheckpoints.swift

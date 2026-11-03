@@ -76,7 +76,8 @@ private struct BrainPicker: View {
         AgentModelPicker(providers: agents, provider: inUse?.provider ?? agents.first ?? .claude,
                          profileID: inUse.map { app.profiles.preferredProfile($0.kind).id },
                          model: inUse == nil ? "" : settings.activeProviderModel,
-                         local: ModelPickerLocal(place: macPlace, chosen: inUse == nil, list: macModels)) { agent, accountID, model in
+                         local: ModelPickerLocal(place: macPlace, chosen: inUse == nil, list: macModels),
+                         offersAuto: false) { agent, accountID, model in
             guard let provider = Self.brain(for: agent) else { return }
             // The brain thinks under the agent's preferred account: another account becomes that one.
             if let accountID, let profile = app.profiles.profile(id: accountID) { app.profiles.setPreferred(profile) }

@@ -53,6 +53,11 @@ extension WorkspaceManager {
         target.directory = directory
         run.remote = target
         run.effort = config.effort
+        // "Auto": the model is picked for each turn as it starts (see `applyAutoModel`).
+        if config.model == AutoModel.id {
+            run.autoModel = true
+            run.model = ""
+        }
         runs.insert(run, at: 0)
         events[id] = []
         selectedRunID = id
