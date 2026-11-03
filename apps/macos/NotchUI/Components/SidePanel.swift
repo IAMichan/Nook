@@ -38,6 +38,8 @@ enum SidePanelMetrics {
     /// Room between a tab's list and the line beside it: with half the line's own room, the list sits as far from the
     /// line as from the panel's outer edge (28 pt in the notch and the window), centered in its column.
     static let listGap: CGFloat = 28 - CGFloat(PanelSplit.handle) / 2
+    /// The same for the main window's sidebar: its rows sit as far from the line as from the window's edge.
+    static let sidebarGap: CGFloat = PanelSidebarMetrics.inset - CGFloat(PanelSplit.handle) / 2
 }
 
 extension View {
@@ -63,8 +65,7 @@ extension View {
             // Leading: a row wider than the list (the footer in a narrow list) runs out on the right, instead of the
             // whole list being centered on it and pushed against the left edge.
             frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .sidePanel(.leading, width: width, defaultWidth: defaultWidth, minimum: PanelLayout.minimumList,
-                           available: available, rest: rest, gap: SidePanelMetrics.listGap)
+                .modifier(ListPanelSide(width: width, defaultWidth: defaultWidth, available: available, rest: rest))
         }
     }
 
@@ -76,6 +77,22 @@ extension View {
             self.frame(width: width).padding(.leading, SidePanelMetrics.gap)
         }
         .transition(.move(edge: .trailing).combined(with: .opacity))
+    }
+}
+
+/// A tab's list beside the conversation. As the sidebar of the main window its rows sit as far from the line as from
+/// the window's edge (`PanelSidebarMetrics.inset`), instead of the wider room a list keeps in the notch.
+private struct ListPanelSide: ViewModifier {
+    let width: Binding<Double>
+    let defaultWidth: Double
+    let available: Double
+    let rest: Double
+    @Environment(\.panelSidebar) private var sidebar
+
+    func body(content: Content) -> some View {
+        content.sidePanel(.leading, width: width, defaultWidth: defaultWidth, minimum: PanelLayout.minimumList,
+                          available: available, rest: rest,
+                          gap: sidebar == nil ? SidePanelMetrics.listGap : SidePanelMetrics.sidebarGap)
     }
 }
 
