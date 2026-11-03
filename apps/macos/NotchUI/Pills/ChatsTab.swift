@@ -896,6 +896,9 @@ struct ChatsTab: View {
     /// as wide as the sidebar, or one icon under the other in the rail.
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            // In the main window the tabs and Search head this column, which runs along the window's left edge.
+            PanelSidebarTop(compact: compactSidebar)
+                .frame(width: sidebarWidth)
             ChatsSidebar(compact: compactSidebar, width: sidebarWidth, view: $view, app: appChoice, account: $account, counts: viewCounts, apps: apps,
                          newByApp: newByApp, accounts: accounts, newByAccount: newByAccount,
                          accountPictures: accountPictures,
@@ -904,6 +907,7 @@ struct ChatsTab: View {
                 .frame(width: sidebarWidth)
         }
         .padding(.trailing, compactSidebar ? NookTheme.Spacing.xs : NookTheme.Spacing.sm)
+        .panelSidebarColumn()
     }
 
     /// The line between the sidebar and the list, a drag line like every other one between panels: drag it to make the
