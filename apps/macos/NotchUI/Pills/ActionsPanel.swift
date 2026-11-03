@@ -46,6 +46,8 @@ struct ActionsPanel: View {
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+            // A run opens beside the list, and closes, at once.
+            .sidePanelsOpenAtOnce(openRun?.id)
         }
         .onChange(of: store.repo) { _, _ in
             openRun = nil

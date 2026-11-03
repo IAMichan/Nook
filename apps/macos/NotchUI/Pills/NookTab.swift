@@ -146,6 +146,8 @@ struct NookChatView: View {
                     }
                 }
             }
+            // A terminal, an app or the browser beside the chat opens and closes at once.
+            .sidePanelsOpenAtOnce([terminalFolder ?? "", appSideOpen ? "app" : ""])
             // No list beside the chat (a first chat, or an app open): the footer keeps the list's width at the bottom.
             if !listShown && showsFooter {
                 footer

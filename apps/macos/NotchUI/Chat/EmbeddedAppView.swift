@@ -417,6 +417,7 @@ struct EmbeddedAppPane: View {
                                            available: paneWidth, rest: PanelLayout.minimumPanel + PanelSplit.handle)
                         }
                     }
+                    .sidePanelsOpenAtOnce(store.side != nil)
                     .onLayoutWidthChange { paneWidth = $0 }
                 }
             }
