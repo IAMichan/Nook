@@ -278,9 +278,11 @@ struct NewSessionComposer: View {
     private var agentMenu: some View {
         let profile = app.profiles.profile(id: config.profileID)
         let name = profile.map { AccountLabel.name($0, app: app) }
+        // On Auto the agent is picked as the session starts: the pill says only "Auto".
+        let auto = config.model == AutoModel.id
         return ModelPickerDropdown {
             ComposerPill(agent: config.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
-                         text: comparing.isEmpty
+                         text: auto && comparing.isEmpty ? tr("auto.model") : comparing.isEmpty
                             ? [config.provider.displayName, name].compactMap { $0 }.joined(separator: " · ")
                                 + (config.model.isEmpty ? "" : " · " + app.modelMenuName(config.model, for: config.provider, profileID: config.profileID))
                             : tr("compare.pill", comparing.count + 1),
