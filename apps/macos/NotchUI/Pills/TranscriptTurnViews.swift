@@ -148,8 +148,22 @@ struct TurnDiffPanel: View {
     @AppStorage("nook.agents.diffFiles") private var showFiles = false
     @State private var expanded: Set<String> = []
 
+    /// The whole session's diff for the turns it was made from: merging every turn's edits is not done again for each
+    /// redraw of the panel while the agent streams.
+    private final class SessionMemo {
+        var turns: [TurnDiff]?
+        var value = TurnDiff.session([])
+    }
+    @State private var sessionMemo = SessionMemo()
+
     private var current: TurnDiff {
-        if selection.turn == TurnDiffSelection.all { return TurnDiff.session(turns) }
+        if selection.turn == TurnDiffSelection.all {
+            if sessionMemo.turns != turns {
+                sessionMemo.value = TurnDiff.session(turns)
+                sessionMemo.turns = turns
+            }
+            return sessionMemo.value
+        }
         return turns.first { $0.id == selection.turn } ?? turns.last ?? TurnDiff.session([])
     }
 

@@ -87,8 +87,13 @@ struct RunQuestionPanel: View {
             }
             .padding(NookTheme.Spacing.lg)
             .cardBackground(NookTheme.surface, stroke: NookTheme.amber.opacity(0.25), radius: NookTheme.Radius.panel, style: .continuous)
-            // Keys 1–9 pick an option, except while you type your own answer.
-            .background { if !ownFocused { digitShortcuts(item) } }
+            // Keys 1–9 pick an option, except while a text is being edited (your own answer).
+            .onWindowKeyDown { digitKey($0, item) }
+            // A question with no options but room for your own answer: the keyboard is in that field.
+            .composerFocusOnAppear($ownFocused, enabled: asksOnlyOwn(item))
+            .onChange(of: index) { _, _ in
+                if asksOnlyOwn(item) { ownFocused = true }
+            }
         }
     }
 
@@ -98,9 +103,10 @@ struct RunQuestionPanel: View {
                 .font(NookTheme.font(12, .medium))
                 .foregroundStyle(ownFocused ? NookTheme.amber : NookTheme.textTertiary)
 
-            TextField(tr("ws.question.own"), text: $own)
+            TextField(tr("ws.question.own"), text: $own, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.body)
+                .lineLimit(1...6)
                 .focused($ownFocused)
                 .onSubmit { if !mentionModel.isOpen { submitOwn(item) } }
                 .mentions(mentionModel, text: $own, config: .mentions())
@@ -138,23 +144,21 @@ struct RunQuestionPanel: View {
         .animation(NookTheme.reveal, value: own.isEmpty)
     }
 
-    /// Keys 1–9 choose an option. Hidden buttons carry the shortcuts.
-    private func digitShortcuts(_ item: RunQuestion) -> some View {
-        ZStack {
-            ForEach(Array(item.options.prefix(9).enumerated()), id: \.offset) { number, option in
-                Button("") {
-                    if item.multiSelect {
-                        if picks.contains(option.label) { picks.remove(option.label) } else { picks.insert(option.label) }
-                    } else {
-                        record(item, [option.label])
-                    }
-                }
-                .keyboardShortcut(KeyEquivalent(Character("\(number + 1)")), modifiers: [])
-            }
+    private func asksOnlyOwn(_ item: RunQuestion) -> Bool { item.options.isEmpty && item.allowsOther }
+
+    /// Keys 1–9 choose an option (plain digits only, and not while a text is being edited).
+    private func digitKey(_ event: NSEvent, _ item: RunQuestion) -> Bool {
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.numericPad).isEmpty,
+              !(NSApp.keyWindow?.firstResponder is NSTextView),
+              let digit = event.charactersIgnoringModifiers.flatMap({ Int($0) }), (1...9).contains(digit),
+              item.options.indices.contains(digit - 1) else { return false }
+        let option = item.options[digit - 1]
+        if item.multiSelect {
+            if picks.contains(option.label) { picks.remove(option.label) } else { picks.insert(option.label) }
+        } else {
+            record(item, [option.label])
         }
-        .opacity(0)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        return true
     }
 
     private func submitOwn(_ item: RunQuestion) {

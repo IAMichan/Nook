@@ -1,3 +1,4 @@
+import Carbon
 import SwiftUI
 
 /// ⇧⌘K in the Agents tab (⌘K searches everything): one field to jump to a session or run an action. Typing filters;
@@ -65,16 +66,26 @@ struct AgentCommandPalette: View {
             if list.isEmpty {
                 ListEmptyNote(tr("palette.none"), padding: NookTheme.Spacing.xl)
             } else {
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: NookTheme.Spacing.xxs) {
-                        ForEach(Array(list.enumerated()), id: \.element.id) { offset, entry in
-                            row(entry, selected: offset == index)
-                                .onTapGesture { index = offset; run(list) }
+                ScrollViewReader { proxy in
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: NookTheme.Spacing.xxs) {
+                            ForEach(Array(list.enumerated()), id: \.element.id) { offset, entry in
+                                row(entry, selected: offset == index)
+                                    .id(entry.id)
+                                    // The pointer and the arrow keys share one highlighted row.
+                                    .onHover { if $0 { index = offset } }
+                                    .onTapGesture { index = offset; run(list) }
+                            }
                         }
+                        .padding(NookTheme.Spacing.sm)
                     }
-                    .padding(NookTheme.Spacing.sm)
+                    .frame(maxHeight: 320)
+                    // The arrow keys keep the highlighted row in view; a row the pointer moved to is already in view.
+                    .onChange(of: index) { _, value in
+                        guard list.indices.contains(value) else { return }
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo(list[value].id) }
+                    }
                 }
-                .frame(maxHeight: 320)
             }
         }
         // As wide as a narrow tab allows, never wider than the usual 480.
@@ -85,9 +96,16 @@ struct AgentCommandPalette: View {
         .padding(.horizontal, NookTheme.Spacing.lg)
         .focusOnAppear($focused)
         .onChange(of: query) { _, _ in index = 0 }
-        .onKeyPress(.downArrow) { index = min(index + 1, max(0, list.count - 1)); return .handled }
-        .onKeyPress(.upArrow) { index = max(index - 1, 0); return .handled }
-        .onKeyPress(.escape) { close(); return .handled }
+        .onWindowKeyDown { event in
+            guard event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty else { return false }
+            switch Int(event.keyCode) {
+            case kVK_DownArrow: index = min(index + 1, max(0, list.count - 1))
+            case kVK_UpArrow: index = max(index - 1, 0)
+            case kVK_Escape: close()
+            default: return false
+            }
+            return true
+        }
     }
 
     private func row(_ entry: Entry, selected: Bool) -> some View {

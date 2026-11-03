@@ -5,6 +5,7 @@ import SwiftUI
 struct FlowSettingsSection: View {
     @ObservedObject private var store = FlowStore.shared
     @ObservedObject private var flow = FlowDictation.shared
+    @EnvironmentObject private var app: AppModel
     /// Opens on an edit still waiting to be saved, so a quick switch away and back does not show (and then save over it)
     /// the text from before it.
     @State private var dictionary = FlowSettingsSection.pendingDictionary ?? FlowStore.shared.dictionaryText
@@ -23,9 +24,10 @@ struct FlowSettingsSection: View {
                         flow.refresh()
                     }
                 if store.enabled {
-                    LabeledContent(tr("flow.settings.key")) {
-                        Text(store.key == .fn ? "fn" : tr("flow.settings.keyRight", store.key.symbol)).foregroundStyle(NookTheme.textSecondary)
-                    }
+                    // The key is changed under Shortcuts: the row says which key it is and leads there.
+                    SettingsLinkRow(title: tr("flow.settings.key"),
+                                    detail: store.key == .fn ? "fn" : tr("flow.settings.keyRight", store.key.symbol),
+                                    section: .shortcuts) { app.settingsSection = .shortcuts }
                     if !flow.trusted {
                         StatusRow(title: tr("flow.settings.access"), detail: tr("flow.settings.accessDetail"), state: .warning) {
                             Button(tr("flow.settings.allow")) { flow.openAccessibilitySettings() }
@@ -78,12 +80,7 @@ struct FlowSettingsSection: View {
                                 HStack(alignment: .top) {
                                     Text(entry.text).lineLimit(2).font(NookTheme.TextStyle.body)
                                     Spacer()
-                                    Button { Pasteboard.copy(entry.text) } label: {
-                                        Image(systemName: "doc.on.doc")
-                                    }
-                                    .buttonStyle(.borderless)
-                                    .help(tr("flow.settings.copy"))
-                                    .accessibilityLabel(tr("flow.settings.copy"))
+                                    CopyIconButton(tr("flow.settings.copy")) { entry.text }
                                 }
                             }
                             ConfirmedButton(tr("flow.settings.clearHistory"), question: tr("confirm.clearFlow")) { store.clearHistory() }

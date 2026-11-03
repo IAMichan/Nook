@@ -309,31 +309,45 @@ extension AppModel {
         if speaksLive { speech.stop() }
         do {
             var lastCleanedText = ""
-            let plan = try await brain.run(
-                userText: request,
-                followUp: !history.isEmpty,
-                history: history,
-                context: brainContext,
-                untrustedLabel: snapshot.map { "\($0.appName) — \($0.windowTitle)" },
-                untrusted: snapshot?.text,
-                images: images,
-                tools: tools,
-                onText: { [weak self] partial in
-                    guard let self, self.replies[conversation] == id else { return }
-                    var visible = FollowUps.streamingBody(partial)
-                    if wantsChart { visible = ChartRescue.hidingChartCode(visible) }
-                    let cleaned = Self.cleanReply(visible)
-                    guard cleaned != lastCleanedText else { return }
-                    lastCleanedText = cleaned
-                    self.chat.update(id) { message in
-                        message.text = cleaned
-                        message.status = ""
-                    }
-                    if speaksLive {
-                        for sentence in spokenQueue.feed(cleaned) { self.speech.enqueue(sentence, language: self.settings.language) }
-                    }
+            // perf: a model streams a token at a time; cleaning the whole text and publishing the chat for each one
+            // costs the main thread more than the eye can use, so the text is written at most every 50 ms.
+            let flusher = StreamFlusher { [weak self] partial in
+                guard let self, self.replies[conversation] == id else { return }
+                var visible = FollowUps.streamingBody(partial)
+                if wantsChart { visible = ChartRescue.hidingChartCode(visible) }
+                let cleaned = Self.cleanReply(visible)
+                guard cleaned != lastCleanedText else { return }
+                lastCleanedText = cleaned
+                self.chat.update(id) { message in
+                    message.text = cleaned
+                    message.status = ""
                 }
-            )
+                if speaksLive {
+                    for sentence in spokenQueue.feed(cleaned) { self.speech.enqueue(sentence, language: self.settings.language) }
+                }
+            }
+            let plan: BrainPlan
+            do {
+                plan = try await brain.run(
+                    userText: request,
+                    followUp: !history.isEmpty,
+                    history: history,
+                    context: brainContext,
+                    untrustedLabel: snapshot.map { "\($0.appName) — \($0.windowTitle)" },
+                    untrusted: snapshot?.text,
+                    images: images,
+                    tools: tools,
+                    onText: { [weak self] partial in
+                        guard let self, self.replies[conversation] == id else { return }
+                        flusher.push(partial)
+                    }
+                )
+            } catch {
+                // The last words that arrived are written before an error is appended to them.
+                flusher.flush()
+                throw error
+            }
+            flusher.flush()
             guard !Task.isCancelled, replies[conversation] == id else { return }
             // Follow-up actions suggested by Nook appear as interactive buttons below response.
             let split = FollowUps.split(plan.text)
@@ -578,5 +592,38 @@ extension AppModel {
             cleaned = rx.stringByReplacingMatches(in: cleaned, range: NSRange(cleaned.startIndex..., in: cleaned), withTemplate: "")
         }
         return MarkdownBlock.clean(cleaned).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// Hands the newest partial answer to `apply` at most every 50 ms; `flush()` writes whatever is still waiting.
+@MainActor
+final class StreamFlusher {
+    private var pending: String?
+    private var lastFlush = Date.distantPast
+    private var trailing = false
+    private let apply: (String) -> Void
+
+    init(apply: @escaping (String) -> Void) { self.apply = apply }
+
+    func push(_ text: String) {
+        pending = text
+        if Date().timeIntervalSince(lastFlush) >= 0.05 {
+            flush()
+        } else if !trailing {
+            // The last words of a pause (a tool call) still show up.
+            trailing = true
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                self?.trailing = false
+                self?.flush()
+            }
+        }
+    }
+
+    func flush() {
+        guard let text = pending else { return }
+        pending = nil
+        lastFlush = Date()
+        apply(text)
     }
 }

@@ -81,6 +81,24 @@ extension View {
             focus.wrappedValue = true
         }
     }
+
+    /// The same for a composer that is on screen next to other fields: it asks for the keyboard now, on the next turn,
+    /// after a moment and when the window becomes key, but never takes it from another text that is being edited.
+    /// `enabled` false (a card that should not take the keyboard) does nothing.
+    func composerFocusOnAppear(_ focus: FocusState<Bool>.Binding, enabled: Bool = true) -> some View {
+        func ask() {
+            guard enabled, !focus.wrappedValue else { return }
+            // An editing text view in the key window is another field with the keyboard (this one is not focused yet).
+            if NSApp.keyWindow?.firstResponder is NSTextView { return }
+            focus.wrappedValue = true
+        }
+        return onAppear {
+            ask()
+            DispatchQueue.main.async { ask() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { ask() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in ask() }
+    }
 }
 
 /// How many things wait for you: a small amber count (a tab, a list's title). Zero shows nothing.

@@ -150,6 +150,12 @@ struct ImageAttachment: Identifiable, Equatable {
         return true
     }
 
+    /// Copied files on the clipboard that are not pictures; pasting them attaches them like a drop.
+    static func nonImageFiles(_ pasteboard: NSPasteboard = .general) -> [URL] {
+        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        return urls.filter { !isImageFile($0) }
+    }
+
     /// The same test `init?(url:)` starts with, without reading the file.
     private static func isImageFile(_ url: URL) -> Bool {
         guard url.isFileURL, let type = UTType(filenameExtension: url.pathExtension) else { return false }

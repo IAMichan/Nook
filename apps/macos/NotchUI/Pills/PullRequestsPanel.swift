@@ -15,7 +15,9 @@ struct PullRequestOpenRequest: Equatable {
 /// is wide enough, as a side panel (half the page, its edge dragged wider or narrower, and a
 /// button that makes it fill the page), else in its place.
 struct PullRequestsPanel: View {
-    @EnvironmentObject private var app: AppModel
+    /// Only used in actions (open Settings, the link that opens a pull request): reading it from the environment would
+    /// redraw the whole page with every change of the app.
+    private var app: AppModel { AppModel.shared }
     @ObservedObject private var store = PullRequestStore.shared
     private var accounts: [AccountPullRequests] { store.accounts }
     @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
@@ -221,6 +223,8 @@ struct PullRequestsPanel: View {
                         empty(symbol: "checkmark.circle", title: tr("agents.pulls.none"), detail: tr("agents.pulls.noneDetail"), action: nil)
                     }
                 } else {
+                    // The times on the rows move on with the clock, as on the Agents list.
+                    TimelineView(.nookTicks(every: 30)) { context in
                     ScrollView(showsIndicators: false) {
                         // Lazy, and flat: the headings and rows of every group are its direct children, so only the
                         // rows in sight are built, however many pull requests you watch.
@@ -229,12 +233,13 @@ struct PullRequestsPanel: View {
                             ForEach(shown) { account in
                                 // An account without matches stays out of a filtered list, unless it has an error to show.
                                 if !filter.isActive || !account.isEmpty || account.error != nil {
-                                    accountSection(account, showName: accounts.count > 1, selected: selected)
+                                    accountSection(account, showName: accounts.count > 1, selected: selected, now: context.date)
                                 }
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.bottom, NookTheme.Spacing.lg)
+                    }
                     }
                 }
             }
@@ -308,7 +313,7 @@ struct PullRequestsPanel: View {
     /// An account's part of the list: its name (with more than one account), an error if reading it failed, then its
     /// groups. No stack of its own: the rows are children of the list's lazy stack, so only the ones in sight are built.
     @ViewBuilder
-    private func accountSection(_ account: AccountPullRequests, showName: Bool, selected: String?) -> some View {
+    private func accountSection(_ account: AccountPullRequests, showName: Bool, selected: String?, now: Date) -> some View {
         // Where each row stands in a stack, worked out once for the whole account instead of once per row.
         let stacks = PullRequestStack.positions(in: items(of: account.id))
         if showName {
@@ -345,14 +350,14 @@ struct PullRequestsPanel: View {
             ForEach(account.byRole(sort: sort)) { group in
                 rowGroup(key: account.id + " role:" + group.role.rawValue, symbol: Self.symbol(group.role),
                          title: tr("agents.pulls.group." + group.role.rawValue), rows: group.rows, account: account.id,
-                         showRepo: true, stacks: stacks, selected: selected)
+                         showRepo: true, stacks: stacks, selected: selected, now: now)
             }
         case .repository:
             // Every pull request of a repository together, whatever brought it into the list; the heading counts
             // the ones waiting for your review.
             ForEach(account.byRepo(sort: sort)) { repo in
                 rowGroup(key: account.id + " " + repo.repo, symbol: "folder", title: repo.repo, rows: repo.rows,
-                         account: account.id, showRepo: false, waiting: repo.waiting, stacks: stacks, selected: selected)
+                         account: account.id, showRepo: false, waiting: repo.waiting, stacks: stacks, selected: selected, now: now)
             }
         }
     }
@@ -399,7 +404,7 @@ struct PullRequestsPanel: View {
     @ViewBuilder
     private func rowGroup(key: String, symbol: String, title: String, rows: [PullRequestRepoGroup.Row], account: String,
                           showRepo: Bool, waiting: Int = 0, stacks: [String: (index: Int, count: Int)],
-                          selected: String?) -> some View {
+                          selected: String?, now: Date) -> some View {
         let open = !collapsedRepos.split(separator: "\n").contains(Substring(key))
         Button {
             withAnimation(NookTheme.reveal) { toggleRepo(key, open: open) }
@@ -428,9 +433,10 @@ struct PullRequestsPanel: View {
         if open {
             ForEach(rows) { row in
                 PullRequestRow(item: row.item, role: row.role, showRepo: showRepo, accountID: account,
-                               selected: selected == row.item.id, stack: stacks[row.item.id]) {
+                               selected: selected == row.item.id, stack: stacks[row.item.id], now: now) {
                     self.open(account, row.item)
                 }
+                .equatable()
             }
         }
     }

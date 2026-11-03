@@ -115,6 +115,32 @@ struct EventRow: View {
     }
 }
 
+/// Whether a path exists and is a folder, remembered for a few seconds: the timeline's rows ask on every redraw while the
+/// agent streams, and a file system call per row per token adds up on the main thread. Short enough that a file the agent
+/// is still writing shows up on a later redraw.
+enum PathProbe {
+    private static var known: [String: (exists: Bool, isDirectory: Bool, at: Date)] = [:]
+    private static let lock = NSLock()
+    private static let lifetime: TimeInterval = 3
+
+    static func stat(_ path: String) -> (exists: Bool, isDirectory: Bool) {
+        let now = Date()
+        lock.lock()
+        if let hit = known[path], now.timeIntervalSince(hit.at) < lifetime {
+            lock.unlock()
+            return (hit.exists, hit.isDirectory)
+        }
+        lock.unlock()
+        var folder: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: path, isDirectory: &folder)
+        lock.lock()
+        if known.count > 2_000 { known.removeAll() }
+        known[path] = (exists, folder.boolValue, now)
+        lock.unlock()
+        return (exists, folder.boolValue)
+    }
+}
+
 /// Files the agent handed you (SharedFiles), as their own row: what it said with them, then each file as itself. A video
 /// plays right here (and opens big from its enlarge button), a picture shows small, and any file opens in the side panel.
 struct SharedFilesRow: View {
@@ -127,7 +153,7 @@ struct SharedFilesRow: View {
 
     var body: some View {
         let paths = SharedFiles.paths(input).map { SessionOutputs.resolve($0, in: directory) }
-        let videos = paths.filter { SessionOutputs.kind(path: $0) == .video && FileManager.default.fileExists(atPath: $0) }
+        let videos = paths.filter { SessionOutputs.kind(path: $0) == .video && PathProbe.stat($0).exists }
         let others = paths.filter { !videos.contains($0) }
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             TranscriptWorkLine(symbol: "paperclip", label: SharedFiles.caption(input) ?? tr("ws.shared.title"))
@@ -370,8 +396,7 @@ struct ToolRow: View {
         guard let directory, [.read, .edit].contains(ToolCategory.of(tool: event.tool ?? "")),
               let raw = ToolSummary.path(AgentActivity.input(event.detail) ?? [:]) else { return nil }
         let path = SessionOutputs.resolve(raw, in: directory)
-        var folder: ObjCBool = false
-        guard !path.isEmpty, !(FileManager.default.fileExists(atPath: path, isDirectory: &folder) && folder.boolValue) else { return nil }
+        guard !path.isEmpty, !PathProbe.stat(path).isDirectory else { return nil }
         return path
     }
 

@@ -14,6 +14,7 @@ struct PanelView: View {
     var inWindow = false
     @EnvironmentObject private var app: AppModel
     @Environment(\.lineBleed) private var lineBleed
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The width of the Agents session list, which the footer takes on a tab without a list of its own.
     @AppStorage("nook.agents.listWidth") private var agentsListWidth = PanelLayout.agentsList
     /// Search everything is open over the tab (⌘K or ⇧⌘F, or the magnifying glass in the header).
@@ -50,8 +51,10 @@ struct PanelView: View {
                     closeSheet()
                     if !inWindow { viewModel.show(.idle) }
                 }
-                    .transition(.opacity.combined(with: .offset(y: 6)))
+                    .transition(.opacity.combined(with: .offset(y: reduceMotion ? 0 : 6)))
             } else {
+              // Back brings the tab in as switching tabs does (a quick fade); the tab itself leaves at once under a task.
+              VStack(alignment: .leading, spacing: 0) {
                 if !usesSidebar { header }
                 // A Double Tap Nook works on, or just finished: every step, and what it typed, to check.
                 if !app.demoMode {
@@ -123,6 +126,9 @@ struct PanelView: View {
                         .frame(width: agentsListWidth)
                         .padding(.top, NookTheme.Spacing.md)
                 }
+              }
+              .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+              .transition(.asymmetric(insertion: .opacity.animation(NookTheme.tabFade), removal: .identity))
             }
         }
         .animation(NookTheme.swap, value: sheet)
@@ -136,11 +142,13 @@ struct PanelView: View {
                         .accessibilityHidden(true)
                     SearchPanel(select: select) { searching = false }
                         .padding(.top, Self.headerHeight + NookTheme.Spacing.md)
-                        .transition(.opacity.combined(with: .offset(y: -4)))
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))
                 }
             }
         }
         .animation(NookTheme.reveal, value: searching)
+        .onChange(of: searching) { _, open in if !inWindow { viewModel.panelSearchOpen = open } }
+        .onDisappear { if !inWindow { viewModel.panelSearchOpen = false } }
         // Usage (limits, cost, tokens) as a modal over the panel, from the footer's usage button on any tab.
         .overlay {
             if app.usageModalOpen && !app.demoMode {
@@ -246,8 +254,10 @@ struct PanelView: View {
     /// Shows `tab`: in the pane beside this tab when it is the one split view shows there (`PanelSplitChoice.landing`).
     private func select(_ tab: PanelTab) {
         if inWindow {
-            viewModel.windowSheet = nil
-            viewModel.windowTab = PanelSplitChoice.landing(tab, current: self.tab)
+            withAnimation(NookTheme.swap) {
+                viewModel.windowSheet = nil
+                viewModel.windowTab = PanelSplitChoice.landing(tab, current: self.tab)
+            }
         } else {
             viewModel.show(.panel(PanelSplitChoice.landing(tab, current: self.tab)), inNotch: true)
         }
@@ -384,8 +394,22 @@ struct PanelApprovalBar: View {
     let workspace: WorkspaceManager
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @EnvironmentObject private var app: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// What the bar shows now, so a request coming or going rises and fades like a toast instead of popping in.
+    private var shownID: String? {
+        if let approval = app.approvals.pending.first(where: { !onScreen($0) }) { return "approval-\(approval.id)" }
+        if !app.demoMode, let question = hub.questions.first(where: { !onScreen($0) }) { return "question-\(question.id)" }
+        return viewModel.panelNotice.map { "notice-\($0.id)" }
+    }
 
     var body: some View {
+        bar
+            .animation(NookTheme.reveal, value: shownID)
+    }
+
+    @ViewBuilder
+    private var bar: some View {
         let waiting = app.approvals.pending
         if let approval = waiting.first(where: { !onScreen($0) }) {
             PanelNoticeBar(title: approval.title, detail: subtitle(approval, more: waiting.count - 1),
@@ -404,6 +428,7 @@ struct PanelApprovalBar: View {
                 )
                 .fixedSize()
             }
+            .transition(.nookFloating(reduceMotion: reduceMotion))
         } else if !app.demoMode, let question = hub.questions.first(where: { !onScreen($0) }) {
             questionBar(question, more: hub.questions.count - 1)
         } else if let notice = viewModel.panelNotice {
@@ -424,6 +449,7 @@ struct PanelApprovalBar: View {
             EmptyView()
         }
         .id(notice.id)
+        .transition(.nookFloating(reduceMotion: reduceMotion))
         .onHover { viewModel.holdPanelNotice($0) }
     }
 
@@ -440,6 +466,7 @@ struct PanelApprovalBar: View {
             )
             .fixedSize()
         }
+        .transition(.nookFloating(reduceMotion: reduceMotion))
     }
 
     private func subtitle(_ request: AgentQuestionRequest, more: Int) -> String {

@@ -204,15 +204,9 @@ struct CardView: View {
         }
         .onAppear {
             if let draft = card.draft { reply = draft }
-            // Wait briefly for the panel to acquire keyboard focus.
-            guard card.focusesInput else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { replyFocused = true }
         }
         // The panel can take the keyboard after the card appeared (a double tap from another app): the field asks again.
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
-            guard card.focusesInput, note.object is NotchPanel, !replyFocused else { return }
-            replyFocused = true
-        }
+        .composerFocusOnAppear($replyFocused, enabled: card.focusesInput)
         .onChange(of: card.draft) { _, draft in
             guard let draft else { return }
             reply = draft
@@ -252,13 +246,6 @@ struct CardView: View {
         // Closes the field as Escape does, for whoever reaches for the mouse.
         .trayTrailing {
             ToolbarIconButton("xmark", tr("button.close"), height: 20, width: 20) { onAction(card.escape ?? card.primary) }
-        }
-        // In the non-activating notch panel the binding can lag behind the field until Return commits it, which left
-        // the send arrow looking disabled; take every keystroke straight from the field itself.
-        .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidChangeNotification)) { note in
-            guard replyFocused, let field = note.object as? NSTextField, field.window is NotchPanel,
-                  field.stringValue != reply else { return }
-            reply = field.stringValue
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(card.title)

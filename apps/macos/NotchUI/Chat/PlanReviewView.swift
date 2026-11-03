@@ -5,7 +5,8 @@ import SwiftUI
 /// allowing you to resume safely without repeating completed actions.
 struct PlanReview: View {
     let message: ChatMessage
-    @EnvironmentObject private var app: AppModel
+    // perf: read from the shared model, not observed: an answer's sources and plan must not redraw on every change of the app.
+    private var app: AppModel { AppModel.shared }
     @State private var expanded: Set<Int> = []
     @State private var editing: Set<Int> = []
 

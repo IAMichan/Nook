@@ -12,8 +12,8 @@ struct CompanionSettingsRows: View {
     @ObservedObject private var relayPush = RelayPushClient.shared
     @State private var keyProblem = false
     @State private var link: PairingLink?
-    @State private var copied = false
-    @State private var diagnosticsCopied = false
+    @StateObject private var copied = CopiedMoment()
+    @StateObject private var diagnosticsCopied = CopiedMoment()
     /// The Cloudflare token being pasted, and the address of a relay set up some other way.
     @State private var token = ""
     @State private var manualAddress = ""
@@ -51,9 +51,8 @@ struct CompanionSettingsRows: View {
                 }
                 // The local connection log, redacted (no addresses, names or keys), for the user to paste where they choose.
                 HStack(spacing: NookTheme.Spacing.md) {
-                    Button(diagnosticsCopied ? tr("companion.diagnostics.copied") : tr("companion.diagnostics.copy")) {
-                        Pasteboard.copy(CompanionDiagnosticsLog.mac.bundle(about: diagnosticsAbout))
-                        diagnosticsCopied = true
+                    Button(diagnosticsCopied.copied ? tr("companion.diagnostics.copied") : tr("companion.diagnostics.copy")) {
+                        diagnosticsCopied.copy(CompanionDiagnosticsLog.mac.bundle(about: diagnosticsAbout))
                     }
                     SettingNote(tr("companion.diagnostics.hint"))
                 }
@@ -373,13 +372,10 @@ struct CompanionSettingsRows: View {
             }
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 Text(tr("companion.pairSteps")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textStrong).fixedSize(horizontal: false, vertical: true)
-                Button(copied ? tr("companion.copied") : tr("companion.copyLink")) {
-                    if let url = link.url {
-                        Pasteboard.copy(url.absoluteString)
-                        copied = true
-                    }
+                Button(copied.copied ? tr("companion.copied") : tr("companion.copyLink")) {
+                    if let url = link.url { copied.copy(url.absoluteString) }
                 }
-                Button(tr("companion.cancelPairing")) { store.cancelPairing(); self.link = nil; copied = false }
+                Button(tr("companion.cancelPairing")) { store.cancelPairing(); self.link = nil }
                 // What the phone that pairs now may do; changed later per phone above.
                 Text(tr("companion.scopes.pairing")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textSecondary)
                 scopeToggles($store.pendingScopes)

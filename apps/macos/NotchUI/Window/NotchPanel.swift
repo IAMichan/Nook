@@ -58,11 +58,43 @@ final class NotchPanel: NSPanel {
         }
     }
 
-    // Typing in the notch: the emoji picker may open for its field, so watch for it (see `CharacterPaletteWatch`).
+    /// Escape that nothing in the panel wanted (no field, sheet, search, menu or card took it): the controller closes the
+    /// open panel and returns true. Escape reaches the window's own `keyDown` only after every view had its turn.
+    var onUnhandledEscape: (() -> Bool)?
+
+    override func keyDown(with event: NSEvent) {
+        let plain = event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty
+        if event.keyCode == 53, plain, !(firstResponder is NSText), onUnhandledEscape?() == true { return }
+        super.keyDown(with: event)
+    }
+
     override func becomeKey() {
         super.becomeKey()
         becameKey = Date()
+    }
+
+    // The emoji picker opens on a request, so the watch for it (see `CharacterPaletteWatch`) starts only on one: the
+    // Globe key (fn), Control-Command-Space, or the context menu's Emoji & Symbols. Otherwise no timer runs.
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .flagsChanged where event.modifierFlags.contains(.function):
+            CharacterPaletteWatch.shared.start()
+        case .keyDown where event.keyCode == 49 && event.modifierFlags.isSuperset(of: [.control, .command]):
+            CharacterPaletteWatch.shared.start()
+        case .rightMouseDown:
+            CharacterPaletteWatch.shared.start()
+        case .leftMouseDown where event.modifierFlags.contains(.control):
+            CharacterPaletteWatch.shared.start()
+        default:
+            break
+        }
+        super.sendEvent(event)
+    }
+
+    /// The Emoji & Symbols item of a field's menu or the Edit menu.
+    @objc func orderFrontCharacterPalette(_ sender: Any?) {
         CharacterPaletteWatch.shared.start()
+        NSApp.orderFrontCharacterPalette(sender)
     }
 
     /// When the notch last got the keyboard.
@@ -131,21 +163,29 @@ final class CharacterPaletteWatch {
     private var timer: Timer?
     /// The notch's own levels while they are lowered for the picker.
     private var saved: [(NotchPanel, NSWindow.Level)] = []
+    /// When the picker was last asked for, and whether it has shown since: the watch ends once it is gone, or when it never came.
+    private var startedAt = Date.distantPast
+    private var sawPicker = false
+    /// How long the watch waits for a picker that was asked for before it gives up.
+    private static let patience: TimeInterval = 6
     /// The notch sits lower on purpose right now: the picker is up.
     var lowersNotch: Bool { !saved.isEmpty }
 
     func start() {
+        startedAt = Date()
         guard timer == nil else { return }
+        sawPicker = false
         timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { _ in
             MainActor.assumeIsolated { CharacterPaletteWatch.shared.check() }
         }
-        // Runs for as long as you type in the notch: a little slack lets macOS bundle its wake-ups with others.
+        // Runs only while a picker was asked for and is up: a little slack lets macOS bundle its wake-ups with others.
         timer?.tolerance = 0.1
     }
 
     private func check() {
         let notches = NSApp.windows.compactMap { $0 as? NotchPanel }
         if let layer = Self.pickerLayer() {
+            sawPicker = true
             if saved.isEmpty { saved = notches.map { ($0, $0.level) } }
             let below = NSWindow.Level(rawValue: max(NSWindow.Level.normal.rawValue, layer - 1))
             for (panel, level) in saved where panel.level != min(level, below) { panel.level = min(level, below) }
@@ -153,10 +193,11 @@ final class CharacterPaletteWatch {
         }
         saved.forEach { $0.0.level = $0.1 }
         saved = []
-        // Nothing to watch once no notch has the keyboard.
-        if !notches.contains(where: \.isKeyWindow) {
+        // Nothing to watch once the picker is gone, never came, or no notch has the keyboard.
+        if sawPicker || Date().timeIntervalSince(startedAt) > Self.patience || !notches.contains(where: \.isKeyWindow) {
             timer?.invalidate()
             timer = nil
+            sawPicker = false
             Self.pickerProcesses = [:]
         }
     }

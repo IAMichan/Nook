@@ -56,9 +56,11 @@ struct WorkspaceView: View {
         // ⌘N starts a session, unless a list on screen starts its own kind (a new Nook chat).
         .keyCommand("session.new", priority: -1) { newSession() }
         .sheet(isPresented: $app.showOnboarding) {
-            OnboardingView {
+            OnboardingView { completed in
                 app.settings.onboardingDone = true
                 app.showOnboarding = false
+                // Done leads straight into the chat; Later and Escape only close.
+                if completed { app.openAsk() }
             }
         }
         .tint(NookTheme.iris)

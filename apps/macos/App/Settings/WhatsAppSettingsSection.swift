@@ -87,12 +87,16 @@ struct WhatsAppGatewayRows: View {
         LabeledContent(tr("whatsapp.settings.address")) {
             TextField("", text: $address, prompt: Text(gateway.defaultURL))
                 .labelsHidden()
-                .onSubmit { WhatsAppSettings.url = address; accounts.settingsChanged() }
+                .onSubmit { saveGateway(toast: false) }
         }
         LabeledContent(credentialLabel) {
             SecureField("", text: $credential)
                 .labelsHidden()
-                .onSubmit { WhatsAppSettings.setCredential(credential); accounts.settingsChanged() }
+                .onSubmit { saveGateway(toast: false) }
+        }
+        HStack {
+            Spacer()
+            Button(tr("button.save")) { saveGateway(toast: true) }
         }
         if gateway == .gowa, WhatsAppGOWAInstaller.isInstalled {
             Toggle(tr("whatsapp.settings.autoStart"), isOn: $autoStart)
@@ -109,6 +113,14 @@ struct WhatsAppGatewayRows: View {
         if let line = webhookLine {
             SettingNote(line, tone: .warning)
         }
+    }
+
+    /// Stores the address and password; Return saves quietly, the Save button confirms with a toast.
+    private func saveGateway(toast: Bool) {
+        WhatsAppSettings.url = address
+        WhatsAppSettings.setCredential(credential)
+        accounts.settingsChanged()
+        if toast { ToastCenter.shared.success(tr("whatsapp.settings.saved")) }
     }
 
     private var credentialLabel: String {

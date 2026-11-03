@@ -60,8 +60,8 @@ final class WhatsAppActionsTests: XCTestCase {
         XCTAssertEqual(archive.path, "/chats/archive")
         XCTAssertEqual(archive.json?["archive"] as? Bool, true)
 
-        let delete = WAAction.openwaDeleteChat("x@g.us")
-        XCTAssertEqual(delete.path, "/chats/delete")
+        let deleteChat = WAAction.openwaDeleteChat("x@g.us")
+        XCTAssertEqual(deleteChat.path, "/chats/delete")
         XCTAssertEqual(delete.json?["chatId"] as? String, "x@g.us")
     }
 

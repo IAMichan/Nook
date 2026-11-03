@@ -391,6 +391,9 @@ struct ChatsTab: View {
     /// The list scrolls to the open chat only when it was opened from elsewhere (the keyboard, a card, "@chat"): a click
     /// on a row that is in view already leaves the list where it is.
     @State private var revealSelection = false
+    /// The chat whose removal from a row's menu waits for a yes, and whether it goes in its app too.
+    @State private var removingRow: (entry: ChatsEntry, thread: String)?
+    @State private var removingRowInApp = false
     /// The chat closed with the back button while the tab shows one column: the list comes back scrolled to it.
     @State private var returnTo: String?
     /// The chats you opened or marked since the view, app or account last changed: they keep their place in a view they
@@ -413,16 +416,16 @@ struct ChatsTab: View {
     /// A mail you started and left by opening a chat: New mail brings it back.
     @State private var parkedMail: MailDraft?
     /// One app's chats only (its source id), or all.
-    @State private var filter: String?
+    @State private var filter: String? = ChatsTab.kept.filter
     /// Within the chosen app, one of its accounts only (by its name), while the app has chats in more than one.
-    @State private var account: String?
+    @State private var account: String? = ChatsTab.kept.account
     /// Within the chosen app, its chats, the status updates of its contacts or its channels (`ChatsListKind`).
-    @State private var listKind: ChatsListKind = .chats
+    @State private var listKind: ChatsListKind = ChatsTab.kept.listKind
     /// Which chats the list shows by where they stand; the chat you opened stays while you read it.
     @AppStorage("nook.chats.view") private var view: ChatsView = .all
-    @State private var query = ""
+    @State private var query = ChatsTab.kept.query
     /// The groups folded shut (a click on their header); a search shows every group open.
-    @State private var collapsed: Set<ChatsGroup> = []
+    @State private var collapsed: Set<ChatsGroup> = ChatsTab.kept.collapsed
     @AppStorage("nook.chats.listWidth") private var listWidth = PanelLayout.chatsList
     /// How wide the sidebar is after you dragged its line, like every other line between panels; 0 follows the panel
     /// (a rail when it is narrow). A double-click on the line goes back to that. Remembered.
@@ -437,6 +440,17 @@ struct ChatsTab: View {
     @State private var entriesMemo = ChatsEntryMemo()
     @State private var shownMemo = ChatsShownMemo()
     @State private var countsMemo = ChatsCountsMemo()
+
+    /// What the list was set to (search, app, account, kind of list, folded groups), kept while Nook runs so that a visit
+    /// to another tab and back finds the list as it was left. Not kept across a restart.
+    struct KeptList {
+        var query = ""
+        var filter: String?
+        var account: String?
+        var listKind: ChatsListKind = .chats
+        var collapsed: Set<ChatsGroup> = []
+    }
+    static var kept = KeptList()
 
     static let readOnOpenKey = "nook.chats.readOnOpen"
     /// The apps Nook can link so that it writes in their chats: through its chat helper, or a bridge of its own.
@@ -568,20 +582,46 @@ struct ChatsTab: View {
         }
         // ⌘⇧[ and ⌘⇧] go to the chat above or below in the list, as they go through sessions on Agents.
         .keyCommands(["session.previous": { step(-1) }, "session.next": { step(1) }], enabled: !all.isEmpty)
+        .confirmDelete($removingRow, question: { tr("confirm.deleteChat", $0.entry.name) },
+                       detail: removingRowInApp
+                           ? tr("chats.deleteInApp.detail", MessagingApps.app(id: removingRow?.entry.app ?? "")?.name ?? "")
+                           : tr("confirm.deleteChat.detail"),
+                       confirmTitle: removingRowInApp
+                           ? tr("chats.deleteInApp", MessagingApps.app(id: removingRow?.entry.app ?? "")?.name ?? "")
+                           : tr("chats.remove")) { pending in
+            if selection == pending.entry.id { closeChat() }
+            guard removingRowInApp, let route = app.chatRoute(for: pending.entry) else { return capture.remove(pending.thread) }
+            Task { @MainActor in
+                do {
+                    try await app.deleteChatInApp(route: route, thread: pending.thread, name: pending.entry.name)
+                } catch {
+                    ToastCenter.shared.show(error.localizedDescription, kind: .error)
+                }
+            }
+        }
         .onChange(of: viewModel.chatsFocus) { _, _ in takeFocus() }
         // Another app (or none) has accounts of its own: the account chosen before no longer applies.
-        .onChange(of: filter) { _, _ in
+        .onChange(of: filter) { _, value in
             account = nil
             keptInView = []
+            ChatsTab.kept.filter = value
         }
+        .onChange(of: query) { _, value in ChatsTab.kept.query = value }
+        .onChange(of: collapsed) { _, value in ChatsTab.kept.collapsed = value }
         .onChange(of: view) { _, _ in keptInView = [] }
         // A new day: the groups ("Today", "Yesterday") and the rows' times move on with it.
         .onReceive(ChatsDay.changes) { _ in
             let now = ChatsDay.now()
             if now != day { day = now }
         }
-        .onChange(of: account) { _, _ in keptInView = [] }
-        .onChange(of: listKind) { _, _ in keptInView = [] }
+        .onChange(of: account) { _, value in
+            keptInView = []
+            ChatsTab.kept.account = value
+        }
+        .onChange(of: listKind) { _, value in
+            keptInView = []
+            ChatsTab.kept.listKind = value
+        }
         .onChange(of: selection) { old, id in
             // Opening a chat puts a mail being written aside; New mail brings it back.
             if id != nil, let draft = composing {
@@ -1023,7 +1063,7 @@ struct ChatsTab: View {
                                         selection = entry.id
                                     }
                                         .equatable()
-                                        .contextMenu { readMenu(entry) }
+                                        .contextMenu { rowMenu(entry) }
                                 }
                                 .id(entry.id)
                             }
@@ -1094,6 +1134,23 @@ struct ChatsTab: View {
         }
         if !entry.read.isUnread {
             Button(tr("chats.markUnread")) { markUnread(entry) }
+        }
+    }
+
+    /// A row's menu: read and unread, opening the chat's app, what that app lets Nook do with the chat, and removing it
+    /// (after a yes). The open chat's "…" menu offers the same.
+    @ViewBuilder
+    private func rowMenu(_ entry: ChatsEntry) -> some View {
+        let appName = MessagingApps.app(id: entry.app)?.name ?? entry.app
+        readMenu(entry)
+        Button(tr("chats.openApp", appName)) { app.openChatApp(entry.app) }
+        ChatAppActions(entry: entry, app: app, run: { action in
+            Task { @MainActor in
+                do { try await action() } catch { ToastCenter.shared.show(error.localizedDescription, kind: .error) }
+            }
+        }, afterArchive: { if selection == entry.id { closeChat() } }) { thread, inApp in
+            removingRowInApp = inApp
+            removingRow = (entry, thread)
         }
     }
 
@@ -1652,6 +1709,53 @@ struct ChatsAvatar: View {
 }
 
 /// The chat on the right: who and which app on top, the messages as bubbles, and how to answer below.
+/// What a chat's app lets Nook do with the chat (pin, mute, archive) and removing it, after a yes: the same in a row's
+/// menu and in the open chat's "…" menu. Each group comes with its divider, and nothing shows where the app allows none.
+private struct ChatAppActions: View {
+    let entry: ChatsEntry
+    let app: AppModel
+    /// Runs a change in the chat's app; the caller shows a failure.
+    let run: (@escaping () async throws -> Void) -> Void
+    /// The chat is archived or deleted in its app: the caller closes it if it is open.
+    let afterArchive: () -> Void
+    /// Removing waits for a yes: the chat's id, and whether it goes in its app too (else from Nook only).
+    let remove: (String, Bool) -> Void
+
+    var body: some View {
+        let appName = MessagingApps.app(id: entry.app)?.name ?? entry.app
+        let route = app.chatRoute(for: entry)
+        let abilities = app.chatAbilities(route)
+        if let route, abilities.pin || abilities.mute || abilities.archive {
+            Divider()
+            if abilities.pin {
+                Button(tr(abilities.pinned ? "chats.unpinInApp" : "chats.pinInApp", appName)) {
+                    run { try await app.setChatPinned(!abilities.pinned, route: route, name: entry.name) }
+                }
+            }
+            if abilities.mute {
+                Button(tr(abilities.muted ? "chats.unmuteInApp" : "chats.muteInApp", appName)) {
+                    run { try await app.setChatMuted(!abilities.muted, route: route, name: entry.name) }
+                }
+            }
+            if abilities.archive {
+                Button(tr("chats.archiveInApp", appName)) {
+                    run {
+                        try await app.archiveChat(route: route, thread: app.chatThread(entry), name: entry.name)
+                        afterArchive()
+                    }
+                }
+            }
+        }
+        if let thread = app.chatThread(entry) {
+            Divider()
+            Button(tr("chats.remove"), role: .destructive) { remove(thread, false) }
+            if route != nil, abilities.deleteChat {
+                Button(tr("chats.deleteInApp", appName), role: .destructive) { remove(thread, true) }
+            }
+        }
+    }
+}
+
 private struct ChatsDetail: View, Equatable {
     let entry: ChatsEntry
     @ObservedObject var capture: ChatCaptureService
@@ -2208,40 +2312,9 @@ private struct ChatsDetail: View, Equatable {
             if !entry.read.isUnread {
                 Button(tr("chats.markUnread"), action: onMarkUnread)
             }
-            let abilities = self.abilities
-            if let route, abilities.pin || abilities.mute || abilities.archive {
-                Divider()
-                if abilities.pin {
-                    Button(tr(abilities.pinned ? "chats.unpinInApp" : "chats.pinInApp", appName)) {
-                        change { try await app.setChatPinned(!abilities.pinned, route: route, name: entry.name) }
-                    }
-                }
-                if abilities.mute {
-                    Button(tr(abilities.muted ? "chats.unmuteInApp" : "chats.muteInApp", appName)) {
-                        change { try await app.setChatMuted(!abilities.muted, route: route, name: entry.name) }
-                    }
-                }
-                if abilities.archive {
-                    Button(tr("chats.archiveInApp", appName)) {
-                        change {
-                            try await app.archiveChat(route: route, thread: app.chatThread(entry), name: entry.name)
-                            onClose()
-                        }
-                    }
-                }
-            }
-            if let thread = app.chatThread(entry) {
-                Divider()
-                Button(tr("chats.remove"), role: .destructive) {
-                    removingInApp = false
-                    removing = thread
-                }
-                if route != nil, abilities.deleteChat {
-                    Button(tr("chats.deleteInApp", appName), role: .destructive) {
-                        removingInApp = true
-                        removing = thread
-                    }
-                }
+            ChatAppActions(entry: entry, app: app, run: change, afterArchive: onClose) { thread, inApp in
+                removingInApp = inApp
+                removing = thread
             }
         } label: {
             Image(systemName: "ellipsis")
