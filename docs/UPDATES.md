@@ -28,7 +28,7 @@ shown in Settings. Automatic checks can be turned off in Settings › Overview �
 
 | State | Footer | Panel |
 | --- | --- | --- |
-| Update available | Mint **Update** with the number of changes (pulses until you open it) | Merged pull requests (each opens on GitHub), commit range with a compare link, warnings, **Install and restart** |
+| Update available | Mint **Update** with the number of changes | Merged pull requests (each opens on GitHub), commit range with a compare link, warnings, **Install and restart** |
 | Installing | Spinner **Updating…** | The six steps with the current one, what xcodebuild is compiling, elapsed time, **Cancel** |
 | Ready to restart | **Restart** | Shown when sessions Nook runs are still working; **Restart now** |
 | Failed | Coral **Update failed** | Where it stopped, why, the compiler errors, **Show log**, **Copy errors**, **Try again** |
