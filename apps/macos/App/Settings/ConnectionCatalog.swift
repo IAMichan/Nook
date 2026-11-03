@@ -562,6 +562,8 @@ struct SettingsFormSheet<Icon: View, Content: View>: View {
             .padding(NookTheme.Spacing.xl)
         }
         .frame(width: 560, height: 640)
+        // Escape closes the sheet the way Done does.
+        .onExitCommand { dismiss() }
     }
 }
 

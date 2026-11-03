@@ -458,11 +458,11 @@ private final class TaskRingLayerView: NSView {
     }
 
     private static func ease(_ keyPath: String, from: CGFloat, to: CGFloat, duration: Double) -> CABasicAnimation {
-        let animation = CABasicAnimation(keyPath: keyPath)
+        // A spring without bounce, like every other movement in Nook; its settling time follows `duration`.
+        let animation = CASpringAnimation(perceptualDuration: duration, bounce: 0)
+        animation.keyPath = keyPath
         animation.fromValue = from
         animation.toValue = to
-        animation.duration = duration
-        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
         return animation
     }
 

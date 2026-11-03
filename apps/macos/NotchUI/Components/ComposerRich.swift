@@ -66,6 +66,17 @@ final class ComposerModel: ObservableObject {
     /// Drafts set aside with Cmd+S; the call site keeps them across launches.
     var stash = PromptStash()
     var onStashChanged: (() -> Void)?
+
+    /// Keeps the drafts set aside (Cmd+S) in `ComposerDraftStore`, so every composer shares them across launches. A
+    /// call site that wired `onStashChanged` itself (the session panel) is left alone.
+    func connectStash(_ store: ComposerDraftStore = .shared) {
+        guard onStashChanged == nil else { return }
+        stash = store.stash
+        onStashChanged = { [weak self] in
+            guard let self else { return }
+            store.setStash(self.stash)
+        }
+    }
     private(set) var excerpts: [String: String] = [:]
     private var search: Task<Void, Never>?
     private var trigger: ComposerTrigger?

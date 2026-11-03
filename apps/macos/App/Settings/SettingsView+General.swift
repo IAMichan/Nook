@@ -30,7 +30,7 @@ extension SettingsView {
                  done: permissions.isGranted(.calendar), button: tr("button.allow"), section: .privacy,
                  request: { await permissions.request(.calendar, app: app) }),
             Step(title: tr("settings.checklist.connectors"), detail: tr("settings.checklist.connectors.detail", app.connectors.active.count),
-                 done: app.connectors.active.count >= 3, button: tr("button.view"), section: .connections)
+                 done: app.connectors.active.count >= 1, button: tr("button.view"), section: .connections)
         ]
     }
 

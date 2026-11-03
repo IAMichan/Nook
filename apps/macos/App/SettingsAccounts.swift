@@ -172,10 +172,9 @@ private struct ManageAccountSheet: View {
                     HStack {
                         TextField(profile.isDefault ? tr("agents.personal") : tr("agents.name"), text: $name)
                             .textFieldStyle(.roundedBorder)
-                        Button(tr("button.save")) {
-                            app.profiles.rename(profile.id, to: name)
-                        }
-                        .disabled(name == profile.label || name.trimmingCharacters(in: .whitespaces).isEmpty)
+                            .onSubmit(saveName)
+                        Button(tr("button.save"), action: saveName)
+                            .disabled(!nameChanged)
                     }
                 }
 
@@ -238,14 +237,27 @@ private struct ManageAccountSheet: View {
                 }
             }
             Spacer()
-            Button(tr("settings2.done"), action: done)
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+            Button(tr("settings2.done")) {
+                saveName()
+                done()
+            }
+            .keyboardShortcut(.defaultAction)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
         }
         .onAppear {
             name = profile.label
         }
+    }
+
+    private var nameChanged: Bool {
+        name != profile.label && !name.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// Renames the profile; also runs on Return and before Done closes the sheet, so a typed name is never lost.
+    private func saveName() {
+        guard nameChanged else { return }
+        app.profiles.rename(profile.id, to: name)
     }
 
     private var subtitle: String {
@@ -310,7 +322,7 @@ private struct ManageAccountSheet: View {
                     .foregroundStyle(NookTheme.mint)
                 Spacer()
                 if profile.kind == .claude {
-                    ConfirmedButton(tr("accounts.removeKey"), question: tr("confirm.removeKey"), detail: tr("confirm.keychain.detail")) {
+                    ConfirmedButton(tr("accounts.removeKey"), question: tr("confirm.removeKeyNamed", profile.kind.name), detail: tr("confirm.keychain.detail")) {
                         app.profiles.setAPIKey("", for: profile)
                         app.history.refresh(minimumInterval: 0)
                     }

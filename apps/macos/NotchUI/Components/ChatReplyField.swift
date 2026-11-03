@@ -238,6 +238,8 @@ struct ChatReplyField: View {
                 }
                 .accessibilityLabel(placeholder)
                 .focused(focus)
+                // A restored draft is selected whole when the field gets the keyboard: put the caret at its end.
+                .onChange(of: focus.wrappedValue) { _, now in if now { SessionComposer<EmptyView>.placeCaretAtEnd() } }
                 // Return sends, as in every chat app; with the `@` menu open Return chooses a line there, and on
                 // "@nook …" Return lets Nook write. ⌥Return adds a line; ⌘Return (send) and ⇧Return (a line) are
                 // keybinding commands, run by the panel's key monitor while this field has the keyboard.
@@ -476,6 +478,7 @@ struct ChatReplyField: View {
                 notice = error.localizedDescription
                 if let before = beforeWriting { text = before }
                 beforeWriting = nil
+                focus.wrappedValue = true
             }
         }
     }

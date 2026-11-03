@@ -13,6 +13,8 @@ struct MailComposeView: View {
     let onClose: () -> Void
 
     @FocusState private var focus: Field?
+    /// `@` in the text: people from your chats by name.
+    @StateObject private var mentionModel = ComposerModel()
 
     private enum Field: Hashable { case to, cc, subject, body }
 
@@ -35,6 +37,12 @@ struct MailComposeView: View {
         }
         .onAppear { focus = draft.to.isEmpty ? .to : .body }
         .onEscapeKey(enabled: !locked) { onClose() }
+        // ⌘↩ is the send command (rebindable in Settings), offered while a field of the mail has the keyboard.
+        .keyCommands(["composer.send": {
+            guard !locked, !draft.to.trimmingCharacters(in: .whitespaces).isEmpty else { return true }
+            onSend()
+            return true
+        }], context: ["composerFocus": true, "composerDraft": !draft.body.isEmpty], enabled: focus != nil && draft.state != .sent)
     }
 
     private var header: some View {
@@ -106,6 +114,13 @@ struct MailComposeView: View {
 
     /// The text over the rest of the pane, with a prompt while it is empty.
     private var editor: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            MentionSuggestions(model: mentionModel, text: $draft.body, config: .mentions())
+            editorField
+        }
+    }
+
+    private var editorField: some View {
         ZStack(alignment: .topLeading) {
             if draft.body.isEmpty {
                 Text(tr("chats.mail.bodyPrompt"))
@@ -121,6 +136,7 @@ struct MailComposeView: View {
                 .foregroundStyle(NookTheme.paper)
                 .scrollContentBackground(.hidden)
                 .focused($focus, equals: .body)
+                .mentions(mentionModel, text: $draft.body, config: .mentions())
                 .disabled(locked)
         }
         .padding(.top, NookTheme.Spacing.md)
@@ -144,7 +160,6 @@ struct MailComposeView: View {
                 } else {
                     SmallPrimaryButton(title: draft.state == .sending ? tr("button.sending") : tr("button.send"),
                                        systemName: "paperplane.fill", action: onSend)
-                        .keyboardShortcut(.return, modifiers: .command)
                         .disabled(locked || draft.to.trimmingCharacters(in: .whitespaces).isEmpty)
                     SmallGhostButton(title: tr("button.openInMail"), action: onOpenInMail)
                         .disabled(locked)

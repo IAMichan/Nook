@@ -91,7 +91,7 @@ struct GitLabSetupSheet: View {
         } footer: {
             if let managing {
                 if confirmDisconnect {
-                    Text(tr("settings2.service.disconnectConfirm"))
+                    Text(tr("connect.disconnectTitle", "GitLab"))
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                     Button(tr("button.cancel")) { confirmDisconnect = false }

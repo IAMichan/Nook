@@ -70,7 +70,7 @@ struct SettingsTile: View {
 struct ServiceTile: View {
     let domain: String?
     let fallback: String
-    var tint: Color = .secondary
+    var tint: Color = NookTheme.textSecondary
     var size: CGFloat = 28
     /// The source id: a source backed by a Mac app shows that app's own icon instead of a tile.
     var source: String? = nil
@@ -222,6 +222,7 @@ struct SetupSheet<Icon: View, Content: View, Footer: View>: View {
     @ViewBuilder var icon: () -> Icon
     @ViewBuilder var content: () -> Content
     @ViewBuilder var footer: () -> Footer
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(spacing: 0) {
@@ -252,5 +253,7 @@ struct SetupSheet<Icon: View, Content: View, Footer: View>: View {
         }
         .frame(width: 520)
         .frame(minHeight: 360, idealHeight: 520, maxHeight: 680)
+        // Escape closes the sheet.
+        .onExitCommand { dismiss() }
     }
 }

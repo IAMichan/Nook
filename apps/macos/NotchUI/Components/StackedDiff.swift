@@ -184,12 +184,8 @@ private struct StackedDiffHeader: View {
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
             }
-            ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", tr("agents.diff.copyPath"), height: 20, width: 20) {
-                Pasteboard.copy(file.path)
-                copied = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
-            }
-            .opacity(hovering || copied ? 1 : 0)
+            CopyIconButton(tr("agents.diff.copyPath"), height: 20, width: 20, showing: $copied) { file.path }
+                .opacity(hovering || copied ? 1 : 0)
             Spacer(minLength: NookTheme.Spacing.sm)
             if file.additions != nil || file.deletions != nil {
                 EditLinesLabel(lines: EditLines(added: file.additions ?? 0, removed: file.deletions ?? 0), size: 11)

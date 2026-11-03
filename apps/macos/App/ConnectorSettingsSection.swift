@@ -246,7 +246,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
         } footer: {
             if configured {
                 if confirmDisconnect {
-                    Text(tr("settings2.service.disconnectConfirm"))
+                    Text(tr("connect.disconnectTitle", connector.title))
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                     Button(tr("button.cancel")) { confirmDisconnect = false }

@@ -93,12 +93,16 @@ private struct MarkdownSegment {
     let blocks: [MarkdownBlock]
     let prose: Bool
 
+    static let proseLimit = 8
+
     /// Groups headings, paragraphs, and lists that follow each other; `kept` is a block that stays on its own.
     static func split(_ blocks: [MarkdownBlock], keeping kept: Int?) -> [MarkdownSegment] {
         var segments: [MarkdownSegment] = []
         for (offset, block) in blocks.enumerated() {
             let prose = offset != kept && SelectableProse.joins(block)
-            if prose, let last = segments.last, last.prose {
+            // At most `proseLimit` blocks per run: a streaming answer sets only its newest run again, and a finished run
+            // keeps the exact blocks it had, so it stays equal.
+            if prose, let last = segments.last, last.prose, last.blocks.count < proseLimit {
                 segments[segments.count - 1] = MarkdownSegment(offset: last.offset, blocks: last.blocks + [block], prose: true)
             } else {
                 segments.append(MarkdownSegment(offset: offset, blocks: [block], prose: prose))
@@ -297,7 +301,7 @@ struct MarkdownView: View, Equatable {
                 .fixedSize(horizontal: false, vertical: true)
             }
         case .table(let header, let rows):
-            TableBlock(header: header, rows: rows, size: size)
+            TableBlock(header: header, rows: rows, size: size).equatable()
         case .rule:
             NookDivider().padding(.vertical, 4)
         case .pullRequest:
@@ -364,7 +368,6 @@ private struct MarkdownCodeBlock: View {
     let language: String
     let code: String
     let size: CGFloat
-    @State private var copied = false
     /// HTML, SVG and Mermaid: shown as what they draw instead of their source.
     @State private var rendered = false
 
@@ -380,11 +383,7 @@ private struct MarkdownCodeBlock: View {
                     ToolbarIconButton(rendered ? "chevron.left.forwardslash.chevron.right" : "eye",
                                       rendered ? tr("code.source") : tr("code.preview")) { rendered.toggle() }
                 }
-                ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", copied ? tr("button.copied") : tr("button.copy")) {
-                    Pasteboard.copy(code)
-                    copied = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
-                }
+                CopyIconButton(tr("button.copy")) { code }
             }
             .padding(.leading, NookTheme.Spacing.lg)
             .padding(.trailing, NookTheme.Spacing.sm)
@@ -476,12 +475,16 @@ private struct ChoiceRow: View {
 
 // MARK: Table
 
-private struct TableBlock: View {
+private struct TableBlock: View, Equatable {
     @Environment(\.fileLinkBase) private var fileLinkBase
     let header: [String]
     let rows: [[String]]
     let size: CGFloat
     @State private var showChart = false
+
+    nonisolated static func == (a: TableBlock, b: TableBlock) -> Bool {
+        a.header == b.header && a.rows == b.rows && a.size == b.size
+    }
 
     private var chart: ChatChart? { ChartRescue.chart(fromTable: header, rows: rows, title: "") }
 
@@ -491,6 +494,9 @@ private struct TableBlock: View {
     }
 
     var body: some View {
+        // Once per body: the chart and which columns are numbers do not change cell by cell.
+        let chart = self.chart
+        let numbers = (0..<header.count).map { numeric($0) }
         VStack(alignment: .leading, spacing: 8) {
             if let chart {
                 NookTabBar(items: [
@@ -499,19 +505,19 @@ private struct TableBlock: View {
                 ], selected: showChart) { value in
                     withAnimation(NookTheme.swap) { showChart = value }
                 }
-                if showChart { ChatChartView(chart: chart) } else { grid }
+                if showChart { ChatChartView(chart: chart) } else { grid(numbers) }
             } else {
-                grid
+                grid(numbers)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // Split into small typed parts: as one expression the grid takes the compiler too long to type-check.
-    private var grid: some View {
+    private func grid(_ numbers: [Bool]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 0) {
-                headerRow
+                headerRow(numbers)
                 ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
                     Divider().overlay(NookTheme.line2).gridCellColumns(header.count)
                     bodyRow(row, index: rowIndex)
@@ -523,16 +529,16 @@ private struct TableBlock: View {
         .panelCard()
     }
 
-    private var headerRow: some View {
+    private func headerRow(_ numbers: [Bool]) -> some View {
         GridRow {
             ForEach(Array(header.enumerated()), id: \.offset) { column, cell in
-                headerCell(cell, column: column)
+                headerCell(cell, numeric: numbers[column])
             }
         }
     }
 
-    private func headerCell(_ cell: String, column: Int) -> some View {
-        let alignment: HorizontalAlignment = numeric(column) ? .trailing : .leading
+    private func headerCell(_ cell: String, numeric: Bool) -> some View {
+        let alignment: HorizontalAlignment = numeric ? .trailing : .leading
         return Text(MarkdownBlock.inline(cell, size: size, files: fileLinkBase != nil))
             .font(NookTheme.font(size - 1.5, .semibold))
             .foregroundStyle(NookTheme.textTertiary)

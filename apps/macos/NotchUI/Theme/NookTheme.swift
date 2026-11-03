@@ -320,7 +320,7 @@ extension AnyTransition {
         return .asymmetric(
             insertion: .modifier(active: NotchContentFade(amount: 1), identity: NotchContentFade(amount: 0))
                 .animation(.spring(duration: 0.28, bounce: 0).delay(0.04)),
-            removal: .opacity.animation(.easeIn(duration: 0.12))
+            removal: .opacity.animation(.spring(duration: 0.14, bounce: 0))
         )
     }
 }

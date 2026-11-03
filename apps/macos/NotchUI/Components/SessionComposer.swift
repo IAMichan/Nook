@@ -322,7 +322,10 @@ struct SessionComposer<Controls: View>: View {
 
     /// ⌘S: set the draft aside, bring one back, or choose from several.
     private func stashKey() -> Bool {
-        guard let extras, let result = extras.model.stashKey(composerText: text) else { return true }
+        guard let extras else { return true }
+        // Another composer may have changed the set-aside drafts since this one last looked.
+        if extras.model.onStashChanged != nil { extras.model.stash = ComposerDraftStore.shared.stash }
+        guard let result = extras.model.stashKey(composerText: text) else { return true }
         assign(result)
         extras.model.onStashChanged?()
         return true
@@ -367,6 +370,15 @@ struct SessionComposer<Controls: View>: View {
             .onChange(of: focused.wrappedValue) { _, now in if now { Self.placeCaretAtEnd() } }
             .onSubmit(submit)
             .onChange(of: text) { old, new in textChanged(old, new) }
+            // In the non-activating notch and ask panels the binding can lag behind the field until Return commits it,
+            // which left the send arrow looking disabled; take every keystroke straight from the field itself, through
+            // `bodyBinding` so files attached to the draft stay.
+            .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidChangeNotification)) { note in
+                guard focused.wrappedValue, let field = note.object as? NSTextField,
+                      field.window is NotchPanel || field.window is SelectionAskPanel,
+                      field.stringValue != typedText else { return }
+                bodyBinding.wrappedValue = field.stringValue
+            }
     }
 
     // The keys that belong to the text field itself (moving in the list, taking a line); ⌘Return, ⌘S, ⇧Return and the
@@ -382,7 +394,12 @@ struct SessionComposer<Controls: View>: View {
     }
 
     private func submit() {
-        if busy, let queueAction, !isEmpty, encodingPictures == 0 { fire(queueAction) } else if enabled { fire(onSend) }
+        if busy, let queueAction, !isEmpty, encodingPictures == 0 {
+            fire(queueAction)
+        } else if !(busy && onStop != nil), enabled {
+            // While busy with a stop button showing, Return must not send: the button is for stopping.
+            fire(onSend)
+        }
     }
 
     private var box: some View {
@@ -438,10 +455,13 @@ struct SessionComposer<Controls: View>: View {
         .onDrop(of: imagesBinding == nil ? [] : [UTType.fileURL, UTType.image], isTargeted: $dropTargeted) { providers in
             guard let imagesBinding else { return false }
             return ImageAttachment.receive(providers, images: { imagesBinding.wrappedValue += $0 }, file: { url in
-                if let fileDropped { fileDropped(url) } else if extras != nil { attach(url) } else { insertPath(url) }
+                dropFile(url)
             })
         }
-        .onAppear { startPasteMonitor(focused: focused) }
+        .onAppear {
+            startPasteMonitor(focused: focused)
+            extras?.model.connectStash()
+        }
         .onDisappear { pasteMonitor.stop() }
     }
 
@@ -517,6 +537,11 @@ struct SessionComposer<Controls: View>: View {
         }
     }
 
+    /// Another file that is dropped or pasted: handed to the caller, or a tile for a rich composer, or its path in the text.
+    private func dropFile(_ url: URL) {
+        if let fileDropped { fileDropped(url) } else if extras != nil { attach(url) } else { insertPath(url) }
+    }
+
     /// A file dropped on a composer for an agent: a tile above the box, a reference the agent reads itself.
     private func attach(_ url: URL) {
         let path = url.standardizedFileURL.path
@@ -532,7 +557,7 @@ struct SessionComposer<Controls: View>: View {
 
     /// AppKit selects a text field's whole text when it gets the keyboard, so coming back to a draft would leave it
     /// selected and the next key would replace it. A full selection becomes a caret at the end; a click keeps its spot.
-    private static func placeCaretAtEnd() {
+    static func placeCaretAtEnd() {
         DispatchQueue.main.async {
             guard let editor = (NSApp.keyWindow ?? NSApp.mainWindow)?.firstResponder as? NSTextView else { return }
             let length = (editor.string as NSString).length
@@ -547,12 +572,15 @@ struct SessionComposer<Controls: View>: View {
         guard let imagesBinding else { return }
         pasteMonitor.start {
             guard focused.wrappedValue else { return false }
+            // Copied files that are not pictures attach like a drop.
+            let others = ImageAttachment.nonImageFiles()
             let claimed = ImageAttachment.fromPasteboard { pictures in
                 encodingPictures = max(encodingPictures - 1, 0)
                 imagesBinding.wrappedValue += pictures
             }
             if claimed { encodingPictures += 1 }
-            return claimed
+            others.forEach(dropFile)
+            return claimed || !others.isEmpty
         }
     }
 

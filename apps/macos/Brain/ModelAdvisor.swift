@@ -253,32 +253,32 @@ enum ModelAdvisor {
 
         // 1. The best model that fits, if it is already installed.
         if let top = best.first, installed.first == top {
-            result.append(Recommendation(choice: .mlx(top), ready: true, reason: "Best fit for \(hardware.memoryGB) GB and already on your Mac."))
+            result.append(Recommendation(choice: .mlx(top), ready: true, reason: tr("advisor.reason.bestInstalled", hardware.memoryGB)))
         }
         // 2. A good model already served by Ollama / LM Studio: no download.
         if let server = usableServer.first {
             result.append(Recommendation(choice: .server(server), ready: true,
-                                         reason: "Already available in \(server.server == .ollama ? "Ollama" : "LM Studio"), no download needed."))
+                                         reason: tr("advisor.reason.serverReady", server.server == .ollama ? "Ollama" : "LM Studio")))
         }
         // 3. The best fitting built-in model (download once).
         if let top = best.first, !result.contains(where: { $0.choice == .mlx(top) }) {
             result.append(Recommendation(choice: .mlx(top), ready: installedMLX.contains(top.id),
-                                         reason: "Best balance of quality and speed for \(hardware.memoryGB) GB memory (download of ±\(formatted(top.sizeGB)) GB, once)."))
+                                         reason: tr("advisor.reason.balance", hardware.memoryGB, formatted(top.sizeGB))))
         }
         // 4. Other installed models, then the remaining fitting ones.
         for option in installed where !result.contains(where: { $0.choice == .mlx(option) }) {
-            result.append(Recommendation(choice: .mlx(option), ready: true, reason: "Already on your Mac."))
+            result.append(Recommendation(choice: .mlx(option), ready: true, reason: tr("advisor.reason.installed")))
         }
         for server in usableServer.dropFirst() {
-            result.append(Recommendation(choice: .server(server), ready: true, reason: "Available in \(server.server == .ollama ? "Ollama" : "LM Studio")."))
+            result.append(Recommendation(choice: .server(server), ready: true, reason: tr("advisor.reason.server", server.server == .ollama ? "Ollama" : "LM Studio")))
         }
         for option in best where !result.contains(where: { $0.choice == .mlx(option) }) {
-            result.append(Recommendation(choice: .mlx(option), ready: false, reason: "Download of ±\(formatted(option.sizeGB)) GB."))
+            result.append(Recommendation(choice: .mlx(option), ready: false, reason: tr("advisor.reason.download", formatted(option.sizeGB))))
         }
         if result.isEmpty {
             let reason = hardware.appleSilicon
-                ? "This Mac has too little memory for a local model. Install Ollama with a small model, or choose an external AI."
-                : "The built-in model needs Apple Silicon. Install Ollama or LM Studio to think locally, or choose an external AI."
+                ? tr("advisor.reason.tooLittle")
+                : tr("advisor.reason.needsSilicon")
             result.append(Recommendation(choice: .unavailable, ready: false, reason: reason))
         }
         return result

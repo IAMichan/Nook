@@ -24,8 +24,16 @@ final class WindowAttach {
     private var target: Target?
     private var halo: NSPanel?
 
+    /// When the window under the pointer was last looked up: listing the windows is not cheap, so a drag asks about 15 times
+    /// a second, not on every mouse event.
+    private var lastLookup = Date.distantPast
+    private static let lookupInterval: TimeInterval = 1.0 / 15
+
     func dragMoved() {
         isDragging = true
+        let now = Date()
+        guard now.timeIntervalSince(lastLookup) >= Self.lookupInterval else { return }
+        lastLookup = now
         let found = Self.window(at: NSEvent.mouseLocation)
         guard found != target else { return }
         target = found
@@ -34,6 +42,9 @@ final class WindowAttach {
 
     func dragEnded() {
         isDragging = false
+        lastLookup = .distantPast
+        // The drop spot itself, as the lookups in between were skipped.
+        target = Self.window(at: NSEvent.mouseLocation)
         halo?.orderOut(nil)
         guard let target else { return }
         self.target = nil
@@ -115,19 +126,24 @@ final class WindowAttach {
     }
 }
 
-/// A soft rainbow ring around the window Nook will look at.
+/// A soft rainbow ring around the window Nook will look at. It turns about once in three seconds, drawn at a low frame rate
+/// in a graph of its own (`SeparateGraph`); under Reduce Motion it stands still.
 private struct WindowHalo: View {
-    @State private var turn = 0.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .strokeBorder(
-                AngularGradient(colors: [Color(hex: 0xFF6B5B), Color(hex: 0xF7B32B), Color(hex: 0x2DD4A7), Color(hex: 0x38BDF8),
-                                         Color(hex: 0xA78BFA), Color(hex: 0xF472B6), Color(hex: 0xFF6B5B)],
-                                center: .center, angle: .degrees(turn)),
-                lineWidth: 4
-            )
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
-            .onAppear { withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) { turn = 360 } }
+        SeparateGraph {
+            TimelineView(.nookFrames(fps: 20, paused: reduceMotion)) { timeline in
+                let turn = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3) / 3 * 360
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(
+                        AngularGradient(colors: [Color(hex: 0xFF6B5B), Color(hex: 0xF7B32B), Color(hex: 0x2DD4A7), Color(hex: 0x38BDF8),
+                                                 Color(hex: 0xA78BFA), Color(hex: 0xF472B6), Color(hex: 0xFF6B5B)],
+                                        center: .center, angle: .degrees(turn)),
+                        lineWidth: 4
+                    )
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
+            }
+        }
     }
 }

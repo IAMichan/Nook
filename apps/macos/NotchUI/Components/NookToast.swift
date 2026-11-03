@@ -189,7 +189,15 @@ final class ToastCenter: ObservableObject {
 
     func unregister(_ id: UUID) {
         hosts.removeAll { $0.id == id }
-        if activeHost == id, current != nil { route() }
+        guard activeHost == id, current != nil else { return }
+        // The surface that showed it went away (the panel closed): the toast goes with it, instead of turning up again in
+        // the notch's strip. It moves only to another surface that is on screen.
+        hosts.removeAll { $0.window == nil }
+        if hosts.contains(where: { $0.window?.isVisible == true }) {
+            route()
+        } else {
+            dismiss()
+        }
     }
 
     private func present(_ toast: NookToast) {
@@ -237,18 +245,13 @@ struct NookToastView: View {
     var restart: AnyHashable? = nil
     let perform: () -> Void
     let close: () -> Void
-    @State private var copied = false
 
     var body: some View {
         NookNotice(title: toast.title, detail: toast.detail, symbol: toast.kind.symbol, tone: toast.kind.color,
                    actions: toast.action.map { [NookNoticeAction($0.title, perform: perform)] } ?? [],
                    countdown: toast.duration, paused: paused, restart: restart, wraps: true, onOK: close) {
             if toast.kind == .error, let detail = toast.detail {
-                ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", tr("toast.copy"), height: 20) {
-                    Pasteboard.copy([toast.title, detail].joined(separator: "\n"))
-                    copied = true
-                }
-                .help(tr("toast.copy"))
+                CopyIconButton(tr("toast.copy"), height: 20) { [toast.title, detail].joined(separator: "\n") }
             }
         }
         .textSelection(.enabled)
@@ -270,6 +273,14 @@ extension View {
     }
 }
 
+extension AnyTransition {
+    /// The enter and leave of what floats over a panel's bottom edge (a toast, a request): it rises from the edge, or only
+    /// fades under Reduce Motion.
+    static func nookFloating(reduceMotion: Bool) -> AnyTransition {
+        reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom))
+    }
+}
+
 /// Shows `ToastCenter`'s current toast over the bottom edge of this view, when this is the surface it belongs to, under
 /// `above`: what waits for you on this surface (a permission request), stacked with the toast instead of covered by it.
 private struct NookToastHost<Above: View>: ViewModifier {
@@ -281,20 +292,25 @@ private struct NookToastHost<Above: View>: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .overlay(alignment: .bottom) {
-                VStack(spacing: NookTheme.Spacing.sm) {
-                    above
-                    if let toast = center.current, center.activeHost == id {
-                        NookToastView(toast: toast, paused: center.paused, restart: center.stamp,
-                                      perform: { center.performAction() }, close: { center.dismiss() })
-                            .onHover { center.setPaused($0) }
-                            .id(toast.id)
-                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
-                            .onAppear { announce(toast) }
+            // Over the bottom edge, but above the session's composer when one is on this surface, so the toast and what
+            // waits for you never cover the box you type in.
+            .overlayPreferenceValue(SessionComposerBounds.self) { composer in
+                GeometryReader { proxy in
+                    VStack(spacing: NookTheme.Spacing.sm) {
+                        above
+                        if let toast = center.current, center.activeHost == id {
+                            NookToastView(toast: toast, paused: center.paused, restart: center.stamp,
+                                          perform: { center.performAction() }, close: { center.dismiss() })
+                                .onHover { center.setPaused($0) }
+                                .id(toast.id)
+                                .transition(.nookFloating(reduceMotion: reduceMotion))
+                                .onAppear { announce(toast) }
+                        }
                     }
+                    .padding(.horizontal, NookTheme.Spacing.xl)
+                    .padding(.bottom, bottomInset(composer.map { proxy[$0] }, height: proxy.size.height))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 }
-                .padding(.horizontal, NookTheme.Spacing.xl)
-                .padding(.bottom, NookTheme.Spacing.xl)
             }
             .background(ToastWindowReader { window = $0 })
             .onChange(of: window) { _, window in
@@ -302,6 +318,12 @@ private struct NookToastHost<Above: View>: ViewModifier {
             }
             .onAppear { if let window { center.register(id, window: window) } }
             .onDisappear { center.unregister(id) }
+    }
+
+    /// The room under the toast: the edge's own, or up to just above the composer when it sits lower than that.
+    private func bottomInset(_ composer: CGRect?, height: CGFloat) -> CGFloat {
+        guard let composer, composer.height > 0 else { return NookTheme.Spacing.xl }
+        return max(NookTheme.Spacing.xl, height - composer.minY + NookTheme.Spacing.sm)
     }
 
     /// VoiceOver reads the toast without having to find it.

@@ -10,6 +10,7 @@ struct NotchRootView: View {
     @ObservedObject private var settings = AppSettings.shared
     /// Lets the closed notch's ring follow Nook. Held, not observed: only the ring redraws when he moves.
     @State private var orbMotion = NookMotion()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(viewModel: NotchViewModel) {
         self.viewModel = viewModel
@@ -54,7 +55,7 @@ struct NotchRootView: View {
             // A slight expansion when hovering over the notch: it is alive, without bouncing.
             // Only on the resting notch: opening ends the hover in the same update, and the hover's curve then took over
             // the open spring for the panel's frame, clip and background (and scaled its text for a moment).
-            .scaleEffect(hoverGrow ? 1.02 : 1, anchor: .top)
+            .scaleEffect(hoverGrow && !reduceMotion ? 1.02 : 1, anchor: .top)
             .transaction(value: hoverGrow) { [resting = viewModel.state.isResting] transaction in
                 if resting { transaction.animation = NookTheme.hover }
             }
@@ -422,6 +423,14 @@ struct NotchRootView: View {
                     .frame(height: nh)
                     .contentShape(Rectangle())
                     .floatingDrag(viewModel)
+            } else if case .panel = viewModel.state {
+                // Docked: the clear strip beside the physical notch, at the top, closes the open panel with a click, as
+                // clicking the notch does when it is shut.
+                Color.clear
+                    .frame(height: nh)
+                    .contentShape(Rectangle())
+                    .onTapGesture { viewModel.show(.idle) }
+                    .accessibilityHidden(true)
             }
         }
     }

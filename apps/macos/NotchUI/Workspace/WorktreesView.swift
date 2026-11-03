@@ -33,6 +33,9 @@ struct WorktreesView: View {
             Divider()
             if workspace.gitAvailable == false {
                 WSEmptyState(symbol: "exclamationmark.triangle", title: tr("ws.worktrees.noGitTitle"), message: tr("ws.error.noGit"))
+            } else if workspace.worktreeRows.isEmpty && workspace.worktreesLoading {
+                // The first read: a calm spinner (after a short wait) instead of an empty table.
+                PatientSpinner()
             } else if workspace.worktreeRows.isEmpty && !workspace.worktreesLoading {
                 WSEmptyState(symbol: "arrow.triangle.branch", title: tr("ws.worktrees.emptyTitle"), message: tr("ws.worktrees.emptyMessage"))
             } else {

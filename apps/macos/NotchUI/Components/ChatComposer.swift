@@ -578,14 +578,38 @@ struct ChatAttachMenu: View {
 struct ChatEmojiButton: View {
     @Binding var text: String
     @State private var picking = false
+    /// Where the caret was when the picker opened, so an emoji goes in at the cursor and not at the end.
+    @State private var anchor = CaretAnchor()
+
+    /// The text view that had the caret and its selection; the picker takes the keyboard while it is open.
+    final class CaretAnchor {
+        weak var editor: NSTextView?
+        var range = NSRange(location: NSNotFound, length: 0)
+    }
 
     var body: some View {
-        ToolbarIconButton("face.smiling", tr("chat.compose.emoji"), height: 26, width: 26) { picking = true }
-            .popover(isPresented: $picking, arrowEdge: .top) {
-                EmojiBrowser { emoji in
-                    text += emoji
-                }
-            }
+        ToolbarIconButton("face.smiling", tr("chat.compose.emoji"), height: 26, width: 26) {
+            let editor = NSApp.keyWindow?.firstResponder as? NSTextView
+            anchor.editor = editor
+            anchor.range = editor?.selectedRange() ?? NSRange(location: NSNotFound, length: 0)
+            picking = true
+        }
+        .popover(isPresented: $picking, arrowEdge: .top) {
+            EmojiBrowser { emoji in insert(emoji) }
+        }
+    }
+
+    private func insert(_ emoji: String) {
+        let current = text as NSString
+        guard let editor = anchor.editor, editor.string == text, anchor.range.location != NSNotFound,
+              NSMaxRange(anchor.range) <= current.length else {
+            text += emoji
+            return
+        }
+        text = current.replacingCharacters(in: anchor.range, with: emoji)
+        let caret = NSRange(location: anchor.range.location + (emoji as NSString).length, length: 0)
+        anchor.range = caret
+        DispatchQueue.main.async { editor.setSelectedRange(caret) }
     }
 }
 
