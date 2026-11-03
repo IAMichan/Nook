@@ -59,6 +59,55 @@ final class WorkspaceBridgeTests: XCTestCase {
         XCTAssertEqual(BridgePolicy.verdict(tool: .terminalStop, caller: run()), .allow)
     }
 
+    func testNookToolsReadDirectlyAndActOnlyAfterApproval() {
+        XCTAssertEqual(BridgePolicy.verdict(tool: .nookUse, caller: run(), nookAction: false), .allow)
+        XCTAssertEqual(BridgePolicy.verdict(tool: .nookUse, caller: run(.plan), nookAction: false), .allow,
+                       "reading the user's apps through Nook is reading, also in Plan mode")
+        XCTAssertEqual(BridgePolicy.verdict(tool: .nookUse, caller: run(.plan), nookAction: true), .refuse(.planMode))
+        for caller in [run(), run(.agent, .ask), run(.agent, .bypass), external] {
+            XCTAssertEqual(BridgePolicy.verdict(tool: .nookUse, caller: caller, nookAction: true), .ask(.action),
+                           "a message, an event or music: always the user's decision, whatever the session's rights")
+        }
+        XCTAssertEqual(BridgePolicy.verdict(tool: .nookUse, caller: run(.agent, .bypass)), .ask(.action),
+                       "a call that does not say what it runs counts as an action")
+    }
+
+    func testNookChatAsksUnlessFullRights() {
+        XCTAssertEqual(BridgePolicy.verdict(tool: .nookChatList, caller: run(.plan)), .allow)
+        XCTAssertEqual(BridgePolicy.verdict(tool: .nookChatRead, caller: external), .allow)
+        XCTAssertEqual(BridgePolicy.verdict(tool: .nookChatSend, caller: run()), .ask(.delegation))
+        XCTAssertEqual(BridgePolicy.verdict(tool: .nookChatSend, caller: external), .ask(.delegation))
+        XCTAssertEqual(BridgePolicy.verdict(tool: .nookChatSend, caller: run(.agent, .bypass)), .allow)
+        XCTAssertEqual(BridgePolicy.verdict(tool: .nookChatSend, caller: run(.plan, .bypass)), .refuse(.planMode))
+    }
+
+    func testTakingOverTheScreenAlwaysAsks() {
+        for caller in [run(), run(.agent, .ask), run(.agent, .bypass), external] {
+            XCTAssertEqual(BridgePolicy.verdict(tool: .takeOverScreen, caller: caller), .ask(.screen),
+                           "the mouse and keyboard in every app: only with the user's yes, whatever the session's rights")
+        }
+        XCTAssertEqual(BridgePolicy.verdict(tool: .takeOverScreen, caller: run(.plan, .bypass)), .refuse(.planMode))
+        XCTAssertEqual(BridgePolicy.verdict(tool: .takeOverScreen, caller: run(), enabled: false), .refuse(.disabled))
+    }
+
+    func testScreenGrantIsForOneSessionAndRunsOut() {
+        let now = Date()
+        let grant = BridgeScreenGrant(holder: "run:a", agent: "Codex", minutes: nil, now: now)
+        XCTAssertEqual(grant.until, now.addingTimeInterval(TimeInterval(BridgeScreenGrant.defaultMinutes * 60)))
+        XCTAssertTrue(grant.holds("run:a", at: now.addingTimeInterval(60)))
+        XCTAssertFalse(grant.holds("run:b", at: now.addingTimeInterval(60)), "another session does not get the screen")
+        XCTAssertFalse(grant.holds("run:a", at: grant.until), "it runs out")
+        XCTAssertEqual(BridgeScreenGrant.minutes(500), BridgeScreenGrant.maxMinutes)
+        XCTAssertEqual(BridgeScreenGrant.minutes(0), 1)
+        XCTAssertEqual(BridgeScreenGrant.minutes(5), 5)
+    }
+
+    func testInstructionsNameNooksOwnTools() {
+        for name in ["nook_tools", "nook_use", "nook_chat_send", "take_over_screen"] {
+            XCTAssertTrue(BridgeLaunch.instructions.contains(name), name)
+        }
+    }
+
     func testCallerKeys() {
         let id = UUID()
         XCTAssertEqual(BridgeCaller(kind: .run(id), agent: "Codex", title: "", directory: "/a", mode: .agent, permission: .bypass).key,
