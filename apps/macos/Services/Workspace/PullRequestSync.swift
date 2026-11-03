@@ -19,6 +19,12 @@ final class PullRequestSync: ObservableObject {
     /// Keyed by `folderKey(path:branch:)` with the session's id as the path.
     private var earlierChecked: [String: Date] = [:]
     private var running = false
+    /// Branches whose pull request is on its way outside Nook's own call (GitHub's page, the agent's own `gh`), by run id
+    /// or `folderKey`: asked about every round until it turns up or the time runs out.
+    private var expected: [String: Date] = [:]
+    private static let expectFor: TimeInterval = 15 * 60
+    /// An expected pull request turned up: the session's id (nil for a folder) and its link, to open it in the side panel.
+    var found: ((UUID?, URL) -> Void)?
     private let defaults = UserDefaults.standard
     private static let key = "agents.pullRequests.v1"
     private static let foldersKey = "agents.pullRequests.folders.v1"
@@ -82,6 +88,32 @@ final class PullRequestSync: ObservableObject {
         save()
     }
 
+    /// A pull request for the session's branch is being made where Nook cannot see it (GitHub's page in the browser):
+    /// the tray above its composer shows it as soon as GitHub has it, not a minute later.
+    func expect(_ id: UUID, now: Date = Date()) {
+        expected[id.uuidString] = now.addingTimeInterval(Self.expectFor)
+        checked[id] = nil
+        refresh(now: now)
+    }
+
+    /// The same for a session Nook only sees, by its folder and branch.
+    func expect(path: String, branch: String, now: Date = Date()) {
+        let key = Self.folderKey(path: path, branch: branch)
+        expected[key] = now.addingTimeInterval(Self.expectFor)
+        folderChecked[key] = nil
+        if !folders.contains(where: { $0.path == path && $0.branch == branch }) { folders.append((path, branch)) }
+        refresh(now: now)
+    }
+
+    /// How long a branch's answer stays fresh: at once while a pull request is expected and none is known yet.
+    private func interval(_ key: String, _ known: [PullRequestLink], now: Date) -> TimeInterval {
+        if known.isEmpty, let until = expected[key] {
+            if until > now { return 0 }
+            expected[key] = nil
+        }
+        return PullRequestSettlement.syncInterval(links: known)
+    }
+
     /// One branch to ask about: a session Nook runs, or another agent's folder.
     private enum Job {
         case run(UUID, branch: String)
@@ -127,7 +159,7 @@ final class PullRequestSync: ObservableObject {
             guard let branch = run.branch, !branch.isEmpty, !BranchPolicy.isDefaultBranch(branch, detectedDefault: run.baseBranch) else { continue }
             let known = links[run.id] ?? []
             guard PullRequestSettlement.needsSync(lastChecked: checked[run.id], now: now,
-                                                  interval: PullRequestSettlement.syncInterval(links: known)) else { continue }
+                                                  interval: interval(run.id.uuidString, known, now: now)) else { continue }
             due.append((job: .run(run.id, branch: branch), open: PullRequestSettlement.anyOpen(links: known),
                         last: checked[run.id] ?? .distantPast))
         }
@@ -146,7 +178,7 @@ final class PullRequestSync: ObservableObject {
             guard seen.insert(key).inserted else { continue }
             let known = folderLinks[key] ?? []
             guard PullRequestSettlement.needsSync(lastChecked: folderChecked[key], now: now,
-                                                  interval: PullRequestSettlement.syncInterval(links: known)) else { continue }
+                                                  interval: interval(key, known, now: now)) else { continue }
             due.append((job: .folder(key: key, path: folder.path, branch: folder.branch), open: PullRequestSettlement.anyOpen(links: known),
                         last: folderChecked[key] ?? .distantPast))
         }
@@ -170,6 +202,8 @@ final class PullRequestSync: ObservableObject {
                     // The requests of a branch the session has since left move to its earlier ones.
                     let left = (links[id] ?? []).filter { $0.headBranch.map { $0 != branch } ?? false }
                     if !left.isEmpty { retire(id, left); changed = true }
+                    if next != nil, expected.removeValue(forKey: id.uuidString) != nil,
+                       let url = PullRequestLink.shown(in: found) { self.found?(id, url) }
                     if links[id] != next {
                         links[id] = next
                         changed = true
@@ -193,6 +227,8 @@ final class PullRequestSync: ObservableObject {
                           let found = await SourceForge.requests(repo: repo, branch: branch) else { continue }
                     PullRequestStatusStore.shared.record(found, at: now)
                     let next: [PullRequestLink]? = found.isEmpty ? nil : found
+                    if next != nil, expected.removeValue(forKey: key) != nil,
+                       let url = PullRequestLink.shown(in: found) { self.found?(nil, url) }
                     if folderLinks[key] != next {
                         folderLinks[key] = next
                         changed = true

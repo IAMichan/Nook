@@ -132,6 +132,16 @@ extension AppModel {
         }
     }
 
+    /// A pull request a session just made opens as a pull request in the side panel beside that session, while you
+    /// look at it; elsewhere its row and the tray above its composer show it. Each one once, whoever saw it first (the
+    /// tool that made it, the end of the agent's turn, the sync that found it). Without a GitHub connection that can
+    /// read it, it opens in Nook's browser, never in another app.
+    func showCreatedPullRequest(_ url: URL, run id: UUID?) {
+        if let id, !(viewModel.isShowing(.agents) && viewModel.selectedAgentID == "run:" + id.uuidString) { return }
+        guard CreatedPullRequests.shown.insert(url.absoluteString.lowercased()).inserted else { return }
+        if !openPullRequestLink(url, beside: true) { BrowserStore.show(url) }
+    }
+
     /// A github.com pull request link opens in Nook, read with the account that lists it (else the first GitHub
     /// account): in the session's side panel when clicked in an agent's conversation (`beside`), else on the Pull
     /// requests page. Its top bar opens it on GitHub. Returns false when Nook cannot read it (another forge, GitHub
@@ -270,4 +280,10 @@ extension AppModel {
         }
         return line
     }
+}
+
+/// The pull requests `showCreatedPullRequest` opened already.
+@MainActor
+private enum CreatedPullRequests {
+    static var shown = Set<String>()
 }

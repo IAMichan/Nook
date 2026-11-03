@@ -157,7 +157,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .browserScreenshot:
             return "Takes a screenshot of the page in Nook's browser, to check layout and visual changes. Works best while the browser is visible in Nook."
         case .pullRequestCreate:
-            return "Proposes a pull request for the current branch of your folder. The user approves it in Nook first unless the session has full rights; Nook then pushes the branch and opens the pull request on GitHub with the user's own connection (or the GitHub page to finish it). Commit your work before calling this. Returns the link."
+            return "Proposes a pull request for the current branch of your folder. The user approves it in Nook first unless the session has full rights; Nook then pushes the branch and opens the pull request through GitHub's API with the user's own connection or GitHub CLI login (without either, or when GitHub refuses, GitHub's page opens in Nook's browser for the user to finish). Use this instead of `gh pr create`, also when gh reports a rate limit. Commit your work before calling this. Returns the link."
         case .orchestratorCapabilities:
             return "Lists the agents Nook can run as a delegated task (installed or not, their models and the rights they offer), your own mode and rights, and the limits on delegating. Call it before delegate_task when you want another agent or model."
         case .delegateTask:
@@ -588,7 +588,9 @@ struct BridgeLaunch: Equatable, Sendable {
     `nook` MCP tools: start long-running processes such as dev servers or watchers with terminal_run (the user sees them in \
     Nook's terminal; check their output with terminal_read), open local or https pages in Nook's browser with browser_open \
     and verify them with browser_read or browser_screenshot, and when the work is committed and ready, propose a pull request \
-    with pull_request_create (the user approves it in Nook). Short commands whose output you need right away can still run \
+    with pull_request_create (the user approves it in Nook). Always open pull requests that way, never with `gh pr create \
+    --web` or by opening GitHub's page in the user's browser; when `gh` reports a rate limit, call pull_request_create, \
+    which uses GitHub's API instead. Short commands whose output you need right away can still run \
     in your own shell. For work that can run on its own (research, a review, a side task) you can hand it to another agent \
     session with delegate_task: it sees only the brief you write, never has more rights than you, and its result comes back \
     through task_status (or Nook tells you when it has finished). For an iOS app, device_open shows an iOS Simulator in \

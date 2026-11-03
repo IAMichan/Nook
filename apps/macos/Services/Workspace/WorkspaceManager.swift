@@ -179,6 +179,9 @@ final class WorkspaceManager: ObservableObject {
     /// compare page with title and description filled in).
     var pullRequestLookup: ((_ repo: RemoteRepository, _ branch: String) async -> (open: URL?, landed: Bool))?
     var pullRequestCreate: ((_ repo: RemoteRepository, _ title: String, _ body: String, _ head: String, _ base: String) async throws -> URL?)?
+    /// A session made a pull request (the agent's own `gh`, or one found on its branch after GitHub's page opened): it
+    /// opens in the side panel.
+    var pullRequestCreated: ((_ run: UUID?, _ url: URL) -> Void)?
     /// A watched pull request as it is now (GitHub, with your connected accounts).
     var pullRequestSnapshot: ((URL) async -> PullRequestSnapshot?)?
     var watchesInFlight: Set<UUID> = []
@@ -2357,6 +2360,16 @@ final class WorkspaceManager: ObservableObject {
             }
         }
         scheduleEventSave(id)
+        if event.kind == .result { noticeCreatedPullRequest(id) }
+    }
+
+    /// At the end of a turn: a pull request link the turn brought that the conversation did not have before is the one
+    /// the agent just made, also when it used its own `gh` instead of pull_request_create.
+    private func noticeCreatedPullRequest(_ id: UUID) {
+        guard let all = events[id], let start = all.lastIndex(where: { $0.kind == .user }) else { return }
+        guard let made = RunPullRequestLinks.last(in: Array(all[start...])),
+              made != RunPullRequestLinks.last(in: Array(all[..<start])) else { return }
+        pullRequestCreated?(id, made)
     }
 
     func mutateEvent(_ id: UUID, _ eventID: UUID, _ change: (inout RunEvent) -> Void) {
