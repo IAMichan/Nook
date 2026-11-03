@@ -261,9 +261,12 @@ extension AppModel {
             return (open, open == nil && found.contains { !$0.state.isOpen })
         }
         workspace.pullRequestCreate = { repo, title, body, head, base in
+            await GitHubCLILogin.read()
             guard SourceForge.canCreate(repo) else { return nil }
             return try await SourceForge.create(repo: repo, title: title, body: body, head: head, base: base, draft: false)
         }
+        workspace.pullRequestCreated = { [weak self] run, url in self?.showCreatedPullRequest(url, run: run) }
+        PullRequestSync.shared.found = { [weak self] run, url in self?.showCreatedPullRequest(url, run: run) }
         // Project scripts run in a terminal that belongs to the session's folder, without taking you away from where you are.
         workspace.runScript = { folder, command, title in _ = TerminalStore.shared.open(in: folder, command: command, title: title) }
         startWorkspaceBridge()

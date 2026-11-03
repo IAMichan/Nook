@@ -312,7 +312,7 @@ final class WorkspaceBridge: ObservableObject {
         if let remote = git.remote, let repo = GitHubRemote.repository(from: remote) {
             lines.append(GitHubPullRequests.isAvailable
                 ? "- \(repo): pull_request_create pushes the branch and opens the pull request with the user's GitHub connection, after their approval unless the session has full rights."
-                : "- \(repo): no GitHub connection in Nook; pull_request_create pushes the branch and opens GitHub's page for the user to finish, after their approval unless the session has full rights.")
+                : "- \(repo): no GitHub connection in Nook; pull_request_create pushes the branch and opens GitHub's page in Nook's browser for the user to finish, after their approval unless the session has full rights.")
         } else {
             lines.append("- this folder has no GitHub remote")
         }
@@ -588,6 +588,8 @@ final class WorkspaceBridge: ObservableObject {
         guard !base.isEmpty else { throw NookError("Nook could not tell which branch to merge into; pass base.") }
         guard base != branch else { throw NookError("You are on \(branch) itself. Work on a separate branch, then propose the pull request.") }
 
+        // Someone who never connected GitHub in Nook but is signed in to `gh` still gets the pull request through the API.
+        await GitHubCLILogin.read()
         let viaConnector = SourceForge.canCreate(forge)
         // Read as prose in the approval: the description is Markdown, the title above it in bold.
         var detail = "\(repo) · `\(branch)` → `\(base)`\(draft && viaConnector ? " · draft" : "")\n\n**\(title)**"
@@ -612,16 +614,36 @@ final class WorkspaceBridge: ObservableObject {
         }
         if case .run(let id) = caller.kind { app?.workspace.refreshGit(id) }
 
-        guard viaConnector else {
-            if let page = SourceForge.newRequestPage(repo: forge, base: base, head: branch, title: title, body: body, draft: draft) {
-                NSWorkspace.shared.open(page)
+        let runID: UUID? = { if case .run(let id) = caller.kind { return id } else { return nil } }()
+        var refused: Error?
+        if viaConnector {
+            do {
+                let link = try await SourceForge.create(repo: forge, title: title, body: body, head: branch, base: base, draft: draft)
+                audit(.pullRequestCreate, caller, "\(repo) \(branch) → \(base)", link.absoluteString)
+                app?.showCreatedPullRequest(link, run: runID)
+                return BridgeRPC.ToolResult(text: "Pushed \(branch) to \(remote) and opened the \(word)\(draft ? " as draft" : ""): \(link.absoluteString)")
+            } catch {
+                // One that already exists for the branch is the answer, not an error.
+                if let found = await SourceForge.requests(repo: forge, branch: branch),
+                   let open = found.first(where: { $0.state.isOpen }), let link = URL(string: open.url) {
+                    audit(.pullRequestCreate, caller, "\(repo) \(branch) → \(base)", link.absoluteString)
+                    app?.showCreatedPullRequest(link, run: runID)
+                    return BridgeRPC.ToolResult(text: "Pushed \(branch) to \(remote). The branch already has an open \(word): \(link.absoluteString)")
+                }
+                refused = error
             }
-            audit(.pullRequestCreate, caller, "\(repo) \(branch) → \(base)", "pagina op \(forge.hostName) geopend")
-            return BridgeRPC.ToolResult(text: "Pushed \(branch) to \(remote). Nook has no connection to \(forge.hostName), so it opened the page for a new \(word) in the user's browser for them to finish it.")
         }
-        let link = try await SourceForge.create(repo: forge, title: title, body: body, head: branch, base: base, draft: draft)
-        audit(.pullRequestCreate, caller, "\(repo) \(branch) → \(base)", link.absoluteString)
-        return BridgeRPC.ToolResult(text: "Pushed \(branch) to \(remote) and opened the \(word)\(draft ? " as draft" : ""): \(link.absoluteString)")
+        // No connection, or the forge refused (a rate limit): its own page, in Nook's browser beside the chat rather than
+        // a tab in another browser. Nook finds the request made there by its branch and shows it above the composer.
+        guard let page = SourceForge.newRequestPage(repo: forge, base: base, head: branch, title: title, body: body, draft: draft) else {
+            throw refused ?? NookError("Nook could not make the page for a new \(word) on \(forge.hostName).")
+        }
+        app?.workspace.openRequestPage(page, run: runID, directory: directory, branch: branch)
+        markUnseen(directory, SessionTool.browser.rawValue)
+        audit(.pullRequestCreate, caller, "\(repo) \(branch) → \(base)", "pagina op \(forge.hostName) geopend")
+        let reason = refused.map { "\(forge.hostName) refused to open it through the API (\($0.localizedDescription)), so " }
+            ?? "Nook has no connection to \(forge.hostName), so "
+        return BridgeRPC.ToolResult(text: "Pushed \(branch) to \(remote). \(reason)it opened the page for a new \(word) in Nook's browser, in the corner of your chat, for the user to finish. Do not open it in another browser or retry with gh: Nook shows the \(word) above the composer as soon as it exists.")
     }
 
     // MARK: Delegation

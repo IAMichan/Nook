@@ -22,6 +22,8 @@ extension WorkspaceManager {
         var log: (RunEvent) -> Void = { _ in }
         var committed: () -> Void = {}
         var openedPullRequest: (URL) -> Void = { _ in }
+        /// The forge's page for a new pull request, opened in Nook's browser for this session.
+        var openedRequestPage: (URL, _ branch: String) -> Void = { _, _ in }
         /// A new branch for a new pull request: what was known about the old branch's pull request no longer applies.
         var switchedBranch: (String) -> Void = { _ in }
     }
@@ -70,8 +72,13 @@ extension WorkspaceManager {
                       openedPullRequest: { [weak self] link in
                           guard let self else { return }
                           self.openPullRequests[id] = link
+                          self.pullRequestCreated?(id, link)
                           // A GitHub pull request Nook opened for the session is watched from the start.
                           if self.run(id)?.prWatch == nil, PullRequestWatch.canWatch(link) { self.watchPullRequest(id, url: link) }
+                      },
+                      openedRequestPage: { [weak self] page, _ in
+                          guard let self, let run = self.run(id) else { return }
+                          self.openRequestPage(page, run: id, directory: run.workingDirectory)
                       },
                       switchedBranch: { [weak self] branch in
                           guard let self else { return }
@@ -204,7 +211,13 @@ extension WorkspaceManager {
     @discardableResult
     func performQuickGit(folder root: String, _ action: GitQuickAction, progress: @escaping (String) -> Void) async throws -> URL? {
         guard let target = quickTarget(folder: root) else { throw StartError.noGit }
-        let hooks = QuickGitHooks(openedPullRequest: { [weak self] in self?.folderPullRequests[root] = $0 },
+        let hooks = QuickGitHooks(openedPullRequest: { [weak self] link in
+                                      self?.folderPullRequests[root] = link
+                                      self?.pullRequestCreated?(nil, link)
+                                  },
+                                  openedRequestPage: { [weak self] page, branch in
+                                      self?.openRequestPage(page, run: nil, directory: root, branch: branch)
+                                  },
                                   switchedBranch: { [weak self] _ in self?.folderPullRequests[root] = nil })
         return try await tracked(root, action, progress: progress) { step in
             try await performQuickGit(target, action, hooks: hooks, progress: step)
@@ -321,9 +334,21 @@ extension WorkspaceManager {
         guard let compare = SourceForge.newRequestPage(repo: repo, base: base, head: branch, title: title, body: body) else {
             throw StartError.git(tr("ws.quick.noForge"))
         }
-        NSWorkspace.shared.open(compare)
+        hooks.openedRequestPage(compare, branch)
         hooks.log(RunEvent(kind: .system, text: tr("ws.event.prCompare", branch)))
         return compare
+    }
+
+    /// The forge's page for a new pull request opens in Nook's browser, in the corner of the session's chat, never in a
+    /// tab of another browser: the pull request made there shows above the composer as soon as the forge has it.
+    func openRequestPage(_ page: URL, run id: UUID?, directory: String, branch: String? = nil) {
+        SessionBrowserOwner.shared.owner = SessionBrowserOwner.Owner(run: id, directory: directory)
+        Task { _ = await BrowserStore.shared.load(page, by: "Nook") }
+        if let id {
+            PullRequestSync.shared.expect(id)
+        } else if let branch {
+            PullRequestSync.shared.expect(path: directory, branch: branch)
+        }
     }
 
     /// The branch a pull request of this session merges into: the one it started from, else (a chat taken over from a
