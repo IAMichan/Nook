@@ -57,6 +57,7 @@ extension NowPlayingService {
         case .notSignedIn: return tr("music.queue.connectSpotify", tr("settings.section.connections"))
         case .premiumRequired: return tr("music.queue.spotifyPremium")
         case .noActiveDevice: return tr("music.queue.spotifyNoDevice")
+        case .missingScope: return tr("music.playlists.reconnectDetail", tr("settings.section.connections"))
         case .failed(let message): return message
         }
     }

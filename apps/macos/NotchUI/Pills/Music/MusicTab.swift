@@ -6,16 +6,48 @@ struct MusicTab: View {
     @EnvironmentObject private var app: AppModel
 
     var body: some View {
-        if let info = app.nowPlaying.current {
-            MusicPlayerView(info: info, service: app.nowPlaying)
+        MusicTabContent(service: app.nowPlaying)
+            .musicPlaylistPrompts(app.nowPlaying)
+    }
+}
+
+/// The player when something plays; otherwise why not, and the playlists to start something from.
+private struct MusicTabContent: View {
+    @ObservedObject var service: NowPlayingService
+
+    var body: some View {
+        if let info = service.current {
+            MusicPlayerView(info: info, service: service)
+        } else if service.permissionDenied {
+            denied
+        } else if service.playlistSourceApp != nil {
+            idleWithPlaylists
         } else {
-            idle
+            nothingPlaying
         }
     }
 
-    @ViewBuilder
-    private var idle: some View {
-        if app.nowPlaying.permissionDenied { denied } else { nothingPlaying }
+    /// Nothing plays, but a player runs or Spotify is connected: its playlists, one click from playing.
+    private var idleWithPlaylists: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+            HStack(spacing: NookTheme.Spacing.md) {
+                Image(systemName: "music.note")
+                    .font(NookTheme.font(13, .semibold))
+                    .foregroundStyle(NookTheme.textTertiary)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(tr("music.nothingPlayingTitle"))
+                        .font(NookTheme.TextStyle.strong)
+                        .foregroundStyle(NookTheme.paper)
+                    Text(tr("music.idle.pickPlaylist"))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                }
+            }
+            .padding(.horizontal, NookTheme.Spacing.xs)
+            MusicPlaylistsView(service: service)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .task(id: service.playlistSourceApp) { service.refreshPlaylists() }
     }
 
     /// Nook may not ask the player what plays: why, and the one button that fixes it.
@@ -76,10 +108,10 @@ enum MusicSection: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Spotify's AppleScript has no playlists. Its queue and search come from the Web API once Spotify is connected in
-    /// Settings.
+    /// Every section for both players: Spotify's queue, playlists and search come from its Web API once Spotify is
+    /// connected in Settings, and say so until then.
     static func available(for app: String) -> [MusicSection] {
-        app == "Music" ? allCases : [.lyrics, .upNext, .recent, .search]
+        allCases
     }
 }
 
@@ -132,6 +164,8 @@ private struct MusicPlayerView: View {
             }
         }
         .task(id: "\(info.trackKey)|\(section.rawValue)|\(expanded)") { load() }
+        // The playlists back "Add to playlist" everywhere in the tab, so they load with the player, not with their section.
+        .task(id: info.app) { service.refreshPlaylists() }
         .onChange(of: info.shuffle) { if section == .upNext || (expanded && info.app == "Music") { service.refreshUpNext() } }
     }
 
@@ -144,7 +178,9 @@ private struct MusicPlayerView: View {
         switch section {
         case .lyrics: lyrics.load(for: info)
         case .upNext: service.refreshUpNext()
-        case .playlists: service.refreshPlaylists()
+        case .playlists:
+            service.refreshPlaylists()
+            service.reloadPlaylistDetail()
         case .recent, .search: break
         }
     }
@@ -153,8 +189,13 @@ private struct MusicPlayerView: View {
         withAnimation(Self.fold) { expanded = value }
     }
 
-    /// Picking a section while the player is unfolded folds it, so the section shows.
+    /// Picking a section while the player is unfolded folds it, so the section shows. Picking Playlists again while
+    /// one is open goes back to all of them.
     private func select(_ item: MusicSection) {
+        if item == .playlists, section == .playlists, !expanded, service.playlistDetail != nil {
+            service.closePlaylist()
+            return
+        }
         withAnimation(Self.fold) {
             storedSection = item.rawValue
             expanded = false
