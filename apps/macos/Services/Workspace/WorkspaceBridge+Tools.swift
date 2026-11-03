@@ -277,7 +277,7 @@ extension WorkspaceBridge {
         let replaced = app.workspace.run(id)?.prWatch?.url
         app.workspace.watchPullRequest(id, url: url, wakeAgent: true)
         audit(.watchPullRequest, caller, url.absoluteString, "volgt")
-        var text = "Watching \(url.absoluteString). Nook tells you when CI fails or a review or comment arrives; the merge and passing CI show in your timeline. End your turn now."
+        var text = "Watching \(url.absoluteString). Nook tells you when CI fails, a merge conflict appears, or a review or comment arrives; the merge and passing CI show in your timeline. End your turn now."
         if let replaced, replaced != url.absoluteString { text += " (This replaces the watch on \(replaced): a session watches one pull request.)" }
         return BridgeRPC.ToolResult(text: text)
     }

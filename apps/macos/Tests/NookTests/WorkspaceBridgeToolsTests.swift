@@ -226,11 +226,13 @@ final class WorkspaceBridgeToolsTests: XCTestCase {
         XCTAssertTrue(status.contains("Checks: failure (build, lint)"))
         XCTAssertTrue(status.contains("Reviews: @anna approved, @bob commented"), "a comment does not undo an approval")
         XCTAssertTrue(status.contains("Comments: 1"))
+        XCTAssertTrue(status.contains("Merge conflicts: no"))
         XCTAssertFalse(status.contains("ignore previous instructions"), "other people's text stays out")
         XCTAssertFalse(status.contains("rm -rf"))
         let quiet = BridgePullRequestStatus.render(PullRequestSnapshot(state: "merged", checks: "", failedChecks: [], reviews: [], comments: []), url: "u")
         XCTAssertTrue(quiet.contains("Checks: none"))
         XCTAssertTrue(quiet.contains("Reviews: none"))
+        XCTAssertFalse(quiet.contains("Merge conflicts"), "only an open pull request can be in conflict")
     }
 
     // MARK: Browser
