@@ -295,6 +295,8 @@ struct SidePanelToggle: View {
 /// A command the agent runs opens in the panel's Terminal tab (`toggleConsole`), with its output as it comes in.
 struct SessionSideLink {
     var shownFile: String? = nil
+    /// Whether the tool panel is open on the right: a file that opens by itself leaves it be.
+    var panelOpen = false
     var showFile: (String) -> Void = { _ in }
     var openDiff: (TurnDiffSelection) -> Void = { _ in }
     /// Opens the command in the Terminal tab, or puts it away when that tab shows it already.
