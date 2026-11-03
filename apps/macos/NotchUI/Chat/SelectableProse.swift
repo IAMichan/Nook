@@ -29,7 +29,7 @@ extension EnvironmentValues {
 /// can run across several paragraphs. SwiftUI only selects within a single `Text`, so a drag stopped at every paragraph.
 struct SelectableProse: NSViewRepresentable {
     let blocks: [MarkdownBlock]
-    var size: CGFloat = 13
+    var size: CGFloat = 14
 
     /// Whether a block is plain text that can join a selectable run.
     static func joins(_ block: MarkdownBlock) -> Bool {
@@ -306,7 +306,7 @@ struct SelectableProse: NSViewRepresentable {
             // The line break belongs to the paragraph before it, so it takes that paragraph's style.
             let previous = result.attributes(at: result.length - 1, effectiveRange: nil)
             result.append(NSAttributedString(string: "\n", attributes: [
-                .font: previous[.font] ?? NSFont.systemFont(ofSize: 13),
+                .font: previous[.font] ?? NSFont.systemFont(ofSize: 14),
                 .paragraphStyle: previous[.paragraphStyle] ?? NSParagraphStyle.default,
             ]))
         }

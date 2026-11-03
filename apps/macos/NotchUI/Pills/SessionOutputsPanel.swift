@@ -156,7 +156,7 @@ private struct OutputViewer: View {
         case .tasks(let steps):
             ScrollView { TaskListRows(steps: steps).padding(NookTheme.Spacing.xl).frame(maxWidth: .infinity, alignment: .leading) }
         case .plan(let text):
-            ScrollView { MarkdownView(text: text, size: 13.5).padding(NookTheme.Spacing.xl).frame(maxWidth: .infinity, alignment: .leading) }
+            ScrollView { MarkdownView(text: text, size: 14).padding(NookTheme.Spacing.xl).frame(maxWidth: .infinity, alignment: .leading) }
         case .design:
             if let path = output.path {
                 // Written again: the page loads again.
@@ -387,7 +387,7 @@ private struct DocumentPreview: View {
     var body: some View {
         ScrollView {
             Group {
-                if let text { MarkdownView(text: text, size: 13.5) } else { PatientSpinner() }
+                if let text { MarkdownView(text: text, size: 14) } else { PatientSpinner() }
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
