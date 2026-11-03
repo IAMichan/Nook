@@ -10,7 +10,7 @@ enum WorktreeArchive {
     /// A `.scratch` larger than this is not kept: it holds builds, not drafts.
     static let maxBytes: Int64 = 512 * 1024 * 1024
     /// Archives not touched for this long are removed when the next one is saved.
-    static let keepFor: TimeInterval = 60 * 24 * 60 * 60
+    static let keepFor: TimeInterval = 30 * 24 * 60 * 60
 
     static var root: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
