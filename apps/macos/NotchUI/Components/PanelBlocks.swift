@@ -84,7 +84,7 @@ extension View {
 }
 
 /// How many things wait for you: a small amber count (a tab, a list's title). Zero shows nothing.
-/// A button drawn as a `NookSearchField` that opens a search instead of being one (the main window's sidebar opens
+/// A button drawn as a `NookSearchField` that opens a search instead of being one (the Chats tab's rail of icons opens
 /// Search everything with it): the same field, glyph and inset, the prompt, and the shortcut as a `NookKeyHint`.
 /// `compact` is only the glyph, for a rail of icons.
 struct NookSearchLauncher: View {
