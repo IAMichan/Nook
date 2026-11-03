@@ -1201,25 +1201,6 @@ enum WAReply {
     }
 }
 
-/// A few sends a minute at most, whatever is clicked: Nook is no bulk sender.
-struct WARateLimit: Sendable {
-    var limit = 6
-    var window: TimeInterval = 60
-    private(set) var sent: [Date] = []
-
-    init(limit: Int = 6, window: TimeInterval = 60) {
-        self.limit = limit
-        self.window = window
-    }
-
-    mutating func allow(now: Date = Date()) -> Bool {
-        sent.removeAll { now.timeIntervalSince($0) > window }
-        guard sent.count < limit else { return false }
-        sent.append(now)
-        return true
-    }
-}
-
 // MARK: - The webhook's HTTP request
 
 /// One HTTP request read from the local socket: enough of HTTP/1.1 for a gateway's webhook.

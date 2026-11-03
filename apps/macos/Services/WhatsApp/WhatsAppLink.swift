@@ -358,7 +358,6 @@ final class WhatsAppLink: ObservableObject {
     private var previewsLoading: Set<String> = []
     /// When a preview last failed: it is tried again after `previewRetry`, not at every redraw.
     private var previewFailed: [String: Date] = [:]
-    private var rateLimit = WARateLimit(limit: 6, window: 60)
     private var failures = 0
     /// Bumped at each start and stop: an answer from before a restart is dropped.
     private var generation = 0
@@ -1412,7 +1411,6 @@ final class WhatsAppLink: ObservableObject {
         guard let target = resolve(recipient, also: also) else {
             throw NookError(tr("whatsapp.reply.unknown", recipient, chatNames().prefix(12).joined(separator: ", ")))
         }
-        guard rateLimit.allow() else { throw NookError(tr("whatsapp.reply.tooFast")) }
         let gen = generation
         do {
             // "@Name" of a member goes as WhatsApp's own tag: "@" and their digits, with their id in the list.
@@ -1452,7 +1450,6 @@ final class WhatsAppLink: ObservableObject {
         guard let target = resolve(recipient) else {
             throw NookError(tr("whatsapp.reply.unknown", recipient, chatNames().prefix(12).joined(separator: ", ")))
         }
-        guard rateLimit.allow() else { throw NookError(tr("whatsapp.reply.tooFast")) }
         var outgoing = outgoing
         if case .file(let file) = outgoing {
             guard !file.tooLarge else { throw NookError(tr("chat.compose.tooLarge", file.name)) }
@@ -1527,7 +1524,6 @@ final class WhatsAppLink: ObservableObject {
               let message = conversation.messages.first(where: { $0.id == id }) else {
             throw NookError(tr("whatsapp.react.missing"))
         }
-        guard rateLimit.allow() else { throw NookError(tr("whatsapp.reply.tooFast")) }
         let old = message.reactions.first(where: \.fromMe)?.emoji
         // The same emoji again takes it back, as on the phone.
         let new = old == emoji ? "" : emoji
@@ -1589,7 +1585,6 @@ final class WhatsAppLink: ObservableObject {
         if let kept = inbox.conversations[key]?.messages.first(where: { $0.id == message }), !kept.fromMe {
             throw NookError(tr("chat.action.failed"))
         }
-        guard rateLimit.allow() else { throw NookError(tr("whatsapp.reply.tooFast")) }
         let gen = generation
         do {
             try await provider.edit(message, chat: key, to: body)
@@ -1606,7 +1601,6 @@ final class WhatsAppLink: ObservableObject {
     func delete(_ message: String, chat: String) async throws {
         guard let provider, isConnected else { throw NookError(statusLine) }
         guard provider.canDelete else { throw NookError(tr("chat.compose.unsupported")) }
-        guard rateLimit.allow() else { throw NookError(tr("whatsapp.reply.tooFast")) }
         let key = WAJID.normalized(chat)
         let gen = generation
         do {
