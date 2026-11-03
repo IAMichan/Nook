@@ -543,6 +543,16 @@ enum TelegramData {
         ["@type": "addChatToList", "chat_id": chat, "chat_list": ["@type": "chatListArchive"] as [String: Any]]
     }
 
+    /// What deletes a chat for you alone, as Telegram's own "Delete chat" does: a person's chat loses its history and leaves
+    /// the chat list (`deleteChatHistory`); a group you leave first (`leaveChat`), and a basic group, which stays listed
+    /// after you left, then goes the same way. A supergroup leaves the list once you left it.
+    static func deleteChat(_ chat: Chat) -> [[String: Any]] {
+        let history: [String: Any] = ["@type": "deleteChatHistory", "chat_id": chat.id, "remove_from_chat_list": true, "revoke": false]
+        guard chat.isGroup else { return [history] }
+        let leave: [String: Any] = ["@type": "leaveChat", "chat_id": chat.id]
+        return chat.basicGroup != nil ? [leave, history] : [leave]
+    }
+
     /// `editMessageText`: a message's new text.
     static func editMessageText(chat: Int64, message: Int64, text: String) -> [String: Any] {
         ["@type": "editMessageText", "chat_id": chat, "message_id": message, "input_message_content": textContent(text)]

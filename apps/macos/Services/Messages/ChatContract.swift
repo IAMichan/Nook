@@ -24,6 +24,8 @@ struct ChatAbilities: Equatable {
     var pin = false
     var mute = false
     var archive = false
+    /// The whole chat can be deleted in its app, for you alone (a group you also leave, as the app itself does).
+    var deleteChat = false
     var pinned = false
     var muted = false
     /// A poll in the chat can be voted on from Nook.
@@ -43,6 +45,7 @@ struct ChatAbilities: Equatable {
         case .pin: return pin
         case .mute: return mute
         case .archive: return archive
+        case .deleteChat: return deleteChat
         case .vote: return vote
         }
     }
@@ -61,6 +64,7 @@ enum ChatAction: Equatable {
     case pin
     case mute
     case archive
+    case deleteChat
     case vote
 
     /// Why an action cannot go, the same for every app; nil when it can.
@@ -84,6 +88,7 @@ enum ChatAction: Equatable {
         case .pin: return "chat_pin"
         case .mute: return "chat_mute"
         case .archive: return "chat_archive"
+        case .deleteChat: return "chat_delete_chat"
         case .vote: return "chat_vote"
         }
     }
