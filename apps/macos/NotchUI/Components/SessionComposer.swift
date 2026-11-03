@@ -32,6 +32,8 @@ struct SessionComposer<Controls: View>: View {
     private var queueSymbol = "text.append"
     /// Cmd+Return while busy: the other way to deliver the text (steer instead of queue, or the reverse).
     private var flipAction: (() -> Void)?
+    /// Cmd+Return while not busy: send right away, past messages still waiting in line (without it Cmd+Return sends as Return).
+    private var sendNowAction: (() -> Void)?
     /// The list under the text, history and references (see `ComposerRich`); nil keeps the plain box.
     private var extras: (model: ComposerModel, config: ComposerConfig)?
     /// The choices sit in a tray under the box, tucked behind it, and the box holds the text with send on its row.
@@ -61,6 +63,13 @@ struct SessionComposer<Controls: View>: View {
         copy.flipAction = alternate
         copy.queueLabel = label
         copy.queueSymbol = symbol
+        return copy
+    }
+
+    /// The same composer whose Cmd+Return sends right away, ahead of anything waiting in line, when it is not busy.
+    func sendingNow(_ action: (() -> Void)?) -> Self {
+        var copy = self
+        copy.sendNowAction = action
         return copy
     }
 
@@ -303,6 +312,8 @@ struct SessionComposer<Controls: View>: View {
         if chooseSelected() { return true }
         if alternate {
             if busy, !isEmpty, encodingPictures == 0, let flipAction { fire(flipAction) }
+        } else if !busy, let sendNowAction, !isEmpty, encodingPictures == 0 {
+            fire(sendNowAction)
         } else if !busy, enabled {
             fire(onSend)
         }

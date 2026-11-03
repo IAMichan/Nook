@@ -1153,6 +1153,22 @@ final class WorkspaceManager: ObservableObject {
         if !send(id, text: text, shown: false) { queued[id, default: MessageQueue()].requeueFirst(text) }
     }
 
+    /// ⌘Return: a message you send now, past anything waiting in line. It steers a running turn when the agent can take it,
+    /// otherwise it goes in front of the queue and out as `sendQueuedNow` sends it (interrupting the turn, or as the next
+    /// turn when the agent is idle). It only waits when nothing can go out yet, at the front of the line. False when it waits.
+    @discardableResult
+    func sendNow(_ id: UUID, text: String) -> Bool {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, run(id) != nil else { return false }
+        if canSteer(id), steer(id, text: clean) { return true }
+        var queue = queued[id] ?? MessageQueue()
+        queue.requeueFirst(clean)
+        store(queue, for: id)
+        guard let first = queued[id]?.messages.first, canSendQueuedNow(id) else { return false }
+        sendQueuedNow(id, message: first.id)
+        return true
+    }
+
     func removeQueued(_ id: UUID, message: UUID) {
         guard var queue = queued[id] else { return }
         queue.remove(message)
