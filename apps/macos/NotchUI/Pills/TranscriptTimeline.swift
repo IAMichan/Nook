@@ -37,8 +37,6 @@ struct TranscriptConversation: View {
     @State private var overflows = false
     /// Read only by the handlers: as state, each start and stop of a scroll drew every row of the conversation again.
     @State private var scrollPhase = Unobserved(ScrollPhase.idle)
-    /// The rows on screen, for where you left the conversation; not state, so scrolling does not redraw it.
-    @State private var onScreen = VisibleTimelineRows()
     /// Where the conversation is scrolled, for the rail, and the position the rail scrolls it to when you drag it.
     @State private var viewport = TimelineViewport()
     @State private var position = ScrollPosition()
@@ -123,7 +121,6 @@ struct TranscriptConversation: View {
                 // Only while following does growth keep the end in place: reading higher up, a working agent's new
                 // output below leaves the text you read where it is instead of pushing it up.
                 .defaultScrollAnchor(scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
-                .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.1) { ids in onScreen.ids = Set(ids) }
                 .scrollIndicators(.never)
                 .onScrollGeometryChange(for: ScrollFrame.self) { geometry in
                     ScrollFrame(offset: geometry.contentOffset.y, content: geometry.contentSize.height,
@@ -173,7 +170,7 @@ struct TranscriptConversation: View {
                 }
                 // Only while you are at the end: reading higher up, new messages do not pull you down.
                 .onChange(of: shown) { _, _ in if scroll.shouldFollowEnd { scrollToEnd(proxy) } }
-                // Back where you left it: the end, or the row you were reading (TimelineLanding).
+                // Always the end once it has loaded, with what is new since your last visit under its line.
                 .onChange(of: freshRead) { _, read in if read { land(proxy) } }
                 .onAppear {
                     visit = visitKey.flatMap { TimelineVisitStore.shared.visit(for: $0) }
@@ -263,27 +260,24 @@ struct TranscriptConversation: View {
         if scroll.shouldFollowEnd, new.offset < old.offset - 0.5, new.maxOffset - new.offset > 48 { scroll.userScrolled() }
     }
 
-    /// Once the conversation has loaded: the row you were reading when you left, else the end (with what came in since
-    /// your last visit under its line). Following stops at a row, so what comes in does not pull you away from it.
+    /// Once the conversation has loaded: its very end, with what came in since your last visit under its line. Scrolls
+    /// again while the layout settles: the lazy rows only learn their real height once laid out, so a single scroll from
+    /// far up lands short of the end. Stops when you scroll away in the meantime.
     private func land(_ proxy: ScrollViewProxy) {
-        let rows = visitRows
-        newSince = visit.flatMap { TimelineLanding.firstNew(rows, since: $0.lastViewedAt) }
-        switch TimelineLanding.decide(rows, visit: visit) {
-        case .end:
-            scrollToEnd(proxy)
-        case .row(let id):
-            scroll.userScrolled()
-            proxy.scrollTo(id, anchor: .top)
-            // After the other handlers of this change (following the end) and once the lazy rows are laid out.
-            DispatchQueue.main.async { proxy.scrollTo(id, anchor: .top) }
+        newSince = visit.flatMap { TimelineLanding.firstNew(visitRows, since: $0.lastViewedAt) }
+        scroll.jumpedToEnd()
+        scrollToEnd(proxy)
+        for delay in [0.0, 0.1, 0.3] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                if scroll.shouldFollowEnd { scrollToEnd(proxy) }
+            }
         }
     }
 
-    /// Where you leave the conversation: the row at the top, what you opened, and whether you were at the end.
+    /// What you opened and when you left the conversation.
     private func rememberVisit() {
         guard let visitKey, loaded else { return }
-        TimelineVisitStore.shared.remember(sessionID: visitKey, visit: TimelineVisit(
-            anchorID: TimelineLanding.top(visitRows, visible: onScreen.ids), open: open, atEnd: atEnd, lastViewedAt: Date()))
+        TimelineVisitStore.shared.remember(sessionID: visitKey, visit: TimelineVisit(open: open, lastViewedAt: Date()))
     }
 }
 
@@ -436,12 +430,6 @@ private struct TranscriptRowView: View, Equatable {
         let text = TranscriptStepText.parts(step)
         return text.detail.isEmpty ? text.verb : text.verb + "  " + text.detail
     }
-}
-
-/// The ids of a timeline's rows on screen, kept out of SwiftUI's state: they change on every scroll, and only matter
-/// when the conversation closes.
-final class VisibleTimelineRows {
-    var ids: Set<String> = []
 }
 
 /// The rows, outputs and turn diffs of a conversation, worked out again only when its messages change. The view's body
