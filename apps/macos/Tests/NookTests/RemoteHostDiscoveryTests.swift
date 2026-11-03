@@ -63,4 +63,38 @@ final class RemoteHostDiscoveryTests: XCTestCase {
                                                existing: [RemoteMachine(name: "pi", host: "me@pi")])
         XCTAssertEqual(merged.map(\.id), ["buildbox.local:0", "pi:2222"])
     }
+
+    func testConfigFollowsIncludes() {
+        let files = [
+            "config.d/*": ["Host work\n  HostName work.example.com\n", "Include nested\n"],
+            "nested": ["Host deep\n"],
+            "loop": ["Include loop\nHost looped\n"],
+        ]
+        let include: (String) -> [String] = { files[$0] ?? [] }
+        let config = """
+        Include config.d/*
+        Host pi
+          HostName raspberrypi.local
+        """
+        let found = RemoteHostDiscovery.sshConfig(config, include: include)
+        XCTAssertEqual(found.map(\.host), ["work", "deep", "pi"])
+        XCTAssertEqual(found.first?.detail, "work.example.com")
+        // A file that includes itself stops instead of running forever.
+        XCTAssertEqual(RemoteHostDiscovery.sshConfig("Include loop", include: include).map(\.host), Array(repeating: "looped", count: 16))
+    }
+
+    func testIncludePatternsResolveLikeSSH() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("nook-ssh-\(UUID().uuidString)").path
+        try FileManager.default.createDirectory(atPath: folder + "/config.d", withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: folder) }
+        for name in ["b.conf", "a.conf", ".hidden.conf", "notes.txt"] {
+            FileManager.default.createFile(atPath: folder + "/config.d/" + name, contents: Data())
+        }
+        XCTAssertEqual(RemoteHostDiscovery.includedFiles("config.d/*.conf", sshDirectory: folder, home: "/home/me"),
+                       [folder + "/config.d/a.conf", folder + "/config.d/b.conf"])
+        XCTAssertEqual(RemoteHostDiscovery.includedFiles("~/.ssh/extra", sshDirectory: folder, home: "/home/me"), ["/home/me/.ssh/extra"])
+        XCTAssertEqual(RemoteHostDiscovery.includedFiles("/etc/ssh/x", sshDirectory: folder, home: "/home/me"), ["/etc/ssh/x"])
+        XCTAssertTrue(RemoteHostDiscovery.matches("a.conf", pattern: "?.conf"))
+        XCTAssertFalse(RemoteHostDiscovery.matches("a.confx", pattern: "*.conf"))
+    }
 }

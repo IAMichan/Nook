@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Security
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -19,6 +20,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        // SSH passwords you chose to keep, before any session on another machine starts again.
+        RemotePasswords.shared.keychain = RemotePasswords.Keychain(
+            read: { SecretStore.read($0) },
+            write: { SecretStore.write($1, account: $0) == errSecSuccess },
+            remove: { SecretStore.remove($0) })
         model.start()
         UpdateTrialRunner.startWatching()
         if let rollback = UpdateTrialRunner.rollbackToReport { AppUpdater.shared.reportRollback(rollback) }

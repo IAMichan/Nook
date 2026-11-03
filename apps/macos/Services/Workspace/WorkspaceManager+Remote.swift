@@ -58,6 +58,7 @@ extension WorkspaceManager {
         selectedRunID = id
         if visibleTask != config.task { displayPrompt[id] = visibleTask }
         append(id, RunEvent(kind: .system, text: tr("ws.remote.started", remote.name, remote.host, directory)))
+        RemoteMachines.markUsed(id: remote.machineID)
         append(id, RunEvent(kind: .user, text: shownPrompt(id, config.task)))
         if title.isEmpty { generateTitle(id) }
 

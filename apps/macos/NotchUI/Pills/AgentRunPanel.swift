@@ -23,6 +23,8 @@ struct AgentRunPanel: View {
     /// "Back to before this message": the message, and why it could not, if it could not.
     @State private var revertTarget: RunEvent?
     @State private var revertError: String?
+    /// Bumped when the session's machine was unlocked with its password, so the field goes away.
+    @State private var unlockedAt: Date?
     @State private var reverting = false
     @State private var confirmDelete = false
     @State private var renaming = false
@@ -98,6 +100,10 @@ struct AgentRunPanel: View {
             let signatures = derived.outputSignatures
             VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                 header(run)
+                // After Nook restarted, a session on a machine with a password waits for it before the next turn.
+                if let machine = lockedMachine(run) {
+                    RemotePasswordField(machine: machine) { _ in unlockedAt = Date() }
+                }
                 timeline(run)
             }
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -355,10 +361,19 @@ struct AgentRunPanel: View {
         }
     }
 
+    /// The session's machine when it logs in with a password that was not typed in this run of Nook yet.
+    private func lockedMachine(_ run: WorkspaceRun) -> RemoteMachine? {
+        _ = unlockedAt
+        guard let remote = run.remote,
+              let machine = RemoteMachines.load().first(where: { $0.id == remote.machineID }),
+              !RemotePasswords.shared.isUnlocked(machine) else { return nil }
+        return machine
+    }
+
     /// A terminal on the session's machine, in its folder (ssh -t, then your login shell there).
     private func openRemoteTerminal(_ remote: RemoteTarget) {
         var parts = ["ssh", "-t"]
-        if let port = remote.port { parts += ["-p", String(port)] }
+        parts += RemoteLaunch.destination(port: remote.port, identityFile: remote.identityFile)
         let inner = "cd " + RemoteLaunch.quotedDirectory(remote.directory) + #" && exec "${SHELL:-/bin/sh}" -l"#
         parts += ["--", remote.host, inner]
         let command = parts.map(CustomAgents.quote).joined(separator: " ")
