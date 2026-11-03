@@ -355,6 +355,8 @@ final class AppModel: ObservableObject {
         CompanionServer.shared.attach(app: self)
         CompanionNotifier.shared.attach(app: self)
         SystemNotifier.shared.start()
+        // A bar above words you select anywhere in Nook asks Nook about them.
+        SelectionAskController.shared.start(app: self)
         requestNotificationAccessIfNeeded()
         hub.onApproval = { [weak self] request in self?.presentApproval(request) }
         hub.onApprovalGone = { [weak self] id, message in self?.cardGone("approval-" + id, message: message) }

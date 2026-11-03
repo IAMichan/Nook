@@ -209,6 +209,7 @@ targets:
       - path: Core/I18n+Actions.swift
       - path: Core/I18n+RelayPush.swift
       - path: Core/I18n+ChatTimeline.swift
+      - path: Core/I18n+SelectionAsk.swift
       - path: Core/I18n+WorkspaceFeatures.swift
       - path: Core/I18n+ProviderTraffic.swift
       - path: Core/I18n+Companion.swift
@@ -387,6 +388,7 @@ targets:
       - path: Services/Workspace/SessionOutputs.swift
       - path: Services/Workspace/ReviewComments.swift
       - path: Services/Workspace/ComposerQuotes.swift
+      - path: Services/SelectionAsk.swift
       - path: Services/Workspace/UnifiedDiff.swift
       - path: Services/Workspace/SessionExport.swift
       - path: Services/Workspace/CustomAgents.swift
