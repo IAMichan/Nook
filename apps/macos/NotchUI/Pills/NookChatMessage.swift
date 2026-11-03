@@ -13,6 +13,13 @@ struct ChatMessageView: View, Equatable {
     /// Used for the buttons only, deliberately not observed: observing the whole app model redrew every message on
     /// every change anywhere in Nook.
     let app: AppModel
+    /// Where a picked option or offer is asked; nil asks in the chat on screen. The card beside a selection asks in its
+    /// own conversation (`SelectionAskCard`).
+    var onAsk: ((String) -> Void)? = nil
+
+    private func ask(_ text: String) {
+        if let onAsk { onAsk(text) } else { app.handleUserText(text) }
+    }
 
     var body: some View {
         switch message.role {
@@ -39,7 +46,7 @@ struct ChatMessageView: View, Equatable {
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             TranscriptReply(text: message.text, date: message.date, footer: !message.streaming,
-                            onChoose: !message.streaming && isNewest ? { app.handleUserText($0) } : nil) {
+                            onChoose: !message.streaming && isNewest ? { ask($0) } : nil) {
                 extras
             } actions: {
                 if isLast {
@@ -109,7 +116,7 @@ struct ChatMessageView: View, Equatable {
     @ViewBuilder
     private var offerChips: some View {
         ForEach(message.offers, id: \.self) { offer in
-            OfferChip(text: offer) { app.handleUserText(offer) }
+            OfferChip(text: offer) { ask(offer) }
         }
     }
 

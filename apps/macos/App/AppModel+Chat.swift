@@ -130,9 +130,10 @@ extension AppModel {
 
     /// Submits a query in chat: response streams in real-time. `focus` and `reflects` are for prompts a card writes
     /// (see `ReplyContext`). `target` asks in that conversation instead of the active one, and `reveal: false` leaves the
-    /// notch as it is (a question from the iPhone companion). `note`: see `ReplyContext.note`.
+    /// notch as it is (a question from the iPhone companion). `note`: see `ReplyContext.note`; `selfContained`: see
+    /// `ReplyContext.selfContained`.
     func ask(_ text: String, images: [ImageAttachment] = [], focus: [Prefetch.Call] = [], reflects: Bool = true,
-             in target: UUID? = nil, reveal: Bool = true, note: String = "") {
+             in target: UUID? = nil, reveal: Bool = true, note: String = "", selfContained: Bool = false) {
         let conversation = target.flatMap { chat.conversation($0) == nil ? nil : $0 } ?? chat.ensureActive()
         if chat.isBusy(conversation) { stop(conversation: conversation) }
         // A question about the screen, or a follow-up on an answer that read it, while the screen stays on this Mac: the
@@ -174,7 +175,9 @@ extension AppModel {
                         await ReplyContext.$reflects.withValue(reflects) {
                             await ReplyContext.$messageID.withValue(replyID) {
                                 await ReplyContext.$note.withValue(note) {
-                                    await self?.answer(text, history: history, replyID: replyID, conversation: conversation)
+                                    await ReplyContext.$selfContained.withValue(selfContained) {
+                                        await self?.answer(text, history: history, replyID: replyID, conversation: conversation)
+                                    }
                                 }
                             }
                         }
@@ -208,7 +211,8 @@ extension AppModel {
         let screenAllowed = scope.allows(SourceCatalog.screen)
         let explicitScreen = Self.refersToScreen(text)
         let shouldCaptureScreen: Bool
-        if let file = attachment, Date().timeIntervalSince(file.date) < 600 {
+        let selfContained = ReplyContext.selfContained
+        if !selfContained, let file = attachment, Date().timeIntervalSince(file.date) < 600 {
             attachment = (file.name, file.text, Date())
             chat.update(id) { $0.status = tr("app.status.reading", file.name) }
             let limit = settings.brainProfile.isSmall ? 12_000 : 40_000
@@ -216,7 +220,7 @@ extension AppModel {
             attachedName = file.name
             images = attachmentImages
             shouldCaptureScreen = false
-        } else if screenAllowed, explicitScreen || (settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.brainProfile.isSmall) {
+        } else if screenAllowed, explicitScreen || (!selfContained && settings.screenWithEveryQuestion && screenContext.hasPermission && !settings.brainProfile.isSmall) {
             if screenContext.cachedSnapshot() == nil { chat.update(id) { $0.status = tr("app.look.context") } }
             shouldCaptureScreen = true
         } else {
@@ -486,6 +490,8 @@ extension AppModel {
     /// Conversation finished in background while looking elsewhere: a notice the way Settings › Notifications says for
     /// Nook himself.
     func nookFinished(_ id: UUID) {
+        // Asked about a selection, and its card is still open beside it: the answer is in sight already.
+        if SelectionAskController.shared.shows(id) { return }
         // Asked from the notch (the Double Tap field, a notice's field): you wait for it there.
         let followed = NotchFollow.shared.conversations.remove(id) != nil
         let watching = viewModel.isShowing(.chat) && chat.activeID == id

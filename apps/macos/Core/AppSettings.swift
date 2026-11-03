@@ -411,6 +411,10 @@ final class AppSettings: ObservableObject {
     @Published var screenWithEveryQuestion: Bool {
         didSet { UserDefaults.standard.set(screenWithEveryQuestion, forKey: "screenWithEveryQuestion") }
     }
+    /// A bar above words selected anywhere in Nook asks Nook about them (`SelectionAsk`).
+    @Published var selectionAsk: Bool {
+        didSet { UserDefaults.standard.set(selectionAsk, forKey: "selectionAsk") }
+    }
     /// How much Nook does by himself (reading the screen, thinking along, looking for agents) when the Mac is on battery,
     /// hot or busy (Settings › General › Energy). What you ask for always runs at full speed.
     @Published var energyMode: EnergyMode {
@@ -673,6 +677,7 @@ final class AppSettings: ObservableObject {
         onlineLyrics = defaults.object(forKey: "onlineLyrics") as? Bool ?? true
         liveScreen = defaults.object(forKey: "liveScreen") as? Bool ?? true
         screenWithEveryQuestion = defaults.object(forKey: "screenWithEveryQuestion") as? Bool ?? true
+        selectionAsk = defaults.object(forKey: "selectionAsk") as? Bool ?? true
         energyMode = EnergyMode(rawValue: defaults.string(forKey: "energyMode") ?? "") ?? .automatic
         localOnlySources = Set(defaults.stringArray(forKey: "localOnlySources") ?? [])
         screenBrain = defaults.string(forKey: "screenBrain") ?? ""
