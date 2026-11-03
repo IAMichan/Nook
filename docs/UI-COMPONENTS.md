@@ -177,7 +177,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `NookSearchField` | `PanelBlocks.swift` | The one search field (panel lists, Settings rows, menus, the command palette): magnifying glass, text, a clear button, Escape clears and then calls `onEscape`. `panel`, `inline` (in a Settings form or a menu) and `large` (a palette). Never build a search field by hand |
 | `.focusOnAppear(_:)` | `PanelBlocks.swift` | Puts the keyboard in a palette's field as it opens (⌘K search, the command palette), also when it appears with a transition or the panel takes the keyboard later. Use it instead of `.onAppear { focused = true }` on a field that must take typing at once |
 | `QRCodeView`, `QRCode` | `QRCode.swift` | The one QR code for a phone to scan (linking a chat app, WhatsApp, pairing the companion): crisp pixels on a light card, with a label for VoiceOver. Never draw a QR image by hand |
-| `NookSearchLauncher`, `NookKeyHint` | `PanelBlocks.swift` | A button drawn as a `NookSearchField` that opens a search (the sidebar's Search, ⌘K), and a shortcut as a small key cap |
+| `NookSearchLauncher`, `NookKeyHint` | `PanelBlocks.swift` | A button drawn as a `NookSearchField` that opens a search (the Chats tab's rail of icons, ⌘K), and a shortcut as a small key cap |
 | `PanelSidebarTop`, `.panelSidebarColumn()` | `PanelSidebar.swift` | The head of the main window's sidebar (the title bar's row, Search, the tabs with their status) at the top of a tab's first column, and the inset that column keeps from the window's edge; nothing in the notch |
 | `PanelListHeader`, `PanelNewButton` | `PanelBlocks.swift` | The title row on top of every tab's list (Nook, Agents, Chats, Pull requests): name, `NookCountBadge`, the list's actions; `PanelNewButton` is the "new" in it, lit while the new one is open |
 | `NookCountBadge` | `PanelBlocks.swift` | How many wait for you: a small amber count, on a tab or a list title |
@@ -281,7 +281,7 @@ button, the window remembers its tab (and opens at an agent that waits for you),
 
 In the window the tabs live in a sidebar along the left edge, as in t3code (`PanelSidebar.swift`): `PanelView` hands
 the tab a `PanelSidebarContext` through the environment, and the tab's first column starts with `PanelSidebarTop`
-(the title bar's row with talk and split view, Search as a `NookSearchLauncher`, then the tabs as rows: the selected
+(the title bar's row with search, talk and split view, then the tabs as rows: the selected
 one with a filled mark on `rowSelected` and a hairline edge, and at the end what goes on there — waiting sessions in
 amber or a pulse while one works, unread chats, the bars while music plays — or its shortcut under the pointer) and carries `.panelSidebarColumn()`.
 The window has an empty unified toolbar, so its title bar is a 52 pt row (`PanelSidebarMetrics.titleBand`) with the
