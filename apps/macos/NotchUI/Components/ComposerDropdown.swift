@@ -347,7 +347,8 @@ struct AgentModelPicker: View {
     var comparing: Binding<[ComparisonTarget]>? = nil
     /// This Mac's models in front of the agents (Nook's own brain); nil for an agent.
     var local: ModelPickerLocal? = nil
-    /// "Auto" on top of each agent's models: Nook picks one per turn (see `AutoModel`). Off for Nook's own brain.
+    /// "Auto" as a place of its own in the rail, above the agents: Nook picks one per turn (see `AutoModel`). Off for
+    /// Nook's own brain.
     var offersAuto = true
     let choose: (RunProvider, String?, String?) -> Void
     /// Picking a model adds it to the comparison instead of replacing the chosen one.
@@ -382,13 +383,17 @@ struct AgentModelPicker: View {
     var body: some View {
         let shown = places
         let agentPlaces = shown.map(pickerPlace)
-        let chosen = local.flatMap { $0.chosen || agentPlaces.isEmpty ? $0.place : nil } ?? pickerPlace(chosenPlace)
-        ModelPicker(places: (local.map { [$0.place] } ?? []) + agentPlaces, chosen: chosen,
+        let auto = showsAuto ? Self.autoPlace : nil
+        let chosen = local.flatMap { $0.chosen || agentPlaces.isEmpty ? $0.place : nil }
+            ?? (auto != nil && model == AutoModel.id ? auto : nil)
+            ?? pickerPlace(chosenPlace)
+        ModelPicker(places: (local.map { [$0.place] } ?? []) + (auto.map { [$0] } ?? []) + agentPlaces, chosen: chosen,
                     addHelp: tr("agents.picker.add"), settingsTitle: tr("agents.picker.settings"),
-                    openSettings: { app.openSettings(section: .agents) }) { _ in
-            if let comparing { compareToggle(comparing) }
+                    openSettings: { app.openSettings(section: .agents) }) { place in
+            if let comparing, place != Self.autoPlace { compareToggle(comparing) }
         } list: { picked, query in
             if let local, picked.id == local.place.id { return local.list(query) }
+            if picked == Self.autoPlace { return ModelPickerList(models: [autoRow()]) }
             return shown.first { $0.id == picked.id }.map { models(of: $0, query: query) } ?? ModelPickerList(models: [])
         }
     }
@@ -431,21 +436,25 @@ struct AgentModelPicker: View {
                 choose(current.provider, pickedProfile(current), custom)
             })
         }
-        let auto = autoRow(of: current, query: query).map { [$0] } ?? []
-        return ModelPickerList(models: auto + filtered(current, query: query).map { modelRow($0, of: current) }, actions: actions)
+        return ModelPickerList(models: filtered(current, query: query).map { modelRow($0, of: current) }, actions: actions)
     }
 
+    // MARK: Auto
+
+    /// "Auto" sits in the rail next to the agents, not under one of them: it spans every agent and account.
+    private static var autoPlace: ModelPickerPlace { ModelPickerPlace(id: AutoModel.id, name: tr("auto.model"), symbol: "wand.and.stars") }
+
+    /// Hidden for Nook's own brain, and while picking several models (Auto is one choice, not a model to compare).
+    private var showsAuto: Bool { offersAuto && !multi && local == nil }
+
     /// "Auto": Nook picks the agent, account and model for each turn from every model allowed in Settings, by the task
-    /// and the limits. The same row under every agent: picking it there starts from that agent.
-    private func autoRow(of place: Place, query: String) -> ModelPickerItem? {
-        let title = tr("auto.model")
-        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
-        guard offersAuto, !multi, needle.isEmpty || title.lowercased().contains(needle) else { return nil }
+    /// and the limits. Picking it starts from the agent and account in use.
+    private func autoRow() -> ModelPickerItem {
         let reach = app.workspace.autoReach()
-        return ModelPickerItem(id: AutoModel.id, title: title, symbol: "wand.and.stars",
+        return ModelPickerItem(id: AutoModel.id, title: tr("auto.model"), symbol: "wand.and.stars",
                                detail: reach.models > 0 ? tr("auto.model.detail", reach.models, reach.agents) : tr("auto.model.none"),
-                               chosen: isChosen(place) && model == AutoModel.id) {
-            choose(place.provider, pickedProfile(place), AutoModel.id)
+                               chosen: model == AutoModel.id) {
+            choose(provider, nil, AutoModel.id)
         }
     }
 
