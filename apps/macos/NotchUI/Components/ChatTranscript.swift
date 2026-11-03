@@ -149,6 +149,9 @@ struct ChatTranscript: View, Equatable {
                 }
             }
             .scrollIndicators(.never)
+            // The messages stay inside the transcript: unclipped, a bubble scrolled past the top was drawn over the
+            // chat's header above it.
+            .clipped()
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             // At the newest message a chat that grows keeps its bottom where it is; reading back, a picture that
             // loads below (or a link's card) leaves what you read where it is.
