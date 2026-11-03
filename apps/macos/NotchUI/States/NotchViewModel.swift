@@ -979,12 +979,17 @@ final class NotchViewModel: ObservableObject {
         self.sheet = sheet
     }
 
-    /// Clicking outside the notch closes the panel. Cards remain until an option is selected, and an open task
-    /// (a form you are filling in) stays until you close it yourself.
+    /// Clicking outside the notch closes the panel and the Double Tap field. Other cards remain until an option is
+    /// selected, and an open task (a form you are filling in) stays until you close it yourself.
     func clickedOutside() {
         // A folder picker opened from the notch is not "outside": keep the panel while it is up.
         guard sheet == nil, NSApp.modalWindow == nil else { return }
-        if case .panel = state { show(.idle) }
+        switch state {
+        case .panel: show(.idle)
+        // The Double Tap field only asks; a click elsewhere means it is not needed, as Escape or its cross would.
+        case .card(let card) where card.compact: perform(card.escape ?? card.primary)
+        default: break
+        }
     }
 
     // MARK: Dimensions

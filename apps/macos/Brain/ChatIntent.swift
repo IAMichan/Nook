@@ -400,7 +400,7 @@ struct ChatIntent: Equatable {
         .mailWrite: ["compose_mail", "search_contacts", "search_mail", "read_mail"],
         .mailRead: ["inbox_mail", "search_mail", "read_mail", "mail_unread", "trash_mail", "mark_mail"],
         .contacts: ["search_contacts"],
-        .music: ["media_control"],
+        .music: ["play_music", "search_music", "media_control"],
         .volume: ["set_volume"],
         .openApp: ["open_app", "open_url", "list_app_menu", "app_menu_command"],
         .shortcut: ["run_shortcut"],
