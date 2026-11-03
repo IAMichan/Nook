@@ -1,8 +1,8 @@
 import SwiftUI
 
 // The main window's sidebar: one column along the window's left edge, from the top of the window to the
-// bottom. Its head is the title bar's row: the traffic lights, Nook with his task ring (drawn by the window, so his
-// ring and its labels are never cut off by the column), and talk and split view. Then the tabs (Nook, Agents, Chats, Music) and Search as rows, then the list of
+// bottom. Its head is the title bar's row: the traffic lights, and talk and split view. Nook himself stays in the notch.
+// Then the tabs (Nook, Agents, Chats, Music) and Search as rows, then the list of
 // the tab you are on (its sessions, its Nooks, its chats), and the footer at the bottom.
 //
 // The list belongs to its tab, so the tab draws the column; `PanelView` hands it what goes on top through the
@@ -31,11 +31,8 @@ enum PanelSidebarMetrics {
     static let titleBand: CGFloat = 52
     /// How far below the window's top the content beside the sidebar starts, so a 30 pt header is centered on the band.
     static let contentTop: CGFloat = (titleBand - 30) / 2
-    /// Nook's size at the head of the sidebar, with room for his ring inside the band.
-    static let orb: CGFloat = 24
-    /// Where Nook stands, from the window's left edge: past the traffic lights (which end near 80 pt), with room for his
-    /// ring (`NookTaskRing.radius`, 12 pt around him).
-    static let orbLeading: CGFloat = 100
+    /// The room the traffic lights take from the window's left edge (they end near 80 pt).
+    static let trafficLights: CGFloat = 88
     /// The head of the sidebar fills the title bar's row.
     static let head: CGFloat = titleBand
     /// A tab row, and the search field above them.
@@ -103,12 +100,11 @@ struct PanelSidebarTop: View {
         }
     }
 
-    /// The title bar's row: room for the traffic lights and Nook (the window draws him there), then talk and split view.
+    /// The title bar's row: room for the traffic lights, then talk and split view.
     private func head(_ context: PanelSidebarContext) -> some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
             Color.clear
-                .frame(width: PanelSidebarMetrics.orbLeading + PanelSidebarMetrics.orb + NookTheme.Spacing.md
-                       - PanelSidebarMetrics.inset)
+                .frame(width: PanelSidebarMetrics.trafficLights - PanelSidebarMetrics.inset)
             Spacer(minLength: 0)
             if !compact {
                 NookIconButton(systemName: "mic", label: tr("button.talk"), size: 28, action: context.talk)
@@ -253,6 +249,13 @@ private struct PanelSidebarTabStatus: View {
 }
 
 extension View {
+    /// The header of a conversation (a session's, the Nook chat's) stands on the canvas, above what scrolls under it:
+    /// in the main window a scroll view may draw past its top into the title bar's row, and the conversation's lines
+    /// ran through the header's title. There the canvas reaches up to the window's top too.
+    func conversationHeaderBackground() -> some View {
+        modifier(ConversationHeaderBackground())
+    }
+
     /// The first column of a tab in the main window, which starts with `PanelSidebarTop`: its rows keep
     /// `PanelSidebarMetrics.inset` from the window's edge, and it runs up to the window's top, where its head fills the
     /// title bar's row, while the content beside it starts `contentTop` lower. Elsewhere unchanged.
@@ -269,5 +272,20 @@ private struct PanelSidebarColumn: ViewModifier {
             .padding(.leading, context == nil ? 0 : PanelSidebarMetrics.inset)
             .padding(.top, context == nil ? 0 : -PanelSidebarMetrics.contentTop)
             .environment(\.inPanelSidebar, context != nil)
+    }
+}
+
+private struct ConversationHeaderBackground: ViewModifier {
+    @Environment(\.panelSidebar) private var context
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                NookTheme.canvas
+                    .padding(.top, context == nil ? 0 : -PanelSidebarMetrics.contentTop)
+                    .padding(.bottom, -NookTheme.Spacing.sm)
+                    .allowsHitTesting(false)
+            }
+            .zIndex(1)
     }
 }

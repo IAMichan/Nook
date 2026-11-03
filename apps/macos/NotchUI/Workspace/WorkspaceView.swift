@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Nook's main window: the open notch with the room of a window. The same panel (Nook with home and chat, Agents with
-/// every session and its tools, Music while something plays), with Nook and his task ring next to the same tabs, and
+/// every session and its tools, Music while something plays), with the tabs in a sidebar along its left edge, and
 /// tasks such as reviewing changes opening over the tab as they do in the notch. While the window is open, anything that
 /// asks for a tab or a task (View on a notch card too) opens here and brings it forward (see `NotchViewModel.routesToWindow`).
 struct WorkspaceView: View {
@@ -9,21 +9,12 @@ struct WorkspaceView: View {
     @ObservedObject private var viewModel = AppModel.shared.viewModel
     /// A chat's video or photo shown over the whole window.
     @StateObject private var mediaStage = ChatMediaStage()
-    /// The tab draws the sidebar along the window's left edge (`PanelSidebarTop`): no margin on that side, and Nook stands
-    /// small in the title bar's row, just past the traffic lights, instead of beside the header.
+    /// The tab draws the sidebar along the window's left edge (`PanelSidebarTop`): no margin on that side.
     @State private var sidebarShown = false
 
     var body: some View {
-        let orb = sidebarShown ? PanelSidebarMetrics.orb : PanelOrb.panelSize
-        ZStack(alignment: .topLeading) {
-            PanelView(viewModel: viewModel, tab: viewModel.windowTab, headerInset: PanelOrb.headerInset, inWindow: true)
-            // Drawn here, over the panel, and not inside the sidebar's column: that column clips, and cut off his ring
-            // and the labels it shows on hover.
-            PanelOrb(viewModel: viewModel, mood: viewModel.mood(for: viewModel.windowTab), size: orb, inWindow: true)
-                .offset(x: sidebarShown ? PanelSidebarMetrics.orbLeading : 0,
-                        y: sidebarShown ? (PanelSidebarMetrics.titleBand - orb) / 2 - PanelSidebarMetrics.contentTop
-                            : (PanelView.headerHeight - orb) / 2)
-        }
+        // Nook himself lives in the notch: the window is the place to work, with the Nook chat a tab in its sidebar.
+        PanelView(viewModel: viewModel, tab: viewModel.windowTab, inWindow: true)
         .onPreferenceChange(PanelSidebarShown.self) { shown in
             if sidebarShown != shown { sidebarShown = shown }
         }
@@ -97,9 +88,8 @@ private enum WindowLayout {
     /// row, to stay clear of the traffic lights.
     /// Nook sits on the header row's center, as in the notch: lifted above it, his ring ran into the traffic lights.
     /// The content below starts under his ring (`PanelOrb.belowHeader`).
-    /// Measured from the window's top: past the title bar's row (`PanelSidebarMetrics.titleBand`) with the margin
-    /// Nook's ring needs.
-    static let belowTitleBar: CGFloat = 48
+    /// Measured from the window's top: just past the title bar's row (`PanelSidebarMetrics.titleBand`).
+    static let belowTitleBar: CGFloat = PanelSidebarMetrics.titleBand
 }
 
 /// Display name for an account: custom label, organization name, or "Personal".

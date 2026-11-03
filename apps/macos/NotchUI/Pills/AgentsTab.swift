@@ -611,12 +611,14 @@ struct AgentListRow: View {
                 .buttonStyle(.plain)
             if let actions {
                 hoverActions(actions)
+                    // Only the buttons themselves hold the card back: with the backdrop's fade and the padding counted, a
+                    // one-line row in a narrow list was "on the buttons" nearly everywhere and never showed its card.
+                    .onHover { onActions = $0 }
                     .rowActionsBackdrop(background)
                     .padding(.top, oneLine ? NookTheme.Spacing.xs : NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
                     .padding(.trailing, NookTheme.Spacing.md)
                     .opacity(hovering ? 1 : 0)
                     .allowsHitTesting(hovering)
-                    .onHover { onActions = $0 }
             }
         }
         .onHover { hovering = $0 }
@@ -778,7 +780,9 @@ struct AgentListRow: View {
     @ViewBuilder
     private func hoverActions(_ actions: AgentRowActions) -> some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
-            if let onSnooze = actions.onSnooze {
+            // A narrow one-line row keeps one button, so its hover card shows over nearly the whole row: snooze and pin
+            // are in its right-click menu.
+            if let onSnooze = actions.onSnooze, !compactStatus {
                 Menu {
                     ForEach(SnoozePolicy.Choice.allCases, id: \.self) { choice in
                         Button(tr("agents.snooze." + choice.rawValue)) { onSnooze(choice) }
@@ -791,7 +795,9 @@ struct AgentListRow: View {
             if let onWake = actions.onWake {
                 rowButton("alarm", tr("agents.snooze.cancel"), onWake)
             }
-            rowButton(actions.pinned ? "pin.slash" : "pin", actions.pinned ? tr("inbox.unpin") : tr("inbox.pin"), actions.onPin)
+            if !compactStatus {
+                rowButton(actions.pinned ? "pin.slash" : "pin", actions.pinned ? tr("inbox.unpin") : tr("inbox.pin"), actions.onPin)
+            }
             rowButton(actions.settled ? "arrow.uturn.backward" : "checkmark",
                       actions.settled ? tr("inbox.reopen") : tr("inbox.settle"), actions.onSettle)
         }

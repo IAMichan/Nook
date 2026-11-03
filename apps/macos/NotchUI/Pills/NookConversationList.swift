@@ -273,12 +273,13 @@ private struct NookRow: View, Equatable {
             Button(action: action) { content }
                 .buttonStyle(.plain)
             hoverActions
+                // Only the buttons themselves hold the card back, not the backdrop's fade or the padding around them.
+                .onHover { onActions = $0 }
                 .rowActionsBackdrop(background)
                 .padding(.top, NookTheme.Spacing.md)
                 .padding(.trailing, NookTheme.Spacing.md)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
-                .onHover { onActions = $0 }
         }
         .onHover { hovering = $0 }
         // Closed over the buttons, so their first click is not spent closing the card.
