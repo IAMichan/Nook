@@ -1123,7 +1123,7 @@ struct AgentRunPanel: View {
         // Return does what you chose in Settings, Cmd+Return the other.
         let canSteer = active && workspace.canSteer(runID)
         let preferred: ComposerDispatch.Intent = workspace.settings.steerByDefault ? .steer : .queue
-        func deliver(_ intent: ComposerDispatch.Intent) -> () -> Void {
+        func deliver(_ intent: ComposerDispatch.Intent, now: Bool = false) -> () -> Void {
             {
                 if editingQueued != nil { saveQueuedEdit(); return }
                 let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1134,10 +1134,25 @@ struct AgentRunPanel: View {
                 let message = quotes.message(outgoing.send)
                 quotes.removeAll()
                 sentCount += 1
+                // ⌘Return to steer means now: when the turn cannot take it in, it is interrupted and the message goes next.
+                if intent == .steer, now { workspace.sendNow(runID, text: message); return }
                 if ComposerDispatch.resolve(busy: true, intent: intent, canSteer: canSteer) == .steer,
                    workspace.steer(runID, text: message) { return }
                 workspace.enqueue(runID, text: message)
             }
+        }
+        // ⌘Return while the last turn is still finishing (or messages wait in line): this one goes out first, right away.
+        let sendNow = {
+            if editingQueued != nil { saveQueuedEdit(); return }
+            let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard composerModel.hasContent(text), !active else { return }
+            let outgoing = composerModel.outgoing(text)
+            draft = ""
+            images = []
+            let message = quotes.message(outgoing.send)
+            quotes.removeAll()
+            workspace.sendNow(runID, text: message)
+            sentCount += 1
         }
         let primary = ComposerDispatch.resolve(busy: true, intent: preferred, canSteer: canSteer)
         let steers = primary == .steer
@@ -1182,9 +1197,10 @@ struct AgentRunPanel: View {
                 .trayTrailing { usageLimits(run) }
                 // While it works, what you type steers the turn or waits in line, and Cmd+Return does the other.
                 .queueing(active ? deliver(preferred) : nil,
-                          alternate: active ? deliver(preferred == .steer ? .queue : .steer) : nil,
+                          alternate: active ? deliver(preferred == .steer ? .queue : .steer, now: true) : nil,
                           label: steers ? tr("compose.steer") : tr("compose.queue"),
                           symbol: steers ? "arrow.turn.down.right" : "text.append")
+                .sendingNow(active ? nil : sendNow)
                 .images($composerState.images)
                 .zIndex(1)
             }
