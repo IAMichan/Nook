@@ -53,13 +53,23 @@ extension WorkspaceManager {
         limitResumes.removeValue(forKey: id)?.cancel()
         guard let run = run(id), run.autoResume == true, let reset = run.limitResetAt else { return }
         // A little after the reset, so the limit is really free again.
-        let wait = max(0, reset.timeIntervalSinceNow) + 20
+        let due = reset.addingTimeInterval(20)
         limitResumes[id] = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+            // Task.sleep stands still while the Mac sleeps, so one long sleep would fire hours late after a night
+            // with the lid closed: wait in short steps against the wall clock instead.
+            var left = due.timeIntervalSinceNow
+            while left > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(min(left, Self.limitResumeStep) * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                left = due.timeIntervalSinceNow
+            }
             guard !Task.isCancelled else { return }
             self?.resumeAfterLimit(id)
         }
     }
+
+    /// How often a waiting resume looks at the clock: at most this long late after the Mac wakes.
+    static let limitResumeStep: TimeInterval = 30
 
     /// Checked again right before sending: still waiting, still wanted, nothing pending, not archived.
     private func resumeAfterLimit(_ id: UUID) {

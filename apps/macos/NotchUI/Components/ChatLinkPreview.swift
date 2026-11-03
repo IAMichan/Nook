@@ -268,7 +268,8 @@ final class ChatLinkPreviews {
 }
 
 /// A frame of a video and how long it lasts, read once per video: a video whose app sent no picture of it still shows
-/// what it is.
+/// what it is. A file still coming in is waited for (`ChatVideoAsset`); one that still gave no frame is asked again a
+/// while later rather than never, so a video that came in late gets its picture too.
 @MainActor
 enum ChatVideoStills {
     struct Still {
@@ -276,19 +277,34 @@ enum ChatVideoStills {
         var seconds: Double?
     }
 
+    /// How long a video that gave no frame is left alone before it is tried again.
+    private static let retry: TimeInterval = 30
+
     private static var stills: [URL: Still] = [:]
+    private static var failed: [URL: Date] = [:]
 
     static func still(_ url: URL) async -> Still {
         if let known = stills[url] { return known }
-        let asset = AVURLAsset(url: url)
+        if let at = failed[url], Date().timeIntervalSince(at) < retry { return Still() }
+        guard let asset = await ChatVideoAsset.load(url) else {
+            if !Task.isCancelled { failed[url] = Date() }
+            return Still()
+        }
         let seconds = try? await asset.load(.duration).seconds
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: 640, height: 640)
+        generator.requestedTimeToleranceBefore = .positiveInfinity
+        generator.requestedTimeToleranceAfter = .positiveInfinity
         let at = CMTime(seconds: min(0.5, (seconds ?? 1) / 2), preferredTimescale: 600)
         let image = (try? await generator.image(at: at).image).map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
         let still = Still(image: image, seconds: seconds.flatMap { $0.isFinite ? $0 : nil })
-        stills[url] = still
+        if image == nil {
+            failed[url] = Date()
+        } else {
+            stills[url] = still
+            failed[url] = nil
+        }
         return still
     }
 }

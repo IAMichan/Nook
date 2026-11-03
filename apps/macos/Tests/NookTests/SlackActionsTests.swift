@@ -44,11 +44,23 @@ final class SlackActionsTests: XCTestCase {
         XCTAssertEqual(messages[1].quote, InboxQuote(id: "slack-D1-1700000010.000100", sender: "Anna", text: "lunch?", mine: false))
     }
 
-    func testDeletedMessageWithAnswersIsLeftOut() {
+    func testDeletedMessageWithAnswersShowsAsDeleted() {
         let history: [String: Any] = ["ok": true, "messages": [
             ["ts": "1700000010.000100", "subtype": "tombstone", "user": "USLACKBOT", "text": "This message was deleted."],
         ]]
-        XCTAssertTrue(SlackData.messages(history, conversation: direct, users: [:], me: "U2").isEmpty)
+        let messages = SlackData.messages(history, conversation: direct, users: [:], me: "U2")
+        XCTAssertEqual(messages.map(\.id), ["slack-D1-1700000010.000100"])
+        XCTAssertEqual(messages.first?.isDeleted, true)
+        XCTAssertEqual(messages.first?.text, "", "Slack's own words are not shown as a message")
+    }
+
+    func testEditedMessageSaysSo() {
+        let history: [String: Any] = ["ok": true, "messages": [
+            ["ts": "1700000010.000100", "user": "U1", "text": "lunch at 1?", "edited": ["user": "U1", "ts": "1700000020.000000"]],
+            ["ts": "1700000030.000100", "user": "U1", "text": "ok"],
+        ]]
+        let messages = SlackData.messages(history, conversation: direct, users: ["U1": "Anna"], me: "U2")
+        XCTAssertEqual(messages.map(\.isEdited), [true, false])
     }
 
     func testEmojiByName() {

@@ -667,6 +667,12 @@ final class WhatsAppLink: ObservableObject {
             if let changed = inbox.applyReaction(emoji, message: message, chat: chat, sender: sender, fromMe: fromMe) {
                 onReceipt?(chatKey(changed))
             }
+        case .edited(let chat, let message, let text)?:
+            // Changed on a phone: the chat shows the new text, marked as edited, without bringing a card up.
+            if let changed = inbox.applyEdit(text, message: message, chat: chat) { onReceipt?(chatKey(changed)) }
+        case .revoked(let chat, let message)?:
+            // Deleted for everyone on a phone: the chat shows it as deleted.
+            if let changed = inbox.applyDelete(message: message, chat: chat) { onReceipt?(chatKey(changed)) }
         default:
             break
         }
@@ -1123,13 +1129,13 @@ final class WhatsAppLink: ObservableObject {
     /// How many fetched files stay at most; the oldest go first, from memory and from disk.
     static let previewLimit = 48
     /// How long a preview that failed waits before it is tried again.
-    static let previewRetry: TimeInterval = 60
+    static let previewRetry: TimeInterval = 10
 
     /// A file already fetched for the notch card.
     func preview(_ id: String) -> WAPreview? { previews[id] }
 
     /// Fetches these messages' files for the card (a photo, a video, a document) with a picture of each: the photo
-    /// itself, the video's first frame, the document's first page. One that failed is tried again after a minute.
+    /// itself, the video's first frame, the document's first page. One that failed is tried again after `previewRetry`.
     /// True when at least one new preview came in while the link stayed the same.
     func loadPreviews(_ ids: [String], chat: String) async -> Bool {
         let gen = generation
@@ -1595,7 +1601,7 @@ final class WhatsAppLink: ObservableObject {
         Log.connectors.info("WhatsApp: message edited")
     }
 
-    /// Deletes a message for everyone, after you confirmed it; it leaves the chat in Nook at once, as on the phone.
+    /// Deletes a message for everyone, after you confirmed it; the chat in Nook shows it as deleted at once, as the phone does.
     /// Throws with a sentence the user can act on.
     func delete(_ message: String, chat: String) async throws {
         guard let provider, isConnected else { throw NookError(statusLine) }

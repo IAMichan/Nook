@@ -2312,7 +2312,8 @@ enum GitHubPullRequests {
                 }
             return PullRequestSnapshot(state: state, checks: checks, failedChecks: failed, reviews: reviews, comments: comments,
                                        draft: (pull["draft"] as? Bool) ?? false,
-                                       conflicted: PullRequestMergeability.githubConflicted(pull))
+                                       conflicted: PullRequestMergeability.githubConflicted(pull),
+                                       mergeabilityKnown: PullRequestMergeability.githubKnown(pull))
         }
         return nil
     }

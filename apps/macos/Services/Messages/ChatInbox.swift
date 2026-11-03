@@ -355,14 +355,37 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
     var mentionsMe: Bool? = nil
     /// Who wrote it, by the app's own id for them, when the app gives one: two people with the same name stay two.
     var senderID: String? = nil
+    /// Its app says it was changed after it was sent: the bubble says "Edited". Nil when the app does not say.
+    var edited: Bool? = nil
+    /// Deleted for everyone (by whoever wrote it, in its app or from Nook): the chat keeps its place and says so, the same
+    /// for every app, with nothing left of what it said (`withdrawn()`).
+    var deleted: Bool? = nil
 
     var isMine: Bool { fromMe == true }
+    var isEdited: Bool { edited == true }
+    var isDeleted: Bool { deleted == true }
+
+    /// What stays of the message once it was deleted for everyone: who wrote it and when, nothing of what it said.
+    func withdrawn() -> InboxMessage {
+        var gone = self
+        gone.deleted = true
+        gone.edited = nil
+        gone.text = ""
+        gone.media = nil
+        gone.poll = nil
+        gone.reactions = nil
+        gone.quote = nil
+        gone.readers = nil
+        gone.mentionsMe = nil
+        return gone
+    }
 
     /// A call its app noted in the chat ("Missed voice call"), read from its line the same way for every app.
-    var call: ChatCall? { media == nil && poll == nil ? ChatFormat.call(text) : nil }
+    var call: ChatCall? { media == nil && poll == nil && !isDeleted ? ChatFormat.call(text) : nil }
 
     /// One line for lists and for Nook: the text, with what came with it ("Photo: on the beach", "Sticker").
     var summary: String {
+        if isDeleted { return tr(isMine ? "chat.message.deletedMine" : "chat.message.deleted") }
         if let poll { return poll.line }
         if let call { return call.summary(mine: isMine) }
         let plain = ChatFormat.plain(text)
@@ -387,7 +410,8 @@ struct BridgedChat: Equatable, Sendable {
     /// The app lists this chat as one of yours (Teams): it shows in the Chats tab even without messages, or with only
     /// old ones, as long as the app keeps listing it.
     var listed: Bool = false
-    /// Messages (by their id in Nook) the app says were deleted since: the chat drops them.
+    /// Messages (by their id in Nook) the app says were deleted for everyone since: the chat keeps them as deleted
+    /// (`InboxMessage.withdrawn()`).
     var deleted: [String] = []
     /// The chat's own id in its app (WhatsApp's chat key, its account included), when the bridge gives one: Nook then
     /// knows the chat by it (`ChatInbox.key(app:id:)`), so a new name never splits it and two chats with one name stay
@@ -1048,6 +1072,14 @@ struct ChatInbox: Codable, Equatable, Sendable {
         let indexByID = Dictionary(thread.messages.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         for message in messages {
             guard let index = indexByID[message.id] else { continue }
+            // Deleted for everyone: it stays deleted, whatever a later read still brings of it.
+            if thread.messages[index].isDeleted { continue }
+            if message.isDeleted {
+                thread.messages[index] = thread.messages[index].withdrawn()
+                if thread.reaction?.message == message.id { thread.reaction = nil }
+                continue
+            }
+            if message.isEdited, !thread.messages[index].isEdited { thread.messages[index].edited = true }
             // An edited message, or one first known from a chat list's preview, now read in full.
             if !message.text.isEmpty, thread.messages[index].text != message.text { thread.messages[index].text = message.text }
             // Who wrote it, by a better name than before (the app learned it since: WhatsApp's names from Contacts and
@@ -1075,7 +1107,13 @@ struct ChatInbox: Codable, Equatable, Sendable {
                 }
             }
         }
-        if !chat.deleted.isEmpty { thread.messages.removeAll { chat.deleted.contains($0.id) } }
+        if !chat.deleted.isEmpty {
+            let gone = Set(chat.deleted)
+            for index in thread.messages.indices where gone.contains(thread.messages[index].id) && !thread.messages[index].isDeleted {
+                thread.messages[index] = thread.messages[index].withdrawn()
+            }
+            if let note = thread.reaction, gone.contains(note.message) { thread.reaction = nil }
+        }
         var ids = Set(thread.messages.map(\.id))
         // A chat its app knows by an id (`chatID`) gets every message under the app's own id, never also as a
         // notification: two messages with the same words in a row ("ok", "ok") are two. Elsewhere the same words from the
@@ -1083,14 +1121,16 @@ struct ChatInbox: Codable, Equatable, Sendable {
         let byIDOnly = chat.chatID != nil
         for message in messages where !ids.contains(message.id) && (byIDOnly || !thread.messages.contains(where: {
             // Two photos sent in a row are two messages, even without a caption.
-            message.media == nil && $0.media == nil && message.poll == nil && $0.isMine == message.isMine && $0.text == message.text
+            message.media == nil && $0.media == nil && message.poll == nil && !message.isDeleted && $0.isMine == message.isMine && $0.text == message.text
                 && abs($0.date.timeIntervalSince(message.date)) < Self.sameMessageWindow
         })) {
             let index = thread.messages.lastIndex { $0.date <= message.date }.map { $0 + 1 } ?? 0
-            thread.messages.insert(message, at: index)
+            thread.messages.insert(message.isDeleted ? message.withdrawn() : message, at: index)
             ids.insert(message.id)
-            // History (fetched on opening the chat, or after the Mac slept) is never new.
-            if chat.unread == nil, !chat.history, let newestBefore, !message.isMine, message.date > newestBefore { thread.unread += 1 }
+            // History (fetched on opening the chat, or after the Mac slept) is never new, nor is a deleted message.
+            if chat.unread == nil, !chat.history, let newestBefore, !message.isMine, !message.isDeleted, message.date > newestBefore {
+                thread.unread += 1
+            }
         }
         // A message that came in after what the chat had is its newest change: the line again, even when the emoji the
         // line showed was dated later by this Mac's clock (it was read before the message, or in the same read).

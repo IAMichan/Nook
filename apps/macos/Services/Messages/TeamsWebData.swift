@@ -202,8 +202,8 @@ enum TeamsWebData {
         ChatJSON.date(message["composetime"]) ?? ChatJSON.date(message["originalarrivaltime"])
     }
 
-    /// A chat's messages, oldest first: text, rich text and calls (no one joining), deleted ones left out; a message with
-    /// only files shows their names.
+    /// A chat's messages, oldest first: text, rich text and calls (no one joining); a deleted one shows as deleted, an
+    /// edited one says so, and a message with only files shows their names.
     static func messages(_ json: [String: Any], chat: TeamsData.Chat, me: String) -> [InboxMessage] {
         let all = json["messages"] as? [[String: Any]] ?? []
         // Who is who, by the names their messages carry: the emoji name their people by id only.
@@ -212,7 +212,11 @@ enum TeamsWebData {
             guard let id = message["id"] as? String, let type = message["messagetype"] as? String,
                   type == "Text" || type.hasPrefix("RichText") || type == "Event/Call", let sent = date(message) else { return nil }
             let properties = message["properties"] as? [String: Any] ?? [:]
-            if properties["deletetime"] != nil { return nil }
+            if properties["deletetime"] != nil {
+                let mine = contact(message["from"]) == me
+                let sender = mine || !chat.isGroup ? "" : ((message["imdisplayname"] as? String) ?? "")
+                return InboxMessage(id: "teams-\(id)", sender: sender, text: "", date: sent, fromMe: mine).withdrawn()
+            }
             let content = (message["content"] as? String) ?? ""
             if type == "Event/Call" {
                 // A call shows as every app's call, once it ended or was missed.
@@ -228,6 +232,7 @@ enum TeamsWebData {
             let sender = mine || !chat.isGroup ? "" : ((message["imdisplayname"] as? String) ?? "")
             var inbox = InboxMessage(id: "teams-\(id)", sender: sender, text: text, date: sent, fromMe: mine)
             if mine { inbox.receipt = .sent }
+            if properties["edittime"] != nil { inbox.edited = true }
             inbox.quote = answer.quote
             inbox.reactions = reactions(properties["emotions"], me: me, names: names)
             return inbox
@@ -442,8 +447,8 @@ enum TeamsWebData {
         return escaped
     }
 
-    /// The messages Teams marked as deleted (`properties.deletetime`), by their id in Nook ("teams-…"): `messages`
-    /// leaves them out, and the chat in Nook drops them too.
+    /// The messages Teams marked as deleted (`properties.deletetime`), by their id in Nook ("teams-…"): the chat in Nook
+    /// shows them as deleted.
     static func deleted(_ json: [String: Any]) -> [String] {
         (json["messages"] as? [[String: Any]] ?? []).compactMap { message in
             guard let id = message["id"] as? String, !id.isEmpty,
