@@ -357,5 +357,12 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
   AppleScript (`search library playlist 1`, so only tracks in the library, not the Apple Music catalogue), Spotify
   through its Web API search (needs Spotify connected in Settings › Connections, not Premium). A found track plays on
   click and goes in the queue like any other track in the tab.
+- **Music players: playlists.** The Music tab's Playlists section shows and keeps the user's playlists in both players:
+  Music through AppleScript (`MusicScriptOutput`: list, tracks, add with `duplicate`, remove, make, rename, delete;
+  smart playlists are read only), Spotify through its Web API (`SpotifyWebAPI`: `/me/playlists`, a playlist's
+  `/items` with a fallback to the older `/tracks`; playlists of others are read only). A playlist opens as a track
+  list to play, shuffle, filter and edit; "Add to playlist" sits in the bar, the full player and every track's context
+  menu. Spotify needs the playlist scopes, so a connection made before them asks to connect again
+  (`Failure.missingScope`). With nothing playing, the tab offers the playlists to start from.
 
 Add an item here when a change cannot reach every member yet.

@@ -69,8 +69,15 @@ final class NowPlayingService: ObservableObject {
     @Published private(set) var recent = RecentTracks()
     /// Music: what comes next in the playlist it plays from. `nil` until loaded, or for Spotify.
     @Published var upNext: MusicQueue?
-    /// Music: the user's playlists.
+    /// The user's playlists in Music, or on Spotify once it is connected (see `NowPlayingService+Playlists`).
     @Published var playlists: [MusicPlaylist] = []
+    /// The player `playlists` came from.
+    @Published var playlistsApp: String?
+    @Published var playlistsState = MusicLoadState.idle
+    /// The playlist open in the Music tab, with its tracks.
+    @Published var playlistDetail: MusicPlaylistDetail?
+    /// A name the Music tab asks for: a new playlist, or a new name for one.
+    @Published var playlistPrompt: MusicPlaylistPrompt?
     /// The Music tab's search (see `NowPlayingService+Search`).
     @Published var searchResult = MusicSearchResult()
     var searchTask: Task<Void, Never>?
