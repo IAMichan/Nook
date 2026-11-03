@@ -30,6 +30,7 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 | Web, weather, charts, mail drafts | ✓ (mail via `mailto:`) | `tools/{web,charts,mail}.rs` |
 | `ClaudeCodeBrain` | ◐ (not tested with a real `claude`) | `core/src/brain/claude_code.rs` |
 | `NookStore`, `NookChat` (Nooks, `nooks.json`, archive, search) | ✓ | `core/src/store.rs`, `core/src/nooks.rs` |
+| Asking about a selection (`SelectionAsk`: a bar above selected text anywhere in Nook, the answer in a card beside it) | ○ | |
 | `SecretStore` | ✓ | Credential Manager, Secret Service, private app folder on Android |
 | Plans with Run, never run twice, Undo | ✓ | `src-tauri/src/commands/plans.rs` |
 | Onboarding (welcome card, three steps) | ✓ | `src/views/` |
