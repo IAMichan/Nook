@@ -141,7 +141,7 @@ final class AppModel: ObservableObject {
         // Claude API uses Anthropic's native search tool; other providers use Nook's search tool.
         let ownSearch = settings.useLocal || settings.provider != .claude
         let webSpecs = settings.webSearch ? web.specs(includeSearch: ownSearch) : []
-        var all: [ToolSpec] = tools.specs + chatTools + connectors.tools
+        var all: [ToolSpec] = tools.specs + chatTools + connectors.tools + musicTools + agentSessionTools
         if settings.useMemory { all += memoryTools }
         all += settingsTools
         all += webSpecs
@@ -156,7 +156,7 @@ final class AppModel: ObservableObject {
 
     /// All supported capabilities, including inactive connectors: displayed in Settings › Connectors.
     var knownTools: [ToolSpec] {
-        var all: [ToolSpec] = tools.specs + chatTools + connectors.hubTools + memoryTools + settingsTools
+        var all: [ToolSpec] = tools.specs + chatTools + connectors.hubTools + memoryTools + settingsTools + musicTools + agentSessionTools
         all += connectors.sources.flatMap { $0.tools }
         all += web.specs(includeSearch: true)
         all += BrowserStore.tools
