@@ -27,7 +27,9 @@ struct AgentSessionDetail: View {
         get { composerState.images }
         nonmutating set { composerState.images = newValue }
     }
-    @StateObject private var composerModel = ComposerModel()
+    /// Held, not observed: only its suggestion list watches it (`ComposerSuggestionSlot`), so a key that changes the
+    /// list does not redraw this whole panel.
+    @State private var composerModel = ComposerModel()
     /// The keyboard is in the composer when the session opens, as in `AgentRunPanel`, also with a side panel open.
     @FocusState private var composerFocused: Bool
     /// Why the last action in this view failed, shown above the composer.
@@ -298,12 +300,15 @@ struct AgentSessionDetail: View {
     /// The composer under a live session. What you send continues the conversation in Nook: an idle session goes on as
     /// is, a busy Claude Code session as a copy, and one that waits on you, or still runs in a terminal, is taken over.
     private func liveComposer(_ session: AgentSession) -> some View {
-        Observing(composerState) { liveComposerContent(session) }
+        // Worked out once per session change, not on every key: both look through the history, and for some agents
+        // check the disk.
+        let canSend = app.canReply(to: session)
+        let canTakeOver = app.canTakeOver(session)
+        return Observing(composerState) { liveComposerContent(session, canSend: canSend, canTakeOver: canTakeOver) }
     }
 
     @ViewBuilder
-    private func liveComposerContent(_ session: AgentSession) -> some View {
-        let canSend = app.canReply(to: session)
+    private func liveComposerContent(_ session: AgentSession, canSend: Bool, canTakeOver: Bool) -> some View {
         let send = {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             guard composerModel.hasContent(text), canSend, !working else { return }
@@ -347,8 +352,8 @@ struct AgentSessionDetail: View {
             ) {
                 sessionMenu(session)
                 agentMenu(name: session.name, kind: AgentKind(agentName: session.name), profile: app.profile(for: session),
-                          canSwitch: app.canTakeOver(session))
-                if app.canTakeOver(session) { turnControls(kind: AgentKind(agentName: session.name)) }
+                          canSwitch: canTakeOver)
+                if canTakeOver { turnControls(kind: AgentKind(agentName: session.name)) }
             }
             .rich(composerModel, composerConfig(folder: session.cwd))
             .choicesBelowBox()
@@ -748,7 +753,7 @@ private struct SessionQuestionOptionButton: View {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     HStack(spacing: NookTheme.Spacing.xs) {
                         Text(parsedLabel.title)
-                            .font(NookTheme.font(13.5, .semibold))
+                            .font(NookTheme.font(13, .semibold))
                             .foregroundStyle(chosen ? NookTheme.paper : (isHovered ? NookTheme.paper : NookTheme.paper.opacity(0.92)))
 
                         if let badge = parsedLabel.badge {
@@ -825,7 +830,7 @@ private struct SessionQuestionOptionButton: View {
     private var trailingIndicator: some View {
         if multiSelect {
             Image(systemName: chosen ? "checkmark.square.fill" : "square")
-                .font(NookTheme.font(14, .medium))
+                .font(NookTheme.font(13, .medium))
                 .foregroundStyle(chosen ? NookTheme.amber : (isHovered ? NookTheme.paper : NookTheme.textTertiary))
                 .padding(.top, 2)
         } else {

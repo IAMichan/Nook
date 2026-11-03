@@ -47,7 +47,7 @@ struct ChatMessageText: View {
             }
         }
         // Body size with a little air between lines: a chat is read in long runs.
-        .font(weight == .regular ? NookTheme.TextStyle.body : NookTheme.font(14, weight))
+        .font(weight == .regular ? NookTheme.TextStyle.body : NookTheme.font(13, weight))
         .lineSpacing(NookTheme.Spacing.xxs)
         .foregroundStyle(NookTheme.paper)
         .tint(NookTheme.blue)

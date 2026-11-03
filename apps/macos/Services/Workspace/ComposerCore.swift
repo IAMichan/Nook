@@ -257,7 +257,8 @@ enum ContextRefs {
 
     /// The references in a text, in order. Links of another kind or version are left alone.
     static func find(in text: String) -> [Found] {
-        guard let pattern else { return [] }
+        // Runs several times per key in the composer: most drafts hold no reference, so skip the expression for them.
+        guard let pattern, text.contains("nook-context:") else { return [] }
         let whole = NSRange(text.startIndex..., in: text)
         return pattern.matches(in: text, range: whole).compactMap { match in
             guard match.numberOfRanges == 4, let all = Range(match.range, in: text), let label = Range(match.range(at: 1), in: text),

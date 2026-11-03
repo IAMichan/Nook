@@ -50,7 +50,7 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
         view.linkBase = { [weak self] in self?.directory }
         // Clicking into a pane of a split makes it the active terminal: the one the buttons split and close.
         view.focused = { TerminalStore.shared.activate(id) }
-        view.font = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
+        view.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
 
         let shell = ProcessInfo.processInfo.environment["SHELL"].flatMap { $0.isEmpty ? nil : $0 } ?? "/bin/zsh"
         var environment = ProcessInfo.processInfo.environment

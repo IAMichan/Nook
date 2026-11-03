@@ -77,6 +77,9 @@ struct AgentChatMessage: Identifiable, Equatable {
     var queued = false
     /// What a `.notice` message stands for.
     var notice: AgentNotice? = nil
+    /// Background work (a subagent started with `run_in_background`) that Claude Code said ended after this message:
+    /// its `<task-notification>`, which is no message of its own.
+    var finishedTasks: [BackgroundTaskUpdate] = []
 
     var fromUser: Bool { kind == .user }
     var isThinking: Bool { kind == .thinking }
@@ -271,6 +274,12 @@ enum AgentTranscript {
                                at: when, in: &messages)
                     }
                     let text = typedText(message["content"])
+                    // Background work that ended: the agent woke up for it. Kept on the message before it, so a session
+                    // that follows this transcript can settle the subagent's row (`TranscriptFollow`).
+                    if let update = finishedTask(text: text, content: message["content"]) {
+                        noteFinished(update, in: &messages)
+                        continue
+                    }
                     if isInterruption(text), !messages.isEmpty {
                         messages[messages.count - 1].interrupted = true
                         continue
@@ -321,6 +330,13 @@ enum AgentTranscript {
             // written as a queued command, never as a user line; task notifications and messages from other agents
             // use the same shape and are left out.
             else if type == "attachment" {
+                // Background work that ended while the agent was busy is handed over in the same shape.
+                if let attachment = object["attachment"] as? [String: Any], attachment["type"] as? String == "queued_command",
+                   (object["isSidechain"] as? Bool) != true,
+                   let update = BackgroundTaskUpdate.notification(Self.text(attachment["prompt"])) {
+                    noteFinished(update, in: &messages)
+                    continue
+                }
                 guard let text = queuedPrompt(object) else { continue }
                 var message = AgentChatMessage(id: id, kind: .user, text: clip(text), date: when)
                 message.queued = true
@@ -753,6 +769,24 @@ enum AgentTranscript {
     }
 
     /// Filters to actual user prompts, excluding synthetic commands, output, or interruption notices.
+    /// Claude Code's note that background work ended, from a user line's text or its blocks.
+    private static func finishedTask(text: String, content: Any?) -> BackgroundTaskUpdate? {
+        // The raw content: the typed text has the agent's own tags taken out already.
+        if let update = BackgroundTaskUpdate.notification(text) ?? BackgroundTaskUpdate.notification(Self.text(content)) {
+            return update
+        }
+        for block in (content as? [[String: Any]]) ?? [] where block["type"] as? String == "text" {
+            if let update = BackgroundTaskUpdate.notification((block["text"] as? String) ?? "") { return update }
+        }
+        return nil
+    }
+
+    /// Keeps a finished background task on the last message, once.
+    private static func noteFinished(_ update: BackgroundTaskUpdate, in messages: inout [AgentChatMessage]) {
+        guard !messages.isEmpty, !messages[messages.count - 1].finishedTasks.contains(update) else { return }
+        messages[messages.count - 1].finishedTasks.append(update)
+    }
+
     /// The words of a message a person sent while the agent worked, from Claude Code's `queued_command` attachment line;
     /// nil for anything else in that shape (task notifications, other agents, sidechains).
     static func queuedPrompt(_ object: [String: Any]) -> String? {

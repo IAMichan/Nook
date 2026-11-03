@@ -85,10 +85,10 @@ enum NookTheme {
     static let hairline = Color(hex: 0x1E1E1E)
     /// The line between a window's columns and panels (the sidebar, the side panel, a pane's header): a hairline that
     /// is there when you look for it and gone when you don't, so regions read by their layout rather than their frames.
-    static let border = Color(hex: 0x2A2A2A)
+    static let border = Color(hex: 0x1F1F1F)
     /// The line between the items of a list (a chat in the Chats tab): a step brighter than `border`, so
     /// each item reads as its own.
-    static let separator = Color(hex: 0x323232)
+    static let separator = Color(hex: 0x262626)
     /// The stroke of a text field or tray at rest.
     static let fieldStroke = Color(hex: 0x282828)
     /// Body text that reads a little softer than `paper`, without dropping to `textSecondary`.
@@ -185,7 +185,7 @@ enum NookTheme {
 
     /// The type scale: each kind of text with its size and weight, so two panels never show the same kind of text at
     /// different sizes. Running text is a `TextStyle`; use `font(_:_:)` only for a symbol's size or a numeral the scale
-    /// does not cover. Sizes lean a little large on purpose: Nook is read at a glance, often from the notch.
+    /// does not cover. Sizes stay compact, as in t3code: a 13 pt body and 11.5 pt metadata fit more on screen while staying readable.
     ///
     /// Picking one: a timestamp or a count is `caption`; the line under a title (a hint, a setting's explanation, a
     /// row's second line) is `detail`; a badge, a chip or metadata is `label`; what you read is `body`; a row's title
@@ -193,23 +193,23 @@ enum NookTheme {
     /// big line on a page (home's greeting, a settings page) is `display`.
     enum TextStyle {
         /// Timestamps, counts, and the smallest metadata.
-        static var caption: Font { NookTheme.font(11, .medium) }
+        static var caption: Font { NookTheme.font(10.5, .medium) }
         /// The line under a title: a setting's explanation, a hint, a row's second line, or an error message.
-        static var detail: Font { NookTheme.font(12) }
+        static var detail: Font { NookTheme.font(11.5) }
         /// Secondary labels, badges, chips, and metadata.
-        static var label: Font { NookTheme.font(12, .medium) }
+        static var label: Font { NookTheme.font(11.5, .medium) }
         /// Body text in rows, cards, chat, and the composer.
-        static var body: Font { NookTheme.font(14) }
+        static var body: Font { NookTheme.font(13) }
         /// A row title or a button: medium rather than bold, so a list of titles stays calm and the text carries it.
-        static var strong: Font { NookTheme.font(14, .medium) }
+        static var strong: Font { NookTheme.font(13, .medium) }
         /// The title of a panel, a list, or a card.
-        static var title: Font { NookTheme.font(15, .semibold) }
+        static var title: Font { NookTheme.font(14, .semibold) }
         /// The heading of a sheet or a setup step.
-        static var heading: Font { NookTheme.font(18, .semibold) }
+        static var heading: Font { NookTheme.font(16, .semibold) }
         /// The one large line of a page: home's greeting, a settings page's title.
-        static var display: Font { NookTheme.font(22, .semibold) }
+        static var display: Font { NookTheme.font(20, .semibold) }
         /// Inline code and paths at body size.
-        static var code: Font { NookTheme.mono(13) }
+        static var code: Font { NookTheme.mono(12) }
     }
 
     // Typography: SF Pro for text, SF Mono for code and paths.

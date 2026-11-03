@@ -57,6 +57,8 @@ extension WorkspaceManager {
                     known.output = event.output
                     if event.detail != nil { known.detail = event.detail }
                 }
+            case .backgroundTask(let update):
+                noteBackgroundSubagent(id, update)
             }
         }
     }
