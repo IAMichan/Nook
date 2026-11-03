@@ -27,6 +27,9 @@ struct PullRequestDetailView: View {
     /// page's own top line, so there is no second line above it just for that. Nil leaves it out.
     let onMaximize: (() -> Void)?
     let maximized: Bool
+    /// False while the side panel that holds the page still slides in: until then the page shows its ghost under the
+    /// top, so the slide (and the notch growing with it) does not lay the whole page out on every frame.
+    @State var settled: Bool
 
     enum Tab: Hashable { case summary, guide, timeline, code }
 
@@ -92,7 +95,8 @@ struct PullRequestDetailView: View {
 
     init(accountID: String, item: PullRequestItem, inline: Bool = false, stack: [PullRequestItem] = [],
          onOpenPullRequest: ((PullRequestItem) -> Void)? = nil, onUpdate: ((PullRequestItem) -> Void)? = nil,
-         onBack: (() -> Void)? = nil, onMaximize: (() -> Void)? = nil, maximized: Bool = false) {
+         onBack: (() -> Void)? = nil, onMaximize: (() -> Void)? = nil, maximized: Bool = false,
+         waitsForPanel: Bool = false) {
         self.accountID = accountID
         self.item = item
         self.inline = inline
@@ -102,6 +106,7 @@ struct PullRequestDetailView: View {
         self.onBack = onBack
         self.onMaximize = onMaximize
         self.maximized = maximized
+        _settled = State(initialValue: !waitsForPanel)
         _model = StateObject(wrappedValue: PullRequestDetailModel(accountID: accountID, item: item))
     }
 
@@ -117,7 +122,7 @@ struct PullRequestDetailView: View {
         VStack(alignment: .leading, spacing: 0) {
             headerBlock.pullRequestPageColumn()
             if confirmStackMerge || mergingStack { stackMergeBar.padding(.top, NookTheme.Spacing.sm).pullRequestPageColumn() }
-            if let detail {
+            if let detail, settled {
                 ZStack(alignment: .bottomTrailing) {
                     // The relative times in the timeline and the commits tick along, once a minute.
                     TimelineView(.nookTicks(every: 60)) { context in
@@ -136,7 +141,7 @@ struct PullRequestDetailView: View {
                         .pullRequestPageColumn()
                         .transition(.opacity)
                 }
-            } else if let error = model.error {
+            } else if let error = model.error, settled {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                     Text(tr("agents.pr.loadFailed")).font(NookTheme.TextStyle.title).foregroundStyle(NookTheme.paper)
                     Text(error)
@@ -156,6 +161,11 @@ struct PullRequestDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task(id: item.id) { await model.run() }
+        .task {
+            guard !settled else { return }
+            try? await Task.sleep(for: NookTheme.tabSettle)
+            if !Task.isCancelled { withAnimation(NookTheme.tabFade) { settled = true } }
+        }
         // Back in Nook after a while elsewhere: look at once instead of at the next tick.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             if !merging { Task { await model.refresh() } }
@@ -191,7 +201,7 @@ struct PullRequestDetailView: View {
                         .padding(.top, NookTheme.Spacing.xs)
                         .padding(.bottom, NookTheme.Spacing.lg)
                 }
-                if let detail {
+                if let detail, settled {
                     NookDivider()
                     tabs(detail).padding(.vertical, NookTheme.Spacing.sm)
                 }
