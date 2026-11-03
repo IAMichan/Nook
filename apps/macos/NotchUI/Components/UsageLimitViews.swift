@@ -1,26 +1,26 @@
 import SwiftUI
 
-// Subscription limits, drawn them: everything reads as room left ("62% left", a bar that drains), a
+// Subscription limits, drawn them. The modal reads as room left ("62% left", a bar that drains), a
 // line on the bar marks where even spending would be by now, color only once little is left, and the details (reset
 // time, pace) one hover or click away instead of in a footnote. Two shapes share these rules: `UsageLimitRows`, one line
-// per window for one account (the composer's popover, Settings › Coding agents), and `UsageLimitsSheet`, the modal with
+// per window for one account (the composer's popover, Settings › Coding agents), and `UsageLimitsModal`, the modal with
 // every agent's accounts as one pool per window.
 
 extension QuotaLimit {
     var poolLimit: LimitPool.Limit { .init(label: label, used: percent, resetsAt: resetsAt, duration: duration) }
 }
 
-/// How room left is colored: calm while there is room, amber at 20 % left or less, coral at 10 % or less.
+/// How full a limit is colored, as under the composer: calm while there is room, amber from 75 % used, coral from 90 %.
 enum UsageTone {
     enum Level { case calm, warning, error }
 
-    static func level(left: Int) -> Level {
-        left <= 10 ? .error : (left <= 20 ? .warning : .calm)
+    static func level(used: Int) -> Level {
+        used >= 90 ? .error : (used >= 75 ? .warning : .calm)
     }
 
     /// A bar's fill; `calm` is what it takes while there is room.
-    static func fill(left: Int, calm: Color = NookTheme.textStrong) -> Color {
-        switch level(left: left) {
+    static func fill(used: Int, calm: Color = NookTheme.textStrong) -> Color {
+        switch level(used: used) {
         case .calm: return calm
         case .warning: return NookTheme.amber
         case .error: return NookTheme.coral
@@ -28,8 +28,8 @@ enum UsageTone {
     }
 
     /// A percentage's text.
-    static func text(left: Int) -> Color {
-        switch level(left: left) {
+    static func text(used: Int) -> Color {
+        switch level(used: used) {
         case .calm: return NookTheme.textStrong
         case .warning: return NookTheme.amber
         case .error: return NookTheme.coralSoft
@@ -60,8 +60,9 @@ struct LimitPaceIcon: View {
 
 // MARK: - One account, one line per window
 
-/// One account's windows, a line each: the window's name, a hairline bar of what is left, and the percentage. The reset
-/// time and the pace are in the row's tooltip; the row lights up under the pointer. An account that reports no limits
+/// One account's windows, a line each: the window's name, a hairline bar of how full it is, and the percentage used, as
+/// the composer's ring counts them (the usage limits modal shows what is left instead). The reset time and the pace are in
+/// the row's tooltip; the row lights up under the pointer. An account that reports no limits
 /// shows one "Unavailable" line with the reason in its tooltip.
 struct UsageLimitRows: View {
     let limits: [QuotaLimit]
@@ -72,20 +73,24 @@ struct UsageLimitRows: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if limits.isEmpty {
-                UsageLimitRow(label: tr("limits.limits"), left: nil, value: tr("limits.unavailable"), help: unavailable ?? "")
+                UsageLimitRow(label: tr("limits.limits"), used: nil, value: tr("limits.unavailable"), help: unavailable ?? "")
             } else {
                 ForEach(limits) { limit in
-                    let pool = limit.poolLimit
-                    let left = LimitPool.left(pool.used)
-                    UsageLimitRow(label: limit.label, left: left, value: "\(left)%", help: help(limit, left: left))
+                    let used = Self.used(limit)
+                    UsageLimitRow(label: limit.label, used: used, value: "\(used)%", help: help(limit, used: used))
                 }
             }
         }
     }
 
-    /// "5 hours: 62% left", "Resets in 2h 14m · 17:30", "Ahead of pace".
-    private func help(_ limit: QuotaLimit, left: Int) -> String {
-        var lines = [tr("limits.rowLeft", limit.label, left)]
+    /// A window's percentage used, rounded as it is shown.
+    static func used(_ limit: QuotaLimit) -> Int {
+        Int(max(0, min(100, limit.percent)).rounded())
+    }
+
+    /// "5 hours: 38% used", "Resets in 2h 14m · 17:30", "Ahead of pace".
+    private func help(_ limit: QuotaLimit, used: Int) -> String {
+        var lines = [tr("limits.rowUsed", limit.label, used)]
         if let note = limit.note {
             lines.append(note)
         } else if let reset = limit.resetsAt, reset > now {
@@ -101,8 +106,8 @@ struct UsageLimitRows: View {
 /// One line of `UsageLimitRows`: label, hairline bar, value.
 private struct UsageLimitRow: View {
     let label: String
-    /// Left, 0...100; nil for a line without a bar.
-    let left: Int?
+    /// Used, 0...100; nil for a line without a bar.
+    let used: Int?
     let value: String
     let help: String
     @State private var hovering = false
@@ -114,14 +119,14 @@ private struct UsageLimitRow: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(width: 96, alignment: .leading)
-            if let left {
+            if let used {
                 GeometryReader { proxy in
                     ZStack(alignment: .leading) {
                         Capsule().fill(NookTheme.textSecondary.opacity(0.2))
-                        if left > 0 {
+                        if used > 0 {
                             Capsule()
-                                .fill(UsageTone.fill(left: left))
-                                .frame(width: max(6, proxy.size.width * CGFloat(left) / 100))
+                                .fill(UsageTone.fill(used: used))
+                                .frame(width: max(6, proxy.size.width * CGFloat(used) / 100))
                         }
                     }
                 }
@@ -131,7 +136,7 @@ private struct UsageLimitRow: View {
             }
             Text(value)
                 .font(NookTheme.TextStyle.label.monospacedDigit())
-                .foregroundStyle(left.map { UsageTone.text(left: $0) } ?? NookTheme.textSecondary)
+                .foregroundStyle(used.map { UsageTone.text(used: $0) } ?? NookTheme.textSecondary)
                 .lineLimit(1)
                 .frame(minWidth: 36, alignment: .trailing)
         }
@@ -209,11 +214,12 @@ extension UsageLimitSection {
 }
 
 /// The usage limits of every connected account, as a modal: per agent, a card per window with what is left of the pool
-/// in large type and its pace, beside a bar with a segment per account. Opened from the Usage page, the composer's
-/// limits, and Settings › Coding agents.
-struct UsageLimitsSheet: View {
+/// in large type and its pace, beside a bar with a segment per account. The one component for every way in: the footer's
+/// usage button bottom left, "All limits" under the composer's ring, the command palette and search (over the panel,
+/// `UsageModal`) and Settings › Coding agents (as a sheet).
+struct UsageLimitsModal: View {
     @EnvironmentObject private var app: AppModel
-    @Environment(\.dismiss) private var dismiss
+    let close: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -223,12 +229,12 @@ struct UsageLimitsSheet: View {
                     .foregroundStyle(NookTheme.paper)
                 Spacer(minLength: NookTheme.Spacing.md)
                 UsageRefreshButton()
-                Button(tr("button.close")) { dismiss() }
+                NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30, action: close)
                     .keyboardShortcut(.cancelAction)
             }
             .padding(.horizontal, NookTheme.Spacing.xxl)
-            .padding(.top, NookTheme.Spacing.xxl)
-            .padding(.bottom, NookTheme.Spacing.xl)
+            .padding(.top, NookTheme.Spacing.xl)
+            .padding(.bottom, NookTheme.Spacing.lg)
 
             ScrollView(showsIndicators: false) {
                 // Once a minute the reset times count down and the pace line moves on.
@@ -243,7 +249,7 @@ struct UsageLimitsSheet: View {
                 .padding(.bottom, NookTheme.Spacing.xxl)
             }
         }
-        .frame(width: 720)
+        .frame(maxWidth: 720)
         .frame(minHeight: 320, idealHeight: 560, maxHeight: 760)
         .background(NookTheme.canvas)
         .task { await app.watchQuotas() }
@@ -259,6 +265,56 @@ struct UsageLimitsSheet: View {
                         AgentLogo(profile.kind, size: 16)
                         ResetCreditRow(profile: profile)
                     }
+                }
+            }
+        }
+    }
+}
+
+/// `UsageLimitsModal` over the panel, in the notch and the main window alike: the panel dims behind it, and a click
+/// beside it or Escape closes it. `AppModel.usageModalOpen` opens it.
+struct UsageModal: View {
+    let close: () -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                Color.black.opacity(0.55)
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: close)
+                    .accessibilityHidden(true)
+                UsageLimitsModal(close: close)
+                    .frame(width: min(720, max(0, proxy.size.width - 2 * NookTheme.Spacing.xxl)))
+                    .frame(maxHeight: max(0, proxy.size.height - 2 * NookTheme.Spacing.xxl))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous)
+                        .stroke(NookTheme.line2, lineWidth: 1))
+                    .shadow(color: .black.opacity(0.5), radius: 24, y: 8)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+    }
+}
+
+/// Reads the limits of every account now, in the head of the usage limits modal and Settings › Coding agents. Shows a
+/// small spinner until Claude Code has answered.
+struct UsageRefreshButton: View {
+    @EnvironmentObject private var app: AppModel
+    @State private var refreshing = false
+
+    var body: some View {
+        if refreshing {
+            ProgressView()
+                .controlSize(.mini)
+                .frame(width: 24, height: 24)
+                .help(tr("agents.usage.refreshing"))
+        } else {
+            ToolbarIconButton("arrow.clockwise", tr("agents.usage.refresh")) {
+                refreshing = true
+                Task {
+                    await app.refreshQuotasManually()
+                    refreshing = false
                 }
             }
         }

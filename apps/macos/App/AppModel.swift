@@ -552,6 +552,9 @@ final class AppModel: ObservableObject {
     @Published var selectedExternalSession: String?
     /// The first-run flow is showing in the main window.
     @Published var showOnboarding = false
+    /// The usage modal (limits, cost, tokens) is open over the panel: from the footer's usage button, the command palette,
+    /// search and the composer's limits.
+    @Published var usageModalOpen = false
     /// The step the first-run flow opens on (0: the start; the empty Agents tab opens the coding agents step).
     @Published var onboardingStep = 0
     /// The Settings window (created on first use).

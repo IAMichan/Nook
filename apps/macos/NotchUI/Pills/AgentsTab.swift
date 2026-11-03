@@ -20,7 +20,7 @@ struct AgentsTab: View {
     @State private var totalWidth: Double = 0
     /// The folder picked for a new session: its terminal, browser and changes open beside the composer.
     @State private var newDirectory = ""
-    /// What was open before the footer's pages (pull requests, Actions, usage); empty picks what waits for you, as on a fresh start.
+    /// What was open before the footer's pages (pull requests, Actions); empty picks what waits for you, as on a fresh start.
     @State private var beforeFooterPage = ""
 
     private enum Selection {
@@ -29,7 +29,6 @@ struct AgentsTab: View {
         case run(UUID)
         case pullRequests
         case actions
-        case usage
         case terminals
         case browser
         case worktrees
@@ -112,7 +111,6 @@ struct AgentsTab: View {
                             .id("run:" + id.uuidString)
                         case .pullRequests: PullRequestsPanel()
                         case .actions: ActionsPanel()
-                        case .usage: AgentsUsagePanel()
                         case .terminals: AgentsToolPage(title: tr("agents.footer.terminals")) { TerminalsView() }
                         case .browser: AgentsToolPage(title: tr("agents.footer.browser")) { BrowserView() }
                         case .worktrees: AgentsToolPage(title: tr("agents.footer.worktrees")) { WorktreesView() }
@@ -245,7 +243,6 @@ struct AgentsTab: View {
         if id == "new" { return .new }
         if id == AgentsPage.pullRequests && !app.demoMode { return .pullRequests }
         if id == AgentsPage.actions && !app.demoMode { return .actions }
-        if id == AgentsPage.usage && !app.demoMode { return .usage }
         if id == AgentsPage.terminals && !app.demoMode { return .terminals }
         if id == AgentsPage.browser && !app.demoMode { return .browser }
         if id == AgentsPage.worktrees && !app.demoMode { return .worktrees }
@@ -284,7 +281,6 @@ struct AgentsTab: View {
         case .run(let id): return "run:" + id.uuidString
         case .pullRequests: return AgentsPage.pullRequests
         case .actions: return AgentsPage.actions
-        case .usage: return AgentsPage.usage
         case .terminals: return AgentsPage.terminals
         case .browser: return AgentsPage.browser
         case .worktrees: return AgentsPage.worktrees
