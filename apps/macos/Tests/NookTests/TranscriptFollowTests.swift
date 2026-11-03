@@ -37,8 +37,43 @@ final class TranscriptFollowTests: XCTestCase {
                 events[index].text = event.text
                 events[index].state = event.state
                 events[index].output = event.output
+            case .backgroundTask: continue
             }
         }
+    }
+
+    /// A subagent Nook's own turn started in the background ends while the session waits: Claude Code wakes up for its
+    /// `<task-notification>`, a turn Nook only reads from the transcript. The row settles instead of running forever.
+    func testBackgroundSubagentThatEndsBetweenTurnsSettles() {
+        let launchInput = #"{"description":"Find the lag","subagent_type":"general-purpose","prompt":"Look","run_in_background":true}"#
+        let events = [
+            RunEvent(kind: .user, text: "Find the lag"),
+            RunEvent(kind: .tool, text: "Agent · Find the lag", tool: "Agent", callID: "toolu_bg", detail: launchInput,
+                     output: "Async agent launched successfully.\nagentId: abc123", state: .running),
+            RunEvent(kind: .assistant, text: "A helper is looking into it.", state: .done),
+            RunEvent(kind: .result, text: "10s", state: .done),
+        ]
+        let note = "<task-notification>\n<task-id>abc123</task-id>\n<tool-use-id>toolu_bg</tool-use-id>\n<status>completed</status>\n<summary>Agent \"Find the lag\" finished</summary>\n</task-notification>"
+        let lines = [
+            #"{"type":"user","uuid":"u1","timestamp":"2026-11-03T09:00:00Z","message":{"role":"user","content":"Find the lag"}}"#,
+            #"{"type":"assistant","uuid":"a1","timestamp":"2026-11-03T09:00:05Z","message":{"role":"assistant","content":[{"type":"text","text":"A helper is looking into it."}]}}"#,
+            String(decoding: try! JSONSerialization.data(withJSONObject: [
+                "type": "user", "uuid": "n1", "timestamp": "2026-11-03T09:05:00Z",
+                "message": ["role": "user", "content": note]]), as: UTF8.self),
+            #"{"type":"assistant","uuid":"a2","timestamp":"2026-11-03T09:05:05Z","message":{"role":"assistant","content":[{"type":"text","text":"The report is in."}]}}"#,
+        ]
+        let messages = transcript(lines)
+        // The notification is no message of yours: it does not start a turn.
+        XCTAssertFalse(messages.contains { $0.kind == .user && $0.text.contains("task-notification") })
+        let changes = TranscriptFollow.changes(events: events, messages: messages, finished: true)
+        let updates = changes.compactMap { if case .backgroundTask(let update) = $0 { return update } else { return nil } }
+        XCTAssertEqual(updates.map(\.toolUseID), ["toolu_bg"])
+        XCTAssertEqual(updates.first?.status, .completed)
+        // Once the row settled, reading again changes nothing about it.
+        var settled = events
+        settled[1].state = .done
+        let again = TranscriptFollow.changes(events: settled, messages: messages, finished: true)
+        XCTAssertFalse(again.contains { if case .backgroundTask = $0 { return true } else { return false } })
     }
 
     func testTurnsWrittenOutsideNookAreTakenOverWithTheirWork() {
