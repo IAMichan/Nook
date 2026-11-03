@@ -1,11 +1,11 @@
 import AppKit
 import SwiftUI
 
-/// One pull request, read in full inside Nook, laid out. A fixed top with the crumbs
+/// One pull request, read in full inside Nook. A fixed top with the crumbs
 /// (repository and the number in its state's color), the main action (merge, ready for review, or the state) and the ⋯
 /// menu, then the title, author, branches and size, then the tabs; it folds to one line once you
 /// scroll past the title. Under it four tabs: Summary (reviewers and labels, then the description, the checks and
-/// the comments in sections that fold, the comments as threads them; see
+/// the comments in sections that fold, the comments as threads; see
 /// PullRequestConversationList), Guide, Timeline (everything that happened, commits included) and Code (every
 /// changed file with its diff). The bar under the tabs says what the open tab holds: the comments, commits and approvals
 /// with the order on Timeline, the files viewed on Code (Summary leads with its readiness card instead). Merge asks for a second click and
@@ -184,7 +184,7 @@ struct PullRequestDetailView: View {
 
     // MARK: Header
 
-    /// The top of the page, laid out: the crumbs with the page's actions, the title, who and when, the
+    /// The top of the page: the crumbs with the page's actions, the title, who and when, the
     /// branches and the size, then the tabs, ruled off from the content that scrolls under it. Once the title is
     /// scrolled away the middle folds to one line and the crumbs show the number and title instead.
     /// The fold is not animated: its height changing on every frame of a spring laid the page under it out again on
@@ -377,7 +377,7 @@ struct PullRequestDetailView: View {
         }
     }
 
-    /// How many files and the lines added and removed them; folded, the number of files alone.
+    /// How many files and the lines added and removed; folded, the number of files alone.
     func diffStat(_ detail: PullRequestDetail, compact: Bool = false) -> some View {
         let files = max(detail.changedFiles, detail.files.count)
         return HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {

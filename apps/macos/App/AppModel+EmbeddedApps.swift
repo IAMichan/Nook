@@ -87,8 +87,8 @@ extension AppModel {
         return owner
     }
 
-    /// A web link clicked in an agent's conversation opens in the session's side panel opens links in the
-    /// thread's integrated browser: an artifact in its own tab, signed in with the app that made it, any other page in
+    /// A web link clicked in an agent's conversation opens in the session's side panel, its
+    /// integrated browser: an artifact in its own tab, signed in with the app that made it, any other page in
     /// the browser tab. The link target setting or ⌘ or ⌃ held while clicking sends it to the system browser instead
     /// (false: the caller opens it); `forced` (the link's right-click menu) opens it in the panel whatever they say.
     @discardableResult

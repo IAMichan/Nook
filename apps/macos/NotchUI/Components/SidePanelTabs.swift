@@ -1,6 +1,6 @@
 import SwiftUI
 
-// The side panel's tabs and its list of tools, laid out: small tabs that each carry what
+// The side panel's tabs and its list of tools: small tabs that each carry what
 // they show (the page's title, the pull request's number and title), whose icon turns into a cross under the pointer;
 // + right after the last tab; and with no tab open a short list to open one, each row with the key that opens it.
 
@@ -128,7 +128,7 @@ struct SidePanelLaunch: Identifiable {
     let open: () -> Void
 }
 
-/// The open side panel before any tab "Open a surface": a title and one row per tool with its icon,
+/// The open side panel before any tab: a title and one row per tool with its icon,
 /// its name and the key that opens it. ↑ and ↓ move the highlight, Return opens it, and a row's letter opens it at once.
 struct SidePanelLauncher: View {
     let title: String

@@ -45,8 +45,8 @@ final class CompanionClient: ObservableObject {
     private(set) var watchedSession: String?
     /// The changed files of a session (`CompanionOp.diff`).
     @Published private(set) var diffs: [String: [DiffFileDigest]] = [:]
-    /// Messages your Mac refused, per session, to edit and send again or to drop (as restores a rejected
-    /// message into the composer instead of losing it).
+    /// Messages your Mac refused, per session, to edit and send again or to drop, so a
+    /// rejected message is restored into the composer instead of lost.
     @Published var rejected: [RejectedMessage] = []
     /// Nook's own chats, and the messages of each one that was opened.
     @Published private(set) var conversations: [ChatDigest] = []

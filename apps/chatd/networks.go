@@ -81,7 +81,7 @@ func telegramSettings(tg *telegram.TelegramConnector) error {
 	return nil
 }
 
-// whatsAppSettings asks the phone for a year of history when you link it, as Beeper does, and for what is older than
+// whatsAppSettings asks the phone for a year of history when you link it, and for what is older than
 // that only when you scroll back to it.
 func whatsAppSettings(wa *whatsapp.WhatsAppConnector) error {
 	wa.Config.HistorySync.RequestFullSync = true

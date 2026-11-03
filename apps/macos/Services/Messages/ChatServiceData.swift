@@ -83,8 +83,8 @@ enum ChatServiceData {
         return level > 0
     }
 
-    /// Nook's id of a message in a chat, and back: "beeper-<chat>-<message>". The prefix is what the chats already in
-    /// `chat-inbox.json` were stored with, so it stays: a new one would bring every message in again.
+    /// Nook's id of a message in a chat, and back: "nook-<chat>-<message>". An inbox stored with the earlier prefix
+    /// ("beeper-") is renamed once when it is read (`ChatInbox.renameMessageIDs`), so no message comes in twice.
     static func messageID(_ id: String, chat: String) -> String { "\(idPrefix)\(chat)-\(id)" }
 
     static func networkID(_ id: String, chat: String) -> String? {
@@ -92,7 +92,9 @@ enum ChatServiceData {
         return id.hasPrefix(prefix) ? String(id.dropFirst(prefix.count)) : nil
     }
 
-    private static let idPrefix = "beeper-"
+    static let idPrefix = "nook-"
+    /// The prefix before Nook had its own chat helper; only `ChatInbox.renameMessageIDs` still reads it.
+    static let earlierIDPrefix = "beeper-"
 
     /// The service's own reason in an error answer (`{code, message}`).
     static func errorMessage(_ data: Data) -> String? {
@@ -237,7 +239,7 @@ enum ChatServiceData {
     }
 
     /// The people of a chat by their number, for tags: the phone number the service gives, else the digits in their id
-    /// ("@whatsapp_31612345678:beeper.local", "whatsapp-lid-123456789012"). Yourself too: a tag of you shows your name.
+    /// ("@whatsapp_31612345678:nook.local", "whatsapp-lid-123456789012"). Yourself too: a tag of you shows your name.
     static func tags(_ people: [[String: Any]]) -> [String: String] {
         var tags: [String: String] = [:]
         for person in people {

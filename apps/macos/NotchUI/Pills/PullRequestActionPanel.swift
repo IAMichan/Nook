@@ -82,8 +82,8 @@ final class PullRequestActionState: ObservableObject {
 
 /// The ⋯ menu of a pull request, in Nook's own dropdown panel: refresh it, copy its link, number or checkout command,
 /// ask for reviews, edit it, mark it ready for review or turn it back into a draft, bring its branch up to date, close or
-/// reopen it. While GitHub is asked the ⋯ spins, as on
-/// page. What changes GitHub goes through the confirmation in the action panel.
+/// reopen it. While GitHub is asked the ⋯ spins.
+/// What changes GitHub goes through the confirmation in the action panel.
 struct PullRequestMoreMenu: View {
     @ObservedObject var state: PullRequestActionState
     let detail: PullRequestDetail

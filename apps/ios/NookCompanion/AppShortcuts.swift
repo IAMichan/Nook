@@ -1,8 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// The quick actions on the app's icon (touch and hold it on the Home Screen) offers "New task" and its newest
-/// threads there: start a session, ask Nook, open your chats, and jump straight into the sessions that need you or ran
+/// The quick actions on the app's icon (touch and hold it on the Home Screen): start a session, ask Nook, open your chats, and jump straight into the sessions that need you or ran
 /// last. A tap lands in `CompanionClient.pendingShortcut`, which `RootView` acts on.
 enum AppShortcut: Equatable {
     case newSession

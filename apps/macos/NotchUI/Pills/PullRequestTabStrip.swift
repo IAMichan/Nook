@@ -7,7 +7,7 @@ struct OpenPullRequest: Identifiable, Equatable {
     var id: String { account + " " + item.id }
 }
 
-/// The pull requests you opened, as tabs above the one you read them: each its state mark and
+/// The pull requests you opened, as tabs above the one you read: each its state mark and
 /// number (the title in its tooltip), the mark turning into a close button under the pointer. The right-click menu
 /// closes it, the others, the ones to its right, or all of them.
 struct PullRequestTabStrip: View {
@@ -57,7 +57,7 @@ private struct PullRequestTab: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
-            // The state's mark, which turns into the close button under the pointer, as on tabs.
+            // The state's mark, which turns into the close button under the pointer.
             Button(action: close) {
                 Group {
                     if hovering {

@@ -100,7 +100,7 @@ enum WorktreeCleanup {
 }
 
 /// One operation at a time per folder: a checkpoint, a restore and the removal of the same worktree never overlap
-/// (workspace lease). Operations on different folders run side by side. The work itself runs off the actor.
+/// (a workspace lease). Operations on different folders run side by side. The work itself runs off the actor.
 actor FolderLease {
     static let shared = FolderLease()
 

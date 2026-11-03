@@ -218,6 +218,7 @@ final class ChatCaptureService: ObservableObject {
 
     private nonisolated static func readInbox() -> ChatInbox {
         var inbox = SafeStorage.load(ChatInbox.self, from: file).value ?? ChatInbox()
+        inbox.renameMessageIDs()
         inbox.trim()
         return inbox
     }

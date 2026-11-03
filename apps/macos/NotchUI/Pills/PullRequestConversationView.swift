@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The Summary's comments, read reads them (see PullRequestConversation): a thread on a line keeps its
+/// The Summary's comments, read as conversations (see PullRequestConversation): a thread on a line keeps its
 /// replies under its first comment behind a thin rule, a resolved thread or a dismissed review folds to one line, the
 /// filter hides bots and finished threads, and the most recent conversations show first, ten at a time.
 struct PullRequestConversationList: View {
