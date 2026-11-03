@@ -41,7 +41,7 @@ struct UsageView: View {
                 Spacer()
                 SmallGhostButton(title: tr("limits.all")) { showLimits = true }
                     .help(tr("limits.openHelp"))
-                    .sheet(isPresented: $showLimits) { UsageLimitsSheet().environmentObject(app) }
+                    .sheet(isPresented: $showLimits) { UsageLimitsModal { showLimits = false }.frame(width: 720).environmentObject(app) }
                 UsageRefreshButton()
             }
         } footer: {
