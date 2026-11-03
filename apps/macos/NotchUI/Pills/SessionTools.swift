@@ -321,7 +321,7 @@ struct SessionWorkbench<Conversation: View>: View {
                                                                           subagentsShown: subagentsShown, openSubagents: openSubagents))
                         .environment(\.sessionPanelDocked, docked)
                         // A diff or file the conversation opens takes the right side from the tool panel.
-                        .environment(\.sessionSide, SessionSideLink(shownFile: filePreview, showFile: showFile, openDiff: openDiff,
+                        .environment(\.sessionSide, SessionSideLink(shownFile: filePreview, panelOpen: sideOpen, showFile: showFile, openDiff: openDiff,
                                                                      toggleConsole: toggleConsole))
                         .onPreferenceChange(SessionOutputsReport.self) { outputs = $0 }
                         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

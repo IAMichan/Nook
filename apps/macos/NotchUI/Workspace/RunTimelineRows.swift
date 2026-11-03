@@ -179,11 +179,13 @@ enum AnswerFiles {
         let modified: Date
     }
 
-    /// Answers that opened their file already, so scrolling back to one does not open it again.
+    /// Files that opened by themselves already. Kept per file, not per answer: every later message that names the
+    /// same file (or an answer still streaming in) would open it again right after you closed it.
     @MainActor private static var opened: Set<String> = []
 
     /// The files `text` names in `base`, looked up off the main thread once a streaming answer pauses. A fresh answer
-    /// (`date` under two minutes ago) opens the first file its turn wrote in the side panel, unless a file shows there.
+    /// (`date` under two minutes ago) opens the first file its turn wrote in the side panel, unless a file or a tool
+    /// panel you opened shows there.
     @MainActor
     static func load(_ text: String, date: Date?, base: String?, side: SessionSideLink) async -> [String] {
         guard let base, !base.isEmpty else { return [] }
@@ -196,9 +198,10 @@ enum AnswerFiles {
         // `README.md` gets no tile, and only such a file opens by itself.
         let since = (date ?? Date()).addingTimeInterval(-30 * 60)
         let found = all.filter { SessionOutputs.kind(path: $0.path) != .document || $0.modified > since }
-        if let date, Date().timeIntervalSince(date) < 120, side.shownFile == nil,
+        // A file gets one chance to open, taken or not: closed, or passed over while a panel showed, it stays closed.
+        if let date, Date().timeIntervalSince(date) < 120,
            let made = found.first(where: { $0.modified > since }),
-           opened.insert(String(text.prefix(200)) + "|" + made.path).inserted {
+           opened.insert(made.path).inserted, side.shownFile == nil, !side.panelOpen {
             side.showFile(made.path)
         }
         return found.map(\.path)
