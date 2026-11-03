@@ -285,7 +285,7 @@ final class MessagesBridge: ChatHistoryBridge, ChatSearchBridge {
             }
         }
         // Messages read earlier that were edited since (their new text) or unsent ("Undo Send"): the chat shows the new
-        // text, or drops the message, as for every app (`BridgedChat.deleted`).
+        // text marked as edited, or the message as deleted, as for every app (`BridgedChat.deleted`).
         var dropped: [String: [String]] = [:]
         let readNow = Set(rows.compactMap { NotificationRecord.integer($0["id"]) })
         let edited = changedRows.filter { row in
@@ -373,9 +373,11 @@ final class MessagesBridge: ChatHistoryBridge, ChatSearchBridge {
     private func build(_ row: [String: Any], media: ChatMedia?, extras: Extras,
                        contacts: [String: String]) -> (message: AppData.Message, inbox: InboxMessage)? {
         var readable = row
-        if media != nil, AppData.messages([row], names: contacts).isEmpty { readable["text"] = Self.placeholder }
-        guard let message = AppData.messages([readable], names: contacts).first else { return nil }
         let id = NotificationRecord.integer(row["id"]) ?? 0
+        // An unsent message ("Undo Send") has nothing left to read: it is read with a placeholder, then shown as deleted.
+        let unsent = extras.unsent.contains(id)
+        if media != nil || unsent, AppData.messages([row], names: contacts).isEmpty { readable["text"] = Self.placeholder }
+        guard let message = AppData.messages([readable], names: contacts).first else { return nil }
         let group = (AppData.number(row["grp"]) ?? 0) != 0
         var inbox = InboxMessage(
             id: "imessage-\(id)", sender: message.fromMe || !group ? "" : message.sender,
@@ -387,6 +389,11 @@ final class MessagesBridge: ChatHistoryBridge, ChatSearchBridge {
         inbox.reactions = extras.reactions[AppData.string(row["guid"])]
         let origin = AppData.string(row["origin"])
         if !origin.isEmpty, origin != AppData.string(row["guid"]) { inbox.quote = extras.quotes[origin] }
+        if unsent {
+            inbox = inbox.withdrawn()
+        } else if extras.edited.contains(id) {
+            inbox.edited = true
+        }
         return (message, inbox)
     }
 
@@ -409,6 +416,9 @@ final class MessagesBridge: ChatHistoryBridge, ChatSearchBridge {
     private struct Extras {
         var quotes: [String: InboxQuote] = [:]
         var reactions: [String: [InboxReaction]] = [:]
+        /// The rows changed after they were sent, and the rows unsent ("Undo Send").
+        var edited: Set<Int64> = []
+        var unsent: Set<Int64> = []
     }
 
     private func extras(_ rows: [[String: Any]], contacts: [String: String]) async throws -> Extras {
@@ -418,7 +428,35 @@ final class MessagesBridge: ChatHistoryBridge, ChatSearchBridge {
         let origins = Set(rows.map { AppData.string($0["origin"]) }.filter { !$0.isEmpty })
         let emoji = try await reactions(on: own, after: first)
         let answered = try await quotes(origins, contacts: contacts)
-        return Extras(quotes: answered, reactions: emoji)
+        let changes = try await changes(rows)
+        return Extras(quotes: answered, reactions: emoji, edited: changes.edited, unsent: changes.unsent)
+    }
+
+    /// Which of these rows were edited after they were sent, and which were unsent; nothing on a database from before
+    /// messages could be edited (`keepsEdits`).
+    private func changes(_ rows: [[String: Any]]) async throws -> (edited: Set<Int64>, unsent: Set<Int64>) {
+        let ids = rows.compactMap { NotificationRecord.integer($0["id"]) }
+        guard keepsEdits, !ids.isEmpty else { return ([], []) }
+        do {
+            let marks = try await query("""
+            SELECT ROWID AS id, COALESCE(date_edited, 0) AS edited, COALESCE(date_retracted, 0) AS retracted FROM message
+            WHERE ROWID IN (\(ids.sorted().map(String.init).joined(separator: ","))) AND (COALESCE(date_edited, 0) != 0 OR COALESCE(date_retracted, 0) != 0)
+            """)
+            var edited: Set<Int64> = []
+            var unsent: Set<Int64> = []
+            for mark in marks {
+                guard let id = NotificationRecord.integer(mark["id"]) else { continue }
+                if (AppData.number(mark["retracted"]) ?? 0) != 0 {
+                    unsent.insert(id)
+                } else if (AppData.number(mark["edited"]) ?? 0) != 0 {
+                    edited.insert(id)
+                }
+            }
+            return (edited, unsent)
+        } catch where error.localizedDescription.contains("no such column") {
+            keepsEdits = false
+            return ([], [])
+        }
     }
 
     /// The messages these answer, by their guid: their id in Nook, so the chat shows the one it has, with who wrote it
@@ -900,8 +938,10 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
         let poll = type == Self.pollType
             ? ChatPoll(question: text.isEmpty ? tr("chat.poll.title") : text, options: [], unknownCounts: true) : nil
         if poll != nil { text = "" }
+        // Deleted for everyone: WhatsApp keeps its row as a message of its own type, with nothing of what it said.
+        let deleted = type == Self.deletedType
         if text.isEmpty, media == nil, poll == nil { text = Self.label(type) }
-        guard !text.isEmpty || media != nil || poll != nil else { return nil }
+        guard !text.isEmpty || media != nil || poll != nil || deleted else { return nil }
         var sender = ""
         if group, !mine {
             sender = AppData.string(row["sender"])
@@ -911,7 +951,7 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
             id: "wadesktop-\(id)", sender: sender, text: text,
             date: AppData.appleDate(AppData.number(row["date"]) ?? 0), fromMe: mine, media: media, poll: poll)
         if mine { message.receipt = ChatReceipts.whatsAppDesktop(status: Int(AppData.number(row["status"]) ?? 0)) }
-        return message
+        return deleted ? message.withdrawn() : message
     }
 
     func canLoadOlder(name: String) -> Bool { isReady && !sessions(name).isEmpty }
@@ -1049,6 +1089,8 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
 
     /// WhatsApp's message type of a poll.
     private static let pollType = 46
+    /// A message deleted for everyone ("This message was deleted").
+    private static let deletedType = 14
 
     /// What a message without text holds, by WhatsApp's message type.
     private static func label(_ type: Int) -> String {

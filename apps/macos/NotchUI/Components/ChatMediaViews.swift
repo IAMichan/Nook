@@ -63,6 +63,8 @@ extension ChatBubble {
     init(_ message: InboxMessage, time: String, members: [String] = [], person: String? = nil) {
         self.init(id: message.id, text: message.text, time: time, date: message.date, sender: message.sender,
                   fromMe: message.isMine)
+        edited = message.isEdited
+        deleted = message.isDeleted
         poll = message.poll
         reactions = (message.reactions ?? []).map {
             BubbleReaction(emoji: $0.emoji, count: $0.count, mine: $0.mine, people: $0.people ?? [])

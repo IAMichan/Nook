@@ -85,6 +85,10 @@ struct ChatBubble: Equatable, Identifiable {
     var poll: ChatPoll? = nil
     /// A message you just sent that Nook shows before its app has it back (`ChatOutbox`): it can be copied, nothing else.
     var local = false
+    /// Its app says it was changed after it was sent: "Edited" beside its time.
+    var edited = false
+    /// Deleted for everyone: the bubble keeps its place and says so, and nothing can be done with it but hiding it.
+    var deleted = false
 }
 
 /// The message a bubble answers, as a chat app shows it above the answer: who wrote it and the start of its text.
@@ -109,7 +113,10 @@ struct BubbleReaction: Equatable, Identifiable {
 
 extension ChatBubble {
     /// A call its app noted in the chat: it shows as a call row instead of its line.
-    var call: ChatCall? { attachment == nil && poll == nil ? ChatFormat.call(text) : nil }
+    var call: ChatCall? { attachment == nil && poll == nil && !deleted ? ChatFormat.call(text) : nil }
+
+    /// What a deleted message says in its place: who deleted it, as chat apps word it.
+    var deletedLine: String { tr(fromMe ? "chat.message.deletedMine" : "chat.message.deleted") }
 
     /// A conversation as plain text for the pasteboard, one message per line: "[12:04] Anna: See you at eight".
     /// `contact` names the other side of a private chat, where the bubbles carry no sender.
@@ -124,7 +131,8 @@ extension ChatBubble {
 
     /// The message's own text, or the file's name when it came without one.
     var copyText: String {
-        text.isEmpty ? (attachment ?? "") : text
+        if deleted { return deletedLine }
+        return text.isEmpty ? (attachment ?? "") : text
     }
 
     private func line(contact: String) -> String {

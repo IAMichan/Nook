@@ -133,16 +133,19 @@ enum SlackData {
         return people.isEmpty ? conversation.name : people.joined(separator: ", ")
     }
 
-    /// The messages of conversations.history, oldest first. Joins, leaves and other notices are left out; a message
-    /// with only a file shows its name.
+    /// The messages of conversations.history, oldest first. Joins, leaves and other notices are left out; what stays of
+    /// a deleted message shows as deleted, an edited one says so, and a message with only a file shows its name.
     static func messages(_ json: [String: Any], conversation: Conversation, users: [String: String], me: String?) -> [InboxMessage] {
         let skipped: Set<String> = ["channel_join", "channel_leave", "group_join", "group_leave", "bot_add", "bot_remove",
-                                    "channel_topic", "channel_purpose", "channel_name", "message_deleted", "message_changed",
-                                    // What stays of a deleted message that had answers: "This message was deleted."
-                                    "tombstone"]
+                                    "channel_topic", "channel_purpose", "channel_name", "message_deleted", "message_changed"]
         let messages: [InboxMessage] = (json["messages"] as? [[String: Any]] ?? []).compactMap { message in
             guard let ts = message["ts"] as? String, let seconds = Double(ts) else { return nil }
             if let subtype = message["subtype"] as? String, skipped.contains(subtype) { return nil }
+            // What stays of a deleted message that had answers ("This message was deleted."): it shows as deleted.
+            if message["subtype"] as? String == "tombstone" {
+                return InboxMessage(id: messageID(conversation: conversation.id, ts: ts), text: "",
+                                    date: Date(timeIntervalSince1970: seconds)).withdrawn()
+            }
             var text = clean((message["text"] as? String) ?? "", users: users)
             // An app (GitHub, Jira…) often writes nothing itself and puts everything in its attachments.
             if text.isEmpty { text = clean(attachmentText(message), users: users) }
@@ -157,6 +160,7 @@ enum SlackData {
                                      date: Date(timeIntervalSince1970: seconds), fromMe: mine, media: media)
             // Slack keeps no delivery or read receipts: your message is on Slack, and that is all it says.
             if mine { inbox.receipt = .sent }
+            if message["edited"] != nil { inbox.edited = true }
             // Always set, also when there are none: an emoji taken back in Slack leaves the message in Nook too.
             inbox.reactions = Self.reactions(message, me: me, users: users)
             inbox.quote = Self.quote(message, conversation: conversation, users: users, me: me)

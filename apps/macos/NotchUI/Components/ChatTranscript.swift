@@ -376,12 +376,12 @@ struct ChatTranscript: View, Equatable {
     // A message still on its way (`ChatBubble.local`) has nothing to answer, react to, change or delete yet.
 
     private func replyAction(_ bubble: ChatBubble) -> (() -> Void)? {
-        guard let onReply, !bubble.local else { return nil }
+        guard let onReply, !bubble.local, !bubble.deleted else { return nil }
         return { onReply(bubble) }
     }
 
     private func voteAction(_ bubble: ChatBubble) -> (([String]) -> Void)? {
-        guard let onVote, bubble.poll != nil, !bubble.local else { return nil }
+        guard let onVote, bubble.poll != nil, !bubble.local, !bubble.deleted else { return nil }
         return { onVote(bubble, $0) }
     }
 
@@ -393,18 +393,18 @@ struct ChatTranscript: View, Equatable {
 
     /// Sending the message on to other chats: a message that has arrived, not a poll or a call (those belong to their chat).
     private func forwardAction(_ bubble: ChatBubble) -> (() -> Void)? {
-        guard let onForward, !bubble.local, bubble.poll == nil, bubble.call == nil else { return nil }
+        guard let onForward, !bubble.local, !bubble.deleted, bubble.poll == nil, bubble.call == nil else { return nil }
         return { onForward(bubble) }
     }
 
     /// Changing your own message's text, where its app takes that: in the message's menu.
     private func editAction(_ bubble: ChatBubble) -> (() -> Void)? {
-        guard let onEdit, bubble.fromMe, !bubble.local, !bubble.text.isEmpty, bubble.poll == nil, bubble.call == nil else { return nil }
+        guard let onEdit, bubble.fromMe, !bubble.local, !bubble.deleted, !bubble.text.isEmpty, bubble.poll == nil, bubble.call == nil else { return nil }
         return { onEdit(bubble) }
     }
 
     private func reactAction(_ bubble: ChatBubble) -> ((String) -> Void)? {
-        guard let onReact, !bubble.local else { return nil }
+        guard let onReact, !bubble.local, !bubble.deleted else { return nil }
         return { onReact(bubble, $0) }
     }
 
@@ -506,6 +506,11 @@ private struct ChatBubbleView: View, Equatable {
     /// The time (and your ticks) on a picture: light on a dark capsule, so it reads on any photo.
     private var mediaStamp: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
+            if bubble.edited {
+                Text(tr("chat.message.edited"))
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.paper)
+            }
             Text(bubble.time)
                 .font(NookTheme.TextStyle.caption)
                 .monospacedDigit()
@@ -542,6 +547,11 @@ private struct ChatBubbleView: View, Equatable {
     /// When it was sent, and for your own how far it got.
     private var stamp: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
+            if bubble.edited {
+                Text(tr("chat.message.edited"))
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.chatStamp)
+            }
             Text(bubble.time)
                 .font(NookTheme.TextStyle.caption)
                 .monospacedDigit()
@@ -697,6 +707,15 @@ private struct ChatBubbleView: View, Equatable {
                     .foregroundStyle(ChatPersonBadge.tint(for: bubble.sender))
                     .lineLimit(1)
             }
+            if bubble.deleted {
+                // Deleted for everyone: where it was, what became of it, with its time beside it.
+                HStack(alignment: .lastTextBaseline, spacing: NookTheme.Spacing.md) {
+                    Label(bubble.deletedLine, systemImage: "nosign")
+                        .font(NookTheme.TextStyle.body.italic())
+                        .foregroundStyle(NookTheme.chatStamp)
+                    if showsStamp { stampSlot }
+                }
+            }
             if let quote = bubble.quote {
                 QuotedMessage(quote: quote)
                     .padding(.bottom, NookTheme.Spacing.xxs)
@@ -756,7 +775,7 @@ private struct ChatBubbleView: View, Equatable {
                     .padding(.top, NookTheme.Spacing.xxs)
                 if showsStamp { stampSlot }
             }
-            if bubble.text.isEmpty, bubble.attachment == nil {
+            if bubble.text.isEmpty, bubble.attachment == nil, !bubble.deleted {
                 // A poll or an empty message: the time under it, on the right.
                 stampSlot
             }

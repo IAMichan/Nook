@@ -303,7 +303,7 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
                 notificationSettings[id] = settings
             }
         case "updateDeleteMessages":
-            // Deleted for everyone (by you, from here or elsewhere, or by someone else): the chat drops them.
+            // Deleted for everyone (by you, from here or elsewhere, or by someone else): the chat shows them as deleted.
             if let gone = TelegramData.deletedMessages(object) {
                 let ids = Set(gone.messages.map { "telegram-\(gone.chat)-\($0)" })
                 messages[gone.chat]?.removeAll { ids.contains($0.id) }
@@ -373,6 +373,15 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
                 } else if let text = TelegramData.text(content), !text.isEmpty, TelegramData.file(content) == nil {
                     messages[chat]?[index].text = text
                 }
+                changed.insert(chat)
+            }
+        case "updateMessageEdited":
+            // A message's text or caption was changed: it says "Edited" from now on.
+            if let chat = TelegramData.int64(object["chat_id"]), let id = TelegramData.int64(object["message_id"]),
+               (TelegramData.int64(object["edit_date"]) ?? 0) > 0,
+               let index = messages[chat]?.firstIndex(where: { $0.id == "telegram-\(chat)-\(id)" }),
+               messages[chat]?[index].edited != true {
+                messages[chat]?[index].edited = true
                 changed.insert(chat)
             }
         case "updateMessageInteractionInfo":
