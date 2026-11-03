@@ -27,7 +27,8 @@ struct NookTabBar<Value: Hashable>: View {
     /// its own, where `smoke` would barely show.
     var prominent = false
     /// Small tabs on a shared track, the selected one on a rounded square: a segmented control, as on a pull
-    /// request's page (Summary, Guide, Timeline, Code).
+    /// request's page (Summary, Guide, Timeline, Code). The track is raised and outlined, so it reads as one group on
+    /// `canvas` and on `surface` (the usage modal) alike, and two of them side by side read as two choices.
     var segmented = false
     /// The tab split view shows beside the selected one: outlined on the accent, so both tabs on screen read as open.
     var beside: Value? = nil
@@ -54,20 +55,21 @@ struct NookTabBar<Value: Hashable>: View {
                     }
                     .font(NookTheme.font(segmented ? 12 : 13, .medium))
                     .foregroundStyle(item.value == selected ? selectedText
-                                     : (hovered == item.value || item.value == beside ? NookTheme.paper : NookTheme.textTertiary))
+                                     : (hovered == item.value || item.value == beside ? NookTheme.paper
+                                        : (segmented ? NookTheme.textSecondary : NookTheme.textTertiary)))
                     .padding(.leading, segmented ? 10 : 12)
                     .padding(.trailing, closable ? 8 : (segmented ? 10 : 12))
                     .padding(.vertical, segmented ? 4 : 5)
                     .background {
                         if item.value == selected {
                             shape
-                                .fill(prominent ? NookTheme.iris : (segmented ? NookTheme.line2 : NookTheme.smoke))
+                                .fill(prominent ? NookTheme.iris : (segmented ? NookTheme.paper.opacity(0.14) : NookTheme.smoke))
                                 .matchedGeometryEffect(id: "selection", in: selection)
                         } else if item.value == beside {
                             shape.fill(NookTheme.iris.opacity(0.14))
                                 .overlay(shape.stroke(NookTheme.iris.opacity(0.75), lineWidth: 1))
                         } else if segmented && hovered == item.value {
-                            shape.fill(NookTheme.rowHover)
+                            shape.fill(NookTheme.paper.opacity(0.06))
                         }
                     }
                     .contentShape(shape)
@@ -101,7 +103,10 @@ struct NookTabBar<Value: Hashable>: View {
         .padding(segmented ? NookTheme.Spacing.xxs : 0)
         .background {
             if segmented {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.surface)
+                RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+                    .fill(NookTheme.graphite)
+                    .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+                        .stroke(NookTheme.line2, lineWidth: 1))
             }
         }
         .animation(NookTheme.hover, value: hovered)
