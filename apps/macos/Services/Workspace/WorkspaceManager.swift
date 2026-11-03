@@ -45,6 +45,12 @@ struct GitSnapshot: Equatable {
             && lhs.divergence?.behind == rhs.divergence?.behind && lhs.error == rhs.error
             && lhs.updated == rhs.updated && lhs.loading == rhs.loading
     }
+
+    /// The same status, divergence and error: what git said, apart from when and whether it is being read.
+    func sameContent(as other: GitSnapshot) -> Bool {
+        status == other.status && divergence?.ahead == other.divergence?.ahead
+            && divergence?.behind == other.divergence?.behind && error == other.error
+    }
 }
 
 /// A single row in the worktree overview.
@@ -272,6 +278,10 @@ final class WorkspaceManager: ObservableObject {
     /// Of those, the ones a view waits for (`requestTimeline`): their arrival redraws it.
     private var awaitedTimelines: Set<UUID> = []
     private var gitRefreshes: [UUID: Task<Void, Never>] = [:]
+    /// Sessions whose `git status` is being read: a refresh asked for meanwhile runs once after it, not alongside it.
+    private var gitReading: Set<UUID> = []
+    /// Of those, the ones asked again while reading, and whether that ask showed the spinner.
+    private var gitAgain: [UUID: Bool] = [:]
     /// Sessions whose next turn starts as a copy of the conversation (`--fork-session`), so the original keeps going untouched.
     var forkNext: Set<UUID> = []
     /// Sessions whose running turn is an independent copy (`forkNext` at launch): the id the agent reports is a new
@@ -1886,6 +1896,8 @@ final class WorkspaceManager: ObservableObject {
         evictedAnswers[id] = nil
         // Per-session state that would otherwise stay for every session ever made, until Nook quits.
         gitRefreshes.removeValue(forKey: id)?.cancel()
+        gitReading.remove(id)
+        gitAgain[id] = nil
         codexTotals[id] = nil
         codexSubagents[id] = nil
         openPullRequests[id] = nil
@@ -1933,13 +1945,21 @@ final class WorkspaceManager: ObservableObject {
 
     // MARK: Git
 
-    func refreshGit(_ id: UUID) {
+    /// Reads the session's git status off the main thread. `quiet` (the refreshes Nook schedules itself as an agent
+    /// writes): no spinner, and a result equal to the last one publishes nothing, so a busy session in one window does
+    /// not redraw every other window, nor make the panels look up the branch again, while its files stay the same.
+    /// One read per session at a time: an ask while it runs is folded into a single read after it.
+    func refreshGit(_ id: UUID, quiet: Bool = false) {
         guard let run = run(id), let git = sessionGit(for: run), run.repoRoot != nil else { return }
+        if gitReading.contains(id) {
+            gitAgain[id] = (gitAgain[id] ?? true) && quiet
+            if !quiet { showGitLoading(id) }
+            return
+        }
+        gitReading.insert(id)
+        if !quiet || self.git[id] == nil { showGitLoading(id) }
         let directory = run.workingDirectory
         let base = run.baseBranch
-        var snapshot = self.git[id] ?? GitSnapshot(status: nil, divergence: nil, error: nil, updated: Date(), loading: true)
-        snapshot.loading = true
-        self.git[id] = snapshot
         Task.detached(priority: .utility) {
             var status: GitStatus?
             var problem: String?
@@ -1952,16 +1972,32 @@ final class WorkspaceManager: ObservableObject {
             }
             let result = (status: status, divergence: divergence, problem: problem)
             await MainActor.run { [weak self] in
-                guard let self else { return }
-                self.git[id] = GitSnapshot(status: result.status, divergence: result.divergence, error: result.problem,
-                                           updated: Date(), loading: false)
+                // A session deleted while git was read leaves nothing behind.
+                guard let self, self.run(id) != nil else { return }
+                self.gitReading.remove(id)
+                let again = self.gitAgain.removeValue(forKey: id)
+                let previous = self.git[id]
+                // Still loading when a refresh with the spinner follows straight away.
+                var next = GitSnapshot(status: result.status, divergence: result.divergence, error: result.problem,
+                                       updated: Date(), loading: again == false)
+                // Nothing changed: a quiet read keeps the snapshot's `updated`, so nothing looks at the branch again.
+                if quiet, let previous, previous.sameContent(as: next) { next.updated = previous.updated }
+                if next != previous { self.git[id] = next }
                 if let status = result.status {
                     self.update(id, save: false) { $0.changedFiles = status.files.count }
                     // A branch the agent (or you) switched to becomes the session's own.
                     if !status.detached, let branch = status.branch { self.followBranch(id, to: branch) }
                 }
+                if let again { self.refreshGit(id, quiet: again) }
             }
         }
+    }
+
+    private func showGitLoading(_ id: UUID) {
+        var snapshot = self.git[id] ?? GitSnapshot(status: nil, divergence: nil, error: nil, updated: Date(), loading: false)
+        guard !snapshot.loading else { return }
+        snapshot.loading = true
+        self.git[id] = snapshot
     }
 
     func scheduleGitRefresh(_ id: UUID, delay: TimeInterval) {
@@ -1969,7 +2005,7 @@ final class WorkspaceManager: ObservableObject {
         gitRefreshes[id] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            self?.refreshGit(id)
+            self?.refreshGit(id, quiet: true)
         }
     }
 
