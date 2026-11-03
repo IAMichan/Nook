@@ -173,7 +173,7 @@ struct TranscriptConversation: View {
                 }
                 // Only while you are at the end: reading higher up, new messages do not pull you down.
                 .onChange(of: shown) { _, _ in if scroll.shouldFollowEnd { scrollToEnd(proxy) } }
-                // Back where you left it: the end, what is new since, or the row you were reading (TimelineLanding).
+                // Back where you left it: the end, or the row you were reading (TimelineLanding).
                 .onChange(of: freshRead) { _, read in if read { land(proxy) } }
                 .onAppear {
                     visit = visitKey.flatMap { TimelineVisitStore.shared.visit(for: $0) }
@@ -263,15 +263,15 @@ struct TranscriptConversation: View {
         if scroll.shouldFollowEnd, new.offset < old.offset - 0.5, new.maxOffset - new.offset > 48 { scroll.userScrolled() }
     }
 
-    /// Once the conversation has loaded: what came in since your last visit (under its line), the row you were reading
-    /// when you left, else the end. Following stops at a row, so what comes in does not pull you away from it.
+    /// Once the conversation has loaded: the row you were reading when you left, else the end (with what came in since
+    /// your last visit under its line). Following stops at a row, so what comes in does not pull you away from it.
     private func land(_ proxy: ScrollViewProxy) {
         let rows = visitRows
         newSince = visit.flatMap { TimelineLanding.firstNew(rows, since: $0.lastViewedAt) }
         switch TimelineLanding.decide(rows, visit: visit) {
         case .end:
             scrollToEnd(proxy)
-        case .newSince(let id), .row(let id):
+        case .row(let id):
             scroll.userScrolled()
             proxy.scrollTo(id, anchor: .top)
             // After the other handlers of this change (following the end) and once the lazy rows are laid out.

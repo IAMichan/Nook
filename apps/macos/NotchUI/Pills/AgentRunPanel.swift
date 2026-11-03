@@ -742,7 +742,7 @@ struct AgentRunPanel: View {
                 let fresh = TimelineSearch.search(events, query: findQuery)
                 if let first = fresh.next(after: nil) { findIndex = first; reveal(fresh, at: first, blocks: blocks, proxy: proxy) }
             }
-            // Back where you left it: the end, what is new since, or the block you were reading (TimelineLanding);
+            // Back where you left it: the end, or the block you were reading (TimelineLanding);
             // after the handlers that follow the end on a new session, hence on the next turn of the run loop.
             .onAppear {
                 proxy.scrollTo("bottom", anchor: .bottom)
@@ -795,8 +795,8 @@ struct AgentRunPanel: View {
             .map { ($0.id.uuidString, $0.visitDate) }
     }
 
-    /// What came in since your last visit (under its line), the block you were reading when you left, or the end;
-    /// following stops at a block, so what comes in does not pull you away from it.
+    /// The block you were reading when you left, else the end (with what came in since your last visit under its
+    /// line); following stops at a block, so what comes in does not pull you away from it.
     private func land(_ proxy: ScrollViewProxy) {
         landsOnLoad = !workspace.isTimelineLoaded(runID)
         guard !landsOnLoad else { return }
@@ -806,7 +806,7 @@ struct AgentRunPanel: View {
         case .end:
             scroll.jumpedToEnd()
             proxy.scrollTo("bottom", anchor: .bottom)
-        case .newSince(let id), .row(let id):
+        case .row(let id):
             guard let block = UUID(uuidString: id) else { return }
             scroll.userScrolled()
             proxy.scrollTo(block, anchor: .top)
