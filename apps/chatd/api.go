@@ -457,7 +457,7 @@ func (a *API) messageJSON(ctx context.Context, net *Network, room *Room, e *Stor
 	mine := a.isSelf(ctx, net, e.Sender)
 	out := map[string]any{
 		"id": string(e.ID), "chatID": string(room.ID), "timestamp": time.UnixMilli(e.TS).UTC().Format(time.RFC3339Nano),
-		"senderID": string(e.Sender), "senderName": names[e.Sender], "isSender": mine, "isDeleted": e.Deleted, "type": "TEXT",
+		"senderID": string(e.Sender), "senderName": names[e.Sender], "isSender": mine, "isDeleted": e.Deleted, "isEdited": e.Edited != nil, "type": "TEXT",
 	}
 	if poll, ok := e.Content.Parsed.(*event.PollStartEventContent); ok {
 		out["type"] = "POLL"

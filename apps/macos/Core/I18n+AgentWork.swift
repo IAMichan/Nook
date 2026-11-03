@@ -8,6 +8,9 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
     .nl: [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "Jij",
+        "chat.message.edited": "Bewerkt",
+        "chat.message.deleted": "Dit bericht is verwijderd",
+        "chat.message.deletedMine": "Je hebt dit bericht verwijderd",
         "chat.moreActions": "Meer acties",
         "chat.forward": "Doorsturen",
         "chat.forward.title": "Bericht doorsturen",
@@ -396,6 +399,9 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
     .en: [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "You",
+        "chat.message.edited": "Edited",
+        "chat.message.deleted": "This message was deleted",
+        "chat.message.deletedMine": "You deleted this message",
         "chat.moreActions": "More actions",
         "chat.forward": "Forward",
         "chat.forward.title": "Forward message",
@@ -784,6 +790,9 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
     .de: [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "Du",
+        "chat.message.edited": "Bearbeitet",
+        "chat.message.deleted": "Diese Nachricht wurde gelöscht",
+        "chat.message.deletedMine": "Du hast diese Nachricht gelöscht",
         "chat.moreActions": "Weitere Aktionen",
         "chat.forward": "Weiterleiten",
         "chat.forward.title": "Nachricht weiterleiten",
@@ -1172,6 +1181,9 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
     .fr: [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "Vous",
+        "chat.message.edited": "Modifié",
+        "chat.message.deleted": "Ce message a été supprimé",
+        "chat.message.deletedMine": "Vous avez supprimé ce message",
         "chat.moreActions": "Plus d’actions",
         "chat.forward": "Transférer",
         "chat.forward.title": "Transférer le message",
@@ -1560,6 +1572,9 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
     .es: [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "Tú",
+        "chat.message.edited": "Editado",
+        "chat.message.deleted": "Se eliminó este mensaje",
+        "chat.message.deletedMine": "Eliminaste este mensaje",
         "chat.moreActions": "Más acciones",
         "chat.forward": "Reenviar",
         "chat.forward.title": "Reenviar mensaje",

@@ -225,6 +225,8 @@ enum TelegramData {
         message.receipt = receipt(object, readOutbox: chat.readOutbox)
         message.quote = quote(object, chat: chat.id)
         if let info = object["interaction_info"] { message.reactions = reactions(info, users: users) }
+        // Changed after it was sent: Telegram dates the last change (`edit_date`, 0 when there was none).
+        if (int64(object["edit_date"]) ?? 0) > 0 { message.edited = true }
         return message
     }
 
