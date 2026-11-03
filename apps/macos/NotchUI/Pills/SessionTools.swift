@@ -388,9 +388,11 @@ struct SessionWorkbench<Conversation: View>: View {
                 if covering {
                     panel(.side, tool: side)
                         .background(NookTheme.notch)
-                        .transition(.opacity)
                 }
             }
+            // The panels on the right, and the docked session panel that steps aside for them, open and close at once.
+            .sidePanelsOpenAtOnce(RightPanels(side: sideOpen, covering: covering, diff: diffSelection != nil,
+                                              file: filePreview, docked: docked))
             // Over a bottom panel the columns' lines end at its line instead of running on to the window's bottom.
             .transformEnvironment(\.lineBleed) { if bottom != .conversation { $0.bottom = 0 } }
             // The bottom panel runs the full width of the workbench, under the docked session panel and the side panel too.
@@ -432,8 +434,6 @@ struct SessionWorkbench<Conversation: View>: View {
             try? await Task.sleep(for: NookTheme.tabSettle)
             if !Task.isCancelled { app.prefetchPullRequestLink(url) }
         }
-        .animation(NookTheme.reveal, value: side == .conversation)
-        .animation(NookTheme.reveal, value: docked)
         .onChange(of: docked) { _, now in wasDocked = now }
         .onChange(of: sideOpen) { _, open in
             if open {
@@ -470,6 +470,15 @@ struct SessionWorkbench<Conversation: View>: View {
         }
         // ⇧⌘T: the tab closed last comes back, in the panel it was in; the key goes on when there is none.
         .keyCommands(["panel.reopenClosed": reopenClosed])
+    }
+
+    /// Which panels show on the right of the conversation, for `sidePanelsOpenAtOnce`.
+    private struct RightPanels: Equatable {
+        let side: Bool
+        let covering: Bool
+        let diff: Bool
+        let file: String?
+        let docked: Bool
     }
 
     /// Whether a panel shows the Terminal tab, where a command the agent runs opens.
