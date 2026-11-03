@@ -156,6 +156,13 @@ struct PullRequestLink: Codable, Equatable, Sendable, Identifiable {
         conflicted = ((try? c.decodeIfPresent(Bool.self, forKey: .conflicted)) ?? nil) ?? false
     }
 
+    /// A request known only by its link (the watched one, one the agent printed): open until a read says otherwise. Nil
+    /// for a link to no request.
+    init?(url: URL) {
+        guard let ref = PullRequestRef.parse(url.absoluteString), let repository = ref.repository else { return nil }
+        self.init(host: ref.host ?? .unknown(ref.hostName ?? ""), repository: repository, number: ref.number, url: url.absoluteString)
+    }
+
     /// Open (or draft) and blocked by a merge conflict.
     var hasConflict: Bool { state.isOpen && conflicted }
 

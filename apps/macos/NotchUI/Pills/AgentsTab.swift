@@ -604,10 +604,14 @@ struct AgentListRow: View {
     var actions: AgentRowActions? = nil
     /// "#12" of the session's pull request.
     var pullRequest: PullRequestBadge? = nil
+    /// The pull requests behind that badge, for the card it shows on hover.
+    var pullRequestLinks: [PullRequestLink] = []
     let action: () -> Void
     @State private var hovering = false
     /// The pointer is on the hover buttons.
     @State private var onActions = false
+    /// The pointer is on the changes or the pull request, which show their own card instead of the row's.
+    @State private var onDetail = false
     /// Too narrow for the status's word beside the name (a narrow sidebar): the status is only its mark.
     @State private var narrow = false
     /// Below this width a one-line row keeps the name readable by showing the status as its mark only.
@@ -639,7 +643,7 @@ struct AgentListRow: View {
         }
         .onHover { hovering = $0 }
         // Closed over the buttons, so their first click is not spent closing the card.
-        .hoverCard(suppressed: onActions) { AgentHoverCard(item: item) }
+        .hoverCard(suppressed: onActions || onDetail) { AgentHoverCard(item: item) }
         .accessibilityElement(children: .combine)
         // The hover buttons are merged away above, so VoiceOver gets them as the row's actions.
         .accessibilityActions {
@@ -750,15 +754,33 @@ struct AgentListRow: View {
             }
             Spacer(minLength: 0)
             changes
-            if let pullRequest { PullRequestPill(badge: pullRequest, compact: true) }
+            pullRequestPill
         }
         .font(NookTheme.TextStyle.detail)
         .foregroundStyle(NookTheme.textTertiary)
     }
 
-    /// "+120 −8" for a session whose lines the hooks counted; the number of changed files for one Nook runs.
+    /// The pull request badge; on hover a card with its title, state, branches, size and checks.
     @ViewBuilder
+    private var pullRequestPill: some View {
+        if let pullRequest {
+            PullRequestPill(badge: pullRequest, compact: true, tooltip: pullRequestLinks.isEmpty)
+                .detailCard(enabled: !pullRequestLinks.isEmpty, onDetail: $onDetail) { RowPullRequestCard(links: pullRequestLinks) }
+        }
+    }
+
+    /// The changes of a session on this Mac open the list of changed files on hover; a remote one has no folder here.
+    private var showsChangesCard: Bool { !item.path.isEmpty && item.machine == MachineName.local }
+
+    /// "+120 −8" for a session whose lines the hooks counted; the number of changed files for one Nook runs. On hover a
+    /// card lists the files with their lines.
     private var changes: some View {
+        changeCount
+            .detailCard(enabled: showsChangesCard, onDetail: $onDetail) { RowChangesCard(directory: item.path) }
+    }
+
+    @ViewBuilder
+    private var changeCount: some View {
         if item.linesAdded + item.linesRemoved > 0 {
             HStack(spacing: NookTheme.Spacing.xs) {
                 Text("+\(item.linesAdded)").foregroundStyle(dimmed ? NookTheme.textTertiary : NookTheme.mint)
@@ -772,7 +794,7 @@ struct AgentListRow: View {
                 Text("\(files)").monospacedDigit()
             }
             .fixedSize()
-            .help(tr("agents.git.changes", files))
+            .help(showsChangesCard ? "" : tr("agents.git.changes", files))
             .accessibilityLabel(tr("agents.git.changes", files))
         }
     }
@@ -826,7 +848,7 @@ struct AgentListRow: View {
                 .lineLimit(1)
                 .layoutPriority(1)
             Spacer(minLength: NookTheme.Spacing.xs)
-            if let pullRequest { PullRequestPill(badge: pullRequest, compact: true) }
+            pullRequestPill
             slot.opacity(hovering && actions != nil ? 0 : 1)
         }
     }
