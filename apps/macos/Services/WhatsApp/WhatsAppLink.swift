@@ -1548,6 +1548,8 @@ final class WhatsAppLink: ObservableObject {
     var canPin: Bool { isConnected && provider?.canPin == true }
     var canArchive: Bool { isConnected && provider?.canArchive == true }
     var canMuteInWhatsApp: Bool { isConnected && provider?.canMute == true }
+    /// Whether the linked gateway can delete a whole chat on the phone (OpenWA can; GOWA has no call for it).
+    var canDeleteChat: Bool { isConnected && provider?.canDeleteChat == true }
 
     /// Whether the chat is muted on the phone, as far as Nook knows (see `mutedChats`).
     func isMutedInWhatsApp(_ chat: String) -> Bool { mutedChats.contains(WAJID.normalized(chat)) }
@@ -1643,6 +1645,23 @@ final class WhatsAppLink: ObservableObject {
         guard gen == generation else { return }
         pinnedChats.remove(key)
         Log.connectors.info("WhatsApp: chat archived")
+    }
+
+    /// Deletes the whole chat on the phone, for you alone, after your own click and confirmation.
+    func deleteChat(_ chat: String) async throws {
+        guard let provider, isConnected else { throw NookError(statusLine) }
+        guard provider.canDeleteChat else { throw NookError(tr("chat.compose.unsupported")) }
+        let key = WAJID.normalized(chat)
+        let gen = generation
+        do {
+            try await provider.deleteChat(key)
+        } catch let error as WAError {
+            throw Self.actionSentence(error)
+        }
+        guard gen == generation else { return }
+        pinnedChats.remove(key)
+        mutedChats.remove(key)
+        Log.connectors.info("WhatsApp: chat deleted")
     }
 
     /// As `sentence`, except that a refusal without words of the gateway's own (only a status code, or none at all)

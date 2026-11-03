@@ -116,6 +116,21 @@ final class TelegramActionsTests: XCTestCase {
         XCTAssertEqual(listType(request["chat_list"]), "chatListArchive")
     }
 
+    func testDeleteChatAsTelegramItselfDoes() {
+        let person = TelegramData.deleteChat(TelegramData.Chat(id: 9, title: "Anna", isGroup: false, unread: 0, order: 1))
+        XCTAssertEqual(person.map { $0["@type"] as? String }, ["deleteChatHistory"])
+        XCTAssertEqual(person[0]["chat_id"] as? Int64, 9)
+        XCTAssertEqual(person[0]["remove_from_chat_list"] as? Bool, true)
+        XCTAssertEqual(person[0]["revoke"] as? Bool, false, "deleted for you alone")
+
+        let basic = TelegramData.deleteChat(TelegramData.Chat(id: -5, title: "Club", isGroup: true, unread: 0, order: 1, basicGroup: 5))
+        XCTAssertEqual(basic.map { $0["@type"] as? String }, ["leaveChat", "deleteChatHistory"], "a basic group stays listed after leaving")
+
+        let supergroup = TelegramData.deleteChat(TelegramData.Chat(id: -100_5, title: "Team", isGroup: true, unread: 0, order: 1,
+                                                                   supergroup: 5))
+        XCTAssertEqual(supergroup.map { $0["@type"] as? String }, ["leaveChat"])
+    }
+
     func testEditMessageText() {
         let request = TelegramData.editMessageText(chat: -100123, message: 45, text: "Fixed typo")
         XCTAssertEqual(request["@type"] as? String, "editMessageText")

@@ -1,5 +1,5 @@
 // Doing things in a chat from the Chats tab: text, files, polls, places and contact cards, emoji, edits, deletions, read
-// marks, votes, and pinning, muting and archiving, in every chat Nook can write in, the same way for every app.
+// marks, votes, and pinning, muting, archiving and deleting the chat, in every chat Nook can write in, the same way for every app.
 import Foundation
 
 /// Where what you send in a chat goes: WhatsApp through the linked phone's gateway (by the chat's key across accounts,
@@ -60,14 +60,14 @@ extension AppModel {
         switch route {
         case .whatsApp(let key):
             let (link, jid) = WhatsAppAccounts.shared.route(key)
-            // Muting goes through OpenWA; GOWA has no call for it.
+            // Muting and deleting a chat go through OpenWA; GOWA has no call for either.
             return ChatAbilities(send: true, sends: link.sends, reply: true, react: true, edit: link.canEdit, delete: link.canDelete,
                                  markRead: link.isConnected, pin: link.canPin, mute: link.canMuteInWhatsApp, archive: link.canArchive,
-                                 pinned: link.isPinned(jid), muted: link.isMutedInWhatsApp(jid), vote: link.canVote)
+                                 deleteChat: link.canDeleteChat, pinned: link.isPinned(jid), muted: link.isMutedInWhatsApp(jid), vote: link.canVote)
         case .telegram(let id):
             let telegram = capture.telegramBridge
             return ChatAbilities(send: true, sends: ChatOutgoing.Kind.everything, reply: true, react: true, edit: true, delete: true,
-                                 markRead: true, pin: true, mute: true, archive: true,
+                                 markRead: true, pin: true, mute: true, archive: true, deleteChat: true,
                                  pinned: telegram.isPinned(id), muted: telegram.isMuted(id), vote: true, deleteForMe: true)
         case .teams:
             // Teams' website session takes text, answers, emoji, edits, deletions and read marks; not files, and it
@@ -89,7 +89,8 @@ extension AppModel {
             return ChatAbilities(send: true, markRead: true)
         case .linked(let id):
             let bridge = capture.serviceBridge
-            // A chat the helper does not list (any more) offers only what every network takes: text.
+            // A chat the helper does not list (any more) offers only what every network takes: text. The helper has no
+            // call to delete a chat in its network: such a chat is removed from Nook only.
             guard let chat = bridge.chats[id] else { return ChatAbilities(send: true, sends: bridge.sends, markRead: true) }
             return ChatAbilities(send: true, sends: bridge.sends, reply: true, react: chat.canReact,
                                  edit: chat.canEdit, delete: chat.canDelete, markRead: true,
@@ -424,6 +425,22 @@ extension AppModel {
             case .telegram(let id): try capture.telegramBridge.archive(id)
             case .linked(let id): try await capture.serviceBridge.archive(id)
             case .teams, .slack, .messages, .snapchat, .mail: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
+            }
+        }
+        if let thread { capture.remove(thread) }
+    }
+
+    /// Deletes the whole chat in its app, for you alone (a group you also leave, as the app itself does), after your own
+    /// click and confirmation; it leaves the Chats tab too (`thread`) and comes back only with a newer message.
+    func deleteChatInApp(route: ChatRoute, thread: String?, name: String) async throws {
+        let capture = ChatCaptureService.shared
+        try await runInChat(.deleteChat, route: route, name: name, result: "chat verwijderd") {
+            switch route {
+            case .whatsApp(let key):
+                let (link, jid) = WhatsAppAccounts.shared.route(key)
+                try await link.deleteChat(jid)
+            case .telegram(let id): try capture.telegramBridge.deleteChat(id)
+            case .linked, .teams, .slack, .messages, .snapchat, .mail: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
             }
         }
         if let thread { capture.remove(thread) }
