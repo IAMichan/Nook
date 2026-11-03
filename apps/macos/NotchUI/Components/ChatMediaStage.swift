@@ -92,19 +92,30 @@ private struct ChatMediaStageOverlay: View {
 private struct ChatVideoStageView: View {
     let video: ChatMediaStage.Video
     let onClose: () -> Void
-    @State private var player: AVPlayer
+    /// Waits for a file still coming in and says so when it cannot be played (`ChatVideoPlayback`).
+    @StateObject private var playback: ChatVideoPlayback
 
     init(video: ChatMediaStage.Video, onClose: @escaping () -> Void) {
         self.video = video
         self.onClose = onClose
-        _player = State(initialValue: AVPlayer(url: video.url))
+        _playback = StateObject(wrappedValue: ChatVideoPlayback(url: video.url))
     }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Color.black
-            StagePlayer(player: player)
-                .accessibilityLabel(video.name)
+            switch playback.phase {
+            case .ready:
+                StagePlayer(player: playback.player)
+                    .accessibilityLabel(video.name)
+            case .loading:
+                ProgressView()
+                    .tint(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityLabel(tr("card.video.loading"))
+            case .failed:
+                ChatVideoFailure(url: video.url, retry: playback.retry)
+            }
             HStack(spacing: NookTheme.Spacing.xs) {
                 stageButton("arrow.down.right.and.arrow.up.left",
                             label: tr("card.video.exitFullScreen"),
@@ -114,14 +125,9 @@ private struct ChatVideoStageView: View {
             }
             .padding(NookTheme.Spacing.md)
         }
-        .onAppear {
-            if video.time.isValid, video.time.seconds > 0 {
-                player.seek(to: video.time, toleranceBefore: .zero, toleranceAfter: .zero)
-            }
-            player.play()
-        }
+        .onAppear { playback.start(at: video.time) }
         .onDisappear {
-            player.pause()
+            playback.stop()
         }
     }
 

@@ -6,6 +6,10 @@ import Foundation
 let chatMediaTranslations: [AppLanguage: [String: String]] = [
     .nl: [
         "card.video.fullScreen": "Volledig scherm",
+        "card.video.unplayable": "Deze video kan niet worden afgespeeld",
+        "card.video.retry": "Opnieuw proberen",
+        "card.video.openElsewhere": "Openen in app",
+        "card.video.loading": "Video laden…",
         "card.video.exitFullScreen": "Volledig scherm verlaten",
         "chat.deleteMessage": "Verwijderen",
         "chat.delete.choose": "Bericht verwijderen?",
@@ -154,6 +158,10 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
     ],
     .en: [
         "card.video.fullScreen": "Full screen",
+        "card.video.unplayable": "This video can't be played",
+        "card.video.retry": "Try again",
+        "card.video.openElsewhere": "Open in app",
+        "card.video.loading": "Loading video…",
         "card.video.exitFullScreen": "Exit full screen",
         "chat.deleteMessage": "Delete",
         "chat.delete.choose": "Delete message?",
@@ -302,6 +310,10 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
     ],
     .de: [
         "card.video.fullScreen": "Vollbild",
+        "card.video.unplayable": "Dieses Video kann nicht abgespielt werden",
+        "card.video.retry": "Erneut versuchen",
+        "card.video.openElsewhere": "In App öffnen",
+        "card.video.loading": "Video wird geladen …",
         "card.video.exitFullScreen": "Vollbild beenden",
         "chat.deleteMessage": "Löschen",
         "chat.delete.choose": "Nachricht löschen?",
@@ -450,6 +462,10 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
     ],
     .fr: [
         "card.video.fullScreen": "Plein écran",
+        "card.video.unplayable": "Impossible de lire cette vidéo",
+        "card.video.retry": "Réessayer",
+        "card.video.openElsewhere": "Ouvrir dans l’app",
+        "card.video.loading": "Chargement de la vidéo…",
         "card.video.exitFullScreen": "Quitter le plein écran",
         "chat.deleteMessage": "Supprimer",
         "chat.delete.choose": "Supprimer le message ?",
@@ -598,6 +614,10 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
     ],
     .es: [
         "card.video.fullScreen": "Pantalla completa",
+        "card.video.unplayable": "No se puede reproducir este vídeo",
+        "card.video.retry": "Reintentar",
+        "card.video.openElsewhere": "Abrir en la app",
+        "card.video.loading": "Cargando vídeo…",
         "card.video.exitFullScreen": "Salir de pantalla completa",
         "chat.deleteMessage": "Eliminar",
         "chat.delete.choose": "¿Eliminar el mensaje?",
