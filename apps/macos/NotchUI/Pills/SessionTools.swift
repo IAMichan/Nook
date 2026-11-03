@@ -798,7 +798,7 @@ private struct SessionToolPanel: View {
         }
     }
 
-    /// The open tabs, + right after them, and the button that closes the panel, as t3code's right panel has them. The
+    /// The open tabs, + right after them, and the button that closes the panel. The
     /// tabs scroll sideways when they do not fit, so the close button always stays in view.
     private var header: some View {
         SidePanelTabBar(items: tabs.flatMap(tabItems), selected: selectedTab, onSelect: selectTab, onClose: closeTab) {
@@ -906,7 +906,7 @@ private struct SessionToolPanel: View {
     }
 }
 
-/// An open panel before any tab, like t3code's "Open a surface": the tools, one row each with the key that opens it.
+/// An open panel before any tab: the tools, one row each with the key that opens it.
 /// A tool the session cannot use (a terminal or changes without a folder) is dimmed and says why.
 private struct SessionToolPicker: View {
     let directory: String

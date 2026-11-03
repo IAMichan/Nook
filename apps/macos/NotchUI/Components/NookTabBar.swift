@@ -26,8 +26,8 @@ struct NookTabBar<Value: Hashable>: View {
     /// The selected tab on the accent (`iris`) instead of `smoke`: for a tab bar that sits on a `graphite` surface of
     /// its own, where `smoke` would barely show.
     var prominent = false
-    /// Small tabs on a shared track, the selected one on a rounded square: a segmented control, as on t3code's pull
-    /// request page (Summary, Guide, Timeline, Code).
+    /// Small tabs on a shared track, the selected one on a rounded square: a segmented control, as on a pull
+    /// request's page (Summary, Guide, Timeline, Code).
     var segmented = false
     /// The tab split view shows beside the selected one: outlined on the accent, so both tabs on screen read as open.
     var beside: Value? = nil

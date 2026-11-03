@@ -2,7 +2,7 @@ import XCTest
 
 /// Recorded agent transcripts replayed through the real `AgentProcess` line handling and `ClaudeStreamParser`, with only
 /// the process itself replaced (`ReplayTransport`). Fixtures live in Tests/Fixtures/ProviderReplay; most are adapted
-/// from t3code's recorded Claude transcripts (MIT, see THIRD-PARTY-NOTICES.md).
+/// from recorded Claude transcripts (MIT, see THIRD-PARTY-NOTICES.md).
 final class ProviderReplayTests: XCTestCase {
     private static let root: URL = {
         if let path = ProcessInfo.processInfo.environment["NOOK_MACOS_ROOT"] { return URL(fileURLWithPath: path) }

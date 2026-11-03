@@ -68,12 +68,12 @@ struct SessionDetailView: View {
                         withAnimation(Theme.reveal) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
                     }
                 // An agent in a terminal on the Mac keeps its conversation there; the phone only decides its approvals.
-                // What waits on you, docked right above the composer (as t3code docks its approval card), so it stays in
+                // What waits on you, docked right above the composer, so it stays in
                 // sight however far up you read; while it waits it takes the composer's place.
                 if let item = session.items.first {
                     PendingItemDock(session: session, item: item, more: session.items.count - 1)
                 } else {
-                // A message your Mac refused stays here with why, to edit and send again, as t3code restores it.
+                // A message your Mac refused stays here with why, to edit and send again.
                 ForEach(client.rejected.filter { $0.session == sessionID }) { refused in
                     RejectedMessageCard(message: refused) {
                         let back = client.takeRejected(refused)
@@ -196,7 +196,7 @@ struct SessionDetailView: View {
         client.can(CompanionFeature.steer) && session.canSteer == true && session.attention == "working"
     }
 
-    /// "Steer now" or "After this turn", as a quiet choice under the text, as t3code's and the Mac's composer offer it.
+    /// "Steer now" or "After this turn", as a quiet choice under the text, as the Mac's composer offers it.
     private var steerMenu: some View {
         Menu {
             Button { steerByDefault = true } label: {

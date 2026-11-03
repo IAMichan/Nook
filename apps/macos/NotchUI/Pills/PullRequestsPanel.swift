@@ -12,7 +12,7 @@ struct PullRequestOpenRequest: Equatable {
 /// search that takes qualifiers (`label:bug`), Sort and Filters beside it (see PullRequestFilterMenu), and flat rows
 /// under a heading per group. Open ones by default; the filters also show closed and merged ones. A click opens the pull
 /// request in Nook (see PullRequestDetailView), where it can be read in full and merged: beside the list when the page
-/// is wide enough, as a side panel the way t3code opens one (half the page, its edge dragged wider or narrower, and a
+/// is wide enough, as a side panel (half the page, its edge dragged wider or narrower, and a
 /// button that makes it fill the page), else in its place.
 struct PullRequestsPanel: View {
     @EnvironmentObject private var app: AppModel
@@ -54,7 +54,7 @@ struct PullRequestsPanel: View {
 
     /// From this width the pull request opens beside the list instead of in its place.
     private static let splitWidth: CGFloat = 860
-    /// The side panel, like t3code's: half the page at first, as wide as you drag it after (remembered; 0 is "half"),
+    /// The side panel: half the page at first, as wide as you drag it after (remembered; 0 is "half"),
     /// never narrower than `minimumPanel`, and leaving the list at least `minimumList` and 30% of the page.
     @AppStorage("nook.pulls.panelWidth") private var panelWidth: Double = 0
     private static let minimumPanel: Double = 360

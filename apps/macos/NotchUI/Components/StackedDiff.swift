@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Changes laid out like t3code's diff panel: every file in one scroll under a header that sticks while you read it,
+// Changes laid out as a stacked diff: every file in one scroll under a header that sticks while you read it,
 // all of them folded at first so the panel opens as a short list of files; a click on a header unfolds its diff,
 // which is read only then. The toolbar above folds or unfolds them all and shows a tree of the files beside them.
 

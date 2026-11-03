@@ -1,6 +1,6 @@
 import XCTest
 
-/// The t3code-style capability flags per agent, and how a message during a turn reaches the agent.
+/// The capability flags per agent, and how a message during a turn reaches the agent.
 final class ProviderCapabilityTests: XCTestCase {
     func testFlagsPerProvider() {
         let claude = RunProvider.claude.capabilities

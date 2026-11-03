@@ -1,11 +1,11 @@
 import AppKit
 import SwiftUI
 
-/// One pull request, read in full inside Nook, laid out like t3code's pull request page. A fixed top with the crumbs
+/// One pull request, read in full inside Nook. A fixed top with the crumbs
 /// (repository and the number in its state's color), the main action (merge, ready for review, or the state) and the ⋯
 /// menu, then the title, author, branches and size, then the tabs; it folds to one line once you
 /// scroll past the title. Under it four tabs: Summary (reviewers and labels, then the description, the checks and
-/// the comments in sections that fold, the comments as threads the way t3code shows them; see
+/// the comments in sections that fold, the comments as threads; see
 /// PullRequestConversationList), Guide, Timeline (everything that happened, commits included) and Code (every
 /// changed file with its diff). The bar under the tabs says what the open tab holds: the comments, commits and approvals
 /// with the order on Timeline, the files viewed on Code (Summary leads with its readiness card instead). Merge asks for a second click and
@@ -53,7 +53,7 @@ struct PullRequestDetailView: View {
     @State var armedMerge = false
     @State var armToken = UUID()
     @State var merging = false
-    /// Scrolled past the title: the top folds to one line (number and title), the way t3code's page does. Held without
+    /// Scrolled past the title: the top folds to one line (number and title). Held without
     /// being observed (only the top watches it, see `headerBlock`): as state of this view, the fold built the open tab's
     /// whole page again in the middle of a scroll.
     @State var fold = PullRequestHeaderFold()
@@ -184,7 +184,7 @@ struct PullRequestDetailView: View {
 
     // MARK: Header
 
-    /// The top of the page, laid out like t3code's: the crumbs with the page's actions, the title, who and when, the
+    /// The top of the page: the crumbs with the page's actions, the title, who and when, the
     /// branches and the size, then the tabs, ruled off from the content that scrolls under it. Once the title is
     /// scrolled away the middle folds to one line and the crumbs show the number and title instead.
     /// The fold is not animated: its height changing on every frame of a spring laid the page under it out again on
@@ -220,7 +220,7 @@ struct PullRequestDetailView: View {
             if stack.count > 1 { stackMenu }
             if let detail {
                 primaryAction(detail)
-                // Refreshing is in the ⋯ menu, which spins while GitHub is asked, the way t3code's does. It alone
+                // Refreshing is in the ⋯ menu, which spins while GitHub is asked. It alone
                 // watches the reads, so a poll draws the menu again and not the page.
                 Observing(model.status) {
                     PullRequestMoreMenu(state: actions, detail: detail, loading: model.loading, fetchedAt: model.fetchedAt) {
@@ -377,7 +377,7 @@ struct PullRequestDetailView: View {
         }
     }
 
-    /// How many files and the lines added and removed, as t3code shows them; folded, the number of files alone.
+    /// How many files and the lines added and removed; folded, the number of files alone.
     func diffStat(_ detail: PullRequestDetail, compact: Bool = false) -> some View {
         let files = max(detail.changedFiles, detail.files.count)
         return HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
@@ -397,7 +397,7 @@ struct PullRequestDetailView: View {
         .fixedSize()
     }
 
-    /// The split button at the bottom right that opens the composer (a comment or a review), like t3code's: the bubble
+    /// The split button at the bottom right that opens the composer (a comment or a review): the bubble
     /// writes a comment, the chevron beside it starts straight as a comment, an approval or a request for changes.
     func writeButton(_ detail: PullRequestDetail) -> some View {
         HStack(spacing: 0) {
@@ -565,7 +565,7 @@ struct PullRequestDetailView: View {
             }
         case .timeline:
             if detail.activityLoaded {
-                // One centered column at most 768 pt wide, like t3code's timeline.
+                // One centered column at most 768 pt wide.
                 page { timeline(detail, now: now) }
             } else {
                 activityLoading

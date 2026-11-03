@@ -611,7 +611,7 @@ struct BrowserView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // The page's own bar, as t3code's browser has it: back, forward and reload together, the address, then
+            // The page's own bar: back, forward and reload together, the address, then
             // what to do with the page.
             HStack(spacing: NookTheme.Spacing.xs) {
                 HStack(spacing: NookTheme.Spacing.xxs) {

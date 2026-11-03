@@ -97,7 +97,7 @@ extension PullRequestDetailView {
 
     // MARK: Merging
 
-    /// The page's main action at the top right, as on t3code: merge an open pull request, mark a draft ready, or say
+    /// The page's main action at the top right: merge an open pull request, mark a draft ready, or say
     /// what it is (merged, closed, in conflict) when there is nothing to do.
     @ViewBuilder
     func primaryAction(_ detail: PullRequestDetail) -> some View {

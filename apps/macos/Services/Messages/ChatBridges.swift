@@ -840,7 +840,7 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
     }
 
     var isReady: Bool {
-        // WhatsApp linked through the chat helper (as Beeper did it) brings it live, with its whole history.
+        // WhatsApp linked through the chat helper brings it live, with its whole history.
         !WhatsAppAccounts.shared.isConnected && !ChatHelper.linked(app) && FileManager.default.fileExists(atPath: Self.path)
     }
 
@@ -1305,7 +1305,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
     /// How many older messages one scroll back asks for: the helper's batch (`paginateBatch` in apps/chatd).
     static let olderStep = ChatHistory.step
 
-    /// Scrolling back in the chat Nook shows as `name` in `app`, as Beeper does it: the helper first brings in the next
+    /// Scrolling back in the chat Nook shows as `name` in `app`: the helper first brings in the next
     /// batch of older messages from the app (WhatsApp asks the phone), then Nook reads the batch before `before` from
     /// it. No cap: each scroll back goes on from the oldest message Nook shows. The batch as a chat, and whether there
     /// is still more before it.

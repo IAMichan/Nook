@@ -12,7 +12,7 @@ import (
 )
 
 // Hub is the live line (/v1/ws): it tells every connected Nook which chat changed, the moment it changes. Nook then
-// reads that chat again. Like Beeper's: "ready" first, then events once Nook subscribed.
+// reads that chat again. "ready" first, then events once Nook subscribed.
 type Hub struct {
 	mu      sync.Mutex
 	clients map[*client]struct{}

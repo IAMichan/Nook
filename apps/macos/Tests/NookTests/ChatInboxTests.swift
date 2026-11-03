@@ -944,9 +944,9 @@ final class ChatInboxTests: XCTestCase {
         let gif = ChatServiceData.file(["type": "img", "mimeType": "video/mp4", "isGif": true, "srcURL": "file:///tmp/a.mp4"])
         XCTAssertEqual(gif?.kind, .gif)
         XCTAssertEqual(gif?.path, "/tmp/a.mp4")
-        let photo = ChatServiceData.file(["type": "img", "srcURL": "mxc://beeper.com/abc", "fileName": "a"])
+        let photo = ChatServiceData.file(["type": "img", "srcURL": "mxc://nook.local/abc", "fileName": "a"])
         XCTAssertEqual(photo?.kind, .photo)
-        XCTAssertEqual(photo?.source, "mxc://beeper.com/abc")
+        XCTAssertEqual(photo?.source, "mxc://nook.local/abc")
         XCTAssertEqual(ChatServiceData.picture(["type": "single", "participants": ["items": [
             ["isSelf": true, "imgURL": "file:///me.jpg"], ["imgURL": "file:///anna.jpg"]]]]), "file:///anna.jpg")
         XCTAssertNil(ChatServiceData.picture(["type": "group", "participants": ["items": [["imgURL": "file:///anna.jpg"]]]]))
@@ -994,11 +994,11 @@ final class ChatInboxTests: XCTestCase {
             "id": "!g", "title": "Club", "network": "WhatsApp", "accountID": "whatsapp", "type": "group",
             "participants": ["items": [
                 ["id": "@me", "isSelf": true, "fullName": "Me"],
-                ["id": "@whatsapp_31611111111:beeper.local", "fullName": "Anna"],
-                ["id": "@whatsapp_lid-45600000000001:beeper.local", "fullName": "Cor"],
+                ["id": "@whatsapp_31611111111:nook.local", "fullName": "Anna"],
+                ["id": "@whatsapp_lid-45600000000001:nook.local", "fullName": "Cor"],
                 ["id": "@bob", "fullName": "Bob", "phoneNumber": "+31 6 22222222"],
-                ["id": "@signal_1a2b3c4d-5e6f-1234-5678-123456789012:beeper.local", "fullName": "Dirk"],
-                ["id": "@whatsapp_31633333333:beeper.local", "fullName": "+31 6 33333333"],
+                ["id": "@signal_1a2b3c4d-5e6f-1234-5678-123456789012:nook.local", "fullName": "Dirk"],
+                ["id": "@whatsapp_31633333333:nook.local", "fullName": "+31 6 33333333"],
             ]],
         ]]])
         let chat = try! XCTUnwrap(listed.first)
@@ -1046,14 +1046,34 @@ final class ChatInboxTests: XCTestCase {
             ["id": "2", "text": "weg", "timestamp": "2026-10-23T10:01:00Z", "isDeleted": true],
         ]]
         let messages = ChatServiceData.messages(answer, chat: chat)
-        XCTAssertEqual(messages.map(\.id), ["beeper-!a-1", "beeper-!a-2"], "a deleted message keeps its place")
+        XCTAssertEqual(messages.map(\.id), ["nook-!a-1", "nook-!a-2"], "a deleted message keeps its place")
         XCTAssertEqual(messages.last?.isDeleted, true)
         XCTAssertEqual(messages.last?.text, "", "nothing of what it said")
         XCTAssertEqual(messages.first?.receipt, .read)
         XCTAssertEqual(messages.first?.reactions, [InboxReaction(emoji: "😂", count: 1, mine: false, people: ["Anna"])], "with who put it there")
-        XCTAssertEqual(ChatServiceData.deleted(answer, chat: chat), ["beeper-!a-2"])
-        XCTAssertEqual(ChatServiceData.networkID("beeper-!a-1", chat: "!a"), "1")
-        XCTAssertNil(ChatServiceData.networkID("beeper-!b-1", chat: "!a"), "a message of another chat")
+        XCTAssertEqual(ChatServiceData.deleted(answer, chat: chat), ["nook-!a-2"])
+        XCTAssertEqual(ChatServiceData.networkID("nook-!a-1", chat: "!a"), "1")
+        XCTAssertNil(ChatServiceData.networkID("nook-!b-1", chat: "!a"), "a message of another chat")
+    }
+
+    func testMessageIDsStoredUnderTheEarlierPrefixAreRenamed() {
+        var answer = InboxMessage(id: "beeper-!a-2", text: "ja", date: now)
+        answer.quote = InboxQuote(id: "beeper-!a-1", text: "kom je?")
+        var thread = InboxThread(id: "whatsapp#!a", app: "whatsapp", name: "Anna", messages: [
+            InboxMessage(id: "beeper-!a-1", text: "kom je?", date: now), answer,
+            InboxMessage(id: "slack-C1-1.0", text: "other", date: now),
+        ])
+        thread.reaction = ChatReactionNote(emoji: "👍", message: "beeper-!a-1", text: "kom je?", date: now)
+        var inbox = ChatInbox()
+        inbox.threads[thread.id] = thread
+
+        XCTAssertTrue(inbox.renameMessageIDs())
+        let renamed = inbox.threads[thread.id]
+        XCTAssertEqual(renamed?.messages.map(\.id), ["nook-!a-1", "nook-!a-2", "slack-C1-1.0"], "only the earlier prefix")
+        XCTAssertEqual(renamed?.messages[1].quote?.id, "nook-!a-1", "the answered message too")
+        XCTAssertEqual(renamed?.reaction?.message, "nook-!a-1", "and the message a reaction is on")
+        XCTAssertEqual(renamed?.messages.first?.id, ChatServiceData.messageID("1", chat: "!a"), "matches a chat read again")
+        XCTAssertFalse(inbox.renameMessageIDs(), "nothing left to rename the second time")
     }
 
     func testEditedAndDeletedMessagesShowAsSuch() {
@@ -1212,7 +1232,7 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertNil(ChatJSON.date(""))
         XCTAssertNil(ChatJSON.date(42))
         XCTAssertNil(ChatJSON.date("yesterday"))
-        XCTAssertEqual(ChatJSON.segment("!abc:beeper.com"), "!abc:beeper.com")
+        XCTAssertEqual(ChatJSON.segment("!abc:nook.local"), "!abc:nook.local")
         XCTAssertEqual(ChatJSON.segment("a/b?c#d"), "a%2Fb%3Fc%23d", "an id never leaves its segment")
         XCTAssertEqual(ChatJSON.segment("❤️"), "%E2%9D%A4%EF%B8%8F")
     }
@@ -1649,7 +1669,7 @@ final class ChatInboxTests: XCTestCase {
 
     func testChatHelperChatsAndMessages() {
         let list: [String: Any] = ["items": [
-            ["id": "!a:beeper.local", "accountID": "instagramgo", "network": "Instagram", "title": "Anna", "type": "single",
+            ["id": "!a:nook.local", "accountID": "instagramgo", "network": "Instagram", "title": "Anna", "type": "single",
              "unreadCount": 2, "lastActivity": "2026-10-22T09:00:00.000Z", "account": "anna.ig"],
             ["id": "!b", "accountID": "discordgo", "title": "Gamers", "type": "group", "isArchived": true],
             ["id": "!c", "accountID": "gmessages", "title": "Bank", "type": "single"]
@@ -1673,7 +1693,7 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(messages.map(\.text), [tr("whatsapp.file.photo"), "gg"])
         XCTAssertTrue(messages[0].isMine)
         XCTAssertEqual(messages[1].sender, "Jan")
-        XCTAssertEqual(messages[1].id, "beeper-!g-2")
+        XCTAssertEqual(messages[1].id, "nook-!g-2")
     }
 
     // MARK: As bubbles
