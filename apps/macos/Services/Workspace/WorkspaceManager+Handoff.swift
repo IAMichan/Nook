@@ -14,9 +14,11 @@ extension WorkspaceManager {
     // MARK: Switch
 
     /// Moves the session to another agent. The old agent's conversation is kept; switching back resumes it and hands over
-    /// only what it missed. Everything the new agent starts from is shown in the timeline.
+    /// only what it missed. Everything the new agent starts from is shown in the timeline. A wait for the old account's
+    /// usage limit ends here; with `resumeIfLimited` a session that limit stopped goes on at once on the new one.
     @discardableResult
-    func switchProvider(_ id: UUID, to provider: RunProvider, profileID: String, model: String = "") -> Bool {
+    func switchProvider(_ id: UUID, to provider: RunProvider, profileID: String, model: String = "",
+                        resumeIfLimited: Bool = false) -> Bool {
         guard canTransfer(id), let run = run(id), executable(provider) != nil,
               ProviderInstance.key(run.provider, run.profileID) != ProviderInstance.key(provider, profileID) else { return false }
         loadTimeline(id)
@@ -64,6 +66,13 @@ extension WorkspaceManager {
         append(id, RunEvent(kind: .system, text: accountOnly ? tr("ws.event.switchedAccount", provider.displayName)
                                                               : tr("ws.event.switched", previous.displayName, provider.displayName)))
         if let handoff { appendHandoffNote(id, handoff) }
+        // The limit belonged to the old account: its banner and its "Resume at reset" do not apply to the new one.
+        let limited = run.limitedAt != nil
+        clearUsageLimit(id)
+        if limited && resumeIfLimited {
+            append(id, RunEvent(kind: .system, text: tr("ws.limit.resumingSwitched")))
+            send(id, text: UsageLimits.resumeMessage)
+        }
         return true
     }
 
@@ -170,7 +179,8 @@ extension WorkspaceManager {
     /// What you picked in the agent menu of a session: a model from the next turn on, or another account or agent with a
     /// summary of what happened. Returns what it came to, so the menu can say why nothing changed.
     @discardableResult
-    func applySelection(_ id: UUID, provider: RunProvider, profileID: String, model: String) -> SelectionTransition {
+    func applySelection(_ id: UUID, provider: RunProvider, profileID: String, model: String,
+                        resumeIfLimited: Bool = false) -> SelectionTransition {
         guard let run = run(id) else { return .reject("busy") }
         // "Auto" keeps the model in use (none on another agent) and lets the next turn pick (see `applyAutoModel`); any
         // other model is your own choice again.
@@ -200,7 +210,9 @@ extension WorkspaceManager {
             }
             refreshWarmSession(id)
         case .createWithHandoff:
-            if !switchProvider(id, to: provider, profileID: profileID, model: model) { return .reject("unavailable") }
+            if !switchProvider(id, to: provider, profileID: profileID, model: model, resumeIfLimited: resumeIfLimited) {
+                return .reject("unavailable")
+            }
         }
         return transition
     }
