@@ -37,6 +37,9 @@ enum SessionExport {
             case .error:
                 flushWork()
                 out += ["> **Error:** " + ToolSummary.oneLine(text, 400), ""]
+            case .page:
+                // The page stays in Nook; the export names it.
+                work.append("Page: " + ToolSummary.oneLine(text, 160))
             case .thinking, .approval, .system, .result:
                 continue
             }

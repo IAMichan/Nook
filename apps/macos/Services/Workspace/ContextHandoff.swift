@@ -91,6 +91,9 @@ enum ContextHandoff {
             return "- Changed: " + clip(path, lineLimit) + (event.tool.map { " (\($0))" } ?? "")
         case .error:
             return text.isEmpty ? nil : "- Error: " + clip(text, lineLimit)
+        case .page:
+            // The page itself stays out: only that the agent showed one.
+            return "- Showed a page: " + clip(text.isEmpty ? "Page" : text, lineLimit)
         case .thinking, .approval, .system, .result:
             return nil
         }

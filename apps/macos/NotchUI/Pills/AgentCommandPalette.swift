@@ -134,6 +134,12 @@ struct AgentCommandPalette: View {
         }
         out.append(Entry(id: "s:reference", group: .session, symbol: "link", title: tr("palette.copyReference"),
                          command: "session.copyReference") { _ = actions.copyReference(); return false })
+        // The open session's title, written again.
+        if current.id.hasPrefix("run:"), let id = UUID(uuidString: String(current.id.dropFirst(4))), app.workspace.run(id) != nil {
+            out.append(Entry(id: "s:retitle", group: .session, symbol: "wand.and.stars", title: tr("ws.title.regenerate")) {
+                app.workspace.regenerateTitle(id); return false
+            })
+        }
         // The open session's agent starts again in the same conversation, so new skills, plugins and MCP servers count.
         if current.id.hasPrefix("run:"), let id = UUID(uuidString: String(current.id.dropFirst(4))),
            app.workspace.canRestartAgent(id) {

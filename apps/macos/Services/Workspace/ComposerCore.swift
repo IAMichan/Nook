@@ -386,6 +386,29 @@ enum ComposerAttachments {
     }
 }
 
+// MARK: Files in an answer
+
+/// Files you attach to your own answer to an agent's question. A question's answer goes back as plain text (Claude
+/// Code's AskUserQuestion, Codex's `requestUserInput`), so the files go as their absolute paths below your words, one per
+/// line: every agent reads a path the same way and opens the file itself.
+enum AnswerAttachments {
+    /// A file reference from the picker (relative to `folder` when inside it) as an absolute path.
+    static func absolutePath(_ id: String, folder: String?) -> String {
+        guard !id.hasPrefix("/"), let folder, !folder.isEmpty else { return id }
+        return URL(fileURLWithPath: folder, isDirectory: true).appendingPathComponent(id).standardizedFileURL.path
+    }
+
+    /// Your words with the paths below them; each path once, in the order they were added. Only words: unchanged.
+    static func answer(_ text: String, paths: [String]) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var seen = Set<String>()
+        let clean = paths.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+        guard !clean.isEmpty else { return trimmed }
+        return (trimmed.isEmpty ? "" : trimmed + "\n\n") + clean.joined(separator: "\n")
+    }
+}
+
 // MARK: File search
 
 /// Files under a folder for the `@` list: a path match, best first, without build output and hidden folders.
