@@ -42,7 +42,8 @@ struct RemoteMachinesSection: View {
         // The header's "Add machine" button.
         .onAppear { act(pageAction.requested) }
         .onChange(of: pageAction.requested) { _, section in act(section) }
-        .task {
+        // Again once the last machine is removed: the explanation then offers what Nook found.
+        .task(id: machines.isEmpty) {
             guard machines.isEmpty else { return }
             let existing = machines
             found = await Task.detached(priority: .userInitiated) { AddMachineSheet.discover(existing: existing) }.value

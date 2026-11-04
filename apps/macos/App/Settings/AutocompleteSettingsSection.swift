@@ -518,7 +518,9 @@ struct AutocompleteSettingsSection: View {
         }
         .task { if installed.isEmpty { installed = await InstalledApp.scan() } }
         // One app's own settings in a sheet: a row that opened in place pushed the rest of a long list away.
-        .sheet(item: Binding(get: { editingApp.map { id in EditingApp(id: id, name: apps.first { $0.bundleID == id }?.name ?? id) } },
+        // Named from every app Nook knows, not the filtered list: switching the app off under "On" keeps its name.
+        .sheet(item: Binding(get: { editingApp.map { id in EditingApp(id: id, name: installed.first { $0.bundleID == id }?.name
+                                                                              ?? autocomplete.seenApps[id] ?? id) } },
                              set: { editingApp = $0?.id })) { app in
             SettingsFormSheet(title: app.name, subtitle: tr("autocomplete.appsFooter")) {
                 AppIcon(url: InstalledApp.url(of: app.id))

@@ -162,7 +162,7 @@ struct SettingsView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 0, trailing: 0))
-                detail(for: section, tab: tab, attention: needs, problems: problems.count)
+                detail(for: section, tab: tab, attention: needs, problems: problems.filter { !$0.isChat }.count)
             }
             .formStyle(.grouped)
             // Every row reads at the panel's body size; captions and notes set their own smaller style.
