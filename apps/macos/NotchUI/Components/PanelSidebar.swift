@@ -44,6 +44,9 @@ enum PanelSidebarMetrics {
     /// The narrowest the head fits in: the room for the traffic lights, then search and talk (28 pt) and split view
     /// (30 pt), with the row's spacing between them. A column narrower than this would push its rows off the left edge.
     static let headWidth: CGFloat = trafficLights - inset + 28 + 28 + 30 + NookTheme.Spacing.xxs * 4
+    /// The narrowest the sidebar's whole column gets: its head with the inset on the left and the gap to its line on the
+    /// right. Narrower, search would slide under the traffic lights and split view past the line on the right.
+    static let minimumColumn: Double = Double(inset + headWidth + SidePanelMetrics.sidebarGap)
 }
 
 private struct PanelSidebarKey: EnvironmentKey {
