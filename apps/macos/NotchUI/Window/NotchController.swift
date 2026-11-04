@@ -57,6 +57,8 @@ final class NotchController {
     /// While you share your screen or sit in a meeting and chose to hide Nook: the notch is gone while it rests, and
     /// shows only for what you open yourself (a shortcut, the menu bar).
     private var hidesWhileResting = false
+    /// The last meeting and sharing state (`applyQuiet`), combined with the notch turned off in Settings (`applyHiding`).
+    private var quiet = QuietState.normal
 
     private var isFloating: Bool { settings.placement == "floating" }
     private var showsOnAllScreens: Bool { !isFloating && settings.notchOnAllScreens }
@@ -116,7 +118,9 @@ final class NotchController {
         panel.onUnhandledEscape = { [weak self] in self?.closePanelOnEscape() ?? false }
         self.panel = panel
 
-        panel.orderFrontRegardless()
+        // Turned off in Settings: hidden from the first moment, not after the first meeting check.
+        applyHiding()
+        if !hidesWhileResting { panel.orderFrontRegardless() }
         refreshMirrors()
         installMonitors()
 
@@ -169,6 +173,17 @@ final class NotchController {
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.screenChanged() }
+            .store(in: &cancellables)
+        AppSettings.shared.$showNotch
+            .dropFirst()
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] show in
+                guard let self else { return }
+                // Back on after a while off: what waited in line all that time is stale; a question for you stays.
+                if show { self.viewModel.dropHeldCards() }
+                self.applyHiding()
+            }
             .store(in: &cancellables)
         AppSettings.shared.$hideWhenIdle
             .dropFirst()
@@ -272,13 +287,23 @@ final class NotchController {
             captureSharing = sharing
             for panel in allPanels { panel.sharingType = sharing }
         }
-        viewModel.silenced = state.silent
-        if state.silent, case .track = viewModel.state { dismissTrackAnnouncement() }
-        guard state.hidden != hidesWhileResting else { return }
-        hidesWhileResting = state.hidden
-        viewModel.holdsCards = state.hidden
-        if state.hidden {
-            // A suggestion or moment showing when the meeting starts goes; what you opened yourself stays.
+        quiet = state
+        applyHiding()
+    }
+
+    /// Hidden while resting and quiet for a share or meeting, or always while the notch is turned off in Settings
+    /// (`showNotch`): then Nook only shows when you open him yourself or a question waits on you.
+    private func applyHiding() {
+        let off = !settings.showNotch
+        let silent = quiet.silent || off
+        let hidden = quiet.hidden || off
+        viewModel.silenced = silent
+        if silent, case .track = viewModel.state { dismissTrackAnnouncement() }
+        guard hidden != hidesWhileResting else { return }
+        hidesWhileResting = hidden
+        viewModel.holdsCards = hidden
+        if hidden {
+            // A suggestion or moment showing when the notch hides goes; what you opened yourself stays.
             switch viewModel.state {
             case .nudge, .moment, .done: viewModel.show(.idle)
             default: break
@@ -289,7 +314,7 @@ final class NotchController {
         }
         updateVisibility()
         for mirror in mirrors.values {
-            if state.hidden { mirror.panel.orderOut(nil) } else { mirror.panel.orderFrontRegardless() }
+            if hidden { mirror.panel.orderOut(nil) } else { mirror.panel.orderFrontRegardless() }
         }
     }
 

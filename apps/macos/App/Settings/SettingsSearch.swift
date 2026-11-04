@@ -41,6 +41,7 @@ enum SettingsSearch {
         .init("settings.display.glow", .appearance),
         .init("settings.buddy.title", .appearance),
         .init("settings.buddy.birthday", .appearance),
+        .init("settings.notch.show", .notch),
         .init("settings.notch.placement", .notch),
         .init("settings.notch.allScreens", .notch),
         .init("settings.notch.hideWhenIdle", .notch),

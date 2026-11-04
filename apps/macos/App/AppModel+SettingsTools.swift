@@ -123,6 +123,7 @@ extension AppModel {
         case "answer_language": return settings.language
         case "notch_placement": return settings.placement
         case "nook_style": return NookLook.presets.first { $0.look == settings.nookLook }?.id ?? "custom"
+        case "show_notch": return SettingsCatalog.value(settings.showNotch)
         case "notch_on_all_screens": return SettingsCatalog.value(settings.notchOnAllScreens)
         case "hide_when_idle": return SettingsCatalog.value(settings.hideWhenIdle)
         case "open_on_hover": return SettingsCatalog.value(viewModel.openOnHover)
@@ -154,6 +155,7 @@ extension AppModel {
         case "answer_language": settings.language = value
         case "notch_placement": settings.placement = value
         case "nook_style": if let preset = NookLook.presets.first(where: { $0.id == value }) { settings.nookLook = preset.look }
+        case "show_notch": settings.showNotch = on
         case "notch_on_all_screens": settings.notchOnAllScreens = on
         case "hide_when_idle": settings.hideWhenIdle = on
         case "open_on_hover": viewModel.openOnHover = on

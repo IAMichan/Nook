@@ -608,6 +608,11 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// Drops the cards that waited in line, except the questions that still wait on an answer (`urgent`).
+    func dropHeldCards() {
+        pending.removeAll { !$0.urgent }
+    }
+
     /// Removes a card from the queue only, not from view.
     func removePending(id: String) {
         pending.removeAll { $0.id == id }
