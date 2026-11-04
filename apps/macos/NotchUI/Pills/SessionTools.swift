@@ -330,7 +330,9 @@ struct SessionWorkbench<Conversation: View>: View {
                         .overlayPreferenceValue(SessionComposerBounds.self) { composer in
                             GeometryReader { proxy in
                                 let above = composer.map { max(0, proxy.size.height - proxy[$0].minY) } ?? 0
-                                SessionBrowserCorner(runID: runID, directory: directory, hidden: side == .browser || bottom == .browser) {
+                                SessionBrowserCorner(runID: runID, directory: directory, hidden: side == .browser || bottom == .browser,
+                                                    room: CGSize(width: max(0, proxy.size.width - SessionBrowserCard.size.width - NookTheme.Spacing.lg * 2),
+                                                                 height: max(0, proxy.size.height - above - SessionBrowserCard.size.height - NookTheme.Spacing.md))) {
                                     withAnimation(NookTheme.reveal) { viewModel.sessionTool = .browser }
                                 }
                                 // In a narrow conversation the page covers part of it, not all of it.

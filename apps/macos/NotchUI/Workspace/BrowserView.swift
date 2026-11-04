@@ -852,14 +852,29 @@ struct SessionBrowserCorner: View {
     let directory: String
     /// The session shows the browser in a panel already.
     let hidden: Bool
+    /// The room the card may move in, from its resting place: how far it can go left and up.
+    var room: CGSize = CGSize(width: 10_000, height: 10_000)
     let expand: () -> Void
     @ObservedObject private var owner = SessionBrowserOwner.shared
+    /// Where you dragged the card to, from its corner; it keeps that while the chat is open.
+    @State private var moved: CGSize = .zero
+    @State private var dragStart: CGSize?
+
+    private func clamped(_ size: CGSize) -> CGSize {
+        CGSize(width: min(0, max(-room.width, size.width)), height: min(0, max(-room.height, size.height)))
+    }
 
     var body: some View {
         let shown = !hidden && owner.owns(runID: runID, directory: directory)
         ZStack(alignment: .bottomTrailing) {
             if shown {
-                SessionBrowserCard(store: BrowserStore.shared, directory: directory, expand: expand) { owner.owner = nil }
+                SessionBrowserCard(store: BrowserStore.shared, directory: directory, expand: expand, close: { owner.owner = nil },
+                                   drag: { translation in
+                    let start = dragStart ?? moved
+                    dragStart = start
+                    moved = clamped(CGSize(width: start.width + translation.width, height: start.height + translation.height))
+                }, dragEnded: { dragStart = nil })
+                    .offset(moved)
                     .transition(.scale(scale: 0.92, anchor: .bottomTrailing).combined(with: .opacity))
             }
         }
@@ -867,11 +882,14 @@ struct SessionBrowserCorner: View {
     }
 }
 
-private struct SessionBrowserCard: View {
+struct SessionBrowserCard: View {
     @ObservedObject var store: BrowserStore
     let directory: String
     let expand: () -> Void
     let close: () -> Void
+    /// Called while the header is dragged, with how far the pointer moved since the drag began.
+    let drag: (CGSize) -> Void
+    let dragEnded: () -> Void
 
     static let size = CGSize(width: 380, height: 260)
 
@@ -904,6 +922,10 @@ private struct SessionBrowserCard: View {
             .padding(.leading, NookTheme.Spacing.md)
             .padding(.trailing, NookTheme.Spacing.xs)
             .frame(height: 34)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .global)
+                .onChanged { drag($0.translation) }
+                .onEnded { _ in dragEnded() })
             NookDivider()
             WebViewHost(webView: store.webView).id(store.page.id)
         }
