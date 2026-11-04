@@ -672,13 +672,30 @@ private struct ChatBubbleView: View, Equatable {
         }
         .onHover { inside in
             hovering = inside
-            if inside, !armed { armed = true }
+            if inside, !armed {
+                OpenMenus.watch()
+                armed = true
+            }
+        }
+        // VoiceOver and the keyboard reach the same steps as the menu, the react button and the reply button, also on
+        // a bubble the pointer never came onto (its buttons are made only then).
+        .accessibilityActions {
+            ForEach(Array(menuItems.entries.enumerated()), id: \.offset) { _, entry in
+                if let action = entry.action { Button(entry.title, action: action) }
+            }
+            if onReact != nil {
+                Button(tr("chat.react")) {
+                    armed = true
+                    picking = true
+                }
+            }
         }
         .environment(\.chatMediaLive, near)
         .chatNearView($near)
-        // Far from view again: its buttons go, until the pointer comes back onto it.
+        // Far from view again: its buttons go, until the pointer comes back onto it. Not while its menu, its emoji or
+        // its info is open: that would take the open menu's button away under it.
         .onChange(of: near) { _, near in
-            if !near, armed, !picking, !showingInfo { armed = false }
+            if !near, armed, !picking, !showingInfo, !OpenMenus.tracking { armed = false }
         }
         // A file the chat names but Nook does not have yet (it came in while the chat was open, or fetching it failed)
         // is asked of its app as the bubble comes into view, and again a few times while it stays there.
@@ -819,6 +836,28 @@ private struct ChatBubbleView: View, Equatable {
         .padding(bubble.fromMe ? .trailing : .leading, bare ? 0 : ChatBubbleShape.tail)
         .background(ChatBubbleShape(mine: bubble.fromMe, tailed: first, joinsBelow: !last)
             .fill(bare ? Color.clear : (bubble.fromMe ? NookTheme.chatMine : NookTheme.chatTheirs)))
+    }
+}
+
+/// Whether a menu is open anywhere in Nook (a bubble's chevron menu among them): SwiftUI does not say when a `Menu`
+/// opens, AppKit does for every menu it tracks.
+@MainActor
+private enum OpenMenus {
+    private(set) static var tracking = false
+    private static var observers: [NSObjectProtocol] = []
+
+    /// Starts listening, once.
+    static func watch() {
+        guard observers.isEmpty else { return }
+        let center = NotificationCenter.default
+        observers = [
+            center.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { tracking = true }
+            },
+            center.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { tracking = false }
+            },
+        ]
     }
 }
 
