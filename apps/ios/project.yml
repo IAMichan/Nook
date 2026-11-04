@@ -61,6 +61,8 @@ targets:
       base:
         PRODUCT_NAME: Nook Companion
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.companion
+        # The same icon as the Mac app, drawn by scripts/generate_app_icon.swift.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"
     entitlements:
