@@ -3,8 +3,6 @@ import AppKit
 import Combine
 import UniformTypeIdentifiers
 import ImageIO
-import AVFoundation
-import QuickLookThumbnailing
 
 // MARK: - Settings
 
@@ -146,11 +144,10 @@ enum WhatsAppSettings {
 /// user typed the answer or approved Nook's plan.
 ///
 /// The lifecycle after open-source code (MIT, © 2026 Louis Raillé; see THIRD-PARTY-NOTICES.md).
-/// A message's file as the notch card shows it: saved in Nook's own temporary folder (emptied when Nook starts and
-/// quits), with a small picture of it when there is one.
+/// A message's file as the notch card and the chat show it: saved in Nook's own temporary folder (emptied when Nook
+/// starts and quits). Its picture is made by the bubble that shows it (`ChatMediaImages`, `ChatVideoStills`), once.
 struct WAPreview {
     let file: URL
-    let image: NSImage?
 }
 
 @MainActor
@@ -1115,8 +1112,9 @@ final class WhatsAppLink: ObservableObject {
         return (message, file)
     }
 
-    /// Saves a fetched file in its own folder under Nook's temporary one, under a name the Mac recognizes.
-    private static func save(_ file: WAFile, media: WAMedia) throws -> URL {
+    /// Saves a fetched file in its own folder under Nook's temporary one, under a name the Mac recognizes. Off the main
+    /// thread where it can be: a video is megabytes.
+    nonisolated private static func save(_ file: WAFile, media: WAMedia) throws -> URL {
         let name = media.safeFileName(given: file.name, mimeType: file.mimeType)
         let folder = openedFilesFolder.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -1133,29 +1131,48 @@ final class WhatsAppLink: ObservableObject {
     /// A file already fetched for the notch card.
     func preview(_ id: String) -> WAPreview? { previews[id] }
 
-    /// Fetches these messages' files for the card (a photo, a video, a document) with a picture of each: the photo
-    /// itself, the video's first frame, the document's first page. One that failed is tried again after `previewRetry`.
-    /// True when at least one new preview came in while the link stayed the same.
+    /// How many files are fetched from the gateway at the same time: a chat with several photos shows them together
+    /// instead of one after another.
+    static let previewParallel = 4
+
+    /// Fetches these messages' files for the card and the chat (a photo, a video, a document), `previewParallel` at a
+    /// time. One that failed is tried again after `previewRetry`. True when at least one new file came in while the
+    /// link stayed the same.
     func loadPreviews(_ ids: [String], chat: String) async -> Bool {
         let gen = generation
-        var loaded = false
-        for id in ids where previews[id] == nil && !previewsLoading.contains(id) {
-            if let failed = previewFailed[id], Date().timeIntervalSince(failed) < Self.previewRetry { continue }
-            previewsLoading.insert(id)
-            let fetched = try? await fetchFile(message: id, chat: chat)
-            previewsLoading.remove(id)
-            guard gen == generation else { return false }
-            guard let fetched, let url = try? Self.save(fetched.1, media: fetched.0.media) else {
-                previewFailed[id] = Date()
-                continue
-            }
-            let image = await Self.picture(of: url, data: fetched.1.data, media: fetched.0.media)
-            guard gen == generation else { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()); return false }
-            previewFailed[id] = nil
-            previews[id] = WAPreview(file: url, image: image)
-            previewOrder.append(id)
-            loaded = true
+        let wanted = ids.filter { id in
+            guard previews[id] == nil, !previewsLoading.contains(id) else { return false }
+            return previewFailed[id].map { Date().timeIntervalSince($0) >= Self.previewRetry } ?? true
         }
+        guard !wanted.isEmpty else { return false }
+        previewsLoading.formUnion(wanted)
+        var loaded = false
+        var stale = false
+        await withTaskGroup(of: (String, URL?).self) { group in
+            var next = wanted.makeIterator()
+            for _ in 0..<Self.previewParallel {
+                guard let id = next.next() else { break }
+                group.addTask { (id, await self.fetchPreview(id, chat: chat)) }
+            }
+            while let (id, url) = await group.next() {
+                if let more = next.next() { group.addTask { (more, await self.fetchPreview(more, chat: chat)) } }
+                previewsLoading.remove(id)
+                guard gen == generation else {
+                    stale = true
+                    if let url { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+                    continue
+                }
+                guard let url else {
+                    previewFailed[id] = Date()
+                    continue
+                }
+                previewFailed[id] = nil
+                previews[id] = WAPreview(file: url)
+                previewOrder.append(id)
+                loaded = true
+            }
+        }
+        guard !stale else { return false }
         while previewOrder.count > Self.previewLimit {
             let old = previewOrder.removeFirst()
             if let file = previews.removeValue(forKey: old)?.file {
@@ -1165,24 +1182,11 @@ final class WhatsAppLink: ObservableObject {
         return loaded
     }
 
-    /// A small picture of a file: the photo, a video's first frame or a document's first page.
-    private static func picture(of url: URL, data: Data, media: WAMedia) async -> NSImage? {
-        switch media {
-        case .image:
-            return thumbnail(data)
-        case .video:
-            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
-            generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 960, height: 960)
-            guard let frame = try? await generator.image(at: .zero).image else { return nil }
-            return NSImage(cgImage: frame, size: NSSize(width: frame.width, height: frame.height))
-        case .document:
-            let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 96, height: 128), scale: 2,
-                                                       representationTypes: .thumbnail)
-            return try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request).nsImage
-        default:
-            return nil
-        }
+    /// One message's file from the gateway, saved on this Mac; nil when it could not be fetched.
+    private func fetchPreview(_ id: String, chat: String) async -> URL? {
+        guard let (message, file) = try? await fetchFile(message: id, chat: chat) else { return nil }
+        let media = message.media
+        return await Task.detached(priority: .userInitiated) { try? Self.save(file, media: media) }.value
     }
 
     /// The photo at most `side` pixels on its longest side, decoded straight to that size so a large photo costs little.
@@ -1515,7 +1519,7 @@ final class WhatsAppLink: ObservableObject {
     /// The file you sent shows in its bubble straight away, from a copy in Nook's temporary folder (the one a card's
     /// previews are kept in, and cleared with them), so it never has to come back from the gateway.
     private func showSent(_ file: ChatAttachment, as id: String, media: WAMedia) async {
-        guard let data = try? Data(contentsOf: file.url, options: .mappedIfSafe) else { return }
+        guard FileManager.default.isReadableFile(atPath: file.url.path) else { return }
         let folder = Self.openedFilesFolder.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let copy = folder.appendingPathComponent(file.name)
         do {
@@ -1524,8 +1528,7 @@ final class WhatsAppLink: ObservableObject {
         } catch {
             return
         }
-        let image = await Self.picture(of: copy, data: data, media: media)
-        previews[id] = WAPreview(file: copy, image: image)
+        previews[id] = WAPreview(file: copy)
         previewOrder.append(id)
     }
 

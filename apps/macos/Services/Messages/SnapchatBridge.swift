@@ -45,7 +45,7 @@ final class SnapchatBridge: ChatHistoryBridge {
                 }
                 // A chat that did not open this round, or waits its turn, is read again at the next.
                 if !again { lines[row.id] = row.status }
-                chats.append(SnapchatWebData.chat(row, kept: kept[row.id] ?? [], snapLabel: tr("chats.snapchat.snap")))
+                chats.append(SnapchatWebData.chat(row, kept: kept[row.id] ?? [], snapLabel: tr("chats.snapchat.snap"), pictures: pictures))
             }
             rows = named
             isWorking = true
@@ -65,13 +65,39 @@ final class SnapchatBridge: ChatHistoryBridge {
     func older(name: String, before: Date, oldestID: String?) async throws -> (chat: BridgedChat?, hasMore: Bool) {
         guard let row = rows[name] else { return (nil, false) }
         try await take(row)
-        return (SnapchatWebData.chat(row, kept: kept[row.id] ?? [], snapLabel: tr("chats.snapchat.snap")), false)
+        return (SnapchatWebData.chat(row, kept: kept[row.id] ?? [], snapLabel: tr("chats.snapchat.snap"), pictures: pictures), false)
     }
 
-    /// Reads the chat's messages and keeps them with what Nook already had.
+    /// The pictures saved of the chats' messages, by message id: the website shows them only while a chat is open.
+    private var pictures: [String: String] = [:]
+
+    /// Reads the chat's messages and keeps them with what Nook already had; the pictures among them not saved yet are
+    /// saved now, while the chat is open.
     private func take(_ row: SnapchatWebData.Row) async throws {
-        let read = try await session.read(row)
-        kept[row.id] = SnapchatWebData.align(kept[row.id] ?? [], with: read, chat: row.id, now: Date())
+        let before = kept[row.id] ?? []
+        var aligned = before
+        var wanted: [String: String] = [:]
+        let read = try await session.read(row) { [weak self] lines in
+            aligned = SnapchatWebData.align(before, with: lines, chat: row.id, now: Date())
+            // The read's lines are the newest of what is kept, in their order.
+            let shown = aligned.suffix(lines.count)
+            guard shown.count == lines.count else { return [] }
+            for (item, line) in zip(shown, lines) where item.line == line {
+                guard let source = line.source, self?.pictures[item.id] == nil else { continue }
+                wanted[source] = item.id
+            }
+            return Array(wanted.keys)
+        }
+        kept[row.id] = aligned
+        for (source, data) in read.pictures {
+            guard let id = wanted[source] else { continue }
+            let target = ChatMedia.destination(key: id, name: "photo.jpg")
+            let saved = await Task.detached(priority: .utility) { () -> Bool in
+                try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                return (try? data.write(to: target, options: .atomic)) != nil
+            }.value
+            if saved { pictures[id] = target.path }
+        }
     }
 
     // MARK: Answering
@@ -88,9 +114,27 @@ final class SnapchatBridge: ChatHistoryBridge {
         lines[row.id] = nil
     }
 
+    /// What Snapchat for Web takes from Nook besides text: a picture, handed to the website as you would choose one.
+    var sends: Set<ChatOutgoing.Kind> { [.photo, .sticker] }
+
+    /// A picture (with its caption) in the chat `name`, after your own click; the chat is read again right after.
+    func send(_ outgoing: ChatOutgoing, to name: String) async throws {
+        guard case .file(let file) = outgoing, sends.contains(ChatOutgoing.Kind(file.kind)) else {
+            throw NookError(tr("chat.compose.unsupported"))
+        }
+        guard let row = rows[name] else { throw SnapchatWebSession.Problem.notFound(name) }
+        let url = file.url
+        guard let data = await Task.detached(priority: .userInitiated, operation: { try? Data(contentsOf: url) }).value,
+              data.count <= SnapchatWebData.maxPictureBytes else { throw NookError(tr("chat.compose.unsupported")) }
+        try await session.sendPicture(data, name: file.name, type: file.mimeType, caption: file.caption, to: row)
+        if kept[row.id] == nil { kept[row.id] = [] }
+        lines[row.id] = nil
+    }
+
     /// Forgets what was read, after signing out.
     func reset() {
         rows = [:]
+        pictures = [:]
         kept = [:]
         lines = [:]
         isWorking = false
