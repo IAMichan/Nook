@@ -65,7 +65,13 @@ private struct HoverCardModifier<Card: View>: ViewModifier {
             .simultaneousGesture(TapGesture().onEnded { schedule(false) })
             .onChange(of: suppressed) { _, _ in schedule(hovering) }
             .onDisappear { delay?.cancel() }
-            .popover(isPresented: $showCard, arrowEdge: arrowEdge) { card() }
+            // Only on the row under the pointer: a popover on every row of a long list was carried along while it
+            // scrolled. Behind the view, at its size, so the card points at the same place.
+            .background {
+                if hovering || showCard {
+                    Color.clear.popover(isPresented: $showCard, arrowEdge: arrowEdge) { card() }
+                }
+            }
     }
 
     private func schedule(_ inside: Bool) {
