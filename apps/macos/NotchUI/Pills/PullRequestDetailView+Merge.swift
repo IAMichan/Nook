@@ -241,8 +241,9 @@ extension PullRequestDetailView {
             } catch {
                 app.store.audit(tool: "github_merge_pr", args: args, result: "error: " + error.localizedDescription)
                 merging = false
-                // The answer can get lost (a timeout) after GitHub merged after all: look before calling it failed.
-                await model.refresh(activity: true)
+                // The answer can get lost (a timeout) after GitHub merged after all: look before calling it failed. Also
+                // waits out a poll that runs, so new commits show and the next Merge sends the new head.
+                await model.reload()
                 if model.detail?.state == .merged {
                     settle()
                     await PullRequestStore.shared.refresh(force: true)

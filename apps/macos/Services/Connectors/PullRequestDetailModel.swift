@@ -38,6 +38,8 @@ final class PullRequestDetailModel: ObservableObject {
     /// A refresh was asked for while one ran: it runs again right after.
     private var again = false
     private var againActivity = false
+    /// Callers of `reload` waiting for the read that runs to end, again included.
+    private var waiters: [CheckedContinuation<Void, Never>] = []
     private var activityKey: String?
     private var activityAt = Date.distantPast
 
@@ -100,7 +102,12 @@ final class PullRequestDetailModel: ObservableObject {
             return
         }
         loading = true
-        defer { loading = false }
+        defer {
+            loading = false
+            let done = waiters
+            waiters = []
+            for waiter in done { waiter.resume() }
+        }
         var forceActivity = activity
         repeat {
             again = false
@@ -137,6 +144,15 @@ final class PullRequestDetailModel: ObservableObject {
             }
             forceActivity = false
         } while again && !Task.isCancelled
+    }
+
+    /// A refresh that returns only once a read that started after the call is shown, also while a poll runs: after a
+    /// refused merge the page must show GitHub's head now, not the one the poll began with.
+    func reload() async {
+        guard loading else { return await refresh(activity: true) }
+        again = true
+        againActivity = true
+        await withCheckedContinuation { waiters.append($0) }
     }
 
     /// The merge went through: shows it here, in the list and on the agent rows at once.
