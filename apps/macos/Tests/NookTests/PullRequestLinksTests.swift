@@ -347,6 +347,9 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertFalse(SessionBranches.isEmpty(aheadOfBase: 2, pushed: false))
         XCTAssertFalse(SessionBranches.isEmpty(aheadOfBase: 0, pushed: true))
         XCTAssertFalse(SessionBranches.isEmpty(aheadOfBase: nil, pushed: false))
+        // Its worktree and branch removed, never pushed: nothing is left of it.
+        XCTAssertTrue(SessionBranches.isEmpty(aheadOfBase: nil, pushed: false, exists: false))
+        XCTAssertFalse(SessionBranches.isEmpty(aheadOfBase: nil, pushed: true, exists: false))
     }
 
     func testAWatchedEarlierPullRequestIsNotShownTwice() {
