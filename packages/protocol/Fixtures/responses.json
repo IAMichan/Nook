@@ -8,6 +8,11 @@
           { "id": "I1", "kind": "approval", "title": "Run npm test", "detail": "Bash", "canAllow": true, "options": [] } ] } ] } },
     { "name": "helloVersioned", "core": true, "json": { "id": "C", "ok": true, "macName": "Studio", "sessions": [],
       "features": ["start", "stream", "retry"], "protocolVersion": 2, "oldestPhone": 1, "appVersion": "1.4.0",
-      "scopes": ["read", "approve"], "relay": "" } }
+      "scopes": ["read", "approve"], "relay": "" } },
+    { "name": "staleWithClock", "core": false, "json": { "id": "D", "ok": false, "error": "stale", "macTime": 1700000300 } },
+    { "name": "revoked", "core": false, "json": { "id": "E", "ok": false, "error": "notAllowedFromPhone", "seq": 7, "revoked": true } },
+    { "name": "watchResumed", "core": false, "json": { "id": "F", "ok": true, "timeline": [
+      { "id": "E7", "kind": "assistant", "text": "Done.", "date": 1700000010, "failed": false } ],
+      "timelineSession": "S1", "timelineAfter": "E6" } }
   ]
 }

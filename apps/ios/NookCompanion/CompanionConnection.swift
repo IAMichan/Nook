@@ -103,8 +103,11 @@ final class CompanionChannel: @unchecked Sendable {
         queue.async { [self] in fail(CompanionClientError.closed) }
     }
 
-    /// A request, sealed for the Mac and framed.
+    /// A request, sealed for the Mac and framed. Its time is moved by what this phone's clock is off from that Mac's
+    /// (`ClockOffsets`; the device id is the Mac's pairing id), so a phone with a wrong clock is not refused as stale.
     static func frame(_ request: CompanionRequest, key: Data, deviceID: String) throws -> Data {
+        var request = request
+        request.sent = CompanionClock.sent(request.sent, offset: ClockOffsets.offset(for: deviceID))
         let sealed = try CompanionSeal.seal(try JSONEncoder().encode(request), pairingKey: key, deviceID: deviceID, direction: .request)
         guard let framed = CompanionFrameReader.frame(sealed) else { throw CompanionClientError.badRequest }
         return framed
@@ -148,6 +151,8 @@ final class CompanionChannel: @unchecked Sendable {
               let response = try? JSONDecoder().decode(CompanionResponse.self, from: plain) else {
             return fail(CompanionClientError.badRequest)
         }
+        // A refusal for a clock that is off says the Mac's time: later requests correct for it.
+        ClockOffsets.learn(from: response, mac: deviceID)
         if let seq = response.seq, response.id == subscription {
             // An update the Mac sent by itself; one that does not move on (played back) changes nothing.
             guard seq > lastSeq else { return }
@@ -192,6 +197,7 @@ enum RouteProbe {
               let opened = try? CompanionSeal.open(reply, pairingKey: key, direction: .response),
               let response = try? JSONDecoder().decode(CompanionResponse.self, from: opened),
               response.id == request.id else { return nil }
+        ClockOffsets.learn(from: response, mac: PairedDevice.identifier(forKey: key))
         return response
     }
 

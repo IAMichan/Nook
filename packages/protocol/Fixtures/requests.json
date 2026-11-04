@@ -8,6 +8,8 @@
     { "name": "register", "core": true, "json": { "id": "E", "sent": 1700000003, "op": "register", "item": "production", "text": "abcdef" } },
     { "name": "helloVersioned", "core": false, "json": { "id": "F", "sent": 1700000004, "op": "hello", "text": "iPhone", "protocolVersion": 2, "appVersion": "0.1.0" } },
     { "name": "start", "core": false, "json": { "id": "G", "sent": 1700000005, "op": "start", "launch": { "agent": "claude", "project": "/Users/me/app", "task": "Fix it", "plan": true, "worktree": false } } },
-    { "name": "requestUpdate", "core": false, "json": { "id": "H", "sent": 1700000006, "op": "requestUpdate" } }
+    { "name": "requestUpdate", "core": false, "json": { "id": "H", "sent": 1700000006, "op": "requestUpdate" } },
+    { "name": "subscribeForeground", "core": false, "json": { "id": "I", "sent": 1700000007, "op": "subscribe", "protocolVersion": 2, "appVersion": "0.1.0", "foreground": true } },
+    { "name": "watchResume", "core": false, "json": { "id": "J", "sent": 1700000008, "op": "watch", "session": "S1", "item": "E7" } }
   ]
 }
