@@ -10,6 +10,9 @@ enum AutoModel {
     /// The value "Auto" is stored under, as a session's or Settings' model.
     static let id = "auto"
 
+    /// The SF Symbol "Auto" is drawn with, in the model menu and on the composer's pill.
+    static let symbol = "wand.and.stars"
+
     /// How heavy a model is, or how heavy a turn is.
     enum Tier: Int, Comparable, CaseIterable, Sendable {
         case light, standard, strong

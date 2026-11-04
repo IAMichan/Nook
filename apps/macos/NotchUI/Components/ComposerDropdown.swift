@@ -442,7 +442,7 @@ struct AgentModelPicker: View {
     // MARK: Auto
 
     /// "Auto" sits in the rail next to the agents, not under one of them: it spans every agent and account.
-    private static var autoPlace: ModelPickerPlace { ModelPickerPlace(id: AutoModel.id, name: tr("auto.model"), symbol: "wand.and.stars") }
+    private static var autoPlace: ModelPickerPlace { ModelPickerPlace(id: AutoModel.id, name: tr("auto.model"), symbol: AutoModel.symbol) }
 
     /// Hidden for Nook's own brain, and while picking several models (Auto is one choice, not a model to compare).
     private var showsAuto: Bool { offersAuto && !multi && local == nil }
@@ -451,7 +451,7 @@ struct AgentModelPicker: View {
     /// and the limits. Picking it starts from the agent and account in use.
     private func autoRow() -> ModelPickerItem {
         let reach = app.workspace.autoReach()
-        return ModelPickerItem(id: AutoModel.id, title: tr("auto.model"), symbol: "wand.and.stars",
+        return ModelPickerItem(id: AutoModel.id, title: tr("auto.model"), symbol: AutoModel.symbol,
                                detail: reach.models > 0 ? tr("auto.model.detail", reach.models, reach.agents) : tr("auto.model.none"),
                                chosen: model == AutoModel.id) {
             choose(provider, nil, AutoModel.id)
