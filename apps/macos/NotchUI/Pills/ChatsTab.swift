@@ -384,10 +384,12 @@ struct ChatsTab: View {
     /// In the main window rather than the notch: each has its own open chat, read only while that one is in sight.
     var inWindow = false
     @StateObject private var panelMediaStage = ChatMediaStage()
-    @EnvironmentObject private var app: AppModel
+    /// Asked, not watched: the app model changes up to four times a second while an agent works, and each change drew
+    /// the whole tab again (sidebar, list, every row's menu) while you scrolled. What the tab shows from it watches it
+    /// itself (`PanelFooter`); a chat's routes and abilities follow the chat services, which the tab watches.
+    private var app: AppModel { AppModel.shared }
     @ObservedObject private var capture = ChatCaptureService.shared
     @ObservedObject private var whatsApp = WhatsAppAccounts.shared
-    @ObservedObject private var photos = ContactPhotos.shared
     /// Who types where: each row gets its own line, so a row redraws only when its chat's line changed.
     @ObservedObject private var typing = ChatTypingCenter.shared
     /// The list scrolls to the open chat only when it was opened from elsewhere (the keyboard, a card, "@chat"): a click
@@ -576,7 +578,7 @@ struct ChatsTab: View {
         .onLayoutWidthChange { totalWidth = $0 }
         .onAppear {
             takeFocus()
-            photos.refresh()
+            ContactPhotos.shared.refresh()
         }
         // The pictures of the chats in the list whose app gives them on request, newest first, as their app shows them.
         // Again once a linked account's list of chats came in. Only once the switch to this tab has settled, as on Agents.
@@ -1048,38 +1050,17 @@ struct ChatsTab: View {
 
             ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: NookTheme.Spacing.xxs) {
-                    let selected = current?.id
-                    let groups = sections
-                    let typists = typing.state
-                    ForEach(groups) { section in
-                        let open = searching || !collapsed.contains(section.group)
-                        ChatsGroupHeader(title: section.group.title, count: section.entries.count, open: open,
-                                         first: section.group == groups.first?.group) {
-                            if collapsed.contains(section.group) { collapsed.remove(section.group) }
-                            else { collapsed.insert(section.group) }
-                        }
-                        .disabled(searching)
-                        if open {
-                            ForEach(section.entries) { entry in
-                                // One view per chat: a lazy stack whose rows bring a separator only sometimes loses
-                                // track of a row that moves to the top of its group, and kept showing its old line.
-                                VStack(spacing: NookTheme.Spacing.xxs) {
-                                    if entry.id != section.entries.first?.id { NookRowSeparator() }
-                                    ChatsRow(entry: entry, selected: entry.id == selected, day: today,
-                                             typing: typists.chats.isEmpty ? nil : typing.line(entry.id),
-                                             rowAction: rowAction(entry)) {
-                                        revealSelection = false
-                                        selection = entry.id
-                                    }
-                                        .equatable()
-                                        .contextMenu { rowMenu(entry) }
-                                }
-                                .id(entry.id)
-                            }
-                        }
-                    }
-                }
+                ChatsListRows(sections: sections, selected: current?.id, collapsed: collapsed, searching: searching,
+                              day: today, typing: typingLines,
+                              toggle: { group in
+                                  if collapsed.contains(group) { collapsed.remove(group) } else { collapsed.insert(group) }
+                              },
+                              select: { id in
+                                  revealSelection = false
+                                  selection = id
+                              },
+                              rowAction: rowAction, menu: { entry in rowMenu(entry) })
+                    .equatable()
             }
             // A chat opened from elsewhere (the keyboard, a card, search) is brought into view in the list. A click on a
             // row does not move the list: scrolling a lazy list to a row it already shows could jump it to the top.
@@ -1107,6 +1088,15 @@ struct ChatsTab: View {
             if shown.isEmpty { emptyList }
             listHints
         }
+    }
+
+    /// What each chat someone types in shows in place of its newest message ("Jan is typing…"), by chat.
+    private var typingLines: [String: String] {
+        var lines: [String: String] = [:]
+        for chat in typing.state.chats.keys {
+            if let line = typing.line(chat) { lines[chat] = line }
+        }
+        return lines
     }
 
     /// The one step a row offers under the pointer: read what is new in Nook, pass a chat read in Nook on to its app,
@@ -1223,29 +1213,9 @@ struct ChatsTab: View {
     }
 
     /// The quiet hints at the foot of the list, together in one place: what Nook waits for, and what one click adds.
-    @ViewBuilder
     private var listHints: some View {
-        let waiting = capture.enabled && capture.status == .running && capture.inbox.threads.isEmpty
-        if waiting || !capture.enabled || photos.canAsk {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-                if waiting {
-                    // Collecting is on but no other app showed a message yet: say so, or the list looks like it ignores them.
-                    Label(tr("chats.status.waiting"), systemImage: "tray")
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, NookTheme.Spacing.lg)
-                }
-                if !capture.enabled {
-                    // Only WhatsApp so far: the other chat apps are one switch away.
-                    SmallGhostButton(title: tr("chats.addMore")) { app.openConnections(.add(.chats)) }
-                }
-                if photos.canAsk {
-                    // Photos come from Contacts on this Mac; macOS asks only after this click.
-                    SmallGhostButton(title: tr("chats.photos.allow")) { photos.requestAccess() }
-                }
-            }
-        }
+        ChatsListHints(waiting: capture.enabled && capture.status == .running && capture.inbox.threads.isEmpty,
+                       enabled: capture.enabled, addMore: { app.openConnections(.add(.chats)) })
     }
 
     // MARK: Nothing yet
@@ -1373,10 +1343,114 @@ enum ChatsDay {
 }
 
 /// One group of the list and its chats, newest first.
-struct ChatsSection: Identifiable {
+struct ChatsSection: Identifiable, Equatable {
     let group: ChatsGroup
     var entries: [ChatsEntry]
     var id: ChatsGroup { group }
+}
+
+/// The list's groups and their rows. Drawn again only when what they show changed: the tab around them redraws for
+/// much else (a bridge that read, a contact photo, someone typing in a chat, the sidebar), and each of those went
+/// through every row and built its menu again while you scrolled. The actions do the same for the same chats.
+private struct ChatsListRows<Menu: View>: View, Equatable {
+    let sections: [ChatsSection]
+    let selected: String?
+    let collapsed: Set<ChatsGroup>
+    let searching: Bool
+    let day: Date
+    /// Who types where, by chat; only the chats someone types in.
+    let typing: [String: String]
+    let toggle: (ChatsGroup) -> Void
+    let select: (String) -> Void
+    let rowAction: (ChatsEntry) -> ChatsRowAction
+    let menu: (ChatsEntry) -> Menu
+
+    static func == (a: Self, b: Self) -> Bool {
+        a.selected == b.selected && a.collapsed == b.collapsed && a.searching == b.searching && a.day == b.day
+            && a.typing == b.typing && a.sections == b.sections
+    }
+
+    var body: some View {
+        LazyVStack(spacing: NookTheme.Spacing.xxs) {
+            ForEach(sections) { section in
+                let open = searching || !collapsed.contains(section.group)
+                ChatsGroupHeader(title: section.group.title, count: section.entries.count, open: open,
+                                 first: section.group == sections.first?.group) { toggle(section.group) }
+                    .disabled(searching)
+                if open {
+                    let top = section.entries.first?.id
+                    ForEach(section.entries) { entry in
+                        ChatsListItem(entry: entry, separated: entry.id != top, selected: entry.id == selected, day: day,
+                                      typing: typing[entry.id], rowAction: rowAction(entry),
+                                      select: { select(entry.id) }, menu: { menu(entry) })
+                            .equatable()
+                            .id(entry.id)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// One chat in the list with the line above it and its menu, drawn again only when its row changed: when the list
+/// changes (a new message moves one chat up), the other rows and their menus stay as they are.
+private struct ChatsListItem<Menu: View>: View, Equatable {
+    let entry: ChatsEntry
+    /// A line above it: every row but the first of its group.
+    let separated: Bool
+    let selected: Bool
+    let day: Date
+    let typing: String?
+    let rowAction: ChatsRowAction
+    let select: () -> Void
+    let menu: () -> Menu
+
+    static func == (a: Self, b: Self) -> Bool {
+        a.entry == b.entry && a.separated == b.separated && a.selected == b.selected && a.day == b.day
+            && a.typing == b.typing && a.rowAction.title == b.rowAction.title
+    }
+
+    var body: some View {
+        // One view per chat: a lazy stack whose rows bring a separator only sometimes loses track of a row that moves
+        // to the top of its group, and kept showing its old line.
+        VStack(spacing: NookTheme.Spacing.xxs) {
+            if separated { NookRowSeparator() }
+            ChatsRow(entry: entry, selected: selected, day: day, typing: typing, rowAction: rowAction, action: select)
+                .contextMenu { menu() }
+        }
+    }
+}
+
+/// The quiet hints at the foot of the list, together in one place: what Nook waits for, and what one click adds. It
+/// watches the Contacts photos itself: when the tab did, every photo that came in drew the whole tab again.
+private struct ChatsListHints: View {
+    let waiting: Bool
+    let enabled: Bool
+    let addMore: () -> Void
+    @ObservedObject private var photos = ContactPhotos.shared
+
+    var body: some View {
+        if waiting || !enabled || photos.canAsk {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                if waiting {
+                    // Collecting is on but no other app showed a message yet: say so, or the list looks like it ignores them.
+                    Label(tr("chats.status.waiting"), systemImage: "tray")
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, NookTheme.Spacing.lg)
+                }
+                if !enabled {
+                    // Only WhatsApp so far: the other chat apps are one switch away.
+                    SmallGhostButton(title: tr("chats.addMore"), action: addMore)
+                }
+                if photos.canAsk {
+                    // Photos come from Contacts on this Mac; macOS asks only after this click.
+                    SmallGhostButton(title: tr("chats.photos.allow")) { photos.requestAccess() }
+                }
+            }
+        }
+    }
 }
 
 /// A group's title above its chats, with how many there are; a click folds it shut or open.
@@ -1781,7 +1855,9 @@ private struct ChatsDetail: View, Equatable {
     var onCompose: (MailDraft) -> Void = { _ in }
     /// How many messages were new as the chat opened, for the mail view to open them.
     private let newWhenOpened: Int
-    @EnvironmentObject private var app: AppModel
+    /// Asked, not watched, as in the tab: each change of the app model (four a second while an agent works) built the
+    /// chat's header and answer field again. What the chat can do follows the chat services it watches.
+    private var app: AppModel { AppModel.shared }
     @State private var reply = ""
     @State private var notice: String?
     /// The sends still going to the chat, one after another: each waits for the one before it, so messages arrive in
