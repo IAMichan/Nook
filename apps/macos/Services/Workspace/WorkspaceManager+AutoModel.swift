@@ -52,7 +52,7 @@ extension WorkspaceManager {
         guard let run = run(id), run.autoModel == true, !run.isRemote, canTransfer(id) else { return }
         let current = AutoModel.Account(provider: run.provider, profileID: run.profileID)
         guard let decision = AutoModel.pick(autoCandidates(preferring: current),
-                                            need: AutoModel.need(prompt: prompt, effort: run.effort), current: current),
+                                            need: need(for: run, prompt: prompt), current: current),
               decision.provider != run.provider || decision.profileID != run.profileID else { return }
         let windows = usageWindows(run.profileID)
         if case .reject = applySelection(id, provider: decision.provider, profileID: decision.profileID, model: AutoModel.id) { return }
@@ -61,11 +61,18 @@ extension WorkspaceManager {
         append(id, RunEvent(kind: .system, text: tr("auto.moved", decision.provider.displayName, reason)))
     }
 
+    /// What the next message asks for, given where the chat stands.
+    private func need(for run: WorkspaceRun, prompt: String) -> AutoModel.Tier {
+        AutoModel.need(prompt: prompt, effort: run.effort, previous: run.autoNeed.flatMap(AutoModel.Tier.init(rawValue:)))
+    }
+
     /// Sets the model of a session on Auto for the turn about to start, within its agent and account.
     func applyAutoModel(_ id: UUID, prompt: String) {
         guard let run = run(id), run.autoModel == true else { return }
         let account = AutoModel.Account(provider: run.provider, profileID: run.profileID)
-        guard let decision = AutoModel.pick(autoCandidates(only: account), need: AutoModel.need(prompt: prompt, effort: run.effort)),
+        let asked = need(for: run, prompt: prompt)
+        update(id) { $0.autoNeed = asked.rawValue }
+        guard let decision = AutoModel.pick(autoCandidates(only: account), need: asked),
               run.model.isEmpty || !sameModel(decision.model, run.model, for: run.provider) else { return }
         update(id) { $0.model = decision.model }
         let name = modelChoice(decision.model, for: run.provider, profileID: run.profileID)?.name ?? decision.model
