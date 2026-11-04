@@ -410,6 +410,7 @@ struct WorkspaceSettingsSection: View {
     @ObservedObject private var inbox = InboxStore.shared
     @ObservedObject private var webhook = WebhookListener.shared
     @AppStorage(AppDelegate.confirmQuitKey) private var confirmQuit = true
+    @AppStorage(AgentCredits.settingKey) private var stripAgentCredits = false
     @State private var showScheduled = false
     /// Which defaults the "New session" section edits: "" for all projects, else a project folder (see `ProjectSettings`).
     @State private var scope = ""
@@ -686,6 +687,9 @@ struct WorkspaceSettingsSection: View {
                           prompt: Text(tr("settings.ws.commitInstructions.placeholder")), axis: .vertical)
                     .lineLimit(2...5)
             }
+            // Only the merge commit Nook asks GitHub for: the branch's commits and your own authorship stay as they are.
+            SettingToggle(tr("settings.ws.stripAgentCredits"), detail: tr("settings.ws.stripAgentCredits.detail"),
+                          isOn: $stripAgentCredits)
         } header: {
             SettingsSectionTitle(tr("settings.ws.commitStyle"), info: tr("settings.ws.commitStyle.footer"))
         }

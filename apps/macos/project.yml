@@ -311,6 +311,7 @@ targets:
       - path: Services/Connectors/PullRequestGraphQL.swift
       - path: Services/Connectors/RedirectCredentials.swift
       - path: Services/Connectors/PullRequestDetail.swift
+      - path: Services/Connectors/AgentCredits.swift
       - path: Services/Connectors/PullRequestReadiness.swift
       - path: Services/Connectors/PullRequestConversation.swift
       - path: Services/Connectors/PullRequestViewedFiles.swift
