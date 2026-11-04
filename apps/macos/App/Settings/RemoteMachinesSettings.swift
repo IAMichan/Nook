@@ -24,7 +24,33 @@ struct RemoteMachinesSection: View {
     @State private var askPassword: Set<String> = []
 
     var body: some View {
-        if machines.isEmpty { empty }
+        // The explanation while there is no machine, the list once there is; never an empty list under a heading.
+        Group {
+            if machines.isEmpty {
+                empty
+            } else {
+                list
+            }
+        }
+        .sheet(item: $adding) { adding in
+            AddMachineSheet(start: adding.start) { machine in
+                RemoteMachines.upsert(machine)
+                machines = RemoteMachines.load()
+                test(machine)
+            }
+        }
+        // The header's "Add machine" button.
+        .onAppear { act(pageAction.requested) }
+        .onChange(of: pageAction.requested) { _, section in act(section) }
+        .task {
+            guard machines.isEmpty else { return }
+            let existing = machines
+            found = await Task.detached(priority: .userInitiated) { AddMachineSheet.discover(existing: existing) }.value
+        }
+    }
+
+    /// Every machine with what its last test said, and Lock, Test and Remove.
+    private var list: some View {
         Section {
             ForEach(machines) { machine in
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -88,21 +114,6 @@ struct RemoteMachinesSection: View {
             }
         } header: {
             SettingsSectionTitle(tr("remote.title"), info: tr("remote.footer"))
-        }
-        .sheet(item: $adding) { adding in
-            AddMachineSheet(start: adding.start) { machine in
-                RemoteMachines.upsert(machine)
-                machines = RemoteMachines.load()
-                test(machine)
-            }
-        }
-        // The header's "Add machine" button.
-        .onAppear { act(pageAction.requested) }
-        .onChange(of: pageAction.requested) { _, section in act(section) }
-        .task {
-            guard machines.isEmpty else { return }
-            let existing = machines
-            found = await Task.detached(priority: .userInitiated) { AddMachineSheet.discover(existing: existing) }.value
         }
     }
 
