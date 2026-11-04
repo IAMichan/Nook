@@ -601,6 +601,8 @@ struct AgentInboxList: View {
                 if let forked = app.workspace.fork(id) { select("run:" + forked.uuidString) }
             }
             .disabled(!app.workspace.canTransfer(id))
+            Button(tr("agents.restartAgent")) { app.workspace.restartAgent(id) }
+                .disabled(!app.workspace.canRestartAgent(id))
         }
         Button(tr("inbox.markUnread")) { visits.markUnread(item.id) }
         Divider()

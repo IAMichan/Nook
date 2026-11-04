@@ -308,6 +308,10 @@ struct AgentRunPanel: View {
                 if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
             }
             .disabled(!workspace.canTransfer(runID))
+            // Ends the agent's process; the next message resumes the conversation with new skills, plugins and MCP servers.
+            Button(tr("agents.restartAgent")) { workspace.restartAgent(runID) }
+                .disabled(!workspace.canRestartAgent(runID))
+                .help(tr("agents.restartAgent.help"))
             if run.lineage?.kind == .fork {
                 Button(tr("agents.mergeBack")) {
                     if workspace.mergeBack(runID), let parent = run.lineage?.parentID {

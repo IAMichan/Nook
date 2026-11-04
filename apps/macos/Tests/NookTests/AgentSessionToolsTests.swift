@@ -60,4 +60,25 @@ final class AgentSessionToolsTests: XCTestCase {
             XCTFail("a scheduled task never runs with auto rights")
         }
     }
+
+    // MARK: Restart agent
+
+    func testRestartResumesWhereTheAgentCan() {
+        XCTAssertEqual(AgentRestart.plan(hasConversation: false, canResume: true), .fresh)
+        XCTAssertEqual(AgentRestart.plan(hasConversation: true, canResume: true), .resume)
+        XCTAssertEqual(AgentRestart.plan(hasConversation: true, canResume: nil), .resume,
+                       "unknown: try, the agent's own 'session gone' answer still carries the conversation over")
+        XCTAssertEqual(AgentRestart.plan(hasConversation: true, canResume: false), .summary)
+    }
+
+    func testEveryAgentAnswersHowItResumes() {
+        for provider in RunProvider.allCases {
+            let native = AgentRestart.resumesNatively(provider)
+            if provider.usesACP {
+                XCTAssertNil(native, "\(provider.rawValue) says it in its initialize answer")
+            } else {
+                XCTAssertEqual(native, true, provider.rawValue)
+            }
+        }
+    }
 }
