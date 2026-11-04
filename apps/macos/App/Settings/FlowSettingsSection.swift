@@ -1,11 +1,10 @@
 import SwiftUI
 
-/// Settings › Typing & dictation › Dictate anywhere (Flow): turning it on, how it writes (and the language it translates
-/// to), and what it remembers. The key is set under Shortcuts.
+/// Settings › Dictation & voice › Dictate anywhere (Flow): turning it on, how it writes (and the language it translates
+/// to), and what it remembers. Its key is chosen here, right under the switch.
 struct FlowSettingsSection: View {
     @ObservedObject private var store = FlowStore.shared
     @ObservedObject private var flow = FlowDictation.shared
-    @EnvironmentObject private var app: AppModel
     /// Opens on an edit still waiting to be saved, so a quick switch away and back does not show (and then save over it)
     /// the text from before it.
     @State private var dictionary = FlowSettingsSection.pendingDictionary ?? FlowStore.shared.dictionaryText
@@ -24,10 +23,12 @@ struct FlowSettingsSection: View {
                         flow.refresh()
                     }
                 if store.enabled {
-                    // The key is changed under Shortcuts: the row says which key it is and leads there.
-                    SettingsLinkRow(title: tr("flow.settings.key"),
-                                    detail: store.key == .fn ? "fn" : tr("flow.settings.keyRight", store.key.symbol),
-                                    section: .shortcuts) { app.settingsSection = .shortcuts }
+                    Picker(tr("flow.settings.key"), selection: $store.key) {
+                        ForEach(FlowKey.allCases) { key in
+                            Text(key == .fn ? "fn" : tr("flow.settings.keyRight", key.symbol)).tag(key)
+                        }
+                    }
+                    .onChange(of: store.key) { _, _ in flow.refresh(); DoubleTap.shared.refresh() }
                     if !flow.trusted {
                         StatusRow(title: tr("flow.settings.access"), detail: tr("flow.settings.accessDetail"), state: .warning) {
                             Button(tr("flow.settings.allow")) { flow.openAccessibilitySettings() }

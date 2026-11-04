@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Appearance: how Nook looks. A large live Nook on top that shows each mood, the three styles as cards,
-/// then the color (the biggest change after the style), and the face and finish folded away.
+/// Settings › Appearance: how Nook looks and sounds. A large live Nook on top that shows each mood, the three styles as
+/// cards, then the color (the biggest change after the style), the face and finish folded away, and Nook as a buddy.
 extension SettingsView {
     // MARK: Appearance
 
@@ -15,7 +15,7 @@ extension SettingsView {
             .listRowBackground(Color.clear)
 
             Section {
-                HStack(spacing: 10) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     ForEach(NookLook.presets) { preset in
                         lookPresetCard(preset.id, preset.look)
                     }
@@ -25,7 +25,7 @@ extension SettingsView {
                 Text(tr("settings.appearance.style"))
             } footer: {
                 if !NookLook.presets.contains(where: { $0.look == settings.nookLook }) {
-                    Text(tr("settings.appearance.styleCustom"))
+                    SettingNote(tr("settings.appearance.styleCustom"))
                 }
             }
 
@@ -91,6 +91,8 @@ extension SettingsView {
                 }
             }
             .listRowBackground(Color.clear)
+
+            buddySection
         }
     }
 
@@ -103,7 +105,7 @@ extension SettingsView {
 
     /// Nook large and alive, with the moods underneath to see how each one looks.
     private var lookPreview: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: NookTheme.Spacing.lg) {
             NookOrb(mood: lookPreviewMood, size: 88, glow: settings.nookLook.glow, look: settings.nookLook)
                 .frame(width: 150, height: 130)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: NookTheme.Spacing.sm)], spacing: NookTheme.Spacing.sm) {
@@ -126,8 +128,8 @@ extension SettingsView {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 18)
-        .padding(.horizontal, 14)
+        .padding(.vertical, NookTheme.Spacing.xl)
+        .padding(.horizontal, NookTheme.Spacing.lg)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.surface))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(tr("settings.appearance.preview"))

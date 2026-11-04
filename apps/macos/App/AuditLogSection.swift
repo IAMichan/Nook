@@ -20,7 +20,7 @@ struct AuditLogSection: View {
                 Text(tr("privacy.log.empty")).foregroundStyle(NookTheme.textSecondary)
             }
             ForEach(entries.prefix(100)) { entry in
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     HStack {
                         Text(entry.tool).font(NookTheme.TextStyle.strong)
                         Spacer()

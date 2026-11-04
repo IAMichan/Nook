@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Settings › General: the languages, where Nook sits on screen, and how much it does on its own. The look is under
-/// Appearance; the language dictation is translated to is with dictation.
+/// Settings › General: the languages, where Nook shows (the notch and the main window), how much it does on its own,
+/// and updates. The look is under Appearance; the language dictation is translated to is with dictation.
 extension SettingsView {
     // MARK: General
 
@@ -20,7 +20,8 @@ extension SettingsView {
             } header: {
                 Text(tr("settings.overview.languageSection"))
             }
-            Section(tr("settings.notch.title")) {
+            // The notch and the main window: everywhere Nook shows, in one group.
+            Section(tr("settings.general.where")) {
                 Picker(tr("settings.notch.placement"), selection: $settings.placement) {
                     Text(tr("settings.notch.placementNotch")).tag("notch")
                     Text(tr("settings.notch.placementFloating")).tag("floating")
@@ -49,12 +50,11 @@ extension SettingsView {
                     get: { app.viewModel.openOnHover },
                     set: { app.viewModel.openOnHover = $0; refreshTick += 1 }
                 ))
-            }
-            Section(tr("settings.window.title")) {
                 SettingToggle(tr("settings.window.openAtLaunch"), detail: tr("settings.window.openAtLaunchDetail"),
                               isOn: $settings.openWindowAtLaunch)
             }
             energySection
+            UpdateSettingsSection()
             // Rarely needed: folded away at the end, like on every page.
             Section {
                 DisclosureGroup(tr("settings.display.advanced")) {

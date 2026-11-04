@@ -55,7 +55,7 @@ struct ConnectMethodBadge: View {
             Text(text ?? method.label)
                 .font(NookTheme.TextStyle.label)
                 .foregroundStyle(method == .signIn ? NookTheme.onIris : NookTheme.iris)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, NookTheme.Spacing.md)
                 .padding(.vertical, NookTheme.Spacing.xs)
                 .background(Capsule().fill(method == .signIn ? NookTheme.iris : NookTheme.iris.opacity(0.14)))
                 .lineLimit(1)
@@ -94,9 +94,11 @@ extension ConnectionHealth {
     }
 }
 
-/// A dot (or a small spinner while connecting) and the state in words.
+/// A dot (or a small spinner while connecting) and the state in words. `text` replaces the state's own word where a
+/// row says more (an agent that is not installed, a sign-in in progress).
 struct ServiceStatusLabel: View {
     let status: ServiceStatus
+    var text: String? = nil
 
     var body: some View {
         HStack(spacing: 5) {
@@ -105,7 +107,7 @@ struct ServiceStatusLabel: View {
             } else {
                 Circle().fill(status.color).frame(width: 6, height: 6)
             }
-            Text(status.label)
+            Text(text ?? status.label)
                 .font(NookTheme.TextStyle.label)
                 .foregroundStyle(status == .notLinked || status == .off ? NookTheme.textSecondary : status.color)
                 .lineLimit(1)
@@ -128,23 +130,66 @@ struct ServiceRowLayout<Actions: View>: View {
     @ViewBuilder var actions: () -> Actions
 
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.lg) {
+        ServiceRowShape(title: title, detail: detail, status: status, detailIsError: detailIsError) {
             ServiceTile(domain: domain, fallback: symbol, tint: tint, size: 30, source: source)
+        } actions: {
+            actions()
+        }
+    }
+}
+
+/// The shape behind `ServiceRowLayout`, for a row whose icon is not a service's site icon (a coding agent's logo): the
+/// icon, the name with its state, one line, and the actions. Every linked thing in Settings is drawn with it, so a
+/// service, a chat account and a coding agent read the same.
+struct ServiceRowShape<Icon: View, Actions: View>: View {
+    let title: String
+    let detail: String
+    let status: ServiceStatus
+    /// Replaces the state's own word (see `ServiceStatusLabel`).
+    var statusText: String? = nil
+    var detailIsError = false
+    @ViewBuilder var icon: () -> Icon
+    @ViewBuilder var actions: () -> Actions
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.lg) {
+            icon()
+                .frame(width: 30, height: 30)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 HStack(spacing: NookTheme.Spacing.md) {
                     Text(title)
-                    ServiceStatusLabel(status: status)
+                    ServiceStatusLabel(status: status, text: statusText)
                 }
-                Text(detail)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(detailIsError ? NookTheme.coral : NookTheme.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                if !detail.isEmpty {
+                    Text(detail)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(detailIsError ? NookTheme.coral : NookTheme.textSecondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: NookTheme.Spacing.md)
             HStack(spacing: NookTheme.Spacing.sm) { actions() }
+                .controlSize(.small)
         }
         .padding(.vertical, 3)
+    }
+}
+
+/// A coding agent's logo on the same quiet tile as a service's icon, so agent rows line up with every other linked row.
+struct AgentTile: View {
+    let logo: AgentLogo
+    var size: CGFloat = 30
+
+    init(agent: String) { logo = AgentLogo(agent: agent, size: 20) }
+
+    init(_ kind: AgentKind) { logo = AgentLogo(kind, size: 20) }
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
+            .fill(NookTheme.smoke)
+            .overlay(logo)
+            .frame(width: size, height: size)
     }
 }
 

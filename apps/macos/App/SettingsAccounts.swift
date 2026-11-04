@@ -72,54 +72,25 @@ private struct AgentAccountCardRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button(action: onManage) {
-                HStack(spacing: 12) {
-                    AgentLogo(profile.kind, size: 28)
-                        .frame(width: 32, height: 32)
-                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.smoke))
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
-                            Text(title)
-                                .font(NookTheme.TextStyle.strong)
-                                .foregroundStyle(NookTheme.paper)
-
-                            if several && app.profiles.isPreferred(profile) {
-                                Text(tr("agents.default"))
-                                    .font(NookTheme.TextStyle.label)
-                                    .padding(.horizontal, NookTheme.Spacing.sm)
-                                    .padding(.vertical, 1)
-                                    .background(Capsule().fill(NookTheme.smoke))
-                                    .foregroundStyle(NookTheme.textStrong)
-                            }
-                        }
-
-                        // The state is the pill's to say; this line only says whose account it is.
-                        if let subtitle {
-                            Text(subtitle)
-                                .font(NookTheme.TextStyle.detail)
-                                .foregroundStyle(NookTheme.textSecondary)
-                                .lineLimit(1)
-                        }
-                    }
-
-                    Spacer(minLength: 8)
-
-                    HealthPill(health: health, text: healthText)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
+        // The same row as everything else that is linked: the agent's logo, the account with its state, whose account it
+        // is, and one button. A click anywhere on the row opens its sheet too.
+        ServiceRowShape(title: title, detail: detail, status: health.status, statusText: healthText) {
+            AgentTile(profile.kind)
+        } actions: {
             Button(account == nil || antigravitySignedOut ? tr("button.login") : tr("settings2.manage")) {
                 // Antigravity signs in right here, in your browser.
                 if antigravitySignedOut { app.connect(profile) } else { onManage() }
             }
-            .controlSize(.small)
             .disabled(antigravitySignedOut && app.agentConnect[profile.id]?.isBusy == true)
         }
-        .padding(.vertical, 3)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onManage)
+    }
+
+    /// Whose account it is, with "Default" in front when the agent has several.
+    private var detail: String {
+        let isDefault = several && app.profiles.isPreferred(profile)
+        return [isDefault ? tr("agents.default") : nil, subtitle].compactMap { $0 }.joined(separator: " · ")
     }
 
     private var healthText: String? {
@@ -165,9 +136,9 @@ private struct ManageAccountSheet: View {
         ) {
             AgentLogo(profile.kind, size: 44)
         } content: {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
                 // Name
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                     Text(tr("agents.name")).font(NookTheme.TextStyle.strong)
                     HStack {
                         TextField(profile.isDefault ? tr("agents.personal") : tr("agents.name"), text: $name)
@@ -182,7 +153,7 @@ private struct ManageAccountSheet: View {
                     Divider()
 
                     // Signing in with the agent's own login is the way; a key is only for whoever needs one, folded away.
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                         Text(tr("accounts.method")).font(NookTheme.TextStyle.strong)
                         if profile.usesAPIKey {
                             apiKeyView
@@ -270,7 +241,7 @@ private struct ManageAccountSheet: View {
 
     @ViewBuilder
     private var cliAuthView: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: NookTheme.Spacing.lg) {
             Button {
                 app.reauthenticate(profile)
             } label: {
@@ -290,8 +261,8 @@ private struct ManageAccountSheet: View {
     @ViewBuilder
     private var antigravitySignInView: some View {
         let progress = app.agentConnect[profile.id]
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            HStack(spacing: NookTheme.Spacing.lg) {
                 Button {
                     app.reauthenticate(profile)
                 } label: {
@@ -330,7 +301,7 @@ private struct ManageAccountSheet: View {
                     ConfirmedButton(tr("accounts.logout"), question: tr("confirm.logout", profile.kind.name)) { app.logout(profile) }
                 }
             }
-            .padding(10)
+            .padding(NookTheme.Spacing.md)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.smoke))
         } else {
             HStack {
@@ -388,7 +359,7 @@ private struct AddAccountSheet: View {
         ) {
             AgentLogo(kind, size: 44)
         } content: {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
                 SetupStep(number: 1, title: tr("agents.name"), done: !name.trimmingCharacters(in: .whitespaces).isEmpty) {
                     TextField(tr("agents.addNamePrompt"), text: $name, prompt: Text(tr("agents.work")))
                         .textFieldStyle(.roundedBorder)
@@ -397,7 +368,7 @@ private struct AddAccountSheet: View {
                 // Step 2 is signing in with the agent's own login, in the browser, right after adding. A key instead is
                 // folded away for whoever needs one.
                 SetupStep(number: 2, title: tr("accounts.signInStep"), done: method == .apiKey && canAdd) {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                         if method == .cli {
                             SettingNote(tr("accounts.signInStepDetail", kind.shortName))
                         }
@@ -428,7 +399,7 @@ private struct AddAccountSheet: View {
                                 dismiss()
                             }
                         }
-                        .padding(8)
+                        .padding(NookTheme.Spacing.md)
                         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.smoke))
                     }
                 }

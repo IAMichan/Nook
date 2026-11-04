@@ -9,16 +9,18 @@ extension SettingsView {
 
     var agentsSection: some View {
         Group {
-            // First who you are signed in as with each agent (and the agents that speak ACP), then which agents show
-            // their progress in the notch, then what they used.
-            AccountsSettingsSection()
+            // First which agents are linked to Nook (and show their progress in the notch), then who you are signed in
+            // as with each (and the agents that speak ACP), then what they used.
             Section {
                 ForEach(AgentConfigInstaller.Target.allCases) { target in
                     agentRow(target)
                 }
+                // Antigravity needs its release downloaded before Nook can run it: set up with the other agents.
+                LabeledContent("Antigravity") { AntigravitySetupRow(inSettings: true) }
             } header: {
                 Text(tr("settings.agents.linkAgents"))
             }
+            AccountsSettingsSection()
             // What they used: plan limits per account, tokens and costs. The week recap lives here only, so the menu bar
             // stays calm.
             Section {

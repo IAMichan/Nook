@@ -13,40 +13,38 @@ extension SettingsView {
 
     func agentRow(_ target: AgentConfigInstaller.Target) -> some View {
         let state = agentStates[target] ?? .notInstalled
-        let rowState: StatusState = {
+        let status: ServiceStatus = {
             switch state {
-            case .installed: return .done
-            case .outdated: return .warning
-            case .unreadable: return .error
-            case .notInstalled: return .todo
+            case .installed: return .connected
+            case .outdated: return .expired
+            case .unreadable: return .unreachable
+            case .notInstalled: return .notLinked
             }
         }()
-        return StatusRow(title: target.title, detail: stateText(state, target: target), state: rowState, agent: target.title) {
+        let detail: String = {
+            switch state {
+            case .notInstalled: return target.detail
+            case .installed: return target.displayPath
+            case .outdated: return tr("agents.status.outdated")
+            case .unreadable(let message): return message
+            }
+        }()
+        return ServiceRowShape(title: target.title, detail: detail, status: status,
+                               detailIsError: { if case .unreadable = state { return true }; return false }()) {
+            AgentTile(agent: target.title)
+        } actions: {
             switch state {
             case .notInstalled:
                 Button(tr("button.linkEllipsis")) { prepare(target, install: true) }
-                    .controlSize(.small)
             case .outdated:
                 Button(tr("button.updateEllipsis")) { prepare(target, install: true) }
                     .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
                 Button(tr("button.unlinkEllipsis")) { prepare(target, install: false) }
-                    .controlSize(.small)
             case .installed:
                 Button(tr("button.unlinkEllipsis")) { prepare(target, install: false) }
-                    .controlSize(.small)
             case .unreadable:
                 EmptyView()
             }
-        }
-    }
-
-    func stateText(_ state: AgentConfigInstaller.State, target: AgentConfigInstaller.Target) -> String {
-        switch state {
-        case .notInstalled: return target.detail
-        case .installed: return "\(tr("agents.status.done")) · \(target.displayPath)"
-        case .outdated: return tr("agents.status.outdated")
-        case .unreadable(let message): return message
         }
     }
 
