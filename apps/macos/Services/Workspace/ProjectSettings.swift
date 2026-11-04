@@ -14,6 +14,8 @@ enum ProjectSettingKey: Hashable, Sendable {
     case branchPrefix
     /// The user's own rules for written session titles.
     case titleInstructions
+    /// Whether Nook's worktree cleanup rules apply to the project ("on") or not ("off").
+    case worktreeCleanup
 
     var raw: String {
         switch self {
@@ -23,6 +25,7 @@ enum ProjectSettingKey: Hashable, Sendable {
         case .isolation: return "isolation"
         case .branchPrefix: return "branchPrefix"
         case .titleInstructions: return "titleInstructions"
+        case .worktreeCleanup: return "worktreeCleanup"
         }
     }
 }
@@ -37,6 +40,8 @@ struct SessionDefaults: Equatable, Sendable {
     var branchPrefix: String
     /// Added to the prompt that writes a session's title; empty: Nook's own rules only.
     var titleInstructions: String = ""
+    /// The cleanup rules from Settings › Workspace apply to this project's worktrees; off: they stay until you remove them.
+    var worktreeCleanup = true
 
     func model(for provider: RunProvider) -> String { models[provider.rawValue] ?? "" }
 
@@ -109,6 +114,7 @@ enum ProjectSettings {
         layers.set(ProjectSettingKey.isolation.raw, .string(global.isolation.rawValue), in: .environment)
         layers.set(ProjectSettingKey.branchPrefix.raw, .string(global.branchPrefix), in: .environment)
         layers.set(ProjectSettingKey.titleInstructions.raw, .string(global.titleInstructions), in: .environment)
+        layers.set(ProjectSettingKey.worktreeCleanup.raw, .string(global.worktreeCleanup ? "on" : "off"), in: .environment)
         for (key, value) in overrides { layers.set(key, value, in: .project) }
         return layers
     }
@@ -131,6 +137,7 @@ enum ProjectSettings {
         result.isolation = string(.isolation).flatMap(IsolationMode.init(rawValue:)) ?? global.isolation
         result.branchPrefix = string(.branchPrefix).map(WorktreeNaming.normalizedBranchPrefix) ?? global.branchPrefix
         result.titleInstructions = string(.titleInstructions) ?? global.titleInstructions
+        result.worktreeCleanup = string(.worktreeCleanup).map { $0 != "off" } ?? global.worktreeCleanup
         return result
     }
 
