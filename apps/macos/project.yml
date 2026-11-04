@@ -380,6 +380,8 @@ targets:
       - path: Services/Workspace/ModelComparison.swift
       - path: Services/Workspace/SyntaxTokenizer.swift
       - path: Services/Workspace/Keybindings.swift
+      - path: Services/Workspace/KeybindingEdits.swift
+      - path: Services/Workspace/SessionNavigation.swift
       - path: Services/Workspace/ClosedTabs.swift
       - path: ../../packages/protocol/Sources/PromptLink.swift
       - path: Services/Workspace/PriceTable.swift
