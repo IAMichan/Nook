@@ -111,17 +111,38 @@ enum ContextHandoff {
 /// Where a session came from.
 struct RunLineage: Codable, Equatable, Sendable {
     /// `fork`: a copy of the parent's conversation (/fork). `comparison`: started from the same prompt as the parent with
-    /// another model (`ModelComparison`); the parent is the group's first session.
-    enum Kind: String, Codable, Sendable { case fork, comparison }
+    /// another model (`ModelComparison`); the parent is the group's first session. `side`: a side chat (/btw, /side)
+    /// that starts from the parent's last finished turn while the parent keeps working (see `SideChat`).
+    enum Kind: String, Codable, Sendable { case fork, comparison, side }
     var kind: Kind
     var parentID: UUID
     /// How much of the parent's timeline the fork starts from.
     var atEvent: Int
 
     /// The line in the session's header that leads to the parent ("Forked from %@", "Same prompt as %@").
-    var labelKey: String { kind == .fork ? "lineage.forkedFrom" : "lineage.samePromptAs" }
+    var labelKey: String {
+        switch kind {
+        case .fork: return "lineage.forkedFrom"
+        case .comparison: return "lineage.samePromptAs"
+        case .side: return "lineage.sideOf"
+        }
+    }
     /// The mark of such a session in the Agents list and its header.
-    var symbol: String { kind == .fork ? "arrow.triangle.branch" : "square.stack.3d.up" }
+    var symbol: String {
+        switch kind {
+        case .fork: return "arrow.triangle.branch"
+        case .comparison: return "square.stack.3d.up"
+        case .side: return "bubble.left.and.bubble.right"
+        }
+    }
+    /// Its result can go back to the parent ("Bring back", `mergeBack`): a fork and a side chat; a comparison runs the
+    /// same prompt next to it instead.
+    var bringsBack: Bool {
+        switch kind {
+        case .fork, .side: return true
+        case .comparison: return false
+        }
+    }
 }
 
 /// Ending a session's agent process so the next message starts it again (new skills, plugins or MCP servers are
@@ -152,6 +173,66 @@ enum AgentRestart {
         case .claude, .codex: return true
         case .gemini, .opencode, .cursor, .grok, .antigravity, .acp: return nil
         }
+    }
+}
+
+/// A side chat: a question beside a session's work (`/btw`, `/side`), in a session of its own that starts from the
+/// parent's last finished turn while the parent keeps running. It is listed with its parent, not as a session of its
+/// own, its first turn always asks before it changes anything, and "Bring back" hands its result to the parent.
+enum SideChat {
+    static let commands = ["btw", "side"]
+
+    /// The question after `/btw` or `/side` ("" for the command alone), or nil when the message is not a side chat.
+    static func question(in message: String) -> String? {
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.hasPrefix("/") else { return nil }
+        let body = text.dropFirst()
+        let name = body.prefix { !$0.isWhitespace }
+        guard commands.contains(name.lowercased()) else { return nil }
+        return body.dropFirst(name.count).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// How much of the parent's timeline the side chat starts from: all of it when the parent is idle; while a turn
+    /// runs, what came before the message that started that turn (the turn is not finished, so it is left out).
+    static func cutoff(events: [RunEvent], turnRunning: Bool) -> Int {
+        guard turnRunning else { return events.count }
+        return events.lastIndex { $0.kind == .user } ?? 0
+    }
+
+    enum Start: Equatable, Sendable {
+        /// The agent copies its own conversation as it is (an idle parent: its last turn is finished).
+        case nativeCopy
+        /// The agent copies its own conversation up to the end of the last finished turn (Claude Code `--resume
+        /// --resume-session-at --fork-session`), the parent still working on the next.
+        case nativeCopyAt(session: String, head: String)
+        /// A summary of the timeline up to the cutoff (`ContextHandoff.render`).
+        case summary
+    }
+
+    /// How the side chat gets the parent's conversation. `lastFinished`: where the conversation stood after the last
+    /// finished turn (the newest checkpoint's mark).
+    static func start(provider: RunProvider, session: String?, turnRunning: Bool, lastFinished: ConversationMark?) -> Start {
+        let capabilities = provider.capabilities
+        guard capabilities.nativeFork, session != nil else { return .summary }
+        if !turnRunning { return .nativeCopy }
+        guard capabilities.canForkFromTurn, let mark = lastFinished, mark.provider == provider,
+              let markSession = mark.session, let head = mark.head else { return .summary }
+        return .nativeCopyAt(session: markSession, head: head)
+    }
+
+    /// The sessions the list shows: a side chat only together with its parent (nested under it), never on its own.
+    static func listed(_ runs: [WorkspaceRun]) -> [WorkspaceRun] {
+        let ids = Set(runs.map(\.id))
+        return runs.filter { run in
+            guard let lineage = run.lineage, lineage.kind == .side else { return true }
+            return ids.contains(lineage.parentID)
+        }
+    }
+
+    /// The side chats of a session, newest first.
+    static func children(of parent: UUID, in runs: [WorkspaceRun]) -> [WorkspaceRun] {
+        runs.filter { $0.lineage?.kind == .side && $0.lineage?.parentID == parent && !$0.archived }
+            .sorted { $0.createdAt > $1.createdAt }
     }
 }
 
