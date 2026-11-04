@@ -244,8 +244,9 @@ struct RouteCooldowns: Equatable, Sendable {
     }
 }
 
-/// Messages written while the Mac could not be reached. They keep their request id: the Mac answers a repeat of an id
-/// it already handled with the answer it gave (`CommandReceipts`), so a message whose answer was lost is never sent twice.
+/// What you wrote while the Mac could not be reached: a message to a session, a new session, a question to Nook and a
+/// message to a chat. They keep their request id: the Mac answers a repeat of an id it already handled with the answer it
+/// gave (`CommandReceipts`), so one whose answer was lost is never carried out twice.
 struct CompanionOutbox: Codable, Equatable, Sendable {
     struct Entry: Codable, Equatable, Identifiable, Sendable {
         var request: CompanionRequest
@@ -259,9 +260,32 @@ struct CompanionOutbox: Codable, Equatable, Sendable {
     static let maxEntries = 50
     /// A message that could not go out within a day is dropped rather than sent into a conversation that moved on.
     static let maxAge: TimeInterval = 24 * 3600
+    /// A new session, a question to Nook or a message to a chat waits at most an hour: started or sent much later it
+    /// would surprise you more than it helps.
+    static let shortAge: TimeInterval = 3600
 
-    /// Only a message to a session waits: an approval, an answer or a stop means something only now.
-    static func queues(_ op: CompanionOp) -> Bool { op == .send }
+    /// How long a request of this kind may wait.
+    static func maxAge(for op: CompanionOp) -> TimeInterval { op == .send ? maxAge : shortAge }
+
+    /// Whether a refusal means "try again later" (the entry keeps waiting, and holds the ones behind it). A failure is
+    /// passing for a message to a session (it is still busy), but final for a new session, a question or a chat message
+    /// (a folder another session works in, no brain): those leave the outbox with why, so they cannot block the rest.
+    static func waitsAfter(_ error: CompanionError, op: CompanionOp) -> Bool {
+        switch error {
+        case .replay, .stale, .rateLimited, .busy: return true
+        case .failed: return op == .send
+        default: return false
+        }
+    }
+
+    /// What you wrote waits: a message, a new session, a question to Nook, a message to a chat (each one the Mac keeps a
+    /// receipt of, `CommandReceipts.keeps`). An approval, an answer or a stop means something only now, and goes at once.
+    static func queues(_ op: CompanionOp) -> Bool {
+        switch op {
+        case .send, .start, .ask, .inboxSend: return true
+        default: return false
+        }
+    }
 
     /// False when it cannot wait (another kind of request, or the outbox is full).
     @discardableResult
@@ -277,13 +301,23 @@ struct CompanionOutbox: Codable, Equatable, Sendable {
     /// Drops what is too old and returns it.
     @discardableResult
     mutating func expire(now: Date) -> [Entry] {
-        let limit = now.timeIntervalSince1970 - Self.maxAge
-        let old = entries.filter { $0.queued < limit }
-        entries.removeAll { $0.queued < limit }
+        let old = entries.filter { $0.queued < now.timeIntervalSince1970 - Self.maxAge(for: $0.request.op) }
+        entries.removeAll { entry in old.contains { $0.id == entry.id } }
         return old
     }
 
-    func waiting(for session: String) -> [Entry] { entries.filter { $0.request.session == session } }
+    func waiting(for session: String) -> [Entry] { entries.filter { $0.request.op == .send && $0.request.session == session } }
+
+    /// New sessions that wait for the Mac.
+    var starts: [Entry] { entries.filter { $0.request.op == .start } }
+
+    /// Questions to Nook that wait: in `conversation`, or (nil) the ones that start a new chat.
+    func questions(in conversation: String?) -> [Entry] {
+        entries.filter { $0.request.op == .ask && $0.request.conversation == conversation }
+    }
+
+    /// Messages to a chat of the Chats tab that wait.
+    func chatMessages(to chat: String) -> [Entry] { entries.filter { $0.request.op == .inboxSend && $0.request.item == chat } }
 
     /// The request to send now: the same id, with the current time (the Mac refuses requests older than a minute).
     static func resend(_ entry: Entry, now: Date) -> CompanionRequest {

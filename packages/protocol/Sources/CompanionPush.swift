@@ -15,6 +15,8 @@ enum PushCategory {
     static let actionDeny = "NOOK_ACTION_DENY"
     /// A message to the session, typed right in a finished, failed or limited session's notification.
     static let actionReply = "NOOK_ACTION_REPLY"
+    /// A local notification on the phone: an action from a notification could not reach the Mac; a tap tries again.
+    static let retry = "NOOK_RETRY"
 }
 
 struct PushEvent: Equatable, Sendable {
@@ -114,10 +116,13 @@ struct PushLedger: Sendable {
 
 enum APNsPayload {
     /// The JSON body of a push: `title` and `body` are already in the Mac user's language. `badge` is how many sessions need
-    /// the user. Custom data sits under "nook" and carries ids only.
-    static func make(_ event: PushEvent, title: String, body: String, badge: Int) -> [String: Any] {
+    /// the user. Custom data sits under "nook" and carries ids only: the session, the item, and `mac`, the id of the
+    /// pairing the push goes out for (`PairedDevice.id`, which is the phone's `PairedMac.id`), so a button on it reaches
+    /// the Mac that sent it even when the phone has another Mac active.
+    static func make(_ event: PushEvent, title: String, body: String, badge: Int, mac: String? = nil) -> [String: Any] {
         var nook: [String: Any] = ["session": event.session]
         if let item = event.item { nook["item"] = item }
+        if let mac { nook["mac"] = mac }
         return [
             "aps": ["alert": ["title": title, "body": body], "sound": PushPolicy.isUrgent(event.kind) ? "default" : "default",
                     "category": PushPolicy.category(event), "thread-id": event.session, "badge": max(0, badge),
