@@ -34,12 +34,12 @@ struct RemoteMachinesSection: View {
                             }
                             if machine.usesPassword, RemotePasswords.shared.isKept(machine.id) {
                                 Text(tr("remote.password.inKeychain"))
-                                    .font(NookTheme.TextStyle.caption)
+                                    .font(NookTheme.TextStyle.detail)
                                     .foregroundStyle(NookTheme.textSecondary)
                             }
                             Text(machine.lastUsedAt.map { tr("remote.lastUsed", $0.formatted(.relative(presentation: .named))) }
                                  ?? tr("remote.neverUsed"))
-                                .font(NookTheme.TextStyle.caption)
+                                .font(NookTheme.TextStyle.detail)
                                 .foregroundStyle(NookTheme.textSecondary)
                             if let result = results[machine.id] {
                                 SettingNote(result.text, tone: result.ok ? .success : .warning)

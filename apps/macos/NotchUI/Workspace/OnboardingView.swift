@@ -8,7 +8,8 @@ struct OnboardingView: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var permissions = PermissionMonitor.shared
-    let onFinish: () -> Void
+    /// Called when the flow ends: `true` after Done on the last step, `false` for Later and Escape.
+    let onFinish: (_ completed: Bool) -> Void
 
     @State private var step = 0
     @State private var recommendations: [ModelAdvisor.Recommendation] = []
@@ -72,7 +73,7 @@ struct OnboardingView: View {
 
     private var footer: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            NookGhostButton(title: tr("onboarding.later"), compact: true, height: 32) { onFinish() }
+            NookGhostButton(title: tr("onboarding.later"), compact: true, height: 32) { onFinish(false) }
                 .fixedSize()
                 .keyboardShortcut(.cancelAction)
             Spacer()
@@ -81,7 +82,7 @@ struct OnboardingView: View {
                     .fixedSize()
             }
             NookPrimaryButton(title: step == steps - 1 ? tr("onboarding.done") : tr("onboarding.next")) {
-                if step == steps - 1 { onFinish() } else { step += 1 }
+                if step == steps - 1 { onFinish(true) } else { step += 1 }
             }
             .fixedSize()
             .keyboardShortcut(.defaultAction)

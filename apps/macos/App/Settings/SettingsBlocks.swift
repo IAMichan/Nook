@@ -9,7 +9,7 @@ struct ConfigPreview: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            Text(change.install ? "\(change.target.title) \(tr("button.link"))" : "\(change.target.title) \(tr("button.unlink"))")
+            Text(tr(change.install ? "settings.agents.linkTitle" : "settings.agents.unlinkTitle", change.target.title))
                 .font(NookTheme.TextStyle.strong)
             Text(tr("settings.agents.changeNotice", change.target.displayPath))
                 .font(NookTheme.TextStyle.body)
@@ -94,7 +94,7 @@ enum StatusState {
     var color: Color {
         switch self {
         case .done: return NookTheme.mint
-        case .todo: return NookTheme.textSecondary.opacity(0.55)
+        case .todo: return NookTheme.textTertiary
         case .warning: return NookTheme.amber
         case .error: return NookTheme.coral
         }
@@ -795,9 +795,11 @@ struct WatchedPullRequestsSection: View {
                             .foregroundStyle(NookTheme.textSecondary)
                     }
                     Spacer()
-                    Button(role: .destructive) { watching.remove(entry) } label: { Image(systemName: "trash") }
-                        .buttonStyle(.borderless)
-                        .help(tr("settings.pulls.remove"))
+                    ConfirmedButton(symbol: "trash", title: tr("settings.pulls.remove"), question: tr("confirm.stopWatching", entry)) {
+                        watching.remove(entry)
+                    }
+                    .labelled(tr("settings.pulls.remove"))
+                    .buttonStyle(.borderless)
                 }
             }
             HStack {

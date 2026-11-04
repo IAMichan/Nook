@@ -78,7 +78,7 @@ final class ModelAdvisorTests: XCTestCase {
     func testIntelMacGetsAnExplanation() {
         let top = first(32, arm: false)
         XCTAssertEqual(top.choice, .unavailable)
-        XCTAssertTrue(top.reason.contains("Apple Silicon"))
+        XCTAssertEqual(top.reason, tr("advisor.reason.needsSilicon"))
         XCTAssertEqual(first(32, arm: false, servers: [ServerModel(server: .lmstudio, name: "qwen2.5-7b-instruct")]).choice,
                        .server(ServerModel(server: .lmstudio, name: "qwen2.5-7b-instruct")))
     }

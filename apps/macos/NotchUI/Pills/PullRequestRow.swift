@@ -5,7 +5,7 @@ import AppKit
 /// a small warning on it for a conflict), then two lines. On top the title (so titles line up in one column), the checks
 /// and the review decision, and the lines added and removed at the end; under it the repository and number, the author's
 /// picture and login, up to three labels in their own colors, its place in a stack, and when it last changed at the end.
-struct PullRequestRow: View {
+struct PullRequestRow: View, Equatable {
     let item: PullRequestItem
     let role: PullRequestRepoGroup.Role
     /// The repository is named on the row unless its group heading already does.
@@ -15,8 +15,17 @@ struct PullRequestRow: View {
     var selected = false
     /// Where it stands in a stack of pull requests built on each other, if it is in one.
     var stack: (index: Int, count: Int)? = nil
+    /// The clock the row's time is counted against (the list's tick), so the time moves on while the list is open.
+    var now = Date()
     let onOpen: () -> Void
     @State private var hovering = false
+
+    /// What the row draws: it is redrawn only when one of these changes, not with every change elsewhere in the app.
+    static func == (lhs: PullRequestRow, rhs: PullRequestRow) -> Bool {
+        lhs.item == rhs.item && lhs.role == rhs.role && lhs.showRepo == rhs.showRepo && lhs.accountID == rhs.accountID
+            && lhs.selected == rhs.selected && lhs.stack?.index == rhs.stack?.index && lhs.stack?.count == rhs.stack?.count
+            && lhs.now == rhs.now
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -29,6 +38,7 @@ struct PullRequestRow: View {
             .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
         .selectionMark(selected)
         .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
         // Resting on a row reads it ahead, so the click opens it at once.
         .task(id: hovering) {
             guard hovering else { return }
@@ -105,7 +115,7 @@ struct PullRequestRow: View {
                         .help(tr("agents.pulls.stack.position", stack.index, stack.count))
                     }
                     if let updated = item.updated {
-                        Text(AgentFormat.short(Date().timeIntervalSince(updated)))
+                        Text(AgentFormat.short(now.timeIntervalSince(updated)))
                             .monospacedDigit()
                             .fixedSize()
                             .help(updated.formatted(date: .abbreviated, time: .shortened))

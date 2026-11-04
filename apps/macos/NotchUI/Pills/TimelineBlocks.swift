@@ -61,6 +61,28 @@ struct TimelineRowContext: Equatable {
     var counted: [String: TurnLines]
 }
 
+extension TimelineRowContext {
+    /// The same context with only the open details that belong to `block`, so opening one event's details draws that
+    /// block again and not every block of the session.
+    func scoped(to block: TimelineBlock) -> TimelineRowContext {
+        guard !openEvents.isEmpty else { return self }
+        var scoped = self
+        scoped.openEvents = Set(block.eventIDs.filter(openEvents.contains))
+        return scoped
+    }
+}
+
+extension TimelineBlock {
+    /// The ids of the events this block draws.
+    var eventIDs: [UUID] {
+        switch self {
+        case .event(let event): return [event.id]
+        case .tools(_, let events, _): return events.map(\.id)
+        case .fold(_, _, let blocks, _): return blocks.flatMap(\.eventIDs)
+        }
+    }
+}
+
 /// "+7 −8": the lines an edit (or a group of edits) added and removed.
 struct EditLinesLabel: View {
     let lines: EditLines
@@ -264,7 +286,6 @@ struct PlanCard: View {
     var implementInNew: (() -> Void)? = nil
     let implement: () -> Void
     @State private var open = false
-    @State private var copied = false
 
     private var title: String { PlanPreview.title(from: text) ?? tr("ws.plan.title") }
     private var collapsible: Bool { PlanPreview.needsExpand(text) }
@@ -275,11 +296,7 @@ struct PlanCard: View {
                 Image(systemName: "list.bullet.clipboard").font(NookTheme.font(11, .semibold))
                 Text(tr("ws.plan.title")).font(NookTheme.TextStyle.strong)
                 Spacer(minLength: 0)
-                iconButton(copied ? "checkmark" : "doc.on.doc", tr("ws.plan.copy")) {
-                    Pasteboard.copy(text)
-                    copied = true
-                    Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
-                }
+                CopyIconButton(tr("ws.plan.copy"), height: 20, width: 20) { text }
                 iconButton("square.and.arrow.down", tr("ws.plan.save"), save)
             }
             .foregroundStyle(NookTheme.iris)

@@ -37,7 +37,6 @@ struct CommandConsolePanel: View {
     /// Goes to the command the agent runs now, when that is another one than this.
     var showNewer: (() -> Void)? = nil
     let close: () -> Void
-    @State private var copied = false
 
     private var command: String { CommandConsole.commandLine(event) }
     private var output: String { CommandConsole.output(event.output) }
@@ -93,11 +92,7 @@ struct CommandConsolePanel: View {
                 SmallGhostButton(title: tr("ws.console.newer"), action: showNewer)
                     .help(tr("ws.console.newer.help"))
             }
-            ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", tr("ws.console.copy")) {
-                Pasteboard.copy("$ " + command + (output.isEmpty ? "" : "\n" + output))
-                copied = true
-                Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
-            }
+            CopyIconButton(tr("ws.console.copy")) { "$ " + command + (output.isEmpty ? "" : "\n" + output) }
             SidePanelCloseButton(help: tr("ws.console.close"), action: close)
         }
     }

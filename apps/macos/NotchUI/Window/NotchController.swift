@@ -113,6 +113,7 @@ final class NotchController {
         host.sizingOptions = []
         host.frame = NSRect(origin: .zero, size: viewModel.canvas)
         panel.contentView = host
+        panel.onUnhandledEscape = { [weak self] in self?.closePanelOnEscape() ?? false }
         self.panel = panel
 
         panel.orderFrontRegardless()
@@ -558,6 +559,15 @@ final class NotchController {
         }) { monitors.append(m) }
     }
 
+    /// Escape that no view took closes the open panel, from any tab. Not while a task is open over it (Back takes Escape),
+    /// nor search or the usage modal, which close first.
+    private func closePanelOnEscape() -> Bool {
+        guard case .panel = viewModel.state, viewModel.sheet == nil, !viewModel.panelSearchOpen,
+              app?.usageModalOpen != true else { return false }
+        viewModel.show(.idle)
+        return true
+    }
+
     /// A click outside closes the panel. A click on another screen only closes it: Nook then follows the pointer to
     /// that screen, but does not open there until the pointer has left the notch.
     private func dismissForOutsideClick() {
@@ -607,5 +617,6 @@ final class NotchController {
             panel.ignoresMouseEvents = ignores
         }
         viewModel.pointerChanged(inside: inside)
+        if inside { viewModel.pointerMovedInside() }
     }
 }

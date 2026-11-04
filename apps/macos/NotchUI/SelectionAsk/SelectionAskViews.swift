@@ -98,6 +98,8 @@ struct SelectionAskCard: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var chat: NookChat
     @FocusState private var focused: Bool
+    /// `@` in the follow-up: people from your chats by name.
+    @StateObject private var mentionModel = ComposerModel()
     /// How tall the conversation is, so the card hugs a short answer and scrolls a long one.
     @State private var contentHeight: CGFloat = 0
 
@@ -126,15 +128,11 @@ struct SelectionAskCard: View {
             SessionComposer(text: $model.draft, prompt: tr("selectionAsk.followUp"), focus: $focused, busy: busy,
                             onStop: { app.stop(conversation: conversation) }, sendLabel: tr("card.send"),
                             onSend: { controller.sendFollowUp() }) { EmptyView() }
-                // The panel never activates Nook: take every keystroke straight from the field (as the notch's card does).
-                .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidChangeNotification)) { note in
-                    guard focused, let field = note.object as? NSTextField, field.window is SelectionAskPanel,
-                          field.stringValue != model.draft else { return }
-                    model.draft = field.stringValue
-                }
+                .rich(mentionModel, .mentions())
                 .padding(NookTheme.Spacing.md)
         }
         .frame(width: SelectionAskController.cardWidth)
+        .composerFocusOnAppear($focused)
         .cardBackground(NookTheme.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.panel, style: .continuous)
         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         .shadow(color: NookTheme.notch.opacity(0.5), radius: 14, y: 6)

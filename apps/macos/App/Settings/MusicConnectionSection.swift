@@ -15,7 +15,7 @@ struct MusicConnectionSection: View {
                     Label(tr("music.connect.spotifyConnected"), systemImage: "checkmark.seal.fill")
                         .foregroundStyle(NookTheme.mint)
                     Spacer()
-                    Button(tr("music.connect.signOut"), role: .destructive) { spotify.signOut() }
+                    ConfirmedButton(tr("music.connect.signOut"), question: tr("confirm.logout", "Spotify")) { spotify.signOut() }
                 }
                 SettingNote(tr("music.connect.spotifyConnectedDetail"))
             } else {

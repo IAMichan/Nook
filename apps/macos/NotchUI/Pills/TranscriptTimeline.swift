@@ -224,7 +224,8 @@ struct TranscriptConversation: View {
     /// agent and on every keystroke in the composer under it, and most rows stay the same.
     private func row(_ row: TranscriptRow, ruled: Bool = true) -> some View {
         TranscriptRowView(row: row, answers: row.id == derived.answerable, cards: derived.rowCards[row.id] ?? [:],
-                          checks: derived.foldChecks[row.id] ?? [], open: open, ruled: ruled, directory: directory,
+                          checks: derived.foldChecks[row.id] ?? [],
+                          open: open.isEmpty ? [] : open.intersection(derived.rowOpenKeys[row.id] ?? []), ruled: ruled, directory: directory,
                           side: sideLink, live: row.id == "live" ? shown : [], onReply: onReply,
                           toggle: { toggle($0) })
             .equatable()
@@ -451,6 +452,23 @@ private final class TranscriptDerived {
     private(set) var answerable: String?
     /// The changed-files cards under the answers each row holds, by the row's id (a fold's by the fold's).
     private(set) var rowCards: [String: [String: TurnDiff]] = [:]
+    /// The keys of `open` each row reads (its fold, group, steps and thoughts), by the row's id, so opening one of them
+    /// draws that row again and not every row.
+    private(set) var rowOpenKeys: [String: Set<String>] = [:]
+
+    /// The open-keys a row (and the rows a fold holds) reads, as `TranscriptRowView` makes them.
+    private static func openKeys(_ row: TranscriptRow) -> [String] {
+        switch row {
+        case .thinking(let message): return ["think:" + message.id]
+        case .step(let step): return ["step:" + step.id]
+        case .group(let id, let steps, let thoughts):
+            return ["group:" + id] + steps.map { "step:" + $0.id } + thoughts.values.flatMap { $0.map { "think:" + $0.id } }
+        case .fold(let id, _, let inner): return ["fold:" + id] + inner.flatMap(openKeys)
+        case .continued(let id, _, let inner): return ["continued:" + id] + inner.flatMap(openKeys)
+        case .live(_, let thought): return thought.map { ["think:" + $0.id] } ?? []
+        case .user, .assistant, .notice, .working, .interrupted: return []
+        }
+    }
 
     /// The last one per transcript: switching back to a conversation takes its rows as they were instead of laying the
     /// whole thread out again before the first frame.
@@ -469,6 +487,7 @@ private final class TranscriptDerived {
             foldChecks = known.foldChecks
             answerable = known.answerable
             rowCards = known.rowCards
+            rowOpenKeys = known.rowOpenKeys
         }
         if let key, key.working == working, key.directory == directory, key.messages == messages { return }
         defer { remember(path) }
@@ -486,6 +505,7 @@ private final class TranscriptDerived {
             default: break
             }
         }
+        rowOpenKeys = Dictionary(rows.map { ($0.id, Set(Self.openKeys($0))) }, uniquingKeysWith: { first, _ in first })
         answerable = working ? nil : messages.last(where: { $0.kind == .assistant })?.id
         // A turn still at work gets its card when it is done (a message you sent while it worked is part of that turn).
         let lastPrompt = messages.last(where: { $0.kind == .user && !$0.queued })?.id

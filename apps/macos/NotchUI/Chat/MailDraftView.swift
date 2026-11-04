@@ -14,7 +14,6 @@ struct MailDraftView: View {
     @State private var cc: String
     @State private var subject: String
     @State private var body_: String
-    @State private var copied = false
     /// `@` in the body: people from your chats by name.
     @StateObject private var mentionModel = ComposerModel()
 
@@ -125,10 +124,7 @@ struct MailDraftView: View {
                     .disabled(draft.state == .sending)
                     SmallGhostButton(title: tr("button.openInMail")) { onOpen(edited) }
                 }
-                SmallGhostButton(title: copied ? tr("button.copied") : tr("button.copy")) {
-                    Pasteboard.copy(subject.isEmpty ? body_ : "\(subject)\n\n\(body_)")
-                    copied = true
-                }
+                CopyGhostButton { subject.isEmpty ? body_ : "\(subject)\n\n\(body_)" }
                 Spacer()
             }
             .padding(.top, NookTheme.Spacing.md)

@@ -178,6 +178,8 @@ private struct SettingsSidebar: View {
     var badges: [SettingsSection: Int]
     /// What is typed in the search field above the sidebar.
     @State private var searchQuery = ""
+    /// The Typing page's part, set by a search hit that lives in one of its two parts.
+    @AppStorage("settings.typingPart") private var typingPart = 0
 
     var body: some View {
         List(selection: Binding(
@@ -223,6 +225,7 @@ private struct SettingsSidebar: View {
             }
             ForEach(hits) { hit in
                 Button {
+                    if let part = hit.typingPart { typingPart = part }
                     app.settingsSection = hit.section
                     searchQuery = ""
                 } label: {

@@ -136,6 +136,7 @@ struct MCPServerCardRow: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
+                .accessibilityLabel(config.name)
             Menu {
                 Button {
                     showDetails = true
@@ -384,7 +385,7 @@ struct AddMCPServerWizardSheet: View {
                             TextEditor(text: $rawSecrets)
                                 .font(NookTheme.mono(11))
                                 .frame(height: 70)
-                                .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).stroke(NookTheme.textSecondary.opacity(0.3)))
+                                .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).stroke(NookTheme.fieldStroke))
                             Text(isRemote ? tr("mcp.headersHint") : tr("mcp.envHint"))
                                 .font(NookTheme.TextStyle.detail)
                                 .foregroundStyle(NookTheme.textSecondary)

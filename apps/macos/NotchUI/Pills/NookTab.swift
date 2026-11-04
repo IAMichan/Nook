@@ -159,8 +159,12 @@ struct NookChatView: View {
         // would hand the panels more room than there is and push everything off both sides.
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
         .onLayoutWidthChange { totalWidth = $0 }
-        // Picking a Nook (or starting one) in the list shows it in place of the list.
-        .onChange(of: chat.activeID) { _, _ in listOnly = false }
+        // Picking a Nook (or starting one) in the list shows it in place of the list, and the keyboard goes to the box:
+        // a new conversation, ⌘N and switching all start by typing.
+        .onChange(of: chat.activeID) { _, _ in
+            listOnly = false
+            inputFocused = true
+        }
         .overlay {
             if dropTargeted {
                 RoundedRectangle(cornerRadius: NookTheme.Radius.sheet)
@@ -178,9 +182,8 @@ struct NookChatView: View {
             // What you were typing when the notch closed is back, pictures included.
             if question.isEmpty, let saved = ComposerDraftStore.shared.draft(for: Self.draftKey) { question = saved }
             if images.isEmpty { images = NookTabDraft.images }
-            // Wait briefly for the panel to acquire keyboard focus.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { inputFocused = true }
         }
+        .composerFocusOnAppear($inputFocused)
         .onDisappear { NookTabDraft.images = images }
     }
 
@@ -425,17 +428,15 @@ struct NookChatView: View {
             // The lazy rows only learn their real height once laid out, and the notch is still growing while it opens:
             // as long as we follow the end, every change in size is caught up with, so the chat never opens halfway up.
             // The composer growing under it (a card, a draft) changes the inset instead, and is caught up with as well.
-            .onScrollGeometryChange(for: [Double].self) { geometry in
-                [geometry.containerSize.height, geometry.contentSize.height, geometry.contentInsets.bottom]
-            } action: { _, _ in
-                if scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
+            // Only a change in size scrolls, and only when the end is not already in view and no scroll is under way.
             .onScrollGeometryChange(for: ScrollFrame.self) { geometry in
                 ScrollFrame(offset: geometry.contentOffset.y, content: geometry.contentSize.height,
                             container: geometry.containerSize.height,
                             insetTop: geometry.contentInsets.top, insetBottom: geometry.contentInsets.bottom)
-            } action: { _, frame in
+            } action: { old, frame in
                 viewport.frame = frame
+                let resized = frame.content != old.content || frame.container != old.container || frame.insetBottom != old.insetBottom
+                if resized { followEnd(proxy) }
             }
             .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
                 overflows = now
@@ -476,10 +477,18 @@ struct NookChatView: View {
             .onChange(of: chat.activeID) { _, _ in settleAtEnd(proxy) }
             // You asked something: it is the newest thing and the answer is followed again, also when you had scrolled up.
             .onChange(of: chat.messages.last(where: { $0.role == .user })?.id) { _, _ in settleAtEnd(proxy) }
-            .onChange(of: scrollKey) { _, _ in
-                if scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
+            .onChange(of: scrollKey) { _, _ in followEnd(proxy) }
         }
+    }
+
+    /// Keeps the end in view while following, but only when it is not already there and no scroll is under way, so a
+    /// size change that leaves the end in place does not scroll again.
+    private func followEnd(_ proxy: ScrollViewProxy) {
+        guard scroll.shouldFollowEnd, scrollPhase.value == .idle,
+              viewport.frame.maxOffset - viewport.frame.offset > 0.5 else { return }
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
     }
 
     /// Scrolls to the end now and again while the layout settles (rows measured, the notch done opening), unless you

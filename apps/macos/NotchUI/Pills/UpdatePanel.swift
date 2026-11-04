@@ -80,7 +80,6 @@ struct UpdatePanel: View {
                         updater.install(stash: stashConsent)
                     }
                     .disabled(needsConsent)
-                    .opacity(needsConsent ? 0.4 : 1)
                     .keyboardShortcut(.defaultAction)
                 }
             }
@@ -303,7 +302,7 @@ struct UpdatePanel: View {
                     }
                 }
                 if !failure.errors.isEmpty {
-                    SmallGhostButton(title: tr("update.copyErrors")) { Pasteboard.copy(failure.errors.joined(separator: "\n")) }
+                    CopyGhostButton(title: tr("update.copyErrors")) { failure.errors.joined(separator: "\n") }
                 }
                 Spacer(minLength: 0)
                 SmallGhostButton(title: tr("update.close")) {

@@ -11,7 +11,8 @@ struct SourcesDisclosure: View {
     let message: ChatMessage
     /// Retry the answer; only given for the latest answer.
     var onRetry: (() -> Void)? = nil
-    @EnvironmentObject private var app: AppModel
+    // perf: read from the shared model, not observed: an answer's sources and plan must not redraw on every change of the app.
+    private var app: AppModel { AppModel.shared }
     @ObservedObject private var permissions = PermissionMonitor.shared
     @State private var expanded = false
 
@@ -406,7 +407,8 @@ extension ChatMessage {
 /// that grants it, so it can be fixed right from the chat.
 struct NoticeList: View {
     let notices: [String]
-    @EnvironmentObject private var app: AppModel
+    // perf: read from the shared model, not observed: an answer's sources and plan must not redraw on every change of the app.
+    private var app: AppModel { AppModel.shared }
     @ObservedObject private var permissions = PermissionMonitor.shared
 
     /// The permission each notice asks for; only the first notice per permission shows the button.

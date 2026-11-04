@@ -27,7 +27,7 @@ extension SettingsView {
                 SettingToggle(tr("settings.privacy.onlineLyrics"), detail: tr("settings.privacy.onlineLyricsDetail"),
                               isOn: $settings.onlineLyrics)
                 LabeledContent(tr("settings.privacy.screenText")) {
-                    Button(tr("settings.privacy.forgetScreenText"), role: .destructive) {
+                    ConfirmedButton(tr("settings.privacy.forgetScreenText"), question: tr("confirm.forgetScreenText")) {
                         app.screenContext.clear()
                         ToastCenter.shared.success(tr("settings.privacy.screenTextForgotten"))
                     }

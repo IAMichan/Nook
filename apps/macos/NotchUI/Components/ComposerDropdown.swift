@@ -582,11 +582,21 @@ struct BranchPicker: View {
     let selected: String
     let choose: (String) -> Void
     @State private var query = ""
+    @Environment(\.closeDropdown) private var close
+
+    private var matches: [String] {
+        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
+        return needle.isEmpty ? branches : branches.filter { $0.lowercased().contains(needle) }
+    }
 
     var body: some View {
-        DropdownSearch(placeholder: tr("compose.searchBranches"), text: $query)
-        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
-        let shown = needle.isEmpty ? branches : branches.filter { $0.lowercased().contains(needle) }
+        DropdownSearch(placeholder: tr("compose.searchBranches"), text: $query) {
+            // Return picks the first branch that matches.
+            guard let first = matches.first else { return }
+            choose(first)
+            close()
+        }
+        let shown = matches
         DropdownList(emptyNote: shown.isEmpty ? tr("compose.noBranches") : nil) {
             ForEach(shown, id: \.self) { branch in
                 DropdownRow(symbol: "arrow.triangle.branch", title: branch, chosen: branch == selected) { choose(branch) }

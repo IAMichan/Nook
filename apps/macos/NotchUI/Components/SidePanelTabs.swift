@@ -1,7 +1,7 @@
 import SwiftUI
 
 // The side panel's tabs and its list of tools: small tabs that each carry what
-// they show (the page's title, the pull request's number and title), whose icon turns into a cross under the pointer;
+// they show (the page's title, the pull request's number and title), with a cross at the end that closes them;
 // + right after the last tab; and with no tab open a short list to open one, each row with the key that opens it.
 
 extension EnvironmentValues {
@@ -15,7 +15,7 @@ extension EnvironmentValues {
 struct SidePanelTabItem<Value: Hashable>: Identifiable {
     let value: Value
     let title: String
-    /// The mark before the title; it gives way to the cross under the pointer.
+    /// The mark before the title.
     let icon: AnyView
     /// Something in it you have not looked at yet: a small dot on the icon.
     var fresh = false
@@ -60,7 +60,7 @@ struct SidePanelTabBar<Value: Hashable, Add: View, Trailing: View>: View {
     }
 }
 
-/// A small tab: the icon (a cross under the pointer, which closes it) and the title, on a soft fill while selected.
+/// A small tab: the icon, the title and a cross at the end that closes it, on a soft fill while selected.
 private struct SidePanelTab<Value: Hashable>: View {
     let item: SidePanelTabItem<Value>
     let active: Bool
@@ -70,25 +70,15 @@ private struct SidePanelTab<Value: Hashable>: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            Button(action: close) {
-                ZStack {
-                    if hovering {
-                        Image(systemName: "xmark").font(NookTheme.font(8.5, .bold))
-                    } else {
-                        item.icon
-                            .overlay(alignment: .bottomTrailing) {
-                                if item.fresh {
-                                    Circle().fill(NookTheme.iris).frame(width: 5, height: 5).offset(x: 2, y: 2)
-                                }
-                            }
+            // The mark stays where it is; the cross that closes the tab sits at the trailing edge.
+            item.icon
+                .overlay(alignment: .bottomTrailing) {
+                    if item.fresh {
+                        Circle().fill(NookTheme.iris).frame(width: 5, height: 5).offset(x: 2, y: 2)
                     }
                 }
                 .frame(width: 16, height: 16)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(tr("tab.close"))
-            .accessibilityLabel(tr("tab.close") + " " + item.title)
+                .accessibilityHidden(true)
             Button(action: select) {
                 Text(item.title)
                     .lineLimit(1)
@@ -99,11 +89,23 @@ private struct SidePanelTab<Value: Hashable>: View {
             }
             .buttonStyle(.plain)
             .help(item.help ?? item.title)
+            // Always takes its room, so the tab does not change width when the cross appears.
+            Button(action: close) {
+                Image(systemName: "xmark")
+                    .font(NookTheme.font(8.5, .bold))
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .opacity(hovering || active ? 1 : 0)
+            .allowsHitTesting(hovering || active)
+            .help(tr("tab.close"))
+            .accessibilityLabel(tr("tab.close") + " " + item.title)
         }
         .font(NookTheme.TextStyle.detail)
         .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textTertiary)
         .padding(.leading, NookTheme.Spacing.xs)
-        .padding(.trailing, NookTheme.Spacing.sm)
+        .padding(.trailing, NookTheme.Spacing.xs)
         .frame(height: 24)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
             .fill(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear)))

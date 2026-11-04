@@ -67,11 +67,13 @@ struct AgentSessionDetail: View {
                        detail: tr("confirm.endSession.detail"), confirmTitle: tr("agents.nook.takeOver")) { session in
             perform { try await app.continueInNook(session, endingTerminal: true) }
         }
-        .onAppear { composerFocused = true }
-        .onChange(of: selectionID) { _, _ in
+        .onAppear { composerState.show(session: selectionID) }
+        .composerFocusOnAppear($composerFocused)
+        .onChange(of: selectionID) { _, id in
             composerFocused = true
             actionError = nil
-            draft = ""
+            // The draft of the session you leave stays with it; the one you open brings its own back.
+            composerState.show(session: id)
             choice = nil
             turnSettings = AgentTurnSettings()
         }
@@ -890,6 +892,24 @@ private struct FolderPullRequestTray: View {
 /// without observing it, so typing draws the composer again and not the conversation.
 @MainActor
 final class SessionDraftState: ObservableObject {
-    @Published var draft = ""
+    /// The session the draft belongs to: each change to it is saved for that session, as you type.
+    private(set) var session: String?
+    private var switching = false
+    @Published var draft = "" {
+        didSet {
+            guard !switching, draft != oldValue, let session else { return }
+            ComposerDraftStore.shared.save(sessionID: session, text: draft)
+        }
+    }
+
+    /// Shows the draft saved for `session` (empty when there is none), saving nothing on the way: clearing the box of
+    /// the session you leave is not a change you made to its draft.
+    func show(session: String) {
+        guard self.session != session else { return }
+        switching = true
+        defer { switching = false }
+        self.session = session
+        draft = ComposerDraftStore.shared.draft(for: session) ?? ""
+    }
     @Published var images: [ImageAttachment] = []
 }

@@ -14,7 +14,8 @@ struct ActionsPanel: View {
     @ObservedObject private var pullRequests = PullRequestStore.shared
     @ObservedObject private var watching = PullRequestWatchSettings.shared
     @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
-    @State private var filter: WorkflowRunFilter = .all
+    /// The state filter is kept while Nook runs, so a visit to another tab and back finds it as it was left.
+    @State private var filter: WorkflowRunFilter = ActionsPanel.keptFilter
     @State private var openRun: WorkflowRun?
 
     /// The side panel, as on the pull requests page: half the page at first, as wide as you drag it after.
@@ -22,6 +23,9 @@ struct ActionsPanel: View {
     private static let splitWidth: CGFloat = 860
     private static let minimumPanel: Double = 360
     private static let minimumList: Double = 360
+
+    /// The state filter you left in the list (not kept across a restart).
+    static var keptFilter: WorkflowRunFilter = .all
 
     var body: some View {
         GeometryReader { geometry in
@@ -53,6 +57,7 @@ struct ActionsPanel: View {
             openRun = nil
             filter = .all
         }
+        .onChange(of: filter) { _, value in ActionsPanel.keptFilter = value }
         // The open run follows the list: its row and its page say the same.
         .onChange(of: store.runs) { _, runs in
             if let open = openRun, let fresh = runs.first(where: { $0.id == open.id }), fresh != open { openRun = fresh }
@@ -188,6 +193,8 @@ struct ActionsPanel: View {
             WSEmptyState(symbol: "line.3.horizontal.decrease.circle", title: tr("actions.noMatch"), message: "",
                          action: (title: tr("agents.pulls.clearFilter"), run: { filter = .all }))
         } else {
+            // The times on the rows move on with the clock, as on the Agents list.
+            TimelineView(.nookTicks(every: 30)) { context in
             ScrollView(showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     if let error = store.error {
@@ -202,7 +209,8 @@ struct ActionsPanel: View {
                             .padding(.top, NookTheme.Spacing.md)
                             .padding(.bottom, NookTheme.Spacing.xs)
                         ForEach(group.runs) { run in
-                            WorkflowRunRow(run: run, showWorkflow: store.workflowID == nil, selected: run.id == selected) {
+                            WorkflowRunRow(run: run, showWorkflow: store.workflowID == nil, selected: run.id == selected,
+                                           now: context.date) {
                                 openRun = run
                             }
                         }
@@ -210,6 +218,7 @@ struct ActionsPanel: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.bottom, NookTheme.Spacing.lg)
+            }
             }
         }
     }
@@ -250,6 +259,8 @@ struct WorkflowRunRow: View {
     /// The workflow is named on the row unless the list shows only that one.
     let showWorkflow: Bool
     var selected = false
+    /// The clock the row's time is counted against (the list's tick), so the time moves on while the list is open.
+    var now = Date()
     let onOpen: () -> Void
     @State private var hovering = false
 
@@ -275,7 +286,7 @@ struct WorkflowRunRow: View {
                             .truncationMode(.middle)
                         Spacer(minLength: NookTheme.Spacing.sm)
                         if let date = run.created {
-                            Text(NookDates.ago(date)).fixedSize()
+                            Text(NookDates.ago(date, now: now)).fixedSize()
                         }
                     }
                     .font(NookTheme.TextStyle.caption)
@@ -291,6 +302,7 @@ struct WorkflowRunRow: View {
             .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
         .selectionMark(selected)
         .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
         .help(run.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .contextMenu {

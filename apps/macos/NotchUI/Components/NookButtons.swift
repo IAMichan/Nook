@@ -293,6 +293,75 @@ struct ToolbarIconButton: View {
     }
 }
 
+/// "Copied" for a moment after a copy. `copy(_:)` puts the text on the pasteboard and raises `copied` for `hold`; a
+/// second copy within that time starts the moment over instead of cutting it short. The copy buttons below hold one;
+/// a button of another shape (a Settings button) keeps its own as a `@StateObject`.
+@MainActor
+final class CopiedMoment: ObservableObject {
+    /// How long the checkmark and "Copied" stay.
+    static let hold: Duration = .milliseconds(1500)
+    @Published private(set) var copied = false
+    private var reset: Task<Void, Never>?
+
+    func copy(_ text: String) {
+        Pasteboard.copy(text)
+        reset?.cancel()
+        if !copied { copied = true }
+        reset = Task { [weak self] in
+            try? await Task.sleep(for: Self.hold)
+            guard !Task.isCancelled else { return }
+            self?.copied = false
+        }
+    }
+}
+
+/// The copy button in a header, a row, or under a message: a `ToolbarIconButton` with the copy symbol that turns into a
+/// checkmark, and its tooltip into "Copied", for a moment after the click. `text` is read on the click, so a long text
+/// is not joined on every redraw. `showing` follows that moment, for a row that keeps the button in sight meanwhile.
+struct CopyIconButton: View {
+    let label: String
+    let copiedLabel: String
+    let height: CGFloat
+    let width: CGFloat
+    let showing: Binding<Bool>?
+    let text: () -> String
+    @StateObject private var moment = CopiedMoment()
+
+    init(_ label: String, copiedLabel: String? = nil, height: CGFloat = 24, width: CGFloat = 24,
+         showing: Binding<Bool>? = nil, text: @escaping () -> String) {
+        self.label = label
+        self.copiedLabel = copiedLabel ?? tr("button.copied")
+        self.height = height
+        self.width = width
+        self.showing = showing
+        self.text = text
+    }
+
+    var body: some View {
+        ToolbarIconButton(moment.copied ? "checkmark" : "doc.on.doc", moment.copied ? copiedLabel : label,
+                          height: height, width: width) { moment.copy(text()) }
+            .onChange(of: moment.copied) { _, copied in showing?.wrappedValue = copied }
+    }
+}
+
+/// The copy button as a word (`SmallGhostButton`): "Copy", then "Copied" for a moment after the click.
+struct CopyGhostButton: View {
+    let title: String
+    let copiedTitle: String
+    let text: () -> String
+    @StateObject private var moment = CopiedMoment()
+
+    init(title: String? = nil, copiedTitle: String? = nil, text: @escaping () -> String) {
+        self.title = title ?? tr("button.copy")
+        self.copiedTitle = copiedTitle ?? tr("button.copied")
+        self.text = text
+    }
+
+    var body: some View {
+        SmallGhostButton(title: moment.copied ? copiedTitle : title) { moment.copy(text()) }
+    }
+}
+
 /// The backdrop of a list row's hover buttons: the row's own fill behind the buttons, fading in from the left, so a long
 /// title runs out softly underneath them instead of colliding with them. The fade passes clicks through to the row.
 struct RowActionsBackdrop: ViewModifier {

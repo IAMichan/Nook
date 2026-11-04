@@ -35,6 +35,8 @@ struct PanelFooter: View {
     var onBack: (() -> Void)? = nil
     @ObservedObject private var updater = AppUpdater.shared
     @EnvironmentObject private var app: AppModel
+    /// Set by a click on Refresh, so only a check the user asked for says "up to date".
+    @State private var manualCheck = false
 
     var body: some View {
         if AgentsPage.footerPages.contains(selected), let onBack {
@@ -70,6 +72,7 @@ struct PanelFooter: View {
                 let busy = history.loading || updater.phase == .checking
                 FooterIcon(label: tr("agents.footer.refresh"), active: false, action: {
                     history.refresh(minimumInterval: 0)
+                    manualCheck = true
                     updater.check()
                 }) {
                     TurningGlyph(symbol: "arrow.triangle.2.circlepath", turning: busy)
@@ -78,6 +81,11 @@ struct PanelFooter: View {
             }
             // The icons give up room first, so the update pill stays whole inside a narrow list.
             .layoutPriority(1)
+        }
+        .onChange(of: updater.phase) { _, phase in
+            guard manualCheck, phase != .checking else { return }
+            manualCheck = false
+            if phase == .upToDate { ToastCenter.shared.success(tr("update.settings.status.upToDate")) }
         }
         .padding(.horizontal, NookTheme.Spacing.xs)
         .frame(maxWidth: .infinity, alignment: vertical ? .center : .leading)

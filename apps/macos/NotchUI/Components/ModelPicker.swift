@@ -81,6 +81,7 @@ struct ModelPicker<Above: View>: View {
     /// The rows for a place and the search text.
     let list: (ModelPickerPlace, String) -> ModelPickerList
     @State private var query = ""
+    @Environment(\.closeDropdown) private var close
 
     var body: some View {
         RailDropdown(groups: [places.filter(\.isLocal), places.filter { !$0.isLocal && $0.symbol != nil },
@@ -126,7 +127,14 @@ struct ModelPicker<Above: View>: View {
                 .padding(.bottom, NookTheme.Spacing.xs)
         }
         above(place)
-        if place.symbol == nil { DropdownSearch(placeholder: tr("compose.searchModels"), text: $query) }
+        if place.symbol == nil {
+            DropdownSearch(placeholder: tr("compose.searchModels"), text: $query) {
+                // Return picks the first model that matches (or the model of your own typed in the search).
+                guard let first = (shown.models + shown.actions).first(where: { $0.disabledReason == nil }) else { return }
+                first.pick()
+                if !first.staysOpen { close() }
+            }
+        }
         DropdownList(maxHeight: ModelPickerStyle.listHeight,
                      emptyNote: shown.models.isEmpty && shown.actions.isEmpty ? shown.emptyNote ?? tr("compose.noModels") : nil) {
             ForEach(shown.models + shown.actions) { item in

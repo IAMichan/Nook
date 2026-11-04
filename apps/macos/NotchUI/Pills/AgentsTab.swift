@@ -173,6 +173,10 @@ struct AgentsTab: View {
             }
         }
         .keyCommands(["commandPalette.toggle": { palette.toggle(); return true }], context: ["paletteOpen": palette])
+        // ⌘⇧[ and ⌘⇧] go to the session above or below in the list, as they go through chats on Chats.
+        .keyCommands(["session.previous": { step(-1, in: entries, current: selectedID(selection)) },
+                      "session.next": { step(1, in: entries, current: selectedID(selection)) }],
+                     enabled: !entries.running.isEmpty || !entries.earlier.isEmpty)
         // Keep sessions and usage up to date while the tab remains open. Without the loading state: a refresh in the
         // background that flips it redraws the whole window twice for a list that is already there.
         .task {
@@ -218,6 +222,17 @@ struct AgentsTab: View {
     private func open(_ id: String) {
         viewModel.selectedAgentID = id
         if PanelLayout.stacks(totalWidth) { withAnimation(NookTheme.reveal) { listHidden = true } }
+    }
+
+    /// Opens the session `offset` rows from the open one in the list (the first or last one when none of them is open).
+    /// False at either end, so the key goes on.
+    private func step(_ offset: Int, in entries: ListEntries, current: String) -> Bool {
+        let ids = (entries.running + entries.earlier).map(\.id)
+        guard !ids.isEmpty else { return false }
+        let next = ids.firstIndex(of: current).map { $0 + offset } ?? (offset > 0 ? 0 : ids.count - 1)
+        guard ids.indices.contains(next) else { return false }
+        open(ids[next])
+        return true
     }
 
     /// What is shown on the right. Without a choice (or when it is gone): whatever waits for you or works, otherwise the
@@ -314,7 +329,12 @@ struct AgentsTab: View {
 
     private func listEntries(live: [AgentSession], past: [PastSession], transcripts: [String: PastSession]) -> ListEntries {
         let runs = app.demoMode ? [] : WorkspaceRunsSection.recent(app.workspace)
-        let built = sorted(runs.map { item($0) } + live.map { item($0, transcript: transcripts[$0.id]) })
+        // How many models each first session of a comparison has: counted once, not once per run.
+        var comparisons: [UUID: Int] = [:]
+        for run in app.workspace.runs where run.lineage?.kind == .comparison {
+            if let parent = run.lineage?.parentID { comparisons[parent, default: 0] += 1 }
+        }
+        let built = sorted(runs.map { item($0, comparisons: comparisons) } + live.map { item($0, transcript: transcripts[$0.id]) })
         let busyKeys = Set(built.filter(\.isBusy).map(\.finishKey))
         let (running, earlier) = Self.linkSpawned(running: built,
                                                   past: past.map { item($0) }.filter { !busyKeys.contains($0.finishKey) })
@@ -379,7 +399,7 @@ struct AgentsTab: View {
         return AccountLabel.name(profile, app: app)
     }
 
-    private func item(_ run: WorkspaceRun) -> AgentListItem {
+    private func item(_ run: WorkspaceRun, comparisons: [UUID: Int]) -> AgentListItem {
         // One answer to "what does this need from you" (approval, question, limit, snooze), shared with the notch.
         let attention = app.workspace.attention(run, unseen: run.status == .completed && unseen("run:" + run.id.uuidString, run.updatedAt),
                                                 includeSnooze: false)
@@ -413,7 +433,7 @@ struct AgentsTab: View {
             // A session Nook delegated to or forked from another one, or a later model of a comparison.
             parentID: (run.delegation?.parentID ?? run.lineage?.parentID).map { "run:" + $0.uuidString },
             firstPrompt: run.task,
-            comparison: app.workspace.runs.filter { $0.lineage?.kind == .comparison && $0.lineage?.parentID == run.id }.count,
+            comparison: comparisons[run.id] ?? 0,
             forked: run.lineage?.kind == .fork,
             worktree: run.isolation == .worktree || run.worktreePath != nil,
             changedFiles: run.changedFiles
@@ -512,7 +532,7 @@ enum AgentsListVisibility {
 // MARK: Session row
 
 /// One session in the list, the same for every kind of session.
-struct AgentListItem: Identifiable {
+struct AgentListItem: Identifiable, Equatable {
     enum Status { case working, waiting, input, failed, limited, idle, finished }
 
     /// The selection id: a hub session id, "run:<uuid>" or "past:<id>".
@@ -583,7 +603,7 @@ struct AgentRowActions {
 /// A session as t3code shows a thread: its folder with the status or how long ago, its name, and a line of what it did
 /// (branch, changes, pull request) with the agent's logo. A row that asks nothing of you recedes (lighter text, normal
 /// weight, working rows dimmed) so what needs you is the only loud thing.
-struct AgentListRow: View {
+struct AgentListRow: View, Equatable {
     let item: AgentListItem
     let now: Date
     let selected: Bool
@@ -602,6 +622,19 @@ struct AgentListRow: View {
     /// and each of them in the card it shows on hover.
     var pullRequests = SessionPullRequests(current: [])
     let action: () -> Void
+
+    /// What the row draws, so `.equatable()` skips redrawing a row whose inputs did not change. The closures are left
+    /// out: they act on the same state whichever copy of them the row holds.
+    static func == (lhs: AgentListRow, rhs: AgentListRow) -> Bool {
+        lhs.item == rhs.item && lhs.now == rhs.now && lhs.selected == rhs.selected && lhs.receded == rhs.receded
+            && lhs.pinned == rhs.pinned && lhs.woke == rhs.woke && lhs.slim == rhs.slim && lhs.grouped == rhs.grouped
+            && lhs.wakeLabel == rhs.wakeLabel && lhs.pullRequests == rhs.pullRequests
+            && lhs.actions?.pinned == rhs.actions?.pinned && lhs.actions?.settled == rhs.actions?.settled
+            && (lhs.actions?.onSnooze != nil) == (rhs.actions?.onSnooze != nil)
+            && (lhs.actions?.onWake != nil) == (rhs.actions?.onWake != nil)
+            && (lhs.actions != nil) == (rhs.actions != nil)
+    }
+
     @State private var hovering = false
     /// The pointer is on the hover buttons.
     @State private var onActions = false
@@ -637,6 +670,7 @@ struct AgentListRow: View {
             }
         }
         .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
         // Closed over the buttons, so their first click is not spent closing the card.
         .hoverCard(suppressed: onActions || onDetail) { AgentHoverCard(item: item) }
         .accessibilityElement(children: .combine)
@@ -1032,8 +1066,8 @@ struct ImportedSession<Fallback: View>: View {
         if failed || !app.canContinueInNook(session) {
             fallback()
         } else {
-            ProgressView()
-                .controlSize(.small)
+            // Nothing for the first moment: a quick takeover never flashes a spinner.
+            PatientSpinner()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .task(id: session.id) {
                     do { _ = try await app.continueInNook(session) } catch { failed = true }

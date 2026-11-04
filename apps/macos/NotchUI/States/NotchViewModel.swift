@@ -472,6 +472,8 @@ final class NotchViewModel: ObservableObject {
 
     private var doneTask: Task<Void, Never>?
     private var hoverTask: Task<Void, Never>?
+    /// Search everything is open over the panel (set by `PanelView`): Escape then closes it, not the panel.
+    var panelSearchOpen = false
     private var autoCloseTask: Task<Void, Never>?
 
     /// Is a connected agent running or waiting? If so, the notch appears active when idle.
@@ -563,6 +565,11 @@ final class NotchViewModel: ObservableObject {
         autoCloseTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 60_000_000_000)
             guard !Task.isCancelled, let self, !self.pointerInside, self.sheet == nil, case .panel(let tab) = self.state else { return }
+            // Typing in the panel (a field has the keyboard) is activity too: wait another minute.
+            if let key = NSApp.keyWindow as? NotchPanel, key.firstResponder is NSText {
+                self.scheduleAutoClose()
+                return
+            }
             // Chat does not auto-collapse during a conversation; retry later.
             if (tab == .nook || tab == .chat), self.app?.chat.isRecentlyActive == true {
                 self.scheduleAutoClose()
@@ -743,6 +750,7 @@ final class NotchViewModel: ObservableObject {
 
     /// The strip's OK: it goes at once, as it would have when its countdown ran out.
     func acknowledgeNotice() {
+        if toastOnStrip { ToastCenter.shared.dismiss() }
         show(.idle)
     }
 
@@ -784,13 +792,25 @@ final class NotchViewModel: ObservableObject {
         }
         if let action = toast.action {
             finish(toast.title, button: action.title, tone: toast.kind.doneTone, seconds: toast.duration) { [weak self] in
+                // The toast closes with its action, as the button on a panel's toast does.
+                if self?.toastOnStrip == true { ToastCenter.shared.dismiss() }
                 self?.show(.idle)
                 action.perform()
             }
         } else {
             finish(toast.title, tone: toast.kind.doneTone, seconds: toast.duration)
         }
+        toastStripMessage = toast.title
         return true
+    }
+
+    /// The title of the toast the confirmation strip shows for `ToastCenter`, so the strip's hover and OK reach the toast.
+    private var toastStripMessage: String?
+
+    /// The strip shows a toast now.
+    private var toastOnStrip: Bool {
+        if case .done(let shown) = state, let message = toastStripMessage { return shown == message }
+        return false
     }
 
     /// A notice Nook gives by himself (not in reply to what you just did): like `finish`, but an open panel stays and
@@ -801,17 +821,17 @@ final class NotchViewModel: ObservableObject {
             return
         }
         let notice = PanelNotice(message: message, button: button, action: action)
-        panelNotice = notice
+        withAnimation(NookTheme.reveal) { panelNotice = notice }
         panelNoticeHeld = false
         panelNoticeClock.start(notice.seconds) { [weak self] in
-            if self?.panelNotice?.id == notice.id { self?.panelNotice = nil }
+            if self?.panelNotice?.id == notice.id { withAnimation(NookTheme.reveal) { self?.panelNotice = nil } }
         }
     }
 
     func dismissPanelNotice() {
         panelNoticeClock.cancel()
         panelNoticeHeld = false
-        panelNotice = nil
+        withAnimation(NookTheme.reveal) { panelNotice = nil }
     }
 
     /// The pointer is on the panel's notice bar: its clock and ring hold, and run out the rest once it leaves.
@@ -902,7 +922,12 @@ final class NotchViewModel: ObservableObject {
     /// Button on the right of the confirmation strip.
     func doneButtonPressed() {
         let action = doneButtonAction
-        if let action { action() } else { show(.idle) }
+        if let action {
+            action()
+        } else {
+            if toastOnStrip { ToastCenter.shared.dismiss() }
+            show(.idle)
+        }
     }
 
     func startListening() {
@@ -923,6 +948,8 @@ final class NotchViewModel: ObservableObject {
         case .done, .nudge, .moment:
             guard noticeHolds else { return }
             if inside { noticeClock.hold() } else { noticeClock.resume() }
+            // A toast on the strip holds its own time too, so the two run out together.
+            if toastOnStrip { ToastCenter.shared.setPaused(inside) }
             return
         default:
             break
@@ -930,12 +957,26 @@ final class NotchViewModel: ObservableObject {
         guard openOnHover, inside, state.isResting, !holdsHoverOpen else { return }
         // If an agent is running, hover opens a little faster. Long enough that passing the notch on the way to the menu
         // bar does not open it; any longer and every open felt slow before it had even started.
+        scheduleHoverOpen()
+    }
+
+    /// Waits for the pointer to rest on the notch, then opens the panel.
+    private func scheduleHoverOpen() {
+        hoverTask?.cancel()
         let working = agentsActive
         hoverTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: working ? 140_000_000 : 260_000_000)
             guard !Task.isCancelled, let self else { return }
+            self.hoverTask = nil
             if self.pointerInside, self.state.isResting { self.show(.panel(self.homeTab()), inNotch: true) }
         }
+    }
+
+    /// The pointer moved while it is on the notch: a pending hover-open starts its wait again, so sweeping across the
+    /// top edge opens nothing and only a pointer at rest does.
+    func pointerMovedInside() {
+        guard hoverTask != nil, openOnHover, pointerInside, state.isResting, !holdsHoverOpen else { return }
+        scheduleHoverOpen()
     }
 
     /// Clicking the notch opens the panel immediately, without hover delay.
@@ -1119,17 +1160,25 @@ final class NotchViewModel: ObservableObject {
         let start = resizeStart ?? (extra: card ? cardExtra : panelExtra,
                                     mouse: NSPoint(x: mouse.x - gesture.width, y: mouse.y + gesture.height))
         resizeStart = start
-        // Screen points with y down, as `NotchResize` takes them.
-        let translation = CGSize(width: mouse.x - start.mouse.x, height: start.mouse.y - mouse.y)
-        let extra = NotchResize.clamped(NotchResize.dragged(edge, from: start.extra, translation: translation),
-                                        base: base, maximum: panelMaximum)
-        if card { cardExtra = extra } else { panelExtra = extra }
-        // Follows the pointer: no animation. Held against a limit, the size stays put and the notch need not redraw.
-        let fitted = layoutSize(for: state)
-        if fitted != size { size = fitted }
+        // At most once per frame of the screen, as the drag lines in the panel (`PanelDrag`): the pointer is read when the
+        // step runs, so the newest position is the one that counts.
+        PanelDrag.frame { [weak self] in
+            guard let self, self.resizing else { return }
+            // Screen points with y down, as `NotchResize` takes them.
+            let mouse = NSEvent.mouseLocation
+            let translation = CGSize(width: mouse.x - start.mouse.x, height: start.mouse.y - mouse.y)
+            let extra = NotchResize.clamped(NotchResize.dragged(edge, from: start.extra, translation: translation),
+                                            base: base, maximum: self.panelMaximum)
+            if card { self.cardExtra = extra } else { self.panelExtra = extra }
+            // Follows the pointer: no animation. Held against a limit, the size stays put and the notch need not redraw.
+            let fitted = self.layoutSize(for: self.state)
+            if fitted != self.size { self.size = fitted }
+        }
     }
 
     func endResize() {
+        // The last step still waiting counts before the size is saved.
+        PanelDrag.flushFrame()
         resizing = false
         resizeStart = nil
         NotchResize.save(panelExtra)

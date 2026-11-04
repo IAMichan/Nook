@@ -121,7 +121,7 @@ struct NookOrb: View {
                     .offset(x: size * 0.3, y: -size * 0.18)
             }
         }
-        .animation(.easeInOut(duration: 0.3), value: mood)
+        .animation(NookTheme.reveal, value: mood)
     }
 
     /// Ball lighting: shade towards the edge, a little light bouncing back from below, and the highlight.
@@ -192,7 +192,7 @@ struct NookOrb: View {
             .scaleEffect(x: 1 - 0.28 * turn, y: e.squash)
             .rotationEffect(.degrees(e.rotation))
             .offset(x: e.dx, y: e.dy)
-            .animation(.spring(response: 0.35, dampingFraction: 0.7), value: mood)
+            .animation(NookTheme.swap, value: mood)
     }
 
     private var cheek: some View {

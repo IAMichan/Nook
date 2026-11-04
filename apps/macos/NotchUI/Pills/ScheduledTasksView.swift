@@ -25,12 +25,9 @@ struct ScheduledTasksView: View {
             if !settings.scheduledTasksEnabled { banner(tr("sched.disabledGlobal"), color: NookTheme.amber) }
             if case .failed(let message) = listener.state { banner(tr("sched.webhook.failed", message), color: NookTheme.coralSoft) }
             if store.tasks.isEmpty {
-                Spacer(minLength: 0)
-                Text(tr("sched.empty"))
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .frame(maxWidth: .infinity)
-                Spacer(minLength: 0)
+                // No task yet: the panel says so and offers the first one, as the empty Agents and Nook lists do.
+                WSEmptyState(symbol: "calendar.badge.clock", title: tr("sched.empty"), message: tr("sched.empty.detail"),
+                             action: (tr("sched.new"), { editing = EditorTarget(existing: nil) }))
             } else {
                 ScrollView {
                     LazyVStack(spacing: NookTheme.Spacing.md) {
@@ -42,8 +39,17 @@ struct ScheduledTasksView: View {
                                     runNow: { run(task) },
                                     edit: { editing = EditorTarget(existing: task) },
                                     delete: { deleting = task })
+                                .contextMenu {
+                                    Button(tr("sched.runNow")) { run(task) }
+                                        .disabled(!settings.scheduledTasksEnabled || store.isRunning(task.id))
+                                    Button(tr("sched.edit")) { editing = EditorTarget(existing: task) }
+                                    Divider()
+                                    Button(tr("sched.delete"), role: .destructive) { deleting = task }
+                                }
                         }
                     }
+                    // A task added or removed glides into place instead of the list jumping.
+                    .animation(NookTheme.reveal, value: store.tasks.map(\.id))
                 }
             }
         }
@@ -265,7 +271,7 @@ private struct ScheduledTaskEditor: View {
     @State private var time: Date
     @State private var weekdays: Set<Int>
     @State private var permission: PermissionPolicy
-    @State private var secretCopied = false
+    @StateObject private var secretCopied = CopiedMoment()
 
     init(existing: ScheduledTask?, onDone: @escaping () -> Void) {
         self.existing = existing
@@ -455,11 +461,11 @@ private struct ScheduledTaskEditor: View {
                     Text(tr("sched.webhook.noPort")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
                 }
                 HStack(spacing: NookTheme.Spacing.md) {
-                    SmallGhostButton(title: secretCopied ? tr("sched.webhook.copied") : tr("sched.webhook.copySecret")) {
-                        if let secret = store.webhookSecret(for: existing.id, create: true) { Pasteboard.copy(secret); secretCopied = true }
+                    SmallGhostButton(title: secretCopied.copied ? tr("sched.webhook.copied") : tr("sched.webhook.copySecret")) {
+                        if let secret = store.webhookSecret(for: existing.id, create: true) { secretCopied.copy(secret) }
                     }
                     SmallGhostButton(title: tr("sched.webhook.rotate")) {
-                        if let secret = store.rotateWebhookSecret(existing.id) { Pasteboard.copy(secret); secretCopied = true }
+                        if let secret = store.rotateWebhookSecret(existing.id) { secretCopied.copy(secret) }
                     }
                 }
             } else {
