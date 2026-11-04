@@ -10,6 +10,10 @@ struct RenderedPageRow: View, Equatable {
     /// The page, read from its file off the main thread; `missing` once that found nothing.
     @State private var html: String?
     @State private var missing = false
+    /// The page's scripts run only while its row is on screen and Nook is not saving energy; otherwise the web view goes,
+    /// so a page that animates or loops costs nothing out of sight.
+    @State private var onScreen = false
+    @State private var energyPaused = false
 
     static func == (lhs: RenderedPageRow, rhs: RenderedPageRow) -> Bool { lhs.event == rhs.event }
 
@@ -20,7 +24,7 @@ struct RenderedPageRow: View, Equatable {
             }
             .help(tr("ws.page.help"))
             if !hidden, !missing || html != nil {
-                if let html {
+                if let html, onScreen, !energyPaused {
                     SandboxedPageView(html: html)
                         .frame(maxWidth: .infinity)
                         .frame(height: RenderedPage.height(of: event))
@@ -41,6 +45,9 @@ struct RenderedPageRow: View, Equatable {
         }
         .padding(.vertical, NookTheme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { onScreen = true }
+        .onDisappear { onScreen = false }
+        .onReceive(EnergyMonitor.shared.$plan.map { $0.pace == .paused }.removeDuplicates()) { energyPaused = $0 }
         .task(id: event.detail) {
             let path = event.detail
             let base = NookPaths.supportDirectory

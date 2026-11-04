@@ -691,7 +691,7 @@ struct NewSessionComposer: View {
             config.provider = provider
             config.model = settings.sessionDefaults(for: config.projectPath).model(for: provider)
             config.effort = settings.effort(for: provider)
-            if !provider.capabilities.policies.contains(config.permission) { config.permission = settings.permission(for: provider) }
+            config.permission = config.permission.steppedDown(within: provider.capabilities.policies)
         }
         config.profileID = account
     }

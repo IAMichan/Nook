@@ -32,6 +32,9 @@ final class CompanionServer: ObservableObject {
     private let queue = DispatchQueue(label: "nook.companion.server")
     /// Connections a phone subscribed on, at most one per phone.
     private var streams: [CompanionPeer] = []
+    /// Phones being removed: told so, and refused from that moment on, while their key lives on just long enough to seal
+    /// the message that tells them.
+    private var revoking: Set<String> = []
     private var watch: AnyCancellable?
     private var streamTimer: Timer?
     /// A pass of `pushTimelines` runs, and another one was asked for meanwhile.
@@ -228,7 +231,7 @@ final class CompanionServer: ObservableObject {
     private func respond(to frame: Data, peer: CompanionPeer) async {
         let connection = peer.transport
         let store = CompanionStore.shared
-        guard let claimed = CompanionSeal.claimedDevice(frame) else { connection.cancel(); return }
+        guard let claimed = CompanionSeal.claimedDevice(frame), !revoking.contains(claimed) else { connection.cancel(); return }
         // The key of a paired device, or the key of the open pairing window (which proves itself by opening the message).
         var key = CompanionStore.key(for: claimed)
         var pairing = false
@@ -336,6 +339,7 @@ final class CompanionServer: ObservableObject {
     /// with the key, and redacted by its scopes). True when a live connection was told.
     @discardableResult
     func revoke(_ deviceID: String) -> Bool {
+        revoking.insert(deviceID)
         var told = false
         for peer in streams where peer.deviceID == deviceID {
             guard let key = peer.key, let id = peer.streamID else { continue }
@@ -347,6 +351,11 @@ final class CompanionServer: ObservableObject {
         }
         if told { CompanionDiagnosticsLog.mac.record("revoked", ["device": deviceID]) }
         return told
+    }
+
+    /// The phone is gone (its key removed): a new pairing of the same key would start clean.
+    func forgetRevoked(_ deviceID: String) {
+        revoking.remove(deviceID)
     }
 
     /// Keeps the connection open for this phone and answers like `list`; from now on the sessions follow by themselves.

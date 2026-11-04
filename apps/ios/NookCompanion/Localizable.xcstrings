@@ -8142,6 +8142,34 @@
         }
       }
     },
+    "What waited too long for your Mac was not sent." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was zu lange auf deinen Mac gewartet hat, wurde nicht gesendet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo que esperó demasiado a tu Mac no se envió."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce qui attendait votre Mac depuis trop longtemps n’a pas été envoyé."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wat te lang op je Mac wachtte, is niet verstuurd."
+          }
+        }
+      }
+    },
     "What’s on my calendar today?" : {
       "extractionState" : "stale",
       "localizations" : {

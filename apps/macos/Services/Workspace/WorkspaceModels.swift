@@ -169,6 +169,13 @@ enum PermissionPolicy: String, Codable, CaseIterable, Identifiable, Sendable {
     /// most "Allow edits". "Auto" does not count: its reviewer is the agent's own model, and what it approves nobody sees
     /// until afterwards.
     var isUnattendedSafe: Bool { rank <= PermissionPolicy.acceptEdits.rank }
+
+    /// This policy where an agent does not offer it: the most it offers that does not let the agent do more, so a move
+    /// to another agent never widens what a session may do (and never falls back on a global "Allow everything").
+    func steppedDown(within offered: [PermissionPolicy]) -> PermissionPolicy {
+        if offered.contains(self) { return self }
+        return offered.filter { $0.rank <= rank }.max { $0.rank < $1.rank } ?? .ask
+    }
 }
 
 /// Work directly in the project folder, or in a separate Git worktree with its own branch.

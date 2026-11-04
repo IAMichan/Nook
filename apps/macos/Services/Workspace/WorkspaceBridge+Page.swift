@@ -15,6 +15,10 @@ extension WorkspaceBridge {
         }
         let pageID = UUID()
         let file = RenderedPage.file(in: NookPaths.supportDirectory, run: runID, page: pageID)
+        let kept = (try? FileManager.default.contentsOfDirectory(atPath: file.deletingLastPathComponent().path))?.count ?? 0
+        guard kept < RenderedPage.maxPagesPerRun else {
+            return .error("This session already shows \(RenderedPage.maxPagesPerRun) pages, the most one session keeps. Say it in words, or update the idea in a new session.")
+        }
         do {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true,
                                                     attributes: [.posixPermissions: 0o700])

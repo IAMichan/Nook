@@ -182,6 +182,24 @@ final class CompanionResilienceTests: XCTestCase {
         }
     }
 
+    func testOutboxDropsANewSessionSoonerThanAMessage() {
+        var outbox = CompanionOutbox()
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertTrue(outbox.enqueue(CompanionRequest(id: "m", op: .send, session: "s", text: "hi"), now: start))
+        XCTAssertTrue(outbox.enqueue(CompanionRequest(id: "n", op: .start, text: "task"), now: start))
+        let expired = outbox.expire(now: start.addingTimeInterval(2 * 3600))
+        XCTAssertEqual(expired.map(\.id), ["n"])
+        XCTAssertEqual(outbox.entries.map(\.id), ["m"])
+    }
+
+    func testAFailedNewSessionLeavesTheOutboxButABusySessionKeepsWaiting() {
+        XCTAssertTrue(CompanionOutbox.waitsAfter(.failed, op: .send))
+        XCTAssertFalse(CompanionOutbox.waitsAfter(.failed, op: .start))
+        XCTAssertFalse(CompanionOutbox.waitsAfter(.failed, op: .ask))
+        XCTAssertTrue(CompanionOutbox.waitsAfter(.busy, op: .start))
+        XCTAssertFalse(CompanionOutbox.waitsAfter(.notAllowedFromPhone, op: .send))
+    }
+
     func testOutboxSortsWhatWaitsByWhereItGoes() {
         var outbox = CompanionOutbox()
         let now = Date()

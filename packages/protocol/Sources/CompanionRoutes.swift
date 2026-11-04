@@ -260,6 +260,23 @@ struct CompanionOutbox: Codable, Equatable, Sendable {
     static let maxEntries = 50
     /// A message that could not go out within a day is dropped rather than sent into a conversation that moved on.
     static let maxAge: TimeInterval = 24 * 3600
+    /// A new session, a question to Nook or a message to a chat waits at most an hour: started or sent much later it
+    /// would surprise you more than it helps.
+    static let shortAge: TimeInterval = 3600
+
+    /// How long a request of this kind may wait.
+    static func maxAge(for op: CompanionOp) -> TimeInterval { op == .send ? maxAge : shortAge }
+
+    /// Whether a refusal means "try again later" (the entry keeps waiting, and holds the ones behind it). A failure is
+    /// passing for a message to a session (it is still busy), but final for a new session, a question or a chat message
+    /// (a folder another session works in, no brain): those leave the outbox with why, so they cannot block the rest.
+    static func waitsAfter(_ error: CompanionError, op: CompanionOp) -> Bool {
+        switch error {
+        case .replay, .stale, .rateLimited, .busy: return true
+        case .failed: return op == .send
+        default: return false
+        }
+    }
 
     /// What you wrote waits: a message, a new session, a question to Nook, a message to a chat (each one the Mac keeps a
     /// receipt of, `CommandReceipts.keeps`). An approval, an answer or a stop means something only now, and goes at once.
@@ -284,9 +301,8 @@ struct CompanionOutbox: Codable, Equatable, Sendable {
     /// Drops what is too old and returns it.
     @discardableResult
     mutating func expire(now: Date) -> [Entry] {
-        let limit = now.timeIntervalSince1970 - Self.maxAge
-        let old = entries.filter { $0.queued < limit }
-        entries.removeAll { $0.queued < limit }
+        let old = entries.filter { $0.queued < now.timeIntervalSince1970 - Self.maxAge(for: $0.request.op) }
+        entries.removeAll { entry in old.contains { $0.id == entry.id } }
         return old
     }
 

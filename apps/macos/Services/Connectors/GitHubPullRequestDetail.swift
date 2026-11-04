@@ -210,6 +210,9 @@ enum GitHubPullRequestDetail {
         async let commitList = (try? await get("/pulls/\(number)/commits?per_page=100")) as? [[String: Any]]
         async let me = (try? await ConnectorHTTP.json(URL(string: "https://api.github.com/user")!, headers: headers(token))) as? [String: Any]
         guard let pull = (try? await get("/pulls/\(number)")) as? [String: Any] else { return nil }
+        // Only every commit tells every co-author: past the one page read here, GitHub's own message stands.
+        let commitCount = (await commitList)?.count ?? 0
+        guard commitCount < 100, (pull["commits"] as? Int).map({ $0 <= commitCount }) ?? true else { return nil }
         let head = pull["head"] as? [String: Any] ?? [:]
         let headRepo = (head["repo"] as? [String: Any])?["full_name"] as? String
         let headLabel = headRepo.map { ($0.split(separator: "/").first.map(String.init) ?? $0) + "/" + ((head["ref"] as? String) ?? "") }

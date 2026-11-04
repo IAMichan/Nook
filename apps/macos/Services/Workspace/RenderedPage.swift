@@ -13,6 +13,8 @@ enum RenderedPage {
     static let defaultHeight = 360.0
     static let minHeight = 80.0
     static let maxHeight = 1200.0
+    /// How many pages one session keeps: enough for a few rounds of a chart, never an endless stream of files.
+    static let maxPagesPerRun = 24
 
     struct Request: Equatable, Sendable {
         var html: String
@@ -50,8 +52,8 @@ enum RenderedPage {
 
     static func height(of event: RunEvent) -> Double { clamp(event.output.flatMap(Double.init)) }
 
-    /// A page file of this session's own folder under `base`, never a path elsewhere: an event read back from disk is not
-    /// trusted to point anywhere else.
+    /// A page file in the folder Nook keeps pages in under `base`, never a path elsewhere: an event read back from disk is
+    /// not trusted to point anywhere else.
     static func isOwnFile(_ path: String, base: URL) -> Bool {
         let folder = base.appendingPathComponent("pages", isDirectory: true).standardizedFileURL.path + "/"
         let file = URL(fileURLWithPath: path).standardizedFileURL.path
