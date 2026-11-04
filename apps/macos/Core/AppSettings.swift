@@ -291,6 +291,12 @@ final class AppSettings: ObservableObject {
         get { UserDefaults.standard.object(forKey: "floatOffsetY") as? Double ?? 8 }
         set { UserDefaults.standard.set(newValue, forKey: "floatOffsetY") }
     }
+    /// Whether Nook shows in the notch at all. Off: he stays out of sight until you open him yourself (a shortcut, the
+    /// menu bar or the main window), with no cards, suggestions or track announcements of his own; only a question that
+    /// waits on your answer still comes up.
+    @Published var showNotch: Bool {
+        didSet { UserDefaults.standard.set(showNotch, forKey: "showNotch") }
+    }
     /// Notch placement: show the notch on every connected screen, not just the chosen one.
     @Published var notchOnAllScreens: Bool {
         didSet { UserDefaults.standard.set(notchOnAllScreens, forKey: "notchOnAllScreens") }
@@ -661,6 +667,7 @@ final class AppSettings: ObservableObject {
         showInScreenshots = defaults.bool(forKey: "showInScreenshots")
         panelLarge = defaults.bool(forKey: "panelLarge")
         notchOnAllScreens = defaults.bool(forKey: "notchOnAllScreens")
+        showNotch = defaults.object(forKey: "showNotch") as? Bool ?? true
         sounds = defaults.object(forKey: "sounds") as? Bool ?? true
         // Before these rules: agent notices had their own size and place, and WhatsApp its own switch.
         noticeRules = defaults.data(forKey: Self.noticeRulesKey).flatMap { try? JSONDecoder().decode(NoticeRules.self, from: $0) }

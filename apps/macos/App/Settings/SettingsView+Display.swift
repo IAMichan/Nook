@@ -38,6 +38,7 @@ extension SettingsView {
         Group {
             // The notch and the main window: everywhere Nook shows, in one group.
             Section(tr("settings.general.where")) {
+                SettingToggle(tr("settings.notch.show"), detail: tr("settings.notch.showDetail"), isOn: $settings.showNotch)
                 Picker(tr("settings.notch.placement"), selection: $settings.placement) {
                     Text(tr("settings.notch.placementNotch")).tag("notch")
                     Text(tr("settings.notch.placementFloating")).tag("floating")
