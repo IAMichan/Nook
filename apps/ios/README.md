@@ -11,7 +11,7 @@ xcodegen
 open NookCompanion.xcodeproj
 ```
 
-Select an iPhone simulator (or configure your own Apple Developer Team in Xcode for a physical device) and press `⌘R`. `NookCompanion.xcodeproj`, `Info.plist`, and the `.entitlements` file are generated from [`project.yml`](project.yml) and are ignored by Git.
+Select an iPhone simulator (or, for a physical device, put your Apple Developer Team in `Config/Signing.local.xcconfig`: `DEVELOPMENT_TEAM = YOURTEAMID`, see `Config/Signing.xcconfig`) and press `⌘R`. `NookCompanion.xcodeproj`, `Info.plist`, and the `.entitlements` file are generated from [`project.yml`](project.yml) and are ignored by Git.
 
 ## Structure
 

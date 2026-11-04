@@ -1,0 +1,11 @@
+// Code signing for local builds of the iPhone companion.
+//
+// DEVELOPMENT_TEAM stays empty in git. Xcodegen rewrites the project, which wipes a team picked in Xcode, so put yours
+// in Signing.local.xcconfig (not in git) next to this file:
+//
+//   DEVELOPMENT_TEAM = YOURTEAMID
+//
+// It applies to all three targets (NookCompanion, NookNotifications, NookActivity).
+DEVELOPMENT_TEAM =
+
+#include? "Signing.local.xcconfig"
