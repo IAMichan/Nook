@@ -32,6 +32,8 @@ enum Theme {
     static let rowPressed = Color(hex: 0x181818)
 
     static let text = Color(hex: 0xF5F5F5)
+    /// The Mac's name for `text`, for the shared components.
+    static let paper = text
     /// Running text a little softer than `text` (the agent's and Nook's answers).
     static let textStrong = Color(hex: 0xDADADA)
     static let textSecondary = Color(hex: 0xA8A8A8)
@@ -227,6 +229,10 @@ enum Theme {
         UISegmentedControl.appearance().selectedSegmentTintColor = UIColor(raised)
     }
 }
+
+/// The components shared with the Mac (apps/macos/NotchUI/Shared) take their colors, type and spacing from
+/// `NookTheme`; on the phone that is this theme.
+typealias NookTheme = Theme
 
 extension Color {
     init(hex: UInt32) {

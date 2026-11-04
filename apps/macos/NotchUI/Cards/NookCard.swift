@@ -142,8 +142,10 @@ extension ChatBubble {
     }
 }
 
-/// How far your own message got, as WhatsApp shows it.
-enum BubbleTicks: Equatable {
+/// How far your own message got, as WhatsApp shows it: the shared `MessageTicks` (NotchUI/Shared), also on the iPhone.
+typealias BubbleTicks = MessageTicks
+
+extension MessageTicks {
     init(_ receipt: ChatReceipt) {
         switch receipt {
         case .failed: self = .failed
@@ -153,17 +155,6 @@ enum BubbleTicks: Equatable {
         case .read: self = .read
         }
     }
-
-    /// Still on its way to the server: a clock.
-    case pending
-    /// On the server: one grey tick.
-    case sent
-    /// On their phone: two grey ticks.
-    case delivered
-    /// Read: two blue ticks.
-    case read
-    /// It could not be sent.
-    case failed
 }
 
 enum BubbleMedia: Equatable {
