@@ -244,8 +244,9 @@ struct RouteCooldowns: Equatable, Sendable {
     }
 }
 
-/// Messages written while the Mac could not be reached. They keep their request id: the Mac answers a repeat of an id
-/// it already handled with the answer it gave (`CommandReceipts`), so a message whose answer was lost is never sent twice.
+/// What you wrote while the Mac could not be reached: a message to a session, a new session, a question to Nook and a
+/// message to a chat. They keep their request id: the Mac answers a repeat of an id it already handled with the answer it
+/// gave (`CommandReceipts`), so one whose answer was lost is never carried out twice.
 struct CompanionOutbox: Codable, Equatable, Sendable {
     struct Entry: Codable, Equatable, Identifiable, Sendable {
         var request: CompanionRequest
@@ -260,8 +261,14 @@ struct CompanionOutbox: Codable, Equatable, Sendable {
     /// A message that could not go out within a day is dropped rather than sent into a conversation that moved on.
     static let maxAge: TimeInterval = 24 * 3600
 
-    /// Only a message to a session waits: an approval, an answer or a stop means something only now.
-    static func queues(_ op: CompanionOp) -> Bool { op == .send }
+    /// What you wrote waits: a message, a new session, a question to Nook, a message to a chat (each one the Mac keeps a
+    /// receipt of, `CommandReceipts.keeps`). An approval, an answer or a stop means something only now, and goes at once.
+    static func queues(_ op: CompanionOp) -> Bool {
+        switch op {
+        case .send, .start, .ask, .inboxSend: return true
+        default: return false
+        }
+    }
 
     /// False when it cannot wait (another kind of request, or the outbox is full).
     @discardableResult
@@ -283,7 +290,18 @@ struct CompanionOutbox: Codable, Equatable, Sendable {
         return old
     }
 
-    func waiting(for session: String) -> [Entry] { entries.filter { $0.request.session == session } }
+    func waiting(for session: String) -> [Entry] { entries.filter { $0.request.op == .send && $0.request.session == session } }
+
+    /// New sessions that wait for the Mac.
+    var starts: [Entry] { entries.filter { $0.request.op == .start } }
+
+    /// Questions to Nook that wait: in `conversation`, or (nil) the ones that start a new chat.
+    func questions(in conversation: String?) -> [Entry] {
+        entries.filter { $0.request.op == .ask && $0.request.conversation == conversation }
+    }
+
+    /// Messages to a chat of the Chats tab that wait.
+    func chatMessages(to chat: String) -> [Entry] { entries.filter { $0.request.op == .inboxSend && $0.request.item == chat } }
 
     /// The request to send now: the same id, with the current time (the Mac refuses requests older than a minute).
     static func resend(_ entry: Entry, now: Date) -> CompanionRequest {

@@ -256,11 +256,11 @@ final class CompanionServer: ObservableObject {
             switch receipts[claimed, default: CommandReceipts()].begin(request.id, now: Date()) {
             case .answered(let earlier):
                 let refusal = guards[claimed, default: RequestGuard()].admitRetry(request, now: Date())
-                send(refusal.map { CompanionResponse.failure(request.id, $0) } ?? earlier, key: key, deviceID: claimed, on: connection)
+                send(refusal.map { Self.refusal(request.id, $0) } ?? earlier, key: key, deviceID: claimed, on: connection)
                 return
             case .running:
                 if let refusal = guards[claimed, default: RequestGuard()].admitRetry(request, now: Date()) {
-                    send(.failure(request.id, refusal), key: key, deviceID: claimed, on: connection)
+                    send(Self.refusal(request.id, refusal), key: key, deviceID: claimed, on: connection)
                     return
                 }
                 let slot = claimed + "|" + request.id
@@ -278,9 +278,12 @@ final class CompanionServer: ObservableObject {
             if keeps { receipts[claimed]?.cancel(request.id) }
             CompanionDiagnosticsLog.mac.record("refused", ["op": request.op.rawValue, "error": refusal.rawValue, "device": claimed,
                                                            "skew": String(Int(Date().timeIntervalSince1970 - request.sent))])
-            send(.failure(request.id, refusal), key: key, deviceID: claimed, on: connection)
+            send(Self.refusal(request.id, refusal), key: key, deviceID: claimed, on: connection)
             return
         }
+        // Whether the app is in front on the phone (`CompanionFeature.foreground`): a phone in front gets no pushes for
+        // what its live connection already shows.
+        if let foreground = request.foreground, request.op == .subscribe || request.op == .ping { peer.foreground = foreground }
 
         if pairing {
             guard request.op == .hello, store.completePairing(name: request.text ?? "") != nil else {
@@ -311,7 +314,40 @@ final class CompanionServer: ObservableObject {
         send(response, key: key, deviceID: claimed, on: connection)
     }
 
+    /// A refusal; a `stale` one says the Mac's time, so the phone can correct for its clock (`CompanionFeature.clock`).
+    private static func refusal(_ id: String, _ error: CompanionError, now: Date = Date()) -> CompanionResponse {
+        var response = CompanionResponse.failure(id, error)
+        if error == .stale { response.macTime = now.timeIntervalSince1970 }
+        return response
+    }
+
     // MARK: Live connections
+
+    /// Whether a push to this phone can be left out: it is connected live and in front, so it already shows what the push
+    /// would say (`ForegroundPolicy`).
+    func phoneInFront(_ deviceID: String, now: Date = Date()) -> Bool {
+        streams.contains { peer in
+            peer.deviceID == deviceID && ForegroundPolicy.skipsPush(live: true, foreground: peer.foreground, lastHeard: peer.lastHeard, now: now)
+        }
+    }
+
+    /// The Mac removes this phone: tells it over its live connections (`CompanionFeature.revoke`), so it says "pair again"
+    /// instead of looking for the Mac forever. Must run before the phone's key and device are gone (the answer is sealed
+    /// with the key, and redacted by its scopes). True when a live connection was told.
+    @discardableResult
+    func revoke(_ deviceID: String) -> Bool {
+        var told = false
+        for peer in streams where peer.deviceID == deviceID {
+            guard let key = peer.key, let id = peer.streamID else { continue }
+            peer.seq += 1
+            var response = CompanionResponse(id: id, ok: false, error: .notAllowedFromPhone, seq: peer.seq)
+            response.revoked = true
+            send(response, key: key, deviceID: deviceID, on: peer.transport)
+            told = true
+        }
+        if told { CompanionDiagnosticsLog.mac.record("revoked", ["device": deviceID]) }
+        return told
+    }
 
     /// Keeps the connection open for this phone and answers like `list`; from now on the sessions follow by themselves.
     private func subscribe(_ peer: CompanionPeer, request: CompanionRequest, deviceID: String, key: Data) {
@@ -379,6 +415,12 @@ final class CompanionServer: ObservableObject {
         if let peer {
             peer.watch = session
             peer.sentTimeline = entries
+        }
+        // The phone still has the conversation up to `item` (from its cache): only what came after goes
+        // (`CompanionFeature.resume`).
+        if let resumed = TimelineDelta.resume(entries, from: request.item) {
+            return CompanionResponse(id: request.id, ok: true, timeline: resumed.entries, timelineSession: session,
+                                     timelineAfter: resumed.after)
         }
         return CompanionResponse(id: request.id, ok: true, timeline: entries, timelineSession: session)
     }
@@ -674,6 +716,8 @@ final class CompanionPeer {
     /// The session the phone has open (`watch`), and its conversation as the phone has it now.
     var watch: String?
     var sentTimeline: [TimelineEntry] = []
+    /// The app is in front on the phone, as it last said with `subscribe` or `ping`; nil when it never said.
+    var foreground: Bool?
 
     init(_ transport: CompanionTransport, counted: Bool) {
         self.transport = transport
