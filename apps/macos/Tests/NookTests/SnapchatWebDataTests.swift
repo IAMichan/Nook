@@ -106,4 +106,30 @@ final class SnapchatWebDataTests: XCTestCase {
         XCTAssertEqual(trip.messages[1].text, "Snap")
         XCTAssertEqual(trip.unread, 0)
     }
+
+    /// A picture in the open chat keeps where the page has it, to save it while the chat is open; that address is no
+    /// part of the message (the website gives it a new one each load), so a new read still finds the messages it knew.
+    func testAPictureIsSavedAndShowsAsAPhoto() {
+        let answer: [String: Any] = ["status": "ok", "lines": [
+            ["sender": "ANNA", "text": "", "media": true, "src": "blob:https://www.snapchat.com/1"],
+            ["sender": "ANNA", "text": "hi", "src": "blob:https://www.snapchat.com/ignored"],
+        ]]
+        guard case .lines(let lines) = SnapchatWebData.readOutcome(answer) else { return XCTFail("no lines") }
+        XCTAssertEqual(lines[0].source, "blob:https://www.snapchat.com/1")
+        XCTAssertNil(lines[1].source, "only a picture has a source")
+        var reloaded = lines[0]
+        reloaded.source = "blob:https://www.snapchat.com/2"
+        XCTAssertEqual(reloaded, lines[0], "the same picture after the page loaded again")
+
+        let row = SnapchatWebData.Row(id: "c", name: "Anna", status: "New Chat", bold: false)
+        let kept = SnapchatWebData.align([], with: lines, chat: "c", now: now)
+        let saved = SnapchatWebData.chat(row, kept: kept, snapLabel: "Snap", pictures: [kept[0].id: "/tmp/photo.jpg"])
+        XCTAssertEqual(saved.messages[0].media, ChatMedia(kind: .photo, name: "photo.jpg", path: "/tmp/photo.jpg"))
+        XCTAssertEqual(saved.messages[0].text, "", "a saved picture shows as itself, not as the word for a snap")
+        XCTAssertEqual(SnapchatWebData.chat(row, kept: kept, snapLabel: "Snap").messages[0].text, "Snap", "not saved: the word")
+
+        XCTAssertEqual(SnapchatWebData.pictureData("data:image/jpeg;base64," + Data([1, 2, 3]).base64EncodedString()), Data([1, 2, 3]))
+        XCTAssertNil(SnapchatWebData.pictureData("data:text/html;base64,PGI+"), "only a picture")
+        XCTAssertNil(SnapchatWebData.pictureData("https://example.com/a.jpg"))
+    }
 }

@@ -183,15 +183,17 @@ enum MailChatData {
         return lines.joined(separator: "\n")
     }
 
-    /// One whole message, as the mail view shows it when you open it: its headers, its attachments by name, and its
-    /// whole text (the list only keeps the start). Lines "SUBJECT|||…", "FROM|||…", "DATE|||…", "MSGID|||…", one
-    /// "TO|||…", "CC|||…" and "ATT|||…" each, then "<<<BODY>>>" and the text.
-    static func messageScript(_ row: Row) -> String {
+    /// One whole message, as the mail view shows it when you open it: its headers, its attachments, and its whole text
+    /// (the list only keeps the start). Lines "SUBJECT|||…", "FROM|||…", "DATE|||…", "MSGID|||…", one "TO|||…", "CC|||…"
+    /// and "ATT|||name|||saved path" each, then "<<<BODY>>>" and the text. With `saveTo` (a folder on this Mac) each
+    /// attachment up to `ChatMedia.maxBytes` is saved there, so the mail view shows a photo as itself and opens a file
+    /// with a click; Mail keeps to its sandbox, so one it may not write there goes to its own temporary folder instead.
+    static func messageScript(_ row: Row, saveTo: String? = nil) -> String {
         """
         tell application "Mail"
         \(locate(row))
             set out to ""
-        \(messageOutput)
+        \(messageOutput(saveTo: saveTo))
         end tell
         """
     }
@@ -203,7 +205,7 @@ enum MailChatData {
     /// or it moved to another mailbox. Every mailbox of every account, first the newest and oldest `span` mail of each in
     /// one go (quick, and where a mail nearly always is), then a search through each mailbox. The same output as
     /// `messageScript`, or nothing when Mail no longer has the message.
-    static func findScript(_ id: Int, span: Int = findSpan) -> String {
+    static func findScript(_ id: Int, span: Int = findSpan, saveTo: String? = nil) -> String {
         """
         tell application "Mail"
             set m to missing value
@@ -255,14 +257,34 @@ enum MailChatData {
             end repeat
             if m is missing value then return ""
             set out to ""
-        \(messageOutput)
+        \(messageOutput(saveTo: saveTo))
         end tell
         """
     }
 
     /// Script lines that add message `m`, whole, to `out` and return it: "SUBJECT|||…", "FROM|||…", "DATE|||…",
-    /// "MSGID|||…", one "TO|||…", "CC|||…" and "ATT|||…" each, then "<<<BODY>>>" and the text.
-    private static let messageOutput = """
+    /// "MSGID|||…", one "TO|||…", "CC|||…" and "ATT|||name|||saved path" each (the path empty when it was not saved),
+    /// then "<<<BODY>>>" and the text.
+    private static func messageOutput(saveTo folder: String?) -> String {
+        let save = folder.map { folder in
+            """
+
+                            if (file size of a) < \(ChatMedia.maxBytes) then
+                                try
+                                    set target to \(MailStats.quote(folder + "/")) & k & "-" & (name of a)
+                                    save a in (POSIX file target)
+                                    set saved to target
+                                on error
+                                    try
+                                        set target to (POSIX path of (path to temporary items)) & "nook-" & (id of m) & "-" & k & "-" & (name of a)
+                                        save a in (POSIX file target)
+                                        set saved to target
+                                    end try
+                                end try
+                            end if
+            """
+        } ?? ""
+        return """
             set out to out & "SUBJECT|||" & (subject of m) & linefeed
             set out to out & "FROM|||" & (sender of m) & linefeed
             set out to out & "DATE|||" & ((date received of m) as «class isot» as string) & linefeed
@@ -284,12 +306,29 @@ enum MailChatData {
                 set out to out & "CC|||" & who & linefeed
             end repeat
             try
+                set k to 0
                 repeat with a in mail attachments of m
-                    set out to out & "ATT|||" & (name of a) & linefeed
+                    set k to k + 1
+                    set saved to ""
+                    try\(save)
+                    end try
+                    set out to out & "ATT|||" & (name of a) & "|||" & saved & linefeed
                 end repeat
             end try
             return out & "<<<BODY>>>" & linefeed & (content of m)
     """
+    }
+
+    /// Script lines (inside `tell application "Mail"`, outgoing message `m`) that attach these files on this Mac at the
+    /// end of its text, each handed over as an alias so Mail (sandboxed) may read it. A mail that goes at once waits a
+    /// moment first: Mail loads an attachment before it can send it. Empty without files.
+    static func attachLines(_ paths: [String], send: Bool) -> String {
+        guard !paths.isEmpty else { return "" }
+        let files = paths.map {
+            "\n        make new attachment with properties {file name:((POSIX file \(MailStats.quote($0))) as alias)} at after the last paragraph"
+        }.joined()
+        return "\n    tell content of m" + files + "\n    end tell" + (send ? "\n    delay 1" : "")
+    }
 
     /// A whole message, read from Mail when you open it in the mail view.
     struct Message: Equatable, Sendable {
@@ -301,6 +340,8 @@ enum MailChatData {
         /// The message's own id ("<abc@host>" without the brackets), to open it in Mail itself.
         var messageID: String = ""
         var attachments: [String] = []
+        /// Where each of `attachments` is on this Mac, in the same order; empty for one Mail did not save.
+        var files: [String] = []
         var body: String
 
         /// Mail's own link to the message: opens it in Mail.
@@ -330,7 +371,11 @@ enum MailChatData {
             case "MSGID": message.messageID = value.trimmingCharacters(in: CharacterSet(charactersIn: "<>"))
             case "TO" where !value.isEmpty: message.to.append(value)
             case "CC" where !value.isEmpty: message.cc.append(value)
-            case "ATT" where !value.isEmpty: message.attachments.append(value)
+            case "ATT":
+                let name = parts[1].trimmingCharacters(in: .whitespaces)
+                guard !name.isEmpty else { continue }
+                message.attachments.append(name)
+                message.files.append(parts.count > 2 ? parts[2...].joined(separator: "|||").trimmingCharacters(in: .whitespaces) : "")
             default: continue
             }
         }
