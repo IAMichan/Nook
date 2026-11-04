@@ -15,6 +15,8 @@ extension SettingsView {
                 ForEach(AgentConfigInstaller.Target.allCases) { target in
                     agentRow(target)
                 }
+                // Antigravity needs its release downloaded before Nook can run it: set up with the other agents.
+                LabeledContent("Antigravity") { AntigravitySetupRow(inSettings: true) }
             } header: {
                 Text(tr("settings.agents.linkAgents"))
             }

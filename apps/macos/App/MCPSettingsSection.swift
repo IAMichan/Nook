@@ -341,7 +341,7 @@ struct AddMCPServerWizardSheet: View {
                         SettingNote(tr("mcp.wizard.smartPasteHelp"))
                     }
                     .padding(NookTheme.Spacing.lg)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(Color(hex: 0x5ED6EE).opacity(0.1)))
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.iris.opacity(0.1)))
                 }
 
                 // A preset fills in its name and command: only its keys are left to you, the rest is folded away.

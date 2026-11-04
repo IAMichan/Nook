@@ -5,6 +5,7 @@ import Foundation
 
 let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "music.connect.rowDetail": "Afspeellijsten, zoeken en de wachtrij in de Muziek-tab",
         "settings.ws.modelsPerAgent": "Model per agent",
         "whatsapp.settings.muteStatus": "Statussen stil",
         "whatsapp.settings.muteStatusDetail": "Statusupdates van je contacten melden zich niet.",
@@ -153,6 +154,7 @@ let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
         "settings.tool.custom": "eigen mix"
     ],
     .en: [
+        "music.connect.rowDetail": "Playlists, search and the queue in the Music tab",
         "settings.ws.modelsPerAgent": "Model per agent",
         "whatsapp.settings.muteStatus": "Status updates stay quiet",
         "whatsapp.settings.muteStatusDetail": "Status updates from your contacts do not reach you.",
@@ -301,6 +303,7 @@ let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
         "settings.tool.custom": "own mix"
     ],
     .de: [
+        "music.connect.rowDetail": "Playlists, Suche und die Warteschlange im Musik-Tab",
         "settings.ws.modelsPerAgent": "Modell pro Agent",
         "whatsapp.settings.muteStatus": "Status stumm",
         "whatsapp.settings.muteStatusDetail": "Statusmeldungen deiner Kontakte melden sich nicht.",
@@ -449,6 +452,7 @@ let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
         "settings.tool.custom": "eigene Mischung"
     ],
     .fr: [
+        "music.connect.rowDetail": "Playlists, recherche et file d’attente dans l’onglet Musique",
         "settings.ws.modelsPerAgent": "Modèle par agent",
         "whatsapp.settings.muteStatus": "Statuts silencieux",
         "whatsapp.settings.muteStatusDetail": "Les statuts de vos contacts ne vous dérangent pas.",
@@ -597,6 +601,7 @@ let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
         "settings.tool.custom": "mélange personnel"
     ],
     .es: [
+        "music.connect.rowDetail": "Listas, búsqueda y la cola en la pestaña Música",
         "settings.ws.modelsPerAgent": "Modelo por agente",
         "whatsapp.settings.muteStatus": "Estados en silencio",
         "whatsapp.settings.muteStatusDetail": "Los estados de tus contactos no te avisan.",
