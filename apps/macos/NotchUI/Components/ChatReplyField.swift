@@ -878,23 +878,11 @@ private struct WritingDots: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let rate = energy.plan.progressFrameRate(attended: attended)
-        // In a graph of its own (`SeparateGraph`), so its frames do not update the conversation around it for as long as
-        // Nook writes.
-        SeparateGraph {
-            TimelineView(.nookFrames(fps: rate, paused: reduceMotion)) { context in
-                let t = context.date.timeIntervalSinceReferenceDate
-                HStack(spacing: NookTheme.Spacing.xs) {
-                    ForEach(0..<3) { index in
-                        let wave = reduceMotion ? 0 : (sin(t * 5 - Double(index) * 0.7) + 1) / 2
-                        Circle()
-                            .fill(NookTheme.iris.opacity(0.35 + 0.55 * wave))
-                            .frame(width: 6, height: 6)
-                            .offset(y: -2.5 * wave)
-                    }
-                }
-            }
-        }
+        // Run by Core Animation (`LayerLoop`): the main thread draws nothing per frame for as long as Nook writes.
+        // A wave that rises every 2π/5 s, each dot 0.14 s after the one before it.
+        LayerLoop(shape: .wave(count: 3, diameter: 6, spacing: NookTheme.Spacing.xs, rise: 2.5, low: 0.35, high: 0.9,
+                               period: 2 * Double.pi / 5, lag: 0.14),
+                  color: NookTheme.iris, fps: reduceMotion ? 0 : energy.plan.progressFrameRate(attended: attended))
         .frame(width: 3 * 6 + 2 * NookTheme.Spacing.xs, height: 10)
         .accessibilityHidden(true)
     }

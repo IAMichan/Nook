@@ -18,19 +18,14 @@ struct EqualizerBars: View {
     private static let totalWidth: CGFloat = CGFloat(AudioLevelMonitor.bandCount * 3 + (AudioLevelMonitor.bandCount - 1) * 3)
 
     var body: some View {
-        SeparateGraph {
-            TimelineView(.nookFrames(fps: energy.plan.frameRate(frameRate, attended: attended), paused: !isPlaying)) { _ in
-                let realBands = isPlaying ? AudioLevelMonitor.shared.snapshot() : []
-                HStack(alignment: .bottom, spacing: 3) {
-                    ForEach(0..<AudioLevelMonitor.bandCount, id: \.self) { i in
-                        Capsule()
-                            .fill(color)
-                            .frame(width: 3, height: 4 + (height - 4) * CGFloat(level(i, realBands: realBands)))
-                    }
-                }
-                .frame(width: Self.totalWidth, height: height, alignment: .bottom)
+        // Set straight on layers (`LayerLevelBars`), a few times a second: no SwiftUI update, and no layout of the notch or the
+        // window around it, per frame, for as long as music plays.
+        LayerLevelBars(count: AudioLevelMonitor.bandCount, barWidth: 3, spacing: 3, color: color,
+                  fps: isPlaying ? energy.plan.frameRate(frameRate, attended: attended) : 0) { [isPlaying, height] in
+            let realBands = isPlaying ? AudioLevelMonitor.shared.snapshot() : []
+            return (0..<AudioLevelMonitor.bandCount).map { i in
+                (4 + (height - 4) * CGFloat(Self.level(i, realBands: realBands, isPlaying: isPlaying))) / height
             }
-            .drawingGroup()
         }
         .frame(width: Self.totalWidth, height: height, alignment: .bottom)
         .animation(NookTheme.reveal, value: isPlaying)
@@ -41,7 +36,7 @@ struct EqualizerBars: View {
     }
 
     /// Height between 0 and 1: the measured level of this band. Silence (a gap between tracks) rests the bar.
-    private func level(_ i: Int, realBands: [Double]) -> Double {
+    private static func level(_ i: Int, realBands: [Double], isPlaying: Bool) -> Double {
         guard isPlaying, i < realBands.count else { return 0.12 }
         return max(0.12, min(1.0, realBands[i]))
     }
