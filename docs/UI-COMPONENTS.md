@@ -115,9 +115,10 @@ The checklist for a new or changed view:
   `coral` is an error, `violet` is merged.
 - Corners from `NookTheme.Radius`, spacing from `NookTheme.Spacing`, hover with `.hoverLift`, animation with
   `NookTheme.open` / `close` / `swap` / `hover` / `reveal` / `scroll`, and a looping animation (a pulse, a blinking
-  cursor) stops with Reduce Motion. Anything that loops for long (a pulse, a spinner, a shimmer, Nook himself) is a
-  `TimelineView(.nookFrames(fps:paused:))` at an `EnergyPlan` rate, never `repeatForever`: that runs at the display's
-  own rate and redraws the whole window on every frame.
+  cursor) stops with Reduce Motion. Anything that loops for long (a pulse, a halo, a spinner, a shimmer, dots) is a
+  `LayerLoop`, `ShimmerLayer`, or `LayerLevelBars` at an `EnergyPlan` rate: Core Animation draws it, and the main thread does
+  nothing per frame. Never `repeatForever`, which runs at the display's own rate and redraws the whole window on every
+  frame. Only what follows live input (Nook himself, voice levels) is a `TimelineView(.nookFrames(fps:paused:))`.
 - One layout: the notch, the main window, and a sheet show the same `PanelView`; Settings is the one place for
   configuration. A new task opens inside the panel, not in a new window with its own layout.
 - The buttons at the bottom of a notification are always a `NookNoticeActions` row, never loose buttons.
@@ -226,7 +227,8 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `OpenSessionActions` | `NotchUI/Pills/OpenSessionActions.swift` | What the keys and the command palette do to the open session (pin, settle, stop, rename, fork, snooze, copy, open in the editor); never repeat these per caller |
 | `.onEscapeKey(enabled:perform:)` | `EscapeKey.swift` | Escape that closes what is open (a chat in the Chats tab) also when nothing in the window has the keyboard, where `onExitCommand` hears nothing; a text field being typed in keeps its own Escape |
 | `.onWindowKeyDown(enabled:perform:)` | `EscapeKey.swift` | A palette's keys (Return, ↑/↓, Tab, ⌘1–9) taken in its window before the focused field sees them, so a list steers while its search field keeps the keyboard; keys an input method is composing stay the field's. Search everything uses it |
-| `NookFrames` (`.nookFrames(fps:paused:)`) | `NookFrames.swift` | The shared clock for looping animations: frames of different animations fall on one grid, so they cost one window update together |
+| `LayerLoop`, `ShimmerLayer`, `LayerLevelBars` | `LayerLoops.swift` | Looping animations run by Core Animation (pulse, halo, spinner, wave of dots, shimmer over text, live level bars): no main-thread work per frame |
+| `NookFrames` (`.nookFrames(fps:paused:)`) | `NookFrames.swift` | The shared clock for animations that follow live input (Nook's pose, voice levels): frames of different animations fall on one grid, so they cost one window update together |
 | `Bar`, `PulseDot`, `ShimmerText`, `PullRequestPill` | `AgentIndicators.swift` | Progress bar, live dot, shimmering current step, pull request state in a row |
 | `PullRequestIcon`, `PullRequestStateIcon`, `PullRequestReviewIcon`, `CheckOutcomeGlyph` | `PullRequestIcons.swift` | The one icon and color of every pull request status. `PullRequestIcon` names the symbol and tint of a state (open, draft, conflict, merged, closed, stack), a check outcome, a review (approved, changes requested, required, none, commented, dismissed), a merge blocker, and `generic` for pull requests in general (navigation, Create PR). `PullRequestStateIcon` draws a state's mark at `.inline` (12 pt: rows, pills, tabs, menus) or `.header` (16 pt); `PullRequestReviewIcon` and `CheckOutcomeGlyph` draw a review and a check. An event or action shows the mark of the state it leads to (Reopen and Ready open, Close closed, Merge merged). Colors: mint good to go, amber waits on you, coral broken (closed the softer coral), violet merged, grey nothing to do yet. Never name a pull request symbol or color by hand |
 | `NookSymbol` | `NookSymbol.swift` | A symbol by name: an SF Symbol, or Nook's own pull request mark (`nook.pr.<state>`, from `PullRequestIcon.symbol`). Views that take a symbol name (`DropdownRow`, palettes, side panel launchers, the timeline) draw it through this, so a pull request mark works there too; never `arrow.triangle.pull`, `arrow.triangle.merge` or a warning triangle for a pull request |

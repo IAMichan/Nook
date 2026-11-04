@@ -12,9 +12,11 @@
 #   2. Endless animations run on a `.nookFrames` timeline that pauses, never `.repeatForever`: that runs at the display's
 #      own rate (up to 120 frames a second) and redraws the whole window with it.
 #   3. A `TimelineView(.animation …)` passes `paused:`, so it stops when what it shows stops.
-#   4. A `.nookFrames` timeline runs in a `SeparateGraph` (one of the four lines above opens it): otherwise every frame
-#      updates the whole view graph it sits in, which for the open notch is the Agents list with its transcripts. One that
-#      cannot (its size comes from its content) says why on the line above: `// perf: <why>`.
+#   4. A loop that shows work under way (a pulse, a halo, a spinner, a shimmer, dots) is a `LayerLoop`, `ShimmerLayer` or
+#      `LayerLevelBars` (LayerLoops.swift): Core Animation draws it in the render server and the main thread does nothing per
+#      frame. A SwiftUI timeline draws every frame on the main thread, once for each running session in the list. A
+#      `.nookFrames` timeline that must stay one (it follows the pointer or live levels) says why on the line above:
+#      `// perf: <why>`.
 set -uo pipefail
 cd "$(dirname "$0")/../apps/macos"
 
@@ -56,15 +58,12 @@ report "endless animations run on a pausing .nookFrames timeline (no .repeatFore
 
 report "TimelineView(.animation) passes paused: so it stops when its content does" < <(grep -rnE 'TimelineView\(\.animation' NotchUI App --include='*.swift' | grep -v 'paused:')
 
-report "looping .nookFrames timelines run in a SeparateGraph (or a // perf: reason)" < <(sources | grep -E '^(NotchUI|App)/' | while read -r file; do
+report "looping animations are a LayerLoop; a .nookFrames timeline says why not (// perf: reason)" < <(sources | grep -E '^(NotchUI|App)/' | while read -r file; do
   awk -v file="$file" '
     /TimelineView\(\.nookFrames/ && $0 !~ /^[ \t]*\/\// {
-      ok = 0
-      for (i = 1; i <= 4; i++) if (back[(NR - i) % 5] ~ /SeparateGraph[ ]*\{/) ok = 1
-      if (back[(NR - 1) % 5] ~ /\/\/ perf:/) ok = 1
-      if (!ok) printf "%s:%d:%s\n", file, NR, $0
+      if (prev !~ /\/\/ perf:/) printf "%s:%d:%s\n", file, NR, $0
     }
-    { back[NR % 5] = $0 }
+    { prev = $0 }
   ' "$file"
 done)
 
