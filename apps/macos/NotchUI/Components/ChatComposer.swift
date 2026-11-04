@@ -1184,7 +1184,7 @@ private struct ChatGIFShelf: View {
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                SmallPrimaryButton(title: tr("chat.compose.gifs.addKey")) { app.openSettings(section: .connections) }
+                SmallPrimaryButton(title: tr("chat.compose.gifs.addKey")) { app.openSettings(section: .chats) }
             } else {
                 NookSearchField(prompt: tr("chat.compose.gifs.search"), text: $model.gifQuery, style: .inline, focus: $focused)
                 results

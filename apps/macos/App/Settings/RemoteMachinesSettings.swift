@@ -1,23 +1,31 @@
 import SwiftUI
 
-/// Settings › Agents › Workspace › Machines: the machines sessions can run on over SSH (see RemoteMachines). Nook uses
+/// Settings › Machines: the machines sessions can run on over SSH (see RemoteMachines). Nook uses
 /// your own `ssh`, so an alias from ~/.ssh/config works, and so does a key in your SSH agent or a key file per machine. A
 /// connection test shows at once whether a session would start, and which agents that machine has. A machine that only
 /// takes a password gets a field for it here (see RemotePasswordField), kept in memory until Nook quits, or in the
 /// Keychain when you chose that; Lock forgets it in both.
 struct RemoteMachinesSection: View {
     @State private var machines = RemoteMachines.load()
-    @State private var adding = false
+    /// The Add sheet, open: on a machine found on this Mac, or empty (`Adding.blank`).
+    @State private var adding: Adding?
+    /// Machines from ~/.ssh/config, ~/.ssh/known_hosts and your tailnet, offered while none is added yet.
+    @State private var found: [RemoteHostDiscovery.Suggestion] = []
+    @ObservedObject private var pageAction = SettingsPageAction.shared
+
+    private struct Adding: Identifiable {
+        let id = UUID()
+        var start: RemoteHostDiscovery.Suggestion?
+        static var blank: Adding { Adding(start: nil) }
+    }
     @State private var results: [String: (ok: Bool, text: String)] = [:]
     @State private var testing: Set<String> = []
     /// Machines whose last test was turned away for want of a password.
     @State private var askPassword: Set<String> = []
 
     var body: some View {
+        if machines.isEmpty { empty }
         Section {
-            if machines.isEmpty {
-                Text(tr("remote.empty")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
-            }
             ForEach(machines) { machine in
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     HStack(spacing: NookTheme.Spacing.md) {
@@ -78,15 +86,49 @@ struct RemoteMachinesSection: View {
                     }
                 }
             }
-            Button { adding = true } label: { Label(tr("remote.add"), systemImage: "plus") }
         } header: {
             SettingsSectionTitle(tr("remote.title"), info: tr("remote.footer"))
         }
-        .sheet(isPresented: $adding) {
-            AddMachineSheet { machine in
+        .sheet(item: $adding) { adding in
+            AddMachineSheet(start: adding.start) { machine in
                 RemoteMachines.upsert(machine)
                 machines = RemoteMachines.load()
                 test(machine)
+            }
+        }
+        // The header's "Add machine" button.
+        .onAppear { act(pageAction.requested) }
+        .onChange(of: pageAction.requested) { _, section in act(section) }
+        .task {
+            guard machines.isEmpty else { return }
+            let existing = machines
+            found = await Task.detached(priority: .userInitiated) { AddMachineSheet.discover(existing: existing) }.value
+        }
+    }
+
+    private func act(_ section: SettingsSection?) {
+        guard section == .machines else { return }
+        pageAction.requested = nil
+        adding = .blank
+    }
+
+    /// No machine yet: what one is for, and the ones Nook found on this Mac, each one click from the form filled in.
+    private var empty: some View {
+        Section {
+            IntroCard(title: tr("remote.empty.title"), text: tr("remote.empty.text"))
+            if !found.isEmpty {
+                Text(tr("remote.found"))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                ForEach(found.prefix(6)) { suggestion in
+                    LabeledContent {
+                        Button(tr("remote.addThis")) { adding = Adding(start: suggestion) }
+                            .controlSize(.small)
+                    } label: {
+                        SettingLabel(suggestion.name, detail: [suggestion.host, tr("remote.suggestion." + suggestion.source.rawValue)]
+                            .joined(separator: " · "))
+                    }
+                }
             }
         }
     }
@@ -122,13 +164,19 @@ struct RemoteMachinesSection: View {
     }
 }
 
+/// Adding a machine: the ones found on this Mac to pick with one click, then only its address (the name follows from it
+/// until you type one), with the port and key file folded away. Adding tests the connection at once.
 private struct AddMachineSheet: View {
     @Environment(\.dismiss) private var dismiss
+    /// A machine found on this Mac to start from.
+    var start: RemoteHostDiscovery.Suggestion?
     let add: (RemoteMachine) -> Void
     @State private var name = ""
     @State private var host = ""
     @State private var port = ""
     @State private var identityFile = ""
+    /// You typed a name yourself: the address no longer fills it in.
+    @State private var namedByHand = false
     /// Machines from ~/.ssh/config, ~/.ssh/known_hosts and your tailnet, to fill the form with one click.
     @State private var suggestions: [RemoteHostDiscovery.Suggestion] = []
 
@@ -145,28 +193,38 @@ private struct AddMachineSheet: View {
             Text(tr("remote.addTitle")).font(NookTheme.TextStyle.heading)
             Text(tr("remote.addSubtitle")).foregroundStyle(NookTheme.textSecondary)
             if !suggestions.isEmpty {
-                Menu {
-                    ForEach(suggestions) { suggestion in
-                        Button {
-                            name = suggestion.name
-                            host = suggestion.host
-                            port = suggestion.port.map(String.init) ?? ""
-                        } label: {
-                            Text(suggestion.name + (suggestion.detail.map { " · \($0)" } ?? ""))
-                            Text(tr("remote.suggestion." + suggestion.source.rawValue))
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                    Text(tr("remote.found"))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                    ScrollView {
+                        VStack(spacing: NookTheme.Spacing.xxs) {
+                            ForEach(suggestions) { suggestion in
+                                SettingsPickRow(title: suggestion.name,
+                                                detail: [suggestion.host, tr("remote.suggestion." + suggestion.source.rawValue)].joined(separator: " · "),
+                                                selected: host == suggestion.host) { fill(suggestion) }
+                            }
                         }
                     }
-                } label: {
-                    Label(tr("remote.suggestions", suggestions.count), systemImage: "sparkle.magnifyingglass")
+                    .frame(maxHeight: 150)
                 }
-                .fixedSize()
             }
-            TextField(tr("remote.name"), text: $name, prompt: Text("buildbox")).textFieldStyle(.roundedBorder)
             TextField(tr("remote.host"), text: $host, prompt: Text("me@buildbox.local")).textFieldStyle(.roundedBorder)
                 .font(NookTheme.TextStyle.code)
-            TextField(tr("remote.port"), text: $port, prompt: Text("22")).textFieldStyle(.roundedBorder)
-            TextField(tr("remote.keyFile"), text: $identityFile, prompt: Text("~/.ssh/id_ed25519")).textFieldStyle(.roundedBorder)
-                .font(NookTheme.TextStyle.code)
+                .onChange(of: host) { _, value in
+                    guard !namedByHand else { return }
+                    name = RemoteMachines.suggestedName(for: value.trimmingCharacters(in: .whitespaces))
+                }
+            TextField(tr("remote.name"), text: Binding(get: { name }, set: { name = $0; namedByHand = true }),
+                      prompt: Text("buildbox")).textFieldStyle(.roundedBorder)
+            DisclosureGroup(tr("settings.display.advanced")) {
+                VStack(spacing: NookTheme.Spacing.sm) {
+                    TextField(tr("remote.port"), text: $port, prompt: Text("22")).textFieldStyle(.roundedBorder)
+                    TextField(tr("remote.keyFile"), text: $identityFile, prompt: Text("~/.ssh/id_ed25519")).textFieldStyle(.roundedBorder)
+                        .font(NookTheme.TextStyle.code)
+                }
+                .padding(.top, NookTheme.Spacing.xs)
+            }
             if !host.isEmpty, !RemoteMachines.isValidHost(host.trimmingCharacters(in: .whitespaces)) {
                 SettingNote(tr("remote.badHost"), tone: .warning)
             }
@@ -188,16 +246,24 @@ private struct AddMachineSheet: View {
             }
         }
         .padding(NookTheme.Spacing.xxl)
-        .frame(width: 440)
+        .frame(width: 460)
+        .onAppear { if let start { fill(start) } }
         .task {
             let existing = RemoteMachines.load()
             suggestions = await Task.detached(priority: .userInitiated) { Self.discover(existing: existing) }.value
         }
     }
 
+    private func fill(_ suggestion: RemoteHostDiscovery.Suggestion) {
+        host = suggestion.host
+        name = suggestion.name
+        namedByHand = true
+        port = suggestion.port.map(String.init) ?? ""
+    }
+
     /// Reads ~/.ssh/config (and the files it includes) and ~/.ssh/known_hosts, and asks the Tailscale app for the devices of your tailnet. Nothing
     /// is contacted on the network.
-    nonisolated private static func discover(existing: [RemoteMachine]) -> [RemoteHostDiscovery.Suggestion] {
+    nonisolated static func discover(existing: [RemoteMachine]) -> [RemoteHostDiscovery.Suggestion] {
         let home = NSHomeDirectory()
         let ssh = (home as NSString).appendingPathComponent(".ssh")
         let include: (String) -> [String] = { pattern in

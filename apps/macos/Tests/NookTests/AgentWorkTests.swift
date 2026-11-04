@@ -537,6 +537,14 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertTrue(wrapped.keepsInputOpen)
     }
 
+    func testMachineNameFollowsItsAddress() {
+        XCTAssertEqual(RemoteMachines.suggestedName(for: "me@buildbox.local"), "buildbox")
+        XCTAssertEqual(RemoteMachines.suggestedName(for: "raspberrypi"), "raspberrypi")
+        XCTAssertEqual(RemoteMachines.suggestedName(for: "michan@192.168.1.40"), "192.168.1.40")
+        XCTAssertEqual(RemoteMachines.suggestedName(for: "[fe80::1]"), "[fe80::1]")
+        XCTAssertEqual(RemoteMachines.suggestedName(for: ""), "")
+    }
+
     func testRemoteValidation() {
         XCTAssertTrue(RemoteMachines.isValidHost("me@buildbox.local"))
         XCTAssertTrue(RemoteMachines.isValidHost("buildbox"))

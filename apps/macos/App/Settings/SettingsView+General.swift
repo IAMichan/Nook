@@ -59,7 +59,7 @@ extension SettingsView {
         }
         items += problems.map { problem in
             AttentionItem(id: "connection." + problem.id, title: problem.title, detail: problem.detail, state: problem.state,
-                          button: tr("settings2.fix")) { app.settingsSection = .connections }
+                          button: tr("settings2.fix")) { app.settingsSection = problem.isChat ? .chats : .connections }
         }
         let outdated = AgentConfigInstaller.Target.allCases.filter {
             if case .outdated? = agentStates[$0] { return true }

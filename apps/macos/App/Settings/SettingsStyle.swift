@@ -13,17 +13,25 @@ extension SettingsSection {
         switch self {
         case .start: return "house.fill"
         case .general: return "gearshape.fill"
+        case .notch: return "macbook"
         case .appearance: return "paintpalette.fill"
         case .shortcuts: return "command"
         case .notifications: return "bell.fill"
+        case .sound: return "speaker.wave.2.fill"
         case .brain: return "brain"
         case .assistant: return "sparkles"
         case .memory: return "books.vertical.fill"
         case .autocomplete: return "keyboard.fill"
         case .dictation: return "waveform"
+        case .chats: return "bubble.left.and.bubble.right.fill"
         case .connections: return "person.crop.circle.badge.checkmark"
+        case .iphone: return "iphone"
         case .agents: return "terminal.fill"
-        case .workspace: return "folder.fill"
+        case .sessions: return "rectangle.stack.fill"
+        case .machines: return "server.rack"
+        case .automation: return "clock.arrow.2.circlepath"
+        case .pullRequests: return "arrow.triangle.branch"
+        case .usage: return "chart.bar.fill"
         case .privacy: return "hand.raised.fill"
         }
     }
@@ -195,6 +203,38 @@ struct IntroCard: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, NookTheme.Spacing.xs)
+    }
+}
+
+/// One choice in a short list inside a sheet (a machine found on this Mac): its name and a line under it, the chosen one
+/// marked, the whole row clickable.
+struct SettingsPickRow: View {
+    let title: String
+    let detail: String
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: NookTheme.Spacing.md) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(title).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
+                    Text(detail).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if selected {
+                    Image(systemName: "checkmark").foregroundStyle(NookTheme.mint)
+                }
+            }
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.vertical, NookTheme.Spacing.sm)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+                .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: NookTheme.smoke.opacity(0.5))))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }
 

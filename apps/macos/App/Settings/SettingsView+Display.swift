@@ -1,8 +1,9 @@
 import SwiftUI
 import AppKit
 
-/// Settings › General: the languages, where Nook shows (the notch and the main window), how much it does on its own,
-/// and updates. The look is under Appearance; the language dictation is translated to is with dictation.
+/// Settings › General: the languages, how much Nook does on its own, and updates. Settings › Notch & windows: where
+/// Nook shows (the notch and the main window) and how it behaves in meetings and while you share your screen. The look is
+/// under Appearance; the language dictation is translated to is with dictation.
 extension SettingsView {
     // MARK: General
 
@@ -20,6 +21,21 @@ extension SettingsView {
             } header: {
                 Text(tr("settings.overview.languageSection"))
             }
+            energySection
+            UpdateSettingsSection()
+            // Rarely needed: folded away at the end, like on every page.
+            Section {
+                DisclosureGroup(tr("settings.display.advanced")) {
+                    Toggle(tr("settings.notch.demoData"), isOn: $app.demoMode)
+                }
+            }
+        }
+    }
+
+    // MARK: Notch and windows
+
+    var notchSection: some View {
+        Group {
             // The notch and the main window: everywhere Nook shows, in one group.
             Section(tr("settings.general.where")) {
                 Picker(tr("settings.notch.placement"), selection: $settings.placement) {
@@ -53,14 +69,7 @@ extension SettingsView {
                 SettingToggle(tr("settings.window.openAtLaunch"), detail: tr("settings.window.openAtLaunchDetail"),
                               isOn: $settings.openWindowAtLaunch)
             }
-            energySection
-            UpdateSettingsSection()
-            // Rarely needed: folded away at the end, like on every page.
-            Section {
-                DisclosureGroup(tr("settings.display.advanced")) {
-                    Toggle(tr("settings.notch.demoData"), isOn: $app.demoMode)
-                }
-            }
+            quietSection
         }
     }
 

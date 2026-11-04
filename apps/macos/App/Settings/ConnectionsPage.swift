@@ -15,14 +15,17 @@ final class ConnectionsRoute: ObservableObject {
     @Published var pending: Target?
 }
 
-/// Settings › Accounts & connections: everything Nook is linked to, on one page, in one order.
+/// Settings › Chat apps and Settings › Connections: everything Nook is linked to, on two pages of the same shape.
 ///
-/// - One button adds anything (a chat app, a service, your own server, the iPhone): pick it, follow its steps.
-/// - What you have is listed by kind, each in the same row shape, with what stopped working first and its Fix button.
-/// - The Mac's own apps are switches; chat options and watched pull requests come last.
+/// - Chat apps: every linked chat app with what stopped working first, the apps Nook only knows from their
+///   notifications, and how chats are read.
+/// - Connections: online services and your own servers (searchable, as the list grows), the Mac's own apps, music.
+/// - The header button adds one (`SettingsPageAction`): pick it, follow its steps.
 ///
-/// The coding agents and the AI Nook thinks with have pages of their own in the sidebar.
+/// The iPhone, the coding agents and the watched pull requests have pages of their own in the sidebar.
 struct ConnectionsPage: View {
+    enum Part { case chats, services }
+    let part: Part
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var mcpStore = MCPServerStore.shared
     @ObservedObject private var mcpSignIn = MCPSignIn.shared
@@ -30,10 +33,10 @@ struct ConnectionsPage: View {
     @ObservedObject private var linker = ChatLinker.shared
     @ObservedObject private var serviceBridge = ChatCaptureService.shared.serviceBridge
     @ObservedObject private var whatsApp = WhatsAppAccounts.shared
-    @ObservedObject private var companion = CompanionStore.shared
     @ObservedObject private var beeper = BeeperImporter.shared
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var route = ConnectionsRoute.shared
+    @ObservedObject private var pageAction = SettingsPageAction.shared
     @State private var query = ""
     @State private var sheet: Sheet?
     @State private var refreshTick = 0
@@ -51,41 +54,70 @@ struct ConnectionsPage: View {
         let services = Services(cloud: connectedCloud, remote: linkedRemote,
                                 gitLab: GitLabCredentials.hosts.filter { matches("GitLab " + $0) })
         let own = mcpStore.servers.filter { $0.serviceID == nil && matches($0.name) }
-        let nothingLinked = query.isEmpty && chats.isEmpty && services.isEmpty && own.isEmpty && !companion.enabled
+        let nothingLinked = query.isEmpty && services.isEmpty && own.isEmpty
 
         // Modifiers go on one section: on the Group they would be copied to every section in it.
-        searchAndAdd
+        top(chats, options)
             .sheet(item: $sheet, onDismiss: refresh) { sheet in
                 AddConnectionSheet(category: sheet.category, start: sheet.option)
             }
             .task { await linker.refresh() }
             // The helper started or stopped: what can be linked is listed again.
             .onChange(of: serviceBridge.isWorking) { _, _ in Task { await linker.refresh() } }
-            .onAppear { follow(route.pending) }
+            .onAppear {
+                follow(route.pending)
+                act(pageAction.requested)
+            }
             .onChange(of: route.pending) { _, target in follow(target) }
-        if nothingLinked { popular(options) }
-        if beeper.isOffered && query.isEmpty {
-            BeeperImportSection(setCollecting: { ChatCollecting.set($0) })
-        }
-        Group {
-            if !chats.isEmpty || query.isEmpty { chatsSection(chats, options) }
-            if !services.isEmpty || query.isEmpty { servicesSection(services) }
-            // Watched pull requests are searched with your GitHub accounts, so they sit with them once GitHub is connected.
-            if query.isEmpty && services.cloud.contains(where: { $0.id == "github" }) {
-                WatchedPullRequestsSection()
+            .onChange(of: pageAction.requested) { _, section in act(section) }
+        switch part {
+        case .chats:
+            if beeper.isOffered {
+                BeeperImportSection(setCollecting: { ChatCollecting.set($0) })
             }
-            if !own.isEmpty { ownSection(own) }
-            if matches(tr("settings.devices.iphone")) { devicesSection(options) }
-            if matches("Spotify " + tr("music.connect.title")) { MusicConnectionSection() }
-        }
-        Group {
-            localSection
-            if query.isEmpty {
-                ChatOptionsSection()
-            } else {
-                moreSection(options)
+            ChatOptionsSection()
+        case .services:
+            if nothingLinked { popular(options) }
+            Group {
+                if !services.isEmpty || query.isEmpty { servicesSection(services) }
+                if !own.isEmpty { ownSection(own) }
+                if matches("Spotify " + tr("music.connect.title")) { musicSection }
+            }
+            Group {
+                localSection
+                if !query.isEmpty { moreSection(options) }
             }
         }
+    }
+
+    /// The first section of the page: the linked chat apps, or the search over the services (their list grows).
+    @ViewBuilder
+    private func top(_ chats: [ChatAppState], _ options: [ConnectionOption]) -> some View {
+        switch part {
+        case .chats:
+            chatsSection(chats, options)
+        case .services:
+            Section {
+                NookSearchField(prompt: tr("hub.search"), text: $query, style: .inline)
+            }
+        }
+    }
+
+    /// Spotify and Apple Music, and whether Nook may look up lyrics online for what plays.
+    @ViewBuilder
+    private var musicSection: some View {
+        MusicConnectionSection()
+        Section {
+            SettingToggle(tr("settings.privacy.onlineLyrics"), detail: tr("settings.privacy.onlineLyricsDetail"),
+                          isOn: $settings.onlineLyrics)
+        }
+    }
+
+    /// The header's button: link a chat app on Chat apps, add any connection on Connections.
+    private func act(_ section: SettingsSection?) {
+        guard let section, section == (part == .chats ? .chats : .connections) else { return }
+        pageAction.requested = nil
+        sheet = Sheet(category: part == .chats ? .chats : nil)
     }
 
     /// The online services that are linked, each kind in its own row view.
@@ -98,20 +130,6 @@ struct ConnectionsPage: View {
     }
 
     // MARK: Sections
-
-    private var searchAndAdd: some View {
-        Section {
-            HStack(spacing: NookTheme.Spacing.md) {
-                NookSearchField(prompt: tr("hub.search"), text: $query, style: .inline)
-                Button {
-                    sheet = Sheet()
-                } label: {
-                    Label(tr("hub.add"), systemImage: "plus")
-                }
-                .buttonStyle(.borderedProminent)
-            }
-        }
-    }
 
     /// Nothing linked yet: what the page is for, and the links most people make first.
     private func popular(_ options: [ConnectionOption]) -> some View {
@@ -128,8 +146,9 @@ struct ConnectionsPage: View {
 
     private func chatsSection(_ chats: [ChatAppState], _ options: [ConnectionOption]) -> some View {
         Section {
+            // Nothing linked yet: what the page is for, and the header's button links the first one.
+            if chats.isEmpty { IntroCard(title: tr("hub.empty.title"), text: tr("settings.chats.empty")) }
             ForEach(chats) { chatRow($0, options) }
-            addRow(tr("hub.chats.add"), category: .chats)
         } header: {
             Text(tr("hub.chats"))
         }
@@ -147,7 +166,6 @@ struct ConnectionsPage: View {
             ForEach(services.gitLab, id: \.self) { host in
                 GitLabHostRow(host: host) { refreshTick += 1 }
             }
-            addRow(tr("hub.services.add"), category: nil)
         } header: {
             Text(tr("hub.services"))
         }
@@ -164,14 +182,6 @@ struct ConnectionsPage: View {
             .buttonStyle(.link)
         } header: {
             SettingsSectionTitle(tr("hub.own"), info: tr("settings2.connections.missingDetail"))
-        }
-    }
-
-    private func devicesSection(_ options: [ConnectionOption]) -> some View {
-        Section {
-            iPhoneRow(options)
-        } header: {
-            Text(tr("hub.cat.devices"))
         }
     }
 
@@ -210,12 +220,14 @@ struct ConnectionsPage: View {
     private func chatRow(_ state: ChatAppState, _ options: [ConnectionOption]) -> some View {
         ServiceRowLayout(domain: state.site, symbol: "bubble.left.and.bubble.right.fill", tint: NookTheme.iris, title: state.name,
                          detail: state.detail, status: state.status, detailIsError: state.detailIsError, source: state.id) {
-            Toggle("", isOn: Binding(get: { state.isOn }, set: { on in
+            // Says what it switches, beside it: a bare switch in a row of buttons read as "on/off" for the whole app.
+            Toggle(tr("settings.chats.inChats"), isOn: Binding(get: { state.isOn }, set: { on in
                 capture.setSource(state.id, on: on)
                 if on, !capture.enabled { ChatCollecting.set(true) }
             }))
-            .labelsHidden()
             .toggleStyle(.switch)
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.textSecondary)
             .controlSize(.small)
             .help(tr("chats.apps.showInChats", state.name))
             let needsYou = state.status == .expired || state.status == .unreachable
@@ -226,31 +238,6 @@ struct ConnectionsPage: View {
             .tint(needsYou ? NookTheme.amber : nil)
             .controlSize(.small)
         }
-    }
-
-    /// The iPhone companion: whether it is on and how many phones are paired, and the sheet that pairs one.
-    private func iPhoneRow(_ options: [ConnectionOption]) -> some View {
-        let paired = companion.devices.count
-        let status: ServiceStatus = !companion.enabled ? .notLinked : (paired > 0 ? .connected : .off)
-        let detail = !companion.enabled ? tr("hub.iphone.tagline")
-            : (paired > 0 ? tr("hub.iphone.paired", paired) : tr("hub.iphone.waiting"))
-        return ServiceRowLayout(domain: nil, symbol: "iphone", tint: NookTheme.iris, title: tr("settings.devices.iphone"),
-                                detail: detail, status: status) {
-            Button(companion.enabled ? tr("settings2.manage") : tr("hub.setUp")) {
-                sheet = Sheet(option: options.first { $0.id == "device.iphone" })
-            }
-            .controlSize(.small)
-        }
-    }
-
-    /// The last row of a group: adds another of its kind, through the Add sheet opened on that group.
-    private func addRow(_ title: String, category: ConnectionCategory?) -> some View {
-        Button {
-            sheet = Sheet(category: category)
-        } label: {
-            Label(title, systemImage: "plus")
-        }
-        .buttonStyle(.link)
     }
 
     // MARK: What is linked
