@@ -372,6 +372,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var effort: String? = nil
     /// "Auto": Nook picks `model` for each turn (see `AutoModel`); nil for a model you chose.
     var autoModel: Bool? = nil
+    /// What the last turn on Auto asked for (`AutoModel.Tier` raw value), so a short follow-up does not drop a hard thread.
+    var autoNeed: Int? = nil
     /// The agent's own task list, as it last reported it.
     var tasks: [RunTaskStep]? = nil
     /// The pull request this session watches: what it last saw, so only news wakes it.
@@ -844,6 +846,17 @@ enum WorktreeNaming {
         normalizedBranchPrefix(prefix) + "/" + shortSlug(task) + "-" + String(id.uuidString.prefix(4)).lowercased()
     }
 
+    /// The branch with the slug an agent wrote in place of the one from the prompt, keeping Nook's prefix and the
+    /// slice of the UUID: ("nook/zorg-ervoor-branch-namen-a6f8", "clearer-branch-names") → "nook/clearer-branch-names-a6f8".
+    /// Nil when the branch is not one Nook named this way, or nothing would change.
+    static func renamedBranch(_ branch: String, slug: String) -> String? {
+        guard let slash = branch.lastIndex(of: "/"), let dash = branch.lastIndex(of: "-"), slash < dash else { return nil }
+        let suffix = branch[branch.index(after: dash)...]
+        guard suffix.count == 4, suffix.allSatisfy(\.isHexDigit) else { return nil }
+        let name = String(branch[...slash]) + slug + "-" + suffix
+        return name == branch || !isPlausibleBranchName(name) ? nil : name
+    }
+
     /// The directory of a branch's worktree: "nook/fix-login-bug-3fa2" → "fix-login-bug-3fa2". The repository's own
     /// directory already says where it belongs, so Nook's prefix (the configured one, or "nook") is left off.
     static func directorySlug(branch: String, prefix: String = WorktreeNaming.branchPrefix) -> String {
@@ -858,10 +871,12 @@ enum WorktreeNaming {
     /// Words that say little in a branch name, in the languages Nook speaks.
     private static let fillerWords: Set<String> = [
         "a", "an", "the", "to", "of", "in", "on", "for", "and", "or", "that", "this", "it", "is", "be", "you", "your",
-        "i", "me", "my", "we", "can", "could", "please", "so", "with", "make", "sure", "should",
+        "i", "me", "my", "we", "can", "could", "please", "so", "with", "make", "sure", "should", "just", "really",
+        "also", "now", "want", "would", "like", "let", "lets", "us",
         "de", "het", "een", "en", "dat", "die", "dit", "deze", "je", "jij", "u", "ik", "wij", "mijn", "kan",
         "kun", "kunnen", "wil", "graag", "zodat", "zo", "ook", "nog", "er", "te", "om", "van", "naar", "met", "voor",
         "zijn", "wordt", "moet", "moeten", "maar", "wat", "als", "dan", "aan", "bij", "uit", "op",
+        "zorg", "ervoor", "echt", "even", "gewoon", "worden", "nu", "eens", "hier", "daar", "wel", "ze",
         "der", "das", "ein", "eine", "und", "le", "la", "les", "un", "une", "et", "el", "los", "las", "y"
     ]
 

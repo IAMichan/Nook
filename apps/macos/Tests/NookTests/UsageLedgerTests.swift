@@ -125,4 +125,61 @@ final class UsageLedgerTests: XCTestCase {
         XCTAssertEqual(insights.sessions, 1)
         XCTAssertEqual(insights.agents.first?.sessions, 1)
     }
+
+    // MARK: Chats and windows
+
+    private func chat(_ id: String, profile: String = "p1", title: String = "") -> UsageLedger.Chat {
+        UsageLedger.Chat(id: "claude:" + id, agent: "claude", profileID: profile, title: title.isEmpty ? id : title, project: "Nook")
+    }
+
+    func testChatsAreRankedByCost() {
+        var ledger = UsageLedger()
+        ledger.addChat(chat("small"), model: "claude-sonnet-4-5", date: now.addingTimeInterval(-600), tokens: tokens(1_000, 0))
+        ledger.addChat(chat("big"), model: "claude-sonnet-4-5", date: now.addingTimeInterval(-900), tokens: tokens(2_000_000, 0))
+        ledger.addChat(chat("big"), model: "claude-sonnet-4-5", date: now.addingTimeInterval(-300), tokens: tokens(0, 100_000))
+        // Older than the 24 hours.
+        ledger.addChat(chat("old"), model: "claude-sonnet-4-5", date: now.addingTimeInterval(-3 * 86_400), tokens: tokens(9_000_000, 0))
+        let chats = UsageInsights.make(ledger, window: .day, now: now, calendar: calendar).chats
+        XCTAssertEqual(chats.map(\.chat.title), ["big", "small"])
+        XCTAssertEqual(chats[0].cost?.total ?? 0, 6 + 1.5, accuracy: 1e-9)
+        XCTAssertEqual(chats[0].tokens.total, 2_100_000)
+        XCTAssertGreaterThan(chats[0].costShare, 0.99)
+    }
+
+    func testWindowsStartWithTheFirstTokensAfterTheLastRanOut() {
+        var ledger = UsageLedger()
+        let hour = 3_600.0
+        // 12:00 + 2 h are one window (5 h), the next tokens 6 h in start a second one.
+        ledger.addChat(chat("a"), model: "claude-sonnet-4-5", date: now.addingTimeInterval(-10 * hour), tokens: tokens(1_000_000, 0))
+        ledger.addChat(chat("b"), model: "claude-sonnet-4-5", date: now.addingTimeInterval(-8 * hour), tokens: tokens(1_000_000, 0))
+        ledger.addChat(chat("a"), model: "claude-sonnet-4-5", date: now.addingTimeInterval(-4 * hour), tokens: tokens(1_000_000, 0))
+        // Another account does not count.
+        ledger.addChat(chat("c", profile: "p2"), model: "claude-sonnet-4-5", date: now.addingTimeInterval(-3 * hour), tokens: tokens(5, 0))
+        let blocks = UsageBlocks.make(ledger, profile: "p1", duration: 5 * hour, now: now)
+        XCTAssertEqual(blocks.count, 2)
+        XCTAssertEqual(blocks[0].chats.map(\.chat.title), ["a"])
+        XCTAssertTrue(blocks[0].active)
+        XCTAssertEqual(blocks[1].chats.map(\.chat.title).sorted(), ["a", "b"])
+        XCTAssertFalse(blocks[1].active)
+        XCTAssertEqual(blocks[1].cost, 6, accuracy: 1e-9)
+    }
+
+    func testTheReportedStartCutsTheWindow() {
+        var ledger = UsageLedger()
+        let hour = 3_600.0
+        ledger.addChat(chat("a"), model: "claude-sonnet-4-5", date: now.addingTimeInterval(-3 * hour), tokens: tokens(1_000_000, 0))
+        ledger.addChat(chat("b"), model: "claude-sonnet-4-5", date: now.addingTimeInterval(-1 * hour), tokens: tokens(1_000_000, 0))
+        // The agent says the current window began two hours ago, so "a" belongs to the one before.
+        let anchor = now.addingTimeInterval(-2 * hour)
+        let blocks = UsageBlocks.make(ledger, profile: "p1", duration: 5 * hour, anchor: anchor, now: now)
+        XCTAssertEqual(blocks.count, 2)
+        XCTAssertEqual(blocks[0].start, anchor)
+        XCTAssertTrue(blocks[0].reported)
+        XCTAssertEqual(blocks[0].chats.map(\.chat.title), ["b"])
+        XCTAssertEqual(blocks[1].chats.map(\.chat.title), ["a"])
+        // A window that holds no tokens yet is still there.
+        let empty = UsageBlocks.make(UsageLedger(), profile: "p1", duration: 5 * hour, anchor: anchor, now: now)
+        XCTAssertEqual(empty.count, 1)
+        XCTAssertTrue(empty[0].chats.isEmpty)
+    }
 }

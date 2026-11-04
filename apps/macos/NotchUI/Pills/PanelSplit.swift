@@ -46,6 +46,7 @@ enum PanelSplitChoice {
 /// pick which one (or none).
 struct PanelSplitButton: View {
     let current: PanelTab
+    @EnvironmentObject private var app: AppModel
     @AppStorage(PanelSplitChoice.key) private var split = ""
     @State private var open = false
 
@@ -67,6 +68,17 @@ struct PanelSplitButton: View {
                     DropdownRow(symbol: "rectangle", title: tr("split.off"), chosen: split.isEmpty) {
                         withAnimation(NookTheme.reveal) { split = "" }
                     }
+                    DropdownDivider()
+                    // A tab torn off into a window of its own (`TabWindowController`), beside the main window or on
+                    // another screen.
+                    DropdownHeader(title: tr("split.windowHeader"))
+                    ForEach(PanelSplitChoice.choices) { tab in
+                        DropdownRow(symbol: PanelSplitChoice.symbol(tab), title: tab.title,
+                                    chosen: TabWindowController.shared.isOpen(tab)) {
+                            open = false
+                            TabWindowController.shared.open(tab, app: app)
+                        }
+                    }
                 }
                 .padding(NookTheme.Spacing.xs)
                 .frame(width: 220, alignment: .leading)
@@ -77,7 +89,7 @@ struct PanelSplitButton: View {
 }
 
 /// The second tab of split view, on the right of the current one: its name, a button that swaps it with the main tab,
-/// and the close button, over the tab itself.
+/// one that moves it into a window of its own, and the close button, over the tab itself.
 struct PanelSplitPane: View {
     @ObservedObject var viewModel: NotchViewModel
     let tab: PanelTab
@@ -93,15 +105,24 @@ struct PanelSplitPane: View {
                 SidePanelTitle(symbol: PanelSplitChoice.symbol(tab), title: tab.title)
             } actions: {
                 ToolbarIconButton("arrow.left.arrow.right", tr("split.swap"), swap)
+                ToolbarIconButton("macwindow.badge.plus", tr("split.toWindow")) {
+                    TabWindowController.shared.open(tab, app: app)
+                }
             }
-            content
+            PanelTabContent(viewModel: viewModel, tab: tab, inWindow: inWindow)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
+}
 
-    /// The tab as it shows on its own, without the footer the main tab already has.
-    @ViewBuilder
-    private var content: some View {
+/// A tab as it shows beside another one or in a window of its own, without the footer the main tab has.
+struct PanelTabContent: View {
+    @ObservedObject var viewModel: NotchViewModel
+    let tab: PanelTab
+    let inWindow: Bool
+    @EnvironmentObject private var app: AppModel
+
+    var body: some View {
         switch tab {
         case .nook, .chat, .connect, .shelf: NookChatView(viewModel: viewModel, chat: app.chat, compact: true)
         case .agents: AgentsTab(viewModel: viewModel)

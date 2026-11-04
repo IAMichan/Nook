@@ -640,6 +640,7 @@ struct WorkspaceSettingsSection: View {
     private var autoModelChoice: some View {
         DisclosureGroup(tr("settings.ws.autoModels")) {
             SettingNote(tr("settings.ws.autoModelsDetail"))
+            autoAccountChoice
             ForEach(app.connectedProviders.filter { $0 != .acp }) { provider in
                 let all = AutoModel.candidates(app.workspace.modelChoices(for: provider), allowed: [],
                                                same: { app.workspace.sameModel($0, $1, for: provider) })
@@ -665,6 +666,36 @@ struct WorkspaceSettingsSection: View {
                 }
             }
         }
+    }
+
+    /// Which agents and accounts "Auto" may use: a switch per agent and, below it, one per account of that agent, so Auto
+    /// moves a session between the accounts you allow (for example to the one that has used less of its limits).
+    @ViewBuilder
+    private var autoAccountChoice: some View {
+        SettingNote(tr("settings.ws.autoAccountsDetail"))
+        ForEach(app.connectedProviders) { provider in
+            Toggle(isOn: Binding(get: { !ws.autoAgentsOff.contains(provider.rawValue) },
+                                 set: { ws.setAutoAgent(provider, allowed: $0) })) {
+                Label { Text(provider.displayName) } icon: { LogoImage.agent(provider.kind) }
+            }
+            let accounts = app.connectedProfiles(for: provider)
+            if accounts.count > 1 {
+                ForEach(accounts) { profile in
+                    Toggle(isOn: Binding(get: { !ws.autoAccountsOff.contains(profile.id) },
+                                         set: { ws.setAutoAccount(profile.id, allowed: $0) })) {
+                        Text(autoAccountName(profile))
+                    }
+                    .padding(.leading, NookTheme.Spacing.lg)
+                    .disabled(ws.autoAgentsOff.contains(provider.rawValue))
+                }
+            }
+        }
+    }
+
+    private func autoAccountName(_ profile: AgentProfile) -> String {
+        if !profile.label.isEmpty { return profile.label }
+        let account = app.history.profileAccounts[profile.id]
+        return account.map { $0.organization.isEmpty ? $0.name : $0.organization } ?? tr("agents.personal")
     }
 
     /// Where the model list comes from, and how old it is.

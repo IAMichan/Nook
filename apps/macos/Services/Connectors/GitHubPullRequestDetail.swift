@@ -184,6 +184,19 @@ enum GitHubPullRequestDetail {
             if (200..<300).contains(status), (object["merged"] as? Bool) != false {
                 return (object["sha"] as? String) ?? ""
             }
+            // GitHub answers a busy moment with 500/502/503/504 ("Server Error"), and sometimes merges anyway. So look at
+            // the pull request first: merged means done; otherwise try again a few times before reporting it.
+            if (500..<600).contains(status) {
+                if let pull = await currentPull(repo: repo, number: number, token: token), pull["merged"] as? Bool == true {
+                    return (pull["merge_commit_sha"] as? String) ?? ""
+                }
+                attempt += 1
+                guard attempt < 4 else {
+                    throw NookError(PullRequestDetailParser.mergeError(status: status, object: object))
+                }
+                try await Task.sleep(nanoseconds: UInt64(attempt) * 2_000_000_000)
+                continue
+            }
             guard status == 409, !sha.isEmpty else {
                 throw NookError(PullRequestDetailParser.mergeError(status: status, object: object),
                                 kind: status == 401 ? .auth : .other)
@@ -232,8 +245,12 @@ enum GitHubPullRequestDetail {
 
     /// The head GitHub reports for the pull request right now; nil when it could not be read.
     private static func currentHead(repo: String, number: Int, token: String) async -> String? {
-        guard let pull = (try? await getter(repo: repo, token: token)("/pulls/\(number)")) as? [String: Any] else { return nil }
-        return (pull["head"] as? [String: Any])?["sha"] as? String
+        let pull = await currentPull(repo: repo, number: number, token: token)
+        return (pull?["head"] as? [String: Any])?["sha"] as? String
+    }
+
+    private static func currentPull(repo: String, number: Int, token: String) async -> [String: Any]? {
+        (try? await getter(repo: repo, token: token)("/pulls/\(number)")) as? [String: Any]
     }
 
     /// A merge GitHub refused because the branch has commits past the one that was shown: read it again and look.

@@ -11,6 +11,9 @@ let splitTranslations: [AppLanguage: [String: String]] = [
         "split.close": "Gesplitst scherm sluiten",
         "split.swap": "Omwisselen met de hoofdtab",
         "split.beside": "Ernaast geopend",
+        "split.windowHeader": "In een eigen venster",
+        "split.toWindow": "In een eigen venster openen",
+        "split.dock": "Terug naast de hoofdtab",
     ],
     .en: [
         "split.title": "Split view",
@@ -20,6 +23,9 @@ let splitTranslations: [AppLanguage: [String: String]] = [
         "split.close": "Close split view",
         "split.swap": "Swap with the main tab",
         "split.beside": "Open beside",
+        "split.windowHeader": "In its own window",
+        "split.toWindow": "Open in its own window",
+        "split.dock": "Back beside the main tab",
     ],
     .de: [
         "split.title": "Geteilte Ansicht",
@@ -29,6 +35,9 @@ let splitTranslations: [AppLanguage: [String: String]] = [
         "split.close": "Geteilte Ansicht schließen",
         "split.swap": "Mit dem Haupttab tauschen",
         "split.beside": "Daneben geöffnet",
+        "split.windowHeader": "In eigenem Fenster",
+        "split.toWindow": "In eigenem Fenster öffnen",
+        "split.dock": "Zurück neben den Haupttab",
     ],
     .fr: [
         "split.title": "Écran partagé",
@@ -38,6 +47,9 @@ let splitTranslations: [AppLanguage: [String: String]] = [
         "split.close": "Fermer l’écran partagé",
         "split.swap": "Échanger avec l’onglet principal",
         "split.beside": "Ouvert à côté",
+        "split.windowHeader": "Dans sa propre fenêtre",
+        "split.toWindow": "Ouvrir dans sa propre fenêtre",
+        "split.dock": "Revenir à côté de l’onglet principal",
     ],
     .es: [
         "split.title": "Pantalla dividida",
@@ -47,5 +59,8 @@ let splitTranslations: [AppLanguage: [String: String]] = [
         "split.close": "Cerrar pantalla dividida",
         "split.swap": "Intercambiar con la pestaña principal",
         "split.beside": "Abierta al lado",
+        "split.windowHeader": "En su propia ventana",
+        "split.toWindow": "Abrir en su propia ventana",
+        "split.dock": "Volver junto a la pestaña principal",
     ],
 ]

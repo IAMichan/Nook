@@ -84,6 +84,7 @@ struct UsageOverviewBlocks: View {
     var loading = false
     @Binding var byDay: Bool
     let open: (UsageInsights.ModelTotal) -> Void
+    @State private var allChats = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
@@ -111,9 +112,42 @@ struct UsageOverviewBlocks: View {
                     }
                     if byDay { dayTable(insights) } else { modelTable(insights) }
                 }
+                chatTable(insights)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: Chats
+
+    /// The chats that used the most in the window, to see what suddenly cost a lot.
+    @ViewBuilder private func chatTable(_ insights: UsageInsights) -> some View {
+        let chats = insights.chats.sorted { lhs, rhs in
+            metric == .cost ? (lhs.cost?.total ?? -1) > (rhs.cost?.total ?? -1) : lhs.tokens.total > rhs.tokens.total
+        }
+        if !chats.isEmpty {
+            let shown = allChats ? Array(chats.prefix(50)) : Array(chats.prefix(8))
+            let peak = chats.first.map { metric == .cost ? ($0.cost?.total ?? 0) : Double($0.tokens.total) } ?? 0
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                Text(tr("usage.chats")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
+                VStack(spacing: 0) {
+                    UsageTableHeader(columns: [tr("usage.column.chat"), tr("usage.column.cost"), tr("usage.column.share"), tr("usage.column.tokens")])
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { index, chat in
+                        let value = metric == .cost ? (chat.cost?.total ?? 0) : Double(chat.tokens.total)
+                        UsageChatRow(rank: index + 1, chat: chat, fraction: peak > 0 ? value / peak : 0,
+                                     share: metric == .cost ? chat.costShare : chat.tokenShare)
+                    }
+                }
+                if chats.count > 8 {
+                    Button(allChats ? tr("usage.chats.fewer") : tr("usage.chats.more", min(chats.count, 50) - 8)) {
+                        withAnimation(NookTheme.swap) { allChats.toggle() }
+                    }
+                    .buttonStyle(.plain)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                }
+            }
+        }
     }
 
     // MARK: Overview
@@ -425,6 +459,76 @@ struct UsageModelRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+    }
+}
+
+extension UsageLedger.Chat {
+    /// Its title, or what ran it when it has none.
+    var displayTitle: String {
+        if !title.isEmpty { return title }
+        return project == "Nook" ? tr("usage.chat.nook") : (project.isEmpty ? tr("usage.chat.untitled") : project)
+    }
+}
+
+/// A chat in the breakdown: its rank, logo and title with a thin bar for its size and when it was last busy, then cost,
+/// share and tokens. `rank` and the share columns are left out where the row is compact (`UsageBlockRows`).
+struct UsageChatRow: View {
+    var rank: Int?
+    let chat: UsageInsights.ChatTotal
+    var fraction = 0.0
+    var share = 0.0
+    var compact = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.lg) {
+                HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
+                    if let rank {
+                        Text("\(rank)").font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary).frame(width: 16, alignment: .leading)
+                    }
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                        HStack(spacing: NookTheme.Spacing.sm) {
+                            if let kind = AgentKind(rawValue: chat.chat.agent) { AgentLogo(kind, size: 13) }
+                            Text(chat.chat.displayTitle).foregroundStyle(NookTheme.paper).lineLimit(1).truncationMode(.tail)
+                        }
+                        Text(subtitle)
+                            .font(NookTheme.TextStyle.caption)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .lineLimit(1)
+                        if fraction > 0 {
+                            GeometryReader { proxy in
+                                Capsule().fill(UsageColors.agent(chat.chat.agent))
+                                    .frame(width: max(6, min(proxy.size.width, 192) * fraction), height: 2)
+                            }
+                            .frame(height: 2)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if let cost = chat.cost {
+                    Text(UsageFormat.usd(cost.total)).foregroundStyle(NookTheme.paper).frame(width: 72, alignment: .trailing)
+                } else {
+                    Text(tr("usage.unpriced")).foregroundStyle(NookTheme.textTertiary).frame(width: 72, alignment: .trailing)
+                }
+                if !compact {
+                    Text(UsageFormat.percent(share)).foregroundStyle(NookTheme.textSecondary).frame(width: 72, alignment: .trailing)
+                }
+                Text(UsageFormat.tokens(chat.tokens.total)).foregroundStyle(NookTheme.textSecondary).frame(width: 72, alignment: .trailing)
+            }
+            .font(NookTheme.TextStyle.body.monospacedDigit())
+            .padding(.vertical, NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
+            NookDivider()
+        }
+        .help(chat.chat.displayTitle)
+    }
+
+    /// "Nook · today 14:32" / "Nook · Mon 3 Nov 09:10 – 14:32": the project and when the chat used tokens.
+    private var subtitle: String {
+        let now = Date()
+        let when = Calendar.current.isDate(chat.first, inSameDayAs: chat.last) && chat.first.timeIntervalSince(chat.last) > -600
+            ? AgentFormat.upcoming(chat.last, now: now)
+            : "\(AgentFormat.upcoming(chat.first, now: now)) – \(UsageDates.label(chat.last, hourly: true))"
+        return [chat.chat.project == chat.chat.displayTitle ? "" : chat.chat.project, when].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 }
 

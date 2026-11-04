@@ -31,6 +31,13 @@ final class WorkspaceSettings: ObservableObject {
     @Published var autoModels: [String: [String]] {
         didSet { defaults.set(autoModels, forKey: "ws.autoModels") }
     }
+    /// The agents (`RunProvider.rawValue`) and accounts (profile ids) "Auto" leaves alone; none: every connected one.
+    @Published var autoAgentsOff: [String] {
+        didSet { defaults.set(autoAgentsOff, forKey: "ws.autoAgentsOff") }
+    }
+    @Published var autoAccountsOff: [String] {
+        didSet { defaults.set(autoAccountsOff, forKey: "ws.autoAccountsOff") }
+    }
     /// Model ids you typed yourself per agent, newest first (see `ModelPreferences`).
     @Published var customModels: [String: [String]] {
         didSet { defaults.set(customModels, forKey: "ws.customModels") }
@@ -161,6 +168,8 @@ final class WorkspaceSettings: ObservableObject {
         favoriteModels = (defaults.dictionary(forKey: "ws.favoriteModels") as? [String: [String]]) ?? [:]
         customModels = (defaults.dictionary(forKey: "ws.customModels") as? [String: [String]]) ?? [:]
         autoModels = (defaults.dictionary(forKey: "ws.autoModels") as? [String: [String]]) ?? [:]
+        autoAgentsOff = defaults.stringArray(forKey: "ws.autoAgentsOff") ?? []
+        autoAccountsOff = defaults.stringArray(forKey: "ws.autoAccountsOff") ?? []
         onlineModelList = defaults.object(forKey: "ws.onlineModelList") as? Bool ?? true
         defaultMode = ExecutionMode(rawValue: defaults.string(forKey: "ws.defaultMode") ?? "") ?? .agent
         defaultIsolation = IsolationMode(rawValue: defaults.string(forKey: "ws.defaultIsolation") ?? "") ?? .worktree
@@ -251,6 +260,21 @@ final class WorkspaceSettings: ObservableObject {
     }
 
     func resetAutoModels(for provider: RunProvider) { autoModels[provider.rawValue] = nil }
+
+    /// Whether "Auto" may use this agent's account: neither the agent nor the account is switched off.
+    func autoAllows(_ provider: RunProvider, profileID: String) -> Bool {
+        !autoAgentsOff.contains(provider.rawValue) && !autoAccountsOff.contains(profileID)
+    }
+
+    func setAutoAgent(_ provider: RunProvider, allowed: Bool) {
+        autoAgentsOff.removeAll { $0 == provider.rawValue }
+        if !allowed { autoAgentsOff.append(provider.rawValue) }
+    }
+
+    func setAutoAccount(_ profileID: String, allowed: Bool) {
+        autoAccountsOff.removeAll { $0 == profileID }
+        if !allowed { autoAccountsOff.append(profileID) }
+    }
 
     func customModels(for provider: RunProvider) -> [String] { customModels[provider.rawValue] ?? [] }
 
