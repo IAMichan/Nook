@@ -20,6 +20,8 @@ final class SelectionAskModel: ObservableObject {
     @Published var draft = ""
     /// Quotes the selection into the session's reply box; nil where there is none.
     fileprivate(set) var quote: ((String) -> Void)?
+    /// The chat around a selection made in a chat (`TranscriptSelection`), which goes with every question about it.
+    fileprivate(set) var context: String?
 
     var conversation: UUID? {
         if case .card(let id) = stage { return id }
@@ -60,6 +62,12 @@ final class SelectionAskController {
     private var reading: Task<Void, Never>?
     /// How big the bar or card draws itself.
     private var contentSize: CGSize = .zero
+    /// A press on a message in a chat: while the button stays down, the messages from it to the one under the pointer
+    /// are picked. `ended` once the button went up; `picked` when the drag picked several messages.
+    private var chatDrag: (chat: TranscriptSelection, from: String, ended: Bool, picked: Bool)?
+    /// Follows the pointer during a drag in a chat. A timer, not the drag events: a message's text selection tracks the
+    /// mouse in a loop of its own, where those events never reach the window.
+    private var following: Timer?
 
     static let cardWidth: CGFloat = 400
 
@@ -112,9 +120,66 @@ final class SelectionAskController {
         press = event.type == .leftMouseDown ? (NSEvent.mouseLocation, event.windowNumber) : nil
         // A click starts a new selection or clears this one; the card stays until you close it.
         if model.stage == .bar { dismiss() }
+        TranscriptSelection.clearAll()
+        stopFollowing()
+        chatDrag = nil
+        if event.type == .leftMouseDown, app?.settings.selectionAsk == true, let window = event.window,
+           let hit = TranscriptSelection.hit(in: window, at: event.locationInWindow) {
+            chatDrag = (hit.chat, hit.message, false, false)
+            follow()
+        }
+    }
+
+    private func follow() {
+        let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.followed() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        following = timer
+    }
+
+    private func followed() {
+        guard let drag = chatDrag, !drag.ended else { return stopFollowing() }
+        guard NSEvent.pressedMouseButtons & 1 != 0 else {
+            endChatDrag()
+            return
+        }
+        drag.chat.drag(from: drag.from, to: NSEvent.mouseLocation)
+    }
+
+    private func stopFollowing() {
+        following?.invalidate()
+        following = nil
+    }
+
+    /// The button went up after a press on a message: true when the drag picked several messages, which the bar is then
+    /// about. Called by whichever sees it first, the mouse-up or the timer.
+    @discardableResult
+    private func endChatDrag() -> Bool {
+        guard var drag = chatDrag else { return false }
+        stopFollowing()
+        if drag.ended { return drag.picked }
+        drag.chat.drag(from: drag.from, to: NSEvent.mouseLocation)
+        drag.ended = true
+        drag.picked = drag.chat.picked.count > 1
+        chatDrag = drag
+        guard drag.picked else { return false }
+        guard let found = drag.chat.pickedSelection(), let window = drag.chat.window else {
+            TranscriptSelection.clearAll()
+            return true
+        }
+        reading?.cancel()
+        // The first message's own selection goes: the picks are what the bar is about.
+        window.makeFirstResponder(nil)
+        show(found, in: window, context: drag.chat.pickedContext())
+        return true
     }
 
     private func released(_ event: NSEvent) {
+        if endChatDrag() {
+            press = nil
+            return
+        }
         guard let window = event.window, window !== panel, let press, press.window == event.windowNumber else { return }
         self.press = nil
         let release = NSEvent.mouseLocation
@@ -159,16 +224,19 @@ final class SelectionAskController {
             try? await Task.sleep(nanoseconds: 60_000_000)
             guard !Task.isCancelled, let found = await SelectionReader.read(in: window, press: press, release: release),
                   !Task.isCancelled, let self else { return }
+            // Words in a chat's message: the chat around them goes with the question.
+            let point = window.convertPoint(fromScreen: press ?? NSPoint(x: found.anchor.midX, y: found.anchor.midY))
             // The card is open about something else: a new selection asks about the new words instead.
-            self.show(found, in: window)
+            self.show(found, in: window, context: TranscriptSelection.context(in: window, at: point))
         }
     }
 
-    private func show(_ found: FoundSelection, in window: NSWindow) {
+    private func show(_ found: FoundSelection, in window: NSWindow, context: String?) {
         if model.stage == .bar, model.selection == found.text, source === window { return }
         closePanel()
         model.selection = found.text
         model.quote = found.quote
+        model.context = context
         model.draft = ""
         model.stage = .bar
         source = window
@@ -184,7 +252,7 @@ final class SelectionAskController {
 
     /// Ask Nook, Explain or Translate in the bar: the bar becomes the card, with Nook's answer coming in.
     func ask(_ mode: SelectionAsk.Mode) {
-        guard let app, let conversation = app.askAboutSelection(model.selection, mode: mode) else {
+        guard let app, let conversation = app.askAboutSelection(model.selection, mode: mode, context: model.context) else {
             dismiss()
             return
         }
@@ -203,7 +271,7 @@ final class SelectionAskController {
         guard let conversation = model.conversation else { return }
         let text = model.draft
         model.draft = ""
-        app?.followUpOnSelection(text, in: conversation)
+        app?.followUpOnSelection(text, in: conversation, context: model.context)
     }
 
     func continueInChat() {
@@ -215,8 +283,10 @@ final class SelectionAskController {
     func dismiss() {
         reading?.cancel()
         closePanel()
+        TranscriptSelection.clearAll()
         model.stage = .hidden
         model.quote = nil
+        model.context = nil
         model.draft = ""
     }
 

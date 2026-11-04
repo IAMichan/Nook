@@ -6,10 +6,11 @@ import UniformTypeIdentifiers
 /// A line marks where a new day starts; messages one person sends in a row sit close together under their name (each
 /// person in a group in a color of their own); links open; a message of only emoji shows large; a long message folds
 /// open with "Read more". More than fits scrolls back through the history, starting at the newest message. Each
-/// message's text can be selected; right-click a bubble for the same menu its chevron opens. A message that answers
-/// another quotes it at its top, and the emoji people put on it sit under it. Where the chat can be answered, the pointer
-/// on a bubble shows a button to answer that message and one to react with an emoji. Used by the chat card in the notch
-/// and by the Chats tab.
+/// message's text can be selected, and a drag from one message to others picks them all to ask Nook about
+/// (`TranscriptSelection`); right-click a bubble for the same menu its chevron opens. A message that answers another
+/// quotes it at its top, and the emoji people put on it sit under it. Where the chat can be answered, the pointer on a
+/// bubble shows a button to answer that message and one to react with an emoji. Used by the chat card in the notch and
+/// by the Chats tab.
 struct ChatTranscript: View, Equatable {
     let bubbles: [ChatBubble]
     /// Who the chat is with, for the copied chat's lines in a private chat.
@@ -66,6 +67,8 @@ struct ChatTranscript: View, Equatable {
     /// When this chat was opened: what comes in the first moments (its newest messages, its pictures) is simply there,
     /// without the chat sliding past everything to reach it.
     @State private var openedAt = Date()
+    /// Where the messages are and which ones a drag picked, for asking Nook about them (`TranscriptSelection`).
+    @StateObject private var selection = TranscriptSelection()
 
     /// The end of the chat, under its last message and whoever is typing: where the chat stays while you are there.
     private static let bottomID = "\u{1}bottom"
@@ -355,6 +358,11 @@ struct ChatTranscript: View, Equatable {
                                        onCopyChat: { Pasteboard.copy(ChatBubble.transcript(bubbles, contact: contact)) },
                                        onVote: voteAction(bubble))
                             .equatable()
+                            .background(TranscriptPickMark(selection: selection, id: bubble.id))
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(TranscriptSelection.space)) } action: {
+                                selection.place(bubble.id, at: $0)
+                            }
+                            .onDisappear { selection.place(bubble.id, at: nil) }
                             // A new run starts with room above it; the messages of one run sit close together, so who
                             // said what reads at a glance.
                             .padding(.top, row.id == top ? 0 : (first ? NookTheme.Spacing.lg : NookTheme.Spacing.xxs))
@@ -374,6 +382,8 @@ struct ChatTranscript: View, Equatable {
             .animation(NookTheme.reveal, value: typing)
         }
         .frame(maxWidth: .infinity)
+        .coordinateSpace(.named(TranscriptSelection.space))
+        .background(TranscriptSelectionAnchor(selection: selection, bubbles: bubbles, contact: contact))
     }
 
     // A message still on its way (`ChatBubble.local`) has nothing to answer, react to, change or delete yet.
