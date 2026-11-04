@@ -32,6 +32,13 @@ struct AgentCommandPalette: View {
             Entry(id: "act:worktrees", symbol: "arrow.triangle.branch", title: tr("agents.footer.worktrees"), detail: "") { viewModel.selectedAgentID = AgentsPage.worktrees },
             Entry(id: "act:settings", symbol: "gearshape", title: tr("agents.footer.settings"), detail: "") { app.openSettings() },
         ]
+        // The session that is open: its title written again.
+        let selected = viewModel.selectedAgentID
+        if selected.hasPrefix("run:"), let id = UUID(uuidString: String(selected.dropFirst(4))), let run = app.workspace.run(id) {
+            actions.append(Entry(id: "act:retitle", symbol: "wand.and.stars", title: tr("ws.title.regenerate"), detail: run.title) {
+                app.workspace.regenerateTitle(id)
+            })
+        }
         let sessions = app.workspace.runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }.prefix(40).map { run in
             Entry(id: "run:" + run.id.uuidString, symbol: "bubble.left.and.text.bubble.right", title: run.title,
                   detail: [run.provider.displayName, URL(fileURLWithPath: run.workingDirectory).lastPathComponent, run.branch ?? ""]

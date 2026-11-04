@@ -303,6 +303,8 @@ struct AgentRunPanel: View {
                 titleDraft = run.title
                 renaming = true
             }
+            // A new written title from the first message and the latest ones, with your title rules.
+            Button(tr("ws.title.regenerate")) { workspace.regenerateTitle(runID) }
             // A fork starts from this session; switching moves it to another agent with a summary of what happened.
             Button(tr("agents.fork")) {
                 if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
