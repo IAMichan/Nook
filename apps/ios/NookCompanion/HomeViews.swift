@@ -71,11 +71,36 @@ struct TodayView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            NookMark(size: 44).padding(.bottom, Theme.Spacing.lg)
-            Text(Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)))
-                .font(Theme.TextStyle.label).foregroundStyle(Theme.textTertiary)
-            Text(Self.greeting()).font(Theme.TextStyle.display).foregroundStyle(Theme.text)
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(alignment: .center) {
+                NookMark(size: 48)
+                Spacer()
+                if !waiting.isEmpty {
+                    CountBadge(count: waiting.count)
+                } else if working > 0 {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        PulseDot(color: Theme.blue, size: 6)
+                        Text("\(working) working")
+                            .font(Theme.TextStyle.caption)
+                            .foregroundStyle(Theme.blue)
+                    }
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.vertical, Theme.Spacing.xs)
+                    .background(Theme.blue.opacity(0.12), in: Capsule())
+                    .overlay(Capsule().strokeBorder(Theme.blue.opacity(0.24), lineWidth: 0.5))
+                }
+            }
+            .padding(.bottom, Theme.Spacing.sm)
+
+            Text(Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)).uppercased())
+                .font(Theme.rounded(11.5, .semibold))
+                .tracking(0.8)
+                .foregroundStyle(Theme.textTertiary)
+
+            Text(Self.greeting())
+                .font(Theme.TextStyle.display)
+                .foregroundStyle(Theme.text)
+
             Group {
                 if waiting.isEmpty {
                     Text("All quiet. Here is your day.")
@@ -83,10 +108,11 @@ struct TodayView: View {
                     Text("\(waiting.count) sessions wait for you")
                 }
             }
-            .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary)
+            .font(Theme.TextStyle.body)
+            .foregroundStyle(Theme.textSecondary)
         }
         .padding(.horizontal, Theme.Spacing.xs)
-        .padding(.top, Theme.Spacing.xxl)
+        .padding(.top, Theme.Spacing.xl)
         .padding(.bottom, Theme.Spacing.xs)
     }
 
@@ -241,22 +267,39 @@ private struct NowPlayingCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             HStack(spacing: Theme.Spacing.lg) {
-                Image(systemName: "music.note")
-                    .font(Theme.font(20, .semibold)).foregroundStyle(Theme.textStrong)
-                    .frame(width: 52, height: 52)
-                    .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                ZStack {
+                    RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Theme.music.opacity(0.22), Theme.raised],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 52, height: 52)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                                .strokeBorder(Theme.music.opacity(0.35), lineWidth: 0.5)
+                        )
+                    Image(systemName: "music.note")
+                        .font(Theme.font(20, .semibold))
+                        .foregroundStyle(Theme.music)
+                }
                 VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                     Text(track.title).font(Theme.TextStyle.title).foregroundStyle(Theme.text).lineLimit(1)
                     Text([track.artist, track.app].filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary).lineLimit(1)
                 }
                 Spacer(minLength: 0)
+                if track.playing {
+                    PulseDot(color: Theme.music, size: 6)
+                }
             }
             if track.duration > 0 {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     let position = min(track.duration, track.position + (track.playing ? context.date.timeIntervalSince(read) : 0))
                     VStack(spacing: Theme.Spacing.xs) {
-                        UsageBar(fraction: position / track.duration, color: Theme.text, height: 4)
+                        UsageBar(fraction: position / track.duration, color: Theme.music, height: 4)
                         HStack {
                             Text(Self.time(position))
                             Spacer()
@@ -273,8 +316,15 @@ private struct NowPlayingCard: View {
                     control("backward.fill", "previous", label: "Previous track")
                     Button { press("playpause") } label: {
                         Image(systemName: track.playing ? "pause.fill" : "play.fill")
-                            .font(Theme.font(20, .bold)).foregroundStyle(Theme.ink)
-                            .frame(width: 52, height: 52).background(Theme.text, in: Circle())
+                            .font(Theme.font(20, .bold))
+                            .foregroundStyle(Theme.ink)
+                            .frame(width: 52, height: 52)
+                            .background(
+                                LinearGradient(colors: [Color.white, Color(hex: 0xEDEDF2)], startPoint: .top, endPoint: .bottom),
+                                in: Circle()
+                            )
+                            .overlay(Circle().strokeBorder(Color.white.opacity(0.6), lineWidth: 0.5))
+                            .shadow(color: Color.white.opacity(0.16), radius: 6, y: 1)
                     }
                     .accessibilityLabel(playLabel)
                     control("forward.fill", "next", label: "Next track")
@@ -439,11 +489,23 @@ private struct QuickActionTile: View {
             }
         } label: {
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                Image(systemName: blocked == nil ? symbol : "lock.fill")
-                    .font(Theme.font(18, .semibold))
-                    .foregroundStyle(Theme.text)
-                    .frame(height: 28, alignment: .leading)
-                Spacer(minLength: Theme.Spacing.md)
+                ZStack {
+                    Circle()
+                        .fill(blocked == nil ? Theme.raised : Theme.well)
+                        .frame(width: 38, height: 38)
+                        .overlay(
+                            Circle().strokeBorder(
+                                LinearGradient(colors: [Theme.text.opacity(0.1), Theme.text.opacity(0.02)], startPoint: .top, endPoint: .bottom),
+                                lineWidth: 0.5
+                            )
+                        )
+                    Image(systemName: blocked == nil ? symbol : "lock.fill")
+                        .font(Theme.font(16, .semibold))
+                        .foregroundStyle(blocked == nil ? Theme.text : Theme.textTertiary)
+                }
+                .padding(.bottom, Theme.Spacing.xs)
+
+                Spacer(minLength: Theme.Spacing.xs)
                 Text(title)
                     .font(Theme.TextStyle.strong)
                     .foregroundStyle(Theme.text)
@@ -452,10 +514,10 @@ private struct QuickActionTile: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Text(detail ?? " ")
                     .font(Theme.TextStyle.caption)
-                    .foregroundStyle(Theme.textTertiary)
+                    .foregroundStyle(detail != nil ? Theme.amber : Theme.textTertiary)
                     .lineLimit(1)
             }
-            .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 110, alignment: .topLeading)
             .card(padding: Theme.Spacing.lg)
             .opacity(blocked == nil ? 1 : 0.55)
             .contentShape(Rectangle())

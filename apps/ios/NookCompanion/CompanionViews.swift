@@ -211,10 +211,18 @@ private struct PairingStep: View {
     var body: some View {
         HStack(alignment: .top, spacing: Theme.Spacing.lg) {
             Text(number, format: .number)
-                .font(Theme.rounded(13, .semibold)).foregroundStyle(Theme.text)
-                .frame(width: 26, height: 26)
-                .background(Theme.raised, in: Circle())
-            Text(text).font(Theme.TextStyle.body).foregroundStyle(Theme.textStrong).frame(maxWidth: .infinity, alignment: .leading)
+                .font(Theme.rounded(13, .bold)).foregroundStyle(Theme.text)
+                .frame(width: 28, height: 28)
+                .background(
+                    Circle()
+                        .fill(Theme.raised)
+                        .overlay(Circle().strokeBorder(Theme.hairline, lineWidth: 0.5))
+                )
+            Text(text)
+                .font(Theme.TextStyle.body)
+                .foregroundStyle(Theme.textStrong)
+                .lineSpacing(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -631,32 +639,65 @@ struct AgentRow: View {
     let session: SessionDigest
 
     private var receded: Bool { !SessionListView.needsYou(session) && session.attention != "working" }
+    private var needsAttention: Bool { SessionListView.needsYou(session) }
+    private var isWorking: Bool { session.attention == "working" }
     private var context: String {
         guard let branch = session.branch, !branch.isEmpty else { return session.folder }
         return session.folder + " · " + branch
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            HStack(spacing: Theme.Spacing.md) {
-                Text(session.title)
-                    .font(receded ? Theme.TextStyle.body : Theme.TextStyle.strong)
-                    .foregroundStyle(receded ? Theme.textSecondary : Theme.text)
-                    .lineLimit(1)
-                Spacer(minLength: Theme.Spacing.md)
-                slot
+        HStack(spacing: Theme.Spacing.md) {
+            // Accent stripe for attention / working sessions
+            if needsAttention || isWorking {
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(isWorking ? Theme.accent : Theme.color(session.attention))
+                    .frame(width: 3, height: 26)
             }
-            HStack(spacing: Theme.Spacing.md) {
-                Text(context).lineLimit(1).truncationMode(.middle)
-                Spacer(minLength: Theme.Spacing.md)
-                AgentMark(agent: session.agent, size: 15, quiet: true)
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                HStack(spacing: Theme.Spacing.md) {
+                    Text(session.title)
+                        .font(receded ? Theme.TextStyle.body : Theme.TextStyle.strong)
+                        .foregroundStyle(receded ? Theme.textSecondary : Theme.text)
+                        .lineLimit(1)
+                    Spacer(minLength: Theme.Spacing.md)
+                    slot
+                }
+                HStack(spacing: Theme.Spacing.xs) {
+                    Text(session.folder)
+                        .lineLimit(1)
+                    if let branch = session.branch, !branch.isEmpty {
+                        Text("•")
+                            .foregroundStyle(Theme.textTertiary)
+                        Image(systemName: "arrow.triangle.branch")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.textTertiary)
+                        Text(branch)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Spacer(minLength: Theme.Spacing.md)
+                    AgentMark(agent: session.agent, size: 15, quiet: true)
+                }
+                .font(Theme.TextStyle.detail)
+                .foregroundStyle(Theme.textTertiary)
             }
-            .font(Theme.TextStyle.detail)
-            .foregroundStyle(Theme.textTertiary)
         }
         .padding(.horizontal, Theme.Spacing.lg)
-        .padding(.vertical, Theme.Spacing.md + Theme.Spacing.xxs)
+        .padding(.vertical, Theme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                .fill(needsAttention ? Theme.color(session.attention).opacity(0.05) : (receded ? Color.clear : Theme.surface.opacity(0.5)))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                .strokeBorder(
+                    needsAttention ? Theme.color(session.attention).opacity(0.25) : (receded ? Color.clear : Theme.border.opacity(0.5)),
+                    lineWidth: 0.5
+                )
+        )
         .contentShape(Rectangle())
     }
 
@@ -686,7 +727,7 @@ struct SessionNotice: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             opener {
                 HStack(spacing: Theme.Spacing.md) {
-                    AgentMark(agent: session.agent, size: 15)
+                    AgentMark(agent: session.agent, size: 16)
                     Text(session.title).font(Theme.TextStyle.label).foregroundStyle(Theme.textSecondary).lineLimit(1)
                     Spacer(minLength: Theme.Spacing.md)
                     StatusPill(attention: session.attention)
@@ -702,6 +743,10 @@ struct SessionNotice: View {
                             .padding(Theme.Spacing.md)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                                    .strokeBorder(Theme.hairline, lineWidth: 0.5)
+                            )
                     }
                 }
                 actions(item)
@@ -711,9 +756,35 @@ struct SessionNotice: View {
         }
         .padding(Theme.Spacing.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
-            .strokeBorder(Theme.color(session.attention).opacity(0.35), lineWidth: 1))
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
+                    .fill(Theme.surface)
+                RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Theme.color(session.attention).opacity(0.12), Theme.color(session.attention).opacity(0.02)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            Theme.color(session.attention).opacity(0.65),
+                            Theme.color(session.attention).opacity(0.25)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
+        .shadow(color: Theme.color(session.attention).opacity(0.1), radius: 12, x: 0, y: 4)
     }
 
     @ViewBuilder
@@ -747,10 +818,25 @@ struct SessionNotice: View {
                 }
             case .question:
                 opener {
-                    Text("Answer").font(Theme.TextStyle.strong).foregroundStyle(Theme.ink)
-                        .padding(.horizontal, Theme.Spacing.xl + Theme.Spacing.xxs)
-                        .frame(height: 42)
-                        .background(Theme.text, in: Capsule())
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Image(systemName: "bubble.left.and.text.bubble.right.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Answer").font(Theme.TextStyle.strong)
+                    }
+                    .foregroundStyle(Theme.ink)
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .frame(height: 42)
+                    .background(
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Theme.text, Theme.text.opacity(0.92)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .shadow(color: Color.white.opacity(0.12), radius: 6, x: 0, y: 2)
+                    )
                 }
             }
             Spacer(minLength: 0)
