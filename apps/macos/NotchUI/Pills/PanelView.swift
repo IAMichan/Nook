@@ -39,6 +39,9 @@ struct PanelView: View {
     @State private var clickMonitor: Any?
     /// A tab draws the main window's sidebar (`PanelSidebarTop`): the header with the floating capsule stays out.
     @State private var sidebarShown = false
+    /// The tab itself draws the sidebar's column (its list is out); otherwise the panel shows the rail (`sidebarRail`).
+    /// True at first, so a tab that does draw it never flashes the rail.
+    @State private var tabDrawsSidebar = true
 
     /// The height of the header row (the floating capsule with the tabs, or a task's title), so Nook can be centered
     /// on it: a 30 pt button with the capsule's 4 pt padding above and below.
@@ -64,11 +67,17 @@ struct PanelView: View {
                 HStack(alignment: .top, spacing: 0) {
                     // A tab without a list of its own (Music) still gets the sidebar in the main window.
                     if sidebar != nil && !footerUnderList { sidebarColumn }
+                    // A tab that put its list away (or shows one column at a time) folds the sidebar to a rail of
+                    // icons, so the tabs stay along the left edge instead of coming back in a capsule on top.
+                    if sidebar != nil && footerUnderList && !tabDrawsSidebar { sidebarRail }
                     // Switching tabs: the old tab goes at once and the new one fades in on its own, outside the spring that
                     // moves the tab capsule and resizes the panel. In that spring the old and the new tab were both on
                     // screen and laid out on every frame, and every change the new tab made as it appeared (its width, its
                     // lists) was animated too: that was the lag between Nook, Agents, Chats and Music.
                     content
+                        .onPreferenceChange(PanelSidebarShown.self) { shown in
+                            if tabDrawsSidebar != shown { tabDrawsSidebar = shown }
+                        }
                         .id(tab)
                         .transition(.asymmetric(insertion: .opacity.animation(NookTheme.tabFade), removal: .identity))
                         .transaction(value: tab) { $0.animation = nil }
@@ -195,6 +204,21 @@ struct PanelView: View {
 
     /// The tab draws the sidebar now: no header of the panel's own.
     private var usesSidebar: Bool { sidebar != nil && sidebarShown }
+
+    /// The sidebar folded away: the traffic lights, Search and the tabs as icons, as narrow as the traffic lights allow.
+    private var sidebarRail: some View {
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                PanelSidebarTop(compact: true)
+                Spacer(minLength: 0)
+            }
+            .panelSidebarColumn()
+            .frame(width: PanelSidebarMetrics.trafficLights)
+            NookDivider(vertical: true)
+                .bleedsVertically(lineBleed)
+                .padding(.trailing, NookTheme.Spacing.lg)
+        }
+    }
 
     /// The sidebar of a tab without a list (Music): the head, the tabs, and the footer at the bottom, as wide as the
     /// Agents list.
