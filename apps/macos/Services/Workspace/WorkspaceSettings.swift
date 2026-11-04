@@ -87,8 +87,27 @@ final class WorkspaceSettings: ObservableObject {
     @Published var buildLeftoverCleanup: Bool {
         didSet { defaults.set(buildLeftoverCleanup, forKey: "ws.buildLeftoverCleanup") }
     }
+    @Published var worktreeCleanupInactiveDays: Int {
+        didSet { defaults.set(worktreeCleanupInactiveDays, forKey: "ws.worktreeCleanupInactiveDays") }
+    }
+    @Published var worktreeCleanupUnchanged: Bool {
+        didSet { defaults.set(worktreeCleanupUnchanged, forKey: "ws.worktreeCleanupUnchanged") }
+    }
+    @Published var worktreeCleanupOnDelete: Bool {
+        didSet { defaults.set(worktreeCleanupOnDelete, forKey: "ws.worktreeCleanupOnDelete") }
+    }
+    @Published var worktreeKeepWhen: WorktreeCleanup.KeepWhen {
+        didSet { defaults.set(worktreeKeepWhen.rawValue, forKey: "ws.worktreeKeepWhen") }
+    }
     var worktreeCleanupRules: WorktreeCleanup.Rules {
-        WorktreeCleanup.Rules(onMergedPullRequest: worktreeCleanupOnMerge, daysAfterSettled: worktreeCleanupDays)
+        WorktreeCleanup.Rules(onMergedPullRequest: worktreeCleanupOnMerge, daysAfterSettled: worktreeCleanupDays,
+                              daysInactive: worktreeCleanupInactiveDays, onUnchanged: worktreeCleanupUnchanged,
+                              onDeletedSession: worktreeCleanupOnDelete, keepWhen: worktreeKeepWhen)
+    }
+    /// The rules for the worktrees of one repository: none when the project switched cleanup off.
+    func worktreeCleanupRules(for repo: String?) -> WorktreeCleanup.Rules {
+        guard let repo, !sessionDefaults(for: repo).worktreeCleanup else { return worktreeCleanupRules }
+        return WorktreeCleanup.Rules(keepWhen: worktreeKeepWhen)
     }
     /// Show costs reported by the agent itself.
     @Published var showCost: Bool {
@@ -179,11 +198,14 @@ final class WorkspaceSettings: ObservableObject {
         editorBundleID = defaults.string(forKey: "ws.editor") ?? ""
         terminalBundleID = defaults.string(forKey: "ws.terminal") ?? Self.builtInTerminal
         autoArchiveDays = defaults.object(forKey: "ws.autoArchiveDays") as? Int ?? 0
-        // On by default: a merged session's worktree (with its build, often several GB) is otherwise never removed. Git
-        // still refuses a worktree with uncommitted changes, and the branch stays.
-        worktreeCleanupOnMerge = defaults.object(forKey: "ws.worktreeCleanupOnMerge") as? Bool ?? true
-        // A week after a session settled (finished or archived, and quiet) its worktree goes too, under the same rules.
-        worktreeCleanupDays = defaults.object(forKey: "ws.worktreeCleanupDays") as? Int ?? 7
+        // Every cleanup rule is off until you switch it on: a worktree is where you go on talking to its agent after a
+        // merge. Builds left behind are swept separately (`buildLeftoverCleanup`), and Settings shows what is kept.
+        worktreeCleanupOnMerge = defaults.object(forKey: "ws.worktreeCleanupOnMerge") as? Bool ?? false
+        worktreeCleanupDays = defaults.object(forKey: "ws.worktreeCleanupDays") as? Int ?? 0
+        worktreeCleanupInactiveDays = defaults.object(forKey: "ws.worktreeCleanupInactiveDays") as? Int ?? 0
+        worktreeCleanupUnchanged = defaults.object(forKey: "ws.worktreeCleanupUnchanged") as? Bool ?? false
+        worktreeCleanupOnDelete = defaults.object(forKey: "ws.worktreeCleanupOnDelete") as? Bool ?? false
+        worktreeKeepWhen = WorktreeCleanup.KeepWhen(rawValue: defaults.string(forKey: "ws.worktreeKeepWhen") ?? "") ?? .uncommittedChanges
         buildLeftoverCleanup = defaults.object(forKey: "ws.buildLeftoverCleanup") as? Bool ?? true
         showCost = defaults.object(forKey: "ws.showCost") as? Bool ?? true
         agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true

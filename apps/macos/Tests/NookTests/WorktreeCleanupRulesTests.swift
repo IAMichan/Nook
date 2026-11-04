@@ -5,10 +5,12 @@ final class WorktreeCleanupRulesTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
     private let both = WorktreeCleanup.Rules(onMergedPullRequest: true, daysAfterSettled: 7)
 
-    private func facts(merged: Bool = false, settled: Bool = false, quietDays: Double = 0, changes: Int? = 0) -> WorktreeCleanup.Facts {
+    private func facts(merged: Bool = false, settled: Bool = false, quietDays: Double = 0, changes: Int? = 0,
+                       unpushed: Int? = 0, ahead: Int? = 3, branch: String? = "nook/feature") -> WorktreeCleanup.Facts {
         WorktreeCleanup.Facts(worktree: "/tmp/wt/feature", repoRoot: "/tmp/repo", otherFolders: ["/tmp/repo", "/tmp/wt/other"],
                               pullRequestMerged: merged, settled: settled, lastActivity: now.addingTimeInterval(-quietDays * 86_400),
-                              uncommittedFiles: changes)
+                              branch: "nook/feature",
+                              git: changes.map { WorktreeCleanup.GitFacts(localChanges: $0, unpushedCommits: unpushed, aheadOfBase: ahead, branch: branch) })
     }
 
     func testOffByDefault() {
@@ -48,6 +50,69 @@ final class WorktreeCleanupRulesTests: XCTestCase {
         var none = facts(merged: true)
         none.worktree = nil
         XCTAssertEqual(WorktreeCleanup.decide(none, rules: both, now: now), .keep(.noWorktree))
+    }
+
+    func testQuietSessionsGoAfterTheirDays() {
+        let inactive = WorktreeCleanup.Rules(daysInactive: 7)
+        XCTAssertEqual(WorktreeCleanup.decide(facts(quietDays: 8), rules: inactive, now: now), .remove(.inactive),
+                       "settled or not")
+        XCTAssertEqual(WorktreeCleanup.decide(facts(quietDays: 3), rules: inactive, now: now), .keep(.notDue))
+    }
+
+    func testAWorktreeWithNothingBeyondItsBaseGoes() {
+        let unchanged = WorktreeCleanup.Rules(onUnchanged: true)
+        XCTAssertEqual(WorktreeCleanup.decide(facts(changes: nil), rules: unchanged, now: now), .keep(.unknownChanges),
+                       "only git can tell")
+        XCTAssertEqual(WorktreeCleanup.decide(facts(ahead: 0), rules: unchanged, now: now), .remove(.unchanged))
+        XCTAssertEqual(WorktreeCleanup.decide(facts(ahead: 2), rules: unchanged, now: now), .keep(.notDue))
+        XCTAssertEqual(WorktreeCleanup.decide(facts(ahead: nil), rules: unchanged, now: now), .keep(.notDue), "no base, no verdict")
+        XCTAssertEqual(WorktreeCleanup.decide(facts(changes: 1, ahead: 0), rules: unchanged, now: now), .keep(.uncommittedChanges))
+    }
+
+    func testAMergeDoesNotCoverCommitsMadeAfterIt() {
+        XCTAssertEqual(WorktreeCleanup.decide(facts(merged: true, unpushed: 2), rules: both, now: now), .keep(.unpushedCommits))
+        XCTAssertEqual(WorktreeCleanup.decide(facts(merged: true, settled: true, quietDays: 8, unpushed: 2), rules: both, now: now),
+                       .remove(.settled), "another rule still applies; the branch keeps the commits")
+        XCTAssertEqual(WorktreeCleanup.decide(facts(merged: true, unpushed: nil), rules: both, now: now), .remove(.mergedPullRequest))
+    }
+
+    func testAnOpenTerminalASymlinkOrAnotherBranchKeepsIt() {
+        var terminal = facts(merged: true)
+        terminal.openTerminal = true
+        XCTAssertEqual(WorktreeCleanup.decide(terminal, rules: both, now: now), .keep(.openTerminal))
+        var link = facts(merged: true)
+        link.isSymlink = true
+        XCTAssertEqual(WorktreeCleanup.decide(link, rules: both, now: now), .keep(.symlink))
+        XCTAssertEqual(WorktreeCleanup.decide(facts(merged: true, branch: "main"), rules: both, now: now), .keep(.branchChanged))
+        XCTAssertEqual(WorktreeCleanup.decide(facts(merged: true, branch: nil), rules: both, now: now), .remove(.mergedPullRequest),
+                       "a detached HEAD is not another branch")
+    }
+
+    func testAGuardIsReportedOnlyWhenARuleApplied() {
+        var active = facts()
+        active.active = true
+        XCTAssertEqual(WorktreeCleanup.decide(active, rules: both, now: now), .keep(.notDue))
+        XCTAssertTrue(WorktreeCleanup.KeepReason.notDue.isQuiet)
+        XCTAssertFalse(WorktreeCleanup.KeepReason.openTerminal.isQuiet)
+    }
+
+    func testDeletingTheLastSessionRemovesOnlyWhenAskedFor() {
+        let rules = WorktreeCleanup.Rules(onDeletedSession: true)
+        XCTAssertFalse(rules.isEnabled, "it acts on delete, not on the sweep")
+        XCTAssertEqual(WorktreeCleanup.decideAfterDelete(facts(), rules: rules), .remove(.deletedSession))
+        XCTAssertEqual(WorktreeCleanup.decideAfterDelete(facts(), rules: WorktreeCleanup.Rules()), .keep(.disabled))
+        XCTAssertEqual(WorktreeCleanup.decideAfterDelete(facts(changes: 3), rules: rules), .keep(.uncommittedChanges))
+        var terminal = facts()
+        terminal.openTerminal = true
+        XCTAssertEqual(WorktreeCleanup.decideAfterDelete(terminal, rules: rules), .keep(.openTerminal))
+    }
+
+    func testUnusedFoldersAreOnlyThoseNoSessionUsesAfterAnHour() {
+        let old = now.addingTimeInterval(-2 * 3600)
+        let candidates = [("/tmp/wt/repo/a", old), ("/tmp/wt/repo/b", old), ("/tmp/wt/repo/c", now.addingTimeInterval(-60)),
+                          ("/tmp/wt/repo/d", old)].map { (path: $0.0, modified: $0.1) }
+        let unused = WorktreeCleanup.orphans(candidates: candidates, used: ["/tmp/wt/repo/a", "/tmp/wt/repo/d/app"], now: now)
+        XCTAssertEqual(unused, ["/tmp/wt/repo/b"])
     }
 
     func testLeaseKeys() {
@@ -112,8 +177,15 @@ private final class Log: @unchecked Sendable {
 
 /// How a session whose worktree is gone gets one back when you write to it again.
 final class WorktreeReopenTests: XCTestCase {
-    private func plan(branch: String? = "nook/feature", exists: Bool = true, merged: Bool = false, base: String? = "origin/main") -> WorktreeCleanup.Reopen {
-        WorktreeCleanup.reopen(branch: branch, branchExists: exists, merged: merged, base: base, newBranch: "nook/next")
+    private func plan(branch: String? = "nook/feature", exists: Bool = true, onRemote: Bool = false, merged: Bool = false,
+                      base: String? = "origin/main") -> WorktreeCleanup.Reopen {
+        WorktreeCleanup.reopen(branch: branch, branchExists: exists, remoteBranchExists: onRemote, merged: merged, base: base,
+                               newBranch: "nook/next")
+    }
+
+    func testABranchGoneHereComesBackFromTheRemote() {
+        XCTAssertEqual(plan(exists: false, onRemote: true), .remoteBranch("nook/feature"))
+        XCTAssertEqual(plan(exists: false, onRemote: true, merged: true), .newBranch("nook/next", base: "origin/main"))
     }
 
     func testUnfinishedWorkComesBackOnItsOwnBranch() {

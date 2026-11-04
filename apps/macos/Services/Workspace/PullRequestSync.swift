@@ -60,6 +60,15 @@ final class PullRequestSync: ObservableObject {
 
     func merged(_ id: UUID) -> Bool { PullRequestSettlement.shouldSettle(links: links[id] ?? []) }
 
+    /// Merged (or closed) at or after `since`: the session's start or your latest message to it. A request that landed
+    /// before you wrote again does not settle the session you are busy in. The request's last update stands in for the
+    /// moment it merged; without one it counts.
+    func merged(_ id: UUID, since: Date?) -> Bool {
+        guard merged(id) else { return false }
+        guard let since, let landed = (links[id] ?? []).compactMap(\.updatedAt).max() else { return true }
+        return landed >= since
+    }
+
     /// The session moved on to a new branch: its old pull requests no longer say anything about it (a merged one would
     /// settle it), and the new branch is asked about in the next round. They stay listed above its composer.
     func forget(_ id: UUID) {
