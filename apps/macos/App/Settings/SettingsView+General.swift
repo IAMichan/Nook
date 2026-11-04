@@ -116,7 +116,6 @@ extension SettingsView {
                 glanceRow(.privacy, detail: tr("settings.start.permissions", granted, SystemPermission.allCases.count),
                           state: recommendedGranted ? .done : .todo)
             }
-            UpdateSettingsSection()
         }
     }
 

@@ -55,8 +55,8 @@ enum SettingsCatalog {
               about: "How Nook's own notices show (an answer that finished in the background, call notes that are ready)."),
         Entry(id: "notices_suggestions", kind: .choice(["card", "strip", "system", "off"]), section: "notifications",
               about: "How a Think Along suggestion shows: its card, one line that opens it, a macOS notification, or only in the list."),
-        Entry(id: "use_memory", kind: .toggle, section: "assistant", about: "Use what Nook remembers with every question."),
-        Entry(id: "learn_from_chats", kind: .toggle, section: "assistant", about: "Let Nook learn from conversations by itself."),
+        Entry(id: "use_memory", kind: .toggle, section: "memory", about: "Use what Nook remembers with every question."),
+        Entry(id: "learn_from_chats", kind: .toggle, section: "memory", about: "Let Nook learn from conversations by itself."),
         Entry(id: "online_lyrics", kind: .toggle, section: "privacy", about: "Look up song lyrics online.")
     ]
 

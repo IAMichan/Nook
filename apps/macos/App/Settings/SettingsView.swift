@@ -4,15 +4,16 @@ import AVFoundation
 import Speech
 import EventKit
 
-/// Settings pages, in the order of the sidebar. Each subject lives in exactly one place, and everything you link or sign
-/// in to (chat apps, online services, your own servers, the iPhone) lives on one page: `connections`.
+/// Settings pages, in the order of the sidebar. Each subject lives in exactly one place: a feature's own keys, privacy
+/// note and options sit on its page, and a page never points to another page for something it could hold itself.
+/// Everything you link or sign in to (chat apps, online services, your own servers, the iPhone) lives on `connections`.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case start, general, appearance, shortcuts, notifications, brain, assistant, autocomplete, dictation, connections, agents,
-         workspace, privacy
+    case start, general, appearance, notifications, shortcuts, privacy, brain, assistant, memory, autocomplete, dictation,
+         connections, agents, workspace
 
-    /// The sidebar groups: four, so the sidebar reads at a glance.
+    /// The sidebar groups: three, so the sidebar reads at a glance.
     enum Group: String, CaseIterable, Identifiable {
-        case nook, intelligence, connect, security
+        case nook, intelligence, connect
 
         var id: String { rawValue }
 
@@ -20,12 +21,12 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
         var sections: [SettingsSection] {
             switch self {
-            case .nook: return [.start, .general, .appearance, .shortcuts, .notifications]
-            // The AI Nook thinks with, what it does with it (and what it remembers), and how you type and talk to it.
-            case .intelligence: return [.brain, .assistant, .autocomplete, .dictation]
+            // Nook itself: how it looks, behaves and notifies, its keys, and what it may see.
+            case .nook: return [.start, .general, .appearance, .notifications, .shortcuts, .privacy]
+            // The AI Nook thinks with, what it does with it, what it remembers, and how you type and talk to it.
+            case .intelligence: return [.brain, .assistant, .memory, .autocomplete, .dictation]
             // Everything Nook is linked to, then the coding agents and where their sessions run.
             case .connect: return [.connections, .agents, .workspace]
-            case .security: return [.privacy]
             }
         }
     }
@@ -42,7 +43,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var info: String? {
         switch self {
         case .connections: return tr("connect.intro")
-        case .assistant: return tr("memory.settings.privacyFooter")
+        case .memory: return tr("memory.settings.privacyFooter")
         default: return nil
         }
     }
@@ -69,7 +70,6 @@ struct SettingsView: View {
     @State var recommendations: [ModelAdvisor.Recommendation] = []
     /// The mood the large preview under Appearance shows.
     @State var lookPreviewMood: NookMood = .rest
-    @ObservedObject var flowStore = FlowStore.shared
     @ObservedObject var openRouter = OpenRouterSignIn.shared
     /// Picks up a key copied on a service's own page when you come back to Nook.
     @StateObject var keyCatcher = ClipboardKeyCatcher()
@@ -139,11 +139,8 @@ struct SettingsView: View {
         case .shortcuts: shortcutsSection
         case .notifications: notificationsSection
         case .brain: brainSection
-        // What Nook does, what it remembers of it, and Nook as a friend, on one page.
-        case .assistant:
-            assistantSection
-            MemorySettingsSection()
-            buddySection
+        case .assistant: assistantSection
+        case .memory: MemorySettingsSection()
         // Completing as you type and dictating are pages of their own, so a page never holds tabs within tabs.
         case .autocomplete: AutocompleteSettingsSection()
         case .dictation: dictationSection
