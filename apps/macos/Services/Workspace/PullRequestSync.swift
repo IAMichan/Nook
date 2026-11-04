@@ -210,6 +210,8 @@ final class PullRequestSync: ObservableObject {
                     }
                 case .earlier(let id, let branch):
                     earlierChecked[Self.folderKey(path: id.uuidString, branch: branch)] = now
+                    // A branch with no work left (an empty or removed worktree) has no pull request to find: its row goes.
+                    if await workspace.dropEarlierBranchIfEmpty(id, branch: branch) { continue }
                     let directory = workspace.run(id)?.workingDirectory ?? id.uuidString
                     guard let repo = await remote(directory, read: { await workspace.remoteRepository(id) }),
                           let found = await SourceForge.requests(repo: repo, branch: branch), !found.isEmpty else { continue }
