@@ -342,6 +342,12 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
   that has no jobs, and so no log, says why. A
   GitLab project's pipelines are not listed there yet: Nook reads no GitLab pipelines API.
 
+- **Agent credits in merge commits.** With Settings › Agents › "Leave agent credits out when merging" on, a merge Nook
+  makes on GitHub (the pull request page, quick merge, Nook Chat's merge tool) asks for GitHub's own merge or squash commit
+  without agents' `Co-authored-by:` trailers and "Generated with …" lines (`AgentCredits`, `PullRequestMergeMessage`),
+  keeping the people GitHub would credit. A rebase merge keeps every commit as it is, and a merge commit keeps the
+  branch's commits, so their trailers stay in history. GitLab merge requests have no merge action in Nook yet.
+
 - **The GitHub dashboard in Chats (Tauri).** Pull requests and reviews sorted by what needs you, issues assigned to you,
   approving, commenting and asking for changes, and the merge rights check exist for GitHub only. GitLab merge requests
   are still only watched and opened in the browser; Nook has no GitLab review or merge actions yet.

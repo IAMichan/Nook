@@ -15,6 +15,8 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "ws.title.regenerateFailed": "Geen titel geschreven: koppel Claude Code of Codex om titels te laten schrijven",
         "settings.ws.titleInstructions": "Eigen regels voor titels",
         "settings.ws.titleInstructions.placeholder": "Begin met het ticketnummer, schrijf in het Engels",
+        "settings.ws.stripAgentCredits": "Agentvermeldingen weglaten bij het mergen",
+        "settings.ws.stripAgentCredits.detail": "Haalt Co-Authored-By-regels van agents (Claude, Codex, Cursor, Gemini, Copilot…) en ‘Generated with’-regels uit de mergecommit die Nook bij GitHub aanvraagt. Mensen als co-auteur blijven staan; je eigen commits veranderen niet.",
     ],
     .en: [
         "ws.question.attach": "Attach a file",
@@ -28,6 +30,8 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "ws.title.regenerateFailed": "No title written: connect Claude Code or Codex to have titles written",
         "settings.ws.titleInstructions": "Your own rules for titles",
         "settings.ws.titleInstructions.placeholder": "Start with the ticket number, write in English",
+        "settings.ws.stripAgentCredits": "Leave agent credits out when merging",
+        "settings.ws.stripAgentCredits.detail": "Removes agents’ Co-Authored-By lines (Claude, Codex, Cursor, Gemini, Copilot…) and “Generated with” lines from the merge commit Nook asks GitHub for. People credited as co-authors stay; your own commits do not change.",
     ],
     .de: [
         "ws.question.attach": "Datei anhängen",
@@ -41,6 +45,8 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "ws.title.regenerateFailed": "Kein Titel geschrieben: verbinde Claude Code oder Codex, um Titel schreiben zu lassen",
         "settings.ws.titleInstructions": "Eigene Regeln für Titel",
         "settings.ws.titleInstructions.placeholder": "Mit der Ticketnummer beginnen, auf Englisch schreiben",
+        "settings.ws.stripAgentCredits": "Agent-Vermerke beim Mergen weglassen",
+        "settings.ws.stripAgentCredits.detail": "Entfernt Co-Authored-By-Zeilen von Agenten (Claude, Codex, Cursor, Gemini, Copilot…) und „Generated with“-Zeilen aus dem Merge-Commit, den Nook bei GitHub anfordert. Menschen als Co-Autoren bleiben; deine eigenen Commits ändern sich nicht.",
     ],
     .fr: [
         "ws.question.attach": "Joindre un fichier",
@@ -54,6 +60,8 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "ws.title.regenerateFailed": "Aucun titre écrit : connectez Claude Code ou Codex pour faire écrire les titres",
         "settings.ws.titleInstructions": "Vos propres règles pour les titres",
         "settings.ws.titleInstructions.placeholder": "Commencer par le numéro de ticket, écrire en anglais",
+        "settings.ws.stripAgentCredits": "Omettre les mentions des agents lors du merge",
+        "settings.ws.stripAgentCredits.detail": "Retire les lignes Co-Authored-By des agents (Claude, Codex, Cursor, Gemini, Copilot…) et les lignes « Generated with » du commit de merge que Nook demande à GitHub. Les personnes créditées comme coauteurs restent ; vos propres commits ne changent pas.",
     ],
     .es: [
         "ws.question.attach": "Adjuntar un archivo",
@@ -67,5 +75,7 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "ws.title.regenerateFailed": "No se escribió ningún título: conecta Claude Code o Codex para que escriban los títulos",
         "settings.ws.titleInstructions": "Tus propias reglas para los títulos",
         "settings.ws.titleInstructions.placeholder": "Empieza con el número de ticket, escribe en inglés",
+        "settings.ws.stripAgentCredits": "Omitir las menciones de agentes al fusionar",
+        "settings.ws.stripAgentCredits.detail": "Quita las líneas Co-Authored-By de agentes (Claude, Codex, Cursor, Gemini, Copilot…) y las líneas “Generated with” del commit de fusión que Nook pide a GitHub. Las personas acreditadas como coautoras se quedan; tus propios commits no cambian.",
     ],
 ]
