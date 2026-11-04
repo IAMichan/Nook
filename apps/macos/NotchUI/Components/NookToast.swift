@@ -320,9 +320,14 @@ private struct NookToastHost<Above: View>: ViewModifier {
             .onDisappear { center.unregister(id) }
     }
 
-    /// The room under the toast: the edge's own, or up to just above the composer when it sits lower than that.
+    /// The room a floating notice or toast needs under a composer to sit at the bottom edge without touching it.
+    private static let roomUnderComposer: CGFloat = 120
+
+    /// The room under the toast: the edge's own, or up to just above the composer when it sits at the bottom. A
+    /// composer higher up (a new session's, centered on the page) leaves the bottom edge free, so the toast stays there.
     private func bottomInset(_ composer: CGRect?, height: CGFloat) -> CGFloat {
-        guard let composer, composer.height > 0 else { return NookTheme.Spacing.xl }
+        guard let composer, composer.height > 0,
+              height - composer.maxY < Self.roomUnderComposer else { return NookTheme.Spacing.xl }
         return max(NookTheme.Spacing.xl, height - composer.minY + NookTheme.Spacing.sm)
     }
 
