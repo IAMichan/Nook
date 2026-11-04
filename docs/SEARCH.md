@@ -9,7 +9,7 @@ to search all of Nook at once:
 | Sessions | Agent sessions Nook runs (title, task, instructions, your prompts, the agent's answers, tools and changed files), the agents it follows in a terminal or editor, and every earlier session of every coding agent, the ones under **Settled** too, each with its whole conversation read from the agent's own transcript | Opens the session on the Agents tab; a session Nook runs opens with its find bar on the words that matched |
 | Chats | WhatsApp (with a linked phone) and the chats collected from other apps | Opens the chat on the Chats tab |
 | Notes | Recorded calls: summary, key points, to-dos and every line by speaker | Opens the note as a conversation |
-| Memory | What Nook remembers | Settings › Assistant |
+| Memory | What Nook remembers | Settings › Memory |
 | Notices | Nook's notice history | Whatever the notice was about |
 | Settings | Every setting by its on-screen name, and by its English name | The right Settings page |
 | Actions | New conversation, new session, pull requests, usage, terminals, browser, worktrees, record a call, open the window, Settings | Runs it |

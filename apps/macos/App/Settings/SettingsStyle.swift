@@ -18,6 +18,7 @@ extension SettingsSection {
         case .notifications: return "bell.fill"
         case .brain: return "brain"
         case .assistant: return "sparkles"
+        case .memory: return "books.vertical.fill"
         case .autocomplete: return "keyboard.fill"
         case .dictation: return "waveform"
         case .connections: return "person.crop.circle.badge.checkmark"

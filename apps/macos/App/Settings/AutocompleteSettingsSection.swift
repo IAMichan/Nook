@@ -66,7 +66,7 @@ struct AutocompleteSettingsSection: View {
                     downloadSection
                     suggestionsSection
                     batterySection
-                    keysLink
+                    AutocompleteKeysSection()
                 case .apps:
                     appsSection
                     sitesSection
@@ -405,17 +405,6 @@ struct AutocompleteSettingsSection: View {
             SettingToggle(tr("autocomplete.smallFields"), detail: tr("autocomplete.smallFieldsDetail"), isOn: $store.prefs.smallFields)
             Toggle(tr("autocomplete.trailingSpace"), isOn: $store.prefs.trailingSpace)
             Toggle(tr("autocomplete.punctuation"), isOn: $store.prefs.punctuationWithWord)
-        }
-    }
-
-    // MARK: Keys
-
-    /// The keys live under Shortcuts, with every other key of Nook.
-    private var keysLink: some View {
-        Section {
-            SettingsLinkRow(title: tr("autocomplete.section.keys"), detail: tr("settings.autocomplete.keysMoved"), section: .shortcuts) {
-                app.settingsSection = .shortcuts
-            }
         }
     }
 

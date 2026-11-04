@@ -11,7 +11,7 @@ Settings, on every tab. Installing is always your click.
 - The **Stamp source commit** build phase (`apps/macos/Config/stamp-source.sh`) adds `NookSourceCommit` and
   `NookSourceBranch` from `git rev-parse HEAD` after `Info.plist` is processed and before Xcode signs the app. It reads
   the checkout, so the Nook target sets `ENABLE_USER_SCRIPT_SANDBOXING: NO` (it is the target's only script phase).
-- A build without these keys and without a release stamp (below) never shows the button; Settings › Overview › Updates
+- A build without these keys and without a release stamp (below) never shows the button; Settings › General › Updates
   says why.
 
 ## Checking
@@ -22,7 +22,7 @@ after launch: the main window opens with Nook, and the launch check follows righ
 `git fetch --no-tags origin main` in the checkout (the default branch comes from `origin/HEAD`) and counts the
 first-parent commits between the build's commit and `origin/main`. Merge commits and squash merges are read as pull
 requests (number and title) for the list in the panel. A failed check (offline, no remote) stays quiet and is only
-shown in Settings. Automatic checks can be turned off in Settings › Overview › Updates; "Check now" always works.
+shown in Settings. Automatic checks can be turned off in Settings › General › Updates; "Check now" always works.
 
 ## The button
 

@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Appearance: how Nook looks. A large live Nook on top that shows each mood, the three styles as cards,
-/// then the color (the biggest change after the style), and the face and finish folded away.
+/// Settings › Appearance: how Nook looks and sounds. A large live Nook on top that shows each mood, the three styles as
+/// cards, then the color (the biggest change after the style), the face and finish folded away, and Nook as a buddy.
 extension SettingsView {
     // MARK: Appearance
 
@@ -91,6 +91,8 @@ extension SettingsView {
                 }
             }
             .listRowBackground(Color.clear)
+
+            buddySection
         }
     }
 

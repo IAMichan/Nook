@@ -68,7 +68,7 @@ The model receives these results at the top of its context (`"Looked up for this
 
 ### Memory: How Nook Remembers & Learns
 
-Memory is built directly into Nook—no external MCP server, Node, or `npx` required. Everything is stored locally in `nook.sqlite` (`memories` table) on your Mac and managed in **Settings › Assistant**: search, edit, pin, mark individual memories as **Only on this Mac**, or delete individual/all memories.
+Memory is built directly into Nook—no external MCP server, Node, or `npx` required. Everything is stored locally in `nook.sqlite` (`memories` table) on your Mac and managed in **Settings › Memory**: search, edit, pin, mark individual memories as **Only on this Mac**, or delete individual/all memories.
 
 **How Nook learns** (`Brain/Memory.swift`, `Services/NookMemory.swift`, `App/AppModel+Memory.swift`):
 

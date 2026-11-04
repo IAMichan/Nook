@@ -3,7 +3,8 @@ import AppKit
 
 /// Settings › Dictation & voice: dictating anywhere, speech recognition, reading aloud and "Hey Nook".
 /// Settings › Notifications and sound: how each kind of notice shows and which apps may notify (`NoticeRulesSettings`),
-/// sounds, how Nook behaves in meetings and while you share your screen, and what the iPhone is told.
+/// sounds, and how Nook behaves in meetings and while you share your screen. What the iPhone is told is set in the
+/// iPhone's own sheet under Connections.
 extension SettingsView {
     // MARK: Dictation and voice
 
@@ -41,12 +42,6 @@ extension SettingsView {
                 SettingsSectionTitle(tr("settings.voice.sounds"), info: tr("settings.voice.customSoundsHint"))
             }
             quietSection
-            Section {
-                SettingsLinkRow(title: tr("companion.push.enable"), detail: tr("settings.notifications.iphoneDetail"),
-                                section: .connections) { app.settingsSection = .connections }
-            } header: {
-                Text(tr("settings.notifications.iphone"))
-            }
         }
     }
 
