@@ -51,19 +51,18 @@ struct NookOrb: View {
             // Clicks and hover land on his round shape here: the drawing over it lets them through.
             .contentShape(Circle())
             .overlay {
-                // In a graph of its own (`SeparateGraph`), so his frames do not update the window he is in.
-                SeparateGraph {
-                    TimelineView(.nookFrames(fps: animated ? awakeRate : energy.plan.frameRate(Self.dozingFrameRate, attended: attended),
-                                            paused: (dozing && energy.plan.pace == .paused) || !(animated || dozing))) { context in
-                        let p = pose(at: context.date)
-                        orb(p).onChange(of: p.offset) { _, offset in motion?.follow(offset) }
-                    }
-                    // Drawn as one picture: Nook is dozens of layers (shading, eyes, mouth, what he wears). Three times
-                    // his size, so the glow, a hat and a hop are not cut off; laid out at his own size.
-                    .frame(width: size * 3, height: size * 3)
-                    .drawingGroup()
+                // Drawn in this graph: he changes only drawing effects inside a fixed frame, so his frames lay nothing out
+                // around him. A hosting view of his own marked the whole window for layout on every frame.
+                // perf: his pose follows the pointer, clicks and moods, so no Core Animation loop (`LayerLoop`) draws him.
+                TimelineView(.nookFrames(fps: animated ? awakeRate : energy.plan.frameRate(Self.dozingFrameRate, attended: attended),
+                                        paused: (dozing && energy.plan.pace == .paused) || !(animated || dozing))) { context in
+                    let p = pose(at: context.date)
+                    orb(p).onChange(of: p.offset) { _, offset in motion?.follow(offset) }
                 }
+                // Drawn as one picture: Nook is dozens of layers (shading, eyes, mouth, what he wears). Three times
+                // his size, so the glow, a hat and a hop are not cut off; laid out at his own size.
                 .frame(width: size * 3, height: size * 3)
+                .drawingGroup()
                 .allowsHitTesting(false)
                 .frame(width: size, height: size)
             }
