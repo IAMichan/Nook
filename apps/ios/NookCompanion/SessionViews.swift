@@ -36,15 +36,12 @@ struct SessionDetailView: View {
                             TranscriptConversation(entries: entries, working: session.attention == "working")
                         } else if !session.excerpt.isEmpty {
                             SectionHeader(title: "Latest reply")
-                            MessageBubble(text: session.excerpt, mine: false)
+                            TranscriptReply(text: session.excerpt, footer: false)
                         }
                         // Messages that wait in the outbox until the Mac takes them.
                         let waiting = client.outbox.waiting(for: session.id)
                         ForEach(waiting) { entry in
-                            MessageBubble(text: entry.request.text ?? "", mine: true).opacity(0.6)
-                        }
-                        if !waiting.isEmpty {
-                            Banner(text: String(localized: "Waits to be sent: it goes as soon as your Mac can be reached."), symbol: "clock")
+                            TranscriptUserMessage(text: entry.request.text ?? "", pending: true)
                         }
                         Color.clear.frame(height: 1).id(Self.bottom)
                     }
