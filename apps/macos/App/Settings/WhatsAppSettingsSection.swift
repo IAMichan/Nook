@@ -1,36 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Accounts & connections › WhatsApp, live: link the phone through a local gateway so Nook can show new
-/// messages in the notch, answer them and send messages after your OK. The same three parts as the WhatsApp sheet in
-/// Settings › Connections: the accounts, what reaches you, and the gateway (folded away).
-struct WhatsAppLinkSection: View {
-    @ObservedObject private var accounts = WhatsAppAccounts.shared
-    @State private var enabled = WhatsAppSettings.enabled
-
-    var body: some View {
-        Section {
-            SettingToggle(tr("whatsapp.settings.enable"), detail: tr("whatsapp.settings.enableDetail"), isOn: $enabled)
-                .onChange(of: enabled) { _, on in accounts.setEnabled(on) }
-            if enabled {
-                WhatsAppInstallRow()
-                WhatsAppAccountList()
-                DisclosureGroup {
-                    WhatsAppGatewayRows()
-                } label: {
-                    SettingLabel(tr("whatsapp.manage.gateway"), hint: tr("whatsapp.manage.gatewayDetail"))
-                }
-            }
-        } header: {
-            SettingsSectionTitle(tr("whatsapp.settings.title"), info: tr("whatsapp.settings.footer"))
-        }
-
-        // Once linked, what reaches you gets a section of its own.
-        if enabled, accounts.isConnected {
-            Section { ChatAppNoticeRows(app: "whatsapp", setCollecting: { _ in }) }
-        }
-    }
-}
+// The parts of WhatsApp's sheet under Settings › Chat apps: installing the gateway, the linked accounts, and the
+// gateway's own settings (folded away there).
 
 /// Installing GOWA, while the gateway is GOWA and it is not on this Mac yet (or is being installed).
 struct WhatsAppInstallRow: View {

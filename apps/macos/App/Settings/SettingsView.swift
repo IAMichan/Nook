@@ -115,6 +115,8 @@ struct SettingsView: View {
     @State var pendingChange: AgentConfigInstaller.Change?
     @State var agentStates: [AgentConfigInstaller.Target: AgentConfigInstaller.State] = [:]
     @State var fetchedModels: [String] = []
+    /// The searchable list of the service's models is open.
+    @State var choosingModel = false
     @State var fetchingModels = false
     @State var recommendations: [ModelAdvisor.Recommendation] = []
     /// The mood the large preview under Appearance shows.

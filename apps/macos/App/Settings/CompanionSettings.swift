@@ -144,7 +144,7 @@ struct CompanionSettingsRows: View {
         HStack {
             if store.hasAPNsKey {
                 InUseLabel(tr("companion.push.keySaved"))
-                ConfirmedButton(tr("companion.remove"), question: tr("confirm.removePush"), detail: tr("confirm.removePush.detail")) {
+                ConfirmedButton(tr("companion.push.removeKey"), question: tr("confirm.removePush"), detail: tr("confirm.removePush.detail")) {
                     store.removeAPNsKey(); APNsClient.shared.forgetToken(); keyProblem = false
                 }
             } else {
