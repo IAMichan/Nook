@@ -228,8 +228,16 @@ enum GitHubPullRequestDetail {
         guard commitCount < 100, (pull["commits"] as? Int).map({ $0 <= commitCount }) ?? true else { return nil }
         let head = pull["head"] as? [String: Any] ?? [:]
         let headRepo = (head["repo"] as? [String: Any])?["full_name"] as? String
-        let headLabel = headRepo.map { ($0.split(separator: "/").first.map(String.init) ?? $0) + "/" + ((head["ref"] as? String) ?? "") }
-            ?? ((head["label"] as? String) ?? "").replacingOccurrences(of: ":", with: "/")
+        // In steps: as one expression it took the compiler too long to type-check on CI.
+        let headRef: String = (head["ref"] as? String) ?? ""
+        let fallbackLabel: String = ((head["label"] as? String) ?? "").replacingOccurrences(of: ":", with: "/")
+        let headLabel: String
+        if let headRepo {
+            let owner: String = headRepo.split(separator: "/").first.map(String.init) ?? headRepo
+            headLabel = owner + "/" + headRef
+        } else {
+            headLabel = fallbackLabel
+        }
         let commits = ((await commitList) ?? []).map { item -> PullRequestMergeMessage.Commit in
             let commit = item["commit"] as? [String: Any] ?? [:]
             let author = commit["author"] as? [String: Any] ?? [:]
