@@ -403,7 +403,7 @@ struct SessionWorkbench<Conversation: View>: View {
                                           dragStart = nil
                                           PanelDrag.commit($liveBottomHeight, to: $bottomHeight)
                                       },
-                                      onReset: { withAnimation(NookTheme.reveal) { bottomHeight = BottomPanelLayout.standard } })
+                                      onReset: { PanelDrag.still { bottomHeight = BottomPanelLayout.standard } })
                     panel(.bottom, tool: bottom)
                 }
                 .frame(height: CGFloat(BottomPanelLayout.height(liveBottomHeight ?? bottomHeight, available: totalHeight)))
@@ -677,10 +677,9 @@ private struct BottomSplitHandle: View {
         .frame(maxWidth: .infinity)
         .frame(height: 9)
         .contentShape(Rectangle())
-        .onHover { inside in
-            hovering = inside
-            if inside { NSCursor.resizeUpDown.push() } else if !dragging { NSCursor.pop() }
-        }
+        // The system's resize cursor, which also stays while the pointer runs ahead of the line during a drag.
+        .pointerStyle(.rowResize)
+        .onHover { hovering = $0 }
         .gesture(
             // Global coordinates: the line itself moves while you drag it.
             DragGesture(minimumDistance: 1, coordinateSpace: .global)
@@ -690,7 +689,6 @@ private struct BottomSplitHandle: View {
                 }
                 .onEnded { _ in
                     dragging = false
-                    if !hovering { NSCursor.pop() }
                     onEnd()
                 }
         )

@@ -264,7 +264,8 @@ private struct SidePanelWidenButton: View {
 
     var body: some View {
         ToolbarIconButton(wide ? "arrow.right.to.line" : "arrow.left.to.line", tr(wide ? "ws.outputs.narrow" : "ws.outputs.widen")) {
-            withAnimation(NookTheme.reveal) { wide.toggle() }
+            // Without a slide: sliding the width laid the whole panel and what sits beside it out again on every frame.
+            PanelDrag.still { wide.toggle() }
         }
     }
 }

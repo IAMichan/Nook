@@ -49,7 +49,7 @@ private struct ResizablePanel: ViewModifier {
                 dragStart = nil
                 PanelDrag.commit($live, to: $width)
             },
-            onReset: { withAnimation(NookTheme.reveal) { width = defaultWidth } }
+            onReset: { PanelDrag.still { width = defaultWidth } }
         )
     }
 }
