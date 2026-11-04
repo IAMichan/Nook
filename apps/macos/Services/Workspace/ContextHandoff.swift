@@ -124,6 +124,37 @@ struct RunLineage: Codable, Equatable, Sendable {
     var symbol: String { kind == .fork ? "arrow.triangle.branch" : "square.stack.3d.up" }
 }
 
+/// Ending a session's agent process so the next message starts it again (new skills, plugins or MCP servers are
+/// picked up), in the same conversation where the agent can resume it.
+enum AgentRestart {
+    enum Plan: Equatable, Sendable {
+        /// No conversation yet: the next message starts one, as it would anyway.
+        case fresh
+        /// The next message resumes the agent's own conversation (Claude Code `--resume`, Codex `thread/resume`, ACP
+        /// `session/load` or `session/resume`).
+        case resume
+        /// The agent cannot take its conversation up again: the next message starts a new one from a summary of the
+        /// timeline (`ContextHandoff`).
+        case summary
+    }
+
+    /// `canResume`: whether this agent can continue a conversation it no longer has open; nil when Nook does not know
+    /// yet (an ACP agent says so only once it runs), and then it tries, as an idle session does after a restart of Nook.
+    static func plan(hasConversation: Bool, canResume: Bool?) -> Plan {
+        guard hasConversation else { return .fresh }
+        return canResume == false ? .summary : .resume
+    }
+
+    /// Whether an agent can resume a conversation natively, as far as the agent alone says. ACP agents tell it in their
+    /// `initialize` answer (`AcpSessionCapabilities.continues`), so they answer nil here.
+    static func resumesNatively(_ provider: RunProvider) -> Bool? {
+        switch provider {
+        case .claude, .codex: return true
+        case .gemini, .opencode, .cursor, .grok, .antigravity, .acp: return nil
+        }
+    }
+}
+
 extension WorkspaceRun {
     /// The session this one was forked from (/fork) or started next to (a model comparison); nil for one of its own.
     /// Stored as `lineage`, which older sessions simply do not have.
