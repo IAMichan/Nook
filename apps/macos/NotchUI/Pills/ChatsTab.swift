@@ -991,7 +991,7 @@ struct ChatsTab: View {
                 sidebarDragStart = nil
                 PanelDrag.commit($liveSidebar, to: $sidebarChoice)
             },
-            onReset: { withAnimation(NookTheme.reveal) { sidebarChoice = 0 } }
+            onReset: { PanelDrag.still { sidebarChoice = 0 } }
         )
     }
 

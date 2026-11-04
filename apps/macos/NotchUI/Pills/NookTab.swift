@@ -133,7 +133,7 @@ struct NookChatView: View {
                             dragStartWidth = nil
                             PanelDrag.commit($liveChatWidth, to: $chatWidth)
                         },
-                        onReset: { withAnimation(NookTheme.reveal) { chatWidth = EmbeddedSplit.defaultChatWidth } }
+                        onReset: { PanelDrag.still { chatWidth = EmbeddedSplit.defaultChatWidth } }
                     )
                     if embedded.current != nil {
                         EmbeddedAppPane()
