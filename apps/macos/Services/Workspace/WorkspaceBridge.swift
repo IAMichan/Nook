@@ -223,6 +223,9 @@ final class WorkspaceBridge: ObservableObject {
             case .sessionRead: return sessionRead(arguments)
             case .sessionList: return sessionList(arguments)
             case .sessionSend: return await sessionSend(arguments, caller, context)
+            case .sessionSearch: return await sessionSearch(arguments)
+            case .sessionOrganize: return await sessionOrganize(arguments, caller, context)
+            case .sessionQuestions: return await sessionQuestions(arguments, caller, context)
             case .deviceList, .deviceOpen, .deviceScreenshot, .deviceClose: return try await device(tool, arguments, caller)
             case .browserSnapshot: return try await browserSnapshot(arguments)
             case .browserClick, .browserType: return try await browserInteract(tool, arguments, caller, context)
@@ -247,9 +250,9 @@ final class WorkspaceBridge: ObservableObject {
     }
 
     func verdict(_ tool: BridgeTool, _ caller: BridgeCaller, command: CommandAssessment.Level? = nil,
-                 localPage: Bool = false, nookAction: Bool = true) -> BridgeVerdict {
+                 localPage: Bool = false, nookAction: Bool = true, answers: Bool = true, ownTask: Bool = false) -> BridgeVerdict {
         BridgePolicy.verdict(tool: tool, caller: caller, command: command, enabled: WorkspaceSettings.shared.agentTools,
-                             localPage: localPage, nookAction: nookAction)
+                             localPage: localPage, nookAction: nookAction, answers: answers, ownTask: ownTask)
     }
 
     /// The answer for a refused call, in words the agent can act on.
