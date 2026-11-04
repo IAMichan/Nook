@@ -30,6 +30,8 @@ enum SettingsCatalog {
               about: "How Nook's face looks: minimal (dots, no mouth), classic (the usual look) or playful (round eyes, a talking mouth)."),
         Entry(id: "notch_placement", kind: .choice(["notch", "floating"]), section: "notch",
               about: "Nook in the notch, or floating anywhere on screen."),
+        Entry(id: "show_notch", kind: .toggle, section: "notch",
+              about: "Show Nook in the notch; off keeps him out of sight until opened with a shortcut or from the menu bar."),
         Entry(id: "notch_on_all_screens", kind: .toggle, section: "notch", about: "A notch on every connected screen."),
         Entry(id: "hide_when_idle", kind: .toggle, section: "notch", about: "Hide Nook when there is nothing to show."),
         Entry(id: "open_on_hover", kind: .toggle, section: "notch", about: "Open the panel when pointing at the notch."),
