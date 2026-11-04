@@ -113,6 +113,23 @@ final class WorkspaceModelsTests: XCTestCase {
         XCTAssertEqual(WorktreeNaming.title(from: "/Users/me/x.png\nKijk hiernaar"), "Kijk hiernaar")
     }
 
+    /// Without an agent, a request that opens with "make sure" still names its subject.
+    func testShortBranchSlugSkipsRequestPhrasing() {
+        XCTAssertEqual(WorktreeNaming.shortSlug("Zorg ervoor dat de branch namen van worktree van Nook echt logischer worden"),
+                       "branch-namen-worktree-nook")
+        XCTAssertEqual(WorktreeNaming.shortSlug("Make sure the login just works"), "login-works")
+    }
+
+    /// The agent's English slug replaces the prompt's words; prefix and UUID slice stay.
+    func testRenamedBranchKeepsPrefixAndSuffix() {
+        XCTAssertEqual(WorktreeNaming.renamedBranch("nook/zorg-ervoor-branch-namen-a6f8", slug: "clearer-branch-names"),
+                       "nook/clearer-branch-names-a6f8")
+        XCTAssertEqual(WorktreeNaming.renamedBranch("team/me/fix-3fa2", slug: "fix-login"), "team/me/fix-login-3fa2")
+        XCTAssertNil(WorktreeNaming.renamedBranch("nook/fix-login-3fa2", slug: "fix-login"), "nothing changes")
+        XCTAssertNil(WorktreeNaming.renamedBranch("feature/my-work", slug: "fix-login"), "not a name Nook made")
+        XCTAssertNil(WorktreeNaming.renamedBranch("main", slug: "fix-login"))
+    }
+
     func testWorktreeDirectoryDropsNookPrefix() {
         XCTAssertEqual(WorktreeNaming.directorySlug(branch: "nook/fix-login-3fa2"), "fix-login-3fa2")
         XCTAssertEqual(WorktreeNaming.directorySlug(branch: "feature/x"), "feature-x")
