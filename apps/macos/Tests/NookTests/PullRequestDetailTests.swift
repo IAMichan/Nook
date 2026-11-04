@@ -177,7 +177,8 @@ final class PullRequestDetailTests: XCTestCase {
         XCTAssertFalse(baseMoved.contains("new commits"))
         XCTAssertTrue(PullRequestDetailParser.mergeError(status: 405, object: ["message": "Pull Request is not mergeable"])
             .contains("Pull Request is not mergeable"))
-        XCTAssertEqual(PullRequestDetailParser.mergeError(status: 500, object: [:]), "GitHub returned an error (500).")
+        XCTAssertEqual(PullRequestDetailParser.mergeError(status: 500, object: [:]),
+                       "GitHub had a problem on its side (500). The pull request was not merged; try again in a moment.")
     }
 
     func testParsesReviewersLabelsAndCounts() throws {
