@@ -18,22 +18,47 @@ extension WorkspaceManager {
     }
 
     /// A title for a new session from its first message, in place of the first line Nook shows until then. It is
-    /// dropped when you renamed the session meanwhile. The same answer names the session's worktree branch in English,
-    /// in place of the words Nook took from the prompt (see `renameBranch`).
+    /// dropped when you renamed the session meanwhile. With the user's title rules (Settings, or the project's own). The
+    /// same answer names the session's worktree branch in English, in place of the words Nook took from the prompt (see
+    /// `renameBranch`).
     func generateTitle(_ id: UUID) {
         guard let run = run(id) else { return }
         let renamesBranch = !run.isRemote && run.worktreePath != nil && run.branch.flatMap { WorktreeNaming.renamedBranch($0, slug: "x") } != nil
         guard settings.autoTitles || renamesBranch else { return }
+        writeTitle(run, later: [], announce: false, renamesBranch: renamesBranch)
+    }
+
+    /// "Regenerate title" from the session menu or the command palette: a new title from the first message and the
+    /// latest ones, also when automatic titles are off. Says so when no agent could write one. The branch keeps its name.
+    func regenerateTitle(_ id: UUID) {
+        guard let run = run(id), !regeneratingTitles.contains(id) else { return }
+        loadTimeline(id)
+        let messages = timeline(id).filter { $0.kind == .user }.map(\.text)
+        // The first message is the task itself; what came after says where the session went.
+        writeTitle(run, later: Array(messages.dropFirst()), announce: true, renamesBranch: false)
+    }
+
+    private func writeTitle(_ run: WorkspaceRun, later: [String], announce: Bool, renamesBranch: Bool) {
+        let id = run.id
         let seed = run.title
+        let instructions = settings.sessionDefaults(for: run.projectPath.isEmpty ? run.workingDirectory : run.projectPath).titleInstructions
+        let prompt = TextGeneration.titlePrompt(message: run.task, later: later, instructions: instructions)
+        if announce { regeneratingTitles.insert(id) }
         Task { [weak self] in
             guard let self else { return }
-            let answer = await self.generateText(TextGeneration.titlePrompt(message: run.task), schema: TextGeneration.titleSchema,
-                                                 prefer: run.provider, profileID: run.profileID, cwd: run.isRemote ? NSHomeDirectory() : run.workingDirectory)
+            let answer = await self.generateText(prompt, schema: TextGeneration.titleSchema, prefer: run.provider, profileID: run.profileID,
+                                                 cwd: run.isRemote ? NSHomeDirectory() : run.workingDirectory)
+            if announce { self.regeneratingTitles.remove(id) }
             if renamesBranch, let raw = answer?["branch"] as? String, let slug = TextGeneration.branchSlug(raw) {
                 await self.renameBranch(id, from: run.branch ?? "", slug: slug)
             }
-            guard self.settings.autoTitles, let raw = answer?["title"] as? String, let title = TextGeneration.title(raw),
-                  self.run(id)?.title == seed else { return }
+            // A title written on its own only with automatic titles on; one you asked for always.
+            guard announce || self.settings.autoTitles else { return }
+            guard let raw = answer?["title"] as? String, let title = TextGeneration.title(raw) else {
+                if announce { ToastCenter.shared.error(tr("ws.title.regenerateFailed")) }
+                return
+            }
+            guard self.run(id)?.title == seed else { return }
             self.update(id) { $0.title = title }
         }
     }

@@ -335,9 +335,11 @@ enum TimelinePresentation {
             return group(turn, tally: tally)
         }
         let between = turn.enumerated().filter { $0.offset != 0 && $0.offset != answer && $0.element.kind != .result }.map(\.element)
-        // Files it handed you stay in view next to its answer: they are what the work made, not part of it.
-        let shared = between.filter(SharedFiles.isShare)
-        let work = between.filter { !SharedFiles.isShare($0) }
+        // Files it handed you and pages it showed you stay in view next to its answer: they are what the work made, not
+        // part of it.
+        func isShown(_ event: RunEvent) -> Bool { SharedFiles.isShare(event) || event.kind == .page }
+        let shared = between.filter(isShown)
+        let work = between.filter { !isShown($0) }
         guard work.contains(where: { $0.kind != .assistant || BackgroundWork.isNotice($0) }) else { return group(turn, tally: tally) }
         let seconds = max(0, finished.date.timeIntervalSince(first.date))
         // The fold takes the id of the first work it hides: never the same as a block shown next to it.

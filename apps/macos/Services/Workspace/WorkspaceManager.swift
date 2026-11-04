@@ -107,6 +107,9 @@ final class WorkspaceManager: ObservableObject {
     @Published var questions: [UUID: [PendingQuestion]] = [:]
     /// Connectors (MCP servers) each session's agent has but cannot use until you sign in (see ConnectorSignIn).
     @Published var connectorSignIns: [UUID: [ConnectorSignIn]] = [:]
+    /// Sessions whose title is being written again on request (`regenerateTitle`): a second request waits for the first.
+    /// Not published: nothing draws it.
+    var regeneratingTitles: Set<UUID> = []
 
     /// Codex sessions over `codex app-server` (see WorkspaceManager+CodexServer), kept alive between turns.
     var codexServers: [UUID: CodexAppServerClient] = [:]
@@ -1944,7 +1947,12 @@ final class WorkspaceManager: ObservableObject {
         wakeSubagent[id] = nil
         mcpAppContexts[id] = nil
         let appFolder = Self.mcpAppFolder(id)
-        Task.detached(priority: .utility) { try? FileManager.default.removeItem(at: appFolder) }
+        // The pages the agent showed (render_page) go with the session.
+        let pageFolder = RenderedPage.file(in: NookPaths.supportDirectory, run: id, page: id).deletingLastPathComponent()
+        Task.detached(priority: .utility) {
+            try? FileManager.default.removeItem(at: appFolder)
+            try? FileManager.default.removeItem(at: pageFolder)
+        }
         prepareTasks.removeValue(forKey: id)?.cancel()
         checkpointIndices[id] = nil
         stopCoordinators[id] = nil
@@ -2035,21 +2043,25 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
-    func diff(_ id: UUID, file: GitFileChange) async throws -> String {
+    func diff(_ id: UUID, file: GitFileChange, options: DiffReadOptions = .standard) async throws -> String {
         guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
         let directory = run.workingDirectory
-        return try await Task.detached(priority: .userInitiated) { try git.diff(directory, file: file) }.value
+        return try await Task.detached(priority: .userInitiated) {
+            try git.diff(directory, file: file, ignoreWhitespace: options.ignoreWhitespace)
+        }.value
     }
 
     /// What one turn (from `start` to `end`) did to a file: between the snapshots around it when the session has them,
     /// otherwise the file against its last commit.
-    func turnDiff(_ id: UUID, path: String, start: Date, end: Date) async throws -> String {
+    func turnDiff(_ id: UUID, path: String, start: Date, end: Date, options: DiffReadOptions = .standard) async throws -> String {
         guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
         let directory = run.workingDirectory
         let around = TurnChanges.checkpoints(run.checkpoints ?? [], start: start, end: end)
         let from = around?.before.ref ?? "HEAD"
         let to = around?.after?.ref
-        return try await Task.detached(priority: .userInitiated) { try git.diff(directory, path: path, from: from, to: to) }.value
+        return try await Task.detached(priority: .userInitiated) {
+            try git.diff(directory, path: path, from: from, to: to, ignoreWhitespace: options.ignoreWhitespace)
+        }.value
     }
 
     /// The lines one turn added and removed per file (between the same snapshots as `turnDiff`), keyed by the path

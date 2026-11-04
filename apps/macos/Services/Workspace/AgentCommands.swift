@@ -1,7 +1,7 @@
 import Foundation
 
 // The `/` list per agent: only commands the agent really has. Sources:
-// - plan, fork, new: Nook's own.
+// - plan, fork, new, btw, side: Nook's own (btw and side open a side chat, see `SideChat`).
 // - compact: context compaction command for Claude and Codex.
 // - goal: Codex and Claude.
 // - the agent's own: what an ACP agent announces in `available_commands_update` (`offered`).
@@ -17,6 +17,12 @@ enum AgentCommands {
         }
         if hasProject {
             list.append(ComposerCommand(name: "fork", insertion: "", action: .fork))
+        }
+        // A side chat beside the session (`SideChat`): the question typed after it goes to a session of its own.
+        if hasProject, surface == .agent {
+            for name in SideChat.commands {
+                list.append(ComposerCommand(name: name, insertion: "/" + name + " ", action: .insert))
+            }
         }
         if surface == .chat {
             list.append(ComposerCommand(name: "new", insertion: "", action: .new))

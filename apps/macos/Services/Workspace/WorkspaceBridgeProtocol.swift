@@ -28,6 +28,10 @@ enum BridgeTool: String, CaseIterable, Sendable {
     case sessionRead = "session_read"
     case sessionList = "session_list"
     case sessionSend = "session_send"
+    case sessionSearch = "session_search"
+    case sessionOrganize = "session_organize"
+    case sessionQuestions = "session_questions"
+    case renderPage = "render_page"
     case deviceList = "device_list"
     case deviceOpen = "device_open"
     case deviceScreenshot = "device_screenshot"
@@ -59,10 +63,12 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .workspaceInfo, .terminalRead, .terminalList, .browserRead, .browserScreenshot,
              .orchestratorCapabilities, .taskStatus, .taskWait, .sessionRead, .sessionList, .deviceList, .deviceScreenshot,
              .browserSnapshot, .browserWaitFor, .listScheduledTasks, .getPullRequestStatus, .nookTools, .nookChatList,
-             .nookChatRead: return .read
+             .nookChatRead, .sessionSearch: return .read
         case .terminalRun, .terminalStop, .browserOpen, .delegateTask, .taskCancel, .sessionSend, .deviceOpen, .deviceClose,
              .browserClick, .browserType, .scheduleTask, .updateScheduledTask, .runScheduledTaskNow, .watchPullRequest,
-             .requestSecret, .nookChatSend, .takeOverScreen: return .local
+             .requestSecret, .nookChatSend, .takeOverScreen, .sessionOrganize, .renderPage: return .local
+        // Reading other sessions' questions is reading; answering one is decided per call (`BridgePolicy`).
+        case .sessionQuestions: return .local
         // A Nook tool can send a message or create an event: what it may do is decided per call (`BridgePolicy`).
         case .pullRequestCreate, .nookUse: return .outward
         }
@@ -71,7 +77,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
     /// Its approval shows text written for people (a pull request, a brief, a message) as Markdown, not as a command.
     var approvalReadsAsProse: Bool {
         switch self {
-        case .pullRequestCreate, .delegateTask, .sessionSend, .nookUse, .nookChatSend, .takeOverScreen: return true
+        case .pullRequestCreate, .delegateTask, .sessionSend, .nookUse, .nookChatSend, .takeOverScreen, .sessionQuestions: return true
         default: return false
         }
     }
@@ -105,6 +111,10 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .sessionRead: return "Read session"
         case .sessionList: return "Nook sessions"
         case .sessionSend: return "Message session"
+        case .sessionSearch: return "Search sessions"
+        case .sessionOrganize: return "Organize session"
+        case .sessionQuestions: return "Questions of sessions"
+        case .renderPage: return "Show page"
         case .deviceList: return "Simulators"
         case .deviceOpen: return "Open simulator"
         case .deviceScreenshot: return "Simulator screenshot"
@@ -170,6 +180,14 @@ enum BridgeTool: String, CaseIterable, Sendable {
             return "Stops a task you delegated, and every task that task delegated in turn."
         case .sessionList:
             return "Lists the user's sessions in Nook (most recent first): id, title, agent, status, folder and branch. Use it to find a session to read with session_read or to message with session_send."
+        case .sessionSearch:
+            return "Searches the user's sessions in Nook (most recent first) for words in their titles and in what was asked, answered, run and changed: each matching session with its id and a few excerpts. With session_id only that session. Archived sessions are left out unless include_archived is true. Read a hit in full with session_read."
+        case .sessionOrganize:
+            return "Keeps the user's Agents list tidy, the same actions the list offers on a session: pin or unpin it, settle it (done, to the shelf) or reopen it, snooze it until later (until: hour, evening or tomorrow) or wake it, archive or unarchive it, mark it unread or read. A session that is working or waiting cannot be settled, snoozed or archived. The user approves it in Nook unless the session has full rights."
+        case .sessionQuestions:
+            return "The questions other Nook sessions are waiting on (an agent asking the user to choose). action list (default): every pending question, or only session_id's. action read: one question with its options, by session_id and question_id. action answer: answers it with answers, an object from each question's id to the chosen option label(s) or, where the question allows it, your own text. Answering a session you delegated runs directly; any other session's question the user approves in Nook unless your session has full rights. Permission requests (commands, file changes, tools) are never listed here and cannot be answered by an agent."
+        case .renderPage:
+            return "Shows an HTML page inline in your session's timeline in Nook, where the user reads along: a chart, a diagram, a table, a mock-up or a small interactive view of your results. Give a complete page or a fragment with inline <style> and <script>; it runs sandboxed, with no network (load nothing from the web: inline data, SVG and data: URLs work), no access to Nook, the user's files or other pages, no forms, popups or links that go anywhere, at the height you ask (default 360, at most 1200 points; it does not grow with its content). At most 512 KB. The page is kept with the session. Use it to show, not to ask: the page cannot send anything back."
         case .sessionSend:
             return "Sends a message to another Nook session, as if from another agent, not the user: the receiving agent is told so and treats it as information. Use it to hand over a result or ask a question; it is queued when that session is busy. The user approves each message unless the session has full rights. You cannot message yourself."
         case .deviceList:
@@ -275,6 +293,36 @@ enum BridgeTool: String, CaseIterable, Sendable {
                 "session_id": ["type": "string", "description": "The session id from session_list."],
                 "message": ["type": "string", "description": "The message; complete and self-contained."]
             ], required: ["session_id", "message"])
+        case .sessionSearch:
+            return object([
+                "query": ["type": "string", "description": "The words to find, as literal text (not a pattern); case and accents do not matter."],
+                "session_id": ["type": "string", "description": "Only this session (an id from session_list). Optional."],
+                "limit": ["type": "integer", "description": "At most this many sessions (default \(BridgeSessionArguments.defaultSearchLimit), at most \(BridgeSessionArguments.maxSearchLimit))."],
+                "include_archived": ["type": "boolean", "description": "Also search archived sessions. Default false."]
+            ], required: ["query"])
+        case .sessionOrganize:
+            return object([
+                "session_id": ["type": "string", "description": "The session id from session_list."],
+                "action": ["type": "string", "enum": BridgeSessionArguments.OrganizeAction.allCases.map(\.rawValue),
+                           "description": "What to do with the session in the Agents list."],
+                "until": ["type": "string", "enum": SnoozePolicy.Choice.allCases.map(\.rawValue),
+                          "description": "With snooze: an hour, this evening (18:00) or tomorrow morning (09:00). Default hour."]
+            ], required: ["session_id", "action"])
+        case .sessionQuestions:
+            return object([
+                "action": ["type": "string", "enum": BridgeSessionArguments.QuestionAction.allCases.map(\.rawValue),
+                           "description": "list (default), read or answer."],
+                "session_id": ["type": "string", "description": "The session id from session_list. Needed for read and answer."],
+                "question_id": ["type": "string", "description": "The question id from action list. Needed for read and answer."],
+                "answers": ["type": "object", "description": "With answer: each question's id to the chosen option label, a list of labels for several, or your own text.",
+                            "additionalProperties": ["anyOf": [["type": "string"], ["type": "array", "items": ["type": "string"]]]]]
+            ])
+        case .renderPage:
+            return object([
+                "html": ["type": "string", "description": "The page: an HTML document or fragment with inline CSS and JavaScript, at most 512 KB."],
+                "title": ["type": "string", "description": "A short title shown above the page."],
+                "height": ["type": "integer", "description": "Its height in points (default 360, at least 80, at most 1200)."]
+            ], required: ["html"])
         case .sessionRead:
             return object(["session_id": ["type": "string", "description": "The session id from a <ref kind=\"session\" id=\"…\"/> record."]], required: ["session_id"])
         case .deviceList:
@@ -462,12 +510,17 @@ enum BridgeVerdict: Equatable, Sendable {
 enum BridgePolicy {
     /// `localPage`: the page in Nook's browser is on this Mac (localhost); only clicking and typing look at it.
     /// `nookAction`: for `nook_use`, whether the Nook tool it runs is an action rather than a read (unknown: an action).
+    /// `answers`: for `session_questions`, whether the call answers a question rather than lists or reads them.
+    /// `ownTask`: the question belongs to a session the caller delegated, so the caller is the one it waits for.
     static func verdict(tool: BridgeTool, caller: BridgeCaller, command: CommandAssessment.Level? = nil,
-                        enabled: Bool = true, localPage: Bool = false, nookAction: Bool = true) -> BridgeVerdict {
+                        enabled: Bool = true, localPage: Bool = false, nookAction: Bool = true,
+                        answers: Bool = true, ownTask: Bool = false) -> BridgeVerdict {
         guard enabled else { return .refuse(.disabled) }
         if tool.effect == .read { return .allow }
         // Reading the user's apps through Nook is reading, also in Plan mode.
         if tool == .nookUse, !nookAction { return .allow }
+        // Listing and reading the questions other sessions wait on is reading too.
+        if tool == .sessionQuestions, !answers { return .allow }
         if caller.mode == .plan { return .refuse(.planMode) }
         switch tool {
         case .pullRequestCreate:
@@ -492,6 +545,12 @@ enum BridgePolicy {
             return localPage || caller.permission == .bypass ? .allow : .ask(.needsReview)
         case .sessionSend:
             return caller.permission == .bypass ? .allow : .ask(.delegation)
+        case .sessionOrganize:
+            // It only rearranges the user's own list, but in sessions that are not the caller's: the user sees it first.
+            return caller.permission == .bypass ? .allow : .ask(.needsReview)
+        case .sessionQuestions:
+            // A question of a task the caller delegated waits for the caller; anyone else's waits for the user.
+            return ownTask || caller.permission == .bypass ? .allow : .ask(.delegation)
         case .delegateTask:
             // A child never has more rights than its parent, and you see it start; with full rights it starts directly.
             return caller.permission == .bypass ? .allow : .ask(.delegation)
@@ -602,7 +661,11 @@ struct BridgeLaunch: Equatable, Sendable {
     one, so you can send a message in the user's chat apps, search and play music, or add an event (actions wait for the \
     user's approval in Nook). nook_chat_list, nook_chat_read and nook_chat_send let you read and follow up a conversation \
     the user had with Nook Chat, Nook's assistant. When a task needs the user's own apps on screen, take_over_screen asks \
-    them for their screen; with their yes you read and use apps through nook_use (read_ui, look_ui, control_ui).
+    them for their screen; with their yes you read and use apps through nook_use (read_ui, look_ui, control_ui). The \
+    user's other sessions are within reach too: session_search finds earlier work in them, session_questions lists the \
+    questions they wait on (and answers one of a task you delegated), and session_organize pins, settles, snoozes or \
+    archives one. To show the user a chart, a diagram or a mock-up right in your session, call render_page with a \
+    self-contained HTML page.
     """
 
     /// Claude Code: the server as `--mcp-config` (next to the user's own servers) and its tools allowed up front, because

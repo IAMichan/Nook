@@ -26,15 +26,35 @@ enum TimelineContainers {
     }
 }
 
-/// "Find in session" (⌘F): a small bar on top of the timeline with the match count and previous/next.
+/// "Find in session" (⌘F): a small bar on top of the timeline with the match count and previous/next. Return goes to
+/// the next match, Shift-Return to the previous one, Escape closes. A stacked diff's find uses the same bar.
 struct TimelineFindBar: View {
     @Binding var query: String
-    let result: TimelineSearchResult
+    let state: TimelineSearchResult.State
+    /// How many matches there are.
+    let count: Int
     let current: Int?
     let previous: () -> Void
     let next: () -> Void
     let close: () -> Void
     @FocusState private var focused: Bool
+
+    init(query: Binding<String>, result: TimelineSearchResult, current: Int?, previous: @escaping () -> Void,
+         next: @escaping () -> Void, close: @escaping () -> Void) {
+        self.init(query: query, state: result.state, count: result.matches.count, current: current, previous: previous,
+                  next: next, close: close)
+    }
+
+    init(query: Binding<String>, state: TimelineSearchResult.State, count: Int, current: Int?,
+         previous: @escaping () -> Void, next: @escaping () -> Void, close: @escaping () -> Void) {
+        _query = query
+        self.state = state
+        self.count = count
+        self.current = current
+        self.previous = previous
+        self.next = next
+        self.close = close
+    }
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.md) {
@@ -46,9 +66,15 @@ struct TimelineFindBar: View {
                 .foregroundStyle(NookTheme.paper)
                 .focused($focused)
                 .onSubmit(next)
+                // Shift-Return steps back; a plain Return goes on to `onSubmit`.
+                .onKeyPress(.return, phases: .down) { press in
+                    guard press.modifiers.contains(.shift) else { return .ignored }
+                    previous()
+                    return .handled
+                }
             Text(label)
                 .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(result.state == .noResults || result.state == .failed ? NookTheme.coralSoft : NookTheme.textTertiary)
+                .foregroundStyle(state == .noResults || state == .failed ? NookTheme.coralSoft : NookTheme.textTertiary)
                 .monospacedDigit()
             button("chevron.up", tr("timeline.search.previous"), previous)
             button("chevron.down", tr("timeline.search.next"), next)
@@ -62,11 +88,13 @@ struct TimelineFindBar: View {
     }
 
     private var label: String {
-        switch result.state {
+        switch state {
         case .idle, .searching: return ""
         case .noResults: return tr("timeline.search.none")
         case .failed: return tr("timeline.search.tooLong")
-        case .results: return result.countLabel(current: current)
+        case .results:
+            guard let current, current < count else { return "0/\(count)" }
+            return "\(current + 1)/\(count)"
         }
     }
 
