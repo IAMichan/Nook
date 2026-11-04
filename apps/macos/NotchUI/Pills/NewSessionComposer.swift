@@ -279,15 +279,18 @@ struct NewSessionComposer: View {
     private var agentMenu: some View {
         let profile = app.profiles.profile(id: config.profileID)
         let name = profile.map { AccountLabel.name($0, app: app) }
-        // On Auto the agent is picked as the session starts: the pill says only "Auto".
-        let auto = config.model == AutoModel.id
+        // On Auto the agent is picked from the prompt as the session starts, so the pill shows Auto's own mark and word,
+        // not the logo of the agent chosen last.
+        let auto = config.model == AutoModel.id && comparing.isEmpty
         return ModelPickerDropdown {
-            ComposerPill(agent: config.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
-                         text: auto && comparing.isEmpty ? tr("auto.model") : comparing.isEmpty
+            ComposerPill(symbol: auto ? AutoModel.symbol : nil,
+                         agent: auto ? nil : config.provider.displayName,
+                         account: auto ? nil : profile.map { AccountKind.of($0, app: app) },
+                         text: auto ? tr("auto.model") : comparing.isEmpty
                             ? [config.provider.displayName, name].compactMap { $0 }.joined(separator: " · ")
                                 + (config.model.isEmpty ? "" : " · " + app.modelMenuName(config.model, for: config.provider, profileID: config.profileID))
                             : tr("compare.pill", comparing.count + 1),
-                         short: !comparing.isEmpty ? tr("compare.pill", comparing.count + 1)
+                         short: auto ? tr("auto.model") : !comparing.isEmpty ? tr("compare.pill", comparing.count + 1)
                             : (config.model.isEmpty ? config.provider.displayName : app.modelMenuName(config.model, for: config.provider, profileID: config.profileID)))
         } content: {
             if app.connectedProviders.isEmpty {
