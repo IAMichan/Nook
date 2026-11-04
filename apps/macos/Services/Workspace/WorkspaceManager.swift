@@ -107,6 +107,9 @@ final class WorkspaceManager: ObservableObject {
     @Published var questions: [UUID: [PendingQuestion]] = [:]
     /// Connectors (MCP servers) each session's agent has but cannot use until you sign in (see ConnectorSignIn).
     @Published var connectorSignIns: [UUID: [ConnectorSignIn]] = [:]
+    /// Sessions whose title is being written again on request (`regenerateTitle`): a second request waits for the first.
+    /// Not published: nothing draws it.
+    var regeneratingTitles: Set<UUID> = []
 
     /// Codex sessions over `codex app-server` (see WorkspaceManager+CodexServer), kept alive between turns.
     var codexServers: [UUID: CodexAppServerClient] = [:]

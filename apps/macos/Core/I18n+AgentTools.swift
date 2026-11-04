@@ -11,6 +11,10 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "bridge.approval.organizeNote": "Alleen je Agents-lijst verandert; de sessie zelf gaat door zoals ze was.",
         "bridge.approval.answer": "%@ wil een vraag van de sessie “%@” beantwoorden",
         "bridge.approval.answerNote": "Het antwoord gaat naar die sessie alsof jij het gaf.",
+        "ws.title.regenerate": "Titel opnieuw laten schrijven",
+        "ws.title.regenerateFailed": "Geen titel geschreven: koppel Claude Code of Codex om titels te laten schrijven",
+        "settings.ws.titleInstructions": "Eigen regels voor titels",
+        "settings.ws.titleInstructions.placeholder": "Begin met het ticketnummer, schrijf in het Engels",
     ],
     .en: [
         "ws.question.attach": "Attach a file",
@@ -20,6 +24,10 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "bridge.approval.organizeNote": "Only your Agents list changes; the session itself goes on as it was.",
         "bridge.approval.answer": "%@ wants to answer a question of the session “%@”",
         "bridge.approval.answerNote": "The answer goes to that session as if you had given it.",
+        "ws.title.regenerate": "Regenerate title",
+        "ws.title.regenerateFailed": "No title written: connect Claude Code or Codex to have titles written",
+        "settings.ws.titleInstructions": "Your own rules for titles",
+        "settings.ws.titleInstructions.placeholder": "Start with the ticket number, write in English",
     ],
     .de: [
         "ws.question.attach": "Datei anhängen",
@@ -29,6 +37,10 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "bridge.approval.organizeNote": "Nur deine Agents-Liste ändert sich; die Sitzung selbst läuft weiter wie zuvor.",
         "bridge.approval.answer": "%@ möchte eine Frage der Sitzung „%@“ beantworten",
         "bridge.approval.answerNote": "Die Antwort geht an diese Sitzung, als hättest du sie gegeben.",
+        "ws.title.regenerate": "Titel neu schreiben lassen",
+        "ws.title.regenerateFailed": "Kein Titel geschrieben: verbinde Claude Code oder Codex, um Titel schreiben zu lassen",
+        "settings.ws.titleInstructions": "Eigene Regeln für Titel",
+        "settings.ws.titleInstructions.placeholder": "Mit der Ticketnummer beginnen, auf Englisch schreiben",
     ],
     .fr: [
         "ws.question.attach": "Joindre un fichier",
@@ -38,6 +50,10 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "bridge.approval.organizeNote": "Seule votre liste Agents change ; la session elle-même continue comme avant.",
         "bridge.approval.answer": "%@ veut répondre à une question de la session « %@ »",
         "bridge.approval.answerNote": "La réponse part vers cette session comme si vous l’aviez donnée.",
+        "ws.title.regenerate": "Réécrire le titre",
+        "ws.title.regenerateFailed": "Aucun titre écrit : connectez Claude Code ou Codex pour faire écrire les titres",
+        "settings.ws.titleInstructions": "Vos propres règles pour les titres",
+        "settings.ws.titleInstructions.placeholder": "Commencer par le numéro de ticket, écrire en anglais",
     ],
     .es: [
         "ws.question.attach": "Adjuntar un archivo",
@@ -47,5 +63,9 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "bridge.approval.organizeNote": "Solo cambia tu lista de Agents; la sesión sigue como estaba.",
         "bridge.approval.answer": "%@ quiere responder una pregunta de la sesión “%@”",
         "bridge.approval.answerNote": "La respuesta va a esa sesión como si la hubieras dado tú.",
+        "ws.title.regenerate": "Volver a escribir el título",
+        "ws.title.regenerateFailed": "No se escribió ningún título: conecta Claude Code o Codex para que escriban los títulos",
+        "settings.ws.titleInstructions": "Tus propias reglas para los títulos",
+        "settings.ws.titleInstructions.placeholder": "Empieza con el número de ticket, escribe en inglés",
     ],
 ]

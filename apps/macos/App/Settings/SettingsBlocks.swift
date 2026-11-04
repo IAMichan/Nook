@@ -579,6 +579,13 @@ struct WorkspaceSettingsSection: View {
                 }
             }
         }
+        inheritable(.titleInstructions, path) {
+            TextField(tr("settings.ws.titleInstructions"), text: Binding(
+                get: { overrideText(.titleInstructions, path) ?? resolved.titleInstructions },
+                set: { ws.setOverride(.titleInstructions, $0, for: path) }),
+                      prompt: Text(tr("settings.ws.titleInstructions.placeholder")), axis: .vertical)
+                .lineLimit(1...4)
+        }
     }
 
     /// A per-project row: its control, then "Inherited" or the button that goes back to the value for all projects.
@@ -684,6 +691,10 @@ struct WorkspaceSettingsSection: View {
         }
         Section(tr("settings.ws.behavior")) {
             Toggle(tr("settings.ws.autoTitles"), isOn: $ws.autoTitles)
+            // Also used by "Regenerate title" in a session's menu; a project can set its own under its defaults.
+            TextField(tr("settings.ws.titleInstructions"), text: $ws.titleInstructions,
+                      prompt: Text(tr("settings.ws.titleInstructions.placeholder")), axis: .vertical)
+                .lineLimit(1...4)
             Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
             Toggle(tr("settings.ws.showCost"), isOn: $ws.showCost)
             Toggle(tr("settings.ws.codexAppServer"), isOn: $ws.codexAppServer)
