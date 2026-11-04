@@ -75,7 +75,7 @@ struct InboxListView: View {
                 .padding(.bottom, Theme.Spacing.md)
                 VStack(spacing: 0) {
                     ForEach(Array(shown.enumerated()), id: \.element.id) { index, chat in
-                        if index > 0 { RowSeparator(inset: Theme.Spacing.lg + 40 + Theme.Spacing.lg).padding(.trailing, Theme.Spacing.lg) }
+                        if index > 0 { RowSeparator(inset: Theme.Spacing.lg + SharedMetrics.avatar + Theme.Spacing.lg).padding(.trailing, Theme.Spacing.lg) }
                         NavigationLink(value: chat.id) { InboxRow(chat: chat) }
                             .buttonStyle(RowPress())
                             .contextMenu { markButton(chat) }
@@ -105,40 +105,26 @@ struct InboxListView: View {
     }
 }
 
+/// A chat in the list: the shared row (`ChatListRowContent`, the same as the Mac's Chats tab) with the chat's initials
+/// and its app's mark, and the count of what is unread.
 struct InboxRow: View {
     let chat: InboxChatDigest
 
+    private var when: String {
+        let date = Date(timeIntervalSince1970: chat.last)
+        return Calendar.current.isDateInToday(date) ? date.formatted(date: .omitted, time: .shortened) : ChatDayDivider.label(date)
+    }
+
     var body: some View {
-        HStack(alignment: .top, spacing: Theme.Spacing.lg) {
-            InboxAvatar(name: chat.name, app: chat.app)
-            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(chat.name).font(Theme.TextStyle.strong).foregroundStyle(Theme.text).lineLimit(1)
-                    Spacer(minLength: Theme.Spacing.md)
-                    Text(Date(timeIntervalSince1970: chat.last), format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
-                        .font(Theme.TextStyle.caption).foregroundStyle(chat.unread > 0 ? Theme.textSecondary : Theme.textTertiary)
-                        .lineLimit(1)
-                }
-                HStack(alignment: .top, spacing: Theme.Spacing.md) {
-                    HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.xs) {
-                        // Someone typing shows in place of the newest message, as on the Mac and in WhatsApp's own list.
-                        if let typing = InboxTyping.text(chat.typing ?? []) {
-                            Text(typing).font(Theme.TextStyle.detail).foregroundStyle(Theme.mint).lineLimit(1)
-                        } else {
-                            if let ticks = chat.ticks { TicksMark(ticks: ticks) }
-                            Text(chat.preview.isEmpty ? chat.appName : chat.preview)
-                                .font(Theme.TextStyle.detail).foregroundStyle(chat.unread > 0 ? Theme.textStrong : Theme.textSecondary).lineLimit(2)
-                        }
-                    }
-                    Spacer(minLength: 0)
-                    CountBadge(count: chat.unread)
-                        .accessibilityLabel(Text("\(chat.unread) unread"))
-                }
-            }
+        ChatListRowContent(name: chat.name, when: when, preview: chat.preview.isEmpty ? chat.appName : chat.preview,
+                           unread: chat.unread > 0, ticks: MessageTicks(chat.ticks),
+                           // Someone typing shows in place of the newest message, as on the Mac and in WhatsApp's list.
+                           typing: InboxTyping.text(chat.typing ?? [])) {
+            InboxAvatar(name: chat.name, app: chat.app, size: SharedMetrics.avatar)
+        } trailing: {
+            CountBadge(count: chat.unread)
+                .accessibilityLabel(Text("\(chat.unread) unread"))
         }
-        .padding(.horizontal, Theme.Spacing.lg)
-        .padding(.vertical, Theme.Spacing.lg)
-        .contentShape(Rectangle())
     }
 }
 
@@ -196,35 +182,6 @@ struct InboxAvatar: View {
     }
 }
 
-/// How far your own message got, as WhatsApp shows it.
-struct TicksMark: View {
-    let ticks: String
-
-    var body: some View {
-        Group {
-            switch ticks {
-            case "pending": Image(systemName: "clock").foregroundStyle(Theme.textTertiary)
-            case "sent": Image(systemName: "checkmark").foregroundStyle(Theme.textTertiary)
-            case "delivered": Image(systemName: "checkmark.circle").foregroundStyle(Theme.textTertiary)
-            case "read": Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.blue)
-            default: Image(systemName: "exclamationmark.circle").foregroundStyle(Theme.coral)
-            }
-        }
-        .font(Theme.font(11, .semibold))
-        .accessibilityLabel(Self.label(ticks))
-    }
-
-    static func label(_ ticks: String) -> String {
-        switch ticks {
-        case "pending": return String(localized: "Sending")
-        case "sent": return String(localized: "Sent")
-        case "delivered": return String(localized: "Delivered")
-        case "read": return String(localized: "Read")
-        default: return String(localized: "Not sent")
-        }
-    }
-}
-
 // MARK: One chat
 
 struct InboxChatView: View {
@@ -246,15 +203,16 @@ struct InboxChatView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                LazyVStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                     if lines.isEmpty {
                         ProgressView().frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xxl)
                     }
                     ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
                         let previous = index > 0 ? lines[index - 1] : nil
-                        if Self.newDay(line, after: previous) { DayLine(date: Date(timeIntervalSince1970: line.date)) }
-                        InboxBubble(line: line, showsSender: previous?.sender != line.sender || previous?.fromMe != line.fromMe,
-                                    onInfo: line.readers?.isEmpty == false ? { info = line } : nil)
+                        let next = index + 1 < lines.count ? lines[index + 1] : nil
+                        if ChatRuns.newDay(line, after: previous) { ChatDayDivider(date: Date(timeIntervalSince1970: line.date)) }
+                        ChatBubbleView(line: line, first: !ChatRuns.sameRun(previous, line), last: !ChatRuns.sameRun(line, next),
+                                       onInfo: line.readers?.isEmpty == false ? { info = line } : nil)
                             .contextMenu {
                                 if chat?.canSend == true {
                                     Button { withAnimation { replyingTo = line } } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
@@ -265,15 +223,13 @@ struct InboxChatView: View {
                             }
                     }
                     if let typing {
-                        InboxTypingBubble(text: typing).transition(.opacity)
+                        ChatTypingBubble(text: typing).transition(.opacity)
                     }
                     // Your messages that wait on the phone for the Mac, dimmed, until it takes them.
                     let waiting = client.outbox.chatMessages(to: chatID)
                     ForEach(waiting) { entry in
-                        MessageBubble(text: entry.request.text ?? "", mine: true).opacity(0.6)
-                    }
-                    if !waiting.isEmpty {
-                        Banner(text: String(localized: "Waiting for your Mac: it goes as soon as your Mac can be reached."), symbol: "clock")
+                        ChatBubbleView(line: InboxLine(id: entry.id, text: entry.request.text ?? "", date: entry.queued, sender: "",
+                                                       fromMe: true, reactions: []), pending: true)
                     }
                     Color.clear.frame(height: 1).id(Self.bottom)
                 }
@@ -409,113 +365,6 @@ struct InboxChatView: View {
             sending = false
         }
     }
-
-    private static func newDay(_ line: InboxLine, after previous: InboxLine?) -> Bool {
-        guard let previous else { return true }
-        return !Calendar.current.isDate(Date(timeIntervalSince1970: line.date), inSameDayAs: Date(timeIntervalSince1970: previous.date))
-    }
-}
-
-/// Where a new day starts in a chat.
-private struct DayLine: View {
-    let date: Date
-
-    var body: some View {
-        Text(date, format: .dateTime.weekday(.wide).day().month())
-            .font(Theme.TextStyle.caption)
-            .foregroundStyle(Theme.textTertiary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Theme.Spacing.lg)
-    }
-}
-
-/// A message, as the Mac's `ChatTranscript`: yours on a faint mint on the right, theirs on grey on the left with who
-/// wrote it in a group.
-struct InboxBubble: View {
-    let line: InboxLine
-    let showsSender: Bool
-    /// Opens your message's info from its ticks (who has it and who read it); nil when the app says nothing per person.
-    var onInfo: (() -> Void)? = nil
-
-    var body: some View {
-        HStack {
-            if line.fromMe { Spacer(minLength: 48) }
-            VStack(alignment: line.fromMe ? .trailing : .leading, spacing: Theme.Spacing.xs) {
-                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                    if showsSender, !line.fromMe, !line.sender.isEmpty {
-                        Text(line.sender).font(Theme.TextStyle.label).foregroundStyle(Theme.blue)
-                    }
-                    if let quote = line.quoteText, !quote.isEmpty {
-                        let tint = line.fromMe ? Theme.mint : Theme.blue
-                        HStack(spacing: Theme.Spacing.md) {
-                            Capsule().fill(tint).frame(width: 3)
-                            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                                if let sender = line.quoteSender, !sender.isEmpty {
-                                    Text(sender).font(Theme.TextStyle.label).foregroundStyle(tint)
-                                }
-                                Text(quote).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary).lineLimit(3)
-                            }
-                        }
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(Theme.Spacing.md)
-                        .background(Theme.canvas.opacity(0.35), in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
-                    }
-                    if let attachment = line.attachment {
-                        Label(attachment, systemImage: "paperclip")
-                            .font(Theme.TextStyle.label)
-                            .foregroundStyle(Theme.textStrong)
-                    }
-                    if !line.text.isEmpty {
-                        Text(verbatim: line.text)
-                            .font(Theme.TextStyle.body)
-                            .foregroundStyle(Theme.text)
-                            .textSelection(.enabled)
-                    }
-                    HStack(spacing: Theme.Spacing.xs) {
-                        Text(Date(timeIntervalSince1970: line.date), format: .dateTime.hour().minute())
-                        if let ticks = line.ticks {
-                            if let onInfo {
-                                // A tap on the ticks says who read it, who has it, and who does not yet, as on the Mac.
-                                Button(action: onInfo) { TicksMark(ticks: ticks) }
-                                    .buttonStyle(.plain)
-                                    .accessibilityHint(Text("Message info"))
-                            } else {
-                                TicksMark(ticks: ticks)
-                            }
-                        }
-                    }
-                    .font(Theme.TextStyle.caption)
-                    .foregroundStyle(Theme.textTertiary)
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.vertical, Theme.Spacing.md)
-                .background(line.fromMe ? Theme.chatMine : Theme.chatTheirs,
-                            in: RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    (line.fromMe ? Theme.mint : Color.white).opacity(0.14),
-                                    Color.clear
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 0.5
-                        )
-                )
-                if !line.reactions.isEmpty {
-                    Text(line.reactions.joined(separator: "  "))
-                        .font(Theme.TextStyle.caption)
-                        .padding(.horizontal, Theme.Spacing.md).padding(.vertical, Theme.Spacing.xs)
-                        .background(Theme.surface, in: Capsule())
-                }
-            }
-            if !line.fromMe { Spacer(minLength: 48) }
-        }
-    }
 }
 
 // MARK: Typing and message info
@@ -533,34 +382,6 @@ enum InboxTyping {
         case "uploading": return who.map { String(localized: "\($0) is sending a file…") } ?? String(localized: "sending a file…")
         default: return who.map { String(localized: "\($0) is typing…") } ?? String(localized: "typing…")
         }
-    }
-}
-
-/// Someone typing, under the chat's last message: three dots that come and go, and who it is.
-struct InboxTypingBubble: View {
-    let text: String
-
-    var body: some View {
-        HStack {
-            HStack(spacing: Theme.Spacing.sm) {
-                TimelineView(.periodic(from: .now, by: 0.3)) { context in
-                    let step = Int(context.date.timeIntervalSinceReferenceDate / 0.3) % 3
-                    HStack(spacing: Theme.Spacing.xxs) {
-                        ForEach(0..<3, id: \.self) { dot in
-                            Circle().fill(Theme.textSecondary).frame(width: 6, height: 6).opacity(dot == step ? 1 : 0.35)
-                        }
-                    }
-                }
-                .accessibilityHidden(true)
-                Text(text).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary).lineLimit(1)
-            }
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.vertical, Theme.Spacing.md)
-            .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous))
-            Spacer(minLength: 48)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(text)
     }
 }
 
@@ -608,7 +429,7 @@ struct InboxMessageInfo: View {
                 }
             } header: {
                 HStack(spacing: Theme.Spacing.xs) {
-                    TicksMark(ticks: ticks)
+                    MessageTicksMark(ticks: MessageTicks(ticks) ?? .sent)
                     Text(title)
                 }
             }

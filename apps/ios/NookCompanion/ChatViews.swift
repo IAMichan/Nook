@@ -191,10 +191,7 @@ struct ChatView: View {
                     if sending, lines.last?.fromNook != true { ThinkingLine(status: "") }
                     // What waits for the Mac, dimmed, until it takes it.
                     ForEach(waiting) { entry in
-                        TranscriptUserMessage(text: entry.request.text ?? "").opacity(0.6)
-                    }
-                    if !waiting.isEmpty {
-                        Banner(text: String(localized: "Waiting for your Mac: it goes as soon as your Mac can be reached."), symbol: "clock")
+                        TranscriptUserMessage(text: entry.request.text ?? "", pending: true)
                     }
                     Color.clear.frame(height: 1).id(Self.bottom)
                 }
@@ -306,50 +303,5 @@ private struct ThinkingLine: View {
                 .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
             PulseDot(color: Theme.textSecondary, size: 5)
         }
-    }
-}
-
-// MARK: Shared pieces
-
-/// A message: yours in a soft grey bubble on the right, the agent's as open text with inline Markdown (no bubble), as
-/// in a conversation on the Mac.
-struct MessageBubble: View {
-    let text: String
-    let mine: Bool
-    var failed = false
-
-    var body: some View {
-        if mine {
-            HStack {
-                Spacer(minLength: 48)
-                Markdown.text(text)
-                    .font(Theme.TextStyle.body)
-                    .foregroundStyle(Theme.text)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, Theme.Spacing.lg + Theme.Spacing.xxs)
-                    .padding(.vertical, Theme.Spacing.md + Theme.Spacing.xxs)
-                    .background(Theme.bubble, in: RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous))
-            }
-        } else {
-            Markdown.text(text)
-                .font(Theme.TextStyle.body)
-                .lineSpacing(3)
-                .foregroundStyle(failed ? Theme.coral : Theme.textStrong)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, Theme.Spacing.xs)
-        }
-    }
-}
-
-enum Markdown {
-    /// Inline Markdown (bold, code, links) with the line breaks kept; plain text when it does not parse. Links are
-    /// `Theme.blue`, as on the Mac.
-    static func text(_ source: String) -> Text {
-        if var styled = try? AttributedString(markdown: source, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
-            for run in styled.runs where run.link != nil { styled[run.range].foregroundColor = Theme.blue }
-            return Text(styled)
-        }
-        return Text(verbatim: source)
     }
 }

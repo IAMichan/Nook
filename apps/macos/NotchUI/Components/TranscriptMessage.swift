@@ -6,24 +6,8 @@ import AppKit
 // bubble on the right, the answer formatted text on the left without a bubble, and under both, on hover, the same
 // footer with its time and copy button. Change a message here and every conversation follows.
 
-/// The measurements every conversation shares, so the Nook chat and the agents read alike.
-enum TranscriptStyle {
-    /// The size of the words of a message, yours and the answer's.
-    static let textSize: CGFloat = 14
-    /// The room above each of your messages: every turn starts as a block of its own.
-    static let turnGap = NookTheme.Spacing.xxl
-    /// Your words stay narrower than the answer, so the thread reads as a conversation at a glance.
-    static let bubbleInset: CGFloat = 64
-    /// A message of yours longer than this folds to its first lines, with "Show full message" under it.
-    static let foldCharacters = 600
-    static let foldLines = 8
-    /// How tall a folded message of yours is.
-    static let foldedHeight: CGFloat = 176
-    /// The column a work line's icon sits in, and how far what a line opens to (a thought, a command's output) is
-    /// indented: to the words of the line above it.
-    static let workIcon: CGFloat = 24
-    static let workIndent: CGFloat = workIcon + NookTheme.Spacing.sm
-}
+// `TranscriptStyle`, `TranscriptUserBubble`, `transcriptFolded` and `TranscriptTime` are shared with the iPhone
+// (NotchUI/Shared/TranscriptParts.swift).
 
 /// What you wrote: pictures above a soft bubble on the right, a long message folded to its first lines, and on hover
 /// its time and a copy button under it (and "Edit from here" where the session can go back to before it). Sent while
@@ -43,8 +27,7 @@ struct TranscriptUserMessage<Attachments: View>: View {
     var body: some View {
         // Pictures sent to an agent arrive as paths below the words: show the pictures above the bubble instead.
         let parts = ImageAttachment.splittingPaths(from: text)
-        let long = parts.text.count > TranscriptStyle.foldCharacters
-            || parts.text.split(separator: "\n", omittingEmptySubsequences: false).count > TranscriptStyle.foldLines
+        let long = TranscriptStyle.isLong(parts.text)
         VStack(alignment: .trailing, spacing: NookTheme.Spacing.xs) {
             if steered {
                 HStack(spacing: NookTheme.Spacing.xs) {
@@ -59,8 +42,7 @@ struct TranscriptUserMessage<Attachments: View>: View {
                 MessagePictures(urls: parts.images)
             }
             if !parts.text.isEmpty {
-                HStack(spacing: 0) {
-                    Spacer(minLength: TranscriptStyle.bubbleInset)
+                TranscriptUserBubble {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                         words(parts.text, folded: long && !expanded)
                         if long {
@@ -72,10 +54,6 @@ struct TranscriptUserMessage<Attachments: View>: View {
                             .foregroundStyle(NookTheme.textSecondary)
                         }
                     }
-                    // Room enough that a second line keeps clear of the round corners.
-                    .padding(.horizontal, NookTheme.Spacing.xl)
-                    .padding(.vertical, NookTheme.Spacing.lg)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.bubble, style: .continuous).fill(NookTheme.bubble))
                 }
                 TranscriptMessageFooter(text: text, date: date, visible: hovering, trailing: true) {
                     if let onEdit {
@@ -89,27 +67,14 @@ struct TranscriptUserMessage<Attachments: View>: View {
         .onHover { hovering = $0 }
     }
 
-    @ViewBuilder
     private func words(_ string: String, folded: Bool) -> some View {
-        let label = Text(string)
+        Text(string)
             .font(NookTheme.font(TranscriptStyle.textSize))
             .foregroundStyle(NookTheme.paper)
             .lineSpacing(3)
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
-        if folded {
-            label
-                .frame(maxHeight: TranscriptStyle.foldedHeight, alignment: .top)
-                .clipped()
-                .mask {
-                    VStack(spacing: 0) {
-                        Rectangle()
-                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: 28)
-                    }
-                }
-        } else {
-            label
-        }
+            .transcriptFolded(folded)
     }
 }
 
@@ -215,21 +180,5 @@ struct TranscriptMessageFooter<Actions: View>: View {
         .padding(trailing ? .trailing : .leading, -NookTheme.Spacing.xs)
         .opacity(visible || copied ? 1 : 0)
         .animation(NookTheme.hover, value: visible)
-    }
-}
-
-/// "14:03" today, "12 Oct 14:03" before; the full date on hover.
-struct TranscriptTime: View {
-    let date: Date
-
-    var body: some View {
-        let text = Calendar.current.isDateInToday(date)
-            ? date.formatted(date: .omitted, time: .shortened)
-            : date.formatted(.dateTime.day().month(.abbreviated).hour().minute())
-        Text(text)
-            .font(NookTheme.TextStyle.caption)
-            .foregroundStyle(NookTheme.textTertiary)
-            .monospacedDigit()
-            .help(date.formatted(date: .complete, time: .shortened))
     }
 }

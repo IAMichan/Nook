@@ -1505,61 +1505,21 @@ struct ChatsRow: View, Equatable {
 
     private var row: some View {
         Button(action: action) {
-            HStack(spacing: NookTheme.Spacing.md) {
-                ChatsFace(entry: entry, size: 40)
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    // One title line (who, when) and one line under it (the newest message); unread is said once, by
-                    // the count at the end of the second line.
-                    HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
-                        Text(entry.name)
-                            .font(NookTheme.TextStyle.strong)
-                            .foregroundStyle(entry.read.isUnread ? NookTheme.paper : NookTheme.textStrong)
-                            .lineLimit(1)
-                        Spacer(minLength: NookTheme.Spacing.xs)
-                        // The WhatsApp account, while more than one is linked.
-                        if let account = entry.account {
-                            Text(account)
-                                .font(NookTheme.TextStyle.caption)
-                                .foregroundStyle(NookTheme.textTertiary)
-                                .lineLimit(1)
-                                .opacity(hovering && rowAction != nil ? 0 : 1)
-                        }
-                        // Something new: its time in the color of what waits on you, as the count under it.
-                        Text(when)
-                            .font(NookTheme.TextStyle.caption)
-                            .monospacedDigit()
-                            .foregroundStyle(entry.read.isUnread ? NookTheme.amber : NookTheme.textTertiary)
-                            .fixedSize()
-                            .opacity(hovering && rowAction != nil ? 0 : 1)
-                    }
-                    HStack(spacing: NookTheme.Spacing.sm) {
-                        if let ticks = entry.ticks, typing == nil { TicksView(ticks: ticks) }
-                        if let typingLine = typing {
-                            Text(typingLine)
-                                .font(NookTheme.TextStyle.detail)
-                                .foregroundStyle(NookTheme.mint)
-                                .lineLimit(1)
-                        } else {
-                            // A chat on the phone that wrote nothing since Nook was linked: its newest message is being
-                            // fetched (`loadChatLine`); until then the line says only that something new came in.
-                            Text(entry.preview.isEmpty ? (entry.read.isUnread ? tr("chats.row.new") : " ") : previewText)
-                                .font(NookTheme.TextStyle.detail)
-                                .foregroundStyle(entry.preview.isEmpty ? NookTheme.textTertiary
-                                                 : (entry.read.isUnread ? NookTheme.textStrong : NookTheme.textSecondary))
-                                .lineLimit(1)
-                        }
-                        Spacer(minLength: NookTheme.Spacing.xs)
-                        // Where it stands, the same mark for every app; your own newest message has its ticks in front.
-                        if entry.showsReadMark {
-                            ChatReadMark(state: entry.read)
-                                .fixedSize()
-                        }
-                    }
-                }
+            // The shared row (NotchUI/Shared), the same as a chat's row on the iPhone.
+            ChatListRowContent(
+                name: entry.name, when: when,
+                // A chat on the phone that wrote nothing since Nook was linked: its newest message is being fetched
+                // (`loadChatLine`); until then the line says only that something new came in.
+                preview: entry.preview.isEmpty ? (entry.read.isUnread ? tr("chats.row.new") : " ") : previewText,
+                unread: entry.read.isUnread, ticks: entry.ticks, typing: typing,
+                // The WhatsApp account, while more than one is linked.
+                detail: entry.account, hidesTime: hovering && rowAction != nil
+            ) {
+                ChatsFace(entry: entry, size: SharedMetrics.avatar)
+            } trailing: {
+                // Where it stands, the same mark for every app; your own newest message has its ticks in front.
+                if entry.showsReadMark { ChatReadMark(state: entry.read) }
             }
-            // The avatar lines up with the list's title and its group names above it.
-            .padding(.horizontal, NookTheme.Spacing.lg)
-            .padding(.vertical, NookTheme.Spacing.md)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
                 .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
             .selectionMark(selected)
