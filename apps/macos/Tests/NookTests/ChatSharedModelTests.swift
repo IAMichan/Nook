@@ -385,6 +385,61 @@ final class ChatSharedModelTests: XCTestCase {
         XCTAssertEqual(inbox.threads[key]?.unread, 5, "a message after the read: the app's count again")
     }
 
+    // MARK: The line and the list's order
+
+    /// A vote on a poll moves no chat: its app may say the chat moved (WhatsApp's chat list does), but the list goes
+    /// by what the line shows, for every app.
+    func testAVoteOnAPollLeavesTheChatInPlace() {
+        for app in ["whatsapp", "telegram", "signal", "messages"] {
+            var inbox = ChatInbox()
+            var poll = message("p", "", at: 10)
+            poll.poll = ChatPoll(question: "Friday?", options: [.init(text: "Yes"), .init(text: "No")])
+            inbox.merge(chat("Team", id: "t", app: app, [message("1", at: 0), poll]))
+            let key = ChatInbox.key(app: app, id: "t")
+            let before = inbox.threads[key]?.last
+            var voted = poll
+            voted.poll?.options[0].votes = 1
+            var again = chat("Team", id: "t", app: app, [message("1", at: 0), voted])
+            again.activity = Date(timeIntervalSince1970: 9_000)
+            inbox.merge(again)
+            XCTAssertEqual(inbox.threads[key]?.messages.last?.poll?.options[0].votes, 1, app)
+            XCTAssertEqual(inbox.threads[key]?.last, before, "\(app): the vote shows on the poll, the chat stays put")
+        }
+    }
+
+    /// An emoji is the chat's line, also when its app says the chat moved after it for something the line does not
+    /// show; and the chat is dated by that emoji.
+    func testTheNewestEmojiStaysTheLineAfterActivityItDoesNotShow() {
+        var inbox = ChatInbox()
+        let mine = message("m", "See you", at: 0, mine: true)
+        inbox.merge(chat("Anna", id: "a", [mine]), now: Date(timeIntervalSince1970: 1_000))
+        var liked = mine
+        liked.reactions = [InboxReaction(emoji: "👍", count: 1, mine: false, people: ["Anna"])]
+        var later = chat("Anna", id: "a", [liked])
+        later.activity = Date(timeIntervalSince1970: 1_500)
+        inbox.merge(later, now: Date(timeIntervalSince1970: 1_100))
+        let key = ChatInbox.key(app: "whatsapp", id: "a")
+        XCTAssertEqual(inbox.threads[key]?.newestReaction?.emoji, "👍")
+        var moved = chat("Anna", id: "a", [liked])
+        moved.activity = Date(timeIntervalSince1970: 2_000)
+        inbox.merge(moved, now: Date(timeIntervalSince1970: 1_200))
+        XCTAssertEqual(inbox.threads[key]?.newestReaction?.emoji, "👍", "still the line")
+        XCTAssertEqual(inbox.threads[key]?.last, Date(timeIntervalSince1970: 1_100), "dated by the emoji")
+    }
+
+    func testAVoteNotificationIsNoMessage() {
+        XCTAssertTrue(ChatCapture.isPollVote("📊 Jan voted in: Friday?"))
+        XCTAssertTrue(ChatCapture.isPollVote("Heeft gestemd in de peiling: Etentje"))
+        XCTAssertFalse(ChatCapture.isPollVote("I voted for the blue one"))
+        XCTAssertFalse(ChatCapture.isPollVote("Zullen we een poll doen?"))
+        var inbox = ChatInbox()
+        let date = Date(timeIntervalSince1970: 1_000)
+        XCTAssertTrue(inbox.add(ChatNotice(app: "signal", chat: "Team", sender: "Jan", text: "Friday?", date: date), id: "n1"))
+        XCTAssertFalse(inbox.add(ChatNotice(app: "signal", chat: "Team", sender: "Jan", text: "📊 voted in: Friday?",
+                                            date: date.addingTimeInterval(60)), id: "n2"))
+        XCTAssertEqual(inbox.threads[ChatInbox.key(app: "signal", chat: "Team")]?.last, date)
+    }
+
     // MARK: Never on disk
 
     func testAChatWhoseAppKeepsItsMessagesIsWrittenWithoutThem() throws {

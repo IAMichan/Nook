@@ -118,8 +118,10 @@ extension ChatsEntry {
             : ChatReceipts.newest(receipts, ids: thread.messages.map(\.id), shown: newest?.id).map(BubbleTicks.init)
         // A chat that was read in Nook is known to stand where Nook says, whatever its app tells.
         let readKnown = thread.readKnown != false || thread.readInNook != nil
+        // Dated by what the line shows (`InboxThread.last`), so the row's time and its place in the list match its line.
+        let last = newest.map { max($0.date, reaction?.date ?? .distantPast) } ?? thread.last
         return ChatsEntry(id: thread.id, app: thread.app, name: thread.name, preview: preview,
-                          last: max(thread.last, reaction?.date ?? .distantPast), read: thread.readState,
+                          last: last, read: thread.readState,
                           lastIsMine: reaction == nil && newest?.isMine ?? false, readKnown: readKnown, ticks: ticks,
                           members: thread.members, handle: thread.handle, avatar: thread.avatar,
                           account: thread.account ?? ChatLinker.shared.accountName(for: thread.app),
@@ -407,6 +409,9 @@ struct ChatsTab: View {
     /// The day the list is drawn for. Nothing else redraws the tab when a new day starts (overnight, or while the Mac
     /// slept), so without it a chat from yesterday stayed under "Today" with its time, until something else changed.
     @State private var day = ChatsDay.now()
+    /// The day the list is drawn for, never behind the calendar: a day change the tab did not hear (it was not on
+    /// screen, the Mac slept through it) still moves the groups and the rows' times on at the next redraw.
+    private var today: Date { max(day, ChatsDay.now()) }
     /// The list is scrolling: a row the pointer rests on meanwhile fetches nothing (`ChatsRow`).
     @MainActor static var listScrolling = false
     /// The open chat: the one you opened last, also after the tab was closed or Nook restarted; nil shows none.
@@ -866,7 +871,7 @@ struct ChatsTab: View {
     private var shown: [ChatsEntry] {
         let needle = query.trimmingCharacters(in: .whitespaces)
         return shownMemo.shown(all: all, needle: needle, view: view, filter: filter, account: shownAccount,
-                               listKind: shownListKind, selection: selection, kept: keptInView, day: day) { makeShown(needle) }
+                               listKind: shownListKind, selection: selection, kept: keptInView, day: today) { makeShown(needle) }
     }
 
     private func makeShown(_ needle: String) -> [ChatsEntry] {
@@ -1061,7 +1066,7 @@ struct ChatsTab: View {
                                 // track of a row that moves to the top of its group, and kept showing its old line.
                                 VStack(spacing: NookTheme.Spacing.xxs) {
                                     if entry.id != section.entries.first?.id { NookRowSeparator() }
-                                    ChatsRow(entry: entry, selected: entry.id == selected, day: day,
+                                    ChatsRow(entry: entry, selected: entry.id == selected, day: today,
                                              typing: typists.chats.isEmpty ? nil : typing.line(entry.id),
                                              rowAction: rowAction(entry)) {
                                         revealSelection = false
