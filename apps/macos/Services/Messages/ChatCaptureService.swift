@@ -746,6 +746,16 @@ final class ChatCaptureService: ObservableObject {
         save()
     }
 
+    /// Unread in the app too, after Nook told it (`ChatInbox.markUnreadInApp`); the chat and its twins.
+    func markUnreadInApp(_ id: String) {
+        ensureLoaded()
+        guard inbox.threads[id] != nil else { return }
+        var next = inbox
+        for id in [id] + next.twins(of: id) { next.markUnreadInApp(id) }
+        inbox = next
+        save()
+    }
+
     func markAllRead() {
         ensureLoaded()
         guard inbox.totalUnread > 0 else { return }

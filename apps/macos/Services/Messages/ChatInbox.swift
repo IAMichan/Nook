@@ -1271,6 +1271,16 @@ struct ChatInbox: Codable, Equatable, Sendable {
         threads[id]?.markedUnread = date
     }
 
+    /// Unread in the app too: Nook told the app after your "Mark as unread", so once you read the chat in Nook it still
+    /// waits there (read in Nook only) until you pass the read on.
+    mutating func markUnreadInApp(_ id: String) {
+        guard var thread = threads[id] else { return }
+        thread.readInApp = nil
+        if thread.waitsInApp != nil { thread.waitsInApp = true }
+        if let counted = thread.appUnread { thread.appUnread = max(counted, 1) }
+        threads[id] = thread
+    }
+
     /// Every chat with something new read in Nook.
     mutating func markAllRead(at date: Date = Date()) {
         for (key, thread) in threads where thread.unread > 0 { markRead(key, at: date) }

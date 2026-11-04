@@ -1355,6 +1355,21 @@ final class WhatsAppLink: ObservableObject {
         if inbox.conversations[key] != nil { inbox.markUnread(key) }
     }
 
+    /// Marks the chat unread on the phone too, after your own "Mark as unread" (Nook's mark is set already): it waits in
+    /// WhatsApp as its own "Mark as unread" does. Nobody who wrote sees anything.
+    func markUnreadInWhatsApp(_ chat: String) async throws {
+        guard let provider, isConnected else { throw NookError(statusLine) }
+        guard provider.canMarkUnread else { throw NookError(tr("chat.compose.unsupported")) }
+        let key = WAJID.normalized(chat)
+        do {
+            try await provider.markUnread(key)
+        } catch let error as WAError {
+            throw Self.actionSentence(error)
+        }
+        // No longer read there: once read in Nook, the chat still waits in WhatsApp until you tell it.
+        readInWhatsApp[key] = nil
+    }
+
     func markRead(_ chat: String) {
         let key = WAJID.normalized(chat)
         let hadUnread = (inbox.conversations[key]?.unread ?? 0) + carried(key) > 0
@@ -1548,6 +1563,8 @@ final class WhatsAppLink: ObservableObject {
     var canPin: Bool { isConnected && provider?.canPin == true }
     var canArchive: Bool { isConnected && provider?.canArchive == true }
     var canMuteInWhatsApp: Bool { isConnected && provider?.canMute == true }
+    /// Whether the linked gateway can mark a chat unread on the phone (OpenWA can; GOWA has no call for it).
+    var canMarkUnreadInWhatsApp: Bool { isConnected && provider?.canMarkUnread == true }
     /// Whether the linked gateway can delete a whole chat on the phone (OpenWA can; GOWA has no call for it).
     var canDeleteChat: Bool { isConnected && provider?.canDeleteChat == true }
 

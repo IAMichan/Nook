@@ -36,13 +36,14 @@ final class MailBridge: ChatBridge, ObservableObject {
     /// New bodies read per round: the rest follow at the next, so one read never keeps Mail busy for long (Mail answers
     /// one script at a time, and a mail you open waits behind it).
     private static let bodiesPerRead = 10
-    /// What each chat (by its `chatID`) needs to answer and to mark read: whom, from which address, the newest subject,
-    /// and its unread messages.
+    /// What each chat (by its `chatID`) needs to answer and to mark read or unread: whom, from which address, the newest
+    /// subject, its unread messages, and its newest mail from someone else.
     private struct Target {
         var address: String
         var from: String
         var subject: String
         var unread: [MailChatData.Row]
+        var newestIncoming: MailChatData.Row?
     }
     private var targets: [String: Target] = [:]
     /// Where each message read last lives in Mail, by Mail's id: to read it whole, fast, when you open it. A mail not
@@ -134,7 +135,8 @@ final class MailBridge: ChatBridge, ObservableObject {
             let account = accounts.first { $0.name == newest?.account }
             made[id] = Target(address: MailChatData.address(newest?.person ?? ""), from: account?.addresses.first ?? "",
                               subject: rows.filter { !$0.fromMe }.max { $0.date < $1.date }?.subject ?? newest?.subject ?? "",
-                              unread: rows.filter { !$0.fromMe && !$0.read })
+                              unread: rows.filter { !$0.fromMe && !$0.read },
+                              newestIncoming: rows.filter { !$0.fromMe }.max { $0.date < $1.date })
         }
         targets = made
     }
@@ -228,6 +230,16 @@ final class MailBridge: ChatBridge, ObservableObject {
         let result = await ScriptText.run(MailChatData.markReadScript(target.unread), timeout: 15)
         if result.errorNumber != nil { throw problem(result.errorNumber, result.errorMessage, timeout: 15) }
         targets[chatID]?.unread = []
+        changedInMail()
+    }
+
+    /// Marks the chat's newest mail from someone else unread in Mail, as Mail's own "Mark as Unread" does: the server
+    /// hears it, so it waits on your other devices too.
+    func markUnread(chatID: String) async throws {
+        guard let newest = targets[chatID]?.newestIncoming else { throw NookError(tr("chats.mail.notFound")) }
+        let result = await ScriptText.run(MailChatData.markReadScript([newest], read: false), timeout: 15)
+        if result.errorNumber != nil { throw problem(result.errorNumber, result.errorMessage, timeout: 15) }
+        targets[chatID]?.unread = [newest]
         changedInMail()
     }
 

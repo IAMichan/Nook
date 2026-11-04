@@ -630,6 +630,23 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         ChatCaptureService.shared.readSoon(app)
     }
 
+    /// Marks the chat Nook shows as `name` unread in Teams: its read horizon goes back to just before its newest message
+    /// from someone else (else its newest one), so that message waits there again.
+    func markUnread(name: String) async throws {
+        let (account, chat) = try await webChat(name)
+        let messages = ChatCaptureService.shared.loadedInbox.threads[ChatInbox.key(app: app, chat: name)]?.messages ?? []
+        var known = messages.filter { !$0.isMine }.map(\.id)
+        if known.isEmpty {
+            known = messages.map(\.id)
+            if let preview = chat.preview?.id { known.append(preview) }
+        }
+        guard let newest = TeamsWebData.newest(known) else { throw NookError(tr("chats.markUnreadInApp.nothing", "Teams")) }
+        try await webAct("PUT", account: account, path: TeamsWebData.horizonPath(chat: chat.id),
+                         json: TeamsWebData.unreadHorizon(newest: newest.arrived))
+        changedHere.insert(chat.id)
+        ChatCaptureService.shared.readSoon(app)
+    }
+
     /// The linked account and chat behind the chat Nook shows as `name`, with a session that does not run out within
     /// the minute.
     /// The people you can tag in the group chat Nook shows as `name`: everyone else who wrote in it, by the name their
