@@ -37,7 +37,8 @@ struct UsageView: View {
             }
         } header: {
             HStack {
-                Text(tr("settings.agents.subscriptions"))
+                // What the limits cover sits behind the ⓘ, like every other section's explanation in Settings.
+                SettingsSectionTitle(tr("settings.agents.subscriptions"), info: tr("ws.usage.quotaNote"))
                 Spacer()
                 SmallGhostButton(title: tr("limits.all")) {
                     UserDefaults.standard.set(UsageModalTab.limits.rawValue, forKey: UsageModalTab.storageKey)
@@ -47,8 +48,6 @@ struct UsageView: View {
                     .sheet(isPresented: $showLimits) { UsageLimitsModal { showLimits = false }.frame(width: 720).environmentObject(app) }
                 UsageRefreshButton()
             }
-        } footer: {
-            Text(tr("ws.usage.quotaNote"))
         }
     }
 
@@ -125,9 +124,7 @@ struct UsageView: View {
                 }
             }
         } header: {
-            Text(tr("settings.usage.activity"))
-        } footer: {
-            Text(tr("ws.usage.note.scope"))
+            SettingsSectionTitle(tr("settings.usage.activity"), info: tr("ws.usage.note.scope"))
         }
     }
 

@@ -72,54 +72,25 @@ private struct AgentAccountCardRow: View {
     }
 
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.lg) {
-            Button(action: onManage) {
-                HStack(spacing: NookTheme.Spacing.lg) {
-                    AgentLogo(profile.kind, size: 28)
-                        .frame(width: 32, height: 32)
-                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.smoke))
-
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                        HStack(spacing: NookTheme.Spacing.sm) {
-                            Text(title)
-                                .font(NookTheme.TextStyle.strong)
-                                .foregroundStyle(NookTheme.paper)
-
-                            if several && app.profiles.isPreferred(profile) {
-                                Text(tr("agents.default"))
-                                    .font(NookTheme.TextStyle.label)
-                                    .padding(.horizontal, NookTheme.Spacing.sm)
-                                    .padding(.vertical, 1)
-                                    .background(Capsule().fill(NookTheme.smoke))
-                                    .foregroundStyle(NookTheme.textStrong)
-                            }
-                        }
-
-                        // The state is the pill's to say; this line only says whose account it is.
-                        if let subtitle {
-                            Text(subtitle)
-                                .font(NookTheme.TextStyle.detail)
-                                .foregroundStyle(NookTheme.textSecondary)
-                                .lineLimit(1)
-                        }
-                    }
-
-                    Spacer(minLength: 8)
-
-                    HealthPill(health: health, text: healthText)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
+        // The same row as everything else that is linked: the agent's logo, the account with its state, whose account it
+        // is, and one button. A click anywhere on the row opens its sheet too.
+        ServiceRowShape(title: title, detail: detail, status: health.status, statusText: healthText) {
+            AgentTile(profile.kind)
+        } actions: {
             Button(account == nil || antigravitySignedOut ? tr("button.login") : tr("settings2.manage")) {
                 // Antigravity signs in right here, in your browser.
                 if antigravitySignedOut { app.connect(profile) } else { onManage() }
             }
-            .controlSize(.small)
             .disabled(antigravitySignedOut && app.agentConnect[profile.id]?.isBusy == true)
         }
-        .padding(.vertical, 3)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onManage)
+    }
+
+    /// Whose account it is, with "Default" in front when the agent has several.
+    private var detail: String {
+        let isDefault = several && app.profiles.isPreferred(profile)
+        return [isDefault ? tr("agents.default") : nil, subtitle].compactMap { $0 }.joined(separator: " · ")
     }
 
     private var healthText: String? {
