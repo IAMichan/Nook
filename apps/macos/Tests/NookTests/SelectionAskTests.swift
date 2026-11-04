@@ -23,6 +23,32 @@ final class SelectionAskTests: XCTestCase {
         XCTAssertNotEqual(SelectionAsk.Mode.explain.instruction, SelectionAsk.Mode.translate.instruction)
     }
 
+    func testADragPicksTheMessagesFromItsStartToThePointer() {
+        let order = ["a", "b", "c", "d"]
+        XCTAssertEqual(SelectionAsk.picked(from: "c", to: "a", in: order), ["a", "b", "c"], "dragged up")
+        XCTAssertEqual(SelectionAsk.picked(from: "b", to: "c", in: order), ["b", "c"], "dragged down")
+        XCTAssertEqual(SelectionAsk.picked(from: "b", to: "b", in: order), [], "still on its first message: its own text")
+        XCTAssertEqual(SelectionAsk.picked(from: "x", to: "b", in: order), [])
+    }
+
+    func testThePointerFindsTheNearestMessage() {
+        let frames: [(id: String, frame: CGRect)] = [("a", CGRect(x: 0, y: 0, width: 300, height: 40)),
+                                                      ("b", CGRect(x: 0, y: 50, width: 300, height: 40))]
+        XCTAssertEqual(SelectionAsk.nearest(to: 20, in: frames), "a")
+        XCTAssertEqual(SelectionAsk.nearest(to: 47, in: frames), "b", "in the gap: the closer one")
+        XCTAssertEqual(SelectionAsk.nearest(to: -30, in: frames), "a", "above the chat: its first message")
+        XCTAssertEqual(SelectionAsk.nearest(to: 500, in: frames), "b")
+        XCTAssertNil(SelectionAsk.nearest(to: 0, in: []))
+    }
+
+    func testTheChatAroundASelectionGoesWithIt() {
+        XCTAssertEqual(SelectionAsk.contextRange(first: 30, last: 30, count: 40), 10...33)
+        XCTAssertEqual(SelectionAsk.contextRange(first: 2, last: 5, count: 6), 0...5, "kept inside the chat")
+        let note = SelectionAsk.chatNote(contact: "Anna", transcript: "[09:54] You: Is analytics easy in AWS?", you: "You")
+        XCTAssertTrue(note.contains("chat with Anna"))
+        XCTAssertTrue(note.hasSuffix("[09:54] You: Is analytics easy in AWS?"))
+    }
+
     func testOnlyDeliberateSelectionsBringTheBar() {
         XCTAssertFalse(SelectionAsk.isDeliberate(down: .zero, up: CGPoint(x: 1, y: 2), clicks: 1), "a plain click")
         XCTAssertTrue(SelectionAsk.isDeliberate(down: .zero, up: CGPoint(x: 40, y: 0), clicks: 1), "a drag")
