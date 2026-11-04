@@ -1,15 +1,28 @@
 import SwiftUI
 
-/// Settings › Notifications: one choice per source for how its notices show (a card, one line, a macOS notification,
-/// or only in the list under the bell), and one switch per app for whether it may notify at all. Every notice Nook gives
-/// follows these (`AppModel.deliverNotice`), so what is set here is what happens everywhere.
+/// Settings › Notifications, in two tabs: how (one choice per source for how its notices show: a card, one line, a
+/// macOS notification, or only in the list under the bell), and from whom (one switch per app for whether it may notify
+/// at all, every list searchable at once). Every notice Nook gives follows these (`AppModel.deliverNotice`), so what is
+/// set here is what happens everywhere.
 struct NoticeRulesSettings: View {
+    enum Part { case how, apps }
+
     @ObservedObject var settings: AppSettings
     @ObservedObject var thinkAlong: ThinkAlong
+    var part: Part = .how
     @ObservedObject private var notifier = SystemNotifier.shared
     @ObservedObject private var capture = ChatCaptureService.shared
+    /// Narrows every app list at once.
+    @State private var query = ""
 
     var body: some View {
+        switch part {
+        case .how: how
+        case .apps: apps
+        }
+    }
+
+    private var how: some View {
         Group {
             Section {
                 ForEach(NoticeSource.allCases) { source in
@@ -30,7 +43,15 @@ struct NoticeRulesSettings: View {
                 SettingsSectionTitle(tr("notices.settings.how"), info: tr("notices.settings.howFooter"))
             }
             .onAppear { if settings.noticeRules.usesSystem { notifier.requestAccess() } }
+        }
+    }
 
+    /// Which apps may notify, per source; one search over all of them, as the chat apps alone can be a long list.
+    private var apps: some View {
+        Group {
+            Section {
+                NookSearchField(prompt: tr("notices.settings.searchApps"), text: $query, style: .inline)
+            }
             appSection(.agents, header: tr("notices.settings.agents"), info: tr("notices.settings.agentsFooter"),
                        apps: AgentKind.allCases.map { AppRow(id: $0.rawValue, name: $0.name, icon: $0.rawValue, symbol: "terminal") })
             appSection(.chats, header: tr("notices.settings.chats"), info: tr("notices.settings.chatsFooter"),
@@ -58,24 +79,28 @@ struct NoticeRulesSettings: View {
 
     /// A source's apps, each with its own switch. Greyed out while the source shows nothing at all.
     private func appSection(_ source: NoticeSource, header: String, info: String, apps: [AppRow]) -> some View {
-        // The list of apps can be long: folded away, with how many may notify on its label.
+        // A tab of its own, so the lists are open; how many may notify stands beside each list's name.
         let on = apps.filter { settings.noticeRules.isOn(source, app: $0.id) }.count
-        return Section {
-            DisclosureGroup(tr("notices.settings.whichApps", on, apps.count)) {
-                ForEach(apps) { row in
-                    Toggle(isOn: isOn(source, app: row.id)) {
-                        HStack(spacing: NookTheme.Spacing.md) {
-                            SiteIcon(domain: row.domain, fallback: row.symbol, tint: NookTheme.textSecondary, size: 20, source: row.icon)
-                                .frame(width: 22)
-                            Text(row.name)
+        let text = query.trimmingCharacters(in: .whitespaces)
+        let shown = text.isEmpty ? apps : apps.filter { $0.name.localizedCaseInsensitiveContains(text) }
+        return Group {
+            if !shown.isEmpty {
+                Section {
+                    ForEach(shown) { row in
+                        Toggle(isOn: isOn(source, app: row.id)) {
+                            HStack(spacing: NookTheme.Spacing.md) {
+                                SiteIcon(domain: row.domain, fallback: row.symbol, tint: NookTheme.textSecondary, size: 20, source: row.icon)
+                                    .frame(width: 22)
+                                Text(row.name)
+                            }
                         }
                     }
+                } header: {
+                    SettingsSectionTitle(header + " · " + tr("notices.settings.onCount", on, apps.count), info: info)
                 }
+                .disabled(settings.noticeRules.style(for: source) == .off)
             }
-        } header: {
-            SettingsSectionTitle(header, info: info)
         }
-        .disabled(settings.noticeRules.style(for: source) == .off)
     }
 
     private func style(_ source: NoticeSource) -> Binding<NoticeStyle> {

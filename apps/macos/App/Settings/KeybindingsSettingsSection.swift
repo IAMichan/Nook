@@ -5,11 +5,24 @@ import AppKit
 /// them, the user's `~/.nook/keybindings.json` with what it could not use, and the keys that claim the same chord.
 struct KeybindingsSettingsSection: View {
     @ObservedObject private var center = KeyCommandCenter.shared
+    /// Narrows the panel's keys (two dozen) by command or key.
+    @State private var query = ""
+
+    private var shownCommands: [String] {
+        let text = query.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return Keybindings.commandIDs }
+        return Keybindings.commandIDs.filter { command in
+            Self.title(command).localizedCaseInsensitiveContains(text)
+                || Keybindings.chords(for: command, rules: center.rules).contains { $0.symbols.localizedCaseInsensitiveContains(text) }
+        }
+    }
 
     var body: some View {
         Group {
             Section {
-                ForEach(Keybindings.commandIDs, id: \.self) { command in row(command) }
+                NookSearchField(prompt: tr("keys.search"), text: $query, style: .inline)
+                ForEach(shownCommands, id: \.self) { command in row(command) }
+                if shownCommands.isEmpty { SettingNote(tr("settings.search.none")) }
             } header: {
                 SettingsSectionTitle(tr("keys.title"), info: tr("keys.detail"))
             }

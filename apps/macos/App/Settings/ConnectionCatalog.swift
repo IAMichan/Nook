@@ -140,6 +140,8 @@ enum ConnectionProblems {
         let title: String
         let detail: String
         let state: StatusState
+        /// A chat app (shown under Chat apps), not a service.
+        var isChat = false
     }
 
     static func current(_ app: AppModel) -> [Problem] {
@@ -153,7 +155,7 @@ enum ConnectionProblems {
         for chat in ChatAppStates.all() where chat.linked && !known.contains(chat.id) {
             guard chat.status == .expired || chat.status == .unreachable else { continue }
             problems.append(Problem(id: chat.id, title: chat.name, detail: chat.detail,
-                                    state: chat.status == .expired ? .warning : .error))
+                                    state: chat.status == .expired ? .warning : .error, isChat: true))
         }
         return problems
     }

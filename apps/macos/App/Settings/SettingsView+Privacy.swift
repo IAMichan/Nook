@@ -2,14 +2,26 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-/// Settings › Privacy & security: the privacy level (and what never leaves the Mac), permissions, apps Nook never reads,
-/// sources only a brain on this Mac may read, and the log.
+/// Settings › Privacy & access, in four tabs: the privacy level (what never leaves the Mac, forgetting what Nook just
+/// saw), access (the Mac's permissions and the apps Nook never reads), the sources only a brain on this Mac may read,
+/// and the log. Whether Nook may look up lyrics online is with the music under Connections.
 extension SettingsView {
     // MARK: Privacy and Access
 
-    var privacySection: some View {
-        Group {
+    @ViewBuilder
+    func privacySection(tab: Int) -> some View {
+        switch tab {
+        case 0:
             privacyLevelSection
+            Section {
+                LabeledContent(tr("settings.privacy.screenText")) {
+                    ConfirmedButton(tr("settings.privacy.forgetScreenText"), question: tr("confirm.forgetScreenText")) {
+                        app.screenContext.clear()
+                        ToastCenter.shared.success(tr("settings.privacy.screenTextForgotten"))
+                    }
+                }
+            }
+        case 1:
             Section {
                 ForEach(SystemPermission.allCases) { permission in
                     permissionRow(permission.title, detail: permission.detail, granted: permissions.isGranted(permission)) {
@@ -22,18 +34,9 @@ extension SettingsView {
             .onAppear { permissions.watch() }
             .onDisappear { permissions.unwatch() }
             neverReadAppsSection
+        case 2:
             privateSourcesSection
-            Section {
-                SettingToggle(tr("settings.privacy.onlineLyrics"), detail: tr("settings.privacy.onlineLyricsDetail"),
-                              isOn: $settings.onlineLyrics)
-                LabeledContent(tr("settings.privacy.screenText")) {
-                    ConfirmedButton(tr("settings.privacy.forgetScreenText"), question: tr("confirm.forgetScreenText")) {
-                        app.screenContext.clear()
-                        ToastCenter.shared.success(tr("settings.privacy.screenTextForgotten"))
-                    }
-                }
-            }
-            // The log of what Nook did last: the longest part, so it comes last.
+        default:
             AuditLogSection()
         }
     }

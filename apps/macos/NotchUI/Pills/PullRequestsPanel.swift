@@ -195,7 +195,7 @@ struct PullRequestsPanel: View {
                 } else if let read = store.lastRead {
                     PullRequestFreshness(date: read)
                 }
-                NookIconButton(systemName: "binoculars", label: tr("agents.pulls.watch"), size: 28) { app.openSettings(section: .connections) }
+                NookIconButton(systemName: "binoculars", label: tr("agents.pulls.watch"), size: 28) { app.openSettings(section: .pullRequests) }
                 NookIconButton(systemName: "arrow.clockwise", label: tr("agents.pulls.refresh"), size: 28) { Task { await store.refresh(force: true) } }
             }
 
