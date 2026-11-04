@@ -36,4 +36,8 @@ enum NookPaths {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/nook-mcp")
     }
     static var databaseURL: URL { supportDirectory.appendingPathComponent("nook.sqlite") }
+    /// Folders of sessions started without a project (`ScratchProjects`): ~/.nook/scratch, beside ~/.nook/worktrees.
+    static var scratchDirectory: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/scratch")
+    }
 }

@@ -102,6 +102,30 @@ extension WorkspaceManager {
         return true
     }
 
+    /// "Edit from here" under a message of yours: the agent can roll back its conversation (`canRollbackConversation`,
+    /// per agent in `ProviderCapabilities`), the session is idle, and a snapshot from before the message says where the
+    /// conversation stood then.
+    func canEditFromHere(_ id: UUID, before date: Date) -> Bool {
+        guard let run = run(id), !run.status.isActive, canRollbackConversation(id) else { return false }
+        return (run.checkpoints ?? []).contains { $0.date <= date }
+    }
+
+    /// Goes back to just before a message of yours so it can be written again: the conversation always, and with
+    /// `revertingFiles` the worktree's files too (`revertFiles`, where `canRevert` allows it); otherwise the files stay
+    /// as they are now.
+    func editFromHere(_ id: UUID, before date: Date, revertingFiles: Bool) async throws {
+        if revertingFiles {
+            try await revertFiles(id, before: date)
+            return
+        }
+        guard canEditFromHere(id, before: date), let run = run(id),
+              let index = run.checkpoints?.lastIndex(where: { $0.date <= date }), let checkpoint = run.checkpoints?[index],
+              rollBackConversation(id, to: checkpoint, index: index) else {
+            throw StartError.git(tr("ws.edit.unavailable"))
+        }
+        append(id, RunEvent(kind: .system, text: tr("ws.edit.done")))
+    }
+
     /// After the files went back to `checkpoint` (at `index`): the conversation follows, the timeline shows what was undone,
     /// and the checkpoints past that point go. True when the conversation was rolled back too.
     func rollBackConversation(_ id: UUID, to checkpoint: RunCheckpoint, index: Int) -> Bool {

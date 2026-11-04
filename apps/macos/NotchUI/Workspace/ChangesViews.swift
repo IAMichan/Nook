@@ -42,9 +42,9 @@ struct ChangesSheet: View {
         branchFiles = model.changes
     }
 
-    private func diff(_ change: GitFileChange) async throws -> String {
-        if let branch, branchFiles.contains(where: { $0.path == change.path }) { return try await branch.diff(change) }
-        return try await workspace.diff(runID, file: change)
+    private func diff(_ change: GitFileChange, options: DiffReadOptions) async throws -> String {
+        if let branch, branchFiles.contains(where: { $0.path == change.path }) { return try await branch.diff(change, options: options) }
+        return try await workspace.diff(runID, file: change, options: options)
     }
 
     var body: some View {
@@ -85,9 +85,9 @@ struct ChangesSheet: View {
             } else {
                 ChangesDiffList(workspace: workspace, runID: runID, files: files,
                                 comments: workspace.reviewComments[runID] ?? [], expanded: $expanded, showsTree: showsTree,
-                                focus: initialFile?.path) { file in
+                                focus: initialFile?.path) { file, options in
                     guard let change = self.files.first(where: { $0.path == file.path }) else { return "" }
-                    return try await diff(change)
+                    return try await diff(change, options: options)
                 }
                 // The sheet redraws with every change to the sessions (an agent streaming in another window); the list of
                 // files, hundreds of them after a big change, only when they, the comments or the folding changed.
@@ -132,7 +132,7 @@ private struct ChangesDiffList: View, Equatable {
     @Binding var expanded: Set<String>
     let showsTree: Bool
     let focus: String?
-    let diff: (StackedDiffFile) async throws -> String
+    let diff: (StackedDiffFile, DiffReadOptions) async throws -> String
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.runID == rhs.runID && lhs.files == rhs.files && lhs.comments == rhs.comments
