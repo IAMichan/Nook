@@ -504,6 +504,7 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "ws.event.turnDone": "Runde fertig",
         "ws.event.turnDoneWith": "Runde fertig · %@",
         "ws.event.worktreeCreated": "Worktree erstellt: Branch %@ in %@",
+        "ws.event.branchRenamed": "Branch umbenannt in %@",
         "ws.event.worktreeRemoved": "Worktree entfernt: %@",
         "ws.filter.label": "Filter",
         "ws.git.commit.help": "Wähle aus, was hineinkommt, und schreibe die Nachricht",
