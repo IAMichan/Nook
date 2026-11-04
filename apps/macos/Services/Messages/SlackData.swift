@@ -384,6 +384,17 @@ enum SlackData {
             .max { (Double($0) ?? 0) < (Double($1) ?? 0) }
     }
 
+    /// The `ts` one microsecond before `ts` ("1700000000.000100" → "1700000000.000099"): a read cursor there leaves the
+    /// message at `ts` unread, as Slack's own "Mark unread" does. Nil for a `ts` that is not Slack's.
+    static func ts(before ts: String) -> String? {
+        let parts = ts.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 2, parts[1].count <= 6, let seconds = Int64(parts[0]),
+              let micros = Int64(parts[1].padding(toLength: 6, withPad: "0", startingAt: 0)) else { return nil }
+        let total = seconds * 1_000_000 + micros - 1
+        guard total >= 0 else { return nil }
+        return String(format: "%lld.%06lld", total / 1_000_000, total % 1_000_000)
+    }
+
     // MARK: Emoji
 
     /// The emoji of one of Slack's emoji names ("+1", "joy", "+1::skin-tone-3"), the skin tone left out. Nil for a name

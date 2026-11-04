@@ -644,6 +644,11 @@ struct ChatsTab: View {
         }
         // The main window that opened behind the app you were in (at login) is read once you come to it.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in readOpenChat() }
+        // A chat open in a tab that was out of sight (the notch closed, another tab or a sheet in front, the panel over
+        // the window) when it was picked or when something new came in, is read once the tab comes into sight.
+        .onChange(of: viewModel.isShowing(.inbox, inWindow: inWindow)) { _, showing in
+            if showing { readOpenChat() }
+        }
     }
 
     /// Reads the open chat in Nook, only while you can be looking at this one: in the open notch, or in the main window
@@ -739,8 +744,8 @@ struct ChatsTab: View {
     private static let paneTransition = AnyTransition.asymmetric(insertion: .opacity.animation(NookTheme.tabFade),
                                                                  removal: .identity)
 
-    /// "Mark as unread", by hand, in Nook only: the badge comes back, and an open chat closes so that opening it again
-    /// reads it.
+    /// "Mark as unread", by hand: the badge comes back (and the app hears it where it takes it, `markChatUnread`), and an
+    /// open chat closes so that opening it again reads it in Nook.
     private func markUnread(_ entry: ChatsEntry) {
         keptInView.insert(entry.id)
         if selection == entry.id {

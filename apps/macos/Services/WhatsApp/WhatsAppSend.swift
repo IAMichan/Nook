@@ -246,6 +246,11 @@ enum WAAction {
         WASendRequest(path: "/chats/archive", json: ["chatId": chatId, "archive": true])
     }
 
+    /// WhatsApp's own "Mark as unread" (`/chats/unread`, on either engine).
+    static func openwaMarkUnread(_ chatId: String) -> WASendRequest {
+        WASendRequest(path: "/chats/unread", json: ["chatId": chatId])
+    }
+
     /// Deletes the chat from the phone's chat list, for you alone; WhatsApp takes a group only once you left it.
     static func openwaDeleteChat(_ chatId: String) -> WASendRequest {
         WASendRequest(path: "/chats/delete", json: ["chatId": chatId])

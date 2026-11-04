@@ -501,6 +501,12 @@ enum TeamsWebData {
         return ["consumptionhorizon": "\(arrived);\(read);\(id)"]
     }
 
+    /// What marking a chat unread puts at `horizonPath(chat:)`: the horizon just before the newest message (`arrived`,
+    /// its id), so that message counts as unread again, as Teams' own "Mark as unread" leaves it.
+    static func unreadHorizon(newest arrived: Int64, now: Date = Date()) -> [String: Any] {
+        horizon(newest: String(arrived - 1), arrived: arrived - 1, now: now)
+    }
+
     /// Who wrote each message ("8:orgid:…"), by its id in Nook.
     static func authors(_ json: [String: Any]) -> [String: String] {
         var authors: [String: String] = [:]

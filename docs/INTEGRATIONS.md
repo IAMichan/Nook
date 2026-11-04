@@ -66,6 +66,7 @@ needs a column in that matrix.
 | Link previews and embeds (picture, video, sound, page card) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (Nook reads no attachments from Mail yet) |
 | Calls shown as a call row (kind, who rang, how long; `ChatFormat.call`) | ✓ (the gateway's call line) | ✓ (the gateway's call line) | – (FaceTime calls are not in the chat database) | ✓ (`messageCall`) | ✓ (the bridge's call notice) | ✓ (huddles, `huddle_thread`) | ✓ (`Event/Call`, signed in through the website) | – (not read from the page yet) | – (no calls) |
 | Mark as unread, also a chat without messages in Nook yet | ✓ (`markedUnread`) | ✓ (`markedUnread`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Mark as unread in the app too, as its own "Mark as unread" (`ChatAbilities.markUnread`, `AppModel.markUnreadInChatApp`; read in Nook later, it stays "Only in Nook" until you pass the read on) | – (GOWA has no call; whatsmeow has `BuildMarkChatAsRead`, so it needs GOWA to add one: Nook only) | ✓ (`/chats/unread`, either engine) | – (Messages lets no other app) | ✓ (`toggleChatIsMarkedAsUnread`; "Mark as read" takes the mark back) | ✓ (`/unread`) | ✓ (`conversations.mark` just before the newest message from someone else) | ✓ (the read horizon just before the newest message from someone else) | – (the website offers none) | ✓ (the newest mail from someone else unread in Mail) |
 | Read in the app or on the phone → read in Nook at once, its waiting card and macOS notification gone | ✓ (`readElsewhere`: `read-self`, or with your read receipts on a `read` from your own number, as WhatsApp on this Mac sends it) | ✓ (the phone's chat list counting nothing new, `WAInbox.readInGateway`; within five minutes) | ✓ (unread count) | ✓ (unread count) | ✓ (unread count, also without a new message) | ✓ (`client.counts`, signed in through the website; a pasted token: `conversations.info` of the 10 busiest chats that may be unread) | ✓ (`readUntil`) | ✓ (the list's unread mark) | ✓ (read status) |
 | A chat Nook can only read says what is missing and links it (`ChatLimitsLine`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Emoji on messages | ✓ | ✓ | ✓ (tapbacks) | ✓ | ✓ | ✓ | ✓ | – (the website does not show them) | – (no emoji) |
@@ -150,7 +151,8 @@ gateways push their changes themselves), and the action is logged under one name
 app took it. When the app refuses, a toast says why; so does an app that has no message of the chat to mark (a Telegram
 chat only its notifications brought, a Teams chat without a message Nook knows), instead of claiming it was read. What
 the app is told is what you saw when you clicked: a message that came in while the call went stays new. A chat you
-marked unread by hand (`InboxThread.markedUnread`) stays unread until you read it, whatever a lagging or windowed count
+marked unread by hand (`InboxThread.markedUnread`) is marked unread in its app too where the app takes it
+(`AppModel.markChatUnread`; a refusal says why in a toast and Nook's mark stays), and stays unread until you read it, whatever a lagging or windowed count
 of its app says at its next read. A chat that an app names twice is read with its twin (`ChatInbox.twins`), so the badge
 does not keep counting the one the tab hides. WhatsApp's linked phone keeps its chats in the tab through a short moment
 its gateway does not answer (`WhatsAppLink.holdsChats`, ten minutes at most).
