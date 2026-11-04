@@ -263,10 +263,31 @@ struct SelectableProse: NSViewRepresentable {
         return cache
     }()
 
+    /// What the text is built from, as a plain string (no reflection): only the blocks that draw as prose count, each
+    /// with its length so two different splits of the same characters never share a key.
+    private static func cacheKey(_ blocks: [MarkdownBlock]) -> String {
+        var key = ""
+        for block in blocks {
+            switch block {
+            case .heading(let level, let text):
+                key += "h\(level):\(text.utf8.count):\(text)\u{1E}"
+            case .paragraph(let text):
+                key += "p:\(text.utf8.count):\(text)\u{1E}"
+            case .list(let items):
+                key += "l\(items.count)"
+                for item in items { key += ":\(item.level):\(item.number ?? ""):\(item.text.utf8.count):\(item.text)" }
+                key += "\u{1E}"
+            default:
+                key += "-\u{1E}"
+            }
+        }
+        return key
+    }
+
     /// The blocks as one attributed text, in the same sizes, colors, and spacing as the SwiftUI blocks around them.
     /// `files`: a code span that names a file by a relative path becomes a link (there is a folder to read it from).
     static func attributed(_ blocks: [MarkdownBlock], size: CGFloat, files: Bool = false) -> NSAttributedString {
-        let key = "\(size)|\(files)|\(NookTheme.accentHex)|\(String(describing: blocks))" as NSString
+        let key = "\(size)|\(files)|\(NookTheme.accentHex)|\(cacheKey(blocks))" as NSString
         if let hit = cache.object(forKey: key) { return hit }
         let result = NSMutableAttributedString()
         for (index, block) in blocks.enumerated() {

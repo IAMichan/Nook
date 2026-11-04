@@ -448,7 +448,8 @@ private struct TerminalGroupHeader: View {
     }
 }
 
-/// One terminal in the list: its mark (a cross under the pointer, to close it), its name and how it ended.
+/// One terminal in the list: its mark, its name and how it ended, with a cross at the end (under the pointer) that closes it.
+/// A right click offers the folder and closing as well.
 private struct TerminalRow: View {
     @ObservedObject var session: TerminalSession
     let selected: Bool
@@ -457,44 +458,66 @@ private struct TerminalRow: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
+        Button(action: select) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Image(systemName: "terminal")
+                    .font(NookTheme.font(10, .semibold))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .frame(width: 14, height: 14)
+                    .accessibilityHidden(true)
+                if let owner = session.owner {
+                    // Started by an agent: its mark, so you can tell its processes from your own shells.
+                    AgentMark(agent: owner.agent, account: nil, size: 11, dimmed: !session.running, ring: .clear)
+                        .help(tr("bridge.terminalBy", owner.agent))
+                        .accessibilityLabel(tr("bridge.terminalBy", owner.agent))
+                }
+                Text(session.title)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
+                Spacer(minLength: 0)
+                if !session.running {
+                    Circle()
+                        .fill(session.exitCode == 0 ? NookTheme.textTertiary : NookTheme.coral)
+                        .frame(width: 5, height: 5)
+                        .help(session.exitCode.map { tr("workbench.terminal.exit", $0) } ?? "")
+                }
+                // Always takes its room, so the name does not move when the cross appears.
+                Color.clear.frame(width: 14, height: 14)
+            }
+            .padding(.horizontal, NookTheme.Spacing.sm)
+            .frame(height: TerminalMetrics.row)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+                .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .overlay(alignment: .trailing) {
             Button(action: close) {
-                Image(systemName: hovering ? "xmark" : "terminal")
-                    .font(NookTheme.font(hovering ? 9 : 10, .semibold))
-                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textTertiary)
+                Image(systemName: "xmark")
+                    .font(NookTheme.font(9, .semibold))
+                    .foregroundStyle(NookTheme.paper)
                     .frame(width: 14, height: 14)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .padding(.trailing, NookTheme.Spacing.sm)
+            .opacity(hovering ? 1 : 0)
+            .allowsHitTesting(hovering)
             .help(tr("workbench.terminal.close"))
             .accessibilityLabel(tr("workbench.terminal.close"))
-            if let owner = session.owner {
-                // Started by an agent: its mark, so you can tell its processes from your own shells.
-                AgentMark(agent: owner.agent, account: nil, size: 11, dimmed: !session.running, ring: .clear)
-                    .help(tr("bridge.terminalBy", owner.agent))
-                    .accessibilityLabel(tr("bridge.terminalBy", owner.agent))
-            }
-            Text(session.title)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .font(NookTheme.TextStyle.label)
-                .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
-            Spacer(minLength: 0)
-            if !session.running {
-                Circle()
-                    .fill(session.exitCode == 0 ? NookTheme.textTertiary : NookTheme.coral)
-                    .frame(width: 5, height: 5)
-                    .help(session.exitCode.map { tr("workbench.terminal.exit", $0) } ?? "")
-            }
         }
-        .padding(.horizontal, NookTheme.Spacing.sm)
-        .frame(height: TerminalMetrics.row)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-            .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
-        .contentShape(Rectangle())
-        .onTapGesture(perform: select)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
+        .contextMenu {
+            Button(tr("agents.panel.copyPath")) { Pasteboard.copy(session.directory) }
+            Button(tr("ws.outputs.reveal")) {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: session.directory)])
+            }
+            Divider()
+            Button(tr("workbench.terminal.close"), role: .destructive, action: close)
+        }
         .help(session.owner.map { tr("bridge.terminalBy", $0.agent) + " · " + session.directory } ?? session.directory)
     }
 }

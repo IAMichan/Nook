@@ -619,7 +619,7 @@ struct AgentRunPanel: View {
                     ForEach(blocks) { block in
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                             if block.id == newSince { TimelineNewDivider() }
-                            TimelineBlockView(block: block, expanded: openBlocks, context: context, toggle: toggleBlock) { event in
+                            TimelineBlockView(block: block, expanded: openBlocks, context: context.scoped(to: block), toggle: toggleBlock) { event in
                                 if event.id == liveStep { return AnyView(EmptyView()) }
                                 return AnyView(
                                     VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
@@ -757,7 +757,12 @@ struct AgentRunPanel: View {
                 findQuery = wanted
             }
             .onChange(of: events.count) { _, _ in
-                if scroll.shouldFollowEnd { withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) } }
+                // Not animated, and only when the view is off its end: at the end `defaultScrollAnchor` and `keepEnd`
+                // already hold it there, and an animated scroll on every new event fought them.
+                guard scroll.shouldFollowEnd, !atEnd else { return }
+                var still = Transaction()
+                still.disablesAnimations = true
+                withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             // You sent something: it is the newest thing and follows again, also when you had scrolled up.
             .onChange(of: sentCount) { _, _ in settleAtEnd(proxy) }

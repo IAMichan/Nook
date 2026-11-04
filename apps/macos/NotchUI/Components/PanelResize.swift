@@ -71,6 +71,17 @@ enum PanelDrag {
         }
     }
 
+    /// Runs `step` at the next frame of the screen; a step still waiting is replaced (for drags that are not a binding,
+    /// such as the notch's own edges).
+    static func frame(_ step: @escaping () -> Void) {
+        DragFrame.shared.schedule(step)
+    }
+
+    /// Runs the step still waiting, if any, right now.
+    static func flushFrame() {
+        DragFrame.shared.flush()
+    }
+
     /// Ends the drag: the stored size takes the dragged one, in the same transaction that lets go of the live one, so
     /// nothing jumps back for a frame.
     static func commit(_ live: Binding<Double?>, to stored: Binding<Double>) {

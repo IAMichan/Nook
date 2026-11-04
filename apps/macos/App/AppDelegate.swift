@@ -190,7 +190,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if status { menu.addItem(.separator()) }
 
         // Actions.
-        add(to: menu, title: tr("menu.openPanel"), action: #selector(openChat))
+        add(to: menu, title: tr("menu.openPanel"), action: #selector(openChat), shortcut: .ask)
         add(to: menu, title: tr("menu.talk"), action: #selector(talk), shortcut: .talk)
         add(to: menu, title: tr("menu.screen"), action: #selector(lookAtScreen), shortcut: .lookAtScreen)
         add(to: menu, title: NoteTaker.shared.isRecording ? tr("notes.menu.stop") : tr("notes.menu.start"), action: #selector(recordCall), shortcut: .recordCall)
@@ -251,7 +251,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
         return formatter
     }()
 

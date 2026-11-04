@@ -75,6 +75,7 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Changed
 
+- A smoothness and UX pass: Escape closes the notch, the notch no longer opens while you sweep past it, toasts stay off the composer, and lists (Agents, Nook, palette, search, terminals) work with the keyboard and the pointer alike. Drafts, stashes and carets survive switching sessions, copy buttons all behave the same, Nook chat streams with far less redrawing, and Settings saves and confirms where it did not.
 - Smoother throughout: typing in the Nook chat and under a terminal or past agent session draws only the composer,
   not the conversation above it; starting and stopping a scroll no longer redraws every message; stickers and GIFs
   decode off the main thread; the notch opens sooner (shorter hover wait and open spring) without the hover's curve

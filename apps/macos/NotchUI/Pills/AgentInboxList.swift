@@ -31,6 +31,10 @@ struct AgentInboxList: View {
     /// The project header under the pointer: it shows its "+".
     @State private var hoveredProject: String?
     @State private var selection = ListSelection<String>()
+    /// The rows as shown, kept for the click closures: the rows are not redrawn when only this order changes.
+    @State private var shownOrder: [String] = []
+    /// The row last clicked: opening it from the list does not scroll the list, opening one from elsewhere does.
+    @State private var clickedID: String?
     /// The past sessions by id, made again only when the history changes (`pastSession`).
     @State private var pastIndex = PastSessionIndex()
 
@@ -171,6 +175,7 @@ struct AgentInboxList: View {
                                 ? (title: tr("onboarding.agents.setUp"), run: { app.startOnboarding(at: OnboardingView.agentsStep) })
                                 : (title: tr("agents.newSession"), run: { select("new") }))
             } else {
+                ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
                     // Lazy: the list holds every running and earlier session, and only the ones in view are built.
                     LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -191,6 +196,14 @@ struct AgentInboxList: View {
                         if sections.allSatisfy({ $0.kind == .settled }) { emptyState }
                     }
                 }
+                // A session opened from elsewhere (the keyboard, a card, search) is brought into view in the list; a click
+                // on a row does not move the list.
+                .onChange(of: current) { _, id in
+                    defer { clickedID = nil }
+                    guard id != clickedID, shown.contains(id) else { return }
+                    DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .center) } }
+                }
+                }
                 .frame(maxHeight: .infinity, alignment: .top)
             }
             // What you settled sits at the foot of the list, above the footer, its header above its rows.
@@ -202,8 +215,12 @@ struct AgentInboxList: View {
                 selectionBar(rows: rows, byID: byID, shown: shown)
             }
         }
-        .onChange(of: shown) { _, current in selection.keep(only: current) }
+        .onChange(of: shown) { _, current in
+            shownOrder = current
+            selection.keep(only: current)
+        }
         .onAppear {
+            shownOrder = shown
             pullRequests.follow(workspace: app.workspace, folders: pullRequestFolders, now: now)
             store.undoSnooze = { ids in
                 for id in ids { if let uuid = UUID(uuidString: String(id.dropFirst(4))) { app.workspace.unsnooze(uuid) } }
@@ -495,15 +512,18 @@ struct AgentInboxList: View {
                 wakeLabel: snoozeActive ? item.snoozedUntil.map { tr("inbox.snooze.until", Self.wakeFormat.string(from: $0)) } : nil,
                 actions: AgentRowActions(
                     pinned: entry.row.pinned,
-                    onPin: { entry.row.pinned ? store.unpin(item.id) : pinAndUnsettle(item, entry) },
+                    onPin: { withAnimation(NookTheme.reveal) { entry.row.pinned ? store.unpin(item.id) : pinAndUnsettle(item, entry) } },
                     settled: entry.row.settled,
-                    onSettle: { entry.row.settled ? store.unsettle([item]) : store.settle([item]) },
-                    onSnooze: isRun ? { snooze(item, $0) } : nil,
-                    onWake: isRun && snoozeActive ? { wake(item) } : nil),
+                    onSettle: { withAnimation(NookTheme.reveal) { entry.row.settled ? store.unsettle([item]) : store.settle([item]) } },
+                    onSnooze: isRun ? { choice in withAnimation(NookTheme.reveal) { snooze(item, choice) } } : nil,
+                    onWake: isRun && snoozeActive ? { withAnimation(NookTheme.reveal) { wake(item) } } : nil),
                 pullRequests: sessionPullRequests(item)
             ) {
-                click(item, entry, shown: shown)
+                click(item, entry, shown: shownOrder)
             }
+            // Redrawn only when what the row shows changed: the list redraws on every tick and every store change.
+            .equatable()
+            .id(item.id)
             .nested(entry.depth)
             // Read the session's timeline while the pointer rests on it, so the click opens it without a hitch.
             .onHover { inside in if inside, let id = runID(item) { app.workspace.prefetchTimeline(id) } }
@@ -524,6 +544,7 @@ struct AgentInboxList: View {
         let keys = SelectionClick.modifiers()
         switch selection.click(command: keys.command, shift: keys.shift) {
         case .open:
+            clickedID = item.id
             select(item.id)
             if entry.woke { store.dismissWoke(item.id) }
         case .toggle:
@@ -554,7 +575,7 @@ struct AgentInboxList: View {
     @ViewBuilder
     private func contextMenu(_ item: AgentListItem, _ entry: InboxEntry) -> some View {
         Button(entry.row.pinned ? tr("inbox.unpin") : tr("inbox.pin")) {
-            entry.row.pinned ? store.unpin(item.id) : pinAndUnsettle(item, entry)
+            withAnimation(NookTheme.reveal) { entry.row.pinned ? store.unpin(item.id) : pinAndUnsettle(item, entry) }
         }
         // A busy session can be settled too: a turn that hangs should not stay in the list forever.
         if item.id.hasPrefix("past:") && entry.row.settled {
@@ -562,16 +583,16 @@ struct AgentInboxList: View {
             EmptyView()
         } else {
             Button(entry.row.settled ? tr("inbox.reopen") : tr("inbox.settle")) {
-                entry.row.settled ? store.unsettle([item]) : store.settle([item])
+                withAnimation(NookTheme.reveal) { entry.row.settled ? store.unsettle([item]) : store.settle([item]) }
             }
         }
         if let id = runID(item), let run = app.workspace.run(id) {
             if let until = run.snoozedUntil, until > now {
-                Button(tr("agents.snooze.cancel")) { wake(item) }
+                Button(tr("agents.snooze.cancel")) { withAnimation(NookTheme.reveal) { wake(item) } }
             } else if !item.isBusy {
                 Menu(tr("agents.snooze.menu")) {
                     ForEach(SnoozePolicy.Choice.allCases, id: \.self) { choice in
-                        Button(tr("agents.snooze." + choice.rawValue)) { snooze(item, choice) }
+                        Button(tr("agents.snooze." + choice.rawValue)) { withAnimation(NookTheme.reveal) { snooze(item, choice) } }
                     }
                 }
             }
@@ -590,8 +611,10 @@ struct AgentInboxList: View {
         }
         if let id = runID(item) {
             Button(tr("agents.run.archive")) {
-                app.workspace.setArchived(id, true)
-                store.note(.archived, ids: [item.id])
+                withAnimation(NookTheme.reveal) {
+                    app.workspace.setArchived(id, true)
+                    store.note(.archived, ids: [item.id])
+                }
             }
             .disabled(item.isBusy)
         }

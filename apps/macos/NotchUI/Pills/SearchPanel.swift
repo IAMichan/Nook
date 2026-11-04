@@ -204,7 +204,9 @@ struct SearchPanel: View {
                 ListEmptyNote(tr("search.none"))
                 Text(tr("search.noneDetail")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
                 ForEach(Array(list.enumerated()), id: \.element.id) { offset, row in
-                    rowView(row, selected: offset == index).onTapGesture { index = offset; open(list) }
+                    rowView(row, selected: offset == index)
+                        .onHover { if $0 { index = offset } }
+                        .onTapGesture { index = offset; open(list) }
                 }
             }
             .padding(NookTheme.Spacing.lg)
@@ -221,6 +223,8 @@ struct SearchPanel: View {
                             }
                             rowView(row, selected: offset == index)
                                 .id(row.id)
+                                // The pointer and the arrow keys share one chosen row.
+                                .onHover { if $0 { index = offset } }
                                 .onTapGesture { index = offset; open(list) }
                         }
                     }
@@ -387,6 +391,7 @@ struct SearchPanel: View {
                             }
                             .padding(.horizontal, NookTheme.Spacing.md)
                             .frame(height: 30)
+                            .modifier(SearchHoverFill())
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -407,6 +412,7 @@ struct SearchPanel: View {
                         }
                         .padding(.horizontal, NookTheme.Spacing.md)
                         .frame(height: 28)
+                        .modifier(SearchHoverFill())
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -522,5 +528,18 @@ struct SearchPanel: View {
             out += part
         }
         return out
+    }
+}
+
+/// The soft fill under the pointer for the rows before you type (recent searches, tips).
+private struct SearchHoverFill: ViewModifier {
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control)
+                .fill(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear)))
+            .onHover { hovering = $0 }
+            .animation(NookTheme.hover, value: hovering)
     }
 }

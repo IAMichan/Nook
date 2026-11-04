@@ -277,8 +277,18 @@ struct TurnDiff: Equatable, Identifiable, Sendable {
     /// All the turns together, each file once with the edits of every turn: the whole session.
     static func session(_ turns: [TurnDiff]) -> TurnDiff {
         var all = TurnDiff(id: "all", number: 0, start: turns.compactMap(\.start).min(), end: turns.compactMap(\.end).max())
+        // Each file's place by path, so merging does not search the files so far for every edit.
+        var index: [String: Int] = [:]
         for turn in turns {
-            for file in turn.files { all.merge(file) }
+            for file in turn.files {
+                if let known = index[file.path] {
+                    all.files[known].lines = all.files[known].lines + file.lines
+                    all.files[known].patches += file.patches
+                } else {
+                    index[file.path] = all.files.count
+                    all.files.append(file)
+                }
+            }
         }
         return all
     }

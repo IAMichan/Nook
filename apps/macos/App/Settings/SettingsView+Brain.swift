@@ -309,7 +309,7 @@ extension SettingsView {
                     Label(settings.provider == .claude ? "\(tr("settings.brain.keyInKeychain")): \(settings.maskedKey ?? "")" : tr("settings.brain.keyInKeychain"), systemImage: "key.fill")
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
-                    ConfirmedButton(tr("accounts.removeKey"), question: tr("confirm.removeKey"), detail: tr("confirm.keychain.detail")) {
+                    ConfirmedButton(tr("accounts.removeKey"), question: tr("confirm.removeKeyNamed", settings.provider.title), detail: tr("confirm.keychain.detail")) {
                         saveKey("")
                     }
                     .buttonStyle(.borderless)

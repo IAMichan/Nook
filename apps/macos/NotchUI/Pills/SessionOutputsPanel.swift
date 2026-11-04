@@ -140,7 +140,6 @@ enum OutputText {
 /// One output, shown as what it is, with what you can do with it underneath.
 private struct OutputViewer: View {
     let output: SessionOutput
-    @State private var copied = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -194,11 +193,7 @@ private struct OutputViewer: View {
                 }
             } else {
                 Spacer(minLength: 6)
-                SmallGhostButton(title: copied ? tr("ws.outputs.copied") : tr("ws.plan.copy")) {
-                    Pasteboard.copy(Self.text(output.kind))
-                    copied = true
-                    Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
-                }
+                CopyGhostButton(title: tr("ws.plan.copy"), copiedTitle: tr("ws.outputs.copied")) { Self.text(output.kind) }
             }
         }
         .padding(.horizontal, 10)

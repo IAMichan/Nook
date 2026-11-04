@@ -75,6 +75,17 @@ private struct SidePanelBleed: ViewModifier {
     }
 }
 
+/// How a side panel comes and goes: on the left it slides from its edge (a fade under Reduce Motion), on the right it is
+/// there at once.
+private struct SidePanelTransition: ViewModifier {
+    let slides: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content.transition(!slides ? .identity : reduceMotion ? .opacity : AnyTransition.move(edge: .leading).combined(with: .opacity))
+    }
+}
+
 extension View {
     /// Makes this a side panel on `edge` of the conversation: `SidePanelMetrics.gap` from the drag line on the
     /// conversation's side, as wide as `width` (see `resizablePanel`). On the left it slides in from its edge; on the right
@@ -87,7 +98,7 @@ extension View {
             .padding(leading ? Edge.Set.trailing : Edge.Set.leading, gap)
             .resizablePanel(width: width, defaultWidth: defaultWidth, minimum: minimum, available: available, rest: rest,
                             edge: leading ? HorizontalEdge.trailing : HorizontalEdge.leading, divider: true)
-            .transition(leading ? AnyTransition.move(edge: .leading).combined(with: .opacity) : .identity)
+            .modifier(SidePanelTransition(slides: leading))
     }
 
     /// Opens and closes the side panels on the right of this view at once, without a slide: put it on the row that

@@ -115,7 +115,6 @@ struct FileViewer: View {
     @State private var content: FileViewContent?
     @State private var reloads = 0
     @State private var markdownPreview = false
-    @State private var copied = false
 
     init(target: FileTarget, opened: UUID = UUID(), beside: Bool = false, directory: String = "",
          openOther: @escaping (FileTarget) -> Void = { _ in }) {
@@ -152,6 +151,7 @@ struct FileViewer: View {
                     } else {
                         FileCodeView(lines: lines, tokens: tokens, line: FileViewing.clampedLine(target.line, count: lines.count),
                                      scrollKey: opened)
+                            .equatable()
                     }
                 case .preview:
                     QuickLookView(url: URL(fileURLWithPath: target.path))
@@ -208,11 +208,7 @@ struct FileViewer: View {
                 ToolbarIconButton("arrow.clockwise", tr("file.viewer.reload")) { reloads += 1 }
             }
             ToolbarIconButton("doc.badge.ellipsis", tr("file.viewer.open")) { pickFile() }
-            ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", copied ? tr("button.copied") : tr("file.viewer.copyPath")) {
-                Pasteboard.copy(target.path)
-                copied = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
-            }
+            CopyIconButton(tr("file.viewer.copyPath")) { target.path }
             ToolbarIconButton("folder", tr("file.viewer.reveal")) { AppModel.shared.workspace.revealInFinder(target.path) }
             ToolbarIconButton("arrow.up.forward.app", tr("file.viewer.openEditor")) { AppModel.shared.workspace.openFile(target) }
         }
@@ -344,12 +340,24 @@ private struct FileTextEditor: NSViewRepresentable {
 
 /// The lines of a text file with their numbers. Only the rows in view are built, so a long file opens at once; long
 /// lines wrap, as in the diffs.
-private struct FileCodeView: View {
+private struct FileCodeView: View, Equatable {
     let lines: [String]
     let tokens: [[SyntaxToken]]
     /// The link's line (1-based): scrolled to and marked.
     let line: Int?
     let scrollKey: UUID
+    /// The lines already in their colors, by index with what they were made from, so scrolling back over a line does
+    /// not build it again.
+    @State private var styledLines = StyledLines()
+
+    private final class StyledLines {
+        var byIndex: [Int: (text: String, tokens: [SyntaxToken], styled: AttributedString)] = [:]
+    }
+
+    /// Drawn again only when the file, its colors or the marked line changed (with `.equatable()` where it is used).
+    nonisolated static func == (a: FileCodeView, b: FileCodeView) -> Bool {
+        a.line == b.line && a.scrollKey == b.scrollKey && a.lines == b.lines && a.tokens == b.tokens
+    }
 
     private var numberWidth: CGFloat { CGFloat(max(String(lines.count).count, 2)) * 6.6 + 18 }
 
@@ -402,15 +410,17 @@ private struct FileCodeView: View {
     private func styled(_ index: Int) -> AttributedString {
         let text = lines[index]
         guard !text.isEmpty else { return AttributedString(" ") }
-        let units = Array(text.utf16)
         let found = index < tokens.count ? tokens[index] : []
         guard !found.isEmpty else { return AttributedString(text) }
+        if let hit = styledLines.byIndex[index], hit.text == text, hit.tokens == found { return hit.styled }
+        let units = Array(text.utf16)
         var result = AttributedString()
         for segment in DiffSyntax.segments(length: units.count, tokens: found, changed: nil) {
             var part = AttributedString(String(decoding: units[segment.start..<segment.end], as: UTF16.self))
             if let kind = segment.kind { part.foregroundColor = DiffSyntaxStyle.color(kind) }
             result += part
         }
+        styledLines.byIndex[index] = (text, found, result)
         return result
     }
 }

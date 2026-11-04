@@ -169,7 +169,7 @@ extension SettingsView {
             .padding(.horizontal, NookTheme.Spacing.md)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(selected ? NookTheme.smoke : NookTheme.graphite))
             .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
-                .strokeBorder(selected ? NookTheme.iris : Color.clear, lineWidth: 2))
+                .strokeBorder(selected ? NookTheme.iris : Color.clear, lineWidth: 1))
             .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         }
         .buttonStyle(.plain)

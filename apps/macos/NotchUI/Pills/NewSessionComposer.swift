@@ -60,6 +60,7 @@ struct NewSessionComposer: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { restoreOrPrepare(); app.refreshAgentModels(); applyPromptLink(); applyRequestedProject() }
+        .composerFocusOnAppear($focused)
         // Closing the notch (or switching tabs) drops this view; what you typed and chose waits for its return.
         .onDisappear(perform: keepDraft)
         .onChange(of: config.task) { _, task in
@@ -614,7 +615,7 @@ struct NewSessionComposer: View {
         appliedProjectRequest = request.id
         showClone = false
         if FileManager.default.fileExists(atPath: request.path) { select(request.path) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { focused = true }
+        DispatchQueue.main.async { focused = true }
     }
 
     /// Back where you left it when the notch closed, else a fresh box with your last choices (and the task you were
@@ -635,7 +636,6 @@ struct NewSessionComposer: View {
         remoteMachine = draft.remoteMachine
         remoteFolder = draft.remoteFolder
         for (id, text) in draft.excerpts { composerModel.keep(id, text: text) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { focused = true }
         // A project still being inspected when the notch closed is looked at again.
         if project == nil, !config.projectPath.isEmpty, remoteMachine == nil,
            FileManager.default.fileExists(atPath: config.projectPath) {
@@ -663,7 +663,6 @@ struct NewSessionComposer: View {
         config.effort = settings.effort(for: provider)
         config.isolation = settings.defaultIsolation
         config.worktreeRoot = settings.worktreeRoot
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { focused = true }
         let menu = projectMenu
         let initial = settings.lastProject.isEmpty ? (menu.favorites.first ?? menu.recent.first) : settings.lastProject
         if let initial, FileManager.default.fileExists(atPath: initial) { select(initial) }

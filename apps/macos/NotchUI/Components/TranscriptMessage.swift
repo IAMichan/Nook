@@ -200,11 +200,7 @@ struct TranscriptMessageFooter<Actions: View>: View {
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
             if trailing, let date { TranscriptTime(date: date).padding(.trailing, NookTheme.Spacing.xs) }
-            ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", copied ? tr("button.copied") : tr("button.copy"), height: 22) {
-                Pasteboard.copy(text)
-                copied = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
-            }
+            CopyIconButton(tr("button.copy"), height: 22, showing: $copied) { text }
             actions()
             if !trailing, let date { TranscriptTime(date: date).padding(.leading, NookTheme.Spacing.xs) }
         }

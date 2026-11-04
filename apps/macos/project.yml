@@ -219,6 +219,11 @@ targets:
       - path: Core/I18n+Mail.swift
       - path: Core/I18n+MailSend.swift
       - path: Core/I18n+FileViewer.swift
+      - path: Core/I18n+PolishLists.swift
+      - path: Core/I18n+PolishComposers.swift
+      - path: Core/I18n+PolishNotch.swift
+      - path: Core/I18n+PolishRendering.swift
+      - path: Core/I18n+PolishSettings.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift

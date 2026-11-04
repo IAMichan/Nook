@@ -61,7 +61,7 @@ final class KeyCommandCenter: ObservableObject {
         "composer.send", "composer.sendAlternate", "composer.newline", "composer.stash", "composer.historyPrevious",
         "composer.historyNext", "composer.access", "queue.steerFirst", "chat.find", "search.toggle", "commandPalette.toggle",
         "session.new", "session.undo", "diff.toggle", "panel.reopenClosed", "selection.quote",
-        "selection.ask",
+        "selection.ask", "session.previous", "session.next",
     ]
 
     func update(_ id: UUID, window: NSWindow?, enabled: Bool, priority: Int, context: [String: Bool],

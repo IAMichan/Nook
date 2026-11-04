@@ -9,13 +9,17 @@ import AppKit
 struct NookList: View {
     @ObservedObject var chat: NookChat
     @EnvironmentObject private var app: AppModel
-    @State private var query = ""
+    /// The search is kept while Nook runs, so a visit to another tab and back finds it as it was left.
+    @State private var query = NookList.keptQuery
     @State private var showArchived = false
     @State private var renaming: UUID?
     @State private var nameDraft = ""
     @State private var selection = ListSelection<UUID>()
     /// The Nook whose delete waits for a yes: a context menu cannot hold the dialog itself.
     @State private var deleting: Conversation?
+
+    /// The search you left in the list (not kept across a restart).
+    static var keptQuery = ""
 
     var body: some View {
         let items = chat.list(query: query, showArchived: false)
@@ -75,6 +79,26 @@ struct NookList: View {
             }
         }
         .onChange(of: shown) { _, current in selection.keep(only: current) }
+        .onChange(of: query) { _, value in NookList.keptQuery = value }
+        // ⌘⇧[ and ⌘⇧] go to the Nook above or below in the list, as they go through sessions on Agents.
+        .keyCommands(["session.previous": { step(-1) }, "session.next": { step(1) }], enabled: !shown.isEmpty)
+    }
+
+    /// Opens the Nook `offset` rows from the open one in the list (the first or last when none is open). False at either end.
+    private func step(_ offset: Int) -> Bool {
+        let ids = shownNow()
+        guard !ids.isEmpty else { return false }
+        let next = chat.activeID.flatMap { ids.firstIndex(of: $0) }.map { $0 + offset } ?? (offset > 0 ? 0 : ids.count - 1)
+        guard ids.indices.contains(next) else { return false }
+        app.openConversation(ids[next])
+        return true
+    }
+
+    /// Keeps the new name and ends renaming; a second call (the field's Return, then it losing focus) does nothing.
+    private func commitRename(_ id: UUID) {
+        guard renaming == id else { return }
+        renaming = nil
+        chat.rename(id, to: nameDraft)
     }
 
     // MARK: Selecting several
@@ -189,22 +213,11 @@ struct NookList: View {
     private func rows(_ conversations: [Conversation], now: Date, shown: [UUID]) -> some View {
         ForEach(conversations) { conversation in
             if renaming == conversation.id {
-                TextField("", text: $nameDraft)
-                    .textFieldStyle(.plain)
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(NookTheme.paper)
-                    .padding(.horizontal, NookTheme.Spacing.lg)
-                    .frame(height: 40)
-                    .cardBackground(NookTheme.rowSelected, stroke: NookTheme.iris.opacity(0.4), radius: NookTheme.Radius.panel, style: .continuous)
-                    .onSubmit {
-                        chat.rename(conversation.id, to: nameDraft)
-                        renaming = nil
-                    }
-                    .onExitCommand { renaming = nil }
+                NookRenameField(text: $nameDraft, commit: { commitRename(conversation.id) }, cancel: { renaming = nil })
             } else {
                 NookRow(conversation: conversation, selected: conversation.id == chat.activeID, now: now,
-                        onPin: { chat.togglePin(conversation.id) },
-                        onArchive: { chat.setArchived(!conversation.archived, conversation.id) }) {
+                        onPin: { withAnimation(NookTheme.reveal) { chat.togglePin(conversation.id) } },
+                        onArchive: { withAnimation(NookTheme.reveal) { chat.setArchived(!conversation.archived, conversation.id) } }) {
                     // Worked out at the click: the row is kept while it does not change (`.equatable()`), also when
                     // the order around it does.
                     click(conversation, shown: shownNow())
@@ -226,18 +239,46 @@ struct NookList: View {
             renaming = conversation.id
         }
         if !conversation.archived {
-            Button(tr(conversation.pinned ? "nooks.unpin" : "nooks.pin")) { chat.togglePin(conversation.id) }
+            Button(tr(conversation.pinned ? "nooks.unpin" : "nooks.pin")) {
+                withAnimation(NookTheme.reveal) { chat.togglePin(conversation.id) }
+            }
         }
         Button(tr("ws.export.copy")) {
             Pasteboard.copy(ChatExport.markdown(conversation))
         }
         Button(tr(conversation.archived ? "nooks.unarchive" : "nooks.archive")) {
-            chat.setArchived(!conversation.archived, conversation.id)
+            withAnimation(NookTheme.reveal) { chat.setArchived(!conversation.archived, conversation.id) }
         }
         .disabled(conversation.busy)
         Divider()
         Button(tr("nooks.delete"), role: .destructive) { deleting = conversation }
             .disabled(conversation.busy)
+    }
+}
+
+/// The title of a Nook being renamed, in its row: it has the keyboard at once, Return or clicking away keeps the new name,
+/// Escape drops it.
+private struct NookRenameField: View {
+    @Binding var text: String
+    let commit: () -> Void
+    let cancel: () -> Void
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("", text: $text)
+            .textFieldStyle(.plain)
+            .font(NookTheme.TextStyle.strong)
+            .foregroundStyle(NookTheme.paper)
+            .focused($focused)
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .frame(height: 40)
+            .cardBackground(NookTheme.rowSelected, stroke: NookTheme.iris.opacity(0.4), radius: NookTheme.Radius.panel, style: .continuous)
+            .onAppear { focused = true }
+            .onSubmit(commit)
+            .onChange(of: focused) { _, now in
+                if !now { commit() }
+            }
+            .onExitCommand(perform: cancel)
     }
 }
 
