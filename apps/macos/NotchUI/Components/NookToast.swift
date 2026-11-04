@@ -321,7 +321,7 @@ private struct NookToastHost<Above: View>: ViewModifier {
     }
 
     /// The room a floating notice or toast needs under a composer to sit at the bottom edge without touching it.
-    private static let roomUnderComposer: CGFloat = 120
+    private static var roomUnderComposer: CGFloat { 120 }
 
     /// The room under the toast: the edge's own, or up to just above the composer when it sits at the bottom. A
     /// composer higher up (a new session's, centered on the page) leaves the bottom edge free, so the toast stays there.

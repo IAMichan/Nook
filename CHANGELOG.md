@@ -75,6 +75,11 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Changed
 
+- Much lighter with many agents at work: the working dots, halos, spinners, the shimmer on the running step, Nook's
+  writing dots and the music bars now run in Core Animation instead of being drawn frame by frame on the main thread.
+  Each of them used to make the whole window lay itself out again on every frame, over a hundred times a second with a
+  dozen sessions running; now they cost the main thread nothing per frame. Nook himself is drawn without the separate
+  hosting view that did the same, and looking a session up by id no longer walks every session.
 - A smoothness and UX pass: Escape closes the notch, the notch no longer opens while you sweep past it, toasts stay off the composer, and lists (Agents, Nook, palette, search, terminals) work with the keyboard and the pointer alike. Drafts, stashes and carets survive switching sessions, copy buttons all behave the same, Nook chat streams with far less redrawing, and Settings saves and confirms where it did not.
 - Smoother throughout: typing in the Nook chat and under a terminal or past agent session draws only the composer,
   not the conversation above it; starting and stopping a scroll no longer redraws every message; stickers and GIFs

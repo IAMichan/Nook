@@ -100,31 +100,20 @@ struct SteppedPulseDot: View {
     private static let period = 1.5
 
     var body: some View {
-        Group {
-            if visible && !reduceMotion {
-                // In a graph of its own (`SeparateGraph`), so its frames do not update the row or panel around it; the halo
-                // grows past the dot, so the graph is larger than the dot and laid out at its size.
-                SeparateGraph {
-                    TimelineView(.nookFrames(fps: energy.plan.progressFrameRate(attended: attended))) { context in
-                        let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.period) / Self.period
-                        dot(halo: 0.55 * (1 - phase), scale: 1 + 1.1 * phase)
-                    }
-                    .frame(width: size * 2.4, height: size * 2.4)
-                }
-                .frame(width: size * 2.4, height: size * 2.4)
-                .allowsHitTesting(false)
-                .frame(width: size, height: size)
-            } else {
-                dot(halo: 0, scale: 1)
-            }
-        }
-        .onAppear { visible = true }
-        .onDisappear { visible = false }
-    }
-
-    private func dot(halo: Double, scale: CGFloat) -> some View {
         Circle().fill(color).frame(width: size, height: size)
-            .background(Circle().fill(color.opacity(halo)).frame(width: size, height: size).scaleEffect(scale))
+            .background {
+                if visible && !reduceMotion {
+                    // Run by Core Animation (`LayerLoop`): the main thread draws nothing per frame, however many sessions
+                    // work. The halo grows past the dot, so its view is larger than the dot and laid out at its size.
+                    LayerLoop(shape: .halo(diameter: size, growth: 1.1, opacity: 0.55, period: Self.period),
+                              color: color, fps: energy.plan.progressFrameRate(attended: attended))
+                        .frame(width: size * 2.4, height: size * 2.4)
+                        .allowsHitTesting(false)
+                        .frame(width: size, height: size)
+                }
+            }
             .frame(width: size, height: size)
+            .onAppear { visible = true }
+            .onDisappear { visible = false }
     }
 }

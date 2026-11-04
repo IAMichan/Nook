@@ -30,25 +30,14 @@ struct PulseDot: View {
     var body: some View {
         ZStack {
             if animated && !reduceMotion {
-                // A timeline at the ambient rate, not a `repeatForever` animation: that runs at the display's own rate (up to
-                // 120 times a second) for as long as the dot is there, and every frame redraws the whole window it is in.
-                // In a graph of its own (`SeparateGraph`), so its frames do not update the list or panel around it; the ring
-                // grows past the dot, so the graph is larger than the dot and laid out at its size.
-                SeparateGraph {
-                    TimelineView(.nookFrames(fps: energy.plan.progressFrameRate(attended: attended))) { context in
-                        // An ease-out over 1.4 s, starting over: the ring grows and fades.
-                        let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4
-                        let eased = 1 - (1 - phase) * (1 - phase)
-                        Circle()
-                            .stroke(color.opacity(0.7 * (1 - eased)), lineWidth: 1.5)
-                            .frame(width: 8, height: 8)
-                            .scaleEffect(1 + 1.3 * eased)
-                    }
+                // Run by Core Animation (`LayerLoop`): the main thread draws nothing per frame, so a list with many
+                // working sessions costs no more than one without. The ring grows past the dot, so its view is larger
+                // than the dot and laid out at the dot's size.
+                LayerLoop(shape: .ring(diameter: 8, lineWidth: 1.5, growth: 1.3, opacity: 0.7, period: 1.4),
+                          color: color, fps: energy.plan.progressFrameRate(attended: attended))
                     .frame(width: 24, height: 24)
-                }
-                .frame(width: 24, height: 24)
-                .allowsHitTesting(false)
-                .frame(width: 16, height: 16)
+                    .allowsHitTesting(false)
+                    .frame(width: 16, height: 16)
             }
             Circle().fill(color).frame(width: 8, height: 8)
         }
@@ -62,47 +51,32 @@ struct ShimmerText: View {
     /// Published only when the plan changes: sets how often the shimmer redraws.
     @ObservedObject private var energy = EnergyMonitor.shared
     @Environment(\.nookAttended) private var attended
-    // The light's graph is a hosting view of its own and does not inherit these: passed on, so its text is laid out just
-    // like the one beneath it.
+    // The light's shape is drawn apart from the text beneath it and does not inherit these: passed on, so it is laid out
+    // just like that text.
     @Environment(\.font) private var font
     @Environment(\.lineLimit) private var lineLimit
     @Environment(\.truncationMode) private var truncationMode
     @Environment(\.multilineTextAlignment) private var alignment
 
     var body: some View {
-        // The text itself stands still; only the light moves, in a graph of its own (`SeparateGraph`). A timeline around
-        // the text laid out the whole window again on every frame, for as long as an agent works. The light is cut to the
-        // text's shape inside that graph: a `.mask` around a hosting view draws it once and keeps that picture, so the
-        // light stood still on one word.
+        // The text itself stands still; only the light moves, run by Core Animation (`ShimmerLayer`) and cut to the text's
+        // shape, which is drawn once per text. A timeline drew the light on the main thread on every frame and laid out
+        // the window around it, for as long as an agent works.
         Text(text)
             .foregroundStyle(NookTheme.textMuted)
             .overlay {
-                SeparateGraph {
-                    TimelineView(.nookFrames(fps: energy.plan.progressFrameRate(attended: attended))) { context in
-                        let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.2) / 2.2
-                        Text(text)
-                            .font(font)
-                            .lineLimit(lineLimit)
-                            .truncationMode(truncationMode)
-                            .multilineTextAlignment(alignment)
-                            .foregroundStyle(
-                                LinearGradient(
-                                    stops: [
-                                        .init(color: NookTheme.paper.opacity(0), location: 0),
-                                        .init(color: NookTheme.paper.opacity(0), location: max(0, phase - 0.15)),
-                                        .init(color: NookTheme.paper, location: phase),
-                                        .init(color: NookTheme.paper.opacity(0), location: min(1, phase + 0.15)),
-                                        .init(color: NookTheme.paper.opacity(0), location: 1)
-                                    ],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    }
-                }
-                .allowsHitTesting(false)
+                ShimmerLayer(mask: AnyView(shape), maskKey: "\(text)|\(String(describing: font))|\(String(describing: lineLimit))|\(truncationMode)|\(alignment)",
+                             color: NookTheme.paper, fps: energy.plan.progressFrameRate(attended: attended))
+                    .allowsHitTesting(false)
             }
+    }
+
+    private var shape: some View {
+        Text(text)
+            .font(font)
+            .lineLimit(lineLimit)
+            .truncationMode(truncationMode)
+            .multilineTextAlignment(alignment)
     }
 }
 
