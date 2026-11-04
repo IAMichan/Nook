@@ -183,6 +183,12 @@ private struct PanelSidebarRow: View {
             .contentShape(shape)
         }
         .buttonStyle(.plain)
+        // A tab torn off into a window of its own (`TabWindowController`).
+        .contextMenu {
+            if PanelSplitChoice.choices.contains(TabWindowController.key(tab)) {
+                Button(tr("split.toWindow")) { TabWindowController.shared.open(tab, app: AppModel.shared) }
+            }
+        }
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help("\(title) (\(shortcut))")
