@@ -40,6 +40,11 @@ struct ChatListView: View {
                         if !client.brainReady {
                             Banner(text: String(localized: "Nook has no brain set up on your Mac yet: choose one in Nook › Settings."), symbol: "brain")
                         }
+                        // New chats whose first question waits for the Mac.
+                        ForEach(client.outbox.questions(in: nil)) { entry in
+                            WaitingRow(symbol: "sparkles", title: entry.request.text ?? "",
+                                       detail: String(localized: "New chat · waiting for your Mac")) { client.discardWaiting(entry.id) }
+                        }
                         if client.conversations.isEmpty, client.phase == .connected {
                             AskNook { path.append(.new(UUID(), $0)) }
                         }
@@ -137,6 +142,8 @@ struct ChatView: View {
     /// A suggestion picked on the list, sent once when the screen opens.
     private let prompt: String
     @State private var promptSent = false
+    /// The question that started this chat waits in the outbox: its request id, until the Mac took it.
+    @State private var waitingFor: String?
 
     init(conversationID: String?, prompt: String = "") {
         _id = State(initialValue: conversationID)
@@ -145,6 +152,11 @@ struct ChatView: View {
 
     private var lines: [ChatLine] { id.flatMap { client.chatLines[$0] } ?? [] }
     private var busy: Bool { sending || lines.last?.streaming == true }
+    /// Questions of this chat that wait in the outbox for the Mac: in it, or (a new chat) the one asked here.
+    private var waiting: [CompanionOutbox.Entry] {
+        guard let id else { return client.outbox.entries.filter { $0.id == waitingFor } }
+        return client.outbox.questions(in: id)
+    }
     private var title: String {
         id.flatMap { id in client.conversations.first { $0.id == id }?.title } ?? String(localized: "New chat")
     }
@@ -153,11 +165,18 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Theme.Spacing.xxl) {
-                    if lines.isEmpty, !sending {
+                    if lines.isEmpty, !sending, waiting.isEmpty {
                         AskNook { send($0) }
                     }
                     ForEach(lines) { ChatLineView(line: $0) }
                     if sending, lines.last?.fromNook != true { ThinkingLine(status: "") }
+                    // What waits for the Mac, dimmed, until it takes it.
+                    ForEach(waiting) { entry in
+                        TranscriptUserMessage(text: entry.request.text ?? "").opacity(0.6)
+                    }
+                    if !waiting.isEmpty {
+                        Banner(text: String(localized: "Waiting for your Mac: it goes as soon as your Mac can be reached."), symbol: "clock")
+                    }
                     Color.clear.frame(height: 1).id(Self.bottom)
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
@@ -185,6 +204,12 @@ struct ChatView: View {
             promptSent = true
             send(prompt)
         }
+        // The question that waited went: this screen becomes that chat.
+        .onChange(of: waitingFor.flatMap { client.askedConversations[$0] }) { _, created in
+            guard let created else { return }
+            id = created
+            waitingFor = nil
+        }
         // Quick while Nook writes, slow while it waits for you; a new chat starts the loop once it has an id.
         .task(id: id) {
             guard let id else { return }
@@ -202,9 +227,13 @@ struct ChatView: View {
         sending = true
         Haptics.tap()
         Task {
-            if let created = await client.ask(question, in: id) {
+            switch await client.ask(question, in: id) {
+            case .asked(let created):
                 id = created
-            } else {
+            case .waiting(let request):
+                // Kept on the phone until the Mac answers; a new chat gets its id once the Mac took the question.
+                if id == nil { waitingFor = request }
+            case .refused:
                 // Not sent: keep the text so nothing is lost.
                 text = question
             }

@@ -12,7 +12,28 @@ enum TextGeneration {
     static let commitSchema: [String: Any] = schema(["subject": "string", "body": "string"])
     static let pullRequestSchema: [String: Any] = schema(["title": "string", "body": "string"])
 
-    static func titlePrompt(message: String) -> String {
+    /// `later`: the user's later messages, when a title is written again for a session that went on. `instructions`: the
+    /// user's own rules for titles (Settings, or the project's own), after Nook's rules and before the message.
+    static func titlePrompt(message: String, later: [String] = [], instructions: String = "") -> String {
+        var prompt = baseTitlePrompt(message: message)
+        let rules = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !rules.isEmpty {
+            prompt = prompt.replacingOccurrences(of: "\nUser message:\n", with: """
+
+                The user's own rules for titles (follow them; the JSON format above still applies):
+                \(limit(rules, 2_000))
+
+                User message:
+
+                """)
+        }
+        let followUps = later.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.suffix(3)
+        guard !followUps.isEmpty else { return prompt }
+        return prompt + "\n\nThe session went on; the user's latest messages (title what the session is about now):\n"
+            + followUps.map { "- " + limit($0, 1_500) }.joined(separator: "\n")
+    }
+
+    private static func baseTitlePrompt(message: String) -> String {
         """
         Generate a title that will help the user recognize this Nook session weeks later.
         Also name the git branch the work happens on.

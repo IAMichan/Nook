@@ -165,6 +165,24 @@ final class ComposerCoreTests: XCTestCase {
         XCTAssertEqual(ComposerAttachments.split(only).body, "")
     }
 
+    // MARK: Files in an answer
+
+    func testAnAnswerCarriesItsFilesAsPaths() {
+        XCTAssertEqual(AnswerAttachments.answer("  Use this one ", paths: ["/tmp/a.png", " /Users/me/My Docs/b.pdf ", "/tmp/a.png"]),
+                       "Use this one\n\n/tmp/a.png\n/Users/me/My Docs/b.pdf", "below the words, one per line, each once")
+        XCTAssertEqual(AnswerAttachments.answer("", paths: ["/tmp/a.png"]), "/tmp/a.png", "files alone are an answer too")
+        XCTAssertEqual(AnswerAttachments.answer(" Yes ", paths: ["", "  "]), "Yes", "words alone stay as they were")
+    }
+
+    func testPickedFilesBecomeAbsolutePaths() {
+        XCTAssertEqual(AnswerAttachments.absolutePath("docs/../notes.pdf", folder: "/repo"), "/repo/notes.pdf")
+        XCTAssertEqual(AnswerAttachments.absolutePath("/Users/me/x.pdf", folder: "/repo"), "/Users/me/x.pdf")
+        XCTAssertEqual(AnswerAttachments.absolutePath("x.pdf", folder: nil), "x.pdf")
+        // The attached files of the panel go through the composer's own links and come back as the same paths.
+        let draft = ComposerAttachments.appending(ContextRef(kind: .file, id: "/Users/me/a b.pdf", label: "a b.pdf"), to: "")
+        XCTAssertEqual(ComposerAttachments.split(draft).files.map(\.id), ["/Users/me/a b.pdf"])
+    }
+
     // MARK: References
 
     func testLinkRoundTrips() {

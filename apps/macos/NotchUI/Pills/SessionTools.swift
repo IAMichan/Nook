@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import SwiftUI
 
@@ -347,6 +348,7 @@ struct SessionWorkbench<Conversation: View>: View {
                 // Under the covering panel the conversation keeps its place (and what you typed) but takes no clicks.
                 .allowsHitTesting(!covering)
                 .accessibilityHidden(covering)
+                .focusArea(.conversation)
                 if docked {
                     // Always the leftmost side panel on the right side, right next to the conversation, with any tool, diff
                     // or file panel to its right. The switch takes the height of the conversation's header.
@@ -370,10 +372,13 @@ struct SessionWorkbench<Conversation: View>: View {
                     TurnDiffPanel(turns: outputs.turns, selection: Binding(get: { diffSelection ?? selection }, set: { diffSelection = $0 }),
                                   directory: directory.isEmpty ? nil : directory, wide: PanelLayout.wide($outputsWidth),
                                   load: runID.flatMap { id in
-                                      workspace.run(id)?.isRemote == false ? { turn, files in try await gitDiff(id, turn: turn, files: files) } : nil
+                                      workspace.run(id)?.isRemote == false ? { turn, files, options in
+                                          try await gitDiff(id, turn: turn, files: files, options: options)
+                                      } : nil
                                   }) {
                         withAnimation(NookTheme.reveal) { diffSelection = nil }
                     }
+                    .focusArea(.sidePanel)
                     .sidePanel(.trailing, width: $outputsWidth, defaultWidth: PanelLayout.outputs, available: totalWidth,
                                rest: conversationRoom)
                 } else if let filePreview {
@@ -381,6 +386,7 @@ struct SessionWorkbench<Conversation: View>: View {
                         withAnimation(NookTheme.reveal) { self.filePreview = nil }
                     }
                     .id(filePreview)
+                    .focusArea(.sidePanel)
                     .sidePanel(.trailing, width: $outputsWidth, defaultWidth: PanelLayout.outputs, available: totalWidth,
                                rest: conversationRoom)
                 }
@@ -472,6 +478,61 @@ struct SessionWorkbench<Conversation: View>: View {
         }
         // ⇧⌘T: the tab closed last comes back, in the panel it was in; the key goes on when there is none.
         .keyCommands(["panel.reopenClosed": reopenClosed])
+        // ⌘J the terminal under the conversation, ⌥⌘B the side panel, ⌘W the tab of the panel with the keyboard.
+        .keyCommands(["terminal.toggle": toggleTerminal,
+                      "sidePanel.toggle": { toggleSidePanel(); return true },
+                      "tab.close": { closeFocusedTab(diffOpen: diffSelection != nil && !outputs.turns.isEmpty) }])
+    }
+
+    /// ⌘J: the terminal in the bottom panel, and again to put it away (also from the side panel it may be in).
+    private func toggleTerminal() -> Bool {
+        guard SessionTool.terminal.available(in: directory) else { return false }
+        withAnimation(NookTheme.reveal) {
+            if viewModel.bottomTool == .terminal {
+                viewModel.bottomTool = .conversation
+            } else if viewModel.sessionTool == .terminal {
+                closeTab(.terminal, in: .side)
+            } else {
+                viewModel.bottomTool = .terminal
+            }
+        }
+        return true
+    }
+
+    /// ⌥⌘B: the side panel on its list of tools, or closed with its tabs, as its button in the header does.
+    private func toggleSidePanel() {
+        let open = viewModel.sessionTool != .conversation
+        viewModel.closeSidePanel()
+        if !open { viewModel.sessionTool = .picker }
+    }
+
+    /// ⌘W while the keyboard is in a side or bottom panel: closes the tab in view there (a diff or file beside the
+    /// conversation closes itself). A terminal is left to `WindowKeys`, which closes just that terminal; anywhere else
+    /// the key goes on and closes the window.
+    private func closeFocusedTab(diffOpen: Bool) -> Bool {
+        guard let window = NSApp.keyWindow, KeyCommandCenter.focusedTerminal(window.firstResponder) == nil,
+              let area = FocusAreas.shared.area(of: window.firstResponder, in: window), area.isPanel else { return false }
+        let slot: SessionPanelSlot = area == .bottomPanel ? .bottom : .side
+        withAnimation(NookTheme.reveal) {
+            if area == .sidePanel, viewModel.sessionTool == .conversation, diffOpen {
+                diffSelection = nil
+            } else if area == .sidePanel, viewModel.sessionTool == .conversation, filePreview != nil {
+                filePreview = nil
+            } else {
+                let tool = viewModel[keyPath: slot.tool]
+                switch tool {
+                case .conversation, .picker:
+                    if area == .bottomPanel { viewModel.bottomTool = .conversation } else { viewModel.closeSidePanel() }
+                case .browser:
+                    if let page = BrowserStore.existing?.page.id { closeSessionTab(.browser(page), in: slot) } else { closeTab(.browser, in: slot) }
+                case .pullRequest:
+                    if let id = viewModel.activeSidePullRequest { closeSessionTab(.pullRequest(id), in: slot) } else { closeTab(.pullRequest, in: slot) }
+                default:
+                    closeTab(tool, in: slot)
+                }
+            }
+        }
+        return true
     }
 
     /// Which panels show on the right of the conversation, for `sidePanelsOpenAtOnce`.
@@ -528,11 +589,11 @@ struct SessionWorkbench<Conversation: View>: View {
     }
 
     /// The real diff of these files in this turn (or in all turns), from the session's git snapshots.
-    private func gitDiff(_ id: UUID, turn: TurnDiff, files: [TurnDiff.File]) async throws -> String {
+    private func gitDiff(_ id: UUID, turn: TurnDiff, files: [TurnDiff.File], options: DiffReadOptions) async throws -> String {
         guard let start = turn.start, let end = turn.end else { return "" }
         var parts: [String] = []
         for file in files {
-            parts.append(try await workspace.turnDiff(id, path: file.path, start: start, end: end))
+            parts.append(try await workspace.turnDiff(id, path: file.path, start: start, end: end, options: options))
         }
         return parts.filter { !$0.isEmpty }.joined(separator: "\n")
     }
@@ -601,6 +662,7 @@ struct SessionWorkbench<Conversation: View>: View {
                          showConsole: { id in withAnimation(NookTheme.reveal) { consoleEventID = id } },
                          closeConsole: { withAnimation(NookTheme.reveal) { consoleEventID = nil } })
             .environment(\.sidePanelTakesFocus, panelTakesFocus)
+            .focusArea(slot.tool == \NotchViewModel.bottomTool ? .bottomPanel : .sidePanel)
     }
 
     /// Closes a tab. One of several Pull request tabs goes by itself, and the one next to it comes into view.
