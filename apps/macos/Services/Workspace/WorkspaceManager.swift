@@ -315,6 +315,12 @@ final class WorkspaceManager: ObservableObject {
     var checkpointIndices: [UUID: Int] = [:]
     /// When the worktree cleanup rules last looked (see WorkspaceManager+WorktreeCleanup).
     var worktreeCleanupAt: Date?
+    /// What the latest cleanup did (Settings › Workspace), kept across restarts.
+    @Published var worktreeCleanupReport: WorktreeCleanupReport? = WorktreeCleanupReport.load()
+    /// A cleanup runs now (by the clock or "Clean up now").
+    @Published var worktreeCleanupRunning = false
+    /// The folders terminals in Nook are open in; configured by AppModel. A worktree with one stays.
+    var openTerminalFolders: (() -> [String])?
     var buildLeftoversAt: Date?
     /// Writes an entry to the audit log (tool, arguments, result); configured by AppModel.
     var onAudit: ((String, String, String) -> Void)?
@@ -1913,8 +1919,11 @@ final class WorkspaceManager: ObservableObject {
     }
 
     /// Removes a session from Nook. The directory or worktree is preserved (removed separately); never allows deleting an active session.
-    func delete(_ id: UUID) {
+    /// `cleanUpWorktree`: with "Remove the worktree when its last session is deleted" on, the worktree this leaves unused
+    /// goes too (`cleanUpWorktreeAfterDelete`); **Delete with worktree** removes it itself.
+    func delete(_ id: UUID, cleanUpWorktree: Bool = true) {
         guard let run = run(id), !run.status.isActive, processes[id] == nil else { return }
+        let leftWorktree = cleanUpWorktree && run.isolation == .worktree ? orphanedWorktree(id) : nil
         if let root = run.repoRoot, let git = sessionGit(for: run), run.checkpoints != nil {
             Task.detached(priority: .utility) { git.removeCheckpoints(root, session: id) }
         }
@@ -1963,6 +1972,9 @@ final class WorkspaceManager: ObservableObject {
         store.deleteEvents(id)
         if selectedRunID == id { selectedRunID = runs.first { !$0.archived }?.id }
         scheduleSave()
+        if let leftWorktree {
+            cleanUpWorktreeAfterDelete(repo: leftWorktree.repo, path: leftWorktree.path, branch: run.branch)
+        }
     }
 
     private func applyAutoArchive() {
@@ -2207,7 +2219,7 @@ final class WorkspaceManager: ObservableObject {
     func deleteWithWorktree(_ id: UUID) {
         guard let worktree = orphanedWorktree(id) else { delete(id); return }
         guard run(id)?.status.isActive == false else { return }
-        delete(id)
+        delete(id, cleanUpWorktree: false)
         // `delete` leaves a session whose process is still there; its worktree stays with it.
         guard run(id) == nil else { return }
         Task {

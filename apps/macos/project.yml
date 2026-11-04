@@ -203,6 +203,7 @@ targets:
       - path: Core/I18n+ChatRead.swift
       - path: Core/I18n+BeeperImport.swift
       - path: Core/I18n+AgentLifecycle.swift
+      - path: Core/I18n+WorktreeCleanup.swift
       - path: Core/I18n+ChatCompose.swift
       - path: Core/I18n+PullRequests.swift
       - path: Core/I18n+Keybindings.swift

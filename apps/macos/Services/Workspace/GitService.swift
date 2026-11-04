@@ -297,6 +297,32 @@ struct GitService: Sendable {
         return Self.parseStatus(text).files.count
     }
 
+    /// Local files that keep a worktree from being cleaned up, as `keepWhen` counts them (`WorktreeCleanup.KeepWhen`).
+    func localChangeCount(_ directory: String, keepWhen: WorktreeCleanup.KeepWhen) -> Int? {
+        switch keepWhen {
+        case .uncommittedChanges:
+            return changedFileCount(directory)
+        case .editedTrackedFiles:
+            guard let text = try? run(["status", "--porcelain=v1", "-z", "--untracked-files=no"], in: directory) else { return nil }
+            return Self.parseStatus(text).files.count
+        case .anyLocalFiles:
+            // Ignored files count too (one entry per ignored folder), but not `node_modules`, which a setup makes again.
+            guard let text = try? run(["status", "--porcelain=v1", "-z", "--untracked-files=normal", "--ignored=traditional"],
+                                      in: directory) else { return nil }
+            return Self.parseStatus(text).files.filter { !$0.path.split(separator: "/").contains("node_modules") }.count
+        }
+    }
+
+    /// Commits on HEAD that no remote branch has: work a merged pull request does not cover. Nil when git cannot tell.
+    func unpushedCommitCount(_ directory: String) -> Int? {
+        guard let text = try? run(["rev-list", "--count", "HEAD", "--not", "--remotes"], in: directory) else { return nil }
+        return Int(text.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    func remoteBranchExists(_ name: String, in repo: String, remote: String = "origin") -> Bool {
+        (try? run(["show-ref", "--verify", "--quiet", "refs/remotes/\(remote)/" + name], in: repo)) != nil
+    }
+
     /// The subjects of the latest commits on the current branch, newest first (for `CommitStyle.repository`).
     func recentSubjects(_ directory: String, count: Int = 20) -> [String] {
         guard let text = try? run(["log", "-n", String(count), "--no-merges", "--format=%s"], in: directory, timeout: 10) else { return [] }
@@ -469,6 +495,21 @@ struct GitService: Sendable {
         }
         do {
             try run(["worktree", "add", "--", path, branch], in: repo, timeout: 180)
+        } catch {
+            throw Self.friendlyWorktreeError(error, base: branch)
+        }
+    }
+
+    /// Makes a session's branch again from the remote (it is gone here) in a new worktree, tracking `origin/<branch>`.
+    func addWorktree(repo: String, path: String, remoteBranch branch: String, remote: String = "origin") throws {
+        guard !localBranchExists(branch, in: repo) else { return try addWorktree(repo: repo, path: path, existingBranch: branch) }
+        if self.remote == nil {
+            guard !FileManager.default.fileExists(atPath: path) else { throw GitError("Directory \(path) already exists.") }
+            try FileManager.default.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
+        }
+        do {
+            try run(["worktree", "add", "--track", "-b", branch, "--", path, "\(remote)/\(branch)"], in: repo, timeout: 180)
         } catch {
             throw Self.friendlyWorktreeError(error, base: branch)
         }
