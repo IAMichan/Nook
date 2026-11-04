@@ -249,6 +249,18 @@ struct GitService: Sendable {
         (try? run(["show-ref", "--verify", "--quiet", "refs/heads/" + name], in: repo)) != nil
     }
 
+    /// Renames a local branch that was never pushed (it has no upstream), also while a worktree has it checked out.
+    func renameUnpublishedBranch(_ old: String, to new: String, in repo: String) throws {
+        guard localBranchExists(old, in: repo) else { throw GitError("Branch '\(old)' does not exist.") }
+        guard (try? run(["rev-parse", "--abbrev-ref", "--verify", "--quiet", old + "@{upstream}"], in: repo)) == nil else {
+            throw GitError("Branch '\(old)' is already published.")
+        }
+        guard isValidBranchName(new, in: repo), !localBranchExists(new, in: repo) else {
+            throw GitError("'\(new)' is not a free branch name.")
+        }
+        try run(["branch", "-m", old, new], in: repo)
+    }
+
     /// Asks Git whether this is a valid branch name.
     func isValidBranchName(_ name: String, in repo: String) -> Bool {
         guard WorktreeNaming.isPlausibleBranchName(name) else { return false }
