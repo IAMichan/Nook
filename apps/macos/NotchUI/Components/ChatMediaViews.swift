@@ -135,11 +135,21 @@ final class ChatFileThumbnails: @unchecked Sendable {
         guard kind == .video || kind == .file else { return nil }
         if let image = cached(url) { return image }
         guard !lock.withLock({ failed[url.path].map { Date().timeIntervalSince($0) < Self.retry } ?? false }) else { return nil }
+        // Made before, also on an earlier launch: read back from disk, which is far quicker than making it again.
+        if let stored = ChatPictureDisk.key(url, variant: kind == .video ? "frame-960" : "page", always: true),
+           let image = await Task.detached(priority: .userInitiated, operation: { ChatPictureDisk.image(stored) }).value {
+            cache.setObject(image, forKey: url.path as NSString)
+            return image
+        }
         guard let image = await Self.make(url, kind: kind) else {
             lock.withLock { failed[url.path] = Date() }
             return nil
         }
         cache.setObject(image, forKey: url.path as NSString)
+        // Filed under the file as it is now: a video may have grown while it was waited for.
+        if let settled = ChatPictureDisk.key(url, variant: kind == .video ? "frame-960" : "page", always: true) {
+            ChatPictureDisk.store(image, key: settled)
+        }
         return image
     }
 
@@ -174,18 +184,44 @@ enum ChatMediaImages {
         cache.object(forKey: key(url, side: side))
     }
 
+    /// The picture at `side` pixels at most: from memory, else from the copy on disk (`ChatPictureDisk`), else decoded
+    /// from the file now, completely, so drawing it later costs the main thread nothing. Called off the main thread.
     static func image(_ url: URL, side: CGFloat = 480) -> NSImage? {
         let key = key(url, side: side)
         if let cached = cache.object(forKey: key) { return cached }
+        let stored = ChatPictureDisk.key(url, variant: "photo-\(Int(side))")
+        if let stored, let image = ChatPictureDisk.image(stored) {
+            cache.setObject(image, forKey: key)
+            return image
+        }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
             kCGImageSourceThumbnailMaxPixelSize: side,
         ]
         guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
         let image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
         cache.setObject(image, forKey: key)
+        if let stored { ChatPictureDisk.store(image, key: stored) }
+        return image
+    }
+
+    /// The decodes going on, by `key`: a bubble and the warm-up of its chat (`ChatMediaWarmup`) asking for the same
+    /// photo share one decode.
+    @MainActor private static var loading: [NSString: Task<NSImage?, Never>] = [:]
+
+    /// `image(_:side:)` off the main thread, once per picture however many ask for it at the same time.
+    @MainActor
+    static func load(_ url: URL, side: CGFloat = 480, priority: TaskPriority = .userInitiated) async -> NSImage? {
+        let key = key(url, side: side)
+        if let cached = cache.object(forKey: key) { return cached }
+        if let running = loading[key] { return await running.value }
+        let task = Task.detached(priority: priority) { image(url, side: side) }
+        loading[key] = task
+        let image = await task.value
+        loading[key] = nil
         return image
     }
 
@@ -394,8 +430,7 @@ struct ChatStickerView: View {
         }
         .task(id: live) {
             guard live, still == nil, !ChatMediaImages.isAnimated(url) else { return }
-            let url = url
-            let image = await Task.detached(priority: .userInitiated) { ChatMediaImages.image(url, side: Self.side * 2) }.value
+            let image = await ChatMediaImages.load(url, side: Self.side * 2)
             guard !Task.isCancelled else { return }
             decoded = image
             tried = true

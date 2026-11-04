@@ -70,9 +70,10 @@ extension AppModel {
                                  markRead: true, markUnread: true, pin: true, mute: true, archive: true, deleteChat: true,
                                  pinned: telegram.isPinned(id), muted: telegram.isMuted(id), vote: true, deleteForMe: true)
         case .teams:
-            // Teams' website session takes text, answers, emoji, edits, deletions and read and unread marks; not files,
-            // and it has no pinning, muting or archiving Nook can reach.
-            return ChatAbilities(send: true, reply: true, react: true, edit: true, delete: true, markRead: true, markUnread: true)
+            // Teams' website session takes text, pictures, answers, emoji, edits, deletions and read and unread marks;
+            // not other files (they live in SharePoint), and it has no pinning, muting or archiving Nook can reach.
+            return ChatAbilities(send: true, sends: capture.teamsBridge.sends, reply: true, react: true, edit: true,
+                                 delete: true, markRead: true, markUnread: true)
         case .slack:
             // Slack's Web API has no pinning, muting or archiving of a direct conversation, and no polls.
             return ChatAbilities(send: true, sends: capture.slackBridge.sends, reply: true, react: true, edit: true, delete: true,
@@ -81,12 +82,12 @@ extension AppModel {
             // Messages lets another app send text and files, and nothing else.
             return ChatAbilities(send: true, sends: capture.messagesBridge.sends)
         case .snapchat:
-            // Snapchat for Web takes typed text from Nook, and nothing else Nook can reach.
-            return ChatAbilities(send: true)
+            // Snapchat for Web takes typed text and a picture from Nook, and nothing else Nook can reach.
+            return ChatAbilities(send: true, sends: capture.snapchatBridge.sends)
         case .mail:
-            // Mail sends your answer as a reply and marks mail read or unread; it has no emoji, edits, polls or pinning
-            // another app can reach.
-            return ChatAbilities(send: true, markRead: true, markUnread: true)
+            // Mail sends your answer as a reply, with any file attached, and marks mail read or unread; it has no emoji,
+            // edits, polls or pinning another app can reach.
+            return ChatAbilities(send: true, sends: capture.mailBridge.sends, markRead: true, markUnread: true)
         case .linked(let id):
             let bridge = capture.serviceBridge
             // A chat the helper does not list (any more) offers only what every network takes: text. The helper has no
@@ -242,9 +243,9 @@ extension AppModel {
             case .slack(let chat): try await capture.slackBridge.send(outgoing, to: chat, replyTo: replyTo)
             case .messages(let chat): try await capture.messagesBridge.send(outgoing, to: chat)
             case .linked(let id): try await capture.serviceBridge.send(outgoing, to: id, replyTo: replyTo)
-            case .teams, .snapchat, .mail:
-                // Their abilities offer nothing besides text, so `runInChat` stops before this.
-                throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
+            case .mail(let chat): try await capture.mailBridge.send(outgoing, to: chat)
+            case .teams(let chat): try await capture.teamsBridge.send(outgoing, to: chat, replyTo: replyTo)
+            case .snapchat(let chat): try await capture.snapchatBridge.send(outgoing, to: chat)
             }
         }
         if case .file(let file) = outgoing, file.kind == .sticker || file.kind == .gif {

@@ -321,6 +321,7 @@ private struct NookToastHost<Above: View>: ViewModifier {
     }
 
     /// The room a floating notice or toast needs under a composer to sit at the bottom edge without touching it.
+    /// Computed: a generic type cannot hold a static stored property.
     private static var roomUnderComposer: CGFloat { 120 }
 
     /// The room under the toast: the edge's own, or up to just above the composer when it sits at the bottom. A

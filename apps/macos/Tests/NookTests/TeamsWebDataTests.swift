@@ -145,7 +145,8 @@ final class TeamsWebDataTests: XCTestCase {
              "properties": ["deletetime": 1], "composetime": "2026-10-23T09:00:00.000Z"],
         ]]
         let messages = TeamsWebData.messages(history, chat: chats[1], me: me)
-        XCTAssertEqual(messages.map(\.text), ["", "plan.pdf", "Mine"], "oldest first; no activity; a deleted message without its text")
+        XCTAssertEqual(messages.map(\.text), ["", "", "Mine"], "oldest first; no activity; a deleted message without its text")
+        XCTAssertEqual(messages[1].media, ChatMedia(kind: .file, name: "plan.pdf"), "a message with only a file shows that file")
         XCTAssertEqual(messages.first?.isDeleted, true)
         XCTAssertEqual(messages[1].sender, "Bo")
         XCTAssertEqual(messages.last?.isMine, true)
@@ -153,6 +154,42 @@ final class TeamsWebDataTests: XCTestCase {
         XCTAssertEqual(TeamsWebData.myName(history, me: me), "Me Myself")
         XCTAssertTrue(TeamsWebData.caughtUp(history, last: ChatJSON.date("2026-10-23T10:02:00.000Z")))
         XCTAssertFalse(TeamsWebData.caughtUp(history, last: ChatJSON.date("2026-10-23T11:00:00.000Z")))
+    }
+
+    /// A picture pasted into a Teams message shows as itself, fetched from Teams' media service only; an image from
+    /// anywhere else (an emoji, a link's picture) is no photo, and a message with only a picture is still a message.
+    func testAPictureInAMessageShowsAsAPhoto() {
+        let me = "8:orgid:me"
+        let chat = TeamsData.Chat(id: "19:x@unq.gbl.spaces", name: "Jan", isGroup: false, last: nil, readUntil: nil)
+        let source = "https://eu-prod.asyncgw.teams.microsoft.com/v1/objects/0-weu-d1-abc/views/imgo"
+        let html = #"<p><img src="https://statics.teams.cdn.office.net/emoji/smile.png" itemtype="http://schema.skype.com/Emoji"></p>"#
+            + #"<p><img alt="image" src="\#(source)" itemscope="png" itemtype="http://schema.skype.com/AMSImage"></p>"#
+        let history: [String: Any] = ["messages": [
+            ["id": "5", "messagetype": "RichText/Html", "content": html, "from": "https://x/contacts/8:orgid:jan",
+             "composetime": "2026-10-26T14:21:00.000Z"],
+        ]]
+        let messages = TeamsWebData.messages(history, chat: chat, me: me)
+        XCTAssertEqual(messages.count, 1, "a message with only a picture is kept")
+        XCTAssertEqual(messages.first?.media, ChatMedia(kind: .photo, name: "image.png", source: source))
+        XCTAssertNil(TeamsWebData.image(in: #"<img src="https://evil.example/v1/objects/x/views/imgo">"#), "only Teams' own service")
+        XCTAssertEqual(TeamsWebData.image(in: #"<img src="https://api.asm.skype.com/v1/objects/1/views/imgo" itemscope="gif">"#)?.kind, .gif)
+        XCTAssertEqual(TeamsWebData.mediaHost(of: source), "https://eu-prod.asyncgw.teams.microsoft.com")
+    }
+
+    /// A picture sent from Nook goes as the website sends one: an object readable by the chat, in an `<img>` of at most
+    /// 300 points wide, with the caption after it.
+    func testAPictureGoesAsTheWebsiteSendsIt() {
+        let object = TeamsWebData.imageObject(chat: "19:x@thread.v2", name: "photo.png")
+        XCTAssertEqual(object["type"] as? String, "pish/image")
+        XCTAssertEqual((object["permissions"] as? [String: [String]])?["19:x@thread.v2"], ["read"])
+        let html = TeamsWebData.imageHTML(host: "https://api.asm.skype.com", object: "0-abc", pixels: CGSize(width: 1200, height: 600),
+                                          format: "png", caption: "Look")
+        XCTAssertTrue(html.contains(#"src="https://api.asm.skype.com/v1/objects/0-abc/views/imgo""#), html)
+        XCTAssertTrue(html.contains(#"width="300" height="150""#), html)
+        XCTAssertTrue(html.contains("http://schema.skype.com/AMSImage"))
+        XCTAssertTrue(html.hasSuffix(TeamsWebData.html("Look")))
+        XCTAssertEqual(TeamsWebData.image(in: html)?.source, "https://api.asm.skype.com/v1/objects/0-abc/views/imgo",
+                       "what Nook sends reads back as the same picture")
     }
 
     func testScrollingBackFollowsOnlyTheSessionsOwnService() {

@@ -225,12 +225,14 @@ enum TeamsWebData {
                 return InboxMessage(id: "teams-\(id)", sender: "", text: ring.line, date: sent, fromMe: mine)
             }
             let answer: (html: String, quote: InboxQuote?) = type == "Text" ? (content, nil) : reply(content, me: me)
-            var text = (type == "Text" ? answer.html : TeamsData.plain(html: answer.html)).trimmingCharacters(in: .whitespacesAndNewlines)
-            if text.isEmpty { text = files(properties["files"]) }
-            guard !text.isEmpty else { return nil }
+            let text = (type == "Text" ? answer.html : TeamsData.plain(html: answer.html)).trimmingCharacters(in: .whitespacesAndNewlines)
+            // A picture in the message shows as itself (`TeamsBridge` fetches it); a file sent with it as a file row.
+            let media = type == "Text" ? nil : (image(in: answer.html) ?? file(properties["files"]))
+            guard !text.isEmpty || media != nil else { return nil }
             let mine = contact(message["from"]) == me
             let sender = mine || !chat.isGroup ? "" : ((message["imdisplayname"] as? String) ?? "")
             var inbox = InboxMessage(id: "teams-\(id)", sender: sender, text: text, date: sent, fromMe: mine)
+            inbox.media = media
             if mine { inbox.receipt = .sent }
             if properties["edittime"] != nil { inbox.edited = true }
             inbox.quote = answer.quote
@@ -341,11 +343,74 @@ enum TeamsWebData {
         })
     }
 
-    /// The names of the files sent with a message (a JSON list, as text).
-    private static func files(_ value: Any?) -> String {
+    /// The first file sent with a message (its "files" property, a JSON list as text), by its name: it lives in
+    /// SharePoint or OneDrive, which Nook does not reach, so it shows as a file that opens in Teams.
+    static func file(_ value: Any?) -> ChatMedia? {
         guard let text = value as? String, let data = text.data(using: .utf8),
-              let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { return "" }
-        return list.compactMap { ($0["fileName"] as? String) ?? ($0["title"] as? String) }.joined(separator: ", ")
+              let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]],
+              let name = list.lazy.compactMap({ ($0["fileName"] as? String) ?? ($0["title"] as? String) }).first(where: { !$0.isEmpty })
+        else { return nil }
+        return ChatMedia(kind: ChatMedia.kind(mimeType: nil, name: name), name: name)
+    }
+
+    /// The first picture pasted into a message, as the website sends one: an `<img>` of Teams' media service
+    /// ("…/v1/objects/{id}/views/imgo"), its kind from its `itemscope` ("png", "gif"). Its address is where `TeamsBridge`
+    /// fetches it with the session's token; an emoji drawn as a picture is no photo.
+    static func image(in html: String) -> ChatMedia? {
+        var rest = html[...]
+        while let start = rest.range(of: "<img", options: .caseInsensitive) {
+            guard let end = rest[start.upperBound...].firstIndex(of: ">") else { return nil }
+            let tag = String(rest[start.lowerBound...end])
+            rest = rest[rest.index(after: end)...]
+            guard let source = attribute("src", in: tag).map(unescaped), let url = URL(string: source), isMedia(url),
+                  url.path.contains("/v1/objects/") else { continue }
+            let format = (attribute("itemscope", in: tag) ?? "").lowercased()
+            let ext = ["png", "gif", "jpeg", "jpg", "webp", "heic"].contains(format) ? format : "jpg"
+            return ChatMedia(kind: ext == "gif" ? .gif : .photo, name: "image." + ext, source: source)
+        }
+        return nil
+    }
+
+    /// Whether an address is Teams' own media service (or Skype's, which older chats use): only there is the session's
+    /// token sent.
+    static func isMedia(_ url: URL) -> Bool {
+        guard url.scheme == "https", let host = url.host?.lowercased() else { return false }
+        return host.hasSuffix(".asm.skype.com") || host == "api.asm.skype.com" || host.hasSuffix(".asyncgw.teams.microsoft.com")
+    }
+
+    /// The media service an address points at ("https://eu-prod.asyncgw.teams.microsoft.com"), for sending pictures
+    /// to the one your chats already use.
+    static func mediaHost(of source: String) -> String? {
+        guard let url = URL(string: source), isMedia(url), let host = url.host else { return nil }
+        return "https://" + host
+    }
+
+    /// Where a picture goes first when no chat showed which media service your account uses.
+    static let mediaHosts = ["https://as-prod.asyncgw.teams.microsoft.com", "https://api.asm.skype.com"]
+
+    /// What creating a picture on the media service posts to {host}/v1/objects: readable by the chat it goes to.
+    static func imageObject(chat: String, name: String) -> [String: Any] {
+        ["type": "pish/image", "permissions": [chat: ["read"]], "filename": name]
+    }
+
+    /// The picture as the website puts it in a message: an `<img>` of the media service, at most 300 points wide,
+    /// followed by the caption's paragraphs.
+    static func imageHTML(host: String, object: String, pixels: CGSize?, format: String, caption: String) -> String {
+        let source = host + "/v1/objects/" + object + "/views/imgo"
+        var size = ""
+        if let pixels, pixels.width > 0, pixels.height > 0 {
+            let scale = min(1, 300 / pixels.width)
+            size = " width=\"\(Int(pixels.width * scale))\" height=\"\(Int(pixels.height * scale))\""
+        }
+        let image = "<p><img alt=\"image\" src=\"\(source)\"\(size) id=\"x_\(object)\" itemscope=\"\(format)\""
+            + " itemtype=\"http://schema.skype.com/AMSImage\"></p>"
+        let text = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? image : image + html(text)
+    }
+
+    /// An attribute's value with the entities HTML puts in an address ("&amp;") as they are meant.
+    private static func unescaped(_ value: String) -> String {
+        value.replacingOccurrences(of: "&amp;", with: "&").replacingOccurrences(of: "&quot;", with: "\"")
     }
 
     /// The other people who wrote in a chat, by name, in the order they first wrote: what a chat without a topic is

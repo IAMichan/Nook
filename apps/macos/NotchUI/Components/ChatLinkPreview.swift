@@ -282,14 +282,36 @@ enum ChatVideoStills {
 
     private static var stills: [URL: Still] = [:]
     private static var failed: [URL: Date] = [:]
+    /// The stills being made, by video: the bubble and the warm-up of its chat (`ChatMediaWarmup`) share one.
+    private static var making: [URL: Task<Still, Never>] = [:]
+
+    /// The still when it was made before, without making it: a bubble shows it in its first frame.
+    static func cached(_ url: URL) -> Still? { stills[url] }
 
     static func still(_ url: URL) async -> Still {
         if let known = stills[url] { return known }
+        if let running = making[url] { return await running.value }
         if let at = failed[url], Date().timeIntervalSince(at) < retry { return Still() }
-        guard let asset = await ChatVideoAsset.load(url) else {
+        let task = Task { await make(url) }
+        making[url] = task
+        let still = await task.value
+        making[url] = nil
+        if still.image == nil {
             if !Task.isCancelled { failed[url] = Date() }
-            return Still()
+        } else {
+            stills[url] = still
+            failed[url] = nil
         }
+        return still
+    }
+
+    /// The still from disk when it was made on an earlier launch (`ChatPictureDisk`), else from the video itself.
+    private static func make(_ url: URL) async -> Still {
+        let stored = ChatPictureDisk.key(url, variant: "still-640", always: true)
+        if let stored, let image = await Task.detached(priority: .userInitiated, operation: { ChatPictureDisk.image(stored) }).value {
+            return Still(image: image, seconds: ChatPictureDisk.seconds(stored))
+        }
+        guard let asset = await ChatVideoAsset.load(url) else { return Still() }
         let seconds = try? await asset.load(.duration).seconds
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
@@ -299,11 +321,9 @@ enum ChatVideoStills {
         let at = CMTime(seconds: min(0.5, (seconds ?? 1) / 2), preferredTimescale: 600)
         let image = (try? await generator.image(at: at).image).map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
         let still = Still(image: image, seconds: seconds.flatMap { $0.isFinite ? $0 : nil })
-        if image == nil {
-            failed[url] = Date()
-        } else {
-            stills[url] = still
-            failed[url] = nil
+        // Filed under the file as it is now: it may have grown while it was waited for.
+        if let image, let settled = ChatPictureDisk.key(url, variant: "still-640", always: true) {
+            ChatPictureDisk.store(image, key: settled, seconds: still.seconds)
         }
         return still
     }

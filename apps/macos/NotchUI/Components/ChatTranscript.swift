@@ -1383,7 +1383,9 @@ struct VideoTile: View {
     @Environment(\.chatMediaLive) private var live
     @Environment(\.chatMediaStage) private var stage
 
-    private var picture: NSImage? { poster ?? still?.image }
+    /// The still made before (the chat's warm-up, an earlier visit) shows in the first frame, without a black box first.
+    private var shownStill: ChatVideoStills.Still? { still ?? ChatVideoStills.cached(url) }
+    private var picture: NSImage? { poster ?? shownStill?.image }
     private var enlargeLabel: String { tr(stage == nil ? "card.video.enlarge" : "card.video.fullScreen") }
     private var showEnlarge: Bool { hovering || playback == nil || isPaused }
 
@@ -1442,7 +1444,7 @@ struct VideoTile: View {
         }
         .overlay(alignment: .bottomLeading) {
             // How long it lasts, on the picture, as a chat app shows it.
-            if playback == nil, let seconds = still?.seconds, seconds > 0 {
+            if playback == nil, let seconds = shownStill?.seconds, seconds > 0 {
                 Text(ChatAudioPlayer.clock(seconds))
                     .font(NookTheme.TextStyle.caption)
                     .monospacedDigit()
@@ -1460,7 +1462,7 @@ struct VideoTile: View {
         .onDisappear { playback?.pause() }
         // Its frame is read once its message comes near view, not for every video in the history at once.
         .task(id: live ? url : nil) {
-            guard live, still == nil else { return }
+            guard live, shownStill == nil else { return }
             still = await ChatVideoStills.still(url)
         }
     }
@@ -1923,8 +1925,8 @@ struct ChatPhotoLoader: View {
                 if Task.isCancelled { return }
                 // A file still being written is not decoded yet: a half photo would be cached and shown as it is.
                 guard ChatMedia.isSettled(url) else { continue }
-                let url = url
-                if let loaded = await Task.detached(priority: .utility, operation: { ChatMediaImages.image(url) }).value {
+                // At the priority of what you look at, shared with the warm-up of the chat that may decode it already.
+                if let loaded = await ChatMediaImages.load(url) {
                     image = loaded
                     failed = false
                     return

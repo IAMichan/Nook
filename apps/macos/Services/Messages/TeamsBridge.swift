@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import Combine
+import ImageIO
 
 /// Your Teams chats with their history, read-only. Signing in on teams.microsoft.com (`TeamsWebSession`), as Nook links
 /// Instagram and LinkedIn, reads them from Teams' own chat service with the website's session; that needs nothing but
@@ -458,7 +459,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
             fetched.insert(chat.id)
             guard !chat.name.isEmpty else { continue }
             sources[ChatInbox.key(app: app, chat: chat.name)] = .web(account: account.id, chat: chat)
-            var messages = TeamsWebData.messages(answer, chat: chat, me: session.me)
+            var messages = await withPictures(TeamsWebData.messages(answer, chat: chat, me: session.me), account: account)
             // How far the others read it: your messages get their ticks and readers, as in every app that says so.
             if messages.contains(where: \.isMine), let horizons = try? await webGet(
                 session.base + "/v1/threads/" + ChatJSON.segment(chat.id) + "/consumptionhorizons", token: session.token, account: account.id) {
@@ -516,7 +517,8 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
                 guard let link = backward[chat.id] else { return (nil, false) }
                 let page = try await webGet(link, token: account.session.token, account: id)
                 backward[chat.id] = TeamsWebData.backwardLink(page, base: account.session.base)
-                let messages = TeamsWebData.messages(page, chat: chat, me: account.session.me).filter { $0.date < before }
+                let messages = await withPictures(TeamsWebData.messages(page, chat: chat, me: account.session.me)
+                    .filter { $0.date < before }, account: account)
                 if !messages.isEmpty {
                     return (BridgedChat(app: app, name: name, messages: messages, unread: nil, listed: true), backward[chat.id] != nil)
                 }
@@ -527,7 +529,113 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         }
     }
 
+    // MARK: Pictures
+
+    /// The media service each account's chats use, by account, learned from the pictures in them: a picture you send
+    /// goes there first.
+    private var mediaHosts: [String: String] = [:]
+
+    /// The messages with their pictures fetched from Teams' media service (with the session's token, only from that
+    /// service: `TeamsWebData.isMedia`), a few at a time; a picture fetched before is not asked again. One that cannot be
+    /// fetched stays a photo tile that opens Teams.
+    private func withPictures(_ messages: [InboxMessage], account: TeamsWebData.Account) async -> [InboxMessage] {
+        let token = account.session.token
+        for source in messages.compactMap(\.media?.source) {
+            if let host = TeamsWebData.mediaHost(of: source) { mediaHosts[account.id] = host }
+        }
+        return await ChatMedia.fetchingFiles(messages) { message in
+            guard let media = message.media, let source = media.source, let url = URL(string: source),
+                  TeamsWebData.isMedia(url) else { return nil }
+            let target = ChatMedia.destination(key: message.id, name: media.name ?? "image.jpg")
+            if FileManager.default.fileExists(atPath: target.path) { return target.path }
+            guard let answer = try? await ConnectorHTTP.session.data(for: Self.mediaRequest(url, token: token)),
+                  let response = answer.1 as? HTTPURLResponse, response.statusCode == 200,
+                  answer.0.count <= ChatMedia.maxBytes, !(response.mimeType ?? "").contains("html") else { return nil }
+            let saved = await Task.detached(priority: .utility) { () -> Bool in
+                try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                return (try? answer.0.write(to: target, options: .atomic)) != nil
+            }.value
+            return saved ? target.path : nil
+        }
+    }
+
+    /// A request to Teams' media service with the session's token, in both of the forms it reads.
+    private static func mediaRequest(_ url: URL, token: String, method: String = "GET") -> URLRequest {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("skype_token " + token, forHTTPHeaderField: "Authorization")
+        request.setValue("skypetoken=" + token, forHTTPHeaderField: "Authentication")
+        request.timeoutInterval = 60
+        return request
+    }
+
+    /// Puts a picture on Teams' media service, readable by `chat`, as the website does: the object first, then its
+    /// bytes. The service and the picture's id; the services are tried in turn (the one your chats use first).
+    private func upload(_ data: Data, name: String, chat: String, account: TeamsWebData.Account) async throws -> (host: String, object: String) {
+        let hosts = ([mediaHosts[account.id]].compactMap { $0 } + TeamsWebData.mediaHosts).reduce(into: [String]()) {
+            if !$0.contains($1) { $0.append($1) }
+        }
+        var refused = 0
+        for host in hosts {
+            guard let objects = URL(string: host + "/v1/objects/") else { continue }
+            var create = Self.mediaRequest(objects, token: account.session.token, method: "POST")
+            create.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            create.httpBody = try? JSONSerialization.data(withJSONObject: TeamsWebData.imageObject(chat: chat, name: name))
+            guard let made = try? await ConnectorHTTP.session(timeout: 60).data(for: create) else { continue }
+            refused = (made.1 as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200..<300).contains(refused), let object = ChatJSON.object(made.0)?["id"] as? String, !object.isEmpty,
+                  let content = URL(string: host + "/v1/objects/" + object + "/content/imgpsh") else { continue }
+            var put = Self.mediaRequest(content, token: account.session.token, method: "PUT")
+            put.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+            put.httpBody = data
+            let (_, response) = try await ConnectorHTTP.session(timeout: 120).data(for: put)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200..<300).contains(code) else { throw NookError(tr("chats.teams.notSent", "HTTP \(code)")) }
+            mediaHosts[account.id] = host
+            return (host, object)
+        }
+        if refused == 401 { throw NookError(tr("chats.teams.signInAgain"), kind: .auth) }
+        throw NookError(tr("chats.teams.notSent", refused == 0 ? "–" : "HTTP \(refused)"))
+    }
+
     // MARK: Sending
+
+    /// What Teams takes from Nook besides text: a picture (a photo, a GIF, a sticker), pasted in the message as the
+    /// website does, and a place or a contact as text. Other files live in SharePoint or OneDrive, which Nook does not
+    /// reach, and Teams has no polls Nook can make.
+    var sends: Set<ChatOutgoing.Kind> { [.photo, .gif, .sticker, .location, .contact] }
+
+    /// A picture (with its caption) or a place or contact as text, to the chat Nook shows as `name`. Throws with a
+    /// sentence you can act on.
+    func send(_ outgoing: ChatOutgoing, to name: String, replyTo: String? = nil) async throws {
+        guard case .file(let file) = outgoing else {
+            return try await send(text: outgoing.text, to: name, replyTo: replyTo)
+        }
+        guard [.photo, .gif, .sticker].contains(file.kind) else { throw NookError(tr("chat.compose.unsupported")) }
+        let (account, chat) = try await webChat(name)
+        let url = file.url
+        let read = await Task.detached(priority: .userInitiated) { () -> (Data, CGSize?)? in
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            var pixels: CGSize?
+            if let source = CGImageSourceCreateWithData(data as CFData, nil),
+               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+               let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
+               let height = properties[kCGImagePropertyPixelHeight] as? CGFloat {
+                pixels = CGSize(width: width, height: height)
+            }
+            return (data, pixels)
+        }.value
+        guard let (data, pixels) = read else { throw NookError(tr("chat.compose.unsupported")) }
+        let (host, object) = try await upload(data, name: file.name, chat: chat.id, account: account)
+        let format = file.kind == .gif ? "gif" : (["png", "jpeg", "jpg", "webp", "heic"].first { $0 == file.fileExtension } ?? "jpeg")
+        let html = TeamsWebData.imageHTML(host: host, object: object, pixels: pixels, format: format, caption: file.caption)
+        let clientID = String(UInt64.random(in: 1_000_000_000_000_000...9_999_999_999_999_999))
+        let json = TeamsWebData.outgoing(html: html, name: account.session.name, clientMessageID: clientID)
+        try await webAct("POST", account: account, path: "/v1/users/ME/conversations/" + ChatJSON.segment(chat.id) + "/messages",
+                         json: json)
+        changedHere.insert(chat.id)
+        ChatCaptureService.shared.readSoon(app)
+    }
 
     /// Whether Nook can write in the chat it shows as `name`: one read through the website's session, of an account
     /// still linked. A chat read only through Microsoft Graph (Chat.Read) is read-only.

@@ -172,24 +172,47 @@ final class MailBridge: ChatBridge, ObservableObject {
         guard ScriptText.isRunning(MailSender.mailBundleID) else { throw NookError(tr("chats.mail.openMail")) }
         var result: (text: String?, errorNumber: Int?, errorMessage: String?)?
         var timeout = Self.openTimeout
+        // Its attachments are saved with it, so the mail view shows them as themselves (`MailChatData.messageScript`).
+        let folder = ChatMedia.destination(key: "mail-\(id)", name: "file").deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         if let row = places[id] {
-            result = await ScriptText.run(MailChatData.messageScript(row), timeout: timeout)
+            result = await ScriptText.run(MailChatData.messageScript(row, saveTo: folder.path), timeout: timeout)
         }
         // No place for it (a mail from an earlier read or launch), or no longer at its place (it moved): looked for by
         // its id in every mailbox, instead of a mail view that can only say to wait for the next read.
         if result == nil || result?.errorNumber == Self.notThere {
             timeout = Self.findTimeout
-            result = await ScriptText.run(MailChatData.findScript(id), timeout: timeout)
+            result = await ScriptText.run(MailChatData.findScript(id, saveTo: folder.path), timeout: timeout)
         }
         guard let raw = result?.text else {
             throw problem(result?.errorNumber, result?.errorMessage, timeout: timeout)
         }
-        guard let message = MailChatData.message(raw) else { throw NookError(tr("chats.mail.gone")) }
+        guard var message = MailChatData.message(raw) else { throw NookError(tr("chats.mail.gone")) }
+        message.files = await Self.collect(message.files, into: folder)
         if opened.count >= Self.openedKept { opened = [:] }
         opened[id] = message
         // Its text is kept for the conversation too, so the line under a folded mail shows it.
         if bodies[id]?.isEmpty ?? true { bodies[id] = String(message.body.prefix(MailChatData.bodyLength)) }
         return message
+    }
+
+    /// The attachments Mail saved, all in `folder`: one Mail had to put in its own temporary folder (its sandbox) is
+    /// moved here, so it stays readable and goes with the chat's other files. Empty for one that could not be.
+    private static func collect(_ files: [String], into folder: URL) async -> [String] {
+        await Task.detached(priority: .userInitiated) {
+            files.map { path -> String in
+                guard !path.isEmpty, FileManager.default.isReadableFile(atPath: path) else { return "" }
+                let url = URL(fileURLWithPath: path)
+                guard url.deletingLastPathComponent().standardizedFileURL != folder.standardizedFileURL else { return path }
+                let target = folder.appendingPathComponent(url.lastPathComponent)
+                try? FileManager.default.removeItem(at: target)
+                if (try? FileManager.default.moveItem(at: url, to: target)) != nil
+                    || (try? FileManager.default.copyItem(at: url, to: target)) != nil {
+                    return target.path
+                }
+                return path
+            }
+        }.value
     }
 
     /// Every address of yours across the accounts, lower case: an answer to everyone leaves them out.
@@ -213,6 +236,24 @@ final class MailBridge: ChatBridge, ObservableObject {
         guard let target = targets[chatID] else { throw NookError(tr("chats.mail.notFound")) }
         let draft = MailDraft(to: target.address, cc: "", subject: MailChatData.replySubject(target.subject), body: body,
                               from: target.from)
+        try await MailSender.deliver(draft, send: true)
+        changedInMail()
+    }
+
+    /// What Mail sends besides text: any file, attached to the answer (a photo, a video, a voice message, a document),
+    /// and a place or a contact as text. Mail has no polls.
+    var sends: Set<ChatOutgoing.Kind> { ChatOutgoing.Kind.noPolls }
+
+    /// A file as an answer to the chat's newest mail, attached, with its caption as the text; a place or a contact as
+    /// text. From the account the chat is in, after your own click.
+    func send(_ outgoing: ChatOutgoing, to chatID: String) async throws {
+        guard let target = targets[chatID] else { throw NookError(tr("chats.mail.notFound")) }
+        var attachments: [String] = []
+        if case .file(let file) = outgoing { attachments = [file.path] }
+        let body = outgoing.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty || !attachments.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
+        let draft = MailDraft(to: target.address, cc: "", subject: MailChatData.replySubject(target.subject), body: body,
+                              from: target.from, attachments: attachments)
         try await MailSender.deliver(draft, send: true)
         changedInMail()
     }

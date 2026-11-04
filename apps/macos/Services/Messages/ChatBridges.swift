@@ -1327,13 +1327,9 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
 
     /// The messages with their files on this Mac (see `local`).
     private func withFiles(_ messages: [InboxMessage], token: String) async -> [InboxMessage] {
-        var result = messages
-        for index in result.indices {
-            guard var media = result[index].media, media.path == nil, let path = await local(media.source, token: token) else { continue }
-            media.path = path
-            result[index].media = media
+        await ChatMedia.fetchingFiles(messages) { [weak self] message in
+            await self?.local(message.media?.source, token: token)
         }
-        return result
     }
 
     /// Where a file the helper names is on this Mac: a `file://` one as it is, an `mxc://` one once the helper downloaded
@@ -1876,25 +1872,23 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
     /// GIF or voice clip shows as itself. One that cannot be fetched (the token lacks files:read) stays a file to open
     /// in Slack.
     private func withFiles(_ messages: [InboxMessage], auth: SlackData.Auth) async -> [InboxMessage] {
-        var result = messages
-        for index in result.indices {
-            guard var media = result[index].media, media.path == nil, let source = media.source,
-                  let url = URL(string: source), SlackData.isSlack(url) else { continue }
-            let target = ChatMedia.destination(key: result[index].id, name: media.name ?? url.lastPathComponent)
-            if !FileManager.default.fileExists(atPath: target.path) {
-                let request = Self.request(url, auth: auth)
-                guard let answer = try? await ConnectorHTTP.session.data(for: request),
-                      let response = answer.1 as? HTTPURLResponse, response.statusCode == 200,
-                      answer.0.count <= ChatMedia.maxBytes,
-                      // Without the right scope Slack answers with its sign-in page instead of the file.
-                      !(response.mimeType ?? "").contains("html") else { continue }
+        await ChatMedia.fetchingFiles(messages) { message in
+            guard let media = message.media, let source = media.source,
+                  let url = URL(string: source), SlackData.isSlack(url) else { return nil }
+            let target = ChatMedia.destination(key: message.id, name: media.name ?? url.lastPathComponent)
+            if FileManager.default.fileExists(atPath: target.path) { return target.path }
+            let request = Self.request(url, auth: auth)
+            guard let answer = try? await ConnectorHTTP.session.data(for: request),
+                  let response = answer.1 as? HTTPURLResponse, response.statusCode == 200,
+                  answer.0.count <= ChatMedia.maxBytes,
+                  // Without the right scope Slack answers with its sign-in page instead of the file.
+                  !(response.mimeType ?? "").contains("html") else { return nil }
+            let saved = await Task.detached(priority: .utility) { () -> Bool in
                 try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-                guard (try? answer.0.write(to: target, options: .atomic)) != nil else { continue }
-            }
-            media.path = target.path
-            result[index].media = media
+                return (try? answer.0.write(to: target, options: .atomic)) != nil
+            }.value
+            return saved ? target.path : nil
         }
-        return result
     }
 
     /// The conversations to read now: the ones changed from Nook, never read ones and the busiest, then a few others

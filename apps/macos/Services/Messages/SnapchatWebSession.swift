@@ -122,8 +122,10 @@ final class SnapchatWebSession: NSObject, ObservableObject, WKNavigationDelegate
     }
 
     /// The messages of a chat, oldest first, after opening it as a click in the list does. Snapchat counts that as
-    /// you opening it, as on your phone.
-    func read(_ row: SnapchatWebData.Row) async throws -> [SnapchatWebData.Line] {
+    /// you opening it, as on your phone. `pictures` names the pictures among them to save (by their `source`): those
+    /// are read from the page while the chat is still open, as JPEG or PNG bytes by source.
+    func read(_ row: SnapchatWebData.Row, pictures: @escaping @MainActor ([SnapchatWebData.Line]) -> [String] = { _ in [] })
+        async throws -> (lines: [SnapchatWebData.Line], pictures: [String: Data]) {
         try await serially { web in
             try await self.open(row, in: web)
             var last: [SnapchatWebData.Line]?
@@ -132,7 +134,7 @@ final class SnapchatWebSession: NSObject, ObservableObject, WKNavigationDelegate
                 try await Task.sleep(for: .milliseconds(700))
                 switch SnapchatWebData.readOutcome(try? await self.run(SnapchatWebData.readScript, in: web)) {
                 case .lines(let lines):
-                    if lines == last { return lines }
+                    if lines == last { return (lines, await self.pictures(pictures(lines), in: web)) }
                     last = lines
                 case .signedOut: throw self.signedOut()
                 case .noChat: continue
@@ -140,7 +142,42 @@ final class SnapchatWebSession: NSObject, ObservableObject, WKNavigationDelegate
                 }
             }
             guard let last else { throw Problem.page("chat") }
-            return last
+            return (last, await self.pictures(pictures(last), in: web))
+        }
+    }
+
+    /// The pictures at these addresses in the open chat (`SnapchatWebData.picturesScript`), by address.
+    private func pictures(_ sources: [String], in web: WKWebView) async -> [String: Data] {
+        guard !sources.isEmpty,
+              let answer = try? await web.callAsyncJavaScript(SnapchatWebData.picturesScript, arguments: ["sources": sources],
+                                                              contentWorld: .defaultClient) as? [String: Any] else { return [:] }
+        return answer.reduce(into: [:]) { found, entry in
+            if let url = entry.value as? String, let data = SnapchatWebData.pictureData(url) { found[entry.key] = data }
+        }
+    }
+
+    /// Sends a picture (with its caption) in the chat, as you would on the website; after your own click in Nook.
+    func sendPicture(_ data: Data, name: String, type: String, caption: String, to row: SnapchatWebData.Row) async throws {
+        let encoded = data.base64EncodedString()
+        try await serially { web in
+            try await self.open(row, in: web)
+            for _ in 0..<12 {
+                try await Task.sleep(for: .milliseconds(500))
+                let answer = try? await web.callAsyncJavaScript(
+                    SnapchatWebData.sendPictureScript,
+                    arguments: ["data": encoded, "name": name, "type": type,
+                                "caption": String(caption.prefix(SnapchatWebData.maxText))],
+                    contentWorld: .defaultClient)
+                switch SnapchatWebData.sendOutcome(answer) {
+                case .sent: return
+                case .noChat: continue
+                case .signedOut: throw self.signedOut()
+                case .draft: throw Problem.draft
+                case .notSent: throw Problem.notSent
+                case .failed(let step): throw Problem.page(step)
+                }
+            }
+            throw Problem.page("field")
         }
     }
 

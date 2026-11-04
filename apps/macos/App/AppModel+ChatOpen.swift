@@ -11,27 +11,39 @@ extension AppModel {
     /// pictures of its newest files with them. Every app that Nook reads itself is asked; a chat only notifications
     /// bring has nothing to ask.
     func openedChat(_ entry: ChatsEntry) async {
+        ChatMediaWarmup.warm(ChatCaptureService.shared.inbox.threads[entry.id])
         guard case .whatsApp(let key) = chatRoute(for: entry) else {
             ChatCaptureService.shared.refresh(entry.id)
             return
         }
-        // WhatsApp's gateway is asked for the chat's history, its group's people and its newest files: the link then
-        // changes, and the chat with it (`WhatsAppGatewayBridge`).
+        // WhatsApp's gateway is asked for the chat's history and its group's people at once, then for its newest files:
+        // the link then changes, and the chat with it (`WhatsAppGatewayBridge`).
         let (link, jid) = WhatsAppAccounts.shared.route(key)
+        async let members = link.loadMembers(jid)
         _ = await link.loadHistory(jid)
-        _ = await link.loadMembers(jid)
+        await loadWhatsAppPreviews(link, jid: jid)
+        _ = await members
+    }
+
+    /// The files of a WhatsApp chat's newest messages, fetched from the gateway (a few at a time) when not yet here.
+    private func loadWhatsAppPreviews(_ link: WhatsAppLink, jid: String) async {
         guard let conversation = link.inbox.conversations[WAJID.normalized(jid)] else { return }
         let wanted = conversation.messages.filter { Self.whatsAppPreviews($0.media) }.suffix(Self.whatsAppPreviewCount)
             .filter { link.preview($0.id) == nil }.map(\.id)
         if !wanted.isEmpty { _ = await link.loadPreviews(wanted, chat: jid) }
     }
 
-    /// The pointer rests on a chat in the list: what its click needs is fetched now, so it opens filled. A chat its app
-    /// keeps on this Mac (in the shared inbox) has it already; a WhatsApp chat of the linked phone fetches its history.
+    /// The pointer rests on a chat in the list: what its click needs is fetched now, so it opens filled. Every app's
+    /// chat readies the pictures of its newest messages (`ChatMediaWarmup`); a WhatsApp chat of the linked phone fetches
+    /// its history and newest files too.
     func prefetchChat(_ entry: ChatsEntry) async {
+        ChatMediaWarmup.warm(ChatCaptureService.shared.inbox.threads[entry.id])
         guard case .whatsApp(let key) = chatRoute(for: entry) else { return }
         let (link, jid) = WhatsAppAccounts.shared.route(key)
         _ = await link.loadHistory(jid)
+        await loadWhatsAppPreviews(link, jid: jid)
+        // The files that just came in are part of the chat now: their pictures are readied as well.
+        ChatMediaWarmup.warm(ChatCaptureService.shared.inbox.threads[entry.id])
     }
 
     /// A chat's row came into view without a line under its name (a chat on the phone that wrote nothing since Nook
