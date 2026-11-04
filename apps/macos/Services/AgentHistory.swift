@@ -694,12 +694,34 @@ private final class HistoryScanner: @unchecked Sendable {
             }
             // Each reply once, also when a transcript was copied into a resumed conversation.
             for conversation in conversations { ledger.addSession(agent: conversation.agent.rawValue, ended: conversation.ended) }
+            // The conversation each transcript belongs to, for the Usage page's chats.
+            var conversationOf: [String: PastSession] = [:]
+            for conversation in conversations {
+                for id in [conversation.sessionID] + conversation.earlierIDs { conversationOf[conversation.agent.rawValue + "|" + id] = conversation }
+            }
+            var chatsByTranscript: [String: UsageLedger.Chat] = [:]
             var counted = Set<String>()
             for entry in parsedAll {
+                var chat: UsageLedger.Chat?
+                if let session = entry.parsed.session {
+                    let transcript = entry.agent.rawValue + "|" + session.profileID + "|" + session.sessionID
+                    if let known = chatsByTranscript[transcript] {
+                        chat = known
+                    } else {
+                        let conversation = conversationOf[entry.agent.rawValue + "|" + session.sessionID] ?? session
+                        // Nook's own runs (titles, commit messages) are not listed, but they use the limits too.
+                        let own = Self.isOwn(conversation.cwd, ownFolder: ownFolder)
+                        chat = UsageLedger.Chat(id: entry.agent.rawValue + ":" + conversation.sessionID, agent: entry.agent.rawValue,
+                                                profileID: session.profileID, title: own ? "" : conversation.title,
+                                                project: own ? "Nook" : conversation.project)
+                        chatsByTranscript[transcript] = chat
+                    }
+                }
                 for usage in entry.parsed.entries where counted.insert(entry.agent.rawValue + "|" + usage.key).inserted {
-                    ledger.add(agent: entry.agent.rawValue, model: usage.model,
-                               date: usage.date, tokens: UsageTokens(input: usage.tokens.input, output: usage.tokens.output,
-                                                                     cacheRead: usage.tokens.cacheRead, cacheWrite: usage.tokens.cacheWrite))
+                    let tokens = UsageTokens(input: usage.tokens.input, output: usage.tokens.output,
+                                             cacheRead: usage.tokens.cacheRead, cacheWrite: usage.tokens.cacheWrite)
+                    ledger.add(agent: entry.agent.rawValue, model: usage.model, date: usage.date, tokens: tokens)
+                    if let chat { ledger.addChat(chat, model: usage.model, date: usage.date, tokens: tokens) }
                 }
             }
             lastSignature = signature
