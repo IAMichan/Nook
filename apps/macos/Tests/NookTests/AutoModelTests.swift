@@ -28,6 +28,20 @@ final class AutoModelTests: XCTestCase {
         XCTAssertEqual(AutoModel.need(prompt: "Refactor and redesign everything", effort: "low"), .standard)
     }
 
+    func testAShortPromptWithRealWorkIsNotLight() {
+        XCTAssertEqual(AutoModel.need(prompt: "fix the crash in Foo.swift"), .standard)
+        XCTAssertEqual(AutoModel.need(prompt: "waarom faalt dit?"), .standard)
+        XCTAssertEqual(AutoModel.need(prompt: "thanks"), .light)
+        XCTAssertEqual(AutoModel.need(prompt: "Debug the race condition in Sync.swift, it deadlocks sometimes"), .strong)
+    }
+
+    func testAHardThreadStepsDownOneTierAtATime() {
+        XCTAssertEqual(AutoModel.need(prompt: "ja doe maar", previous: .strong), .standard)
+        XCTAssertEqual(AutoModel.need(prompt: "ja doe maar", previous: .standard), .light)
+        XCTAssertEqual(AutoModel.need(prompt: "Refactor the sync engine and redesign its architecture", previous: .light), .strong,
+                       "a harder question lifts the same chat at once")
+    }
+
     func testThePressureOfTheWindows() {
         XCTAssertEqual(AutoModel.pressure([]), .relaxed)
         XCTAssertEqual(AutoModel.pressure([.init(percent: 30, elapsed: 0.5)]), .relaxed)
@@ -104,6 +118,12 @@ final class AutoModelTests: XCTestCase {
         let candidates = agent(.claude, "work", [.init(percent: 92, elapsed: nil)], [max])
             + agent(.claude, "home", [.init(percent: 5, elapsed: nil)], [max])
         XCTAssertEqual(AutoModel.pick(candidates, need: .strong, current: work)?.profileID, "home")
+    }
+
+    func testTwoRelaxedAccountsTakeTheOneThatUsedLess() {
+        let candidates = agent(.claude, "busy", [.init(percent: 55, elapsed: nil)], [max])
+            + agent(.claude, "quiet", [.init(percent: 10, elapsed: nil)], [max])
+        XCTAssertEqual(AutoModel.pick(candidates, need: .strong)?.profileID, "quiet")
     }
 
     func testAmongEqualsTheAccountWithMoreRoom() {

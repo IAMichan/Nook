@@ -18,23 +18,27 @@ extension WorkspaceManager {
     }
 
     /// A title for a new session from its first message, in place of the first line Nook shows until then. It is
-    /// dropped when you renamed the session meanwhile. With the user's title rules (Settings, or the project's own).
+    /// dropped when you renamed the session meanwhile. With the user's title rules (Settings, or the project's own). The
+    /// same answer names the session's worktree branch in English, in place of the words Nook took from the prompt (see
+    /// `renameBranch`).
     func generateTitle(_ id: UUID) {
-        guard settings.autoTitles, let run = run(id) else { return }
-        writeTitle(run, later: [], announce: false)
+        guard let run = run(id) else { return }
+        let renamesBranch = !run.isRemote && run.worktreePath != nil && run.branch.flatMap { WorktreeNaming.renamedBranch($0, slug: "x") } != nil
+        guard settings.autoTitles || renamesBranch else { return }
+        writeTitle(run, later: [], announce: false, renamesBranch: renamesBranch)
     }
 
     /// "Regenerate title" from the session menu or the command palette: a new title from the first message and the
-    /// latest ones, also when automatic titles are off. Says so when no agent could write one.
+    /// latest ones, also when automatic titles are off. Says so when no agent could write one. The branch keeps its name.
     func regenerateTitle(_ id: UUID) {
         guard let run = run(id), !regeneratingTitles.contains(id) else { return }
         loadTimeline(id)
         let messages = timeline(id).filter { $0.kind == .user }.map(\.text)
         // The first message is the task itself; what came after says where the session went.
-        writeTitle(run, later: Array(messages.dropFirst()), announce: true)
+        writeTitle(run, later: Array(messages.dropFirst()), announce: true, renamesBranch: false)
     }
 
-    private func writeTitle(_ run: WorkspaceRun, later: [String], announce: Bool) {
+    private func writeTitle(_ run: WorkspaceRun, later: [String], announce: Bool, renamesBranch: Bool) {
         let id = run.id
         let seed = run.title
         let instructions = settings.sessionDefaults(for: run.projectPath.isEmpty ? run.workingDirectory : run.projectPath).titleInstructions
@@ -45,6 +49,11 @@ extension WorkspaceManager {
             let answer = await self.generateText(prompt, schema: TextGeneration.titleSchema, prefer: run.provider, profileID: run.profileID,
                                                  cwd: run.isRemote ? NSHomeDirectory() : run.workingDirectory)
             if announce { self.regeneratingTitles.remove(id) }
+            if renamesBranch, let raw = answer?["branch"] as? String, let slug = TextGeneration.branchSlug(raw) {
+                await self.renameBranch(id, from: run.branch ?? "", slug: slug)
+            }
+            // A title written on its own only with automatic titles on; one you asked for always.
+            guard announce || self.settings.autoTitles else { return }
             guard let raw = answer?["title"] as? String, let title = TextGeneration.title(raw) else {
                 if announce { ToastCenter.shared.error(tr("ws.title.regenerateFailed")) }
                 return
@@ -52,6 +61,20 @@ extension WorkspaceManager {
             guard self.run(id)?.title == seed else { return }
             self.update(id) { $0.title = title }
         }
+    }
+
+    /// Gives a worktree session's branch the agent-written slug once its worktree exists, as long as the branch is
+    /// still the one Nook named and was never pushed. The worktree's folder keeps its name: the agent is working in it.
+    func renameBranch(_ id: UUID, from branch: String, slug: String) async {
+        guard let git = gitService, let new = WorktreeNaming.renamedBranch(branch, slug: slug) else { return }
+        while run(id)?.status == .preparing { try? await Task.sleep(for: .milliseconds(250)) }
+        guard let run = run(id), run.branch == branch, let root = run.repoRoot, run.worktreePath != nil else { return }
+        let renamed = (try? await FolderLease.shared.run(FolderLease.key(root), priority: .utility) {
+            try git.renameUnpublishedBranch(branch, to: new, in: root)
+        }) != nil
+        guard renamed, self.run(id)?.branch == branch else { return }
+        update(id) { $0.branch = new }
+        append(id, RunEvent(kind: .system, text: tr("ws.event.branchRenamed", new)))
     }
 }
 
