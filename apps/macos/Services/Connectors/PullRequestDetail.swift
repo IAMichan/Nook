@@ -676,14 +676,18 @@ enum PullRequestDetailParser {
         return body
     }
 
-    /// GitHub's refusal of a merge, in words: its own message, with the reason for the common statuses.
-    static func mergeError(status: Int, object: [String: Any]) -> String {
+    /// GitHub's refusal of a merge, in words: its own message, with the reason for the common statuses. A 409 means the
+    /// head moved past the shown commit only when `headMoved`; with the same head it was the base (another merge landed
+    /// meanwhile) or GitHub still working, and looking at the branch again would not help.
+    static func mergeError(status: Int, object: [String: Any], headMoved: Bool = true) -> String {
         let message = (object["message"] as? String).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
         switch status {
         case 401: return "GitHub rejected the connection (401). Reconnect in Settings › Connections."
         case 403: return "GitHub did not permit the merge (403)." + (message.isEmpty ? "" : " " + message)
         case 404: return "GitHub could not find the pull request, or this account has no access to it (404)."
         case 405: return "GitHub cannot merge this pull request (405)." + (message.isEmpty ? "" : " " + message)
+        case 409 where !headMoved:
+            return "GitHub could not merge it just now (409)." + (message.isEmpty ? "" : " " + message) + " Try again in a moment."
         case 409: return "The branch changed since you opened it (409). Look at the new commits and try again."
         case 422: return "GitHub refused the merge (422)." + (message.isEmpty ? "" : " " + message)
         default: return message.isEmpty ? "GitHub returned an error (\(status))." : "GitHub: " + message
