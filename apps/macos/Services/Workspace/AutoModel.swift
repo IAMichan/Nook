@@ -103,18 +103,38 @@ enum AutoModel {
         "versie", "opsomming",
     ]
 
-    /// What a turn asks for: its words, its length and the effort you set.
-    static func need(prompt: String, effort: String? = nil) -> Tier {
+    /// Signs that a short prompt is still real work: something broken, or code and files in the message.
+    private static let workWords = [
+        "bug", "error", "crash", "fails", "failing", "broken", "fix", "wrong", "doesn't work", "does not work", "not working",
+        "exception", "stack trace", "build", "test", "tests", "why", "how", "waarom", "hoe", "kapot", "werkt niet",
+        "fout", "mislukt", "los op", "repareer", "probleem", "problem", "issue",
+    ]
+
+    /// Code or a path in the prompt.
+    private static func looksLikeCode(_ prompt: String) -> Bool {
+        prompt.contains("```") || prompt.contains("::") || prompt.contains("->") || prompt.contains("()")
+            || prompt.range(of: #"\b[\w-]+\.(swift|ts|tsx|js|py|rs|go|kt|java|rb|cpp|h|json|yml|md)\b"#, options: .regularExpression) != nil
+            || prompt.range(of: #"(^|\s)[\w.-]+/[\w./-]+"#, options: .regularExpression) != nil
+    }
+
+    /// What a turn asks for: its words, its length and the effort you set, and where the chat stands. A short prompt is only
+    /// light when it carries nothing technical ("fix the crash in Foo.swift" is not light for being short). Heavy work lifts
+    /// a session at once, in the same chat, but it steps down one tier at a time: a short follow-up ("ja doe maar", "and
+    /// the other one?") to a strong turn stays standard, so a hard thread does not fall to a light model between messages.
+    static func need(prompt: String, effort: String? = nil, previous: Tier? = nil) -> Tier {
         let text = " " + prompt.lowercased() + " "
         let length = prompt.trimmingCharacters(in: .whitespacesAndNewlines).count
         let heavy = heavyWords.filter { contains(text, $0) }.count
         let light = lightTaskWords.filter { contains(text, $0) }.count
+        let work = workWords.filter { contains(text, $0) }.count
+        let technical = work > 0 || looksLikeCode(prompt)
         var tier: Tier = .standard
-        if length > 1500 || heavy >= 2 || (heavy == 1 && length > 300) {
+        if length > 1500 || heavy >= 2 || (heavy == 1 && length > 300) || (heavy == 1 && technical && length > 120) {
             tier = .strong
-        } else if heavy == 0 && length < 300 && (light > 0 || length < 40) {
+        } else if heavy == 0 && length < 300 && (light > 0 || (length < 40 && !technical)) {
             tier = .light
         }
+        if let previous, tier < previous, length < 200 { tier = Tier(rawValue: max(tier.rawValue, previous.rawValue - 1)) ?? tier }
         switch effort?.lowercased() {
         case "high", "xhigh", "max", "thinking": return max(tier, .standard)
         case "low", "minimal": return min(tier, .standard)
@@ -150,7 +170,7 @@ enum AutoModel {
     /// plus twice how far it goes over what its account can spare (standard when its limits are tight, light when they are
     /// critical), plus one for leaving `current` (moving a session to another agent or account hands its conversation
     /// over, so it moves only for a clear gain). The lowest score wins; among equals the agent in use, then the account with
-    /// more room, then a stronger model while it has room and a lighter one under pressure, then the order given. Nil when
+    /// more room, then a stronger model while it has room and a lighter one under pressure, then the account that has used less, then the order given. Nil when
     /// nothing is allowed.
     static func pick(_ candidates: [Candidate], need: Tier, current: Account? = nil) -> Decision? {
         let rated = candidates.enumerated().map { entry -> (index: Int, candidate: Candidate, tier: Tier, pressure: Pressure, score: Int) in
@@ -167,6 +187,8 @@ enum AutoModel {
             if stayA != stayB { return stayA }
             if a.pressure != b.pressure { return a.pressure < b.pressure }
             if a.tier != b.tier { return a.pressure == .relaxed ? a.tier > b.tier : a.tier < b.tier }
+            let fullA = a.candidate.windows.map(\.percent).max() ?? 0, fullB = b.candidate.windows.map(\.percent).max() ?? 0
+            if fullA != fullB { return fullA < fullB }
             return a.index < b.index
         }
         guard let best else { return nil }

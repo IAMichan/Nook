@@ -330,7 +330,9 @@ struct SessionWorkbench<Conversation: View>: View {
                         .overlayPreferenceValue(SessionComposerBounds.self) { composer in
                             GeometryReader { proxy in
                                 let above = composer.map { max(0, proxy.size.height - proxy[$0].minY) } ?? 0
-                                SessionBrowserCorner(runID: runID, directory: directory, hidden: side == .browser || bottom == .browser) {
+                                SessionBrowserCorner(runID: runID, directory: directory, hidden: side == .browser || bottom == .browser,
+                                                    room: CGSize(width: max(0, proxy.size.width - SessionBrowserCard.size.width - NookTheme.Spacing.lg * 2),
+                                                                 height: max(0, proxy.size.height - above - SessionBrowserCard.size.height - NookTheme.Spacing.md))) {
                                     withAnimation(NookTheme.reveal) { viewModel.sessionTool = .browser }
                                 }
                                 // In a narrow conversation the page covers part of it, not all of it.
@@ -403,7 +405,7 @@ struct SessionWorkbench<Conversation: View>: View {
                                           dragStart = nil
                                           PanelDrag.commit($liveBottomHeight, to: $bottomHeight)
                                       },
-                                      onReset: { withAnimation(NookTheme.reveal) { bottomHeight = BottomPanelLayout.standard } })
+                                      onReset: { PanelDrag.still { bottomHeight = BottomPanelLayout.standard } })
                     panel(.bottom, tool: bottom)
                 }
                 .frame(height: CGFloat(BottomPanelLayout.height(liveBottomHeight ?? bottomHeight, available: totalHeight)))
@@ -677,10 +679,9 @@ private struct BottomSplitHandle: View {
         .frame(maxWidth: .infinity)
         .frame(height: 9)
         .contentShape(Rectangle())
-        .onHover { inside in
-            hovering = inside
-            if inside { NSCursor.resizeUpDown.push() } else if !dragging { NSCursor.pop() }
-        }
+        // The system's resize cursor, which also stays while the pointer runs ahead of the line during a drag.
+        .pointerStyle(.rowResize)
+        .onHover { hovering = $0 }
         .gesture(
             // Global coordinates: the line itself moves while you drag it.
             DragGesture(minimumDistance: 1, coordinateSpace: .global)
@@ -690,7 +691,6 @@ private struct BottomSplitHandle: View {
                 }
                 .onEnded { _ in
                     dragging = false
-                    if !hovering { NSCursor.pop() }
                     onEnd()
                 }
         )
