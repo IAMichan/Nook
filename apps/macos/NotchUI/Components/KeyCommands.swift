@@ -57,12 +57,42 @@ final class KeyCommandCenter: ObservableObject {
 
     /// The commands some view of Nook handles (see the `keyCommands` call sites); Settings marks the others as not
     /// available yet, so a rule for them is not mistaken for a broken key.
-    static let wiredCommands: Set<String> = [
+    static let wiredCommands: Set<String> = Set([
         "composer.send", "composer.sendAlternate", "composer.newline", "composer.stash", "composer.historyPrevious",
         "composer.historyNext", "composer.access", "queue.steerFirst", "chat.find", "search.toggle", "commandPalette.toggle",
         "session.new", "session.undo", "diff.toggle", "panel.reopenClosed", "selection.quote",
-        "selection.ask", "session.previous", "session.next",
-    ]
+        "selection.ask", "session.previous", "session.next", "modelPicker.toggle", "session.settle", "session.pin",
+        "session.interrupt", "session.back", "session.forward", "session.rename", "session.openInEditor",
+        "session.copyReference", "composer.startInBackground", "sidebar.toggle", "terminal.toggle", "sidePanel.toggle",
+        "tab.close", "terminal.splitRight", "terminal.splitDown", "focus.next", "focus.previous",
+    ] + (1...SessionJump.count).map(SessionJump.command))
+
+    /// The shortcut recorder in Settings is waiting for a key: no command takes it.
+    var recording = false
+
+    /// Runs a command as its key would in `window` (the command palette lists commands with their keys): the newest view
+    /// that offers it, then older ones, until one uses it. False when nothing on screen runs it.
+    @discardableResult
+    func run(_ command: String, in window: NSWindow?) -> Bool {
+        guard let window else { return false }
+        for registration in live(in: window).reversed() {
+            if let handler = registration.handlers[command], handler() { return true }
+        }
+        return false
+    }
+
+    /// Whether a view in `window` offers `command` now (the palette leaves out what nothing would run).
+    func offers(_ command: String, in window: NSWindow?) -> Bool {
+        guard let window else { return false }
+        return live(in: window).contains { $0.handlers[command] != nil }
+    }
+
+    /// The registrations of a window that are on, oldest and lowest priority first.
+    private func live(in window: NSWindow) -> [Registration] {
+        registrations.values
+            .filter { $0.enabled && $0.window === window }
+            .sorted { ($0.priority, $0.order) < ($1.priority, $1.order) }
+    }
 
     func update(_ id: UUID, window: NSWindow?, enabled: Bool, priority: Int, context: [String: Bool],
                 handlers: [String: () -> Bool]) {
@@ -82,7 +112,7 @@ final class KeyCommandCenter: ObservableObject {
 
     /// True when a handler took the key.
     private func handle(_ event: NSEvent) -> Bool {
-        guard let window = event.window else { return false }
+        guard !recording, let window = event.window else { return false }
         let responder = window.firstResponder
         // Keys being composed (an input method) and views that pass every key on (a mirrored app) stay theirs.
         if let text = responder as? NSTextView, text.hasMarkedText() { return false }
@@ -91,28 +121,37 @@ final class KeyCommandCenter: ObservableObject {
         guard let chord = KeyChord.pressed(characters: event.characters(byApplyingModifiers: []), keyCode: event.keyCode,
                                            command: flags.contains(.command), control: flags.contains(.control),
                                            option: flags.contains(.option), shift: flags.contains(.shift)) else { return false }
-        let live = registrations.values
-            .filter { $0.enabled && $0.window === window }
-            .sorted { ($0.priority, $0.order) < ($1.priority, $1.order) }
-        var context = Self.focusContext(responder)
-        for registration in live {
+        let active = live(in: window)
+        var context = Self.focusContext(responder, in: window)
+        for registration in active {
             for (key, value) in registration.context where value { context[key] = true }
         }
-        guard let command = Keybindings.match(chord, context: context, rules: rules),
-              let handler = live.last(where: { $0.handlers[command] != nil })?.handlers[command] else { return false }
-        return handler()
+        guard let command = Keybindings.match(chord, context: context, rules: rules) else { return false }
+        // The newest view that offers the command first; one that lets the key go (false) hands it to the one before it,
+        // and the last to the focused view.
+        for registration in active.reversed() {
+            if let handler = registration.handlers[command], handler() { return true }
+        }
+        return false
     }
 
-    /// What the first responder says: a text being edited, or a terminal.
-    private static func focusContext(_ responder: NSResponder?) -> [String: Bool] {
+    /// What the first responder says: a text being edited, a terminal, or a session's side or bottom panel.
+    private static func focusContext(_ responder: NSResponder?, in window: NSWindow) -> [String: Bool] {
         var context: [String: Bool] = [:]
         if let text = responder as? NSTextView, text.isEditable { context["editableFocus"] = true }
+        if focusedTerminal(responder) != nil { context["terminalFocus"] = true }
+        if let area = FocusAreas.shared.area(of: responder, in: window), area.isPanel { context["panelFocus"] = true }
+        return context
+    }
+
+    /// The terminal view that has the keyboard, if one has.
+    static func focusedTerminal(_ responder: NSResponder?) -> TerminalView? {
         var view = responder as? NSView
         while let current = view {
-            if current is TerminalView { context["terminalFocus"] = true; break }
+            if let terminal = current as? TerminalView { return terminal }
             view = current.superview
         }
-        return context
+        return nil
     }
 }
 
@@ -122,9 +161,10 @@ protocol ForwardsKeys: AnyObject {}
 
 extension View {
     /// Offers keybinding commands (see `Keybindings.commandIDs`) while this view is in a window and `enabled`. A handler
-    /// returns true when it used the key; false lets the key go on to the focused view. `context` adds what this view
-    /// knows to the `when` context (`paletteOpen`, `turnRunning`…). When several views offer a command, the newest one
-    /// wins; `priority: -1` makes a window-wide fallback that yields to any other.
+    /// returns true when it used the key; false hands it to an older view that offers the same command, and after the
+    /// last one to the focused view. `context` adds what this view knows to the `when` context (`paletteOpen`,
+    /// `turnRunning`…). When several views offer a command, the newest one goes first; `priority: -1` makes a window-wide
+    /// fallback that yields to any other.
     func keyCommands(_ handlers: [String: () -> Bool], context: [String: Bool] = [:], enabled: Bool = true,
                      priority: Int = 0) -> some View {
         background(KeyCommandProbe(handlers: handlers, flags: context, enabled: enabled, priority: priority))

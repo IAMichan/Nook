@@ -71,6 +71,12 @@ struct NewSessionComposer: View {
         .onChange(of: promptLinks.pending) { _, _ in applyPromptLink() }
         .onChange(of: promptLinks.pendingProject) { _, _ in applyRequestedProject() }
         .onChange(of: workingDirectory, initial: true) { _, directory in onDirectory(directory) }
+        // ⌥⌘↩: start it and keep a fresh box here for the next one.
+        .keyCommands(["composer.startInBackground": {
+            guard canStart, !starting else { return false }
+            start(background: true)
+            return true
+        }], enabled: focused)
     }
 
     /// The folder the panels open in: none for a session on another machine.
@@ -242,7 +248,7 @@ struct NewSessionComposer: View {
             sending: starting,
             sendLabel: blockingReason ?? tr("ws.new.start"),
             focus: $focused,
-            onSend: start
+            onSend: { start() }
         ) {
             // The same row as in a running session and in the chat: plus menu, the agent and model, then mode and rights.
             ComposerPlusMenu(attach: attachFile) {}
@@ -799,9 +805,11 @@ struct NewSessionComposer: View {
         }
     }
 
-    private func start() {
+    /// `background` (⌥⌘↩): the session starts without opening, and the box stays for the next one with the same folder,
+    /// agent and worktree choices.
+    private func start(background: Bool = false) {
         guard canStart else { return }
-        if !comparing.isEmpty, remoteMachine == nil { return startComparison() }
+        if !comparing.isEmpty, remoteMachine == nil { return startComparison(background: background) }
         starting = true
         error = nil
         var request = checkedConfig
@@ -825,7 +833,11 @@ struct NewSessionComposer: View {
                 images = []
                 pendingID = UUID()
                 starting = false
-                onStarted(id)
+                if background {
+                    startedInBackground()
+                } else {
+                    onStarted(id)
+                }
             } catch let failure {
                 error = failure.localizedDescription
                 starting = false
@@ -836,7 +848,7 @@ struct NewSessionComposer: View {
     /// One prompt to several models: a session per model, each in its own worktree, grouped under the first. When a model
     /// fails, the prompt stays in the box (and in `ComposerDraftStore`) with only the failed models still chosen, and the
     /// box says which ones failed and why.
-    private func startComparison() {
+    private func startComparison(background: Bool = false) {
         starting = true
         error = nil
         var base = checkedConfig
@@ -857,7 +869,11 @@ struct NewSessionComposer: View {
                 images = []
                 comparing = []
                 pendingID = UUID()
-                if let leader = outcome.leader { onStarted(leader) }
+                if background {
+                    startedInBackground()
+                } else if let leader = outcome.leader {
+                    onStarted(leader)
+                }
                 return
             }
             ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: config.task)
@@ -870,6 +886,13 @@ struct NewSessionComposer: View {
             error = tr("compare.failed", outcome.failed.map { comparisonName($0.target) + ": " + $0.message }.joined(separator: "\n"))
             if !outcome.started.isEmpty { ToastCenter.shared.success(tr("compare.started", outcome.started.count)) }
         }
+    }
+
+    /// After ⌥⌘↩: the session runs in the list, and this box is a fresh draft with the same choices and the keyboard.
+    private func startedInBackground() {
+        started = false
+        ToastCenter.shared.success(tr("ws.new.startedInBackground"))
+        focused = true
     }
 
     /// "Claude Code · Opus": how a model of a comparison is named in its session's title and in an error.

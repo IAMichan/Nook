@@ -20,7 +20,9 @@ struct ModelPickerDropdown<Trigger: View, Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        ComposerDropdown(width: ModelPickerStyle.width, takesRoom: true, trigger: trigger, content: content)
+        // ⇧⌘M opens it (`modelPicker.toggle`).
+        ComposerDropdown(width: ModelPickerStyle.width, takesRoom: true, command: "modelPicker.toggle", trigger: trigger,
+                         content: content)
     }
 }
 
@@ -81,12 +83,14 @@ struct ModelPicker<Above: View>: View {
     /// The rows for a place and the search text.
     let list: (ModelPickerPlace, String) -> ModelPickerList
     @State private var query = ""
+    /// The row ↑/↓ are on; Return picks it.
+    @State private var highlight = 0
     @Environment(\.closeDropdown) private var close
 
     var body: some View {
         RailDropdown(groups: [places.filter(\.isLocal), places.filter { !$0.isLocal && $0.symbol != nil },
                               places.filter { !$0.isLocal && $0.symbol == nil }], chosen: chosen,
-                     help: help(of:), onShow: { _ in query = "" },
+                     help: help(of:), onShow: { _ in query = ""; highlight = 0 },
                      icon: icon, footer: { ModelPickerAddButton(help: addHelp, add: openSettings) }) { place in
             column(place)
         }
@@ -126,25 +130,47 @@ struct ModelPicker<Above: View>: View {
                 .padding(.horizontal, NookTheme.Spacing.md)
                 .padding(.bottom, NookTheme.Spacing.xs)
         }
+        let rows = shown.models + shown.actions
+        let current = ListHighlight.clamped(highlight, in: rows.map { $0.disabledReason == nil })
         above(place)
         if place.symbol == nil {
             DropdownSearch(placeholder: tr("compose.searchModels"), text: $query) {
-                // Return picks the first model that matches (or the model of your own typed in the search).
-                guard let first = (shown.models + shown.actions).first(where: { $0.disabledReason == nil }) else { return }
-                first.pick()
-                if !first.staysOpen { close() }
+                // Return picks the highlighted model (at first the first one that matches, or the model of your own
+                // typed in the search).
+                pick(rows, at: current)
             }
+            .onChange(of: query) { _, _ in highlight = 0 }
         }
         DropdownList(maxHeight: ModelPickerStyle.listHeight,
-                     emptyNote: shown.models.isEmpty && shown.actions.isEmpty ? shown.emptyNote ?? tr("compose.noModels") : nil) {
-            ForEach(shown.models + shown.actions) { item in
+                     emptyNote: rows.isEmpty ? shown.emptyNote ?? tr("compose.noModels") : nil,
+                     scrollTarget: current.map { rows[$0].id }) {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { offset, item in
                 DropdownRow(symbol: item.symbol, brand: item.brand, title: item.title, detail: item.detail,
                             trailing: item.trailing, chosen: item.chosen, disabledReason: item.disabledReason,
-                            staysOpen: item.staysOpen, favorite: item.favorite, action: item.pick)
+                            staysOpen: item.staysOpen, favorite: item.favorite, highlighted: offset == current,
+                            action: item.pick)
             }
+        }
+        // ↑/↓ move the highlight over the rows that can be picked while the search keeps the keyboard; Return picks.
+        .onWindowKeyDown { event in
+            guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return false }
+            let enabled = rows.map { $0.disabledReason == nil }
+            switch event.keyCode {
+            case 125: highlight = ListHighlight.step(current, by: 1, in: enabled) ?? highlight
+            case 126: highlight = ListHighlight.step(current, by: -1, in: enabled) ?? highlight
+            case 36, 76: pick(rows, at: current)
+            default: return false
+            }
+            return true
         }
         DropdownDivider()
         DropdownRow(symbol: "gearshape", title: settingsTitle, action: openSettings)
+    }
+
+    private func pick(_ rows: [ModelPickerItem], at index: Int?) {
+        guard let index, rows.indices.contains(index), rows[index].disabledReason == nil else { return }
+        rows[index].pick()
+        if !rows[index].staysOpen { close() }
     }
 }
 
