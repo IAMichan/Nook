@@ -739,7 +739,7 @@ struct NotYetBuiltIn {
     static var all: [NotYetBuiltIn] {
         [
             NotYetBuiltIn(name: "Gmail · Outlook · Exchange", how: tr("notbuilt.mail"), domains: ["mail.google.com", "outlook.com"]),
-            NotYetBuiltIn(name: "Google Calendar · Outlook Calendar", how: tr("notbuilt.calendar"), domains: ["calendar.google.com", "outlook.com"]),
+            NotYetBuiltIn(name: tr("notbuilt.calendar.name"), how: tr("notbuilt.calendar"), domains: ["calendar.google.com", "outlook.com"]),
             NotYetBuiltIn(name: "Google Drive · OneDrive · SharePoint · Dropbox", how: tr("notbuilt.drive"),
                           domains: ["drive.google.com", "onedrive.live.com", "sharepoint.com", "dropbox.com"]),
             // Linear and Jira are built in (they sign in under Services), and Discord links as a chat app.

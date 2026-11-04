@@ -16,7 +16,7 @@ with a lock and says why and what to change when tapped (`QuickActionBlock`), so
 disappears; the Agents tab's New session button does the same.
 
 In **Chats**, *Can answer* lists the chats Nook writes in for you; a chat you can only read says so in the list (*Read
-only*) and, at its end, how to link its app in Nook › Settings › Chats to answer it from the phone.
+only*) and, at its end, how to link its app in Nook › Settings › Chat apps to answer it from the phone.
 
 While a session Nook runs works, its composer offers **Steer now** (into the running turn, as the Mac's composer
 steers) or **After this turn** (in line); the choice is remembered (`CompanionRequest.steer`, `SessionDigest.canSteer`,

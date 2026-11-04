@@ -37,6 +37,7 @@ struct ConnectionsPage: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var route = ConnectionsRoute.shared
     @ObservedObject private var pageAction = SettingsPageAction.shared
+    @ObservedObject private var spotify = SpotifySignIn.shared
     @State private var query = ""
     @State private var sheet: Sheet?
     @State private var refreshTick = 0
@@ -54,7 +55,7 @@ struct ConnectionsPage: View {
         let services = Services(cloud: connectedCloud, remote: linkedRemote,
                                 gitLab: GitLabCredentials.hosts.filter { matches("GitLab " + $0) })
         let own = mcpStore.servers.filter { $0.serviceID == nil && matches($0.name) }
-        let nothingLinked = query.isEmpty && services.isEmpty && own.isEmpty
+        let nothingLinked = query.isEmpty && services.isEmpty && own.isEmpty && !spotify.isSignedIn
 
         // Modifiers go on one section: on the Group they would be copied to every section in it.
         top(chats, options)

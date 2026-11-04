@@ -606,7 +606,9 @@ struct AutocompleteSettingsSection: View {
     }
 
     private func rule(_ bundleID: String) -> Binding<CompletionAppRule> {
-        Binding(get: { store.prefs.app(bundleID) }, set: { store.prefs.apps[bundleID] = $0 })
+        // A rule back at the defaults is no rule: the Customized filter then no longer lists the app.
+        Binding(get: { store.prefs.app(bundleID) },
+                set: { store.prefs.apps[bundleID] = $0 == CompletionAppRule() ? nil : $0 })
     }
 
     @ViewBuilder private func appRule(_ bundleID: String) -> some View {

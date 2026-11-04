@@ -432,7 +432,8 @@ struct WorkspaceSettingsSection: View {
     @AppStorage(AgentCredits.settingKey) private var stripAgentCredits = false
     @State private var showScheduled = false
     /// Which defaults the "New session" section edits: "" for all projects, else a project folder (see `ProjectSettings`).
-    @State private var scope = ""
+    /// Kept by Settings, so it stays while you switch between the Sessions tabs (each tab is drawn anew).
+    @Binding var scope: String
 
     var body: some View {
         switch part {

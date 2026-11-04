@@ -151,10 +151,11 @@ enum ConnectionProblems {
             return Problem(id: source.id, title: source.title, detail: relink ? tr("settings2.service.relinkDetail") : message,
                            state: relink ? .warning : .error)
         }
-        let known = Set(problems.map(\.id))
-        for chat in ChatAppStates.all() where chat.linked && !known.contains(chat.id) {
+        // A chat app is listed on its own, also when a source of the same app (Mail, Messages) failed as well: each has
+        // its own page and its own fix.
+        for chat in ChatAppStates.all() where chat.linked {
             guard chat.status == .expired || chat.status == .unreachable else { continue }
-            problems.append(Problem(id: chat.id, title: chat.name, detail: chat.detail,
+            problems.append(Problem(id: "chat." + chat.id, title: chat.name, detail: chat.detail,
                                     state: chat.status == .expired ? .warning : .error, isChat: true))
         }
         return problems

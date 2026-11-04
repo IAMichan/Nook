@@ -189,6 +189,8 @@ private struct AddMachineSheet: View {
     @State private var identityFile = ""
     /// You typed a name yourself: the address no longer fills it in.
     @State private var namedByHand = false
+    /// The address a picked suggestion filled in, which keeps the suggestion's own name until the address changes.
+    @State private var filledHost: String?
     /// Machines from ~/.ssh/config, ~/.ssh/known_hosts and your tailnet, to fill the form with one click.
     @State private var suggestions: [RemoteHostDiscovery.Suggestion] = []
 
@@ -224,7 +226,7 @@ private struct AddMachineSheet: View {
             TextField(tr("remote.host"), text: $host, prompt: Text("me@buildbox.local")).textFieldStyle(.roundedBorder)
                 .font(NookTheme.TextStyle.code)
                 .onChange(of: host) { _, value in
-                    guard !namedByHand else { return }
+                    guard !namedByHand, value != filledHost else { return }
                     name = RemoteMachines.suggestedName(for: value.trimmingCharacters(in: .whitespaces))
                 }
             TextField(tr("remote.name"), text: Binding(get: { name }, set: { name = $0; namedByHand = true }),
@@ -267,9 +269,10 @@ private struct AddMachineSheet: View {
     }
 
     private func fill(_ suggestion: RemoteHostDiscovery.Suggestion) {
+        filledHost = suggestion.host
         host = suggestion.host
         name = suggestion.name
-        namedByHand = true
+        namedByHand = false
         port = suggestion.port.map(String.init) ?? ""
     }
 

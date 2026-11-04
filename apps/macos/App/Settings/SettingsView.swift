@@ -126,6 +126,8 @@ struct SettingsView: View {
     @StateObject var keyCatcher = ClipboardKeyCatcher()
     @ObservedObject var doubleTap = DoubleTap.shared
     @ObservedObject var workspace = WorkspaceSettings.shared
+    /// Which defaults Sessions edits ("" for all projects, else a project folder), across its tabs.
+    @State var sessionScope = ""
     /// What is typed above the sources under Privacy › Only on this Mac.
     @State var sourceQuery = ""
 
@@ -218,9 +220,9 @@ struct SettingsView: View {
         case .connections: ConnectionsPage(part: .services)
         case .iphone: CompanionSettingsRows()
         case .agents: agentsSection
-        case .sessions: WorkspaceSettingsSection(part: .sessions(tab))
+        case .sessions: WorkspaceSettingsSection(part: .sessions(tab), scope: $sessionScope)
         case .machines: RemoteMachinesSection()
-        case .automation: WorkspaceSettingsSection(part: .automation)
+        case .automation: WorkspaceSettingsSection(part: .automation, scope: $sessionScope)
         case .pullRequests: WatchedPullRequestsSection()
         case .usage: usageSettingsSection
         case .privacy: privacySection(tab: tab)

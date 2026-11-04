@@ -124,7 +124,7 @@ Sent mailbox, each message as its subject in bold over the start of its own text
 `MailChatData.text`). With more than one account each chat is named by its account, as WhatsApp's are. Newsletters and
 notifications (`MailChatData.isAutomated`) are the app's channels and stay quiet by default (`ChatNoticeRules`).
 
-Nook reads Mail only after you linked it, in Settings › Chats › Mail or from Mail's empty list in the Chats tab (the
+Nook reads Mail only after you linked it, in Settings › Chat apps › Mail or from Mail's empty list in the Chats tab (the
 first read asks for Automation), and only while Mail is open, as the Mail connector does: it never starts Mail in the
 background on its own. Linking it, or "Read Mail now" while Mail is closed, starts Mail out of sight once, so the first
 chats show at once. A read in which not one account answered says why instead of showing an empty list. An answer goes out through Mail
@@ -164,12 +164,12 @@ Mac or its app, and the chat is online where its app needs that to say who types
 where a chat came from.
 
 Which chats reach you is the same for every app (`ChatNoticeRules`, kept by `ChatNoticeRulesStore`, chosen in each app's
-sheet in Settings › Chats with `ChatAppNoticeRows`, and on a chat's card with Quiet and Hide): a kind of chat can stay
+sheet in Settings › Chat apps with `ChatAppNoticeRows`, and on a chat's card with Quiet and Hide): a kind of chat can stay
 quiet (groups, unless a message mentions you; WhatsApp's status updates and channels too), each chat can be automatic,
 always or never, and a hidden chat never shows, counts or reaches you until you show it again. The first launch took over
 what Settings › WhatsApp kept, for every linked account. WhatsApp's link sorts its gateway's messages by the same rules.
 
-In Settings › Chats every linked account is a `ChatLinkedAccountRow`: one rule (`ChatAccountHealth`) says whether it
+In Settings › Chat apps every linked account is a `ChatLinkedAccountRow`: one rule (`ChatAccountHealth`) says whether it
 reads, is off in Nook, fails for a passing reason, or is signed out (`ChatCaptureService.bridgeSignedOut`, per account
 for Teams), and only the last offers "Sign in again". WhatsApp's accounts keep their own list (`WhatsAppAccountList`):
 a linked phone's state is the gateway's, not a read's.
