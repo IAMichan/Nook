@@ -669,10 +669,16 @@ enum PullRequestDetailParser {
         return min(limit, max(1, (count + 99) / 100))
     }
 
-    /// The body of `PUT /repos/{repo}/pulls/{number}/merge`. With `sha`, GitHub only merges that exact head.
-    static func mergeBody(method: PullRequestMergeMethod, sha: String) -> [String: Any] {
+    /// The body of `PUT /repos/{repo}/pulls/{number}/merge`. With `sha`, GitHub only merges that exact head. With
+    /// `message`, the commit's title and/or message instead of GitHub's own (agent credits left out, `AgentCredits`).
+    static func mergeBody(method: PullRequestMergeMethod, sha: String, message: PullRequestMergeMessage.Override? = nil) -> [String: Any] {
         var body: [String: Any] = ["merge_method": method.rawValue]
         if !sha.isEmpty { body["sha"] = sha }
+        // A rebase replays the commits as they are: GitHub takes no message for it.
+        if method != .rebase, let message {
+            if let title = message.title { body["commit_title"] = title }
+            if let text = message.message { body["commit_message"] = text }
+        }
         return body
     }
 

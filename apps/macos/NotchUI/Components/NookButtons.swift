@@ -260,16 +260,19 @@ struct ToolbarIconButton: View {
     var height: CGFloat = 24
     var width: CGFloat = 24
     var enabled: Bool = true
+    /// A toggle that is on (a diff's display option): lit and on a quiet fill, also at rest.
+    var selected: Bool = false
     let action: () -> Void
     @State private var hovering = false
 
     init(_ symbol: String, _ label: String, height: CGFloat = 24, width: CGFloat = 24, enabled: Bool = true,
-         _ action: @escaping () -> Void) {
+         selected: Bool = false, _ action: @escaping () -> Void) {
         self.symbol = symbol
         self.label = label
         self.height = height
         self.width = width
         self.enabled = enabled
+        self.selected = selected
         self.action = action
     }
 
@@ -278,10 +281,10 @@ struct ToolbarIconButton: View {
             Image(systemName: symbol)
                 .font(NookTheme.font(11, .medium))
                 .foregroundStyle(!enabled ? NookTheme.textTertiary.opacity(0.5)
-                                 : (hovering ? NookTheme.paper : NookTheme.textSecondary))
+                                 : (hovering || selected ? NookTheme.paper : NookTheme.textSecondary))
                 .frame(width: width, height: height)
                 .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                    .fill(hovering && enabled ? NookTheme.smoke : Color.clear))
+                    .fill(hovering && enabled ? NookTheme.smoke : (selected ? NookTheme.rowSelected : Color.clear)))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -290,6 +293,7 @@ struct ToolbarIconButton: View {
         .animation(NookTheme.hover, value: hovering)
         .help(label)
         .accessibilityLabel(label)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

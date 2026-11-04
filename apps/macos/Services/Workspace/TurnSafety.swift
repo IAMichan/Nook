@@ -201,7 +201,9 @@ enum LiveRights {
         guard mode != .plan, tool != "AskUserQuestion", tool != "ExitPlanMode" else { return false }
         switch permission {
         case .bypass: return true
-        case .acceptEdits: return claudeEditTools.contains(tool)
+        // "Auto": Claude Code's reviewer already let routine work through; what still reaches Nook is what it found
+        // risky, so only edits are answered without you, as under "Allow edits".
+        case .acceptEdits, .auto: return claudeEditTools.contains(tool)
         case .ask: return false
         }
     }

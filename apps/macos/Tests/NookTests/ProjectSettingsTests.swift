@@ -27,6 +27,21 @@ final class ProjectSettingsTests: XCTestCase {
         XCTAssertEqual(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/other"), global)
     }
 
+    func testTitleInstructionsComeFromTheProjectOrAllProjects() {
+        var withRules = global
+        withRules.titleInstructions = "English titles"
+        var overrides = ProjectOverrides()
+        XCTAssertEqual(ProjectSettings.resolve(global: withRules, overrides: overrides, folder: "/repo").titleInstructions,
+                       "English titles", "inherited from all projects")
+        overrides.set(.titleInstructions, .string("Start with the ticket number"), for: "/repo")
+        XCTAssertEqual(ProjectSettings.resolve(global: withRules, overrides: overrides, folder: "/repo/sub").titleInstructions,
+                       "Start with the ticket number")
+        overrides.set(.titleInstructions, .string(""), for: "/repo")
+        XCTAssertEqual(ProjectSettings.resolve(global: withRules, overrides: overrides, folder: "/repo").titleInstructions, "",
+                       "a project can switch the global rules off with an empty text")
+        XCTAssertEqual(global.titleInstructions, "", "none by default")
+    }
+
     func testSubfoldersAndTrailingSlashesBelongToTheProject() {
         var overrides = ProjectOverrides()
         overrides.set(.permission, .string("bypass"), for: "/work/app/")

@@ -151,7 +151,8 @@ final class CompanionNotifier: ObservableObject {
     private func notify(_ event: PushEvent, turn: Int = 0) {
         let store = CompanionStore.shared
         guard store.enabled, Self.canSendAlerts else { return }
-        let targets = store.devices.filter { $0.pushToken != nil }
+        // A phone connected live with the app in front already shows it (`ForegroundPolicy`).
+        let targets = store.devices.filter { $0.pushToken != nil && !CompanionServer.shared.phoneInFront($0.id) }
         guard !targets.isEmpty else { return }
         guard PushPolicy.skipReason(event, settings: store.push, away: Self.userIsAway(), now: Date()) == nil else { return }
         guard ledger.admit(event, turn: turn) else { return }
@@ -189,20 +190,22 @@ final class CompanionNotifier: ObservableObject {
     private func deliver(_ event: PushEvent, turn: Int, to devices: [PairedDevice], test: Bool) {
         let words = text(event, test: test)
         let count = badge()
-        let payload = APNsPayload.make(event, title: words.title, body: words.body, badge: count)
         let collapse = APNsPayload.collapseID(event, turn: turn)
         // Through the relay the text is sealed for each phone; Apple and the relay see only "Nook needs you".
         let relay = RelayPushClient.shared.active ? RelayPushClient.shared : nil
-        let sealed = RelayPushContent(title: words.title, body: words.body, category: PushPolicy.category(event), thread: event.session,
-                                      session: event.session, item: event.item, badge: count)
         Task {
             var summary: [String] = []
             for device in devices {
                 guard let token = device.pushToken else { continue }
+                // Each phone is told which of its pairings this is (`mac`), so its buttons reach this Mac from anywhere.
                 let result: APNsClient.Result
                 if let relay {
+                    let sealed = RelayPushContent(title: words.title, body: words.body, category: PushPolicy.category(event),
+                                                  thread: event.session, session: event.session, item: event.item, badge: count,
+                                                  mac: device.id)
                     result = await relay.send(sealed, to: device, collapseKey: collapse, urgent: PushPolicy.isUrgent(event.kind))
                 } else {
+                    let payload = APNsPayload.make(event, title: words.title, body: words.body, badge: count, mac: device.id)
                     result = await APNsClient.shared.send(payload: payload, to: token, production: device.pushProduction ?? true,
                                                           collapseID: collapse)
                 }

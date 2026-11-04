@@ -118,6 +118,11 @@ final class WorkspaceSettings: ObservableObject {
     @Published var autoTitles: Bool {
         didSet { defaults.set(autoTitles, forKey: "ws.autoTitles") }
     }
+    /// Your own rules for written session titles ("start with the ticket number"), added to the title prompt. A project can
+    /// set its own (`ProjectSettingKey.titleInstructions`).
+    @Published var titleInstructions: String {
+        didSet { defaults.set(titleInstructions, forKey: "ws.titleInstructions") }
+    }
     /// A session stopped by a usage limit goes on by itself once the limit resets.
     @Published var autoResumeLimited: Bool {
         didSet { defaults.set(autoResumeLimited, forKey: "ws.autoResumeLimited") }
@@ -185,6 +190,7 @@ final class WorkspaceSettings: ObservableObject {
         codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true
         providerTrafficLog = defaults.bool(forKey: ProviderTrafficLog.enabledKey)
         autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
+        titleInstructions = defaults.string(forKey: "ws.titleInstructions") ?? ""
         commitStyle = CommitStyle(rawValue: defaults.string(forKey: CommitStyle.defaultsKey) ?? "") ?? .standard
         commitInstructions = defaults.string(forKey: CommitStyle.instructionsKey) ?? ""
         autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? false
@@ -298,7 +304,8 @@ final class WorkspaceSettings: ObservableObject {
     /// The global defaults, as `ProjectSettings` reads them.
     var globalDefaults: SessionDefaults {
         SessionDefaults(provider: defaultProvider, models: defaultModels, permission: defaultPermission,
-                        isolation: defaultIsolation, branchPrefix: WorktreeNaming.normalizedBranchPrefix(branchPrefix))
+                        isolation: defaultIsolation, branchPrefix: WorktreeNaming.normalizedBranchPrefix(branchPrefix),
+                        titleInstructions: titleInstructions)
     }
 
     /// What a new session in this folder starts with: the folder's own overrides, the global values for the rest.

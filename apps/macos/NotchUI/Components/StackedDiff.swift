@@ -24,18 +24,55 @@ struct StackedDiffFile: Identifiable, Equatable {
     }
 }
 
-/// The toolbar's right end over a `StackedDiffList`: the total lines, fold or unfold every file, the tree of files.
+/// How every stacked diff is shown, kept across launches: set in `StackedDiffToolbar`, read by `StackedDiffList`.
+enum DiffDisplayKeys {
+    static let wrap = "nook.diff.wrapLines"
+    static let split = "nook.diff.split"
+    static let ignoreWhitespace = "nook.diff.ignoreWhitespace"
+    static let hideTests = "nook.diff.hideTests"
+}
+
+/// What a `DiffText` inside a `StackedDiffList` draws besides the diff: wrapped or scrolled lines, one column or two, and
+/// the words a find looks for. Handed down through the environment, so every place that draws a diff follows it.
+struct DiffDisplay: Equatable {
+    var wrap = true
+    var split = false
+    /// The words of an open find (trimmed); empty when there is none.
+    var query = ""
+    /// The selected match, drawn stronger than the others.
+    var current: DiffFind.Match?
+}
+
+extension EnvironmentValues {
+    @Entry var diffDisplay = DiffDisplay()
+}
+
+/// The toolbar's right end over a `StackedDiffList`: the total lines, how the diff is shown (wrap, side by side, without
+/// whitespace changes, without tests), fold or unfold every file, the tree of files.
 struct StackedDiffToolbar: View {
     let files: [StackedDiffFile]
     @Binding var expanded: Set<String>
     @Binding var showsTree: Bool
+    @AppStorage(DiffDisplayKeys.wrap) private var wrap = true
+    @AppStorage(DiffDisplayKeys.split) private var split = false
+    @AppStorage(DiffDisplayKeys.ignoreWhitespace) private var ignoreWhitespace = false
+    @AppStorage(DiffDisplayKeys.hideTests) private var hideTests = false
 
     var body: some View {
+        let files = hideTests ? files.filter { !DiffFileFilter.isTest($0.path) } : files
         let allOpen = !files.isEmpty && files.allSatisfy { expanded.contains($0.id) }
         HStack(spacing: NookTheme.Spacing.xxs) {
             EditLinesLabel(lines: EditLines(added: files.reduce(0) { $0 + ($1.additions ?? 0) },
                                             removed: files.reduce(0) { $0 + ($1.deletions ?? 0) }), size: 11)
                 .padding(.trailing, NookTheme.Spacing.xs)
+            ToolbarIconButton("text.word.spacing", tr(ignoreWhitespace ? "agents.diff.showWhitespace" : "agents.diff.hideWhitespace"),
+                              selected: ignoreWhitespace) { ignoreWhitespace.toggle() }
+            ToolbarIconButton("testtube.2", tr(hideTests ? "agents.diff.showTests" : "agents.diff.hideTests"),
+                              selected: hideTests) { hideTests.toggle() }
+            ToolbarIconButton("arrow.turn.down.left", tr(wrap ? "agents.diff.noWrap" : "agents.diff.wrap"),
+                              selected: wrap) { wrap.toggle() }
+            ToolbarIconButton(split ? "rectangle.split.2x1" : "rectangle", tr(split ? "agents.diff.unified" : "agents.diff.split"),
+                              selected: split) { split.toggle() }
             ToolbarIconButton(allOpen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
                               tr(allOpen ? "agents.diff.collapseAll" : "agents.diff.expandAll"), enabled: !files.isEmpty) {
                 // Not animated: fading every diff in at once laid all of them out on each frame.
@@ -51,8 +88,10 @@ struct StackedDiffToolbar: View {
 
 /// Every file of a change in one scroll, each under a sticky 32 pt header (chevron in the file's color, its path, a
 /// copy button, its lines); a folded file is only its header. `diff` reads a file's diff when it is first unfolded,
-/// `content` draws it (by default a `DiffText`). With `showsTree` a tree of the files sits on the right; a click there
-/// unfolds the file and scrolls to it.
+/// with the toolbar's `DiffReadOptions`; `content` draws it (by default a `DiffText`). With `showsTree` a tree of the
+/// files sits on the right; a click there unfolds the file and scrolls to it. The toolbar's choices (`DiffDisplayKeys`)
+/// apply here: test files left out, lines wrapped or not, one column or two. ⌘F (`chat.find`) while the pointer is over
+/// the list finds words in every file, folded ones too, and unfolds and scrolls to each match in turn.
 struct StackedDiffList<Content: View>: View {
     let files: [StackedDiffFile]
     /// Tells this change apart from another (a folder, a turn) in the cache of diffs already read.
@@ -61,23 +100,40 @@ struct StackedDiffList<Content: View>: View {
     var showsTree = false
     /// A file to unfold and scroll to (a file picked elsewhere, such as in a turn's changed-files card).
     var focus: String? = nil
-    let diff: (StackedDiffFile) async throws -> String
+    let diff: (StackedDiffFile, DiffReadOptions) async throws -> String
     @ViewBuilder var content: (StackedDiffFile, String) -> Content
     @State private var reveal: String?
     @State private var width: Double = 0
+    @AppStorage(DiffDisplayKeys.wrap) private var wrap = true
+    @AppStorage(DiffDisplayKeys.split) private var split = false
+    @AppStorage(DiffDisplayKeys.ignoreWhitespace) private var ignoreWhitespace = false
+    @AppStorage(DiffDisplayKeys.hideTests) private var hideTests = false
+    /// The pointer is over the list: ⌘F finds in the diff instead of the conversation beside it.
+    @State private var hovering = false
+    @State private var finding = false
+    @State private var query = ""
+    @State private var found = DiffFindState()
 
     /// The 200 pt tree leaves the diffs too little room in a narrow side panel: there it waits until there is room.
     private var treeFits: Bool { width == 0 || width >= 440 }
+    private var options: DiffReadOptions { DiffReadOptions(ignoreWhitespace: ignoreWhitespace) }
+    private var shown: [StackedDiffFile] { hideTests ? files.filter { !DiffFileFilter.isTest($0.path) } : files }
+    private var display: DiffDisplay {
+        DiffDisplay(wrap: wrap, split: split, query: finding ? DiffFindState.trimmed(query) : "",
+                    current: finding ? found.currentMatch : nil)
+    }
 
     var body: some View {
+        let shown = shown
+        let hidden = files.count - shown.count
         HStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                        ForEach(files) { file in
+                        ForEach(shown) { file in
                             Section {
                                 if expanded.contains(file.id) {
-                                    StackedDiffBody(file: file, scope: scope, diff: diff, content: content)
+                                    StackedDiffBody(file: file, scope: scope, options: options, diff: diff, content: content)
                                         .padding(.bottom, NookTheme.Spacing.sm)
                                 }
                             } header: {
@@ -85,6 +141,23 @@ struct StackedDiffList<Content: View>: View {
                             }
                             .id(file.id)
                         }
+                        if hidden > 0 {
+                            Text(tr("agents.diff.testsHidden", hidden))
+                                .font(NookTheme.TextStyle.detail)
+                                .foregroundStyle(NookTheme.textTertiary)
+                                .padding(NookTheme.Spacing.md)
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+                .environment(\.diffDisplay, display)
+                .overlay(alignment: .top) {
+                    if finding {
+                        TimelineFindBar(query: $query, state: found.state, count: found.matches.count, current: found.current,
+                                        previous: { step(forward: false) }, next: { step(forward: true) }, close: closeFind)
+                            .padding(.horizontal, NookTheme.Spacing.md)
+                            .padding(.top, NookTheme.Spacing.sm + 32)
+                            .transition(.opacity)
                     }
                 }
                 .onAppear { if let focus { reveal = focus } }
@@ -95,12 +168,16 @@ struct StackedDiffList<Content: View>: View {
                     withAnimation(NookTheme.scroll) { proxy.scrollTo(path, anchor: .top) }
                     reveal = nil
                 }
+                .onChange(of: found.currentMatch) { _, match in
+                    guard let match else { return }
+                    show(match, proxy: proxy)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             if showsTree && treeFits {
                 NookDivider(vertical: true)
                 // Only when the files change: the tree is built again on each of its own draws.
-                StackedDiffTree(files: files) { reveal = $0 }
+                StackedDiffTree(files: shown) { reveal = $0 }
                     .equatable()
                     .frame(width: 200)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -108,6 +185,23 @@ struct StackedDiffList<Content: View>: View {
         }
         .background(WS.code)
         .onLayoutWidthChange { width = $0 }
+        .onHover { inside in if hovering != inside { hovering = inside } }
+        // Only while the pointer is over the diff (or its find is open): elsewhere ⌘F stays the conversation's.
+        .keyCommand("chat.find", enabled: hovering || finding, priority: 1) { openFind() }
+        // Typing, other options or other files: look again, a moment after the last key.
+        .task(id: finding ? FindKey(query: DiffFindState.trimmed(query), files: shown.map(\.id), options: options, scope: scope) : nil) {
+            guard finding else { return }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard !Task.isCancelled else { return }
+            await search(in: shown)
+        }
+    }
+
+    private struct FindKey: Equatable {
+        var query: String
+        var files: [String]
+        var options: DiffReadOptions
+        var scope: String
     }
 
     /// The diff is simply there (or gone); only the header's chevron turns. A whole diff fading in was laid out on every
@@ -115,11 +209,73 @@ struct StackedDiffList<Content: View>: View {
     private func toggle(_ file: StackedDiffFile) {
         if expanded.contains(file.id) { expanded.remove(file.id) } else { expanded.insert(file.id) }
     }
+
+    private func openFind() {
+        if !finding { withAnimation(NookTheme.reveal) { finding = true } }
+    }
+
+    private func closeFind() {
+        withAnimation(NookTheme.reveal) { finding = false }
+        found = DiffFindState()
+    }
+
+    private func step(forward: Bool) {
+        found.step(forward: forward)
+    }
+
+    /// Reads every shown file's diff (the ones read before come from the cache) and finds the words in them.
+    private func search(in files: [StackedDiffFile]) async {
+        let words = DiffFindState.trimmed(query)
+        guard !words.isEmpty else {
+            found = DiffFindState()
+            return
+        }
+        if found.state != .results { found.state = .searching }
+        var read: [(path: String, rows: [UnifiedDiff.Row])] = []
+        for file in files {
+            guard !Task.isCancelled else { return }
+            let key = options.cacheKey(scope: scope, path: file.path)
+            let text: String
+            if let cached = DiffCache.diff(key) {
+                text = cached
+            } else {
+                guard let fresh = try? await diff(file, options) else { continue }
+                DiffCache.store(fresh, key)
+                text = fresh
+            }
+            read.append((file.path, UnifiedDiff.rows(text)))
+        }
+        guard !Task.isCancelled else { return }
+        let matches = await Task.detached(priority: .userInitiated) { DiffFind.matches(words, in: read) }.value
+        guard !Task.isCancelled else { return }
+        found.update(matches)
+    }
+
+    /// Unfolds the match's file and scrolls to its line: first to the file, so its lines are built, then to the line.
+    private func show(_ match: DiffFind.Match, proxy: ScrollViewProxy) {
+        expanded.insert(match.path)
+        proxy.scrollTo(match.path, anchor: .top)
+        let target = DiffFind.rowID(path: match.path, row: split ? splitAnchor(match) : match.row)
+        Task { @MainActor in
+            for delay in [60, 220] as [UInt64] {
+                try? await Task.sleep(nanoseconds: delay * 1_000_000)
+                withAnimation(NookTheme.scroll) { proxy.scrollTo(target, anchor: .center) }
+            }
+        }
+    }
+
+    /// Side by side, a line holds two rows and carries the id of the first of them.
+    private func splitAnchor(_ match: DiffFind.Match) -> Int {
+        let key = options.cacheKey(scope: scope, path: match.path)
+        guard let text = DiffCache.diff(key) else { return match.row }
+        let line = SplitDiff.lines(UnifiedDiff.rows(text)).first { $0.left == match.row || $0.right == match.row }
+        return line.flatMap { $0.left ?? $0.right ?? $0.full } ?? match.row
+    }
 }
 
 extension StackedDiffList where Content == EquatableView<DiffText> {
     init(files: [StackedDiffFile], scope: String, expanded: Binding<Set<String>>, showsTree: Bool = false,
-         focus: String? = nil, diff: @escaping (StackedDiffFile) async throws -> String) {
+         focus: String? = nil, diff: @escaping (StackedDiffFile, DiffReadOptions) async throws -> String) {
         self.init(files: files, scope: scope, expanded: expanded, showsTree: showsTree, focus: focus, diff: diff) { file, text in
             // The panel beside a streaming session redraws many times a second; the diff only when it changed.
             DiffText(text: text, stacked: true, path: file.path).equatable()
@@ -212,12 +368,13 @@ private struct StackedDiffHeader: View {
 private struct StackedDiffBody<Content: View>: View {
     let file: StackedDiffFile
     let scope: String
-    let diff: (StackedDiffFile) async throws -> String
+    let options: DiffReadOptions
+    let diff: (StackedDiffFile, DiffReadOptions) async throws -> String
     let content: (StackedDiffFile, String) -> Content
     @State private var text: String?
     @State private var error: String?
 
-    private var key: String { scope + "|" + file.path }
+    private var key: String { options.cacheKey(scope: scope, path: file.path) }
 
     var body: some View {
         Group {
@@ -248,7 +405,7 @@ private struct StackedDiffBody<Content: View>: View {
                 if StackedDiffReads.shared.isFresh(key) { return }
             }
             do {
-                let fresh = try await diff(file)
+                let fresh = try await diff(file, options)
                 DiffCache.store(fresh, key)
                 StackedDiffReads.shared.mark(key)
                 text = fresh

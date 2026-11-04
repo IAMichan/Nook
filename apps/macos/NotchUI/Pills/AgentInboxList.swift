@@ -37,6 +37,13 @@ struct AgentInboxList: View {
     @State private var clickedID: String?
     /// The past sessions by id, made again only when the history changes (`pastSession`).
     @State private var pastIndex = PastSessionIndex()
+    /// ⌘ held for a moment: the first nine rows show the ⌘-number that opens them.
+    @StateObject private var commandHold = CommandHoldMonitor()
+    /// The list has the keyboard (F6): ↑/↓ move `keyRow` without opening it, Return opens it, ←/→ fold and unfold.
+    @FocusState private var listFocused: Bool
+    @State private var keyRow: String?
+    /// The row being renamed from its menu, by its id.
+    @State private var renaming: String?
 
     private static let wakeFormat: DateFormatter = {
         let format = DateFormatter()
@@ -203,6 +210,15 @@ struct AgentInboxList: View {
                     guard id != clickedID, shown.contains(id) else { return }
                     DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .center) } }
                 }
+                // With the keyboard (F6): ↑/↓ move, Return opens, ←/→ fold and unfold the row's project or shelf.
+                .focusable(interactions: .activate)
+                .focused($listFocused)
+                .focusEffectDisabled()
+                .onKeyPress(.upArrow) { moveKeyRow(-1, shown: shown, proxy: proxy) }
+                .onKeyPress(.downArrow) { moveKeyRow(1, shown: shown, proxy: proxy) }
+                .onKeyPress(.return) { openKeyRow(shown: shown) }
+                .onKeyPress(.leftArrow) { foldKeyRow(true, groups: groups, sections: sections) }
+                .onKeyPress(.rightArrow) { foldKeyRow(false, groups: groups, sections: sections) }
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
             }
@@ -219,6 +235,17 @@ struct AgentInboxList: View {
             shownOrder = current
             selection.keep(only: current)
         }
+        // F6 lands in the list; ⌘1–⌘9 open its first nine rows, F2 renames the row the keyboard is on.
+        .focusArea(.sidebar) { listFocused = true; return true }
+        .keyCommands(jumpKeys(shown))
+        .keyCommands(["session.rename": { renameKeyRow() }], context: ["listFocus": listFocused], enabled: listFocused,
+                     priority: 1)
+        .onChange(of: listFocused) { _, focused in
+            if focused, keyRow.map({ !shown.contains($0) }) ?? true { keyRow = shown.contains(current) ? current : shown.first }
+        }
+        // Only while the list is on screen: holding ⌘ shows the ⌘-numbers.
+        .onAppear { commandHold.start() }
+        .onDisappear { commandHold.stop() }
         .onAppear {
             shownOrder = shown
             pullRequests.follow(workspace: app.workspace, folders: pullRequestFolders, now: now)
@@ -517,7 +544,9 @@ struct AgentInboxList: View {
                     onSettle: { withAnimation(NookTheme.reveal) { entry.row.settled ? store.unsettle([item]) : store.settle([item]) } },
                     onSnooze: isRun ? { choice in withAnimation(NookTheme.reveal) { snooze(item, choice) } } : nil,
                     onWake: isRun && snoozeActive ? { withAnimation(NookTheme.reveal) { wake(item) } } : nil),
-                pullRequests: sessionPullRequests(item)
+                pullRequests: sessionPullRequests(item),
+                jumpHint: jumpNumber(item.id),
+                keyFocused: listFocused && keyRow == item.id
             ) {
                 click(item, entry, shown: shownOrder)
             }
@@ -530,7 +559,16 @@ struct AgentInboxList: View {
             .selectable(active: selection.isActive, selected: selection.contains(item.id)) {
                 withAnimation(NookTheme.reveal) { selection.toggle(item.id) }
             }
-            .contextMenu { contextMenu(item, entry) }
+            .contextMenu { contextMenu(item, entry, in: section) }
+            // "Rename": a field over the row's title, Return keeps the name and Escape leaves it.
+            .overlay {
+                if renaming == item.id, let id = runID(item) {
+                    InboxRenameField(name: item.title) { name in
+                        if let name { app.workspace.rename(id, to: name) }
+                        renaming = nil
+                    }
+                }
+            }
             .onDrag {
                 dragging = item.id
                 return NSItemProvider(object: item.id as NSString)
@@ -573,9 +611,30 @@ struct AgentInboxList: View {
     }
 
     @ViewBuilder
-    private func contextMenu(_ item: AgentListItem, _ entry: InboxEntry) -> some View {
+    private func contextMenu(_ item: AgentListItem, _ entry: InboxEntry, in section: InboxSection) -> some View {
+        if runID(item) != nil {
+            Button(tr("agents.run.rename")) { renaming = item.id }
+        }
         Button(entry.row.pinned ? tr("inbox.unpin") : tr("inbox.pin")) {
             withAnimation(NookTheme.reveal) { entry.row.pinned ? store.unpin(item.id) : pinAndUnsettle(item, entry) }
+        }
+        // Pinned sessions keep the order you give them: one step up or down, as dragging does.
+        if section.kind == .pinned, let index = section.rows.firstIndex(where: { $0.id == entry.id }) {
+            Button(tr("inbox.moveUp")) {
+                withAnimation(NookTheme.reveal) { store.reorder(item.id, toIndex: index - 1, within: section) }
+            }
+            .disabled(index == 0)
+            Button(tr("inbox.moveDown")) {
+                withAnimation(NookTheme.reveal) { store.reorder(item.id, toIndex: index + 1, within: section) }
+            }
+            .disabled(index >= section.rows.count - 1)
+        }
+        // With auto-settle on, one session can stay out of it (`AutoSettlePolicy.Settings.perThreadOptOut`).
+        if store.autoSettle.enabled, !entry.row.settled {
+            let optedOut = store.autoSettle.perThreadOptOut.contains(item.id)
+            Button(tr(optedOut ? "inbox.autoSettle.allow" : "inbox.autoSettle.keep")) {
+                if optedOut { store.autoSettle.perThreadOptOut.remove(item.id) } else { store.autoSettle.perThreadOptOut.insert(item.id) }
+            }
         }
         // A busy session can be settled too: a turn that hangs should not stay in the list forever.
         if item.id.hasPrefix("past:") && entry.row.settled {
@@ -601,6 +660,8 @@ struct AgentInboxList: View {
                 if let forked = app.workspace.fork(id) { select("run:" + forked.uuidString) }
             }
             .disabled(!app.workspace.canTransfer(id))
+            Button(tr("agents.restartAgent")) { app.workspace.restartAgent(id) }
+                .disabled(!app.workspace.canRestartAgent(id))
         }
         Button(tr("inbox.markUnread")) { visits.markUnread(item.id) }
         Divider()
@@ -758,7 +819,106 @@ struct AgentInboxList: View {
     }
 }
 
+// MARK: Keyboard
+
+extension AgentInboxList {
+    /// The ⌘-number of one of the first nine rows while ⌘ is held; nil otherwise.
+    private func jumpNumber(_ id: String) -> Int? {
+        guard commandHold.held, let index = shownOrder.prefix(SessionJump.count).firstIndex(of: id) else { return nil }
+        return index + 1
+    }
+
+    /// ⌘1–⌘9: the first nine rows as shown. Past the end the key goes on (to the main window's tabs).
+    private func jumpKeys(_ shown: [String]) -> [String: () -> Bool] {
+        var out: [String: () -> Bool] = [:]
+        for number in 1...SessionJump.count {
+            out[SessionJump.command(number)] = {
+                guard let id = SessionJump.target(number, in: shown) else { return false }
+                select(id)
+                return true
+            }
+        }
+        return out
+    }
+
+    /// ↑/↓ with the keyboard in the list: the next row up or down, kept in view, without opening it.
+    private func moveKeyRow(_ offset: Int, shown: [String], proxy: ScrollViewProxy) -> KeyPress.Result {
+        guard !shown.isEmpty else { return .ignored }
+        let start = keyRow.flatMap { shown.firstIndex(of: $0) } ?? shown.firstIndex(of: current)
+        let next = start.map { min(max($0 + offset, 0), shown.count - 1) } ?? (offset > 0 ? 0 : shown.count - 1)
+        keyRow = shown[next]
+        withAnimation(NookTheme.scroll) { proxy.scrollTo(shown[next]) }
+        return .handled
+    }
+
+    /// Return: opens the row the keyboard is on.
+    private func openKeyRow(shown: [String]) -> KeyPress.Result {
+        guard let keyRow, shown.contains(keyRow) else { return .ignored }
+        clickedID = keyRow
+        select(keyRow)
+        return .handled
+    }
+
+    /// ← folds the project (or shelf) of the row the keyboard is on, → unfolds it.
+    private func foldKeyRow(_ fold: Bool, groups: [InboxProjectGroup], sections: [InboxSection]) -> KeyPress.Result {
+        guard let keyRow else { return .ignored }
+        if store.groupByProject, let group = groups.first(where: { $0.rows.contains { $0.entry.id == keyRow } }) {
+            withAnimation(NookTheme.reveal) {
+                if fold { store.collapsedProjects.insert(group.project) } else { store.collapsedProjects.remove(group.project) }
+            }
+            return .handled
+        }
+        if let section = sections.first(where: { $0.rows.contains { $0.id == keyRow } }),
+           section.kind != .pinned, section.kind != .active {
+            withAnimation(NookTheme.reveal) {
+                if fold { collapsed.insert(section.kind) } else { collapsed.remove(section.kind) }
+            }
+            return .handled
+        }
+        return .ignored
+    }
+
+    /// F2 in the list: opens the row the keyboard is on and its name field. Only sessions Nook runs have a name of
+    /// Nook's to change; for the others the key goes on.
+    private func renameKeyRow() -> Bool {
+        guard listFocused, let keyRow, keyRow.hasPrefix("run:"),
+              let id = UUID(uuidString: String(keyRow.dropFirst(4))) else { return false }
+        if keyRow != current { select(keyRow) }
+        SessionRenameRequest.shared.request(id)
+        return true
+    }
+}
+
 /// A section or a row as a place to drop a dragged session.
+/// The field that renames a session in the list, over its row: it starts with the name selected, Return keeps the new
+/// name (`done` with it) and Escape or leaving the field keeps the old one (`done` with nil).
+private struct InboxRenameField: View {
+    let name: String
+    let done: (String?) -> Void
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField(tr("ws.title.placeholder"), text: $draft)
+            .textFieldStyle(.plain)
+            .font(NookTheme.TextStyle.body)
+            .foregroundStyle(NookTheme.paper)
+            .focused($focused)
+            .focusOnAppear($focused)
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).stroke(NookTheme.fieldStroke))
+            .onAppear { draft = name }
+            .onSubmit {
+                let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                done(trimmed.isEmpty || trimmed == name ? nil : trimmed)
+            }
+            .onExitCommand { done(nil) }
+            .onChange(of: focused) { _, now in if !now { done(nil) } }
+    }
+}
+
 private struct DropTarget: ViewModifier {
     let kind: InboxSection.Kind
     let section: InboxSection

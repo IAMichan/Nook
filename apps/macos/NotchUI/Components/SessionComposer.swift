@@ -198,6 +198,8 @@ struct SessionComposer<Controls: View>: View {
         .chatColumn()
         // A page the session's agent opened floats just above it (SessionBrowserCorner).
         .anchorPreference(key: SessionComposerBounds.self, value: .bounds) { $0 }
+        // F6 steps to the composer as a part of its own.
+        .focusArea(.composer)
     }
 
     private func assign(_ value: String) {

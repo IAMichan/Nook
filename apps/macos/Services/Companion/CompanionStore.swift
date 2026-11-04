@@ -153,11 +153,22 @@ final class CompanionStore: ObservableObject {
         save()
     }
 
+    /// Removes a phone. A phone connected live is told first (`CompanionServer.revoke`) and removed a moment later, so the
+    /// message leaves before its key and its relay room are gone.
     func remove(_ id: String) {
+        guard CompanionServer.shared.revoke(id) else { return forget(id) }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            forget(id)
+        }
+    }
+
+    func removeAll() { for device in devices { remove(device.id) } }
+
+    private func forget(_ id: String) {
         Keychain.write("", account: Self.account(id))
+        CompanionServer.shared.forgetRevoked(id)
         devices.removeAll { $0.id == id }
         save()
     }
-
-    func removeAll() { for device in devices { Keychain.write("", account: Self.account(device.id)) }; devices = []; save() }
 }
