@@ -856,6 +856,8 @@ struct SessionBrowserCorner: View {
     let hidden: Bool
     /// The room the card may move in, from its resting place: how far it can go left and up.
     var room: CGSize = CGSize(width: 10_000, height: 10_000)
+    /// How far it can go down from its resting place above the composer, over the composer to the chat's bottom edge.
+    var below: CGFloat = 0
     let expand: () -> Void
     @ObservedObject private var owner = SessionBrowserOwner.shared
     /// Where you dragged the card to, from its corner; it keeps that while the chat is open.
@@ -863,7 +865,7 @@ struct SessionBrowserCorner: View {
     @State private var dragStart: CGSize?
 
     private func clamped(_ size: CGSize) -> CGSize {
-        CGSize(width: min(0, max(-room.width, size.width)), height: min(0, max(-room.height, size.height)))
+        CGSize(width: min(0, max(-room.width, size.width)), height: min(below, max(-room.height, size.height)))
     }
 
     var body: some View {

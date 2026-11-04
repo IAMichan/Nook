@@ -1,30 +1,38 @@
 #!/usr/bin/env swift
 import AppKit
 
-// Generates App/AppIcon.icns for Nook (macOS app icon).
+// Generates the Nook app icon for every platform from one drawing:
+// - apps/macos/App/AppIcon.icns (macOS app icon)
+// - apps/ios/NookCompanion/Assets.xcassets/AppIcon.appiconset/AppIcon.png (iPhone companion)
 // Draws the Nook orb (soft white glowing circle with eyes) on a dark graphite squircle.
 
-func generateIcon(size: Int) -> NSImage {
-    let baseSize: CGFloat = 1024
-    let scale = CGFloat(size) / baseSize
-    let image = NSImage(size: NSSize(width: size, height: size))
-    image.lockFocus()
-    guard let ctx = NSGraphicsContext.current?.cgContext else { exit(1) }
-
-    ctx.scaleBy(x: scale, y: scale)
-
+/// Draws the icon on a 1024x1024 canvas. With `fullBleed` the squircle's contents fill the whole square and the
+/// shadow and stroke are left out: iOS masks the icon itself and does not accept transparency.
+func drawIcon(in ctx: CGContext, fullBleed: Bool) {
     // macOS icon grid: squircle 824x824 centered in 1024x1024 (100pt margin)
     let squircleRect = CGRect(x: 100, y: 100, width: 824, height: 824)
     let cornerRadius: CGFloat = 185
-    let squirclePath = CGPath(roundedRect: squircleRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+    let squirclePath = fullBleed
+        ? CGPath(rect: squircleRect, transform: nil)
+        : CGPath(roundedRect: squircleRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+
+    if fullBleed {
+        // Map the squircle onto the full canvas, so the orb keeps its size relative to the background.
+        let scale: CGFloat = 1024 / 824
+        ctx.translateBy(x: 512, y: 512)
+        ctx.scaleBy(x: scale, y: scale)
+        ctx.translateBy(x: -512, y: -512)
+    }
 
     // Drop shadow below the squircle
+    if !fullBleed {
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 24, color: CGColor(gray: 0, alpha: 0.22))
     ctx.addPath(squirclePath)
     ctx.setFillColor(CGColor(red: 0.09, green: 0.09, blue: 0.11, alpha: 1.0))
     ctx.fillPath()
     ctx.restoreGState()
+    }
 
     // Background gradient within the squircle (dark graphite)
     ctx.saveGState()
@@ -41,10 +49,12 @@ func generateIcon(size: Int) -> NSImage {
     }
 
     // Subtle inner stroke
-    ctx.setStrokeColor(CGColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.12))
-    ctx.setLineWidth(3.0)
-    ctx.addPath(squirclePath)
-    ctx.strokePath()
+    if !fullBleed {
+        ctx.setStrokeColor(CGColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.12))
+        ctx.setLineWidth(3.0)
+        ctx.addPath(squirclePath)
+        ctx.strokePath()
+    }
     ctx.restoreGState()
 
     // Nook Orb (soft white, NookTheme.iris)
@@ -90,16 +100,37 @@ func generateIcon(size: Int) -> NSImage {
     let rightPath = CGPath(roundedRect: rightEyeRect, cornerWidth: eyeCorner, cornerHeight: eyeCorner, transform: nil)
     ctx.addPath(rightPath)
     ctx.fillPath()
+}
 
+func generateIcon(size: Int) -> NSImage {
+    let image = NSImage(size: NSSize(width: size, height: size))
+    image.lockFocus()
+    guard let ctx = NSGraphicsContext.current?.cgContext else { exit(1) }
+    ctx.scaleBy(x: CGFloat(size) / 1024, y: CGFloat(size) / 1024)
+    drawIcon(in: ctx, fullBleed: false)
     image.unlockFocus()
     return image
+}
+
+/// The iOS icon: 1024x1024 pixels, opaque (App Store Connect rejects an icon with an alpha channel).
+func generateOpaqueIconPNG() -> Data {
+    guard let ctx = CGContext(data: nil, width: 1024, height: 1024, bitsPerComponent: 8, bytesPerRow: 0,
+                              space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { exit(1) }
+    drawIcon(in: ctx, fullBleed: true)
+    guard let cgImage = ctx.makeImage(),
+          let png = NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:]) else { exit(1) }
+    return png
 }
 
 let fileManager = FileManager.default
 let scriptURL = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
 let rootDir = scriptURL.deletingLastPathComponent().deletingLastPathComponent()
 let iconsetDir = rootDir.appendingPathComponent("AppIcon.iconset")
-let targetIcns = rootDir.appendingPathComponent("App/AppIcon.icns")
+let targetIcns = rootDir.appendingPathComponent("apps/macos/App/AppIcon.icns")
+let targetIOSIcon = rootDir.appendingPathComponent("apps/ios/NookCompanion/Assets.xcassets/AppIcon.appiconset/AppIcon.png")
+
+try generateOpaqueIconPNG().write(to: targetIOSIcon)
+print("Successfully generated: \(targetIOSIcon.path)")
 
 try? fileManager.removeItem(at: iconsetDir)
 try fileManager.createDirectory(at: iconsetDir, withIntermediateDirectories: true)
