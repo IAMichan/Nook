@@ -211,6 +211,8 @@ struct UsageLimitSection: Identifiable, Equatable {
     var kind: AgentKind
     var pool: LimitPool
     var details: [String: LimitAccountDetails]
+    /// The recent session windows (the 5 hours) of every account of the pool, newest first, with the chats in them.
+    var blocks: [UsageBlock] = []
     var id: String { kind.rawValue }
 }
 
@@ -219,11 +221,13 @@ extension UsageLimitSection {
     @MainActor
     static func make(_ app: AppModel, now: Date) -> (sections: [UsageLimitSection], notices: [String]) {
         let byKind = Dictionary(grouping: app.connectedProfiles, by: \.kind)
+        let prices = UsagePrices.load()
         var sections: [UsageLimitSection] = []
         var notices: [String] = []
         for kind in AgentKind.allCases {
             guard let profiles = byKind[kind] else { continue }
             var details: [String: LimitAccountDetails] = [:]
+            var blocks: [UsageBlock] = []
             let accounts = profiles.map { profile -> LimitPool.Account in
                 let account = app.history.profileAccounts[profile.id]
                 let plan = account.map(\.plan).flatMap { $0.isEmpty ? nil : $0 } ?? app.quota.codexPlan(for: profile)
@@ -234,10 +238,17 @@ extension UsageLimitSection {
                 if limits.isEmpty {
                     notices.append(tr("limits.notice", "\(kind.name) · \(AccountLabel.name(profile, app: app))", unavailableReason(profile, app: app)))
                 }
+                // The session window (the 5 hours): when it started, and which chats used it.
+                if let session = limits.first(where: { LimitPool.Kind(duration: $0.duration) == .session }), let duration = session.duration {
+                    let anchor = session.resetsAt.flatMap { $0 > now ? $0.addingTimeInterval(-duration) : nil }
+                    blocks += UsageBlocks.make(app.history.ledger, profile: profile.id, duration: duration, anchor: anchor, now: now,
+                                               prices: prices)
+                }
                 return LimitPool.Account(id: profile.id, name: AccountLabel.name(profile, app: app), limits: limits.map(\.poolLimit))
             }
             if let pool = LimitPool.make(accounts, now: now) {
-                sections.append(UsageLimitSection(kind: kind, pool: pool, details: details))
+                blocks.sort { $0.start > $1.start }
+                sections.append(UsageLimitSection(kind: kind, pool: pool, details: details, blocks: blocks))
             }
         }
         return (sections, notices)
@@ -468,7 +479,124 @@ private struct LimitPoolSectionView: View {
             ForEach(section.pool.windows) { window in
                 LimitWindowCard(window: window, section: section, now: now)
             }
+            if !section.blocks.isEmpty {
+                UsageBlockRows(blocks: section.blocks, names: section.pool.accounts.reduce(into: [:]) { $0[$1.id] = $1.name },
+                               now: now)
+            }
         }
+    }
+}
+
+/// The session windows of an agent's accounts, newest first: when each started and ran out, what it used and, opened,
+/// which chats used it, so a window that ran out early can be traced back to the chat behind it.
+private struct UsageBlockRows: View {
+    let blocks: [UsageBlock]
+    let names: [String: String]
+    let now: Date
+    @State private var expanded: Set<String> = []
+    @State private var all = false
+
+    var body: some View {
+        let shown = all ? blocks : Array(blocks.prefix(4))
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            Text(tr("limits.blocks"))
+                .font(NookTheme.TextStyle.detail.weight(.medium))
+                .foregroundStyle(NookTheme.textSecondary)
+            VStack(spacing: 0) {
+                ForEach(shown) { block in
+                    row(block)
+                }
+            }
+            .cardBackground(Color.clear, stroke: NookTheme.line2, radius: NookTheme.Radius.card, style: .continuous)
+            if blocks.count > 4 {
+                Button(all ? tr("usage.chats.fewer") : tr("usage.chats.more", blocks.count - 4)) {
+                    withAnimation(NookTheme.swap) { all.toggle() }
+                }
+                .buttonStyle(.plain)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
+            }
+            Text(tr("limits.blocks.footer"))
+                .font(NookTheme.TextStyle.caption)
+                .foregroundStyle(NookTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func row(_ block: UsageBlock) -> some View {
+        let open = expanded.contains(block.id)
+        return VStack(spacing: 0) {
+            Button {
+                withAnimation(NookTheme.swap) { if open { expanded.remove(block.id) } else { expanded.insert(block.id) } }
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
+                    Image(systemName: "chevron.right")
+                        .font(NookTheme.font(10, .semibold))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                        .frame(width: 12)
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                        HStack(spacing: NookTheme.Spacing.sm) {
+                            Text(tr("limits.block.started", AgentFormat.upcoming(block.start, now: now)))
+                                .font(NookTheme.TextStyle.body.weight(.medium))
+                                .foregroundStyle(NookTheme.paper)
+                            if block.active {
+                                Text(tr("limits.block.running"))
+                                    .font(NookTheme.TextStyle.caption.weight(.semibold))
+                                    .foregroundStyle(NookTheme.paper)
+                                    .padding(.horizontal, NookTheme.Spacing.sm)
+                                    .padding(.vertical, NookTheme.Spacing.xxs)
+                                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip / 2, style: .continuous)
+                                        .fill(Color.white.opacity(0.08)))
+                            }
+                        }
+                        Text(detail(block))
+                            .font(NookTheme.TextStyle.caption)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: NookTheme.Spacing.md)
+                    VStack(alignment: .trailing, spacing: NookTheme.Spacing.xxs) {
+                        Text(UsageFormat.usd(block.cost))
+                            .font(NookTheme.TextStyle.strong.monospacedDigit())
+                            .foregroundStyle(NookTheme.paper)
+                        Text(tr("usage.chatCount", block.chats.count))
+                            .font(NookTheme.TextStyle.caption)
+                            .foregroundStyle(NookTheme.textTertiary)
+                    }
+                }
+                .padding(.horizontal, NookTheme.Spacing.lg)
+                .padding(.vertical, NookTheme.Spacing.md)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(block.reported ? tr("limits.block.reported") : tr("limits.block.estimated"))
+            if open {
+                VStack(spacing: 0) {
+                    if block.chats.isEmpty {
+                        Text(tr("limits.block.empty"))
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, NookTheme.Spacing.md)
+                    }
+                    ForEach(block.chats.prefix(10)) { chat in
+                        UsageChatRow(chat: chat, compact: true)
+                    }
+                }
+                .padding(.leading, NookTheme.Spacing.lg + 12 + NookTheme.Spacing.md)
+                .padding(.trailing, NookTheme.Spacing.lg)
+            }
+            NookDivider()
+        }
+    }
+
+    /// "until 19:32 · Work" — when the window ran or runs out, and the account when the agent has several.
+    private func detail(_ block: UsageBlock) -> String {
+        var parts = [tr(block.active ? "limits.block.until" : "limits.block.ended", AgentFormat.upcoming(block.end, now: now))]
+        if names.count > 1, let name = names[block.profileID] { parts.append(name) }
+        parts.append(UsageFormat.tokens(block.tokens.total))
+        return parts.joined(separator: " · ")
     }
 }
 
