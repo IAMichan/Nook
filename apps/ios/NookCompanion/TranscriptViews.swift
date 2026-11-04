@@ -260,6 +260,17 @@ struct TranscriptUserMessage: View {
             }
             .padding(Theme.Spacing.lg)
             .background(Theme.bubble, in: RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.12), Color.white.opacity(0.02)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 0.5
+                    )
+            )
             .contextMenu { CopyButton(text: text) }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
