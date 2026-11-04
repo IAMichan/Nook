@@ -8,14 +8,15 @@ enum TextGeneration {
 
     // MARK: Prompts
 
-    static let titleSchema: [String: Any] = schema(["title": "string", "needsRefinement": "boolean"])
+    static let titleSchema: [String: Any] = schema(["title": "string", "branch": "string", "needsRefinement": "boolean"])
     static let commitSchema: [String: Any] = schema(["subject": "string", "body": "string"])
     static let pullRequestSchema: [String: Any] = schema(["title": "string", "body": "string"])
 
     static func titlePrompt(message: String) -> String {
         """
         Generate a title that will help the user recognize this Nook session weeks later.
-        Return JSON with keys title and needsRefinement.
+        Also name the git branch the work happens on.
+        Return JSON with keys title, branch and needsRefinement.
         Set needsRefinement to true only if the subject is still unknown, such as an unresolved link, "fix this", or an unexplained attachment. Otherwise set it to false.
 
         Before answering, silently reduce the request to:
@@ -37,6 +38,12 @@ enum TextGeneration {
         - Do not claim the work is complete.
         - Do not copy and truncate the user's message.
         - Avoid project names already visible in the UI, quotes, labels, filler, and trailing punctuation.
+
+        Branch rules:
+        - Always in English, whatever the language of the message.
+        - 2-5 lowercase words joined by hyphens, at most 40 characters, e.g. "fix-safari-login" or "add-archive-button".
+        - Start with a verb (add, fix, remove, improve, refactor, investigate…) followed by what it changes.
+        - Name the same subject and outcome as the title; no prefix, ticket number, or date.
 
         User message:
         \(limit(message, 8_000))
@@ -138,6 +145,17 @@ enum TextGeneration {
         text = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         guard !text.isEmpty, text != "New thread" else { return nil }
         return text.count > 120 ? String(text.prefix(117)) + "..." : text
+    }
+
+    /// "Fix Safari login!" → "fix-safari-login": at most 5 whole words and 40 characters. Nil when nothing is left.
+    static func branchSlug(_ raw: String) -> String? {
+        let words = WorktreeNaming.slug(raw, limit: 200).split(separator: "-").map(String.init)
+        var result: [String] = []
+        for word in words where word.count <= 40 {
+            if result.count == 5 || (result + [word]).joined(separator: "-").count > 40 { break }
+            result.append(word)
+        }
+        return result.isEmpty || result == ["sessie"] ? nil : result.joined(separator: "-")
     }
 
     /// First line, no trailing period, at most 72 characters; "Update project files" when empty.
