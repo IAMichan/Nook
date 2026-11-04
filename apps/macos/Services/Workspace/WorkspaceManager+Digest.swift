@@ -5,10 +5,13 @@ import Foundation
 extension WorkspaceManager {
     /// One line per session that is not archived, most recent first: id, title, agent, status, folder and branch.
     func sessionLines(limit: Int) -> [String] {
-        runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }.prefix(max(1, limit)).map { run in
-            "- \(run.id.uuidString) · \(run.title) · \(run.provider.displayName) · \(DelegatedTask.state(run.status).rawValue) · \(run.workingDirectory)"
-                + (run.branch.map { " · \($0)" } ?? "")
-        }
+        runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }.prefix(max(1, limit)).map { "- " + sessionLine($0) }
+    }
+
+    /// One session in a line: id, title, agent, status, folder and branch (`session_list`, `session_search`).
+    func sessionLine(_ run: WorkspaceRun) -> String {
+        "\(run.id.uuidString) · \(run.title) · \(run.provider.displayName) · \(DelegatedTask.state(run.status).rawValue) · \(run.workingDirectory)"
+            + (run.branch.map { " · \($0)" } ?? "") + (run.archived ? " · archived" : "")
     }
 
     /// A summary of one session: what was asked, answered, run and changed, bounded, never the raw conversation (the same
