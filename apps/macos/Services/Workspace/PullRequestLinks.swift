@@ -428,9 +428,11 @@ enum SessionBranches {
     }
 
     /// A branch the session left is empty when it has no commits beyond the base and was never pushed: nothing was done
-    /// on it, so it is not listed as an earlier branch. Unknown (a failed read) counts as not empty.
-    static func isEmpty(aheadOfBase: Int?, pushed: Bool) -> Bool {
-        aheadOfBase == 0 && !pushed
+    /// on it, so it is not listed as an earlier branch. A branch that is gone (its worktree and branch removed) and was
+    /// never pushed has nothing left to show either. Unknown (a failed read of a branch that exists) counts as not empty.
+    static func isEmpty(aheadOfBase: Int?, pushed: Bool, exists: Bool = true) -> Bool {
+        guard !pushed else { return false }
+        return !exists || aheadOfBase == 0
     }
 
     /// The pull requests of a branch the session left, added to the ones it left before (a newer read of the same
