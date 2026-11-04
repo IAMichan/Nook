@@ -4,6 +4,14 @@ import XCTest
 final class AgentSessionToolsTests: XCTestCase {
     // MARK: Auto access level
 
+    func testMovingToAnotherAgentNeverWidensWhatASessionMayDo() {
+        let withoutAuto: [PermissionPolicy] = [.ask, .acceptEdits, .bypass]
+        XCTAssertEqual(PermissionPolicy.auto.steppedDown(within: withoutAuto), .acceptEdits)
+        XCTAssertEqual(PermissionPolicy.bypass.steppedDown(within: withoutAuto), .bypass)
+        XCTAssertEqual(PermissionPolicy.acceptEdits.steppedDown(within: [.ask, .bypass]), .ask)
+        XCTAssertEqual(PermissionPolicy.auto.steppedDown(within: []), .ask)
+    }
+
     func testAutoIsOfferedOnlyWhereTheAgentHasItsOwnReviewer() {
         for provider in RunProvider.allCases {
             let offered = provider.capabilities.policies.contains(.auto)

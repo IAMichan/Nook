@@ -716,13 +716,13 @@ final class CompanionClient: ObservableObject {
         defer { draining = false }
         if !outbox.expire(now: Date()).isEmpty {
             OutboxStore.save(outbox, name: outboxName)
-            notice = String(localized: "A message that waited more than a day for your Mac was not sent.")
+            notice = String(localized: "What waited too long for your Mac was not sent.")
         }
         while let entry = outbox.entries.first {
             let request = CompanionOutbox.resend(entry, now: Date())
             guard let response = try? await transport(request, link: link) else { return }
             // Refused for now (still being handled, a burst, the clocks): it waits for the next try.
-            if !response.ok, let error = response.error, [CompanionError.replay, .stale, .rateLimited, .busy, .failed].contains(error) { return }
+            if !response.ok, let error = response.error, CompanionOutbox.waitsAfter(error, op: request.op) { return }
             outbox.remove(entry.id)
             OutboxStore.save(outbox, name: outboxName)
             if drained.count > 50 { drained.removeAll() }

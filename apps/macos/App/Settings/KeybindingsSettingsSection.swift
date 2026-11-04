@@ -167,7 +167,8 @@ struct KeybindingsSettingsSection: View {
 
     /// Replaces the command's rules in your file and reads it again; a file Nook cannot read is left as it is.
     private func write(command: String, rules: [KeybindingRule]) -> Bool {
-        let url = Keybindings.userFileURL
+        // A file linked from elsewhere (dotfiles) is written where it really lives, so the link stays.
+        let url = Keybindings.userFileURL.resolvingSymlinksInPath()
         do {
             let current = FileManager.default.fileExists(atPath: url.path) ? try Data(contentsOf: url) : nil
             let data = try KeybindingEdits.apply(current, command: command, rules: rules)

@@ -58,7 +58,7 @@ extension WorkspaceManager {
             // Another agent's conversation: what Nook followed of the old one does not apply to it.
             $0.conversation = nil
             $0.pendingRollback = nil
-            if !provider.capabilities.policies.contains($0.permission) { $0.permission = settings.permission(for: provider) }
+            $0.permission = $0.permission.steppedDown(within: provider.capabilities.policies)
         }
         forkNext.remove(id)
         append(id, RunEvent(kind: .system, text: accountOnly ? tr("ws.event.switchedAccount", provider.displayName)

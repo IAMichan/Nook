@@ -167,6 +167,7 @@ final class CompanionStore: ObservableObject {
 
     private func forget(_ id: String) {
         Keychain.write("", account: Self.account(id))
+        CompanionServer.shared.forgetRevoked(id)
         devices.removeAll { $0.id == id }
         save()
     }
