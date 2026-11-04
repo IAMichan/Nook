@@ -227,8 +227,20 @@ enum TextGenerationRunner {
         var text: String { lock.withLock { lines.joined(separator: "\n") } }
     }
 
+    /// How a call ended: its process exited, could not start, or ran past its time.
+    private enum End: Sendable { case exited, failed, timedOut }
+
+    /// Lets only the first of the exit, the start failure and the time limit end the wait.
+    private final class Once: @unchecked Sendable {
+        private let lock = NSLock()
+        private var done = false
+        func claim() -> Bool { lock.withLock { defer { done = true }; return !done } }
+    }
+
+    /// Waits for the call without holding a thread: a title or commit message can take up to `timeout` seconds, and a
+    /// blocked thread of Swift's shared pool is one fewer for the rest of Nook meanwhile.
     static func run(engine: TextGeneration.Engine, executable: String, environment: [String: String], prompt: String,
-                    schema: [String: Any], cwd: String, timeout: TimeInterval = 120, model: String? = nil) -> [String: Any]? {
+                    schema: [String: Any], cwd: String, timeout: TimeInterval = 120, model: String? = nil) async -> [String: Any]? {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent(folderPrefix + UUID().uuidString, isDirectory: true)
         guard (try? FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)) != nil else { return nil }
         defer { try? FileManager.default.removeItem(at: temp) }
@@ -247,12 +259,23 @@ enum TextGenerationRunner {
         let process = AgentProcess(spec: LaunchSpec(executable: executable, arguments: arguments, extraEnvironment: environment,
                                                     workingDirectory: folder, initialInput: [prompt], keepsInputOpen: true))
         let output = Output()
-        let done = DispatchSemaphore(value: 0)
         process.onLines = { output.add($0) }
-        process.onExit = { _, _ in done.signal() }
-        do { try process.start() } catch { return nil }
-        process.closeInput()
-        if done.wait(timeout: .now() + timeout) == .timedOut {
+        let once = Once()
+        let end: End = await withCheckedContinuation { continuation in
+            process.onExit = { _, _ in if once.claim() { continuation.resume(returning: .exited) } }
+            do { try process.start() } catch {
+                if once.claim() { continuation.resume(returning: .failed) }
+                return
+            }
+            process.closeInput()
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
+                if once.claim() { continuation.resume(returning: .timedOut) }
+            }
+        }
+        switch end {
+        case .exited: break
+        case .failed: return nil
+        case .timedOut:
             process.stop(grace: 1)
             return nil
         }
