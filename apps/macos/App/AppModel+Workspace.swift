@@ -289,6 +289,7 @@ extension AppModel {
         PullRequestSync.shared.found = { [weak self] run, url in self?.showCreatedPullRequest(url, run: run) }
         // Project scripts run in a terminal that belongs to the session's folder, without taking you away from where you are.
         workspace.runScript = { folder, command, title in _ = TerminalStore.shared.open(in: folder, command: command, title: title) }
+        workspace.openTerminalFolders = { TerminalStore.shared.sessions.map(\.directory) }
         startWorkspaceBridge()
         // Sessions a restart cut off go on, once the agents' executables are known (history loads in the background).
         Task { @MainActor [weak self] in

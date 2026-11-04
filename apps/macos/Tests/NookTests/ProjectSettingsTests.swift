@@ -27,6 +27,14 @@ final class ProjectSettingsTests: XCTestCase {
         XCTAssertEqual(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/other"), global)
     }
 
+    func testAProjectCanSwitchWorktreeCleanupOff() {
+        var overrides = ProjectOverrides()
+        XCTAssertTrue(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/repo").worktreeCleanup, "inherited")
+        overrides.set(.worktreeCleanup, .string("off"), for: "/repo")
+        XCTAssertFalse(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/repo/app").worktreeCleanup)
+        XCTAssertTrue(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/other").worktreeCleanup)
+    }
+
     func testTitleInstructionsComeFromTheProjectOrAllProjects() {
         var withRules = global
         withRules.titleInstructions = "English titles"
