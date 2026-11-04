@@ -10,6 +10,8 @@ struct ComposerDropdown<Trigger: View, Content: View>: View {
     var width: CGFloat = 264
     /// The trigger is a logo pill that may show its text in the room a crowded composer row has left.
     var takesRoom = false
+    /// The keybinding command that opens and closes it (the model picker's ⇧⌘M).
+    var command: String? = nil
     @ViewBuilder let trigger: () -> Trigger
     @ViewBuilder let content: () -> Content
     @Environment(\.composerDensity) private var density
@@ -20,6 +22,7 @@ struct ComposerDropdown<Trigger: View, Content: View>: View {
         Button { open.toggle() } label: { trigger() }
             .buttonStyle(.plain)
             .fixedSize(horizontal: !flexible, vertical: true)
+            .modifier(DropdownKeyCommand(command: command, open: $open))
             .popover(isPresented: $open, arrowEdge: .bottom) {
                 // The panel takes the height its rows ask for at this width, so wrapped text grows it instead of
                 // being cut off, and it follows when a search or another place changes what it shows.
@@ -32,6 +35,20 @@ struct ComposerDropdown<Trigger: View, Content: View>: View {
             }
             // Ahead of the spacer, so the pill gets all the room left instead of half of it.
             .layoutPriority(flexible ? 1 : 0)
+    }
+}
+
+/// The key that opens a dropdown, offered only by the dropdowns that have one.
+private struct DropdownKeyCommand: ViewModifier {
+    let command: String?
+    @Binding var open: Bool
+
+    func body(content: Content) -> some View {
+        if let command {
+            content.keyCommands([command: { open.toggle(); return true }], context: ["modelPickerOpen": open])
+        } else {
+            content
+        }
     }
 }
 
@@ -93,6 +110,8 @@ struct DropdownRow: View {
     var staysOpen = false
     /// A star at the end of the row (models and project folders): filled while the choice is a favorite, nil for none.
     var favorite: Binding<Bool>? = nil
+    /// The row the arrow keys are on (the model picker): lit as under the pointer.
+    var highlighted = false
     let action: () -> Void
     @Environment(\.closeDropdown) private var close
     @State private var hovering = false
@@ -146,7 +165,8 @@ struct DropdownRow: View {
             .frame(minHeight: 30)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .fill(chosen ? DropdownStyle.chosen : (hovering && disabledReason == nil ? DropdownStyle.hover : .clear)))
+                .fill(chosen && !highlighted ? DropdownStyle.chosen
+                      : ((hovering || highlighted) && disabledReason == nil ? DropdownStyle.hover : .clear)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -295,6 +315,8 @@ struct DropdownList<Rows: View>: View {
     var maxHeight: CGFloat = 260
     /// Shown instead of rows (nothing matches, nothing installed).
     var emptyNote: String? = nil
+    /// The id of the row the arrow keys are on: kept in view.
+    var scrollTarget: String? = nil
     @ViewBuilder let rows: () -> Rows
     @State private var contentHeight: CGFloat = 0
 
@@ -303,18 +325,23 @@ struct DropdownList<Rows: View>: View {
 
     var body: some View {
         let fitted = min(contentHeight, maxHeight)
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                if let emptyNote {
-                    Text(emptyNote)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .padding(10)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    if let emptyNote {
+                        Text(emptyNote)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .padding(10)
+                    }
+                    rows()
                 }
-                rows()
+                .padding(.vertical, 4)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
             }
-            .padding(.vertical, 4)
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+            .onChange(of: scrollTarget) { _, target in
+                if let target { proxy.scrollTo(target) }
+            }
         }
         .frame(minHeight: min(fitted, Self.minVisible), idealHeight: fitted, maxHeight: fitted)
     }

@@ -29,6 +29,7 @@ struct AgentRunPanel: View {
     @State private var confirmDelete = false
     @State private var renaming = false
     @State private var titleDraft = ""
+    @FocusState private var titleFocused: Bool
     /// The older branches of a session that worked on many, shown in the tray above the composer.
     @State private var showsOlderBranches = false
     /// The `#` list needs the repository ("owner/repo") of the session's folder.
@@ -158,6 +159,13 @@ struct AgentRunPanel: View {
                 loadComposerState(run)
             }
             .onDisappear { rememberVisit(runID) }
+            // F2 or the command palette's Rename: the name field in the header, with the keyboard in it.
+            .onReceive(SessionRenameRequest.shared.$pending.removeDuplicates()) { id in
+                guard id == runID, let title = workspace.run(runID)?.title else { return }
+                SessionRenameRequest.shared.take(runID)
+                titleDraft = title
+                renaming = true
+            }
             .onChange(of: runID) { previous, _ in
                 rememberVisit(previous)
                 workspace.requestTimeline(runID)
@@ -233,6 +241,8 @@ struct AgentRunPanel: View {
                         renaming = false
                     }
                     .onExitCommand { renaming = false }
+                    .focused($titleFocused)
+                    .focusOnAppear($titleFocused)
             } else {
                 Text(run.title)
                     .font(NookTheme.TextStyle.strong)
