@@ -34,7 +34,7 @@ failed only after you sent the task.
 **Wiring.** `WorkspaceManager+ModelManifest` loads the preferred copy at launch, reads the agents' versions (once, again
 when the program moves or after half an hour) and builds the menus (`menuModelIDs`, `modelChoice`, `sameModel`) for the
 composer's model picker (`AgentModelPicker`), the session settings (`NextTurnSettings` in `WorkspaceComponents.swift`),
-Settings › Workspace › Models per agent, and the agent bridge's capability list. In the menus:
+Settings › Sessions › New session › Models per agent, and the agent bridge's capability list. In the menus:
 
 - A model that needs a newer agent shows "Needs Claude Code 2.1.300 or newer", cannot be picked, and its tooltip names
   the installed version.
@@ -44,7 +44,7 @@ Settings › Workspace › Models per agent, and the agent bridge's capability l
   alias itself.
 
 **Network rules.** The fetch goes through `NetworkGuard.fetch` (public hosts only, every redirect checked), at most every
-six hours (`ModelManifestRefresh`), and never while **Settings › Workspace › Check for new models online** is off: then
+six hours (`ModelManifestRefresh`), and never while **Settings › Sessions › New session › Check for new models online** is off: then
 only the bundled list is used and nothing goes online for it.
 
 **Adding a model** is a JSON edit: add the entry, set `adapter.<agent>.minVersion` when it needs a newer CLI, and bump

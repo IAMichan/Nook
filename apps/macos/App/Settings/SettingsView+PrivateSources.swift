@@ -24,12 +24,12 @@ extension SettingsView {
         Section {
             NookSearchField(prompt: tr("settings.private.search"), text: $sourceQuery, style: .inline)
             let text = sourceQuery.trimmingCharacters(in: .whitespaces)
-            let shown = SourceCatalog.all.filter { text.isEmpty || $0.title.localizedCaseInsensitiveContains(text) }
+            let shown = SourceCatalog.all.filter { text.isEmpty || Self.sourceName($0).localizedCaseInsensitiveContains(text) }
             ForEach(shown, id: \.id) { source in
                 // The privacy level can keep a source on this Mac by itself (the screen when strict): shown locked.
                 let byLevel = settings.privacyLevel.localOnlySources.contains(source.id)
                 Toggle(isOn: byLevel ? .constant(true) : localOnlyBinding(source.id)) {
-                    Label(source.title, systemImage: byLevel || settings.localOnlySources.contains(source.id) ? "lock.fill" : "lock.open")
+                    Label(Self.sourceName(source), systemImage: byLevel || settings.localOnlySources.contains(source.id) ? "lock.fill" : "lock.open")
                 }
                 .disabled(byLevel)
                 .help(byLevel ? tr("settings.private.byLevel") : "")
@@ -38,6 +38,14 @@ extension SettingsView {
         } header: {
             Text(tr("settings.private.choose", settings.localOnlySources.count, SourceCatalog.all.count))
         }
+    }
+
+    /// A source by its name in the app's language: the catalogue's own titles are the words Nook matches questions on
+    /// (Dutch for the Mac's own sources), not what Settings should show.
+    static func sourceName(_ source: SourceDescriptor) -> String {
+        let key = "source.name.\(source.id)"
+        let name = tr(key)
+        return name == key ? source.title : name
     }
 
     private func localOnlyBinding(_ id: String) -> Binding<Bool> {

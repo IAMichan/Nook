@@ -11,8 +11,20 @@ extension SettingsView {
             // First which agents are linked to Nook (and show their progress in the notch), then who you are signed in
             // as with each (and the agents that speak ACP).
             Section {
-                ForEach(AgentConfigInstaller.Target.allCases) { target in
-                    agentRow(target)
+                // The linked ones first; the agents you have not linked are folded away once one is, so the page shows
+                // yours rather than every agent there is.
+                let linked = AgentConfigInstaller.Target.allCases.filter { target in
+                    if case .notInstalled = agentStates[target] ?? .notInstalled { return false }
+                    return true
+                }
+                let others = AgentConfigInstaller.Target.allCases.filter { !linked.contains($0) }
+                ForEach(linked) { target in agentRow(target) }
+                if linked.isEmpty {
+                    ForEach(others) { target in agentRow(target) }
+                } else if !others.isEmpty {
+                    DisclosureGroup(tr("settings.agents.notLinked", others.count)) {
+                        ForEach(others) { target in agentRow(target) }
+                    }
                 }
                 // Antigravity needs its release downloaded before Nook can run it: set up with the other agents.
                 LabeledContent("Antigravity") { AntigravitySetupRow(inSettings: true) }
