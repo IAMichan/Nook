@@ -57,7 +57,7 @@ enum SettingsCatalog {
               about: "How a Think Along suggestion shows: its card, one line that opens it, a macOS notification, or only in the list."),
         Entry(id: "use_memory", kind: .toggle, section: "memory", about: "Use what Nook remembers with every question."),
         Entry(id: "learn_from_chats", kind: .toggle, section: "memory", about: "Let Nook learn from conversations by itself."),
-        Entry(id: "online_lyrics", kind: .toggle, section: "privacy", about: "Look up song lyrics online.")
+        Entry(id: "online_lyrics", kind: .toggle, section: "connections", about: "Look up song lyrics online.")
     ]
 
     static var ids: [String] { entries.map(\.id) }

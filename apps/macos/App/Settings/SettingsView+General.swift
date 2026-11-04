@@ -77,7 +77,7 @@ extension SettingsView {
         return items
     }
 
-    /// `items` is `attention(problems:)` and `problems` the number of connections that stopped working.
+    /// `items` is `attention(problems:)` and `problems` the number of services (not chat apps) that stopped working.
     func startSection(attention items: [AttentionItem], problems: Int) -> some View {
         Group {
             // One list of what needs you, from every page; once it is empty a single calm line says so.
@@ -114,16 +114,16 @@ extension SettingsView {
                 // Only the recommended permissions make this a to-do; the optional ones (contacts, the microphone…) never do.
                 let recommendedGranted = SystemPermission.allCases.allSatisfy { !$0.isRecommended || permissions.isGranted($0) }
                 glanceRow(.privacy, detail: tr("settings.start.permissions", granted, SystemPermission.allCases.count),
-                          state: recommendedGranted ? .done : .todo)
+                          state: recommendedGranted ? .done : .todo, tab: 1)
             }
         }
     }
 
     /// One line per part of Nook: its tile, how it is doing, and a way to go there. What works stays quiet; only what
     /// still needs you shows a symbol.
-    func glanceRow(_ section: SettingsSection, detail: String, state: StatusState) -> some View {
+    func glanceRow(_ section: SettingsSection, detail: String, state: StatusState, tab: Int? = nil) -> some View {
         SettingsLinkRow(title: section.title, detail: detail, section: section, state: state) {
-            app.settingsSection = section
+            app.openSettings(section: section, tab: tab)
         }
     }
 

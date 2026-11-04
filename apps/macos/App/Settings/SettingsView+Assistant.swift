@@ -16,7 +16,7 @@ extension SettingsView {
                 }
                 if !permissions.isGranted(.screen) {
                     SettingsLinkRow(title: tr("settings.assistant.managePermissions"), section: .privacy, state: .warning) {
-                        app.settingsSection = .privacy
+                        app.openSettings(section: .privacy, tab: 1)
                     }
                 }
             }

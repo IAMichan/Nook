@@ -51,6 +51,9 @@ struct NoticeRulesSettings: View {
         Group {
             Section {
                 NookSearchField(prompt: tr("notices.settings.searchApps"), text: $query, style: .inline)
+                if !query.trimmingCharacters(in: .whitespaces).isEmpty, !anyMatch {
+                    SettingNote(tr("settings.search.none"))
+                }
             }
             appSection(.agents, header: tr("notices.settings.agents"), info: tr("notices.settings.agentsFooter"),
                        apps: AgentKind.allCases.map { AppRow(id: $0.rawValue, name: $0.name, icon: $0.rawValue, symbol: "terminal") })
@@ -65,6 +68,13 @@ struct NoticeRulesSettings: View {
                            })
             }
         }
+    }
+
+    /// Whether any list has an app for the search.
+    private var anyMatch: Bool {
+        let text = query.trimmingCharacters(in: .whitespaces)
+        let names = AgentKind.allCases.map(\.name) + capture.sources.apps.map(\.name) + Array(thinkAlong.mutedApps.values)
+        return names.contains { $0.localizedCaseInsensitiveContains(text) }
     }
 
     /// One app in a source's list.
