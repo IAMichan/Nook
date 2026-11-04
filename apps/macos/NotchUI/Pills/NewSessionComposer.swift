@@ -71,6 +71,12 @@ struct NewSessionComposer: View {
         .onChange(of: promptLinks.pending) { _, _ in applyPromptLink() }
         .onChange(of: promptLinks.pendingProject) { _, _ in applyRequestedProject() }
         .onChange(of: workingDirectory, initial: true) { _, directory in onDirectory(directory) }
+        // ⌥⌘↩: start it and keep a fresh box here for the next one.
+        .keyCommands(["composer.startInBackground": {
+            guard canStart, !starting else { return false }
+            start(background: true)
+            return true
+        }], enabled: focused)
     }
 
     /// The folder the panels open in: none for a session on another machine.
@@ -153,6 +159,9 @@ struct NewSessionComposer: View {
                     DropdownDivider()
                 }
                 DropdownRow(symbol: "folder.badge.plus", title: tr("ws.new.chooseFolder")) { chooseFolder() }
+                // A folder of its own under ~/.nook/scratch, for a question or a try-out that belongs to no project.
+                DropdownRow(symbol: "tray", title: tr("ws.new.noProject"), detail: tr("ws.new.noProjectDetail"),
+                            chosen: remoteMachine == nil && ScratchProjects.isScratch(config.projectPath)) { chooseNoProject() }
                 DropdownRow(symbol: "arrow.down.circle", title: tr("ws.new.clone")) { showClone = true }
                 // Another machine over SSH (Settings › Agents › Workspace › Machines).
                 let machines = RemoteMachines.load()
@@ -206,6 +215,7 @@ struct NewSessionComposer: View {
             let folder = remoteFolder.isEmpty ? "…" : URL(fileURLWithPath: remoteFolder).lastPathComponent
             return remoteMachine.name + ":" + folder
         }
+        if let project, ScratchProjects.isScratch(project.path) { return tr("ws.new.noProject") }
         return project?.name ?? tr("compose.pickProject")
     }
 
@@ -242,7 +252,7 @@ struct NewSessionComposer: View {
             sending: starting,
             sendLabel: blockingReason ?? tr("ws.new.start"),
             focus: $focused,
-            onSend: start
+            onSend: { start() }
         ) {
             // The same row as in a running session and in the chat: plus menu, the agent and model, then mode and rights.
             ComposerPlusMenu(attach: attachFile) {}
@@ -429,7 +439,10 @@ struct NewSessionComposer: View {
                         .help(tr("ws.remote.baseHelp"))
                 }
             } else {
-                isolationDropdown(worktreeAllowed: worktreeAllowed, reason: worktreeBlockedReason)
+                // A folder that is no git repository has no branch or worktree to choose.
+                if project == nil || project?.repoRoot != nil {
+                    isolationDropdown(worktreeAllowed: worktreeAllowed, reason: worktreeBlockedReason)
+                }
 
                 Spacer(minLength: 8)
 
@@ -521,9 +534,11 @@ struct NewSessionComposer: View {
     // MARK: State
 
     private var projectMenu: (favorites: [String], recent: [String]) {
+        // Folders of sessions without a project stay out of Recent; one you turned into a project is a favorite.
         ProjectSettings.projectMenu(
             favorites: settings.favoriteProjects,
-            recent: [config.projectPath, settings.lastProject] + settings.recentProjects + app.history.sessions.map(\.cwd)
+            recent: ([config.projectPath, settings.lastProject] + settings.recentProjects + app.history.sessions.map(\.cwd))
+                .filter { !ScratchProjects.isScratch($0) }
         )
     }
 
@@ -676,7 +691,7 @@ struct NewSessionComposer: View {
             config.provider = provider
             config.model = settings.sessionDefaults(for: config.projectPath).model(for: provider)
             config.effort = settings.effort(for: provider)
-            if !provider.capabilities.policies.contains(config.permission) { config.permission = settings.permission(for: provider) }
+            config.permission = config.permission.steppedDown(within: provider.capabilities.policies)
         }
         config.profileID = account
     }
@@ -725,9 +740,12 @@ struct NewSessionComposer: View {
 
     private func select(_ path: String) {
         remoteMachine = nil
+        // A folder made for "No project" that nothing started in goes again when you pick another.
+        if config.projectPath != path { ScratchProjects.discardIfEmpty(config.projectPath) }
         config.projectPath = path
-        // The next new session opens on the project you chose last, also when this one never started.
-        settings.lastProject = path
+        // The next new session opens on the project you chose last, also when this one never started; a session
+        // without a project leaves that alone.
+        if !ScratchProjects.isScratch(path) { settings.lastProject = path }
         applyProjectDefaults(path)
         error = nil
         if let cached = workspace.cachedProject(path) {
@@ -759,6 +777,16 @@ struct NewSessionComposer: View {
             config.baseBranch = base
         } else {
             config.baseBranch = info.currentBranch ?? info.branches.first ?? ""
+        }
+    }
+
+    /// "No project": a new empty folder under ~/.nook/scratch, named after today and what you typed so far; it takes
+    /// the prompt's name when the session starts.
+    private func chooseNoProject() {
+        do {
+            select(try ScratchProjects.create(prompt: config.task))
+        } catch let failure {
+            error = failure.localizedDescription
         }
     }
 
@@ -799,12 +827,18 @@ struct NewSessionComposer: View {
         }
     }
 
-    private func start() {
+    /// `background` (⌥⌘↩): the session starts without opening, and the box stays for the next one with the same folder,
+    /// agent and worktree choices.
+    private func start(background: Bool = false) {
         guard canStart else { return }
-        if !comparing.isEmpty, remoteMachine == nil { return startComparison() }
+        if !comparing.isEmpty, remoteMachine == nil { return startComparison(background: background) }
         starting = true
         error = nil
         var request = checkedConfig
+        // A folder made for "No project" before the prompt was typed gets the prompt's name now.
+        if request.remote == nil, ScratchProjects.isScratch(request.projectPath) {
+            request.projectPath = ScratchProjects.rename(request.projectPath, prompt: request.task)
+        }
         // References in the text reach the agent as markers plus the context envelope.
         request.task = composerModel.outgoing(request.task).send
         // In Plan mode the agent is read-only; the safest permissions go along for when you continue later.
@@ -825,7 +859,11 @@ struct NewSessionComposer: View {
                 images = []
                 pendingID = UUID()
                 starting = false
-                onStarted(id)
+                if background {
+                    startedInBackground()
+                } else {
+                    onStarted(id)
+                }
             } catch let failure {
                 error = failure.localizedDescription
                 starting = false
@@ -836,7 +874,7 @@ struct NewSessionComposer: View {
     /// One prompt to several models: a session per model, each in its own worktree, grouped under the first. When a model
     /// fails, the prompt stays in the box (and in `ComposerDraftStore`) with only the failed models still chosen, and the
     /// box says which ones failed and why.
-    private func startComparison() {
+    private func startComparison(background: Bool = false) {
         starting = true
         error = nil
         var base = checkedConfig
@@ -857,7 +895,11 @@ struct NewSessionComposer: View {
                 images = []
                 comparing = []
                 pendingID = UUID()
-                if let leader = outcome.leader { onStarted(leader) }
+                if background {
+                    startedInBackground()
+                } else if let leader = outcome.leader {
+                    onStarted(leader)
+                }
                 return
             }
             ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: config.task)
@@ -870,6 +912,13 @@ struct NewSessionComposer: View {
             error = tr("compare.failed", outcome.failed.map { comparisonName($0.target) + ": " + $0.message }.joined(separator: "\n"))
             if !outcome.started.isEmpty { ToastCenter.shared.success(tr("compare.started", outcome.started.count)) }
         }
+    }
+
+    /// After ⌥⌘↩: the session runs in the list, and this box is a fresh draft with the same choices and the keyboard.
+    private func startedInBackground() {
+        started = false
+        ToastCenter.shared.success(tr("ws.new.startedInBackground"))
+        focused = true
     }
 
     /// "Claude Code · Opus": how a model of a comparison is named in its session's title and in an error.

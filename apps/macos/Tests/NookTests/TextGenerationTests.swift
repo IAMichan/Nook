@@ -19,6 +19,19 @@ final class TextGenerationTests: XCTestCase {
         XCTAssertTrue(templated.contains("'Not run yet'"), "testing says what ran instead of ticking boxes it cannot know")
     }
 
+    func testTitleRulesAndLaterMessages() {
+        let plain = TextGeneration.titlePrompt(message: "Fix login", later: [" ", ""], instructions: "  ")
+        XCTAssertEqual(plain, TextGeneration.titlePrompt(message: "Fix login"), "empty rules and messages change nothing")
+        let ruled = TextGeneration.titlePrompt(message: "Fix login", instructions: "Start with the ticket number")
+        XCTAssertTrue(ruled.contains("The user's own rules for titles"))
+        XCTAssertTrue(ruled.hasSuffix("Start with the ticket number\n\nUser message:\nFix login"), "the rules come before the message")
+        XCTAssertTrue(ruled.contains("3-8 words"), "Nook's own rules stay")
+        let later = TextGeneration.titlePrompt(message: "Fix login", later: ["a", "b", "c", "now the signup page"])
+        XCTAssertTrue(later.contains("User message:\nFix login\n\nThe session went on"))
+        XCTAssertTrue(later.hasSuffix("- b\n- c\n- now the signup page"), "only the last three, in order")
+        XCTAssertFalse(later.contains("- a\n"))
+    }
+
     func testCommands() {
         let claude = TextGeneration.claudeArguments(schema: TextGeneration.titleSchema)
         XCTAssertEqual(value(after: "--model", in: claude), "haiku")

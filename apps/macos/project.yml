@@ -198,6 +198,7 @@ targets:
       - path: Core/I18n+DoubleTap.swift
       - path: Core/I18n+Takeover.swift
       - path: Core/I18n+Harness.swift
+      - path: Core/I18n+DiffReview.swift
       - path: Core/I18n+ChatMedia.swift
       - path: Core/I18n+ChatRead.swift
       - path: Core/I18n+BeeperImport.swift
@@ -225,6 +226,7 @@ targets:
       - path: Core/I18n+PolishRendering.swift
       - path: Core/I18n+PolishSettings.swift
       - path: Core/I18n+SettingsPages.swift
+      - path: Core/I18n+AgentTools.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -311,6 +313,7 @@ targets:
       - path: Services/Connectors/PullRequestGraphQL.swift
       - path: Services/Connectors/RedirectCredentials.swift
       - path: Services/Connectors/PullRequestDetail.swift
+      - path: Services/Connectors/AgentCredits.swift
       - path: Services/Connectors/PullRequestReadiness.swift
       - path: Services/Connectors/PullRequestConversation.swift
       - path: Services/Connectors/PullRequestViewedFiles.swift
@@ -363,6 +366,7 @@ targets:
       - path: ../../packages/protocol/Sources/CompanionScopes.swift
       - path: ../../packages/protocol/Sources/CompanionPairings.swift
       - path: ../../packages/protocol/Sources/CompanionDiagnosticsLog.swift
+      - path: ../../packages/protocol/Sources/CompanionResilience.swift
       # CryptoKit: on the Mac only (scripts/core-tests.sh leaves it out); CompanionFixturesTests checks the sealed vectors.
       - path: ../../packages/protocol/Sources/CompanionSeal.swift
       - path: Services/Companion/CloudflareRelaySetup.swift
@@ -381,6 +385,8 @@ targets:
       - path: Services/Workspace/ModelComparison.swift
       - path: Services/Workspace/SyntaxTokenizer.swift
       - path: Services/Workspace/Keybindings.swift
+      - path: Services/Workspace/KeybindingEdits.swift
+      - path: Services/Workspace/SessionNavigation.swift
       - path: Services/Workspace/ClosedTabs.swift
       - path: ../../packages/protocol/Sources/PromptLink.swift
       - path: Services/Workspace/PriceTable.swift
@@ -388,6 +394,8 @@ targets:
       - path: Services/Workspace/LimitPool.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/WorkspaceBridgeArguments.swift
+      - path: Services/Workspace/WorkspaceBridgeSessions.swift
+      - path: Services/Workspace/RenderedPage.swift
       - path: Services/Workspace/TimelinePresentation.swift
       - path: Services/Workspace/AgentProgress.swift
       - path: Services/AppPrompt.swift
@@ -398,6 +406,8 @@ targets:
       - path: Services/Workspace/ComposerQuotes.swift
       - path: Services/SelectionAsk.swift
       - path: Services/Workspace/UnifiedDiff.swift
+      - path: Services/Workspace/DiffDisplay.swift
+      - path: Services/Workspace/ScratchProjects.swift
       - path: Services/Workspace/SessionExport.swift
       - path: Services/Workspace/CustomAgents.swift
       - path: Services/Workspace/BrowserSearch.swift

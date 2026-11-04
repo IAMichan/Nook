@@ -198,7 +198,8 @@ extension AppModel {
             guard !text.isEmpty else { return nil }
             switch event.kind {
             case .user: return SearchPassage(text: text, author: "me", date: event.date, anchor: event.id.uuidString)
-            case .assistant, .result, .error:
+            case .assistant, .result, .error, .page:
+                // A page the agent showed is found by its title.
                 return SearchPassage(text: text, author: run.provider.displayName, date: event.date, anchor: event.id.uuidString)
             case .tool, .fileChange:
                 // A tool's output can run to hundreds of KB, and every session's passages stay in memory for the next

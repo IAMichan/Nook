@@ -118,6 +118,9 @@ struct SessionPanel: View {
     @State private var localProgress: String?
     @State private var confirmDefault: GitQuickAction?
     @State private var error: String?
+    /// "Turn into project" with `git init`: asked first, since it writes a repository into the folder.
+    @State private var askingGitInit = false
+    @State private var registered = false
 
     init(model: FolderGitModel, runID: UUID?, agentWorking: Bool, showChanges: @escaping () -> Void,
          close: @escaping () -> Void, docked: Bool = false) {
@@ -149,6 +152,7 @@ struct SessionPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             machineRow
             openInRow
+            scratchRow
             scriptRows
             if model.isRepository {
                 DropdownDivider()
@@ -537,6 +541,54 @@ struct SessionPanel: View {
     }
 
     // MARK: Helpers
+
+    // MARK: A session without a project
+
+    /// A session started with "No project" (`ScratchProjects`): keep its folder as a regular project, a favorite in the
+    /// new-session composer, and optionally make it a git repository so branches and diffs work there.
+    @ViewBuilder
+    private var scratchRow: some View {
+        if ScratchProjects.isScratch(directory) {
+            let isProject = registered || workspace.settings.isFavoriteProject(directory)
+            if !isProject || !model.isRepository {
+                PanelRow(icon: symbol("folder.badge.plus"),
+                         title: tr(isProject ? "agents.scratch.gitInit" : "agents.scratch.turnIntoProject"),
+                         help: tr("agents.scratch.help"),
+                         action: { if isProject { askingGitInit = true } else { registerScratch() } },
+                         menu: isProject || model.isRepository ? nil
+                            : AnyView(Button(tr("agents.scratch.withGit")) { askingGitInit = true }))
+                    .confirmationDialog(tr("agents.scratch.gitInitQuestion"), isPresented: $askingGitInit, titleVisibility: .visible) {
+                        Button(tr("agents.scratch.gitInitConfirm")) { initGit() }
+                        Button(tr("button.cancel"), role: .cancel) {}
+                    } message: {
+                        Text(tr("agents.scratch.gitInitDetail", AgentPathFormat.tilde(directory)))
+                    }
+            }
+        }
+    }
+
+    private func registerScratch() {
+        if !workspace.settings.isFavoriteProject(directory) { workspace.settings.toggleFavoriteProject(directory) }
+        workspace.settings.rememberProject(directory)
+        registered = true
+        ToastCenter.shared.success(tr("agents.scratch.registered"))
+    }
+
+    private func initGit() {
+        let folder = directory
+        Task {
+            do {
+                guard let git = GitService.shared else { throw GitError(tr("ws.error.noGit")) }
+                try await Task.detached(priority: .userInitiated) { try git.initRepository(folder) }.value
+                if !registered && !workspace.settings.isFavoriteProject(folder) { registerScratch() }
+                await model.refresh()
+                if let runID { workspace.refreshGit(runID) }
+                ToastCenter.shared.success(tr("agents.scratch.gitInitDone"))
+            } catch let failure {
+                ToastCenter.shared.error(failure, title: tr("agents.scratch.gitInitFailed"))
+            }
+        }
+    }
 
     private func symbol(_ name: String) -> AnyView {
         AnyView(NookSymbol(name, size: 13).font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.textSecondary))

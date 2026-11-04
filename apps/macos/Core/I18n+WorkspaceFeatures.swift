@@ -1,6 +1,6 @@
 import Foundation
 
-// Texts for the workspace features: per-project defaults (Settings › Workspace), the "Coding agents" setup step,
+// Texts for the workspace features: per-project defaults (Settings › Sessions), the "Coding agents" setup step,
 // sending one prompt to several models, fork lineage, syntax colors in diffs, and split terminals.
 // Numbers use %ld, text uses %@.
 

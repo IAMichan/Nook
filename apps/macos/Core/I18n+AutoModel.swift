@@ -1,7 +1,7 @@
 import Foundation
 
 // Texts for "Auto" in the model menu: Nook picks the agent, account and model for each turn from the models you allow
-// (Settings › Workspace › Auto model choice), by the task and the account's usage limits (see `AutoModel`).
+// (Settings › Sessions › New session › Auto model choice), by the task and the account's usage limits (see `AutoModel`).
 
 let autoModelTranslations: [AppLanguage: [String: String]] = [
     .nl: [

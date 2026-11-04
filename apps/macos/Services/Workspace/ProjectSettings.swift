@@ -1,7 +1,7 @@
 import Foundation
 
 // Per-project defaults for new sessions on top of the global ones (Settings › Workspace). A project folder may set its own
-// agent, model per agent, access level, worktree on or off and branch prefix; whatever it leaves out comes from the global
+// agent, model per agent, access level, worktree on or off, branch prefix and rules for session titles; whatever it leaves out comes from the global
 // value. Built on `SettingsResolver`: the global values are its `.environment` layer ("all projects", see
 // `ProjectScope.writeLayer`), a folder's overrides its `.project` layer. Foundation only, so it is tested on its own.
 
@@ -12,6 +12,8 @@ enum ProjectSettingKey: Hashable, Sendable {
     case permission
     case isolation
     case branchPrefix
+    /// The user's own rules for written session titles.
+    case titleInstructions
 
     var raw: String {
         switch self {
@@ -20,6 +22,7 @@ enum ProjectSettingKey: Hashable, Sendable {
         case .permission: return "permission"
         case .isolation: return "isolation"
         case .branchPrefix: return "branchPrefix"
+        case .titleInstructions: return "titleInstructions"
         }
     }
 }
@@ -32,6 +35,8 @@ struct SessionDefaults: Equatable, Sendable {
     var permission: PermissionPolicy
     var isolation: IsolationMode
     var branchPrefix: String
+    /// Added to the prompt that writes a session's title; empty: Nook's own rules only.
+    var titleInstructions: String = ""
 
     func model(for provider: RunProvider) -> String { models[provider.rawValue] ?? "" }
 
@@ -103,6 +108,7 @@ enum ProjectSettings {
         layers.set(ProjectSettingKey.permission.raw, .string(global.permission.rawValue), in: .environment)
         layers.set(ProjectSettingKey.isolation.raw, .string(global.isolation.rawValue), in: .environment)
         layers.set(ProjectSettingKey.branchPrefix.raw, .string(global.branchPrefix), in: .environment)
+        layers.set(ProjectSettingKey.titleInstructions.raw, .string(global.titleInstructions), in: .environment)
         for (key, value) in overrides { layers.set(key, value, in: .project) }
         return layers
     }
@@ -124,6 +130,7 @@ enum ProjectSettings {
         result.permission = string(.permission).flatMap(PermissionPolicy.init(rawValue:)) ?? global.permission
         result.isolation = string(.isolation).flatMap(IsolationMode.init(rawValue:)) ?? global.isolation
         result.branchPrefix = string(.branchPrefix).map(WorktreeNaming.normalizedBranchPrefix) ?? global.branchPrefix
+        result.titleInstructions = string(.titleInstructions) ?? global.titleInstructions
         return result
     }
 

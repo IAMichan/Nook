@@ -152,7 +152,8 @@ enum AgentCommand {
         if mode == .plan { return "plan" }
         switch permission {
         case .ask: return "default"
-        case .acceptEdits: return "auto_edit"
+        // Gemini CLI has no reviewer mode (`ProviderCapabilities` does not offer "auto"); an old setting edits only.
+        case .acceptEdits, .auto: return "auto_edit"
         case .bypass: return "yolo"
         }
     }
@@ -162,6 +163,7 @@ enum AgentCommand {
         switch permission {
         case .ask: return "default"
         case .acceptEdits: return "acceptEdits"
+        case .auto: return "auto"
         case .bypass: return "bypassPermissions"
         }
     }
@@ -170,7 +172,8 @@ enum AgentCommand {
         if mode == .plan { return "read-only" }
         switch permission {
         case .ask: return "read-only"
-        case .acceptEdits: return "workspace-write"
+        // `codex exec` asks nobody, so a reviewer has nothing to review: "auto" keeps the workspace sandbox.
+        case .acceptEdits, .auto: return "workspace-write"
         case .bypass: return "danger-full-access"
         }
     }

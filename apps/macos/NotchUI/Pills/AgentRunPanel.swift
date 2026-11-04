@@ -23,12 +23,17 @@ struct AgentRunPanel: View {
     /// "Back to before this message": the message, and why it could not, if it could not.
     @State private var revertTarget: RunEvent?
     @State private var revertError: String?
+    /// "Edit from here": the message to go back to before and write again, why it could not, and whether it runs.
+    @State private var editTarget: RunEvent?
+    @State private var editError: String?
+    @State private var editWorking = false
     /// Bumped when the session's machine was unlocked with its password, so the field goes away.
     @State private var unlockedAt: Date?
     @State private var reverting = false
     @State private var confirmDelete = false
     @State private var renaming = false
     @State private var titleDraft = ""
+    @FocusState private var titleFocused: Bool
     /// The older branches of a session that worked on many, shown in the tray above the composer.
     @State private var showsOlderBranches = false
     /// The `#` list needs the repository ("owner/repo") of the session's folder.
@@ -158,6 +163,13 @@ struct AgentRunPanel: View {
                 loadComposerState(run)
             }
             .onDisappear { rememberVisit(runID) }
+            // F2 or the command palette's Rename: the name field in the header, with the keyboard in it.
+            .onReceive(SessionRenameRequest.shared.$pending.removeDuplicates()) { id in
+                guard id == runID, let title = workspace.run(runID)?.title else { return }
+                SessionRenameRequest.shared.take(runID)
+                titleDraft = title
+                renaming = true
+            }
             .onChange(of: runID) { previous, _ in
                 rememberVisit(previous)
                 workspace.requestTimeline(runID)
@@ -172,6 +184,9 @@ struct AgentRunPanel: View {
                 revertTarget = nil
                 revertError = nil
                 reverting = false
+                editTarget = nil
+                editError = nil
+                editWorking = false
                 openBlocks = []
                 expanded = []
                 countedLines = [:]
@@ -233,6 +248,8 @@ struct AgentRunPanel: View {
                         renaming = false
                     }
                     .onExitCommand { renaming = false }
+                    .focused($titleFocused)
+                    .focusOnAppear($titleFocused)
             } else {
                 Text(run.title)
                     .font(NookTheme.TextStyle.strong)
@@ -303,13 +320,23 @@ struct AgentRunPanel: View {
                 titleDraft = run.title
                 renaming = true
             }
+            // A new written title from the first message and the latest ones, with your title rules.
+            Button(tr("ws.title.regenerate")) { workspace.regenerateTitle(runID) }
             // A fork starts from this session; switching moves it to another agent with a summary of what happened.
             Button(tr("agents.fork")) {
                 if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
             }
             .disabled(!workspace.canTransfer(runID))
-            if run.lineage?.kind == .fork {
-                Button(tr("agents.mergeBack")) {
+            // Ends the agent's process; the next message resumes the conversation with new skills, plugins and MCP servers.
+            Button(tr("agents.restartAgent")) { workspace.restartAgent(runID) }
+                .disabled(!workspace.canRestartAgent(runID))
+                .help(tr("agents.restartAgent.help"))
+            Button(tr("ws.side.new")) {
+                if let id = workspace.openSideChat(runID, question: "") { app.viewModel.selectedAgentID = "run:" + id.uuidString }
+            }
+            .disabled(!workspace.canOpenSideChat(runID))
+            if let lineage = run.lineage, lineage.bringsBack {
+                Button(tr(lineage.kind == .side ? "ws.side.bringBack" : "agents.mergeBack")) {
                     if workspace.mergeBack(runID), let parent = run.lineage?.parentID {
                         app.viewModel.selectedAgentID = "run:" + parent.uuidString
                     }
@@ -578,11 +605,13 @@ struct AgentRunPanel: View {
         }
         if let target = revertTarget {
             revertConfirmation(target)
+        } else if let target = editTarget {
+            editConfirmation(target)
         } else if confirmDelete {
             deleteConfirmation(run)
         } else if let question = workspace.questions[runID]?.first {
             // The agent asks something: its question takes the composer's place until answered (Stop stays).
-            RunQuestionPanel(question: question, agent: run.provider.displayName,
+            RunQuestionPanel(question: question, agent: run.provider.displayName, folder: run.workingDirectory,
                              onStop: { workspace.stop(runID) }) { answers in
                 workspace.answer(runID, questionID: question.id, answers: answers)
             }
@@ -936,7 +965,11 @@ struct AgentRunPanel: View {
                 workspace.send(runID, text: tr("ws.plan.implementPrompt"))
             }
         } else if event.kind == .user {
-            eventView(event)
+            eventView(event, onEdit: workspace.canEditFromHere(runID, before: event.date) ? {
+                editError = nil
+                revertTarget = nil
+                editTarget = event
+            } : nil)
                 .contextMenu {
                     // "Edit from here": the worktree's files go back to how they were before this message.
                     Button(tr("ws.revert.menu")) {
@@ -1009,7 +1042,54 @@ struct AgentRunPanel: View {
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.surface))
     }
 
-    private func eventView(_ event: RunEvent, final: Bool = true, extras: AnyView? = nil, answerable: Bool = false) -> some View {
+    /// "Edit from here": go back to before the message, keeping the files as they are or putting them back too (only
+    /// where they can go back, see `canRevert`), then the message and its pictures are in the composer again.
+    private func editConfirmation(_ target: RunEvent) -> some View {
+        let canRevertFiles = workspace.canRevert(runID, before: target.date)
+        return AdaptiveActionRow(spacing: NookTheme.Spacing.md) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                Text(tr("ws.edit.confirm"))
+                    .font(NookTheme.TextStyle.strong)
+                    .foregroundStyle(NookTheme.paper)
+                Text(editError ?? tr(canRevertFiles ? "ws.edit.detail" : "ws.edit.detailKeepOnly", ToolSummary.oneLine(target.text, 60)))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(editError == nil ? NookTheme.textSecondary : NookTheme.coralSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } actions: {
+            NookGhostButton(title: tr("button.cancel")) { editTarget = nil }
+            NookGhostButton(title: tr("ws.edit.keepFiles")) { editFromHere(target, revertingFiles: false) }
+            if canRevertFiles {
+                NookPrimaryButton(title: editWorking ? tr("ws.revert.working") : tr("ws.edit.revertFiles")) {
+                    editFromHere(target, revertingFiles: true)
+                }
+            }
+        }
+        .padding(NookTheme.Spacing.lg)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.surface))
+    }
+
+    private func editFromHere(_ target: RunEvent, revertingFiles: Bool) {
+        guard !editWorking else { return }
+        editWorking = true
+        Task {
+            do {
+                try await workspace.editFromHere(runID, before: target.date, revertingFiles: revertingFiles)
+                editTarget = nil
+                // The message goes back into the composer: its words, and the pictures that went as paths in it.
+                let parts = ImageAttachment.splittingPaths(from: target.text)
+                draft = parts.text
+                images = parts.images.compactMap(ImageAttachment.init(url:))
+                focused = true
+            } catch {
+                editError = error.localizedDescription
+            }
+            editWorking = false
+        }
+    }
+
+    private func eventView(_ event: RunEvent, final: Bool = true, extras: AnyView? = nil, answerable: Bool = false,
+                           onEdit: (() -> Void)? = nil) -> some View {
         EventRow(
             event: event,
             final: final,
@@ -1025,7 +1105,8 @@ struct AgentRunPanel: View {
             showFile: sideLink.showFile,
             // A session on another machine has its files there, not on this Mac.
             directory: workspace.run(runID).flatMap { $0.isRemote ? nil : $0.workingDirectory },
-            shownFile: sideLink.shownFile
+            shownFile: sideLink.shownFile,
+            onEdit: onEdit
         )
         // Undone by going back to before an earlier message: the agent no longer remembers it.
         .opacity(event.rolledBack == true ? 0.45 : 1)
@@ -1084,6 +1165,15 @@ struct AgentRunPanel: View {
 
     // MARK: Composer
 
+    /// `/btw` or `/side` (with a question): a side chat beside this session, which keeps working (see `SideChat`). It
+    /// opens selected; the question is its first message. False for any other message.
+    private func openSideChat(_ text: String) -> Bool {
+        guard let question = SideChat.question(in: text), workspace.canOpenSideChat(runID) else { return false }
+        draft = ""
+        if let id = workspace.openSideChat(runID, question: question) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
+        return true
+    }
+
     /// The same composer a new session starts with: the agent and its model, mode and permissions for the next turn,
     /// everything else under ⋯, and send (or stop while it works).
     private func composer(_ run: WorkspaceRun) -> some View {
@@ -1092,6 +1182,7 @@ struct AgentRunPanel: View {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             // Return while a queued message is open in the box saves it instead of sending.
             if editingQueued != nil { saveQueuedEdit(); return }
+            if openSideChat(text) { return }
             guard composerModel.hasContent(text), !active else { return }
             let outgoing = composerModel.outgoing(text)
             draft = ""
@@ -1110,6 +1201,8 @@ struct AgentRunPanel: View {
             {
                 if editingQueued != nil { saveQueuedEdit(); return }
                 let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                // `/btw` during a turn: the side chat starts from the last finished turn and this one goes on.
+                if openSideChat(text) { return }
                 guard composerModel.hasContent(text) else { return }
                 let outgoing = composerModel.outgoing(text)
                 draft = ""
@@ -1128,6 +1221,7 @@ struct AgentRunPanel: View {
         let sendNow = {
             if editingQueued != nil { saveQueuedEdit(); return }
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            if openSideChat(text) { return }
             guard composerModel.hasContent(text), !active else { return }
             let outgoing = composerModel.outgoing(text)
             draft = ""
@@ -1142,6 +1236,9 @@ struct AgentRunPanel: View {
         return VStack(alignment: .leading, spacing: 5) {
             UsageLimitBanner(run: run)
             ConnectorSignInBanner(runID: runID)
+            // Its side chats (/btw): open one, or bring its result back here.
+            let sideChats = SideChat.children(of: runID, in: workspace.runs)
+            if !sideChats.isEmpty { SideChatStrip(workspace: workspace, chats: sideChats) }
             // The subagents the agent started since your message (also those still at work in the background after its
             // turn), and its task list.
             let subagents = derived.subagents

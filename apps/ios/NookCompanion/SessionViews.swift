@@ -691,17 +691,22 @@ struct NewSessionView: View {
                                    model: chosenAgent?.models == nil ? nil : model)
         let pictures = images
         Task {
-            let id = await client.start(launch, images: pictures)
+            let delivery = await client.start(launch, images: pictures)
             starting = false
-            guard let id else {
+            switch delivery {
+            case .sent(let response):
+                Haptics.success()
+                dismiss()
+                if let id = response.created { started(id) }
+            case .waiting:
+                // Kept on the phone: the Agents list shows it as waiting for your Mac, and it starts once the Mac answers.
+                Haptics.success()
+                dismiss()
+            case .refused:
                 Haptics.warning()
                 failure = client.notice ?? String(localized: "Your Mac refused this.")
                 client.notice = nil
-                return
             }
-            Haptics.success()
-            dismiss()
-            started(id)
         }
     }
 

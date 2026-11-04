@@ -36,9 +36,7 @@ extension WorkspaceManager {
         var config = config
         if decision.provider != config.provider {
             config.effort = settings.effort(for: decision.provider)
-            if !decision.provider.capabilities.policies.contains(config.permission) {
-                config.permission = settings.permission(for: decision.provider)
-            }
+            config.permission = config.permission.steppedDown(within: decision.provider.capabilities.policies)
             if config.mode == .plan, !decision.provider.capabilities.planMode { config.mode = .agent }
         }
         config.provider = decision.provider
