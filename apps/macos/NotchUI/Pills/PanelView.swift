@@ -205,7 +205,8 @@ struct PanelView: View {
             }
             .panelSidebarColumn()
             .padding(.trailing, PanelSidebarMetrics.inset)
-            .frame(width: agentsListWidth)
+            // Never narrower than its head, with the inset on both sides.
+            .frame(width: max(agentsListWidth, Double(PanelSidebarMetrics.headWidth + PanelSidebarMetrics.inset * 2)))
             NookDivider(vertical: true)
                 .bleedsVertically(lineBleed)
                 .padding(.trailing, NookTheme.Spacing.xl)
