@@ -152,9 +152,16 @@ enum CodexRPC {
         if mode == .plan { return ("untrusted", ["type": "readOnly"]) }
         switch permission {
         case .ask: return ("untrusted", ["type": "readOnly"])
-        case .acceptEdits: return ("on-request", ["type": "workspaceWrite"])
+        // "Auto": the same sandbox as "Allow edits"; what it would ask goes to Codex's reviewer first (`reviewer`).
+        case .acceptEdits, .auto: return ("on-request", ["type": "workspaceWrite"])
         case .bypass: return ("never", ["type": "dangerFullAccess"])
         }
+    }
+
+    /// Who answers Codex's approval requests: Codex's own reviewer subagent for "auto" (it approves routine requests and
+    /// sends risky ones on to you), otherwise you. Plan mode always asks you.
+    static func reviewer(mode: ExecutionMode, permission: PermissionPolicy) -> String {
+        mode != .plan && permission == .auto ? "auto_review" : "user"
     }
 
     static func turnStartParams(threadID: String, text: String, cwd: String, model: String, mode: ExecutionMode,
@@ -166,7 +173,7 @@ enum CodexRPC {
             "cwd": cwd,
             // Model catalogues can default summaries to "none"; ask on every turn so the timeline shows the reasoning.
             "summary": "detailed",
-            "approvalsReviewer": "user",
+            "approvalsReviewer": reviewer(mode: mode, permission: permission),
             "approvalPolicy": policy.approval,
             "sandboxPolicy": policy.sandbox
         ]

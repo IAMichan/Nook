@@ -35,16 +35,17 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
     var capabilities: ProviderCapabilities {
         switch self {
         case .claude:
-            // `--resume-session-at` with `--fork-session` also forks from an earlier turn.
+            // `--resume-session-at` with `--fork-session` also forks from an earlier turn. "Auto" is `--permission-mode auto`.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass], steering: true, nativeFork: true,
+                                        policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, nativeFork: true,
                                         canRollbackConversation: true, canForkFromTurn: true, liveSettings: true)
         case .codex:
-            // Over app-server Codex asks for approval, streams its answer and reports its context window.
+            // Over app-server Codex asks for approval, streams its answer and reports its context window. "Auto" routes its
+            // approval requests to Codex's own reviewer (`approvalsReviewer: auto_review`).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass], steering: true, canRollbackConversation: true)
+                                        policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, canRollbackConversation: true)
         case .gemini:
             // Over ACP Gemini asks Nook for permission; its headless fallback cannot (auto_edit or yolo there).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
@@ -62,6 +63,9 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass], liveSettings: true)
         case .opencode, .grok, .acp:
+            // No "auto" for any ACP agent (Gemini CLI, Antigravity and Cursor above too): none offers a reviewer that approves
+            // routine actions itself. Gemini CLI's modes are default/auto_edit/yolo/plan, Antigravity's the same, Cursor's
+            // agent/plan/ask, OpenCode's build/plan, and Grok only has --always-approve; Nook does not guess what is risky.
             // ACP: permission requests, cancel, streamed messages and thoughts, usage updates with context and cost. Their
             // earlier sessions come from the agent itself (`session/list`).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
@@ -141,9 +145,30 @@ enum PermissionPolicy: String, Codable, CaseIterable, Identifiable, Sendable {
     case ask
     /// Editing files in the workspace directory is allowed; commands prompt first (Claude) or run sandboxed (Codex).
     case acceptEdits
+    /// The agent's own reviewer approves routine actions and still asks you for risky ones (Claude Code's
+    /// `--permission-mode auto`, Codex's `approvalsReviewer: auto_review`). Only where `ProviderCapabilities.policies`
+    /// lists it.
+    case auto
     /// Allow everything without prompts. Use only when explicitly desired.
     case bypass
     var id: String { rawValue }
+
+    /// How much the agent may do without you, from least to most. "Auto" lets the agent approve commands you would
+    /// otherwise have been asked about, so it ranks above "Allow edits"; it still asks for risky ones, so below "Allow
+    /// everything".
+    var rank: Int {
+        switch self {
+        case .ask: return 0
+        case .acceptEdits: return 1
+        case .auto: return 2
+        case .bypass: return 3
+        }
+    }
+
+    /// Whether a session nobody watches from this Mac may run with it (one started from the phone, a scheduled task): at
+    /// most "Allow edits". "Auto" does not count: its reviewer is the agent's own model, and what it approves nobody sees
+    /// until afterwards.
+    var isUnattendedSafe: Bool { rank <= PermissionPolicy.acceptEdits.rank }
 }
 
 /// Work directly in the project folder, or in a separate Git worktree with its own branch.

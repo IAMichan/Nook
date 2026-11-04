@@ -225,6 +225,7 @@ check the agent's protocol before you write `–`.
 | Runs as a session in Nook | ✓ | ✓ (app-server) | ✓ (ACP) | ✓ (ACP) | ✓ (ACP) | ✓ (ACP) | ✓ (ACP) | ✓ |
 | Asks you for permission | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Plan mode | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| "Auto" access: the agent's own reviewer approves routine actions and still asks you for risky ones (`PermissionPolicy.auto`, listed in `ProviderCapabilities.policies` only where the agent has it). Never for a session started from the phone or a scheduled task: those step down to "Allow edits" (`PermissionPolicy.isUnattendedSafe`) | ✓ (`--permission-mode auto`, also live through `set_permission_mode`) | ✓ (app-server: `approvalsReviewer: "auto_review"` with the workspace sandbox; the `codex exec` fallback has no one to ask and keeps the workspace sandbox) | – (its approval modes are default, auto_edit, yolo and plan: no reviewer) | – (same modes as Gemini CLI) | – (its ACP modes are build and plan) | – (its ACP modes are agent, plan and ask) | – (only `--always-approve`, which is "Allow everything") | – (no ACP mode for it; Nook does not guess which actions are risky) |
 | A message during a turn changes it | ✓ (native) | ✓ (`turn/steer`) | ✓ (interrupt and restart) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
 | Cost of a turn | ✓ | – | – | ✓ (when the agent sends it) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
 | Context window meter | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
