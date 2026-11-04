@@ -127,23 +127,22 @@ final class WindowAttach {
 }
 
 /// A soft rainbow ring around the window Nook will look at. It turns about once in three seconds, drawn at a low frame rate
-/// in a graph of its own (`SeparateGraph`); under Reduce Motion it stands still.
+/// in a small window of its own; under Reduce Motion it stands still.
 private struct WindowHalo: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        SeparateGraph {
-            TimelineView(.nookFrames(fps: 20, paused: reduceMotion)) { timeline in
-                let turn = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3) / 3 * 360
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(
-                        AngularGradient(colors: [Color(hex: 0xFF6B5B), Color(hex: 0xF7B32B), Color(hex: 0x2DD4A7), Color(hex: 0x38BDF8),
-                                                 Color(hex: 0xA78BFA), Color(hex: 0xF472B6), Color(hex: 0xFF6B5B)],
-                                        center: .center, angle: .degrees(turn)),
-                        lineWidth: 4
-                    )
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
-            }
+        // perf: alone in a small window of its own, and only while you pick a window.
+        TimelineView(.nookFrames(fps: 20, paused: reduceMotion)) { timeline in
+            let turn = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3) / 3 * 360
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(
+                    AngularGradient(colors: [Color(hex: 0xFF6B5B), Color(hex: 0xF7B32B), Color(hex: 0x2DD4A7), Color(hex: 0x38BDF8),
+                                             Color(hex: 0xA78BFA), Color(hex: 0xF472B6), Color(hex: 0xFF6B5B)],
+                                    center: .center, angle: .degrees(turn)),
+                    lineWidth: 4
+                )
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
         }
     }
 }

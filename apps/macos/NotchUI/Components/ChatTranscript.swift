@@ -427,25 +427,6 @@ struct ChatTranscript: View, Equatable {
     }
 }
 
-/// Where a new day starts in a chat: "Today", "Yesterday", "Monday", "12 Oct". A small soft label in the middle with
-/// room around it, as chat apps mark the day: easy to find while scrolling, quiet while reading.
-private struct ChatDayDivider: View {
-    let label: String
-
-    var body: some View {
-        Text(label)
-            .font(NookTheme.TextStyle.caption)
-            .fontWeight(.semibold)
-            .foregroundStyle(NookTheme.textStrong)
-            .padding(.horizontal, NookTheme.Spacing.lg)
-            .padding(.vertical, NookTheme.Spacing.xs)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.chatTheirs))
-            .frame(maxWidth: .infinity)
-            .padding(.top, NookTheme.Spacing.xl)
-            .padding(.bottom, NookTheme.Spacing.md)
-            .accessibilityAddTraits(.isHeader)
-    }
-}
 
 /// Drawn again only when what it shows changed: the chat around it redraws on every change anywhere in Nook's chats
 /// (a message in another chat, a picture that came in), and fifty bubbles each parsing their text again makes scrolling
@@ -533,7 +514,7 @@ private struct ChatBubbleView: View, Equatable {
                 .font(NookTheme.TextStyle.caption)
                 .monospacedDigit()
                 .foregroundStyle(NookTheme.paper)
-            if let ticks = bubble.ticks { TicksView(ticks: ticks) }
+            if let ticks = bubble.ticks { MessageTicksMark(ticks: ticks) }
         }
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.xxs)
@@ -576,10 +557,10 @@ private struct ChatBubbleView: View, Equatable {
                 .foregroundStyle(NookTheme.chatStamp)
             if let ticks = bubble.ticks {
                 if bubble.readers.isEmpty {
-                    TicksView(ticks: ticks)
+                    MessageTicksMark(ticks: ticks)
                 } else {
                     // In a group: a click on the ticks says who read it, who has it, and who does not yet.
-                    Button { showingInfo = true } label: { TicksView(ticks: ticks) }
+                    Button { showingInfo = true } label: { MessageTicksMark(ticks: ticks) }
                         .buttonStyle(.plain)
                         .pointerStyle(.link)
                         .help(tr("chat.info.title"))
@@ -1096,47 +1077,7 @@ extension View {
     }
 }
 
-/// Someone typing, under the chat's last message as WhatsApp shows it: three dots that come and go, and who it is.
-struct ChatTypingBubble: View {
-    static let id = "\u{1}typing"
-    let text: String
 
-    var body: some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
-            ChatTypingDots()
-            Text(text)
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, NookTheme.Spacing.lg)
-        .padding(.vertical, NookTheme.Spacing.md)
-        .padding(.leading, ChatBubbleShape.tail)
-        .background(ChatBubbleShape(mine: false, tailed: true).fill(NookTheme.chatTheirs))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(text)
-    }
-}
-
-/// Three dots that light up one after the other while someone types.
-struct ChatTypingDots: View {
-    var body: some View {
-        TimelineView(.nookTicks(every: 0.3)) { context in
-            let step = Int(context.date.timeIntervalSinceReferenceDate / 0.3) % 3
-            HStack(spacing: NookTheme.Spacing.xxs) {
-                ForEach(0..<3, id: \.self) { dot in
-                    Circle()
-                        .fill(NookTheme.textSecondary)
-                        .frame(width: 5, height: 5)
-                        .opacity(dot == step ? 1 : 0.35)
-                }
-            }
-            .animation(NookTheme.hover, value: step)
-        }
-        .accessibilityHidden(true)
-    }
-}
 
 /// The emoji the reaction buttons offer, as WhatsApp's own quick row.
 enum ChatReactions {
@@ -1147,35 +1088,9 @@ enum ChatReactions {
 struct QuotedMessage: View {
     let quote: BubbleQuote
 
-    private var tint: Color { quote.mine ? NookTheme.mint : NookTheme.blue }
-
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 1) {
-                if !quote.sender.isEmpty {
-                    Text(quote.sender)
-                        .font(NookTheme.TextStyle.label)
-                        .foregroundStyle(tint)
-                        .lineLimit(1)
-                }
-                Text(quote.text)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, NookTheme.Spacing.xs)
-        .padding(.leading, NookTheme.Spacing.lg)
-        .padding(.trailing, NookTheme.Spacing.md)
-        .overlay(alignment: .leading) {
-            Capsule().fill(tint).frame(width: 3).padding(.vertical, NookTheme.Spacing.xs).padding(.leading, NookTheme.Spacing.xs)
-        }
-        .frame(maxWidth: PhotoButton.maxWidth, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.paper.opacity(0.05)))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(tr("chat.quote", quote.sender.isEmpty ? quote.text : "\(quote.sender): \(quote.text)"))
+        ChatQuote(sender: quote.sender, text: quote.text, mine: quote.mine, maxWidth: PhotoButton.maxWidth)
+            .accessibilityLabel(tr("chat.quote", quote.sender.isEmpty ? quote.text : "\(quote.sender): \(quote.text)"))
     }
 }
 
@@ -1446,59 +1361,6 @@ enum ChatLinks {
     }
 }
 
-/// Your own message's ticks after its time, as WhatsApp draws them, in every chat app that says how far a message got:
-/// a clock while it goes out, one grey tick on the server, two on their phone, two blue ones once read, a red mark when
-/// it could not be sent. Also in front of a chat's newest message in the Chats tab's list, when that message is yours.
-/// In a group whose app says it per person, a click on them opens `MessageInfoView`.
-struct TicksView: View {
-    let ticks: BubbleTicks
-
-    var body: some View {
-        Group {
-            switch ticks {
-            case .pending:
-                Image(systemName: "clock").font(NookTheme.font(10.5, .semibold))
-            case .sent:
-                check
-            case .delivered, .read:
-                // The second tick overlaps the first, as on the phone.
-                ZStack(alignment: .leading) {
-                    check
-                    check.padding(.leading, 5)
-                }
-            case .failed:
-                Image(systemName: "exclamationmark.circle.fill").font(NookTheme.font(11.5, .semibold))
-            }
-        }
-        .foregroundStyle(color)
-        .help(tr(label))
-        .accessibilityElement()
-        .accessibilityLabel(tr(label))
-    }
-
-    private var check: some View {
-        Image(systemName: "checkmark").font(NookTheme.font(10.5, .bold))
-    }
-
-    private var color: Color {
-        switch ticks {
-        case .read: return NookTheme.blue
-        case .failed: return NookTheme.coral
-        // Grey that still reads on your mint bubble; read is blue, as on the phone.
-        case .pending, .sent, .delivered: return NookTheme.chatStamp
-        }
-    }
-
-    private var label: String {
-        switch ticks {
-        case .pending: return "whatsapp.ticks.pending"
-        case .sent: return "whatsapp.ticks.sent"
-        case .delivered: return "whatsapp.ticks.delivered"
-        case .read: return "whatsapp.ticks.read"
-        case .failed: return "whatsapp.ticks.failed"
-        }
-    }
-}
 
 /// A video in a chat bubble: its first frame, whole, with a play button, and a click plays it right there with Nook's own
 /// small controls (`ChatVideoControls`: play and pause, a bar to scrub, the time), which fit even a narrow bubble where
@@ -2252,44 +2114,3 @@ private struct TranscriptScrollGeometry: Equatable {
     var nearBottom: Bool { content <= container || offset + container >= content - 60 }
 }
 
-/// A chat app's message bubble: a rounded box with, on the first message of a run, a small tail at its top corner
-/// pointing at who wrote it, as the chat apps draw them. The messages of one run stack into one block: where two of
-/// them meet, the corners on the writer's side, where their edges line up, are only slightly round (`Radius.chatJoin`);
-/// the other side, where bubbles of different widths end, stays fully round, so no corner sticks out. The tail sits in `tail` points of room on that side, which every
-/// bubble keeps so a run's edges line up.
-struct ChatBubbleShape: Shape {
-    let mine: Bool
-    /// The first message of a run: the tail, and a square top corner on the writer's side.
-    let tailed: Bool
-    /// Another message of the same run follows: its bottom edge meets it.
-    var joinsBelow = false
-    /// It follows another message of the same run (any but the first): its top edge meets it.
-    var joinsAbove: Bool { !tailed }
-    static let tail: CGFloat = 7
-
-    func path(in rect: CGRect) -> Path {
-        let radius = NookTheme.Radius.chatBubble
-        let joined = NookTheme.Radius.chatJoin
-        let body = CGRect(x: mine ? rect.minX : rect.minX + Self.tail, y: rect.minY,
-                          width: max(0, rect.width - Self.tail), height: rect.height)
-        // The writer's side: square under the tail, slightly round where it meets the message above or below. The far side
-        // stays round: bubbles of a run differ in width there.
-        let top: CGFloat = tailed ? 0 : (joinsAbove ? joined : radius)
-        let bottom: CGFloat = joinsBelow ? joined : radius
-        var path = Path(roundedRect: body, cornerRadii: RectangleCornerRadii(
-            topLeading: mine ? radius : top, bottomLeading: mine ? radius : bottom,
-            bottomTrailing: mine ? bottom : radius, topTrailing: mine ? top : radius), style: .continuous)
-        guard tailed else { return path }
-        let edge = mine ? body.maxX : body.minX
-        let tip = mine ? rect.maxX : rect.minX
-        let depth = min(Self.tail * 1.6, body.height)
-        var tailPath = Path()
-        tailPath.move(to: CGPoint(x: edge, y: body.minY))
-        tailPath.addLine(to: CGPoint(x: tip - (mine ? 1 : -1), y: body.minY))
-        tailPath.addQuadCurve(to: CGPoint(x: tip - (mine ? 2 : -2), y: body.minY + 2), control: CGPoint(x: tip, y: body.minY))
-        tailPath.addLine(to: CGPoint(x: edge, y: body.minY + depth))
-        tailPath.closeSubpath()
-        path.addPath(tailPath)
-        return path
-    }
-}

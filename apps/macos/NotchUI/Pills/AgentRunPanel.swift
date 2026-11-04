@@ -1144,8 +1144,10 @@ struct AgentRunPanel: View {
             }
         } actions: {
             NookGhostButton(title: tr("button.cancel")) { confirmDelete = false }
-            // The session's own worktree, which no other session uses, can go with it.
-            if let worktree = workspace.orphanedWorktree(runID) {
+            // The session's own worktree, which no other session uses, can go with it. With "remove it when its last
+            // session is deleted" on, Delete itself takes care of that.
+            if let worktree = workspace.orphanedWorktree(runID),
+               !workspace.settings.worktreeCleanupRules(for: worktree.repo).onDeletedSession {
                 NookGhostButton(title: tr("agents.run.deleteWithWorktree")) {
                     confirmDelete = false
                     workspace.deleteWithWorktree(runID)

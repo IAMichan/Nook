@@ -87,7 +87,23 @@ struct ProjectInfo: Equatable {
 @MainActor
 final class WorkspaceManager: ObservableObject {
     /// Settable within the module: the stop and handoff extensions settle open work and add forked sessions.
-    @Published var runs: [WorkspaceRun] = []
+    @Published var runs: [WorkspaceRun] = [] {
+        didSet { runPositions = nil }
+    }
+    /// Where each session is in `runs`, made again on the first lookup after `runs` changed. Rows, panels and the
+    /// handlers of every streamed line look a session up by id, many times per redraw: walking a few hundred sessions
+    /// (and copying the one found) each time was a visible share of drawing the Agents list.
+    private var runPositions: [UUID: Int]?
+
+    /// The index of session `id` in `runs`; the first one when an id appears twice.
+    func runIndex(_ id: UUID) -> Int? {
+        if let runPositions { return runPositions[id] }
+        var positions: [UUID: Int] = [:]
+        positions.reserveCapacity(runs.count)
+        for (index, run) in runs.enumerated() where positions[run.id] == nil { positions[run.id] = index }
+        runPositions = positions
+        return positions[id]
+    }
     /// Each session's timeline. Not `@Published`: a streaming answer changes it for every token, and a published
     /// dictionary can only be replaced as a whole, which copied the session's entire timeline per token. Changed in place
     /// here, and the views that draw a timeline hear about it through `timelines`, at most every `eventsPublishInterval`
@@ -315,6 +331,12 @@ final class WorkspaceManager: ObservableObject {
     var checkpointIndices: [UUID: Int] = [:]
     /// When the worktree cleanup rules last looked (see WorkspaceManager+WorktreeCleanup).
     var worktreeCleanupAt: Date?
+    /// What the latest cleanup did (Settings › Workspace), kept across restarts.
+    @Published var worktreeCleanupReport: WorktreeCleanupReport? = WorktreeCleanupReport.load()
+    /// A cleanup runs now (by the clock or "Clean up now").
+    @Published var worktreeCleanupRunning = false
+    /// The folders terminals in Nook are open in; configured by AppModel. A worktree with one stays.
+    var openTerminalFolders: (() -> [String])?
     var buildLeftoversAt: Date?
     /// Writes an entry to the audit log (tool, arguments, result); configured by AppModel.
     var onAudit: ((String, String, String) -> Void)?
@@ -410,8 +432,8 @@ final class WorkspaceManager: ObservableObject {
     // MARK: Reading
 
     func run(_ id: UUID?) -> WorkspaceRun? {
-        guard let id else { return nil }
-        return runs.first { $0.id == id }
+        guard let id, let index = runIndex(id) else { return nil }
+        return runs[index]
     }
 
     func timeline(_ id: UUID) -> [RunEvent] {
@@ -447,7 +469,7 @@ final class WorkspaceManager: ObservableObject {
     /// pointer, the session the list is about to show) draws it at once instead of replaying its whole log
     /// on the main thread first. Opening before this is done waits for the same read (`requestTimeline`).
     func prefetchTimeline(_ id: UUID) {
-        guard events[id] == nil, !prefetching.contains(id), runs.contains(where: { $0.id == id }) else { return }
+        guard events[id] == nil, !prefetching.contains(id), runIndex(id) != nil else { return }
         prefetching.insert(id)
         let store = store
         Task { [weak self] in
@@ -1913,8 +1935,11 @@ final class WorkspaceManager: ObservableObject {
     }
 
     /// Removes a session from Nook. The directory or worktree is preserved (removed separately); never allows deleting an active session.
-    func delete(_ id: UUID) {
+    /// `cleanUpWorktree`: with "Remove the worktree when its last session is deleted" on, the worktree this leaves unused
+    /// goes too (`cleanUpWorktreeAfterDelete`); **Delete with worktree** removes it itself.
+    func delete(_ id: UUID, cleanUpWorktree: Bool = true) {
         guard let run = run(id), !run.status.isActive, processes[id] == nil else { return }
+        let leftWorktree = cleanUpWorktree && run.isolation == .worktree ? orphanedWorktree(id) : nil
         if let root = run.repoRoot, let git = sessionGit(for: run), run.checkpoints != nil {
             Task.detached(priority: .utility) { git.removeCheckpoints(root, session: id) }
         }
@@ -1963,6 +1988,9 @@ final class WorkspaceManager: ObservableObject {
         store.deleteEvents(id)
         if selectedRunID == id { selectedRunID = runs.first { !$0.archived }?.id }
         scheduleSave()
+        if let leftWorktree {
+            cleanUpWorktreeAfterDelete(repo: leftWorktree.repo, path: leftWorktree.path, branch: run.branch)
+        }
     }
 
     private func applyAutoArchive() {
@@ -2207,7 +2235,7 @@ final class WorkspaceManager: ObservableObject {
     func deleteWithWorktree(_ id: UUID) {
         guard let worktree = orphanedWorktree(id) else { delete(id); return }
         guard run(id)?.status.isActive == false else { return }
-        delete(id)
+        delete(id, cleanUpWorktree: false)
         // `delete` leaves a session whose process is still there; its worktree stays with it.
         guard run(id) == nil else { return }
         Task {
@@ -2338,13 +2366,13 @@ final class WorkspaceManager: ObservableObject {
     // MARK: Tracking and Persistence
 
     func replace(_ run: WorkspaceRun) {
-        guard let index = runs.firstIndex(where: { $0.id == run.id }) else { return }
+        guard let index = runIndex(run.id) else { return }
         runs[index] = run
         scheduleSave()
     }
 
     func update(_ id: UUID, save: Bool = true, _ change: (inout WorkspaceRun) -> Void) {
-        guard let index = runs.firstIndex(where: { $0.id == id }) else { return }
+        guard let index = runIndex(id) else { return }
         var run = runs[index]
         change(&run)
         guard run != runs[index] else { return }
@@ -2367,7 +2395,7 @@ final class WorkspaceManager: ObservableObject {
             // agent appends many events a second, so in between turn boundaries the time moves on at most every 2 s.
             let boundary = event.kind == .user || event.kind == .result || event.kind == .error || event.kind == .approval
             let now = Date()
-            if boundary || runs.first(where: { $0.id == id }).map({ now.timeIntervalSince($0.updatedAt) >= 2 }) ?? false {
+            if boundary || runIndex(id).map({ now.timeIntervalSince(runs[$0].updatedAt) >= 2 }) ?? false {
                 update(id, save: false) { $0.updatedAt = now }
             }
         }
