@@ -198,6 +198,7 @@ targets:
       - path: Core/I18n+DoubleTap.swift
       - path: Core/I18n+Takeover.swift
       - path: Core/I18n+Harness.swift
+      - path: Core/I18n+DiffReview.swift
       - path: Core/I18n+ChatMedia.swift
       - path: Core/I18n+ChatRead.swift
       - path: Core/I18n+BeeperImport.swift
@@ -400,6 +401,8 @@ targets:
       - path: Services/Workspace/ComposerQuotes.swift
       - path: Services/SelectionAsk.swift
       - path: Services/Workspace/UnifiedDiff.swift
+      - path: Services/Workspace/DiffDisplay.swift
+      - path: Services/Workspace/ScratchProjects.swift
       - path: Services/Workspace/SessionExport.swift
       - path: Services/Workspace/CustomAgents.swift
       - path: Services/Workspace/BrowserSearch.swift

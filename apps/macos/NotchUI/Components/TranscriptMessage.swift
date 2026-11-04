@@ -26,12 +26,15 @@ enum TranscriptStyle {
 }
 
 /// What you wrote: pictures above a soft bubble on the right, a long message folded to its first lines, and on hover
-/// its time and a copy button under it. Sent while the agent worked, a quiet "steered" mark sits above it.
+/// its time and a copy button under it (and "Edit from here" where the session can go back to before it). Sent while
+/// the agent worked, a quiet "steered" mark sits above it.
 struct TranscriptUserMessage<Attachments: View>: View {
     let text: String
     var date: Date? = nil
     /// Sent while the agent was working: it changed course mid-turn.
     var steered = false
+    /// "Edit from here": goes back to before this message and puts it in the composer again; nil where it cannot.
+    var onEdit: (() -> Void)? = nil
     /// Pictures that came with the message as attachments rather than as paths in its text (the Nook chat's).
     @ViewBuilder var attachments: () -> Attachments
     @State private var expanded = false
@@ -74,7 +77,11 @@ struct TranscriptUserMessage<Attachments: View>: View {
                     .padding(.vertical, NookTheme.Spacing.lg)
                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.bubble, style: .continuous).fill(NookTheme.bubble))
                 }
-                TranscriptMessageFooter(text: text, date: date, visible: hovering, trailing: true) { EmptyView() }
+                TranscriptMessageFooter(text: text, date: date, visible: hovering, trailing: true) {
+                    if let onEdit {
+                        ToolbarIconButton("pencil", tr("agents.message.editFromHere"), height: 22, width: 22, onEdit)
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -107,8 +114,8 @@ struct TranscriptUserMessage<Attachments: View>: View {
 }
 
 extension TranscriptUserMessage where Attachments == EmptyView {
-    init(text: String, date: Date? = nil, steered: Bool = false) {
-        self.init(text: text, date: date, steered: steered) { EmptyView() }
+    init(text: String, date: Date? = nil, steered: Bool = false, onEdit: (() -> Void)? = nil) {
+        self.init(text: text, date: date, steered: steered, onEdit: onEdit) { EmptyView() }
     }
 }
 
