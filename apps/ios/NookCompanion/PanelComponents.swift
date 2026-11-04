@@ -127,29 +127,48 @@ struct HomeLogo: View {
 
 // MARK: Headers
 
-/// The title row on top of a tab, the Mac's `PanelListHeader` with Nook beside it as in the panel's header: Nook's
-/// orb, the name, what waits (`CountBadge`), and the tab's own round buttons on the right. Every tab starts with this
-/// same row, so they line up when you switch.
+/// The panel's tabs, in the Mac's order (`PanelTab.visible`): Nook, Agents, Chats.
+enum CompanionTab: Hashable, CaseIterable {
+    case nook, agents, chats
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .nook: return "Nook"
+        case .agents: return "Agents"
+        case .chats: return "Chats"
+        }
+    }
+}
+
+/// Which tab shows: shared, so the header every tab starts with can switch.
+@MainActor
+final class TabRouter: ObservableObject {
+    @Published var tab = CompanionTab.nook
+
+    /// The tabs this phone may use: one the Mac does not allow it (`CompanionScope`) is left out.
+    func available(_ client: CompanionClient) -> [CompanionTab] {
+        CompanionTab.allCases.filter { tab in
+            switch tab {
+            case .nook: return client.allows(.nookChat)
+            case .agents: return true
+            case .chats: return client.allows(.chats)
+            }
+        }
+    }
+}
+
+/// The row on top of every tab, the Mac's panel header: Nook's orb (its menu holds the Mac, the connection and Live
+/// Activities), the tabs in one quiet capsule, and the tab's own round button on the right. Every tab starts with this
+/// same row, so it stays put when you switch.
 struct PanelHeader<Trailing: View>: View {
-    let title: LocalizedStringKey
-    var count: Int = 0
-    var subtitle: String? = nil
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.lg) {
-            NookMark(size: 30)
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: Theme.Spacing.md) {
-                    Text(title).font(Theme.TextStyle.pageTitle).foregroundStyle(Theme.text).lineLimit(1)
-                    CountBadge(count: count)
-                }
-                if let subtitle {
-                    Text(subtitle).font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary).lineLimit(1)
-                }
-            }
-            Spacer(minLength: Theme.Spacing.md)
-            HStack(spacing: Theme.Spacing.md) { trailing() }
+        HStack(spacing: Theme.Spacing.md) {
+            MacMenu()
+            PanelTabBar()
+            Spacer(minLength: 0)
+            trailing()
         }
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.top, Theme.Spacing.md)
@@ -158,8 +177,130 @@ struct PanelHeader<Trailing: View>: View {
 }
 
 extension PanelHeader where Trailing == EmptyView {
-    init(_ title: LocalizedStringKey, count: Int = 0, subtitle: String? = nil) {
-        self.init(title: title, count: count, subtitle: subtitle) { EmptyView() }
+    init() { self.init { EmptyView() } }
+}
+
+/// The panel's tabs as the Mac's `NookTabBar`: plain words in a quiet capsule, the selected one on a raised capsule
+/// that slides to the next; what waits for you as an amber count.
+struct PanelTabBar: View {
+    @EnvironmentObject private var client: CompanionClient
+    @EnvironmentObject private var router: TabRouter
+    @Namespace private var selection
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.xxs) {
+            ForEach(router.available(client), id: \.self) { tab in
+                let selected = router.tab == tab
+                Button {
+                    guard !selected else { return }
+                    Haptics.tap()
+                    withAnimation(Theme.reveal) { router.tab = tab }
+                } label: {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Text(tab.title).lineLimit(1)
+                        CountBadge(count: count(tab))
+                    }
+                    .font(Theme.TextStyle.tab)
+                    .foregroundStyle(selected ? Theme.text : Theme.textTertiary)
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .frame(height: 32)
+                    .background {
+                        if selected {
+                            Capsule().fill(Theme.raised).matchedGeometryEffect(id: "selection", in: selection)
+                        }
+                    }
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(Theme.Spacing.xxs)
+        .background(Theme.surface, in: Capsule())
+        .fixedSize()
+    }
+
+    private func count(_ tab: CompanionTab) -> Int {
+        switch tab {
+        case .nook: return client.conversations.filter(\.waiting).count
+        case .agents: return client.sessions.needingYou
+        // Chats with something unread, not every message: one busy group is one.
+        case .chats: return client.inbox.filter { $0.unread > 0 }.count
+        }
+    }
+}
+
+/// Nook's orb, and under it what the phone knows about the Mac: which Mac (and switching to another), how it is
+/// reached, Live Activities, checking the connection, and unpairing. A small amber dot on the orb while the Mac
+/// cannot be reached.
+struct MacMenu: View {
+    @EnvironmentObject private var client: CompanionClient
+    @ObservedObject private var live = LiveActivities.shared
+    @State private var diagnosing = false
+
+    private var offline: Bool {
+        if case .offline = client.phase { return true }
+        return false
+    }
+
+    var body: some View {
+        Menu {
+            // Every paired Mac: the live connection goes to the one that is checked.
+            Section(client.macName.isEmpty ? String(localized: "Your Mac") : client.macName) {
+                if client.macs.count > 1 {
+                    ForEach(client.macs) { mac in
+                        Button { client.switchMac(to: mac.id) } label: {
+                            if mac.id == client.activeMacID {
+                                Label(mac.name, systemImage: "checkmark")
+                            } else {
+                                Label(mac.name, systemImage: "laptopcomputer")
+                            }
+                        }
+                    }
+                }
+                // How the phone reaches the Mac right now: the local network, Tailscale, or the relay.
+                if client.phase == .connected, let route = client.activeRoute {
+                    Label(RouteText.connected(route), systemImage: RouteText.symbol(route))
+                }
+                Button { diagnosing = true } label: { Label("Check the connection", systemImage: "stethoscope") }
+            }
+            Section {
+                // Sessions working on the Mac on the Lock Screen and in the Dynamic Island.
+                if client.can(CompanionFeature.liveActivity) {
+                    Toggle(isOn: $live.enabled) { Label("Live Activities", systemImage: "platter.filled.top.iphone") }
+                        .disabled(!live.allowedBySystem)
+                }
+                if client.macPushReady == false {
+                    Label("Push notifications are not ready on your Mac yet (Settings › iPhone companion).",
+                          systemImage: "bell.slash")
+                }
+                if client.hasUnrecognizedMacFeatures {
+                    Label("Update Nook Companion to use everything your Mac offers.", systemImage: "arrow.down.circle")
+                }
+                // Opens the update panel on the Mac; installing stays a click there.
+                if client.can(CompanionFeature.requestUpdate) {
+                    Button { Task { await client.requestMacUpdate() } } label: {
+                        Label("Show the update on your Mac", systemImage: "arrow.down.circle")
+                    }
+                }
+            }
+            Section {
+                Button { client.addingMac = true } label: { Label("Pair another Mac", systemImage: "plus") }
+                Button("Unpair from this Mac", role: .destructive) { client.unpair() }
+            }
+        } label: {
+            NookMark(size: 30)
+                .overlay(alignment: .bottomTrailing) {
+                    if offline {
+                        Circle().fill(Theme.amber).frame(width: 9, height: 9)
+                            .overlay(Circle().strokeBorder(Theme.canvas, lineWidth: 2))
+                    }
+                }
+                .frame(width: 36, height: 36)
+                .contentShape(Circle())
+        }
+        .accessibilityLabel("Nook and your Mac")
+        .sheet(isPresented: $diagnosing) { DiagnosisSheet() }
     }
 }
 

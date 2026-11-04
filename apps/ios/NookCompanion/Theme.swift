@@ -74,6 +74,8 @@ enum Theme {
         static var display: Font { .title.weight(.semibold) }
         /// A tab's own title in its `PanelHeader`.
         static var pageTitle: Font { .title2.weight(.semibold) }
+        /// A tab in the panel's header.
+        static var tab: Font { .subheadline.weight(.medium) }
         static var code: Font { .footnote.monospaced() }
     }
 
@@ -155,6 +157,19 @@ enum Theme {
         case "ready": return String(localized: "Ready")
         case "finished": return String(localized: "Finished")
         default: return String(localized: "Idle")
+        }
+    }
+
+    /// One word for a row's corner, where the row's title says the rest.
+    static func shortWord(_ attention: String) -> String {
+        switch attention {
+        case "approval": return String(localized: "Approval")
+        case "input": return String(localized: "Question")
+        case "failed": return String(localized: "Failed")
+        case "limited": return String(localized: "Limit")
+        case "working": return String(localized: "Working")
+        case "ready": return String(localized: "Done")
+        default: return word(attention)
         }
     }
 
@@ -302,25 +317,54 @@ struct SectionHeader: View {
     var count: Int? = nil
     /// Amber count for what waits on you; otherwise the count is a quiet number.
     var urgent = false
+    /// A shelf that folds: a hairline across the rest of the row and a chevron; the count shows only while folded.
+    var expanded: Binding<Bool>? = nil
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.sm) {
-            Text(title)
-                .font(Theme.TextStyle.label)
-                .foregroundStyle(urgent ? Theme.amber : Theme.textTertiary)
-            if let count {
-                if urgent {
-                    CountBadge(count: count)
-                } else {
-                    Text(count, format: .number).font(Theme.TextStyle.caption).monospacedDigit().foregroundStyle(Theme.textTertiary)
+        if let expanded {
+            Button {
+                Haptics.tap()
+                withAnimation(Theme.reveal) { expanded.wrappedValue.toggle() }
+            } label: {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Text(title)
+                    if !expanded.wrappedValue, let count {
+                        Text(verbatim: "(\(count))").monospacedDigit()
+                    }
+                    Rectangle().fill(Theme.hairline).frame(height: 1).padding(.horizontal, Theme.Spacing.xs)
+                    Image(systemName: "chevron.down")
+                        .font(Theme.font(10, .semibold))
+                        .rotationEffect(.degrees(expanded.wrappedValue ? 0 : -90))
                 }
+                .font(Theme.TextStyle.label)
+                .foregroundStyle(Theme.textTertiary)
+                .padding(.horizontal, Theme.Spacing.xs)
+                .padding(.top, Theme.Spacing.xl)
+                .padding(.bottom, Theme.Spacing.xs)
+                .contentShape(Rectangle())
             }
-            Spacer()
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityValue(Text(expanded.wrappedValue ? "Expanded" : "Collapsed"))
+        } else {
+            HStack(spacing: Theme.Spacing.sm) {
+                Text(title)
+                    .font(Theme.TextStyle.label)
+                    .foregroundStyle(urgent ? Theme.amber : Theme.textTertiary)
+                if let count {
+                    if urgent {
+                        CountBadge(count: count)
+                    } else {
+                        Text(count, format: .number).font(Theme.TextStyle.caption).monospacedDigit().foregroundStyle(Theme.textTertiary)
+                    }
+                }
+                Spacer()
+            }
+            .padding(.horizontal, Theme.Spacing.xs)
+            .padding(.top, Theme.Spacing.xl)
+            .padding(.bottom, Theme.Spacing.xxs)
+            .accessibilityAddTraits(.isHeader)
         }
-        .padding(.horizontal, Theme.Spacing.xs)
-        .padding(.top, Theme.Spacing.xl)
-        .padding(.bottom, Theme.Spacing.xxs)
-        .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -345,28 +389,26 @@ struct CountBadge: View {
 /// grey, and paper-white when the session waits on you. The mark pulses while the agent works.
 struct StatusPill: View {
     let attention: String
+    /// The one-word form ("Approval", "Done") for a row's corner; the full words elsewhere.
+    var short = false
 
     var body: some View {
         let color = Theme.color(attention)
-        let needs = Theme.needsYou(attention)
         HStack(spacing: Theme.Spacing.xs) {
             if attention == "working" {
                 PulseDot(color: color, size: 6)
             } else {
                 Image(systemName: Theme.symbol(attention))
-                    .font(Theme.font(10.5, .semibold))
+                    .font(Theme.font(11, .semibold))
                     .foregroundStyle(color)
             }
-            Text(Theme.word(attention))
+            Text(short ? Theme.shortWord(attention) : Theme.word(attention))
                 .font(Theme.TextStyle.label)
-                .foregroundStyle(needs ? Theme.text : Theme.textSecondary)
+                .foregroundStyle(Theme.needsYou(attention) ? color : Theme.textSecondary)
                 .lineLimit(1)
         }
-        .padding(.horizontal, Theme.Spacing.sm + 1)
-        .padding(.vertical, 3)
-        .background(color.opacity(needs ? 0.12 : 0.06), in: Capsule())
-        .overlay(Capsule().strokeBorder(color.opacity(needs ? 0.28 : 0.14), lineWidth: 0.5))
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(Theme.word(attention)))
     }
 }
 
