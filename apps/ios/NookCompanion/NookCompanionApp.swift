@@ -65,21 +65,28 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         return [.banner, .sound, .badge]
     }
 
+    /// A button goes to the Mac that sent the notification (`mac`, the pairing id), also when another Mac is active, from
+    /// a cold start, and away from home (`CompanionClient.notificationAction`).
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let nook = response.notification.request.content.userInfo["nook"] as? [String: Any]
         let session = nook?["session"] as? String
         let item = nook?["item"] as? String
+        let mac = nook?["mac"] as? String
         switch response.actionIdentifier {
         case PushCategory.actionAllow, PushCategory.actionDeny:
             guard let session, let item else { return }
-            await CompanionClient.shared.decide(sessionID: session, itemID: item, allow: response.actionIdentifier == PushCategory.actionAllow)
+            let request = CompanionRequest(op: .decide, session: session, item: item,
+                                           allow: response.actionIdentifier == PushCategory.actionAllow)
+            await CompanionClient.shared.notificationAction(request, mac: mac)
         case PushCategory.actionReply:
             // Your words to the agent, typed in the notification; nothing goes out empty.
             let text = (response as? UNTextInputNotificationResponse)?.userText.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             guard let session, !text.isEmpty else { return }
-            await CompanionClient.shared.send(sessionID: session, text: text)
+            await CompanionClient.shared.notificationAction(CompanionRequest(op: .send, session: session, text: text), mac: mac)
         default:
-            if let session { await MainActor.run { CompanionClient.shared.openSession = session } }
+            // "Couldn't reach your Mac": a tap tries again what could not go.
+            if nook?["retry"] as? Bool == true { await CompanionClient.shared.retryNotificationActions(mac: mac, quiet: false) }
+            if let session { await MainActor.run { CompanionClient.shared.open(session: session, mac: mac) } }
         }
     }
 }
