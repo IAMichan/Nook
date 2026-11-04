@@ -149,7 +149,10 @@ private struct ListPanelSide: ViewModifier {
     @Environment(\.panelSidebar) private var sidebar
 
     func body(content: Content) -> some View {
-        content.sidePanel(.leading, width: width, defaultWidth: defaultWidth, minimum: PanelLayout.minimumList,
+        // As the main window's sidebar the list is never narrower than its head (`PanelSidebarMetrics.minimumColumn`).
+        content.sidePanel(.leading, width: width, defaultWidth: defaultWidth,
+                          minimum: sidebar == nil ? PanelLayout.minimumList
+                              : max(PanelLayout.minimumList, PanelSidebarMetrics.minimumColumn),
                           available: available, rest: rest,
                           gap: sidebar == nil ? SidePanelMetrics.listGap : SidePanelMetrics.sidebarGap)
     }
