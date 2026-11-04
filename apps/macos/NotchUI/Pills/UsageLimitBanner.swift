@@ -29,7 +29,7 @@ struct UsageLimitBanner: View {
                 } actions: {
                     if let suggestion = suggestion() {
                         SmallGhostButton(title: tr("ws.limit.switchTo", AccountLabel.name(suggestion.profile, app: app) + " · " + suggestion.profile.kind.name)) {
-                            _ = workspace.switchProvider(run.id, to: suggestion.provider, profileID: suggestion.profile.id)
+                            _ = workspace.switchProvider(run.id, to: suggestion.provider, profileID: suggestion.profile.id, resumeIfLimited: true)
                         }
                         .help(suggestion.sameAgent ? tr("ws.limit.switchHelpSame") : tr("ws.limit.switchHelp"))
                     }
