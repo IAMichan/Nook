@@ -85,7 +85,7 @@ extension SettingsView {
             } footer: {
                 // Local needs no warning (its explanation is on hover); leaving the Mac is said out loud.
                 if !settings.isLocalBrain {
-                    Text(tr("settings.brain.externalWarning"))
+                    SettingNote(tr("settings.brain.externalWarning"), tone: .warning)
                 }
             }
 

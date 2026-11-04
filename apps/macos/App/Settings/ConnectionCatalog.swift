@@ -535,7 +535,7 @@ struct SettingsFormSheet<Icon: View, Content: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 14) {
+            HStack(spacing: NookTheme.Spacing.lg) {
                 icon()
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(title).font(NookTheme.TextStyle.heading)
@@ -545,7 +545,7 @@ struct SettingsFormSheet<Icon: View, Content: View>: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(20)
+            .padding(NookTheme.Spacing.xxl)
             Divider()
             Form { content() }
                 .formStyle(.grouped)

@@ -55,7 +55,7 @@ struct ConnectMethodBadge: View {
             Text(text ?? method.label)
                 .font(NookTheme.TextStyle.label)
                 .foregroundStyle(method == .signIn ? NookTheme.onIris : NookTheme.iris)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, NookTheme.Spacing.md)
                 .padding(.vertical, NookTheme.Spacing.xs)
                 .background(Capsule().fill(method == .signIn ? NookTheme.iris : NookTheme.iris.opacity(0.14)))
                 .lineLimit(1)

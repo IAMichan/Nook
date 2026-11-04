@@ -60,7 +60,7 @@ extension SettingsView {
             .pickerStyle(.segmented)
             .disabled(!settings.buddyMoments)
             // How he sounds in the chosen tone: the morning greeting on a day with three events.
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
                 NookOrb(mood: .cozy, size: 26, animated: false, glow: false)
                     .frame(width: 30, height: 30)
                 Text(tr(BuddyPlanner.lineKey(BuddyMoment(kind: .morning, id: "preview", count: 3), tone: settings.buddyTone), 3))

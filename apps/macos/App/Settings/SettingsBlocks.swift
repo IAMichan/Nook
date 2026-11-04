@@ -38,7 +38,7 @@ struct ConfigPreview: View {
                     .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20)
+        .padding(NookTheme.Spacing.xxl)
         .frame(width: 620, height: 520)
     }
 
@@ -138,8 +138,10 @@ struct StatusRow<Trailing: View>: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: NookTheme.Spacing.md)
+            // Every status row's buttons have the same small size, whichever page the row is on.
             trailing()
+                .controlSize(.small)
         }
         .padding(.vertical, NookTheme.Spacing.xxs)
     }

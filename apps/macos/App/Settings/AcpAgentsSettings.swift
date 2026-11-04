@@ -16,7 +16,7 @@ struct AcpAgentsSection: View {
                     .foregroundStyle(NookTheme.textSecondary)
             }
             ForEach(agents) { agent in
-                HStack(spacing: 10) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     AgentLogo(agent: agent.name, size: 22)
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         Text(agent.name).font(NookTheme.TextStyle.strong)
@@ -164,7 +164,7 @@ private struct AcpRegistrySheet: View {
                     .disabled(!(chosen?.isSupported ?? false) || installing)
             }
         }
-        .padding(20)
+        .padding(NookTheme.Spacing.xxl)
         .frame(width: 520, height: 520)
         .interactiveDismissDisabled(installing)
         .task {
@@ -233,7 +233,7 @@ private struct AcpManualSheet: View {
                 .disabled(!canAdd)
             }
         }
-        .padding(20)
+        .padding(NookTheme.Spacing.xxl)
         .frame(width: 460)
     }
 }

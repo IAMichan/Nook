@@ -19,6 +19,7 @@ extension SettingsSection {
         case .brain: return "brain"
         case .assistant: return "sparkles"
         case .autocomplete: return "keyboard.fill"
+        case .dictation: return "waveform"
         case .connections: return "person.crop.circle.badge.checkmark"
         case .agents: return "terminal.fill"
         case .workspace: return "folder.fill"
@@ -226,7 +227,7 @@ struct SetupSheet<Icon: View, Content: View, Footer: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 14) {
+            HStack(spacing: NookTheme.Spacing.lg) {
                 icon()
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(title).font(NookTheme.TextStyle.heading)
@@ -236,13 +237,13 @@ struct SetupSheet<Icon: View, Content: View, Footer: View>: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(20)
+            .padding(NookTheme.Spacing.xxl)
             Divider()
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
                     content()
                 }
-                .padding(20)
+                .padding(NookTheme.Spacing.xxl)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             Divider()

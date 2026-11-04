@@ -336,7 +336,7 @@ struct ConnectionsPage: View {
                 app.connectors.refresh(source)
             }
         )) {
-            HStack(spacing: 10) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 SiteIcon(domain: source.iconDomain, fallback: source.symbol, tint: source.accent, size: 20, source: source.id)
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {

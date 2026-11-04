@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings › Typing & dictation › Dictate anywhere (Flow): turning it on, how it writes (and the language it translates
+/// Settings › Dictation & voice › Dictate anywhere (Flow): turning it on, how it writes (and the language it translates
 /// to), and what it remembers. The key is set under Shortcuts.
 struct FlowSettingsSection: View {
     @ObservedObject private var store = FlowStore.shared

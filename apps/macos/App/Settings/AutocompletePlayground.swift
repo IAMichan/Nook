@@ -30,7 +30,7 @@ struct AutocompletePlaygroundSection: View {
                     }
                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.well))
                     .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.control).strokeBorder(.quaternary))
-                HStack(spacing: 10) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     if playground.thinking {
                         ProgressView().controlSize(.small)
                         Text(tr("autocomplete.playground.thinking")).foregroundStyle(NookTheme.textSecondary)
