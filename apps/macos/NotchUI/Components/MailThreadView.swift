@@ -175,7 +175,7 @@ struct MailMessageCard: View {
             top
             if isOpen {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                    if let whole, !whole.attachments.isEmpty { attachments(whole.attachments) }
+                    if let whole, !whole.attachments.isEmpty { attachments(whole) }
                     content
                 }
                 .padding(.top, NookTheme.Spacing.md)
@@ -337,20 +337,51 @@ struct MailMessageCard: View {
         }
     }
 
-    private func attachments(_ names: [String]) -> some View {
-        ChipFlow {
-            ForEach(Array(names.enumerated()), id: \.offset) { _, name in
-                Label(name, systemImage: "paperclip")
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .lineLimit(1)
-                    .padding(.horizontal, NookTheme.Spacing.sm)
-                    .padding(.vertical, NookTheme.Spacing.xs)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.smoke))
-                    .help(tr("chats.mail.attachmentInMail"))
+    /// The mail's attachments: a photo Mail saved shows as itself (a click shows it big), another saved file as a tile
+    /// with its kind and size that opens it, as in every chat; one Mail did not save stays a name to open in Mail.
+    private func attachments(_ whole: MailChatData.Message) -> some View {
+        let items = whole.attachments.enumerated().map { index, name in
+            MailAttachment(name: name, file: whole.files.indices.contains(index) && !whole.files[index].isEmpty
+                ? URL(fileURLWithPath: whole.files[index]) : nil)
+        }
+        let saved = items.filter { $0.file != nil }
+        let unsaved = items.filter { $0.file == nil }
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            ForEach(Array(saved.enumerated()), id: \.offset) { _, item in
+                if let file = item.file {
+                    if ChatMedia(kind: .file, name: item.name).shownKind == .photo {
+                        ChatPhotoLoader(url: file, name: item.name, onZoom: { open(file, item.name) }, onOpen: { open(file, item.name) })
+                    } else {
+                        AttachmentButton(name: item.name, file: file) { open(file, item.name) }
+                    }
+                }
+            }
+            if !unsaved.isEmpty {
+                ChipFlow {
+                    ForEach(Array(unsaved.enumerated()), id: \.offset) { _, item in
+                        Label(item.name, systemImage: "paperclip")
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .lineLimit(1)
+                            .padding(.horizontal, NookTheme.Spacing.sm)
+                            .padding(.vertical, NookTheme.Spacing.xs)
+                            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.smoke))
+                            .help(tr("chats.mail.attachmentInMail"))
+                    }
+                }
             }
         }
     }
+
+    /// A saved attachment in Quick Look, else in the app the Mac uses for it.
+    private func open(_ file: URL, _ name: String) {
+        if !FilePreviewWindow.shared.show(file, title: name) { NSWorkspace.shared.open(file) }
+    }
+}
+
+private struct MailAttachment {
+    let name: String
+    let file: URL?
 }
 
 /// When a mail came, the way mail apps say it: the time today, the weekday this week, the day and month this year,

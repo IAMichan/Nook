@@ -127,6 +127,11 @@ enum SnapchatWebData {
         var sender: String
         var text: String
         var media: Bool = false
+        /// Where the page has the picture (a `blob:` or Snapchat's own address), to save it while the chat is open. Not
+        /// part of what a line is: the website gives the same picture a new `blob:` address on each load.
+        var source: String? = nil
+
+        static func == (a: Line, b: Line) -> Bool { a.sender == b.sender && a.text == b.text && a.media == b.media }
 
         /// Snapchat heads your own messages with "Me" (in the website's language).
         var isMine: Bool { SnapchatWebData.meWords.contains(sender.trimmingCharacters(in: .whitespaces).lowercased()) }
@@ -154,8 +159,9 @@ enum SnapchatWebData {
                 let text = ((line["text"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 let media = (line["media"] as? Bool) ?? false
                 guard !text.isEmpty || media else { return nil }
+                let source = (line["src"] as? String).flatMap { $0.isEmpty ? nil : $0 }
                 return Line(sender: ((line["sender"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
-                            text: text, media: media)
+                            text: text, media: media, source: media ? source : nil)
             }
             return .lines(lines)
         default:
@@ -191,7 +197,7 @@ enum SnapchatWebData {
       }
       if (el.matches('img, video, canvas') && !el.closest('[dir="auto"]')) {
         const box = el.getBoundingClientRect();
-        if (box.width > 80 && box.height > 80) lines.push({sender, text: '', media: true});
+        if (box.width > 80 && box.height > 80) lines.push({sender, text: '', media: true, src: el.tagName === 'IMG' ? (el.currentSrc || el.src || '') : ''});
       }
     }
     return {status: 'ok', lines};
@@ -247,6 +253,110 @@ enum SnapchatWebData {
     return {status: current() ? 'notSent' : 'sent'};
     """
 
+    /// The pictures in the open chat as data URLs, by the address the read gave them: drawn from the page itself (a
+    /// `blob:` the website made is only readable there), else fetched by the page with its own sign-in. Runs with
+    /// `callAsyncJavaScript`, `sources` as an argument. A picture the page no longer shows is left out.
+    static let picturesScript = """
+    const found = {};
+    for (const src of sources) {
+      const img = Array.from(document.querySelectorAll('img')).find(i => (i.currentSrc || i.src) === src);
+      try {
+        if (img && img.complete && img.naturalWidth > 0) {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+          canvas.getContext('2d').drawImage(img, 0, 0);
+          found[src] = canvas.toDataURL('image/jpeg', 0.9);
+          continue;
+        }
+      } catch (e) {}
+      try {
+        const blob = await (await fetch(src, {credentials: 'include'})).blob();
+        if (!blob.type.startsWith('image/')) continue;
+        found[src] = await new Promise(done => {
+          const reader = new FileReader();
+          reader.onload = () => done(reader.result);
+          reader.onerror = () => done('');
+          reader.readAsDataURL(blob);
+        });
+      } catch (e) {}
+    }
+    return found;
+    """
+
+    /// The bytes of a data URL ("data:image/jpeg;base64,…"); nil for anything else.
+    static func pictureData(_ dataURL: String) -> Data? {
+        guard dataURL.hasPrefix("data:image/"), let comma = dataURL.firstIndex(of: ","),
+              dataURL[..<comma].hasSuffix(";base64") else { return nil }
+        return Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...]))
+    }
+
+    /// The largest picture Nook hands to the website to send.
+    static let maxPictureBytes = 10_000_000
+
+    /// Sends a picture in the open chat as you would on the website: chosen with its own file button when the page has
+    /// one, else pasted into the field, else dropped on it; then its send button (or Return). Sent once the chat shows
+    /// one more picture than before. Runs with `callAsyncJavaScript`: `data` (base64), `name`, `type` and `caption` come
+    /// in as arguments and are never part of the script.
+    static let sendPictureScript = """
+    if (document.querySelector('input[type="password"]')) return {status: 'signedOut'};
+    const field = document.querySelector('[contenteditable="true"], textarea');
+    if (!field) return {status: 'noChat'};
+    const current = () => (field.value !== undefined ? field.value : field.innerText || '').trim();
+    if (current()) return {status: 'draft'};
+    const pictures = () => Array.from(document.querySelectorAll('img, video')).filter(el => {
+      const box = el.getBoundingClientRect();
+      return box.width > 80 && box.height > 80;
+    }).length;
+    const before = pictures();
+    const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+    const file = new File([bytes], name, {type});
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    const input = document.querySelector('input[type="file"]');
+    let handed = false;
+    if (input) {
+      try {
+        input.files = transfer.files;
+        input.dispatchEvent(new Event('change', {bubbles: true}));
+        handed = true;
+      } catch (e) {}
+    }
+    if (!handed) {
+      field.focus();
+      try {
+        handed = !field.dispatchEvent(new ClipboardEvent('paste', {clipboardData: transfer, bubbles: true, cancelable: true}));
+      } catch (e) {}
+    }
+    if (!handed) {
+      try {
+        for (const kind of ['dragenter', 'dragover', 'drop']) {
+          field.dispatchEvent(new DragEvent(kind, {dataTransfer: transfer, bubbles: true, cancelable: true}));
+        }
+        handed = true;
+      } catch (e) {}
+    }
+    if (!handed) return {status: 'failed', step: 'picture'};
+    await new Promise(r => setTimeout(r, 900));
+    if (caption) {
+      const box = document.activeElement && document.activeElement.isContentEditable ? document.activeElement : field;
+      box.focus();
+      document.execCommand('insertText', false, caption);
+    }
+    const words = /^(send|verzend|verstuur|senden|envoyer|enviar|invia)/i;
+    const button = Array.from(document.querySelectorAll('button, [role="button"]')).find(b =>
+      words.test((b.getAttribute('aria-label') || b.innerText || '').trim()));
+    if (button) {
+      button.click();
+    } else {
+      const target = document.activeElement || field;
+      for (const kind of ['keydown', 'keypress', 'keyup']) {
+        target.dispatchEvent(new KeyboardEvent(kind, {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true}));
+      }
+    }
+    for (let i = 0; i < 40 && pictures() <= before; i++) await new Promise(r => setTimeout(r, 150));
+    return {status: pictures() > before ? 'sent' : 'notSent'};
+    """
+
     // MARK: Messages in Nook
 
     /// A message Nook keeps of a chat: what the website showed, with the id and time Nook gave it when it first saw it.
@@ -299,14 +409,18 @@ enum SnapchatWebData {
 
     /// A chat as the inbox takes it: the messages Nook keeps of it, the list's word on whether something waits, and
     /// listed, so it shows in the Chats tab before its messages were read. A chat with more than one other person
-    /// heading messages is a group: there each message names who wrote it.
-    static func chat(_ row: Row, kept: [Kept], snapLabel: String) -> BridgedChat {
+    /// heading messages is a group: there each message names who wrote it. A picture Nook saved (`pictures`, by the
+    /// message's id) shows as a photo; one it could not is the snap's word.
+    static func chat(_ row: Row, kept: [Kept], snapLabel: String, pictures: [String: String] = [:]) -> BridgedChat {
         let others = Set(kept.map(\.line).filter { !$0.isMine && !$0.sender.isEmpty }.map(\.sender))
         let group = others.count > 1
         let messages = kept.map { item in
-            InboxMessage(id: item.id, sender: group && !item.line.isMine ? item.line.sender : "",
-                         text: item.line.media && item.line.text.isEmpty ? snapLabel : item.line.text,
-                         date: item.date, fromMe: item.line.isMine)
+            let picture = item.line.media ? pictures[item.id] : nil
+            var message = InboxMessage(id: item.id, sender: group && !item.line.isMine ? item.line.sender : "",
+                                       text: item.line.media && item.line.text.isEmpty && picture == nil ? snapLabel : item.line.text,
+                                       date: item.date, fromMe: item.line.isMine)
+            if let picture { message.media = ChatMedia(kind: .photo, name: "photo.jpg", path: picture) }
+            return message
         }
         return BridgedChat(app: app, name: row.name, messages: messages, unread: row.isUnread ? 1 : 0,
                            members: group ? others.sorted() : nil, listed: true)

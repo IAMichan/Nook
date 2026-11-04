@@ -1,0 +1,10 @@
+./scripts/ui-lint.sh: line 24: shopt: lastpipe: invalid shell option name
+✓ type comes from NookTheme.font / mono / rounded (no Font.system(size:))
+✓ colors come from NookTheme by name (no literal Color(hex:/red:/white:))
+✓ corner radii come from NookTheme.Radius (no 6/7/8/9/10/12/13/14/16/20 literals)
+✓ text uses NookTheme.TextStyle (no .caption / .callout / .headline / .system(.body))
+✓ state and text colors come from NookTheme (no system .red / .orange / .green / .secondary)
+✓ short animations use NookTheme.hover / reveal / scroll / swap (no inline .easeOut(duration: 0.15))
+✓ search fields are a NookSearchField (no magnifying glass and text field built inline)
+✓ dividers are a NookDivider (no 1 pt Rectangle drawn inline)
+✓ pull request icons come from PullRequestIcon / PullRequestStateIcon (no arrow.triangle.pull or a hand-sized mark)

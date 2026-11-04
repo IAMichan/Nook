@@ -1999,7 +1999,11 @@ private struct ChatsDetail: View, Equatable {
             landNew()
         }
         // While a chat is open Nook is online in it where its app needs that to say who types (WhatsApp).
-        .onAppear { app.setChatOnline(entry) }
+        .onAppear {
+            app.setChatOnline(entry)
+            // The pictures of its newest messages, a few at a time, unless hovering it in the list started that already.
+            ChatMediaWarmup.warm(capture.inbox.threads[entry.id])
+        }
         .onDisappear { app.setChatOnline(nil) }
         // Nothing waiting for one chat goes to the next.
         .onChange(of: entry.id) { _, id in

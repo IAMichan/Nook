@@ -12,6 +12,8 @@ struct MailDraft: Identifiable, Equatable {
     var body: String
     /// The account to send from, when the user named one. Empty: Mail's default account.
     var from: String = ""
+    /// Files on this Mac that go with it, attached at the end of its text.
+    var attachments: [String] = []
     var state: State = .draft
 
     /// Not sent, opened or closed yet.

@@ -141,3 +141,36 @@ struct ChatMedia: Codable, Equatable, Sendable {
         }
     }
 }
+
+extension ChatMedia {
+    /// How many of a read's files a bridge fetches at the same time: a chat with several photos shows them together
+    /// instead of one after another, without asking a service for dozens at once.
+    static let parallelFetches = 4
+
+    /// `messages` with the files `fetch` brought to this Mac (it returns where it put one, nil when it could not), for
+    /// every message whose file is not here yet, `parallelFetches` at a time. The messages keep their order. The same
+    /// for every bridge that fetches its files itself (Slack, the chat helper).
+    @MainActor
+    static func fetchingFiles(_ messages: [InboxMessage], limit: Int = parallelFetches,
+                              fetch: @escaping @MainActor (InboxMessage) async -> String?) async -> [InboxMessage] {
+        var result = messages
+        let wanted = messages.indices.filter { messages[$0].media != nil && messages[$0].media?.path == nil }
+        guard !wanted.isEmpty else { return result }
+        await withTaskGroup(of: (Int, String?).self) { group in
+            var next = wanted.makeIterator()
+            for _ in 0..<max(limit, 1) {
+                guard let index = next.next() else { break }
+                let message = messages[index]
+                group.addTask { @MainActor in (index, await fetch(message)) }
+            }
+            while let (index, path) = await group.next() {
+                if let more = next.next() {
+                    let message = messages[more]
+                    group.addTask { @MainActor in (more, await fetch(message)) }
+                }
+                if let path { result[index].media?.path = path }
+            }
+        }
+        return result
+    }
+}

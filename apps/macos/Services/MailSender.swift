@@ -68,12 +68,13 @@ enum MailSender {
                 end repeat
             """
         }
+        let files = MailChatData.attachLines(draft.attachments, send: send)
         let guardAccount = send ? "\n    if (count of accounts) is 0 then error \"no account\" number \(noAccountError)" : ""
         return """
         tell application "Mail"\(guardAccount)
             set m to make new outgoing message with properties {subject:\(ScriptText.quote(draft.subject)), content:\(ScriptText.quote(draft.body)), visible:\(send ? "false" : "true")}
             tell m\(recipients)
-            end tell\(sender)
+            end tell\(sender)\(files)
             \(send ? "send m" : "activate")
         end tell
         """

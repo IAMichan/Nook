@@ -168,6 +168,25 @@ final class MailChatDataTests: XCTestCase {
 
     // MARK: The mail view
 
+    /// Opening a mail saves its attachments where the mail view can show them: each one's name with where it went.
+    func testAttachmentsAreSavedWithTheMail() {
+        let raw = "SUBJECT|||Photos\nATT|||beach.jpg|||/Users/me/Library/Caches/Nook/ChatMedia/mail-7/1-beach.jpg\nATT|||big.mov|||\n<<<BODY>>>\nHi"
+        guard let message = MailChatData.message(raw) else { return XCTFail("no message") }
+        XCTAssertEqual(message.attachments, ["beach.jpg", "big.mov"])
+        XCTAssertEqual(message.files, ["/Users/me/Library/Caches/Nook/ChatMedia/mail-7/1-beach.jpg", ""])
+        let row = MailChatData.Row(account: "Google", mailbox: "INBOX", id: 7, subject: "", person: "a@b.c", date: Date(),
+                                   read: false, fromMe: false, index: 5)
+        let script = MailChatData.messageScript(row, saveTo: "/tmp/mail-7")
+        XCTAssertTrue(script.contains(#"save a in (POSIX file target)"#))
+        XCTAssertTrue(script.contains(#""/tmp/mail-7/""#))
+        XCTAssertTrue(script.contains("path to temporary items"), "Mail's own folder when its sandbox refuses Nook's")
+        XCTAssertFalse(MailChatData.messageScript(row).contains("save a in"), "nothing is saved unless asked")
+        let attach = MailChatData.attachLines(["/tmp/a.jpg"], send: true)
+        XCTAssertTrue(attach.contains(#"make new attachment with properties {file name:((POSIX file "/tmp/a.jpg") as alias)}"#), attach)
+        XCTAssertTrue(attach.hasSuffix("delay 1"), "Mail loads it before it sends")
+        XCTAssertEqual(MailChatData.attachLines([], send: true), "")
+    }
+
     func testAWholeMessageIsReadWithItsHeaders() {
         let raw = """
         SUBJECT|||Offerte ||| versie 2
@@ -189,6 +208,7 @@ final class MailChatDataTests: XCTestCase {
         XCTAssertEqual(message.to, ["Me <me@work.nl>", "bram@x.nl"])
         XCTAssertEqual(message.cc, ["Anna <anna@x.nl>"])
         XCTAssertEqual(message.attachments, ["offerte.pdf"])
+        XCTAssertEqual(message.files, [""], "not saved: a name to open in Mail")
         XCTAssertEqual(message.messageID, "abc@example.com")
         XCTAssertEqual(message.date, Date(timeIntervalSince1970: 1_793_178_900))
         XCTAssertEqual(message.body, "Hoi,\n\nZie bijlage.")
@@ -296,6 +316,9 @@ final class MailChatDataTests: XCTestCase {
         placeless.index = nil
         let scripts = [MailChatData.accountsScript, MailChatData.readScript(account: "Google"),
                        MailChatData.messageScript(row), MailChatData.messageScript(placeless), MailChatData.findScript(77),
+                       MailChatData.messageScript(row, saveTo: "/tmp/mail-77"), MailChatData.findScript(77, saveTo: "/tmp/x"),
+                       "tell application \"Mail\"\nset m to make new outgoing message with properties {subject:\"x\"}"
+                           + MailChatData.attachLines(["/tmp/a \"b\".jpg"], send: true) + "\nend tell",
                        MailChatData.bodiesScript([row, placeless]), MailChatData.markReadScript([row, placeless]),
                        "tell application \"Mail\"\nset m to \(MailChatData.reference(row))\nend tell"]
         for source in scripts {
