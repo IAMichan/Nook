@@ -429,6 +429,7 @@ struct WorkspaceSettingsSection: View {
     @ObservedObject private var inbox = InboxStore.shared
     @ObservedObject private var webhook = WebhookListener.shared
     @AppStorage(AppDelegate.confirmQuitKey) private var confirmQuit = true
+    @AppStorage(AgentCredits.settingKey) private var stripAgentCredits = false
     @State private var showScheduled = false
     /// Which defaults the "New session" section edits: "" for all projects, else a project folder (see `ProjectSettings`).
     @State private var scope = ""
@@ -600,6 +601,13 @@ struct WorkspaceSettingsSection: View {
                 }
             }
         }
+        inheritable(.titleInstructions, path) {
+            TextField(tr("settings.ws.titleInstructions"), text: Binding(
+                get: { overrideText(.titleInstructions, path) ?? resolved.titleInstructions },
+                set: { ws.setOverride(.titleInstructions, $0, for: path) }),
+                      prompt: Text(tr("settings.ws.titleInstructions.placeholder")), axis: .vertical)
+                .lineLimit(1...4)
+        }
     }
 
     /// A per-project row: its control, then "Inherited" or the button that goes back to the value for all projects.
@@ -728,6 +736,9 @@ struct WorkspaceSettingsSection: View {
                           prompt: Text(tr("settings.ws.commitInstructions.placeholder")), axis: .vertical)
                     .lineLimit(2...5)
             }
+            // Only the merge commit Nook asks GitHub for: the branch's commits and your own authorship stay as they are.
+            SettingToggle(tr("settings.ws.stripAgentCredits"), detail: tr("settings.ws.stripAgentCredits.detail"),
+                          isOn: $stripAgentCredits)
         } header: {
             SettingsSectionTitle(tr("settings.ws.commitStyle"), info: tr("settings.ws.commitStyle.footer"))
         }
@@ -739,6 +750,10 @@ struct WorkspaceSettingsSection: View {
     private var behavior: some View {
         Section(tr("settings.ws.behavior")) {
             Toggle(tr("settings.ws.autoTitles"), isOn: $ws.autoTitles)
+            // Also used by "Regenerate title" in a session's menu; a project can set its own under its defaults.
+            TextField(tr("settings.ws.titleInstructions"), text: $ws.titleInstructions,
+                      prompt: Text(tr("settings.ws.titleInstructions.placeholder")), axis: .vertical)
+                .lineLimit(1...4)
             Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
             // How the session list is laid out belongs with how sessions behave, not with tidying up.
             Toggle(tr("settings.ws.inboxProjects"), isOn: $inbox.groupByProject)

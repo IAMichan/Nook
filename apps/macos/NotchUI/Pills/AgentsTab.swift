@@ -148,6 +148,7 @@ struct AgentsTab: View {
         .onAppear {
             finishedMarks.reconcile(busy: entries.busyKeys)
             if let openLive { viewModel.lastOpenLiveSession = openLive }
+            if Self.isSession(selectedID(selection)) { SessionHistory.shared.opened(selectedID(selection)) }
         }
         .onChange(of: openLive) { _, session in
             if let session { viewModel.lastOpenLiveSession = session }
@@ -156,6 +157,7 @@ struct AgentsTab: View {
             visits.visit(old)
             visits.visit(new)
             prefetchNeighbours(of: new, in: entries)
+            if Self.isSession(new) { SessionHistory.shared.opened(new) }
         }
         // Exactly the width it is given, however wide a row inside wants to be: measuring a row that runs past the window
         // would hand the panels more room than there is and push everything off both sides.
@@ -167,7 +169,8 @@ struct AgentsTab: View {
         }
         .overlay(alignment: .top) {
             if palette {
-                AgentCommandPalette(viewModel: viewModel) { palette = false }
+                AgentCommandPalette(viewModel: viewModel, sessions: entries.running + entries.earlier,
+                                    current: currentItem(entries, selection)) { palette = false }
                     .padding(.top, 40)
                     .transition(.opacity)
             }
@@ -177,6 +180,8 @@ struct AgentsTab: View {
         .keyCommands(["session.previous": { step(-1, in: entries, current: selectedID(selection)) },
                       "session.next": { step(1, in: entries, current: selectedID(selection)) }],
                      enabled: !entries.running.isEmpty || !entries.earlier.isEmpty)
+        // ⌘[ / ⌘] back and forward, ⌘B the list, and what the keys do to the open session (pin, settle, rename…).
+        .keyCommands(sessionKeys(entries, selection: selection, stacked: stacked))
         // Keep sessions and usage up to date while the tab remains open. Without the loading state: a refresh in the
         // background that flips it redraws the whole window twice for a list that is already there.
         .task {
@@ -233,6 +238,51 @@ struct AgentsTab: View {
         guard ids.indices.contains(next) else { return false }
         open(ids[next])
         return true
+    }
+
+    // MARK: Keys for the open session
+
+    /// A session of the list, not a page of the footer or the new-session composer: what back and forward step through.
+    static func isSession(_ id: String) -> Bool {
+        !id.isEmpty && id != "new" && !AgentsPage.footerPages.contains(id) && !AgentsPage.tools.contains(id)
+    }
+
+    /// The row of the session that is open, if it is in the list.
+    private func currentItem(_ entries: ListEntries, _ selection: Selection) -> AgentListItem? {
+        let id = selectedID(selection)
+        return entries.running.first { $0.id == id } ?? entries.earlier.first { $0.id == id }
+    }
+
+    /// The keys that act on the list and the open session. Each lets the key go (false) when it has nothing to act on.
+    private func sessionKeys(_ entries: ListEntries, selection: Selection, stacked: Bool) -> [String: () -> Bool] {
+        let item = currentItem(entries, selection)
+        let exists: (String) -> Bool = { id in
+            entries.running.contains { $0.id == id } || entries.earlier.contains { $0.id == id }
+        }
+        let actions = item.map { OpenSessionActions(item: $0, app: app) }
+        return [
+            "sidebar.toggle": {
+                guard stacked || canHideList(selection) else { return false }
+                withAnimation(NookTheme.reveal) { listHidden.toggle() }
+                return true
+            },
+            "session.back": {
+                guard let id = SessionHistory.shared.back(exists: exists) else { return false }
+                open(id)
+                return true
+            },
+            "session.forward": {
+                guard let id = SessionHistory.shared.forward(exists: exists) else { return false }
+                open(id)
+                return true
+            },
+            "session.pin": { actions?.togglePin() ?? false },
+            "session.settle": { actions?.toggleSettled() ?? false },
+            "session.interrupt": { actions?.interrupt() ?? false },
+            "session.openInEditor": { actions?.openInEditor() ?? false },
+            "session.copyReference": { actions?.copyReference() ?? false },
+            "session.rename": { actions?.rename() ?? false },
+        ]
     }
 
     /// What is shown on the right. Without a choice (or when it is gone): whatever waits for you or works, otherwise the
@@ -621,12 +671,17 @@ struct AgentListRow: View, Equatable {
     /// The session's pull requests, of its branch now and of the ones it worked on before: "#12" (or "#12 +1") on the row,
     /// and each of them in the card it shows on hover.
     var pullRequests = SessionPullRequests(current: [])
+    /// While ⌘ is held: the number that opens this row (⌘1–⌘9), shown in the right slot.
+    var jumpHint: Int? = nil
+    /// The keyboard is on this row in the list (↑/↓ after F6): lit as under the pointer.
+    var keyFocused = false
     let action: () -> Void
 
     /// What the row draws, so `.equatable()` skips redrawing a row whose inputs did not change. The closures are left
     /// out: they act on the same state whichever copy of them the row holds.
     static func == (lhs: AgentListRow, rhs: AgentListRow) -> Bool {
         lhs.item == rhs.item && lhs.now == rhs.now && lhs.selected == rhs.selected && lhs.receded == rhs.receded
+            && lhs.jumpHint == rhs.jumpHint && lhs.keyFocused == rhs.keyFocused
             && lhs.pinned == rhs.pinned && lhs.woke == rhs.woke && lhs.slim == rhs.slim && lhs.grouped == rhs.grouped
             && lhs.wakeLabel == rhs.wakeLabel && lhs.pullRequests == rhs.pullRequests
             && lhs.actions?.pinned == rhs.actions?.pinned && lhs.actions?.settled == rhs.actions?.settled
@@ -646,7 +701,7 @@ struct AgentListRow: View, Equatable {
     static let narrowWidth: CGFloat = 240
 
     /// No fill at rest: the rows read as one list, and only the one under the pointer or the selected one lifts.
-    private var background: Color { NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear) }
+    private var background: Color { NookTheme.rowFill(selected: selected, hovering: hovering || keyFocused, rest: .clear) }
     /// A tighter row: a shelf row, or a row under its project's header.
     private var compact: Bool { slim || grouped }
     private var dimmed: Bool { item.status == .finished || slim }
@@ -888,7 +943,9 @@ struct AgentListRow: View, Equatable {
     /// The right slot: the wake time of a snoozed row, "Wakker" for one that woke, otherwise the status or how long ago.
     @ViewBuilder
     private var slot: some View {
-        if let wakeLabel {
+        if let jumpHint {
+            NookKeyHint(text: "⌘\(jumpHint)")
+        } else if let wakeLabel {
             AgentStatusBadge(state: .snoozed, detail: wakeLabel, markOnly: compactStatus)
         } else if woke {
             AgentStatusBadge(state: .woke, markOnly: compactStatus)
@@ -1050,7 +1107,8 @@ enum WorkspaceRunsSection {
             run.status.isActive || !finished.isSettled(FinishedSessions.key(run: run), lastActive: run.updatedAt)
         }
         let settled = list.filter { !isOpen($0) && now.timeIntervalSince($0.updatedAt) < 24 * 3600 }
-        return list.filter(isOpen) + settled.prefix(settledLimit)
+        // A side chat is listed with its parent only (nested under it), never as a session of its own.
+        return SideChat.listed(list.filter(isOpen) + settled.prefix(settledLimit))
     }
 }
 

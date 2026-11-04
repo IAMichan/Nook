@@ -148,6 +148,12 @@ struct PairingView: View {
                 }
                 .padding(.top, 56)
 
+                // The Mac this iPhone was paired with removed it: pairing again is what is left to do.
+                if let name = client.revokedMac {
+                    Banner(text: String(localized: "\(name) removed this iPhone. Pair again to use it from here."),
+                           symbol: "xmark.shield.fill", color: Theme.coral)
+                }
+
                 VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
                     PairingStep(number: 1, text: "On your Mac, open Nook › Settings › iPhone companion and turn it on.")
                     PairingStep(number: 2, text: "Choose ‘Pair an iPhone’: Nook shows a code for five minutes.")
@@ -331,6 +337,11 @@ struct SessionListView: View {
                 .buttonStyle(.borderless)
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     ConnectionLine()
+                    // New sessions written while the Mac could not be reached: they start once it answers.
+                    ForEach(client.outbox.starts) { entry in
+                        WaitingRow(symbol: "square.and.pencil", title: entry.request.launch?.task ?? "",
+                                   detail: String(localized: "New session · waiting for your Mac")) { client.discardWaiting(entry.id) }
+                    }
                     // Finding one among many by search and project scope: words, and the project as chips.
                     if client.sessions.count > 4 {
                         NookSearchField(prompt: "Search sessions", text: $query)
@@ -546,7 +557,26 @@ struct ConnectionLine: View {
     @State private var diagnosing = false
 
     var body: some View {
+        // A Mac removed this iPhone (`CompanionResponse.revoked`) while another paired Mac is still here.
+        if let name = client.revokedMac {
+            Banner(text: String(localized: "\(name) removed this iPhone. Pair again to use it from here."),
+                   symbol: "xmark.shield.fill", color: Theme.coral)
+            HStack(spacing: Theme.Spacing.md) {
+                Button("Pair again") {
+                    client.revokedMac = nil
+                    client.addingMac = true
+                }
+                .buttonStyle(ActionButtonStyle())
+                Button("Not now") { client.revokedMac = nil }
+                    .font(Theme.TextStyle.label).foregroundStyle(Theme.textSecondary)
+            }
+        }
         if case .offline(let reason) = client.phase {
+            // What shows is what the Mac said last, not what happens now.
+            if let updated = client.lastUpdated, !client.sessions.isEmpty {
+                Banner(text: String(localized: "Last updated \(updated.formatted(date: .omitted, time: .shortened)) · not connected"),
+                       symbol: "clock.arrow.circlepath", color: Theme.textSecondary)
+            }
             Banner(text: reason.isEmpty ? String(localized: "Looking for your Mac…") : reason, symbol: "wifi.slash")
             if let hint = client.awayHint { Banner(text: hint, symbol: "globe") }
             Button { diagnosing = true } label: { Label("Why can't I connect?", systemImage: "stethoscope") }
@@ -566,6 +596,30 @@ struct ConnectionLine: View {
                    symbol: "arrow.down.circle.fill")
         case .ok:
             EmptyView()
+        }
+    }
+}
+
+/// Something you wrote that waits on the phone for the Mac (`CompanionOutbox`): what it is, that it waits, and (long
+/// press) a way to let it go.
+struct WaitingRow: View {
+    let symbol: String
+    let title: String
+    let detail: String
+    let discard: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.md) {
+            Image(systemName: symbol).foregroundStyle(Theme.textSecondary)
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                Text(title).font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                Label(detail, systemImage: "clock").font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary)
+            }
+            Spacer(minLength: Theme.Spacing.md)
+        }
+        .card(padding: Theme.Spacing.lg)
+        .contextMenu {
+            Button(role: .destructive, action: discard) { Label("Don’t send", systemImage: "trash") }
         }
     }
 }

@@ -174,7 +174,8 @@ enum AntigravityAcp {
         if mode == .plan { return "plan" }
         switch permission {
         case .bypass: return "yolo"
-        case .acceptEdits: return "auto_edit"
+        // Antigravity has no reviewer mode; an old "auto" setting edits only.
+        case .acceptEdits, .auto: return "auto_edit"
         case .ask: return "default"
         }
     }

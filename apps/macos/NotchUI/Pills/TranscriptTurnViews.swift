@@ -1,13 +1,42 @@
 import SwiftUI
 
-/// Which changes the diff panel next to a conversation shows: one turn (or every turn, `all`), and in it one file or all.
+/// Which changes the diff panel next to a conversation shows: one turn (or every turn, `all`), or what git knows about
+/// the folder (what is not committed, the branch against its base, one commit), and in it one file or all.
 struct TurnDiffSelection: Equatable {
     static let all = "all"
+    static let uncommitted = "git:uncommitted"
+    static let branch = "git:branch"
+    static let commitPrefix = "git:commit:"
 
-    /// A turn's id (TurnDiff.id), or `all`.
+    /// A turn's id (TurnDiff.id), `all`, or one of the git choices above.
     var turn: String
     /// A file's path relative to the session's folder; nil for every file of the turn.
     var file: String? = nil
+
+    enum Source: Equatable {
+        case turns
+        case turn(String)
+        case uncommitted
+        case branch
+        case commit(String)
+
+        var isGit: Bool {
+            switch self {
+            case .uncommitted, .branch, .commit: return true
+            case .turns, .turn: return false
+            }
+        }
+    }
+
+    var source: Source {
+        if turn == Self.all { return .turns }
+        if turn == Self.uncommitted { return .uncommitted }
+        if turn == Self.branch { return .branch }
+        if turn.hasPrefix(Self.commitPrefix) { return .commit(String(turn.dropFirst(Self.commitPrefix.count))) }
+        return .turn(turn)
+    }
+
+    static func commit(_ id: String) -> TurnDiffSelection { TurnDiffSelection(turn: commitPrefix + id) }
 }
 
 /// Under the answer of a turn that changed files (the changed-files card): "3 changed files +12 −4", the files
@@ -132,10 +161,11 @@ private struct TurnChangesRow: View {
     }
 }
 
-/// The diff panel next to a conversation: pick a turn or the whole session at the top, then
-/// every file of that choice in one scroll under sticky headers (`StackedDiffList`), folded until you open one; a file
-/// picked in a turn's changed-files card opens and scrolls into view. Made from the agent's own edits, so it shows what
-/// each turn did, also for a session whose folder is not on this Mac.
+/// The diff panel next to a conversation: pick a turn, the whole session, or (in a git folder on this Mac) what is not
+/// committed, the branch against its base, or one of the newest commits at the top; then every file of that choice in
+/// one scroll under sticky headers (`StackedDiffList`), folded until you open one; a file picked in a turn's
+/// changed-files card opens and scrolls into view. The turns are made from the agent's own edits, so they show what each
+/// turn did, also for a session whose folder is not on this Mac.
 struct TurnDiffPanel: View {
     let turns: [TurnDiff]
     @Binding var selection: TurnDiffSelection
@@ -143,10 +173,23 @@ struct TurnDiffPanel: View {
     @Binding var wide: Bool
     /// Reads the real diff of these files in this turn (a session Nook runs: from its git snapshots); nil, or when it
     /// fails, the diff made from the agent's edits shows.
-    var load: ((TurnDiff, [TurnDiff.File]) async throws -> String)? = nil
+    var load: ((TurnDiff, [TurnDiff.File], DiffReadOptions) async throws -> String)? = nil
     let close: () -> Void
     @AppStorage("nook.agents.diffFiles") private var showFiles = false
     @State private var expanded: Set<String> = []
+    /// What git knows about the folder; read when the panel opens, nothing for a folder that is not on this Mac.
+    @StateObject private var git: GitDiffSources
+
+    init(turns: [TurnDiff], selection: Binding<TurnDiffSelection>, directory: String?, wide: Binding<Bool>,
+         load: ((TurnDiff, [TurnDiff.File], DiffReadOptions) async throws -> String)? = nil, close: @escaping () -> Void) {
+        self.turns = turns
+        _selection = selection
+        self.directory = directory
+        _wide = wide
+        self.load = load
+        self.close = close
+        _git = StateObject(wrappedValue: GitDiffSources.make(directory: directory ?? ""))
+    }
 
     /// The whole session's diff for the turns it was made from: merging every turn's edits is not done again for each
     /// redraw of the panel while the agent streams.
@@ -168,24 +211,32 @@ struct TurnDiffPanel: View {
     }
 
     var body: some View {
+        let source = selection.source
         let current = current
-        let files = current.files.map { file in
+        let changes = source.isGit ? git.files(selection) : nil
+        let files = changes.map { $0.map(StackedDiffFile.init) } ?? (source.isGit ? [] : current.files.map { file in
             StackedDiffFile(path: TurnDiff.relative(file.path, to: directory),
                             kind: file.patches.first?.hasPrefix("@@ -0,0") == true ? .added : .modified,
                             additions: file.lines.added, deletions: file.lines.removed)
-        }
+        })
         VStack(alignment: .leading, spacing: 0) {
             header(current, files: files)
             NookDivider()
             if files.isEmpty {
-                StackedDiffNote(text: tr("agents.diff.none"))
+                StackedDiffNote(text: source.isGit && changes == nil ? tr("ws.timeline.working") : tr("agents.diff.none"))
             } else {
                 StackedDiffList(files: files, scope: "turn|" + selection.turn, expanded: $expanded, showsTree: showFiles,
-                                focus: selection.file) { file in
+                                focus: selection.file) { file, options in
+                    if source.isGit {
+                        guard let change = changes?.first(where: { $0.path == file.path }) else { return "" }
+                        return try await git.diff(selection, file: change, options: options)
+                    }
                     guard let source = current.file(file.path, relativeTo: directory) else { return "" }
-                    let fallback = TurnDiff.diff([source])
+                    // The agent's own edits: git cannot leave out their whitespace, so their hunks that only change it go.
+                    let made = TurnDiff.diff([source])
+                    let fallback = options.ignoreWhitespace ? UnifiedDiffFilter.droppingWhitespaceOnlyHunks(made) : made
                     guard let load else { return fallback }
-                    let loaded = (try? await load(current, [source])) ?? ""
+                    let loaded = (try? await load(current, [source], options)) ?? ""
                     return loaded.isEmpty ? fallback : loaded
                 }
                 .id(selection.turn)
@@ -194,14 +245,23 @@ struct TurnDiffPanel: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear { if let file = selection.file { expanded = [file] } }
         .onChange(of: selection.turn) { _, _ in expanded = selection.file.map { [$0] } ?? [] }
+        // Git is read when the panel opens and again when one of its choices is picked; never while it sits idle.
+        .task(id: directory) { await git.refresh() }
+        .task(id: selection.turn) {
+            switch selection.source {
+            case .commit(let id): await git.loadCommit(id)
+            case .uncommitted, .branch: await git.refresh()
+            case .turns, .turn: break
+            }
+        }
     }
 
     /// The side panel's own header (`SidePanelHeader`): the turn to show and how many files it changed.
     private func header(_ current: TurnDiff, files: [StackedDiffFile]) -> some View {
         SidePanelHeader(closeHelp: tr("ws.outputs.close"), wide: $wide, close: close) {
-            ComposerDropdown(width: 240) {
+            ComposerDropdown(width: 300) {
                 HStack(spacing: NookTheme.Spacing.xs) {
-                    Text(selection.turn == TurnDiffSelection.all ? tr("agents.diff.allTurns") : title(current))
+                    Text(title(of: selection, current: current))
                         .lineLimit(1)
                     Image(systemName: "chevron.down").font(NookTheme.font(9, .bold)).opacity(0.7)
                 }
@@ -212,14 +272,19 @@ struct TurnDiffPanel: View {
                 .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.smoke))
                 .contentShape(Rectangle())
             } content: {
-                DropdownRow(title: tr("agents.diff.allTurns"), chosen: selection.turn == TurnDiffSelection.all) {
-                    selection = TurnDiffSelection(turn: TurnDiffSelection.all)
-                }
-                DropdownDivider()
-                ForEach(turns.reversed()) { turn in
-                    DropdownRow(title: title(turn), trailing: "+\(turn.lines.added) −\(turn.lines.removed)",
-                                chosen: selection.turn == turn.id) {
-                        selection = TurnDiffSelection(turn: turn.id)
+                DropdownList(maxHeight: 420) {
+                    DropdownRow(title: tr("agents.diff.allTurns"), chosen: selection.turn == TurnDiffSelection.all) {
+                        selection = TurnDiffSelection(turn: TurnDiffSelection.all)
+                    }
+                    DropdownDivider()
+                    ForEach(turns.reversed()) { turn in
+                        DropdownRow(title: title(turn), trailing: "+\(turn.lines.added) −\(turn.lines.removed)",
+                                    chosen: selection.turn == turn.id) {
+                            selection = TurnDiffSelection(turn: turn.id)
+                        }
+                    }
+                    if git.isRepository {
+                        gitRows
                     }
                 }
             }
@@ -232,9 +297,49 @@ struct TurnDiffPanel: View {
         }
     }
 
+    /// What git knows about the folder, under the turns: what is not committed, the branch, the newest commits.
+    @ViewBuilder
+    private var gitRows: some View {
+        DropdownDivider()
+        DropdownRow(symbol: "pencil.line", title: tr("agents.diff.uncommitted"),
+                    trailing: git.folder.files.isEmpty ? nil : String(git.folder.files.count),
+                    chosen: selection.turn == TurnDiffSelection.uncommitted) {
+            selection = TurnDiffSelection(turn: TurnDiffSelection.uncommitted)
+        }
+        DropdownRow(symbol: "arrow.triangle.branch", title: branchTitle,
+                    trailing: "+\(git.folder.added) −\(git.folder.removed)",
+                    chosen: selection.turn == TurnDiffSelection.branch) {
+            selection = TurnDiffSelection(turn: TurnDiffSelection.branch)
+        }
+        if !git.commits.isEmpty {
+            DropdownHeader(title: tr("agents.diff.commits"))
+            ForEach(git.commits) { commit in
+                DropdownRow(title: commit.subject, trailing: commit.shortID,
+                            chosen: selection.source == .commit(commit.id)) {
+                    selection = .commit(commit.id)
+                }
+                .help(commit.date.map { "\(commit.author) · " + $0.formatted(date: .abbreviated, time: .shortened) } ?? commit.author)
+            }
+        }
+    }
+
+    /// "Branch vs origin/main", or "Branch changes" when there is no base to name.
+    private var branchTitle: String {
+        git.folder.base.map { tr("agents.diff.branchVs", $0) } ?? tr("agents.diff.branch")
+    }
+
+    private func title(of selection: TurnDiffSelection, current: TurnDiff) -> String {
+        switch selection.source {
+        case .turns: return tr("agents.diff.allTurns")
+        case .turn: return title(current)
+        case .uncommitted: return tr("agents.diff.uncommitted")
+        case .branch: return branchTitle
+        case .commit(let id): return git.commit(id)?.subject ?? String(id.prefix(7))
+        }
+    }
+
     /// "Turn 3", or "Latest turn" for the last one.
     private func title(_ turn: TurnDiff) -> String {
         turn.id == turns.last?.id ? tr("agents.diff.latestTurn") : tr("agents.diff.turn", turn.number)
     }
 }
-

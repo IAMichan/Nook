@@ -288,9 +288,10 @@ enum Keybindings {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/keybindings.json")
     }
 
-    /// Rules naming a command Nook does not know (a typo, or a command from another app): they load but never run.
+    /// Rules naming a command Nook does not know (a typo, or a command from another app): they load but never run. A
+    /// rule that switches a default off (`-<id>`) counts by the command it names.
     static func unknownCommands(_ rules: [KeybindingRule]) -> [KeybindingRule] {
-        rules.filter { !commandIDs.contains($0.command) }
+        rules.filter { !commandIDs.contains($0.command.hasPrefix("-") ? String($0.command.dropFirst()) : $0.command) }
     }
 
     /// Every key a command answers to, in rule order without repeats (a user's rule adds a key, it does not take the
@@ -309,8 +310,16 @@ enum Keybindings {
         return (try? encoder.encode(rules)) ?? Data("[]".utf8)
     }
 
-    /// Defaults first, user rules after: the user's win on a shared key.
-    static func effective(user: [KeybindingRule]) -> [KeybindingRule] { defaults + user }
+    /// Defaults first, user rules after: the user's win on a shared key. A user rule whose command starts with `-`
+    /// (`{"key": "mod+d", "command": "-diff.toggle"}`) switches that default key off instead, as the shortcut recorder
+    /// does when it gives a command another key; it is not a rule itself.
+    static func effective(user: [KeybindingRule]) -> [KeybindingRule] {
+        let removals = user.filter { $0.command.hasPrefix("-") }
+        let kept = removals.isEmpty ? defaults : defaults.filter { rule in
+            !removals.contains { "-" + rule.command == $0.command && $0.chord?.resolved == rule.chord?.resolved }
+        }
+        return kept + user.filter { !$0.command.hasPrefix("-") }
+    }
 
     /// The last rule whose chord and condition both match wins, even for a different command.
     static func match(_ chord: KeyChord, context: [String: Bool], rules: [KeybindingRule]) -> String? {
@@ -350,8 +359,10 @@ enum Keybindings {
     /// Context keys the app provides. `composerFocus`, `composerDraft` (the focused composer holds text) and
     /// `turnRunning` come from the focused composer; `editableFocus` and `terminalFocus` from the key window's first
     /// responder; `paletteOpen`, `modelPickerOpen` and `diffOpen` from the views that show them.
+    /// `panelFocus` (the keyboard is in a session's side or bottom panel) comes from the focus areas (`FocusAreas`),
+    /// `listFocus` from the Agents list while it has the keyboard.
     static let contextKeys = ["composerFocus", "composerDraft", "turnRunning", "editableFocus", "terminalFocus",
-                              "modelPickerOpen", "paletteOpen", "diffOpen"]
+                              "modelPickerOpen", "paletteOpen", "diffOpen", "panelFocus", "listFocus"]
 
     /// Everything a rule can name, including commands without a default key (interrupt).
     static let commandIDs = [
@@ -359,7 +370,10 @@ enum Keybindings {
         "composer.historyNext", "composer.access", "queue.steerFirst", "chat.find", "search.toggle", "commandPalette.toggle", "session.new",
         "session.previous", "session.next", "diff.toggle", "modelPicker.toggle", "session.settle", "session.pin",
         "session.undo", "session.interrupt", "panel.reopenClosed", "selection.quote", "selection.ask",
-    ]
+        "session.back", "session.forward", "session.rename", "session.openInEditor", "session.copyReference",
+        "composer.startInBackground", "sidebar.toggle", "terminal.toggle", "sidePanel.toggle", "tab.close",
+        "terminal.splitRight", "terminal.splitDown", "focus.next", "focus.previous",
+    ] + (1...SessionJump.count).map(SessionJump.command)
 
     /// Default chat and workspace keybindings. `session.interrupt` stays unbound on purpose. ⌘S also brings a stashed
     /// draft back into an empty composer, so the stash rule does not ask for `composerDraft`.
@@ -386,5 +400,21 @@ enum Keybindings {
         KeybindingRule(key: "mod+shift+t", command: "panel.reopenClosed", when: "!terminalFocus"),
         KeybindingRule(key: "mod+shift+l", command: "selection.quote", when: "!terminalFocus && !editableFocus"),
         KeybindingRule(key: "mod+l", command: "selection.ask", when: "!terminalFocus && !editableFocus"),
-    ]
+        KeybindingRule(key: "mod+[", command: "session.back", when: "!terminalFocus"),
+        KeybindingRule(key: "mod+]", command: "session.forward", when: "!terminalFocus"),
+        KeybindingRule(key: "f2", command: "session.rename", when: "!editableFocus && !terminalFocus"),
+        KeybindingRule(key: "mod+o", command: "session.openInEditor", when: "!terminalFocus"),
+        KeybindingRule(key: "mod+shift+c", command: "session.copyReference", when: "!terminalFocus && !editableFocus"),
+        KeybindingRule(key: "mod+alt+enter", command: "composer.startInBackground", when: "composerFocus"),
+        KeybindingRule(key: "mod+b", command: "sidebar.toggle", when: "!terminalFocus"),
+        KeybindingRule(key: "mod+j", command: "terminal.toggle", when: nil),
+        KeybindingRule(key: "mod+alt+b", command: "sidePanel.toggle", when: nil),
+        // ⌘W closes the window unless a terminal or a panel tab has the keyboard.
+        KeybindingRule(key: "mod+w", command: "tab.close", when: "terminalFocus || panelFocus"),
+        // ⌘D is the diff everywhere else (`!terminalFocus`), so the two never meet.
+        KeybindingRule(key: "mod+d", command: "terminal.splitRight", when: "terminalFocus"),
+        KeybindingRule(key: "mod+shift+d", command: "terminal.splitDown", when: "terminalFocus"),
+        KeybindingRule(key: "f6", command: "focus.next", when: nil),
+        KeybindingRule(key: "shift+f6", command: "focus.previous", when: nil),
+    ] + (1...SessionJump.count).map { KeybindingRule(key: "mod+\($0)", command: SessionJump.command($0), when: nil) }
 }

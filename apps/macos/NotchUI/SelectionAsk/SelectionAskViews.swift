@@ -37,15 +37,18 @@ private struct SelectionAskBar: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
-            SelectionBarButton(symbol: SelectionAsk.Mode.answer.symbol, title: SelectionAsk.Mode.answer.title, accent: true) {
-                controller.ask(.answer)
-            }
-            ComposerDivider()
-            ForEach([SelectionAsk.Mode.explain, .translate], id: \.self) { mode in
-                SelectionBarButton(symbol: mode.symbol, title: mode.title) { controller.ask(mode) }
+            // With Selection Ask off, words of a session's answer still get the floating Quote on its own.
+            if !model.quoteOnly {
+                SelectionBarButton(symbol: SelectionAsk.Mode.answer.symbol, title: SelectionAsk.Mode.answer.title, accent: true) {
+                    controller.ask(.answer)
+                }
+                ComposerDivider()
+                ForEach([SelectionAsk.Mode.explain, .translate], id: \.self) { mode in
+                    SelectionBarButton(symbol: mode.symbol, title: mode.title) { controller.ask(mode) }
+                }
             }
             if model.quote != nil {
-                ComposerDivider()
+                if !model.quoteOnly { ComposerDivider() }
                 SelectionBarButton(symbol: "text.quote", title: tr("selectionAsk.quote")) { controller.quoteSelection() }
             }
         }
