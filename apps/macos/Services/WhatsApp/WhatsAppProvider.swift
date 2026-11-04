@@ -82,6 +82,9 @@ protocol WhatsAppProvider: Sendable {
     /// Whether this gateway can delete a whole chat on the phone, for you alone, and deletes it.
     var canDeleteChat: Bool { get }
     func deleteChat(_ chat: String) async throws
+    /// Whether this gateway can mark a chat unread on the phone, as WhatsApp's own "Mark as unread", and marks it.
+    var canMarkUnread: Bool { get }
+    func markUnread(_ chat: String) async throws
     /// Whether this gateway can mute a chat on the phone, and mutes it (for good) or unmutes it.
     var canMute: Bool { get }
     func setMuted(_ muted: Bool, chat: String) async throws
@@ -118,6 +121,8 @@ extension WhatsAppProvider {
     func deleteChat(_ chat: String) async throws { throw WAError.refused("delete chat") }
     var canMute: Bool { false }
     func setMuted(_ muted: Bool, chat: String) async throws { throw WAError.refused("mute") }
+    var canMarkUnread: Bool { false }
+    func markUnread(_ chat: String) async throws { throw WAError.refused("mark unread") }
 }
 
 extension ChatAttachment {
@@ -768,6 +773,13 @@ actor OpenWAProvider: WhatsAppProvider {
 
     func archive(_ chat: String) async throws {
         try await perform(WAAction.openwaArchive(Self.openwaId(chat)))
+    }
+
+    // Marking a chat unread: OpenWA's /chats/unread, on either engine. GOWA has no such call.
+    nonisolated var canMarkUnread: Bool { true }
+
+    func markUnread(_ chat: String) async throws {
+        try await perform(WAAction.openwaMarkUnread(Self.openwaId(chat)))
     }
 
     // Deleting a whole chat: OpenWA's /chats/delete. GOWA has no such call.

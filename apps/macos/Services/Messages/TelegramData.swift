@@ -524,6 +524,11 @@ enum TelegramData {
          "is_pinned": pinned]
     }
 
+    /// `toggleChatIsMarkedAsUnread`: the chat's own "Mark as unread" in Telegram, or that mark taken back.
+    static func markedUnread(_ unread: Bool, chat: Int64) -> [String: Any] {
+        ["@type": "toggleChatIsMarkedAsUnread", "chat_id": chat, "is_marked_as_unread": unread]
+    }
+
     /// `setChatNotificationSettings` that mutes a chat for good, or unmutes it. The chat's other settings (sound,
     /// preview…) stay as `current` has them; without them they follow Telegram's defaults.
     static func setMuted(_ muted: Bool, chat: Int64, current: [String: Any]? = nil) -> [String: Any] {

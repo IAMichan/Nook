@@ -606,6 +606,14 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         // Nothing Telegram knows by its id (a chat only its notifications brought): saying it was read would be untrue.
         guard !ids.isEmpty else { throw NookError(tr("chats.markReadInApp.nothing", "Telegram", "Telegram")) }
         try act(["@type": "viewMessages", "chat_id": chat, "message_ids": ids, "force_read": true], chat: chat)
+        // Viewing messages leaves a chat marked unread by hand (from Nook or the phone) marked: read takes that back too.
+        try act(TelegramData.markedUnread(false, chat: chat), chat: chat)
+    }
+
+    /// Marks the chat unread in Telegram itself, after your own "Mark as unread": it waits on your phone too, as
+    /// Telegram's own "Mark as unread" does. Nobody who wrote sees anything.
+    func markUnread(chat: Int64) throws {
+        try act(TelegramData.markedUnread(true, chat: chat), chat: chat)
     }
 
     /// Your vote on a poll, after your own click (an empty choice takes it back); the poll shows it at once.

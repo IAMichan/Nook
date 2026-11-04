@@ -5,12 +5,12 @@ import XCTest
 /// each app's own sign-in loss is told apart from a passing refusal.
 final class ChatContractTests: XCTestCase {
     private let everything = ChatAbilities(send: true, sends: ChatOutgoing.Kind.everything, reply: true, react: true, edit: true,
-                                           delete: true, markRead: true, pin: true, mute: true, archive: true, deleteChat: true,
-                                           vote: true)
+                                           delete: true, markRead: true, markUnread: true, pin: true, mute: true, archive: true,
+                                           deleteChat: true, vote: true)
 
     func testAnActionGoesOnlyWhereTheAbilitiesSaySo() {
-        let actions: [ChatAction] = [.send, .sendItem(.photo), .react, .edit, .delete, .markRead, .pin, .mute, .archive, .deleteChat,
-                                     .vote]
+        let actions: [ChatAction] = [.send, .sendItem(.photo), .react, .edit, .delete, .markRead, .markUnread, .pin, .mute, .archive,
+                                     .deleteChat, .vote]
         for action in actions {
             XCTAssertTrue(everything.allows(action), "\(action)")
             XCTAssertEqual(action.refusal(ChatAbilities(), text: "hi"), .unsupported, "a chat Nook only reads takes nothing: \(action)")
@@ -42,6 +42,7 @@ final class ChatContractTests: XCTestCase {
         XCTAssertEqual(ChatAction.sendItem(.voice).auditTool, "chat_send")
         XCTAssertEqual(ChatAction.react.auditTool, "chat_react")
         XCTAssertEqual(ChatAction.markRead.auditTool, "chat_mark_read")
+        XCTAssertEqual(ChatAction.markUnread.auditTool, "chat_mark_unread")
         XCTAssertEqual(ChatAction.vote.auditTool, "chat_vote")
     }
 

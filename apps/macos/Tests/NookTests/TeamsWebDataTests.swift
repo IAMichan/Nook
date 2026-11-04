@@ -270,6 +270,9 @@ final class TeamsWebDataTests: XCTestCase {
                                         now: Date(timeIntervalSince1970: 1_700_000_010))
         XCTAssertEqual(body["consumptionhorizon"] as? String, "1700000005000;1700000010000;1700000005000")
         XCTAssertEqual(TeamsWebData.readUntil(body), Date(timeIntervalSince1970: 1_700_000_005), "reads back as until when")
+        let unread = TeamsWebData.unreadHorizon(newest: 1_700_000_005_000, now: Date(timeIntervalSince1970: 1_700_000_010))
+        XCTAssertEqual(unread["consumptionhorizon"] as? String, "1700000004999;1700000010000;1700000004999",
+                       "just before the newest message: that one is unread again")
     }
 
     /// A call in the chat shows as every app's call once it ended or was missed; its start says nothing yet.

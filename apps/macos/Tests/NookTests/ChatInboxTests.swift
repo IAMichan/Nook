@@ -617,6 +617,19 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertNil(inbox.threads[key]?.readInNook)
     }
 
+    func testMarkedUnreadInTheAppWaitsThereOnceReadInNook() {
+        var inbox = ChatInbox()
+        let key = ChatInbox.key(app: "telegram", chat: "Anna")
+        inbox.merge(BridgedChat(app: "telegram", name: "Anna", messages: [message("1", "hi")], unread: 1))
+        inbox.markReadInApp(key, at: now.addingTimeInterval(1))
+        inbox.markUnread(key)
+        inbox.markUnreadInApp(key)
+        XCTAssertEqual(inbox.threads[key]?.readState, .unread(1))
+        XCTAssertEqual(inbox.threads[key]?.appUnread, 1, "the app holds it unread too")
+        inbox.markRead(key, at: now.addingTimeInterval(2))
+        XCTAssertEqual(inbox.threads[key]?.readState, .readInNook, "opened in Nook: still unread in Telegram")
+    }
+
     func testAChatFromNotificationsWaitsForItsAppOnceReadInNook() {
         var inbox = ChatInbox()
         let key = ChatInbox.key(app: "instagram", chat: "Lisa")

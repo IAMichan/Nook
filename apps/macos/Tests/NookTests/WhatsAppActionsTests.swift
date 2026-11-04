@@ -60,6 +60,10 @@ final class WhatsAppActionsTests: XCTestCase {
         XCTAssertEqual(archive.path, "/chats/archive")
         XCTAssertEqual(archive.json?["archive"] as? Bool, true)
 
+        let unread = WAAction.openwaMarkUnread("x@g.us")
+        XCTAssertEqual(unread.path, "/chats/unread")
+        XCTAssertEqual(unread.json?["chatId"] as? String, "x@g.us")
+
         let deleteChat = WAAction.openwaDeleteChat("x@g.us")
         XCTAssertEqual(deleteChat.path, "/chats/delete")
         XCTAssertEqual(delete.json?["chatId"] as? String, "x@g.us")
