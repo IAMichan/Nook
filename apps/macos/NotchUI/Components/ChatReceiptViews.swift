@@ -14,7 +14,7 @@ struct MessageInfoView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                TicksView(ticks: ticks)
+                MessageTicksMark(ticks: ticks)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(tr("chat.info.title"))
                         .font(NookTheme.TextStyle.strong)
@@ -42,7 +42,7 @@ struct MessageInfoView: View {
         if !people.isEmpty {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    TicksView(ticks: ticks)
+                    MessageTicksMark(ticks: ticks)
                     Text(title)
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.textSecondary)

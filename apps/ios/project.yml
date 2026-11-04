@@ -28,6 +28,9 @@ targets:
       # The agents' and models' real marks, drawn in code, shared with the Mac app so both show the same logos.
       - path: ../macos/NotchUI/Components/BrandLogo.swift
         group: Shared from the Mac
+      # The conversation components both apps share: chat rows and bubbles, your messages, the time under them.
+      - path: ../macos/NotchUI/Shared
+        group: Shared from the Mac
     dependencies:
       - target: NookActivity
       - target: NookNotifications
