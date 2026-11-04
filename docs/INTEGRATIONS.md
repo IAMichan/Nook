@@ -124,7 +124,7 @@ Sent mailbox, each message as its subject in bold over the start of its own text
 `MailChatData.text`). With more than one account each chat is named by its account, as WhatsApp's are. Newsletters and
 notifications (`MailChatData.isAutomated`) are the app's channels and stay quiet by default (`ChatNoticeRules`).
 
-Nook reads Mail only after you linked it, in Settings › Chats › Mail or from Mail's empty list in the Chats tab (the
+Nook reads Mail only after you linked it, in Settings › Chat apps › Mail or from Mail's empty list in the Chats tab (the
 first read asks for Automation), and only while Mail is open, as the Mail connector does: it never starts Mail in the
 background on its own. Linking it, or "Read Mail now" while Mail is closed, starts Mail out of sight once, so the first
 chats show at once. A read in which not one account answered says why instead of showing an empty list. An answer goes out through Mail
@@ -164,12 +164,12 @@ Mac or its app, and the chat is online where its app needs that to say who types
 where a chat came from.
 
 Which chats reach you is the same for every app (`ChatNoticeRules`, kept by `ChatNoticeRulesStore`, chosen in each app's
-sheet in Settings › Chats with `ChatAppNoticeRows`, and on a chat's card with Quiet and Hide): a kind of chat can stay
+sheet in Settings › Chat apps with `ChatAppNoticeRows`, and on a chat's card with Quiet and Hide): a kind of chat can stay
 quiet (groups, unless a message mentions you; WhatsApp's status updates and channels too), each chat can be automatic,
 always or never, and a hidden chat never shows, counts or reaches you until you show it again. The first launch took over
 what Settings › WhatsApp kept, for every linked account. WhatsApp's link sorts its gateway's messages by the same rules.
 
-In Settings › Chats every linked account is a `ChatLinkedAccountRow`: one rule (`ChatAccountHealth`) says whether it
+In Settings › Chat apps every linked account is a `ChatLinkedAccountRow`: one rule (`ChatAccountHealth`) says whether it
 reads, is off in Nook, fails for a passing reason, or is signed out (`ChatCaptureService.bridgeSignedOut`, per account
 for Teams), and only the last offers "Sign in again". WhatsApp's accounts keep their own list (`WhatsAppAccountList`):
 a linked phone's state is the gateway's, not a read's.
@@ -199,7 +199,7 @@ a later message of yours read the earlier ones too. In a private chat, their mes
 them. Neither WhatsApp gateway keeps receipts. So a message whose receipts came while Nook was not running (or before
 it was linked) shows only what those rules prove.
 
-WhatsApp can link more than one account through the same gateway (Settings › Connections › WhatsApp › Add account): each
+WhatsApp can link more than one account through the same gateway (Settings › Chat apps › WhatsApp › Add account): each
 account is a `WhatsAppLink` of its own, on its own GOWA device or OpenWA session (named after its `WAAccount` id), with
 its own QR, webhook port (the first account's port plus its place in the list) and read marks. The rest of Nook knows a
 chat by its key across accounts (`WAChatKey`): the first account's chats by their JID alone, so nothing kept from before
@@ -241,7 +241,7 @@ check the agent's protocol before you write `–`.
 | A model or mode picked in an open session counts from the next message | ✓ (live) | ✓ (`turn/start`) | ✓ (`session/set_config_option` or `session/set_model`, answered before the prompt) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
 | A model, mode or effort picked during a turn reaches that turn at once (`ProviderCapabilities.liveSettings`, `applyLive`) | ✓ (`set_model` and `set_permission_mode` control requests) | – (the app-server has no call that changes a running turn; from the next message) | ✓ (`session/set_config_option` or `session/set_model` sent right away) | – (switching models restarts its agent session, which would end the running prompt; from the next message) | ✓ (same as Gemini CLI) | ✓ (same) | ✓ (same) | ✓ (same) |
 | Model list | ✓ | ✓ | ✓ | ✓ (what its session lists, kept for the next one) | ✓ (same) | ✓ (same) | ✓ (`initialize`) | ✓ (same as OpenCode, per agent you added) |
-| "Auto" model: Nook picks the agent, account and model for each turn over every model of every connected agent allowed in Settings › Workspace › Auto model choice, by the task and each account's usage windows; a session moves to another agent or account (with the handoff summary) only when that fits clearly better (`AutoModel`, `WorkspaceManager+AutoModel`) | ✓ (by task and its 5-hour and weekly windows) | ✓ (same) | ✓ (by task only: it reports no limits) | ✓ (by task and its windows, among the models its session lists) | ✓ (by task only, among the models its session lists; with none listed, the agent's default) | ✓ (same) | ✓ (same) | ✓ (same) |
+| "Auto" model: Nook picks the agent, account and model for each turn over every model of every connected agent allowed in Settings › Sessions › New session › Auto model choice, by the task and each account's usage windows; a session moves to another agent or account (with the handoff summary) only when that fits clearly better (`AutoModel`, `WorkspaceManager+AutoModel`) | ✓ (by task and its 5-hour and weekly windows) | ✓ (same) | ✓ (by task only: it reports no limits) | ✓ (by task and its windows, among the models its session lists) | ✓ (by task only, among the models its session lists; with none listed, the agent's default) | ✓ (same) | ✓ (same) | ✓ (same) |
 | Nook's tools (bridge) | ✓ (`claude mcp add`) | ✓ (`codex mcp add`) | ✓ | ✓ (`session/new` `mcpServers`) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
 | Nook's own tools through the bridge (`nook_tools`, `nook_use`: chat apps, music, calendar, connectors) and Nook Chat (`nook_chat_*`); taking over the screen after the user's yes (`take_over_screen`, `take_over`); Nook Chat reads, messages and starts the session (`list_agent_sessions`, `message_agent_session`, `start_agent_session`, on another machine too); machines over SSH (`list_remote_machines`, `add_remote_machine`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | The user's other sessions through the bridge: `session_search` (their timelines, `TimelineSearch`), `session_organize` (pin, settle, snooze, archive, mark unread, as the Agents list does) and `session_questions` (list, read and answer the questions sessions wait on; a task's parent answers directly, any other answer is approved by you; permission requests never) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -371,14 +371,14 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
   through AppleScript, too slow for every keystroke.
 
 - **Music players: queue and Up next.** "Add to queue" in the Music tab goes to the playing player's own queue: Spotify
-  through its Web API (`SpotifyWebAPI`, after connecting Spotify in Settings › Connections with the user's own client ID;
+  through its Web API (`SpotifyWebAPI`, after connecting Spotify in Settings › Services with the user's own client ID;
   Spotify allows this only with Premium), Music through its own Song › Add to Queue menu item (`MusicAppQueue`, needs
   the Accessibility permission and the track in Music's library or current playlist). When the player cannot take it,
   Nook keeps the track in its own queue and starts it itself. Up next reads Spotify's real queue once connected; for
   Music it still shows the playlist order, because Music's own queue cannot be read by another app.
 - **Music players: search.** The Music tab's Search section finds tracks in the playing player: Music's library through
   AppleScript (`search library playlist 1`, so only tracks in the library, not the Apple Music catalogue), Spotify
-  through its Web API search (needs Spotify connected in Settings › Connections, not Premium). A found track plays on
+  through its Web API search (needs Spotify connected in Settings › Services, not Premium). A found track plays on
   click and goes in the queue like any other track in the tab.
 - **Music players: playlists.** The Music tab's Playlists section shows and keeps the user's playlists in both players:
   Music through AppleScript (`MusicScriptOutput`: list, tracks, add with `duplicate`, remove, make, rename, delete;

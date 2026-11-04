@@ -1,17 +1,23 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Dictation & voice: dictating anywhere, speech recognition, reading aloud and "Hey Nook".
-/// Settings › Notifications and sound: how each kind of notice shows and which apps may notify (`NoticeRulesSettings`),
-/// sounds, and how Nook behaves in meetings and while you share your screen. What the iPhone is told is set in the
-/// iPhone's own sheet under Connections.
+/// Settings › Sound & voice: the sounds Nook makes, speech recognition, reading aloud and "Hey Nook". Dictating has a
+/// page of its own (`FlowSettingsSection`); how notices show and which apps may notify is under Notifications
+/// (`NoticeRulesSettings`); how Nook behaves in meetings and while you share your screen is under Notch & windows.
 extension SettingsView {
-    // MARK: Dictation and voice
+    // MARK: Sound and voice
 
-    var dictationSection: some View {
+    var soundSection: some View {
         Group {
-            FlowSettingsSection()
-            ParakeetSettingsSection()
+            Section {
+                Toggle(tr("settings.voice.agentSound"), isOn: $settings.sounds)
+                LabeledContent(tr("settings.voice.customSounds")) {
+                    Button(tr("button.openFolder")) { NookSound.openFolder() }
+                }
+                .disabled(!settings.sounds)
+            } header: {
+                SettingsSectionTitle(tr("settings.voice.sounds"), info: tr("settings.voice.customSoundsHint"))
+            }
             Section {
                 Toggle(tr("settings.voice.speakAnswers"), isOn: $settings.speakAnswers)
                 Toggle(tr("settings.voice.wakeWord"), isOn: $settings.wakeWord)
@@ -24,24 +30,7 @@ extension SettingsView {
                     SettingNote(tr("settings.voice.wakeWordUnsupported"), tone: .warning)
                 }
             }
-        }
-    }
-
-    // MARK: Notifications and sound
-
-    var notificationsSection: some View {
-        Group {
-            NoticeRulesSettings(settings: settings, thinkAlong: app.thinkAlong)
-            Section {
-                Toggle(tr("settings.voice.agentSound"), isOn: $settings.sounds)
-                LabeledContent(tr("settings.voice.customSounds")) {
-                    Button(tr("button.openFolder")) { NookSound.openFolder() }
-                }
-                .disabled(!settings.sounds)
-            } header: {
-                SettingsSectionTitle(tr("settings.voice.sounds"), info: tr("settings.voice.customSoundsHint"))
-            }
-            quietSection
+            ParakeetSettingsSection()
         }
     }
 

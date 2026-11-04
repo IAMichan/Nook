@@ -4,6 +4,8 @@ import Foundation
 struct SettingsSearchHit: Identifiable {
     let key: String
     let section: SettingsSection
+    /// The tab of `section` it is on, for a page with tabs.
+    var tab: Int? = nil
 
     var id: String { key }
     var title: String { tr(key) }
@@ -16,10 +18,13 @@ enum SettingsSearch {
     struct Entry {
         let key: String
         let section: SettingsSection
+        /// The tab of `section` it is on, for a page with tabs (`SettingsSection.tabs`).
+        let tab: Int?
 
-        init(_ key: String, _ section: SettingsSection) {
+        init(_ key: String, _ section: SettingsSection, tab: Int? = nil) {
             self.key = key
             self.section = section
+            self.tab = tab
         }
     }
 
@@ -36,11 +41,11 @@ enum SettingsSearch {
         .init("settings.display.glow", .appearance),
         .init("settings.buddy.title", .appearance),
         .init("settings.buddy.birthday", .appearance),
-        .init("settings.notch.placement", .general),
-        .init("settings.notch.allScreens", .general),
-        .init("settings.notch.hideWhenIdle", .general),
-        .init("settings.notch.openOnHover", .general),
-        .init("settings.window.openAtLaunch", .general),
+        .init("settings.notch.placement", .notch),
+        .init("settings.notch.allScreens", .notch),
+        .init("settings.notch.hideWhenIdle", .notch),
+        .init("settings.notch.openOnHover", .notch),
+        .init("settings.window.openAtLaunch", .notch),
         .init("update.settings.title", .general),
         .init("settings.notch.demoData", .general),
         .init("settings.energy.title", .general),
@@ -52,20 +57,20 @@ enum SettingsSearch {
         .init("autocomplete.section.keys", .autocomplete),
         .init("keys.title", .shortcuts),
         .init("keys.file.title", .shortcuts),
-        .init("notices.settings.how", .notifications),
-        .init("notices.settings.agents", .notifications),
-        .init("notices.settings.chats", .notifications),
-        .init("notices.settings.suggestions", .notifications),
-        .init("agentNotice.watching", .notifications),
-        .init("settings.voice.agentSound", .notifications),
-        .init("settings.voice.customSounds", .notifications),
-        .init("quiet.title", .notifications),
-        .init("quiet.sharing", .notifications),
-        .init("quiet.meeting", .notifications),
-        .init("quiet.hideFromCaptures", .notifications),
-        .init("quiet.showInScreenshots", .notifications),
-        .init("companion.push.enable", .connections),
-        .init("companion.push.quiet", .connections),
+        .init("notices.settings.how", .notifications, tab: 0),
+        .init("notices.settings.agents", .notifications, tab: 1),
+        .init("notices.settings.chats", .notifications, tab: 1),
+        .init("notices.settings.suggestions", .notifications, tab: 1),
+        .init("agentNotice.watching", .notifications, tab: 0),
+        .init("settings.voice.agentSound", .sound),
+        .init("settings.voice.customSounds", .sound),
+        .init("quiet.title", .notch),
+        .init("quiet.sharing", .notch),
+        .init("quiet.meeting", .notch),
+        .init("quiet.hideFromCaptures", .notch),
+        .init("quiet.showInScreenshots", .notch),
+        .init("companion.push.enable", .iphone),
+        .init("companion.push.quiet", .iphone),
         .init("settings.brain.apiKey", .brain),
         .init("settings.brain.claudeCodeSub", .brain),
         .init("settings.brain.model", .brain),
@@ -91,44 +96,53 @@ enum SettingsSearch {
         .init("autocomplete.emoji", .autocomplete),
         .init("flow.settings.enable", .dictation),
         .init("flow.settings.dictionary", .dictation),
-        .init("parakeet.title", .dictation),
-        .init("settings.voice.speakAnswers", .dictation),
-        .init("settings.voice.wakeWord", .dictation),
+        .init("parakeet.title", .sound),
+        .init("settings.voice.speakAnswers", .sound),
+        .init("settings.voice.wakeWord", .sound),
         .init("hub.add", .connections),
-        .init("hub.chats", .connections),
+        .init("hub.chats", .chats),
+        .init("hub.chats.add", .chats),
         .init("hub.services", .connections),
         .init("hub.own", .connections),
         .init("settings.connections.onYourMac", .connections),
-        .init("whatsapp.settings.title", .connections),
-        .init("chats.settings.collect", .connections),
-        .init("chats.settings.readOnOpen", .connections),
-        .init("chats.settings.sources", .connections),
-        .init("chats.giphy.title", .connections),
+        .init("whatsapp.settings.title", .chats),
+        .init("chats.settings.collect", .chats),
+        .init("chats.settings.readOnOpen", .chats),
+        .init("chats.settings.sources", .chats),
+        .init("chats.giphy.title", .chats),
         .init("gitlab.title", .connections),
         .init("mcp.add", .connections),
         .init("settings.agents.linkAgents", .agents),
         .init("settings.agents.accounts", .agents),
         .init("acp.title", .agents),
-        .init("settings.agents.usage", .agents),
-        .init("settings.agents.subscriptions", .agents),
-        .init("ws.usage.byModel", .agents),
-        .init("settings.agents.weekRecap", .agents),
-        .init("settings.ws.provider", .workspace),
-        .init("settings.ws.worktreeRoot", .workspace),
-        .init("settings.ws.editor", .workspace),
-        .init("settings.ws.terminal", .workspace),
-        .init("sched.title", .workspace),
-        .init("settings.bridge.title", .workspace),
-        .init("settings.devices.iphone", .connections),
-        .init("companion.enable", .connections),
-        .init("remote.title", .workspace),
-        .init("settings.privacy.levelTitle", .privacy),
-        .init("settings.privacy.permissions", .privacy),
-        .init("settings.privacy.neverRead.title", .privacy),
-        .init("settings.private.title", .privacy),
-        .init("settings.privacy.whatLeavesMac", .privacy),
-        .init("settings.privacy.forgetScreenText", .privacy),
-        .init("settings.pulls.title", .connections),
+        .init("settings.agents.usage", .usage),
+        .init("settings.agents.subscriptions", .usage),
+        .init("ws.usage.byModel", .usage),
+        .init("settings.agents.weekRecap", .usage),
+        .init("settings.ws.provider", .sessions, tab: 0),
+        .init("settings.ws.worktreeRoot", .sessions, tab: 0),
+        .init("settings.ws.editor", .sessions, tab: 1),
+        .init("settings.ws.terminal", .sessions, tab: 1),
+        .init("sched.title", .automation),
+        .init("settings.bridge.title", .automation),
+        .init("settings.devices.iphone", .iphone),
+        .init("companion.enable", .iphone),
+        .init("remote.title", .machines),
+        .init("settings.privacy.levelTitle", .privacy, tab: 0),
+        .init("settings.privacy.permissions", .privacy, tab: 1),
+        .init("settings.privacy.neverRead.title", .privacy, tab: 1),
+        .init("settings.private.title", .privacy, tab: 2),
+        .init("settings.privacy.whatLeavesMac", .privacy, tab: 0),
+        .init("settings.privacy.forgetScreenText", .privacy, tab: 0),
+        .init("settings.pulls.title", .pullRequests),
+        .init("settings.ws.commitStyle", .sessions, tab: 1),
+        .init("settings.ws.autoTitles", .sessions, tab: 2),
+        .init("ws.section.restart", .sessions, tab: 2),
+        .init("ws.section.tidy", .sessions, tab: 3),
+        .init("settings.ws.showCost", .usage),
+        .init("settings.ws.codexAppServer", .agents),
+        .init("settings.ws.trafficLog", .automation),
+        .init("settings.privacy.onlineLyrics", .connections),
     ]
 
     /// Matches on a setting's name, its section and the section's subtitle; sections themselves come first.
@@ -141,7 +155,7 @@ enum SettingsSearch {
             .map { SettingsSearchHit(key: "settings.section.\($0.rawValue)", section: $0) }
         let settings = index
             .filter { matches(tr($0.key)) }
-            .map { SettingsSearchHit(key: $0.key, section: $0.section) }
+            .map { SettingsSearchHit(key: $0.key, section: $0.section, tab: $0.tab) }
         return sections + settings
     }
 }

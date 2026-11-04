@@ -200,6 +200,15 @@ enum RemoteMachines {
         return host.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
 
+    /// The name a machine gets from its address until you give it one: the host without the user and the domain
+    /// ("me@buildbox.local" → "buildbox"), or an IP address and an alias as they are.
+    static func suggestedName(for host: String) -> String {
+        let bare = String(host.split(separator: "@").last ?? Substring(host))
+        guard !bare.isEmpty else { return "" }
+        let isAddress = bare.contains(":") || bare.split(separator: ".").allSatisfy { Int($0) != nil }
+        return isAddress ? bare : String(bare.split(separator: ".").first ?? Substring(bare))
+    }
+
     /// A key file on this Mac: absolute or from your home ("~/.ssh/id_buildbox"), one line.
     static func isValidIdentityFile(_ path: String) -> Bool {
         let clean = path.trimmingCharacters(in: .whitespaces)

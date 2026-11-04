@@ -24,7 +24,15 @@ struct AutocompleteSettingsSection: View {
 
     enum AppFilter: String, CaseIterable, Identifiable {
         case all, on, off
+        /// Apps with settings of their own.
+        case custom
         var id: String { rawValue }
+    }
+
+    /// The app whose own settings are open in their sheet.
+    private struct EditingApp: Identifiable {
+        let id: String
+        let name: String
     }
 
     var body: some View {
@@ -509,6 +517,20 @@ struct AutocompleteSettingsSection: View {
             }
         }
         .task { if installed.isEmpty { installed = await InstalledApp.scan() } }
+        // One app's own settings in a sheet: a row that opened in place pushed the rest of a long list away.
+        // Named from every app Nook knows, not the filtered list: switching the app off under "On" keeps its name.
+        .sheet(item: Binding(get: { editingApp.map { id in EditingApp(id: id, name: installed.first { $0.bundleID == id }?.name
+                                                                              ?? autocomplete.seenApps[id] ?? id) } },
+                             set: { editingApp = $0?.id })) { app in
+            SettingsFormSheet(title: app.name, subtitle: tr("autocomplete.appsFooter")) {
+                AppIcon(url: InstalledApp.url(of: app.id))
+            } content: {
+                Section {
+                    Toggle(tr("autocomplete.enable"), isOn: enabledBinding(app.id))
+                }
+                Section { appRule(app.id) }
+            }
+        }
     }
 
     /// Installed apps, apps with their own settings and apps typed in, filtered and searched.
@@ -525,6 +547,7 @@ struct AutocompleteSettingsSection: View {
                 case .all: return true
                 case .on: return isOn(app.bundleID)
                 case .off: return !isOn(app.bundleID)
+                case .custom: return store.prefs.apps[app.bundleID] != nil
                 }
             }
             // Alphabetical: a row must not jump away while you flip its switch. The Off filter gathers the excluded ones.
@@ -550,24 +573,24 @@ struct AutocompleteSettingsSection: View {
         store.prefs.enabledByDefault && !CompletionPreferences.offByDefault.contains(bundleID)
     }
 
+    /// One app on one line: its switch, and Manage for the rest of its settings (`EditingApp`).
     private func appRow(_ app: InstalledApp) -> some View {
-        DisclosureGroup(isExpanded: Binding(get: { editingApp == app.bundleID }, set: { editingApp = $0 ? app.bundleID : nil })) {
-            appRule(app.bundleID)
-        } label: {
-            HStack(spacing: NookTheme.Spacing.md) {
-                AppIcon(url: app.url)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(app.name)
-                    if let note = note(for: app.bundleID) {
-                        Text(note).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
-                    }
+        HStack(spacing: NookTheme.Spacing.md) {
+            AppIcon(url: app.url)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(app.name)
+                if let note = note(for: app.bundleID) {
+                    Text(note).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                 }
-                Spacer()
-                if let uses = store.stats.apps[app.bundleID]?.takes, uses > 0 {
-                    Text(tr("autocomplete.stats.timesShort", uses)).font(NookTheme.TextStyle.detail).monospacedDigit().foregroundStyle(NookTheme.textSecondary)
-                }
-                Toggle("", isOn: enabledBinding(app.bundleID)).labelsHidden().toggleStyle(.switch).controlSize(.small)
             }
+            Spacer()
+            if let uses = store.stats.apps[app.bundleID]?.takes, uses > 0 {
+                Text(tr("autocomplete.stats.timesShort", uses)).font(NookTheme.TextStyle.detail).monospacedDigit().foregroundStyle(NookTheme.textSecondary)
+            }
+            Button(tr("settings2.manage")) { editingApp = app.bundleID }
+                .controlSize(.small)
+            Toggle("", isOn: enabledBinding(app.bundleID)).labelsHidden().toggleStyle(.switch).controlSize(.small)
+                .help(tr("autocomplete.enable"))
         }
     }
 
@@ -583,7 +606,9 @@ struct AutocompleteSettingsSection: View {
     }
 
     private func rule(_ bundleID: String) -> Binding<CompletionAppRule> {
-        Binding(get: { store.prefs.app(bundleID) }, set: { store.prefs.apps[bundleID] = $0 })
+        // A rule back at the defaults is no rule: the Customized filter then no longer lists the app.
+        Binding(get: { store.prefs.app(bundleID) },
+                set: { store.prefs.apps[bundleID] = $0 == CompletionAppRule() ? nil : $0 })
     }
 
     @ViewBuilder private func appRule(_ bundleID: String) -> some View {
