@@ -610,6 +610,8 @@ enum PullRequestNews {
 struct RunEvent: Codable, Identifiable, Equatable, Sendable {
     enum Kind: String, Codable, Sendable {
         case user, assistant, thinking, tool, fileChange, approval, error, system, result
+        /// A page the agent showed inline (`render_page`, see `RenderedPage`): `text` its title, `detail` its file.
+        case page
     }
 
     enum State: String, Codable, Sendable {

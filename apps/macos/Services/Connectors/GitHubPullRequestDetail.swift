@@ -168,7 +168,11 @@ enum GitHubPullRequestDetail {
         }
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
-        request.httpBody = try JSONSerialization.data(withJSONObject: PullRequestDetailParser.mergeBody(method: method, sha: sha))
+        // With the setting on, the commit GitHub would write, without the agents' credits (only when there are any).
+        let message = UserDefaults.standard.bool(forKey: AgentCredits.settingKey)
+            ? await messageWithoutCredits(repo: repo, number: number, method: method, token: token) : nil
+        request.httpBody = try JSONSerialization.data(withJSONObject: PullRequestDetailParser.mergeBody(method: method, sha: sha,
+                                                                                                        message: message))
         for (key, value) in headers(token) { request.setValue(value, forHTTPHeaderField: key) }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Nook", forHTTPHeaderField: "User-Agent")
@@ -194,6 +198,33 @@ enum GitHubPullRequestDetail {
             }
             try await Task.sleep(nanoseconds: UInt64(attempt) * 1_500_000_000)
         }
+    }
+
+    /// The title and message of the merge commit GitHub would make (by the repository's settings), without agent credits;
+    /// nil when there are none, for a rebase, or when GitHub could not be read (then GitHub's own commit stands).
+    static func messageWithoutCredits(repo: String, number: Int, method: PullRequestMergeMethod,
+                                      token: String) async -> PullRequestMergeMessage.Override? {
+        guard method != .rebase else { return nil }
+        let get = getter(repo: repo, token: token)
+        async let repository = (try? await get("")) as? [String: Any]
+        async let commitList = (try? await get("/pulls/\(number)/commits?per_page=100")) as? [[String: Any]]
+        async let me = (try? await ConnectorHTTP.json(URL(string: "https://api.github.com/user")!, headers: headers(token))) as? [String: Any]
+        guard let pull = (try? await get("/pulls/\(number)")) as? [String: Any] else { return nil }
+        let head = pull["head"] as? [String: Any] ?? [:]
+        let headRepo = (head["repo"] as? [String: Any])?["full_name"] as? String
+        let headLabel = headRepo.map { ($0.split(separator: "/").first.map(String.init) ?? $0) + "/" + ((head["ref"] as? String) ?? "") }
+            ?? ((head["label"] as? String) ?? "").replacingOccurrences(of: ":", with: "/")
+        let commits = ((await commitList) ?? []).map { item -> PullRequestMergeMessage.Commit in
+            let commit = item["commit"] as? [String: Any] ?? [:]
+            let author = commit["author"] as? [String: Any] ?? [:]
+            return PullRequestMergeMessage.Commit(message: (commit["message"] as? String) ?? "",
+                                                  login: (item["author"] as? [String: Any])?["login"] as? String,
+                                                  name: (author["name"] as? String) ?? "", email: (author["email"] as? String) ?? "")
+        }
+        return PullRequestMergeMessage.withoutCredits(
+            method: method, number: number, title: (pull["title"] as? String) ?? "", body: (pull["body"] as? String) ?? "",
+            headLabel: headLabel, commits: commits, merger: (await me)?["login"] as? String,
+            settings: (await repository).map(PullRequestMergeMessage.Settings.init(repository:)) ?? .init())
     }
 
     /// The head GitHub reports for the pull request right now; nil when it could not be read.

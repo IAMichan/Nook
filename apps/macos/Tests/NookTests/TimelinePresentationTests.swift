@@ -96,6 +96,18 @@ final class TimelinePresentationTests: XCTestCase {
         XCTAssertEqual(SharedFiles.caption(AgentActivity.input(shared.detail) ?? [:]), "The reel")
     }
 
+    /// A page the agent showed (render_page) stays in sight next to the answer too.
+    func testPagesStayOutOfTheFold() {
+        var turn = finishedTurn()
+        let page = RenderedPage.event(title: "Chart", file: "/x/pages/r/p.html", height: 300)
+        turn.insert(page, at: 4)
+        let blocks = TimelinePresentation.blocks(turn + [event(.user, "Nog iets", at: 200)], active: false)
+        guard case .fold(_, _, let inner, _) = blocks[1], case .event(let shown) = blocks[2] else { return XCTFail("\(blocks)") }
+        XCTAssertEqual(shown.id, page.id)
+        XCTAssertFalse(TimelinePresentation.events(inner).contains { $0.id == page.id })
+        XCTAssertTrue(TimelinePresentation.group(Array(turn[1...5])).contains(.event(page)), "never counted away in a group")
+    }
+
     func testFailedOrEmptySharesAreOrdinarySteps() {
         let failed = event(.tool, "SendUserFile", tool: "SendUserFile", detail: #"{"files":["a.mp4"]}"#, state: .failed)
         let empty = event(.tool, "SendUserFile", tool: "SendUserFile", detail: #"{"files":[]}"#, state: .done)

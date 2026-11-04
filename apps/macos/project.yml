@@ -225,6 +225,7 @@ targets:
       - path: Core/I18n+PolishNotch.swift
       - path: Core/I18n+PolishRendering.swift
       - path: Core/I18n+PolishSettings.swift
+      - path: Core/I18n+AgentTools.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -311,6 +312,7 @@ targets:
       - path: Services/Connectors/PullRequestGraphQL.swift
       - path: Services/Connectors/RedirectCredentials.swift
       - path: Services/Connectors/PullRequestDetail.swift
+      - path: Services/Connectors/AgentCredits.swift
       - path: Services/Connectors/PullRequestReadiness.swift
       - path: Services/Connectors/PullRequestConversation.swift
       - path: Services/Connectors/PullRequestViewedFiles.swift
@@ -391,6 +393,8 @@ targets:
       - path: Services/Workspace/LimitPool.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/WorkspaceBridgeArguments.swift
+      - path: Services/Workspace/WorkspaceBridgeSessions.swift
+      - path: Services/Workspace/RenderedPage.swift
       - path: Services/Workspace/TimelinePresentation.swift
       - path: Services/Workspace/AgentProgress.swift
       - path: Services/AppPrompt.swift
