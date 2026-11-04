@@ -117,10 +117,11 @@ extension CompanionServer {
         }
     }
 
-    /// Your default for this agent, except "allow everything": a session started from a phone always keeps asking.
-    /// Plan mode takes the safest policy, as the composer does.
+    /// Your default for this agent, at most "allow edits": a session started from a phone always keeps asking. "Auto"
+    /// steps down to "allow edits" too (`PermissionPolicy.isUnattendedSafe`): its reviewer would approve commands nobody
+    /// at the Mac sees. Plan mode takes the safest policy, as the composer does.
     private func phonePermission(_ provider: RunProvider, preferred: PermissionPolicy, plan: Bool) -> PermissionPolicy {
-        let offered = provider.capabilities.policies.filter { $0 != .bypass }
+        let offered = provider.capabilities.policies.filter(\.isUnattendedSafe)
         if plan { return offered.first ?? .acceptEdits }
         return offered.contains(preferred) ? preferred : (offered.contains(.acceptEdits) ? .acceptEdits : (offered.first ?? .acceptEdits))
     }
@@ -212,6 +213,10 @@ extension CompanionServer {
             detail = event.tool
         case .error: kind = .error
         case .system: kind = .notice
+        case .page:
+            // The phone draws no pages: it says which page the agent showed (the page itself stays on the Mac).
+            kind = .notice
+            detail = nil
         case .thinking, .approval, .result: return nil
         }
         let clipped = CompanionPolicy.clip(text)

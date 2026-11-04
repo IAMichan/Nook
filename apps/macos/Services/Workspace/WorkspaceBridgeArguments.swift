@@ -188,8 +188,8 @@ enum BridgeScheduleArguments {
         guard let raw = BridgeArgs.string(value), let policy = PermissionPolicy(rawValue: raw) else {
             return .failure(BridgeArgumentError("rights must be ask or acceptEdits."))
         }
-        if policy == .bypass {
-            return .failure(BridgeArgumentError("A scheduled task never runs with full rights; use ask or acceptEdits."))
+        if !policy.isUnattendedSafe {
+            return .failure(BridgeArgumentError("A scheduled task never runs with \(policy.rawValue) rights; use ask or acceptEdits."))
         }
         if let caller, rank(policy) > rank(caller) {
             return .failure(BridgeArgumentError("A scheduled task cannot have more rights than you (\(caller.rawValue))."))
@@ -197,13 +197,7 @@ enum BridgeScheduleArguments {
         return .success(policy)
     }
 
-    private static func rank(_ policy: PermissionPolicy) -> Int {
-        switch policy {
-        case .ask: return 0
-        case .acceptEdits: return 1
-        case .bypass: return 2
-        }
-    }
+    private static func rank(_ policy: PermissionPolicy) -> Int { policy.rank }
 
     private static func text(_ value: Any?, field: String, limit: Int) -> Result<String?, BridgeArgumentError> {
         guard let value, !(value is NSNull) else { return .success(nil) }

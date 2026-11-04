@@ -433,7 +433,7 @@ private struct ScheduledTaskEditor: View {
     private var permissionPicker: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             Picker("", selection: $permission) {
-                ForEach(provider.capabilities.policies.filter { $0 != .bypass }) { Text($0.label).tag($0) }
+                ForEach(provider.capabilities.policies.filter(\.isUnattendedSafe)) { Text($0.label).tag($0) }
             }
             .labelsHidden()
             .frame(maxWidth: 240, alignment: .leading)

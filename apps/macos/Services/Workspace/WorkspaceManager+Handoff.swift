@@ -58,7 +58,7 @@ extension WorkspaceManager {
             // Another agent's conversation: what Nook followed of the old one does not apply to it.
             $0.conversation = nil
             $0.pendingRollback = nil
-            if !provider.capabilities.policies.contains($0.permission) { $0.permission = settings.permission(for: provider) }
+            $0.permission = $0.permission.steppedDown(within: provider.capabilities.policies)
         }
         forkNext.remove(id)
         append(id, RunEvent(kind: .system, text: accountOnly ? tr("ws.event.switchedAccount", provider.displayName)
@@ -86,7 +86,7 @@ extension WorkspaceManager {
         return ContextHandoff.compose(handoff: handoff.text, message: prompt)
     }
 
-    private func appendHandoffNote(_ id: UUID, _ handoff: ContextHandoff.Rendered) {
+    func appendHandoffNote(_ id: UUID, _ handoff: ContextHandoff.Rendered) {
         append(id, RunEvent(kind: .system, text: tr("ws.event.handoff", handoff.included, handoff.omitted),
                             tool: "handoff", detail: handoff.text))
     }
@@ -108,10 +108,35 @@ extension WorkspaceManager {
         let strategy = ContextTransfer.forFork(nativeFork: nativeFork, hasNativeSession: source.providerSessionID != nil)
 
         let newID = UUID()
+        var copy = branchCopy(of: source, id: newID, title: tr("ws.fork.title", source.title),
+                              lineage: RunLineage(kind: .fork, parentID: id, atEvent: events.count))
+
+        var handoff: ContextHandoff.Rendered?
+        switch strategy {
+        case .native:
+            // The first turn resumes the conversation as a copy (`--fork-session`), so the original is never written to twice.
+            forkNext.insert(newID)
+        case .fullSummary, .delta:
+            copy.providerSessionID = nil
+            handoff = ContextHandoff.render(events: events, source: source.provider.displayName)
+            copy.pendingHandoff = handoff?.text
+        }
+        runs.insert(copy, at: 0)
+        self.events[newID] = events
+        selectedRunID = newID
+        append(newID, RunEvent(kind: .system, text: tr(strategy == .native ? "ws.event.forkedNative" : "ws.event.forkedSummary", source.title)))
+        if let handoff { appendHandoffNote(newID, handoff) }
+        scheduleSave()
+        return newID
+    }
+
+    /// A new session that starts from `source` in the same folder, with nothing of its own yet: a fork or a side chat.
+    /// It never owns a worktree, so removing it cannot take the original's.
+    func branchCopy(of source: WorkspaceRun, id newID: UUID, title: String, lineage: RunLineage) -> WorkspaceRun {
         let now = Date()
         var copy = source
         copy.id = newID
-        copy.title = tr("ws.fork.title", source.title)
+        copy.title = title
         copy.status = .completed
         copy.statusDetail = nil
         copy.createdAt = now
@@ -136,25 +161,8 @@ extension WorkspaceManager {
         copy.providerSessions = nil
         copy.handoffCursors = nil
         copy.pendingHandoff = nil
-        copy.lineage = RunLineage(kind: .fork, parentID: id, atEvent: events.count)
-
-        var handoff: ContextHandoff.Rendered?
-        switch strategy {
-        case .native:
-            // The first turn resumes the conversation as a copy (`--fork-session`), so the original is never written to twice.
-            forkNext.insert(newID)
-        case .fullSummary, .delta:
-            copy.providerSessionID = nil
-            handoff = ContextHandoff.render(events: events, source: source.provider.displayName)
-            copy.pendingHandoff = handoff?.text
-        }
-        runs.insert(copy, at: 0)
-        self.events[newID] = events
-        selectedRunID = newID
-        append(newID, RunEvent(kind: .system, text: tr(strategy == .native ? "ws.event.forkedNative" : "ws.event.forkedSummary", source.title)))
-        if let handoff { appendHandoffNote(newID, handoff) }
-        scheduleSave()
-        return newID
+        copy.lineage = lineage
+        return copy
     }
 
     // MARK: One choice for agent, account and model
@@ -199,25 +207,27 @@ extension WorkspaceManager {
 
     // MARK: Merge back
 
-    /// Sends what a fork found out to the session it came from, as one message: the summary of the
-    /// fork's timeline since the point where it split off. The parent takes it up as soon as it is idle.
+    /// Sends what a fork or a side chat found out to the session it came from, as one message: the summary of its
+    /// timeline since the point where it split off. The parent takes it up as soon as it is idle.
     @discardableResult
     func mergeBack(_ id: UUID) -> Bool {
-        guard canTransfer(id), let fork = run(id), let lineage = fork.lineage, lineage.kind == .fork,
+        guard canTransfer(id), let fork = run(id), let lineage = fork.lineage, lineage.bringsBack,
               let parent = run(lineage.parentID), !parent.archived else { return false }
         loadTimeline(id)
+        let side = lineage.kind == .side
+        let what = side ? "side chat" : "fork"
         guard let handoff = ContextHandoff.render(
             events: timeline(id), from: lineage.atEvent, source: fork.title,
-            header: "[Result of a fork] This is what the fork \"\(fork.title)\" of this session did since it split off (oldest first):",
-            footer: "[End of the fork's result] Take over what is useful; check the files yourself before relying on it."
+            header: "[Result of a \(what)] This is what the \(what) \"\(fork.title)\" of this session did since it split off (oldest first):",
+            footer: "[End of the \(what)'s result] Take over what is useful; check the files yourself before relying on it."
         ) else { return false }
-        append(parent.id, RunEvent(kind: .system, text: tr("ws.event.mergedBackParent", fork.title)))
+        append(parent.id, RunEvent(kind: .system, text: tr(side ? "ws.event.sideBroughtBackParent" : "ws.event.mergedBackParent", fork.title)))
         if parent.canContinue, processes[parent.id] == nil, !checkpointing.contains(parent.id) {
             send(parent.id, text: handoff.text)
         } else {
             enqueue(parent.id, text: handoff.text)
         }
-        append(id, RunEvent(kind: .system, text: tr("ws.event.mergedBack", parent.title)))
+        append(id, RunEvent(kind: .system, text: tr(side ? "ws.event.sideBroughtBack" : "ws.event.mergedBack", parent.title)))
         return true
     }
 }

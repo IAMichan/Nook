@@ -77,13 +77,7 @@ enum DelegationPolicy {
 
     private static func rank(_ mode: ExecutionMode) -> Int { mode == .plan ? 0 : 1 }
 
-    private static func rank(_ policy: PermissionPolicy) -> Int {
-        switch policy {
-        case .ask: return 0
-        case .acceptEdits: return 1
-        case .bypass: return 2
-        }
-    }
+    private static func rank(_ policy: PermissionPolicy) -> Int { policy.rank }
 
     /// The mode and rights of the child. Omitted values are inherited; asking for more than the parent has is refused; an
     /// inherited right the target agent does not offer steps down to the broadest one it does.

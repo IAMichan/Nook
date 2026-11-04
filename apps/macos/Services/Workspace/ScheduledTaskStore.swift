@@ -340,7 +340,9 @@ final class ScheduledTaskStore: ObservableObject {
     /// webhook run, whose payload is not from the user. A policy the agent does not offer falls back to "ask".
     nonisolated static func effectivePermission(stored: PermissionPolicy?, provider: RunProvider, trigger: ScheduleTrigger) -> PermissionPolicy {
         // Nothing unattended runs with full rights, whatever an old row says.
-        let wanted: PermissionPolicy = trigger == .webhook || stored == .bypass ? .ask : (stored ?? .ask)
+        // "Auto" steps down to "allow edits": its reviewer would approve commands nobody watches.
+        let capped: PermissionPolicy? = stored.map { $0.isUnattendedSafe ? $0 : ($0 == .bypass ? .ask : .acceptEdits) }
+        let wanted: PermissionPolicy = trigger == .webhook ? .ask : (capped ?? .ask)
         let offered = provider.capabilities.policies
         if offered.contains(wanted) { return wanted }
         return offered.contains(.ask) ? .ask : (offered.first ?? .ask)

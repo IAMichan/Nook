@@ -273,7 +273,8 @@ enum AcpRPC {
         if mode == .plan { return ["read", "search", "think", "fetch"].contains(call.kind) }
         switch permission {
         case .bypass: return true
-        case .acceptEdits: return ["read", "search", "think", "fetch", "edit", "move"].contains(call.kind)
+        // No ACP agent offers "auto" (see `RunProvider.capabilities`); an old setting allows edits only.
+        case .acceptEdits, .auto: return ["read", "search", "think", "fetch", "edit", "move"].contains(call.kind)
         case .ask: return ["read", "search", "think"].contains(call.kind)
         }
     }
