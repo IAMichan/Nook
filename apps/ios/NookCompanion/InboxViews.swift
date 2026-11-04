@@ -275,6 +275,14 @@ struct InboxChatView: View {
                     if let typing {
                         InboxTypingBubble(text: typing).transition(.opacity)
                     }
+                    // Your messages that wait on the phone for the Mac, dimmed, until it takes them.
+                    let waiting = client.outbox.chatMessages(to: chatID)
+                    ForEach(waiting) { entry in
+                        MessageBubble(text: entry.request.text ?? "", mine: true).opacity(0.6)
+                    }
+                    if !waiting.isEmpty {
+                        Banner(text: String(localized: "Waiting for your Mac: it goes as soon as your Mac can be reached."), symbol: "clock")
+                    }
                     Color.clear.frame(height: 1).id(Self.bottom)
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
@@ -395,11 +403,15 @@ struct InboxChatView: View {
         Haptics.tap()
         let quoted = replyingTo?.id
         Task {
-            if await client.sendInbox(message, to: chatID, replyTo: quoted) {
+            switch await client.sendInbox(message, to: chatID, replyTo: quoted) {
+            case .sent:
                 Haptics.success()
                 if replyingTo?.id == quoted { replyingTo = nil }
                 await client.loadInboxChat(chatID)
-            } else {
+            case .waiting:
+                // Kept on the phone, shown below as waiting, and sent once the Mac answers.
+                if replyingTo?.id == quoted { replyingTo = nil }
+            case .refused:
                 text = message
             }
             sending = false

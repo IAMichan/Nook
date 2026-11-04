@@ -17,12 +17,15 @@ struct RelayPushContent: Codable, Equatable, Sendable {
     var session: String
     var item: String?
     var badge: Int
+    /// The id of the pairing it goes out for (`APNsPayload.make`); nil from a Mac that predates it.
+    var mac: String?
 
     /// Longest title and text sent: the sealed blob must stay well inside Apple's 4 KB.
     static let maxTitle = 120
     static let maxBody = 240
 
-    init(title: String, body: String, category: String, thread: String, session: String, item: String?, badge: Int) {
+    init(title: String, body: String, category: String, thread: String, session: String, item: String?, badge: Int,
+         mac: String? = nil) {
         self.title = String(title.prefix(Self.maxTitle))
         self.body = String(body.prefix(Self.maxBody))
         self.category = category
@@ -30,12 +33,14 @@ struct RelayPushContent: Codable, Equatable, Sendable {
         self.session = session
         self.item = item
         self.badge = max(0, badge)
+        self.mac = mac
     }
 
     /// The custom data the app reads on a tap or a button, as a direct push carries it under "nook".
     var userInfo: [String: Any] {
         var nook: [String: Any] = ["session": session]
         if let item { nook["item"] = item }
+        if let mac { nook["mac"] = mac }
         return ["nook": nook]
     }
 }

@@ -8,6 +8,7 @@ Sources/
   CompanionPush.swift     APNs push payload formatting and JWT signing helpers
   CompanionRelay.swift    Relay rooms, relay addresses and the relay's message format (tested in CompanionRelayTests)
   CompanionRoutes.swift   Routes to the Mac, reconnect backoff, wakeups, the outbox and command receipts (tested in CompanionRoutesTests)
+  CompanionResilience.swift  Clock offset, stale notifications, notification retries, the phone's cache, resuming a conversation (tested in CompanionResilienceTests)
   CompanionLiveActivity.swift  Live Activity phases, attributes, planner and liveactivity payloads (also compiled into the iPhone widget extension)
   CompanionSeal.swift     Authenticated encryption with ChaCha20-Poly1305 (CryptoKit)
   WebhookSecurity.swift   Pure-Swift SHA-256 and HMAC verification (no CryptoKit dependency)

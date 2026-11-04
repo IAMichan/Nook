@@ -86,7 +86,26 @@ final class CompanionClient: ObservableObject {
     @Published private(set) var otherSessions: [String: [SessionDigest]] = [:]
     /// Pairing another Mac: the pairing screen shows while the current Mac stays paired.
     @Published var addingMac = false
+    /// When the active Mac last answered the list, live or (at launch) from what the phone kept (`CompanionCache`):
+    /// while it cannot be reached the list says "Last updated HH:mm · not connected".
+    @Published private(set) var lastUpdated: Date?
+    /// The name of a Mac that removed this iPhone (`CompanionResponse.revoked`), until the user pairs again or lets it go.
+    @Published var revokedMac: String?
+    /// The conversation a question that waited in the outbox started, by its request id, once the Mac took it.
+    @Published private(set) var askedConversations: [String: String] = [:]
     private(set) var pushToken: String?
+
+    /// The last answers of the active Mac, kept for the next launch (`CacheStore`), and the save that is coming.
+    private var cache = CompanionCache()
+    private var cacheSave: Task<Void, Never>?
+    /// What waited when delivered notifications were last cleared (`DeliveredNotifications`).
+    private var clearedPending: Set<String>?
+    /// Deny and Reply buttons that could not reach their Mac (`NotificationRetries`).
+    private var retries = RetryStore.load()
+    /// Whether the app is in front; a Mac with `CompanionFeature.foreground` leaves out pushes while it is.
+    private var inFront = false
+    /// Answers to outbox entries that were sent, by request id, for the one waiting on it (`deliver`).
+    private var drained: [String: CompanionResponse] = [:]
 
     private var pairings = CompanionPairings()
     private var link: PairingLink?
@@ -168,6 +187,7 @@ final class CompanionClient: ObservableObject {
                 pairings = next
                 loadActive()
                 addingMac = false
+                revokedMac = nil
                 activeRoute = picked.route
                 macName = response.macName ?? parsed.macName
                 apply(response, to: CompanionRequest(op: .hello))
@@ -188,9 +208,33 @@ final class CompanionClient: ObservableObject {
         stopConnection()
         Task { await LiveActivities.shared.endAll() }
         guard let id = pairings.active?.id else { phase = .unpaired; return }
+        forgetActive(id)
+    }
+
+    /// The Mac removed this iPhone (`CompanionResponse.revoked`): its key is dead, so the pairing goes, with its push key
+    /// (`PairingStore.save` keeps only those of paired Macs), its Live Activities and what was kept of it; the phone
+    /// says so and offers to pair again, and goes on with another paired Mac if there is one.
+    private func revoked() {
+        guard let mac = pairings.active else { return }
+        CompanionDiagnosticsLog.phone.record("revoked", ["macs": String(pairings.macs.count)])
+        stopConnection()
+        Task { await LiveActivities.shared.endAll() }
+        if let key = mac.link?.key { PushKeyStore.forget(pairingKey: key) }
+        revokedMac = mac.name
+        forgetActive(mac.id)
+    }
+
+    /// Drops the active Mac's pairing and everything kept for it; another paired Mac becomes the active one.
+    private func forgetActive(_ id: String) {
+        cacheSave?.cancel()
+        cacheSave = nil
         outbox = CompanionOutbox()
         OutboxStore.save(outbox, name: outboxName)
         UserDefaults.standard.removeObject(forKey: featuresKey)
+        CacheStore.remove(mac: id)
+        ClockOffsets.forget(id)
+        for entry in retries.waiting(for: id) { retries.remove(entry.id) }
+        RetryStore.save(retries)
         pairings.remove(id)
         PairingStore.save(pairings)
         otherSessions[id] = nil
@@ -223,6 +267,8 @@ final class CompanionClient: ObservableObject {
 
     /// Takes in the active Mac: its pairing, routes, features and outbox; what was shown for the previous one goes.
     private func loadActive() {
+        // What the previous Mac answered last is written before its place is taken.
+        flushCache()
         let mac = pairings.active
         link = mac?.link
         routes = mac?.routes ?? []
@@ -234,10 +280,14 @@ final class CompanionClient: ObservableObject {
         features = Set(UserDefaults.standard.stringArray(forKey: featuresKey) ?? [])
         hasUnrecognizedMacFeatures = false
         outbox = OutboxStore.load(name: outboxName)
-        sessions = []
+        // The last the phone saw of this Mac, until it answers: shown as not live ("Last updated …"), never over newer.
+        cache = mac.map { CacheStore.load(mac: $0.id) } ?? CompanionCache()
+        sessions = cache.sessions
+        timelines = cache.allTimelines
+        launchOptions = cache.launch
+        lastUpdated = cache.savedAt
+        clearedPending = nil
         featuresKnown = false
-        launchOptions = nil
-        timelines = [:]
         conversations = []
         chatLines = [:]
         home = nil
@@ -265,6 +315,28 @@ final class CompanionClient: ObservableObject {
         PairingStore.save(pairings)
     }
 
+    /// Writes what the active Mac answered last a moment from now, once for a burst of changes (a conversation that
+    /// streams changes every second).
+    private func scheduleCacheSave() {
+        guard let id = activeMacID, cacheSave == nil else { return }
+        cacheSave = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            // Cancelled: `flushCache` wrote it already and let go of this task.
+            guard let self, !Task.isCancelled else { return }
+            self.cacheSave = nil
+            guard self.activeMacID == id else { return }
+            CacheStore.save(self.cache, mac: id)
+        }
+    }
+
+    /// Writes a save that is still coming now (before another Mac becomes active).
+    private func flushCache() {
+        guard let pending = cacheSave, let id = activeMacID else { return }
+        pending.cancel()
+        cacheSave = nil
+        CacheStore.save(cache, mac: id)
+    }
+
     /// Asks every other paired Mac what waits there, for the Agents list; one that does not answer keeps what it said last.
     func refreshOthers() async {
         for mac in pairings.others {
@@ -273,6 +345,8 @@ final class CompanionClient: ObservableObject {
                   picked.answer.ok, let list = picked.answer.sessions else { continue }
             // Only what that Mac lets this phone see comes back; an empty list is fine.
             otherSessions[mac.id] = list
+            // Its notifications about what no longer waits go too; the badge stays the active Mac's.
+            Notifications.clearAnswered(pending: DeliveredNotifications.pending(list), mac: mac.id, onlyMac: false, badge: nil)
         }
         let paired = Set(pairings.macs.map(\.id))
         for id in otherSessions.keys where !paired.contains(id) { otherSessions[id] = nil }
@@ -285,6 +359,9 @@ final class CompanionClient: ObservableObject {
     func appBecameActive() {
         let wakeup = CompanionWakeup.onActive(backgroundedAt: backgroundedAt, now: Date())
         backgroundedAt = nil
+        inFront = true
+        // Buttons on notifications that could not reach their Mac get another go, quietly.
+        if !retries.entries.isEmpty { Task { await retryNotificationActions(mac: nil, quiet: true) } }
         guard link != nil else { return }
         guard supervisor != nil else {
             failures = 0
@@ -305,6 +382,16 @@ final class CompanionClient: ObservableObject {
 
     func appWentToBackground() {
         backgroundedAt = Date()
+        inFront = false
+        flushCache()
+        // The Mac sends pushes again from now on (`CompanionFeature.foreground`); without this word it does after a few
+        // seconds of silence anyway (`ForegroundPolicy`).
+        guard let channel, channel.isOpen, can(CompanionFeature.foreground) else { return }
+        let work = BackgroundWork("Nook: going to the background")
+        Task {
+            _ = try? await channel.request(CompanionRequest(op: .ping, foreground: false), timeout: CompanionTiming.probeTimeout)
+            work.end()
+        }
     }
 
     private func superviseIfNeeded() {
@@ -368,6 +455,8 @@ final class CompanionClient: ObservableObject {
 
     private func supervise() async {
         while !Task.isCancelled, let link {
+            let macID = PairedDevice.identifier(forKey: link.key)
+            let clockBefore = ClockOffsets.offset(for: macID)
             // Every route is asked for the list: any Mac answers it, and the answer says whether it keeps a live
             // connection, so a Mac that was updated (or rolled back) in the meantime is met as it is now.
             guard let picked = await RouteProbe.pick(attemptOrder(), key: link.key, makeRequest: { CompanionRequest.versioned(.list) }) else {
@@ -389,7 +478,14 @@ final class CompanionClient: ObservableObject {
                                                  ["route": picked.route.logKind, "error": picked.answer.error?.rawValue ?? "",
                                                   "failures": String(failures)])
             guard picked.answer.ok else {
-                failures += 1
+                if picked.answer.error == .stale {
+                    // The Mac said its time (`CompanionFeature.clock`): the next attempt carries the corrected time, now.
+                    if CompanionClock.changed(clockBefore, ClockOffsets.offset(for: macID)) { continue }
+                    // A clock that is off does not get better by asking fast: straight to the longest wait.
+                    failures = max(failures + 1, 6)
+                } else {
+                    failures += 1
+                }
                 phase = .offline(refusalText(picked.answer.error))
                 await pause(RetryBackoff.delay(failures: failures, random: Double.random(in: 0...1)))
                 continue
@@ -421,7 +517,9 @@ final class CompanionClient: ObservableObject {
         }
         do {
             try await channel.open(timeout: 5)
-            let response = try await channel.request(CompanionRequest.versioned(.subscribe), timeout: 10)
+            var subscribe = CompanionRequest.versioned(.subscribe)
+            if can(CompanionFeature.foreground) { subscribe.foreground = inFront }
+            let response = try await channel.request(subscribe, timeout: 10)
             guard response.ok else {
                 channel.close()
                 failures += 1
@@ -502,6 +600,7 @@ final class CompanionClient: ObservableObject {
         if let session = watchedSession { await watchSession(session) }
         await LiveActivities.shared.reconcile(sessions)
         await drainOutbox()
+        if let id = activeMacID, !retries.waiting(for: id).isEmpty { await retryNotificationActions(mac: id, quiet: true) }
         await refreshInbox()
         await refreshOthers()
     }
@@ -513,6 +612,8 @@ final class CompanionClient: ObservableObject {
 
     /// What the Mac sent by itself over the live connection.
     private func received(_ update: CompanionResponse) {
+        // The Mac removed this iPhone (`CompanionFeature.revoke`): nothing more will open; pair again.
+        if update.revoked == true { return revoked() }
         apply(update, to: CompanionRequest(op: .list))
         Task { await LiveActivities.shared.reconcile(sessions) }
     }
@@ -520,7 +621,9 @@ final class CompanionClient: ObservableObject {
     /// A quick look whether the channel still answers; if not, it is replaced at once.
     private func probe(_ channel: CompanionChannel) async {
         do {
-            _ = try await channel.request(CompanionRequest(op: .ping), timeout: CompanionTiming.probeTimeout)
+            // Says too whether the app is in front, which may have changed since the connection was made.
+            _ = try await channel.request(CompanionRequest(op: .ping, foreground: can(CompanionFeature.foreground) ? inFront : nil),
+                                          timeout: CompanionTiming.probeTimeout)
         } catch {
             guard self.channel === channel else { return }
             CompanionDiagnosticsLog.phone.record("probeFailed", ["route": channel.route.logKind, "error": error.localizedDescription])
@@ -622,17 +725,57 @@ final class CompanionClient: ObservableObject {
             if !response.ok, let error = response.error, [CompanionError.replay, .stale, .rateLimited, .busy, .failed].contains(error) { return }
             outbox.remove(entry.id)
             OutboxStore.save(outbox, name: outboxName)
+            if drained.count > 50 { drained.removeAll() }
+            drained[entry.id] = response
             if response.ok {
                 apply(response, to: request)
-                if response.message == "queued" { notice = String(localized: "Queued: the session is still busy.") }
+                switch request.op {
+                case .send where response.message == "queued":
+                    notice = String(localized: "Queued: the session is still busy.")
+                case .ask:
+                    // The chat it started (or went on with) can open now.
+                    if let created = response.created { askedConversations[entry.id] = created }
+                    await loadChats()
+                case .inboxSend:
+                    await loadInbox()
+                    if let chat = request.item { await loadInboxChat(chat) }
+                default:
+                    break
+                }
             } else if let session = request.session, request.op == .send {
                 // Kept with why, in the session, to edit and send again: nothing you wrote is lost.
                 rejected.append(RejectedMessage(session: session, text: request.text ?? "", images: request.images ?? [],
                                                 reason: RejectedMessage.reason(response)))
+            } else if request.op == .start || request.op == .ask || request.op == .inboxSend {
+                notice = String(localized: "Your Mac did not take what waited for it: \(RejectedMessage.reason(response))")
             } else {
                 notice = String(localized: "Your Mac refused this.")
             }
         }
+    }
+
+    /// Something you wrote (a message, a new session, a question to Nook, a message to a chat): through the outbox when
+    /// the Mac answers repeats once (`CompanionFeature.retry`), so it waits on the phone while the Mac cannot be reached;
+    /// straight to the Mac otherwise.
+    private func deliver(_ request: CompanionRequest) async -> Delivery {
+        guard can(CompanionFeature.retry), outbox.enqueue(request, now: Date()) else {
+            return await perform(request).map(Delivery.sent) ?? .refused
+        }
+        OutboxStore.save(outbox, name: outboxName)
+        // Without a connection it waits for the supervisor to reach the Mac, rather than for a timeout here.
+        guard phase == .connected, !draining else { return .waiting }
+        await drainOutbox()
+        guard let response = drained.removeValue(forKey: request.id) else { return .waiting }
+        return response.ok ? .sent(response) : .refused
+    }
+
+    enum Delivery {
+        /// The Mac took it, with its answer.
+        case sent(CompanionResponse)
+        /// It waits in the outbox until the Mac can be reached.
+        case waiting
+        /// The Mac said no (the reason is in `notice`, or with the message in its session).
+        case refused
     }
 
     // MARK: Actions
@@ -680,11 +823,6 @@ final class CompanionClient: ObservableObject {
         return response.message ?? "nopush"
     }
 
-    /// An action from a notification (Allow / Deny), done without opening the app.
-    func decide(sessionID: String, itemID: String, allow: Bool) async {
-        await perform(CompanionRequest(op: .decide, session: sessionID, item: itemID, allow: allow))
-    }
-
     func decide(_ session: SessionDigest, item: SessionDigest.Item, allow: Bool) async {
         await perform(CompanionRequest(op: .decide, session: session.id, item: item.id, allow: allow))
     }
@@ -705,12 +843,7 @@ final class CompanionClient: ObservableObject {
         let request = CompanionRequest(op: .send, session: sessionID, text: text,
                                        steer: steer && can(CompanionFeature.steer) ? true : nil,
                                        images: images.isEmpty || !can(CompanionFeature.images) ? nil : images)
-        guard can(CompanionFeature.retry), outbox.enqueue(request, now: Date()) else {
-            await perform(request)
-            return
-        }
-        OutboxStore.save(outbox, name: outboxName)
-        await drainOutbox()
+        _ = await deliver(request)
     }
 
     func stop(_ session: SessionDigest) async {
@@ -742,10 +875,11 @@ final class CompanionClient: ObservableObject {
         await perform(CompanionRequest(op: .options))
     }
 
-    /// Starts a session on the Mac; the id of the new session, or nil when it did not start (the reason is in `notice`).
-    func start(_ launch: LaunchRequest, images: [CompanionImage] = []) async -> String? {
-        await perform(CompanionRequest(op: .start, launch: launch,
-                                       images: images.isEmpty || !can(CompanionFeature.images) ? nil : images))?.created
+    /// Starts a session on the Mac (through the outbox, so it waits while the Mac cannot be reached). `.sent` carries the
+    /// new session's id in `created`; `.refused` has the reason in `notice`.
+    func start(_ launch: LaunchRequest, images: [CompanionImage] = []) async -> Delivery {
+        await deliver(CompanionRequest(op: .start, launch: launch,
+                                       images: images.isEmpty || !can(CompanionFeature.images) ? nil : images))
     }
 
     // MARK: A session's conversation
@@ -761,7 +895,9 @@ final class CompanionClient: ObservableObject {
     func watchSession(_ sessionID: String) async -> Bool {
         watchedSession = sessionID
         guard await supports(CompanionFeature.liveTimeline), phase == .connected else { return false }
-        return await perform(CompanionRequest(op: .watch, session: sessionID), quiet: true)?.ok == true
+        // The conversation the phone still has (from before, or kept since the last launch): only what came after it.
+        let last = can(CompanionFeature.resume) ? timelines[sessionID]?.last?.id : nil
+        return await perform(CompanionRequest(op: .watch, session: sessionID, item: last), quiet: true)?.ok == true
     }
 
     /// The session left the screen: the Mac stops sending its conversation (unless another one opened meanwhile).
@@ -799,11 +935,33 @@ final class CompanionClient: ObservableObject {
         await perform(CompanionRequest(op: .chat, conversation: conversationID), quiet: true)
     }
 
-    /// Asks Nook; nil `conversationID` starts a new chat. The id of the chat, or nil when the Mac refused.
-    func ask(_ text: String, in conversationID: String?) async -> String? {
-        let response = await perform(CompanionRequest(op: .ask, text: text, conversation: conversationID))
-        if response != nil { await loadChats() }
-        return response?.created
+    /// Asks Nook; nil `conversationID` starts a new chat. Through the outbox, so a question waits while the Mac cannot be
+    /// reached: `.waiting(id)` names the request, whose chat shows up in `askedConversations` once the Mac took it.
+    func ask(_ text: String, in conversationID: String?) async -> AskOutcome {
+        let request = CompanionRequest(op: .ask, text: text, conversation: conversationID)
+        switch await deliver(request) {
+        case .sent(let response):
+            await loadChats()
+            return response.created.map(AskOutcome.asked) ?? .refused
+        case .waiting:
+            return .waiting(request.id)
+        case .refused:
+            return .refused
+        }
+    }
+
+    enum AskOutcome {
+        /// The chat it went to.
+        case asked(String)
+        /// Waits in the outbox, by request id.
+        case waiting(String)
+        case refused
+    }
+
+    /// Something that waits in the outbox is let go: it will not be sent.
+    func discardWaiting(_ id: String) {
+        outbox.remove(id)
+        OutboxStore.save(outbox, name: outboxName)
     }
 
     // MARK: Home and usage
@@ -837,11 +995,12 @@ final class CompanionClient: ObservableObject {
         await perform(CompanionRequest(op: .inboxChat, item: chatID), quiet: true)
     }
 
-    /// Your own words to a chat (a WhatsApp chat on the Mac), as an answer to `replyTo` when one is quoted. Whether it went.
-    func sendInbox(_ text: String, to chatID: String, replyTo: String? = nil) async -> Bool {
-        let sent = await perform(CompanionRequest(op: .inboxSend, item: chatID, text: text, replyTo: replyTo)) != nil
-        if sent { await loadInbox() }
-        return sent
+    /// Your own words to a chat (a WhatsApp chat on the Mac), as an answer to `replyTo` when one is quoted. Through the
+    /// outbox: it waits while the Mac cannot be reached, shown in the chat as waiting.
+    func sendInbox(_ text: String, to chatID: String, replyTo: String? = nil) async -> Delivery {
+        let delivery = await deliver(CompanionRequest(op: .inboxSend, item: chatID, text: text, replyTo: replyTo))
+        if case .sent = delivery { await loadInbox() }
+        return delivery
     }
 
     /// Read (`read`) or unread by hand; read tells WhatsApp too.
@@ -962,6 +1121,7 @@ final class CompanionClient: ObservableObject {
             if list.needingYou != sessions.needingYou || phase != .connected { Notifications.setBadge(list.needingYou) }
             if list != sessions { sessions = list }
         }
+        if let list = response.sessions { tookList(list) }
         if let name = response.macName, name != macName {
             macName = name
             if let id = pairings.active?.id {
@@ -996,11 +1156,20 @@ final class CompanionClient: ObservableObject {
             saveRoutes(relay)
         }
         if req.op == .list || req.op == .hello { featuresKnown = true }
-        if let options = response.launch, options != launchOptions { launchOptions = options }
+        if let options = response.launch, options != launchOptions {
+            launchOptions = options
+            // Kept, so a new session can be written (and wait in the outbox) while the Mac cannot be reached.
+            cache.launch = options
+            scheduleCacheSave()
+        }
         if let timeline = response.timeline, let session = response.timelineSession ?? req.session {
             // An update builds on the entry the phone already has; missing it, the whole conversation is asked for once.
             if let merged = TimelineDelta.apply(timeline, after: response.timelineAfter, to: timelines[session]) {
-                if timelines[session] != merged { timelines[session] = merged }
+                if timelines[session] != merged {
+                    timelines[session] = merged
+                    cache.record(timeline: merged, session: session, at: Date())
+                    scheduleCacheSave()
+                }
             } else {
                 Task { await loadTimeline(session) }
             }
@@ -1029,12 +1198,177 @@ final class CompanionClient: ObservableObject {
     }
 
 
+    /// A list the active Mac answered just now: kept for the next launch, and the notifications about what no longer
+    /// waits are taken away, with the badge set to what still does.
+    private func tookList(_ list: [SessionDigest]) {
+        let now = Date()
+        // "Last updated HH:mm": a new value only when the minute changed, so a list every second redraws nothing.
+        if lastUpdated.map({ Int($0.timeIntervalSince1970 / 60) != Int(now.timeIntervalSince1970 / 60) }) ?? true { lastUpdated = now }
+        cache.record(sessions: list, at: now)
+        scheduleCacheSave()
+        let pending = DeliveredNotifications.pending(list)
+        guard pending != clearedPending, let mac = activeMacID else { return }
+        clearedPending = pending
+        Notifications.clearAnswered(pending: pending, mac: mac, onlyMac: pairings.macs.count == 1, badge: list.needingYou)
+    }
+
+    // MARK: Buttons on notifications
+
+    /// Reads the pairings again when the app was started while the phone was locked (the Keychain could not be read
+    /// then), so a notification's button finds its Mac once the phone is unlocked.
+    private func reloadPairingsIfNeeded() {
+        guard pairings.isEmpty else { return }
+        let stored = PairingStore.load()
+        guard !stored.isEmpty else { return }
+        pairings = stored
+        loadActive()
+        phase = .offline("")
+    }
+
+    /// Opens a session from a notification: of the Mac that sent it, which becomes the active one when it is not.
+    func open(session: String, mac: String?) {
+        reloadPairingsIfNeeded()
+        if let mac, mac != pairings.active?.id, pairings.contains(mac) { switchMac(to: mac) }
+        openSession = session
+    }
+
+    /// A button on a notification (Allow, Deny, Reply), for the Mac that sent it (`mac` in the push; a Mac that does not
+    /// say means the active one). Over the live connection when that Mac has one; otherwise the app keeps running in the
+    /// background for it, looks for the best route to that Mac (the local network, Tailscale, the relay;
+    /// `RouteProbe.pick`) and sends it there. When nothing answers, a notification says so: a Deny or a Reply is kept to
+    /// try again (`NotificationRetries`), and a Reply also waits in that Mac's outbox.
+    func notificationAction(_ request: CompanionRequest, mac macID: String?) async {
+        reloadPairingsIfNeeded()
+        guard let mac = macID.flatMap({ id in pairings.macs.first { $0.id == id } }) ?? pairings.active else { return }
+        let work = BackgroundWork("Nook: answering from a notification")
+        defer { work.end() }
+        if let response = await deliverOnce(request, to: mac) {
+            took(response, for: request, from: mac)
+            return
+        }
+        CompanionDiagnosticsLog.phone.record("actionUnreachable", ["op": request.op.rawValue,
+                                                                   "routes": mac.routes.map(\.logKind).joined(separator: ",")])
+        let kept = retries.add(request, mac: mac.id, now: Date())
+        RetryStore.save(retries)
+        if request.op == .send { keepInOutbox(request, mac: mac) }
+        await Notifications.couldNotReach(mac.name, mac: mac.id, session: request.session, retry: kept, id: request.id)
+    }
+
+    /// Tries again what notification buttons could not deliver, for one Mac or all: on a tap on "Couldn't reach", when
+    /// the app comes to the front, and once connected to that Mac. `quiet`: no new notification when it still fails.
+    func retryNotificationActions(mac only: String?, quiet: Bool) async {
+        reloadPairingsIfNeeded()
+        retries.expire(now: Date())
+        defer { RetryStore.save(retries) }
+        guard !retries.entries.isEmpty else { return }
+        let work = BackgroundWork("Nook: trying again")
+        defer { work.end() }
+        for id in only.map({ [$0] }) ?? retries.macs {
+            guard let mac = pairings.macs.first(where: { $0.id == id }) else {
+                for entry in retries.waiting(for: id) { retries.remove(entry.id) }
+                continue
+            }
+            for entry in retries.waiting(for: id) {
+                var request = entry.request
+                request.sent = Date().timeIntervalSince1970
+                guard let response = await deliverOnce(request, to: mac) else {
+                    if !quiet {
+                        await Notifications.couldNotReach(mac.name, mac: mac.id, session: request.session, retry: true, id: entry.id)
+                    }
+                    // The Mac is out of reach: what else waits for it waits too.
+                    break
+                }
+                retries.remove(entry.id)
+                removeFromOutbox(entry.id, mac: mac)
+                Notifications.removeCouldNotReach(entry.id)
+                took(response, for: request, from: mac)
+            }
+        }
+    }
+
+    /// One request to one Mac, now: over the live connection when it is that Mac's, else over the best route that
+    /// answers (`RouteProbe.pick`, the relay included). Nil when the Mac could not be reached. The request keeps its id,
+    /// so a repeat after a lost answer is not carried out twice (`CommandReceipts`).
+    private func deliverOnce(_ request: CompanionRequest, to mac: PairedMac) async -> CompanionResponse? {
+        guard let link = mac.link else { return nil }
+        if mac.id == pairings.active?.id, let channel, channel.isOpen,
+           let response = try? await channel.request(request, timeout: 15) {
+            return response
+        }
+        let clockBefore = ClockOffsets.offset(for: mac.id)
+        // The route is found with a list (any Mac answers it), so the request itself goes over one route only, once.
+        guard let picked = await RouteProbe.pick(mac.id == pairings.active?.id ? routes : mac.routes, key: link.key,
+                                                 makeRequest: { CompanionRequest.versioned(.list) }) else { return nil }
+        if picked.answer.ok, mac.id != pairings.active?.id, let list = picked.answer.sessions { otherSessions[mac.id] = list }
+        var response = try? await exchange(request, link: link, route: picked.route)
+        // Refused for the clock while the Mac said its time: once more, with the time corrected.
+        if response?.error == .stale, CompanionClock.changed(clockBefore, ClockOffsets.offset(for: mac.id)) {
+            response = try? await exchange(request, link: link, route: picked.route)
+        }
+        return response
+    }
+
+    /// Takes in a Mac's answer to a button: the active Mac's like any answer, another Mac's into its list. A refusal is
+    /// the Mac's last word (the approval was answered on the Mac already): nothing to try again.
+    private func took(_ response: CompanionResponse, for request: CompanionRequest, from mac: PairedMac) {
+        if mac.id == pairings.active?.id {
+            if response.ok { apply(response, to: request) }
+            // The Mac answers: the supervisor need not wait out its backoff.
+            if phase != .connected, channel == nil { wakeUp(resetBackoff: true) }
+        } else if let list = response.sessions {
+            otherSessions[mac.id] = list
+        }
+    }
+
+    /// The outbox file and the features of a Mac, by its pairing id (`CompanionPairings.storageName`).
+    private func outboxFile(for mac: PairedMac) -> String {
+        CompanionPairings.storageName("companion-outbox.json", mac: mac.id, legacyID: pairings.legacyID)
+    }
+
+    /// A Reply that could not go also waits in its Mac's outbox (when that Mac answers repeats once,
+    /// `CompanionFeature.retry`): shown in its session, it goes once the phone reaches that Mac.
+    private func keepInOutbox(_ request: CompanionRequest, mac: PairedMac) {
+        let featuresName = CompanionPairings.storageName("companion.features", mac: mac.id, legacyID: pairings.legacyID)
+        guard (UserDefaults.standard.stringArray(forKey: featuresName) ?? []).contains(CompanionFeature.retry) else { return }
+        if mac.id == pairings.active?.id {
+            guard outbox.enqueue(request, now: Date()) else { return }
+            OutboxStore.save(outbox, name: outboxName)
+        } else {
+            var other = OutboxStore.load(name: outboxFile(for: mac))
+            guard other.enqueue(request, now: Date()) else { return }
+            OutboxStore.save(other, name: outboxFile(for: mac))
+        }
+    }
+
+    private func removeFromOutbox(_ id: String, mac: PairedMac) {
+        if mac.id == pairings.active?.id {
+            guard outbox.entries.contains(where: { $0.id == id }) else { return }
+            outbox.remove(id)
+            OutboxStore.save(outbox, name: outboxName)
+        } else {
+            var other = OutboxStore.load(name: outboxFile(for: mac))
+            guard other.entries.contains(where: { $0.id == id }) else { return }
+            other.remove(id)
+            OutboxStore.save(other, name: outboxFile(for: mac))
+        }
+    }
+
     // MARK: Transport
 
     /// Sends a request: over the live connection when there is one, else over one short connection to the route in use
-    /// (or the best known one). A request the Mac answers once (`CompanionFeature.retry`) may go again after the live
-    /// connection broke under it: a repeat gets the first answer, it is never carried out twice.
+    /// (or the best known one). A request the Mac refused for the clock, while saying its time (`CompanionFeature.clock`),
+    /// goes once more with the corrected time.
     private func transport(_ req: CompanionRequest, link: PairingLink) async throws -> CompanionResponse {
+        let mac = PairedDevice.identifier(forKey: link.key)
+        let clockBefore = ClockOffsets.offset(for: mac)
+        let response = try await transportOnce(req, link: link)
+        guard response.error == .stale, CompanionClock.changed(clockBefore, ClockOffsets.offset(for: mac)) else { return response }
+        return try await transportOnce(req, link: link)
+    }
+
+    /// One try of `transport`. A request the Mac answers once (`CompanionFeature.retry`) may go again after the live
+    /// connection broke under it: a repeat gets the first answer, it is never carried out twice.
+    private func transportOnce(_ req: CompanionRequest, link: PairingLink) async throws -> CompanionResponse {
         if let channel, channel.isOpen {
             do {
                 return try await channel.request(req, timeout: 15)
@@ -1068,6 +1402,7 @@ final class CompanionClient: ObservableObject {
         let opened = try CompanionSeal.open(reply, pairingKey: link.key, direction: .response)
         let response = try JSONDecoder().decode(CompanionResponse.self, from: opened)
         guard response.id == req.id else { throw CompanionClientError.badRequest }
+        ClockOffsets.learn(from: response, mac: PairedDevice.identifier(forKey: link.key))
         return response
     }
 }
@@ -1238,10 +1573,14 @@ enum Notifications {
     }
 
     static func registerCategories() {
-        let deny = UNNotificationAction(identifier: PushCategory.actionDeny, title: String(localized: "Deny"), options: [.destructive])
-        let allow = UNNotificationAction(identifier: PushCategory.actionAllow, title: String(localized: "Allow"), options: [])
+        // The buttons ask for the phone to be unlocked: the pairings (the keys to reach the Mac) only open then.
+        let deny = UNNotificationAction(identifier: PushCategory.actionDeny, title: String(localized: "Deny"),
+                                        options: [.destructive, .authenticationRequired])
+        let allow = UNNotificationAction(identifier: PushCategory.actionAllow, title: String(localized: "Allow"),
+                                         options: [.authenticationRequired])
         // Answer the agent right from a notification that its turn ended, without opening the app.
-        let reply = UNTextInputNotificationAction(identifier: PushCategory.actionReply, title: String(localized: "Reply"), options: [],
+        let reply = UNTextInputNotificationAction(identifier: PushCategory.actionReply, title: String(localized: "Reply"),
+                                                  options: [.authenticationRequired],
                                                   textInputButtonTitle: String(localized: "Send"),
                                                   textInputPlaceholder: String(localized: "Message to the agent"))
         let center = UNUserNotificationCenter.current()
@@ -1249,13 +1588,49 @@ enum Notifications {
             UNNotificationCategory(identifier: PushCategory.approvalDeny, actions: [deny], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: PushCategory.approvalAllow, actions: [deny, allow], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: PushCategory.question, actions: [], intentIdentifiers: [], options: []),
-            UNNotificationCategory(identifier: PushCategory.info, actions: [reply], intentIdentifiers: [], options: [])
+            UNNotificationCategory(identifier: PushCategory.info, actions: [reply], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: PushCategory.retry, actions: [], intentIdentifiers: [], options: [])
         ])
     }
 
     static func setBadge(_ count: Int) {
         UNUserNotificationCenter.current().setBadgeCount(count) { _ in }
     }
+
+    /// Takes away the delivered notifications of `mac` about approvals and questions that no longer wait
+    /// (`DeliveredNotifications`), and sets the badge to what still does (nil leaves it).
+    static func clearAnswered(pending: Set<String>, mac: String, onlyMac: Bool, badge: Int?) {
+        Task {
+            let center = UNUserNotificationCenter.current()
+            let delivered = await center.deliveredNotifications().map { note in
+                DeliveredNotifications.Delivered(id: note.request.identifier, nook: note.request.content.userInfo["nook"] as? [String: Any])
+            }
+            let stale = DeliveredNotifications.stale(delivered, pending: pending, mac: mac, onlyMac: onlyMac)
+            if !stale.isEmpty { center.removeDeliveredNotifications(withIdentifiers: stale) }
+            if let badge { setBadge(badge) }
+        }
+    }
+
+    /// Says that a button on a notification could not reach the Mac named `name`: with `retry`, a tap tries again
+    /// (`CompanionClient.retryNotificationActions`); an Allow is not kept, so it says to answer again.
+    static func couldNotReach(_ name: String, mac: String, session: String?, retry: Bool, id: String) async {
+        let content = UNMutableNotificationContent()
+        content.title = String(localized: "Not sent")
+        content.body = retry ? String(localized: "Couldn’t reach \(name). Tap to try again.")
+            : String(localized: "Couldn’t reach \(name): your answer was not sent. Open the app to answer again.")
+        content.categoryIdentifier = PushCategory.retry
+        if let session { content.threadIdentifier = session }
+        var nook: [String: Any] = ["mac": mac, "retry": retry]
+        if let session { nook["session"] = session }
+        content.userInfo = ["nook": nook]
+        try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: couldNotReachID(id), content: content, trigger: nil))
+    }
+
+    static func removeCouldNotReach(_ id: String) {
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [couldNotReachID(id)])
+    }
+
+    private static func couldNotReachID(_ id: String) -> String { "nook-retry-" + id }
 }
 
 /// A message your Mac refused (`CompanionClient.rejected`): what you wrote, the pictures with it, and why, in words.

@@ -100,7 +100,8 @@ enum CompanionOp: String, Codable, Sendable, CaseIterable {
     case timeline
     /// The session the phone has open (`session`; nil when it closed it): its conversation follows by itself over the
     /// subscribed connection, as changes after the entry the phone has (`CompanionResponse.timelineAfter`), instead of
-    /// the phone asking every few seconds (`CompanionFeature.liveTimeline`).
+    /// the phone asking every few seconds (`CompanionFeature.liveTimeline`). With `CompanionFeature.resume`, `item` may
+    /// name the last entry the phone already has (from its cache), and the answer holds only what came after it.
     case watch
     /// What a session changed in its folder (`session`): every changed file with its lines and its patch
     /// (`CompanionResponse.diff`, `CompanionFeature.diff`).
@@ -174,8 +175,19 @@ enum CompanionFeature {
     static let diff = "diff"
     /// The Mac takes pictures with `send` and `start` (`CompanionRequest.images`).
     static let images = "images"
+    /// The Mac says its own time with a `stale` refusal (`CompanionResponse.macTime`), so the phone can correct for a clock
+    /// that is off (`CompanionClock`).
+    static let clock = "clock"
+    /// The Mac tells a phone it removes, over its live connection, before it forgets its key (`CompanionResponse.revoked`).
+    static let revoke = "revoke"
+    /// The Mac takes `foreground` with `subscribe` and `ping`, and leaves out pushes for a phone that is connected live
+    /// and in front (`ForegroundPolicy`).
+    static let foreground = "foreground"
+    /// `watch` may name the last entry the phone has (`item`): the Mac answers with only what came after
+    /// (`TimelineDelta.resume`).
+    static let resume = "resume"
     static let all = [start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate,
-                      steer, liveTimeline, diff, images]
+                      steer, liveTimeline, diff, images, clock, revoke, foreground, resume]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -257,14 +269,18 @@ struct CompanionRequest: Codable, Equatable, Sendable {
     /// Pictures that go with `send` or `start` (`CompanionFeature.images`): the Mac saves them and gives the agent their
     /// paths below the words, as its own composer does.
     var images: [CompanionImage]?
+    /// With `subscribe` and `ping` (`CompanionFeature.foreground`): the app is in front on the phone right now. Nil from a
+    /// phone that does not say, which gets every push as before.
+    var foreground: Bool?
 
     init(id: String = UUID().uuidString, sent: Double = Date().timeIntervalSince1970, op: CompanionOp, session: String? = nil,
          item: String? = nil, text: String? = nil, allow: Bool? = nil, conversation: String? = nil, launch: LaunchRequest? = nil,
          replyTo: String? = nil, live: LiveActivityRegistration? = nil, protocolVersion: Int? = nil, appVersion: String? = nil,
-         steer: Bool? = nil, images: [CompanionImage]? = nil) {
+         steer: Bool? = nil, images: [CompanionImage]? = nil, foreground: Bool? = nil) {
         self.id = id; self.sent = sent; self.op = op; self.session = session; self.item = item; self.text = text; self.allow = allow
         self.conversation = conversation; self.launch = launch; self.replyTo = replyTo; self.live = live
         self.protocolVersion = protocolVersion; self.appVersion = appVersion; self.steer = steer; self.images = images
+        self.foreground = foreground
     }
 
     /// A request that says which versions this side speaks: `hello`, `list` and `subscribe` carry them.
@@ -320,6 +336,12 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     var timelineAfter: String? = nil
     /// The changed files of `diff`, the most changed first.
     var diff: [DiffFileDigest]? = nil
+    /// With a `stale` refusal (`CompanionFeature.clock`): the Mac's time (seconds since 1970), so the phone can correct
+    /// for its clock (`CompanionClock`).
+    var macTime: Double? = nil
+    /// Sent once over the live connection when the Mac removes this phone (`CompanionFeature.revoke`): its key is gone
+    /// from now on, and the phone has to pair again.
+    var revoked: Bool? = nil
 
     static func failure(_ id: String, _ error: CompanionError, message: String? = nil) -> CompanionResponse {
         CompanionResponse(id: id, ok: false, error: error, message: message)
