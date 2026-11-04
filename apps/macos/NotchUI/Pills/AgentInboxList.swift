@@ -37,6 +37,11 @@ struct AgentInboxList: View {
     @State private var clickedID: String?
     /// The past sessions by id, made again only when the history changes (`pastSession`).
     @State private var pastIndex = PastSessionIndex()
+    /// ⌘ held for a moment: the first nine rows show the ⌘-number that opens them.
+    @StateObject private var commandHold = CommandHoldMonitor()
+    /// The list has the keyboard (F6): ↑/↓ move `keyRow` without opening it, Return opens it, ←/→ fold and unfold.
+    @FocusState private var listFocused: Bool
+    @State private var keyRow: String?
 
     private static let wakeFormat: DateFormatter = {
         let format = DateFormatter()
@@ -203,6 +208,15 @@ struct AgentInboxList: View {
                     guard id != clickedID, shown.contains(id) else { return }
                     DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .center) } }
                 }
+                // With the keyboard (F6): ↑/↓ move, Return opens, ←/→ fold and unfold the row's project or shelf.
+                .focusable(interactions: .activate)
+                .focused($listFocused)
+                .focusEffectDisabled()
+                .onKeyPress(.upArrow) { moveKeyRow(-1, shown: shown, proxy: proxy) }
+                .onKeyPress(.downArrow) { moveKeyRow(1, shown: shown, proxy: proxy) }
+                .onKeyPress(.return) { openKeyRow(shown: shown) }
+                .onKeyPress(.leftArrow) { foldKeyRow(true, groups: groups, sections: sections) }
+                .onKeyPress(.rightArrow) { foldKeyRow(false, groups: groups, sections: sections) }
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
             }
@@ -219,6 +233,17 @@ struct AgentInboxList: View {
             shownOrder = current
             selection.keep(only: current)
         }
+        // F6 lands in the list; ⌘1–⌘9 open its first nine rows, F2 renames the row the keyboard is on.
+        .focusArea(.sidebar) { listFocused = true; return true }
+        .keyCommands(jumpKeys(shown))
+        .keyCommands(["session.rename": { renameKeyRow() }], context: ["listFocus": listFocused], enabled: listFocused,
+                     priority: 1)
+        .onChange(of: listFocused) { _, focused in
+            if focused, keyRow.map({ !shown.contains($0) }) ?? true { keyRow = shown.contains(current) ? current : shown.first }
+        }
+        // Only while the list is on screen: holding ⌘ shows the ⌘-numbers.
+        .onAppear { commandHold.start() }
+        .onDisappear { commandHold.stop() }
         .onAppear {
             shownOrder = shown
             pullRequests.follow(workspace: app.workspace, folders: pullRequestFolders, now: now)
@@ -517,7 +542,9 @@ struct AgentInboxList: View {
                     onSettle: { withAnimation(NookTheme.reveal) { entry.row.settled ? store.unsettle([item]) : store.settle([item]) } },
                     onSnooze: isRun ? { choice in withAnimation(NookTheme.reveal) { snooze(item, choice) } } : nil,
                     onWake: isRun && snoozeActive ? { withAnimation(NookTheme.reveal) { wake(item) } } : nil),
-                pullRequests: sessionPullRequests(item)
+                pullRequests: sessionPullRequests(item),
+                jumpHint: jumpNumber(item.id),
+                keyFocused: listFocused && keyRow == item.id
             ) {
                 click(item, entry, shown: shownOrder)
             }
@@ -757,6 +784,76 @@ struct AgentInboxList: View {
                 .transition(.opacity)
             }
         }
+    }
+}
+
+// MARK: Keyboard
+
+extension AgentInboxList {
+    /// The ⌘-number of one of the first nine rows while ⌘ is held; nil otherwise.
+    private func jumpNumber(_ id: String) -> Int? {
+        guard commandHold.held, let index = shownOrder.prefix(SessionJump.count).firstIndex(of: id) else { return nil }
+        return index + 1
+    }
+
+    /// ⌘1–⌘9: the first nine rows as shown. Past the end the key goes on (to the main window's tabs).
+    private func jumpKeys(_ shown: [String]) -> [String: () -> Bool] {
+        var out: [String: () -> Bool] = [:]
+        for number in 1...SessionJump.count {
+            out[SessionJump.command(number)] = {
+                guard let id = SessionJump.target(number, in: shown) else { return false }
+                select(id)
+                return true
+            }
+        }
+        return out
+    }
+
+    /// ↑/↓ with the keyboard in the list: the next row up or down, kept in view, without opening it.
+    private func moveKeyRow(_ offset: Int, shown: [String], proxy: ScrollViewProxy) -> KeyPress.Result {
+        guard !shown.isEmpty else { return .ignored }
+        let start = keyRow.flatMap { shown.firstIndex(of: $0) } ?? shown.firstIndex(of: current)
+        let next = start.map { min(max($0 + offset, 0), shown.count - 1) } ?? (offset > 0 ? 0 : shown.count - 1)
+        keyRow = shown[next]
+        withAnimation(NookTheme.scroll) { proxy.scrollTo(shown[next]) }
+        return .handled
+    }
+
+    /// Return: opens the row the keyboard is on.
+    private func openKeyRow(shown: [String]) -> KeyPress.Result {
+        guard let keyRow, shown.contains(keyRow) else { return .ignored }
+        clickedID = keyRow
+        select(keyRow)
+        return .handled
+    }
+
+    /// ← folds the project (or shelf) of the row the keyboard is on, → unfolds it.
+    private func foldKeyRow(_ fold: Bool, groups: [InboxProjectGroup], sections: [InboxSection]) -> KeyPress.Result {
+        guard let keyRow else { return .ignored }
+        if store.groupByProject, let group = groups.first(where: { $0.rows.contains { $0.entry.id == keyRow } }) {
+            withAnimation(NookTheme.reveal) {
+                if fold { store.collapsedProjects.insert(group.project) } else { store.collapsedProjects.remove(group.project) }
+            }
+            return .handled
+        }
+        if let section = sections.first(where: { $0.rows.contains { $0.id == keyRow } }),
+           section.kind != .pinned, section.kind != .active {
+            withAnimation(NookTheme.reveal) {
+                if fold { collapsed.insert(section.kind) } else { collapsed.remove(section.kind) }
+            }
+            return .handled
+        }
+        return .ignored
+    }
+
+    /// F2 in the list: opens the row the keyboard is on and its name field. Only sessions Nook runs have a name of
+    /// Nook's to change; for the others the key goes on.
+    private func renameKeyRow() -> Bool {
+        guard listFocused, let keyRow, keyRow.hasPrefix("run:"),
+              let id = UUID(uuidString: String(keyRow.dropFirst(4))) else { return false }
+        if keyRow != current { select(keyRow) }
+        SessionRenameRequest.shared.request(id)
+        return true
     }
 }
 
