@@ -1,12 +1,16 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// A question from the agent in place of the composer, one at a time: its options as buttons (keys 1–9
 /// pick one), several for a multiple choice, or an answer of your own. A single choice moves on by itself; with several
 /// questions, Back returns to an earlier one with its answer still picked, and what you had started on
-/// the later one waits for you.
+/// the later one waits for you. Your own answer can carry files and pictures (attached, pasted or dropped), which go to
+/// the agent as their paths below your words (`AnswerAttachments`), the same for every agent.
 struct RunQuestionPanel: View {
     let question: PendingQuestion
     let agent: String
+    /// The session's folder: the file picker starts there.
+    var folder: String? = nil
     /// Stops the agent instead of answering (the composer with its Stop button is hidden meanwhile).
     var onStop: (() -> Void)? = nil
     let onAnswer: ([String: [String]]) -> Void
@@ -17,6 +21,13 @@ struct RunQuestionPanel: View {
     /// What you had picked and typed on a question you went back from, by question id.
     @State private var drafts: [String: QuestionDraft] = [:]
     @FocusState private var ownFocused: Bool
+    /// Pictures and files that go with your own answer; the files are kept as the composer keeps them (links at the end
+    /// of a text, see `ComposerAttachments`), with absolute paths.
+    @State private var pictures: [ImageAttachment] = []
+    @State private var attached = ""
+    @State private var encodingPictures = 0
+    @State private var dropTargeted = false
+    @State private var pasteMonitor = PasteMonitor()
     /// `@` in your own answer: people from your chats by name.
     @StateObject private var mentionModel = ComposerModel()
 
@@ -73,6 +84,11 @@ struct RunQuestionPanel: View {
 
                 if item.allowsOther {
                     MentionSuggestions(model: mentionModel, text: $own, config: .mentions(), focus: $ownFocused)
+                    if hasAttachments {
+                        ImageAttachmentStrip(images: pictures, files: attachedFiles, fileRoot: folder,
+                                             remove: { picture in pictures.removeAll { $0.id == picture.id } },
+                                             removeFile: { attached = ComposerAttachments.removing(at: $0, from: attached) })
+                    }
                     ownAnswerField(item)
                 }
 
@@ -94,7 +110,50 @@ struct RunQuestionPanel: View {
             .onChange(of: index) { _, _ in
                 if asksOnlyOwn(item) { ownFocused = true }
             }
+            .onAppear { startPasteMonitor() }
+            .onDisappear { pasteMonitor.stop() }
         }
+    }
+
+    // MARK: Files with your own answer
+
+    private var attachedFiles: [ContextRefs.Found] { ComposerAttachments.split(attached).files }
+    private var hasAttachments: Bool { !pictures.isEmpty || !attachedFiles.isEmpty }
+    /// Something to send as your own answer: words, or files alone. Not while a pasted picture is still being encoded.
+    private var canSendOwn: Bool {
+        encodingPictures == 0 && (!own.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || hasAttachments)
+    }
+
+    private func attachFile() {
+        guard let ref = ComposerFilePicker.pick(startingIn: folder ?? NSHomeDirectory()) else { return }
+        attach(path: AnswerAttachments.absolutePath(ref.id, folder: folder), label: ref.label)
+        ownFocused = true
+    }
+
+    private func attach(path: String, label: String) {
+        attached = ComposerAttachments.appending(ContextRef(kind: .file, id: path, label: label), to: attached)
+    }
+
+    /// Cmd-V in your own answer with a picture or files on the clipboard attaches them; text pastes as always.
+    private func startPasteMonitor() {
+        guard question.questions.contains(where: \.allowsOther) else { return }
+        pasteMonitor.start {
+            guard ownFocused else { return false }
+            let others = ImageAttachment.nonImageFiles()
+            let claimed = ImageAttachment.fromPasteboard { made in
+                encodingPictures = max(encodingPictures - 1, 0)
+                pictures += made
+            }
+            if claimed { encodingPictures += 1 }
+            for url in others { attach(path: url.standardizedFileURL.path, label: url.lastPathComponent) }
+            return claimed || !others.isEmpty
+        }
+    }
+
+    private func receiveDrop(_ providers: [NSItemProvider]) -> Bool {
+        ImageAttachment.receive(providers, images: { pictures += $0 }, file: { url in
+            attach(path: url.standardizedFileURL.path, label: url.lastPathComponent)
+        })
     }
 
     private func ownAnswerField(_ item: RunQuestion) -> some View {
@@ -111,7 +170,10 @@ struct RunQuestionPanel: View {
                 .onSubmit { if !mentionModel.isOpen { submitOwn(item) } }
                 .mentions(mentionModel, text: $own, config: .mentions())
 
-            if !own.trimmingCharacters(in: .whitespaces).isEmpty {
+            ToolbarIconButton("paperclip", tr("ws.question.attach")) { attachFile() }
+                .help(tr("ws.question.attachHelp"))
+
+            if canSendOwn {
                 Button {
                     submitOwn(item)
                 } label: {
@@ -138,10 +200,12 @@ struct RunQuestionPanel: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .stroke(ownFocused ? NookTheme.amber.opacity(0.55) : Color.white.opacity(0.04), lineWidth: 1)
+                .stroke(ownFocused || dropTargeted ? NookTheme.amber.opacity(0.55) : Color.white.opacity(0.04),
+                        style: StrokeStyle(lineWidth: 1, dash: dropTargeted ? [5, 4] : []))
         )
+        .onDrop(of: [UTType.fileURL, UTType.image], isTargeted: $dropTargeted) { receiveDrop($0) }
         .animation(NookTheme.hover, value: ownFocused)
-        .animation(NookTheme.reveal, value: own.isEmpty)
+        .animation(NookTheme.reveal, value: canSendOwn)
     }
 
     private func asksOnlyOwn(_ item: RunQuestion) -> Bool { item.options.isEmpty && item.allowsOther }
@@ -161,9 +225,15 @@ struct RunQuestionPanel: View {
         return true
     }
 
+    /// Your words, with the attached pictures (saved to Nook's folder first) and files as paths below them.
     private func submitOwn(_ item: RunQuestion) {
-        let text = own.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard canSendOwn else { return }
+        let paths = pictures.compactMap { $0.writeToDisk()?.path }
+            + attachedFiles.map { AnswerAttachments.absolutePath($0.id, folder: folder) }
+        let text = AnswerAttachments.answer(own, paths: paths)
         guard !text.isEmpty else { return }
+        pictures = []
+        attached = ""
         record(item, Array(picks) + [text])
     }
 
