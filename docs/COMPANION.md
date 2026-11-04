@@ -9,14 +9,19 @@ The phone sees two kinds of sessions:
 
 ## Starting from the phone
 
-**Today** opens with three quick actions: **New session** (a coding agent, the New session sheet on the Agents tab),
-**Ask Nook** (a new chat with Nook) and **Answer a chat** (the Chats tab), each with what is going on there (sessions at
-work, unread chats). An action the Mac does not allow this phone, or that the Mac is too old for, stays in sight dimmed
-with a lock and says why and what to change when tapped (`QuickActionBlock`), so nothing you look for quietly
-disappears; the Agents tab's New session button does the same.
+The app is laid out as Nook's panel on the Mac: three tabs, **Nook**, **Agents** and **Chats**, switched in one
+quiet capsule at the top of every tab (`PanelHeader`, `PanelTabBar`), with what waits for you as an amber count on each.
+There is no tab bar along the bottom. Nook's orb on the left of that row opens the menu with the paired Macs, how the
+phone reaches the Mac, checking the connection, Live Activities and unpairing (`MacMenu`); a small amber dot on the orb
+means the Mac cannot be reached.
 
-In **Chats**, *Can answer* lists the chats Nook writes in for you; a chat you can only read says so in the list (*Read
-only*) and, at its end, how to link its app in Nook › Settings › Chat apps to answer it from the phone.
+The **Nook** tab asks Nook something straight from its composer at the bottom (a new chat); the **Agents** tab's round
+button opens the New session sheet. The quick actions on the app's icon start a session, ask Nook or open Chats. An
+action the Mac does not allow this phone, or that the Mac is too old for, says why and what to change when tapped
+(`QuickActionBlock`), so nothing you look for quietly disappears.
+
+A chat in **Chats** you can only read says so at its end, with how to link its app in Nook › Settings › Chat apps to
+answer it from the phone.
 
 While a session Nook runs works, its composer offers **Steer now** (into the running turn, as the Mac's composer
 steers) or **After this turn** (in line); the choice is remembered (`CompanionRequest.steer`, `SessionDigest.canSteer`,
@@ -54,7 +59,7 @@ session as a message (through the outbox), without opening the app.
 
 ## Several Macs
 
-One phone can pair with up to eight Macs (`CompanionPairings`, `packages/protocol/Sources/CompanionPairings.swift`, tested in `CompanionPairingsTests`). *Pair another Mac* is in the Agents menu (`…`), next to the list of paired Macs.
+One phone can pair with up to eight Macs (`CompanionPairings`, `packages/protocol/Sources/CompanionPairings.swift`, tested in `CompanionPairingsTests`). *Pair another Mac* is in the menu under Nook's orb, next to the list of paired Macs.
 
 - **One active Mac:** the live connection, the tabs and the Live Activities follow the active Mac; picking another Mac in the menu moves the connection there. *Unpair from this Mac* removes only the active one.
 - **The others in the Agents list:** every other Mac is asked for its sessions when the phone connects and every 30 seconds (one short `list` over its own routes), and its sessions show under *On <Mac>*, what waits on you first. A tap makes that Mac active and opens the session.
@@ -63,14 +68,12 @@ One phone can pair with up to eight Macs (`CompanionPairings`, `packages/protoco
 
 ## What the App Does
 
-- **Today tab:** Nook's home, as the empty notch on the Mac: a greeting, what needs you (approve right there), the *For you* rows, your agenda, what plays on the Mac (play/pause, next, previous), your plan limits at a glance, and conversation starters that open a chat.
-- **Usage tab:** Settings › Usage & costs on the phone: the 5-hour and weekly limits of every connected account with an even-pace mark and reset time, then sessions, tokens and reported costs of the sessions Nook started (today, week, month), tokens per day per agent, and usage per model.
-- **Agents tab:** every session on the Mac, the ones waiting on you first. A session opens as a conversation: your messages, the agent's replies, the tools it ran and the files it changed, what waits on you (approve, deny, answer), and a field to send the next message. **Stop** ends a running session.
+- **Agents tab:** every session on the Mac, the ones waiting on you first, then the working ones, then the eight most recent (*Show more* for the rest; a search once there are more than eight). A session opens as a conversation: your messages, the agent's replies, the tools it ran and the files it changed, what waits on you (approve, deny, answer), and a field to send the next message. **Stop** ends a running session.
 - **New session (`+`):** type a task, pick a connected agent and one of the folders you recently worked in on the Mac, and optionally *plan first* or work *on its own branch (worktree)*. Account, model, and effort come from the Mac's remembered choices for that agent.
 - **Prompt links:** a `nook://prompt?text=…&project=…&agent=…` link (the same links the Mac opens) opens *New session* with the task filled in and the named folder and agent picked when the Mac offers them. It never starts by itself: you read the task and tap Start. Links are parsed by the shared `PromptLink` (`packages/protocol`), which strips hidden characters and refuses overlong text.
 - **Quiet for what you are looking at:** a push about the session open on screen arrives without a banner or sound; the session's screen already shows what changed.
-- **Chats tab:** the Mac's Chats tab: WhatsApp (through the phone linked to Nook) and every other chat app Nook collects on the Mac (Telegram, Messages, Slack…) in one list, newest first, with a search, *All / Unread*, and a badge for what is unread. A chat opens as bubbles (quotes, reactions, ticks, files by name). A WhatsApp chat can be answered from the phone, also as a reply to one of its messages (long-press it): your own words and your own tap, sent and logged as in the Chats tab on the Mac. Any other chat is read-only on the phone and answered in its own app; *@nook* drafting stays on the Mac. Opening a chat reads it in Nook the way opening it on the Mac does (Settings › Chat apps); *Mark as read* in a chat's menu passes that on to the chat's app where Nook can tell it (WhatsApp, Telegram, an app Nook's chat helper links), and *Mark as unread* is Nook's alone.
-- **Nook tab:** Nook's own conversations (the same ones as in the notch). Ask a question in a new chat or continue one; the answer streams in. It runs through the same brain pipeline as on the Mac; plans, mail drafts, and charts in an answer are shown and approved on the Mac. A question from the phone does not open the notch.
+- **Chats tab:** the Mac's Chats tab: WhatsApp (through the phone linked to Nook) and every other chat app Nook collects on the Mac (Telegram, Messages, Slack…) in one list, newest first, with a search and *All / Unread* once there are more than eight, and a badge for what is unread. A chat opens as bubbles (quotes, reactions, ticks, files by name). A WhatsApp chat can be answered from the phone, also as a reply to one of its messages (long-press it): your own words and your own tap, sent and logged as in the Chats tab on the Mac. Any other chat is read-only on the phone and answered in its own app; *@nook* drafting stays on the Mac. Opening a chat reads it in Nook the way opening it on the Mac does (Settings › Chat apps); *Mark as read* in a chat's menu passes that on to the chat's app where Nook can tell it (WhatsApp, Telegram, an app Nook's chat helper links), and *Mark as unread* is Nook's alone.
+- **Nook tab:** Nook's own conversations (the same ones as in the notch), with the box to ask him something at the bottom. Ask a question in a new chat or continue one; the answer streams in. It runs through the same brain pipeline as on the Mac; plans, mail drafts, and charts in an answer are shown and approved on the Mac. A question from the phone does not open the notch.
 
 Which of these the phone offers depends on the Mac: the `hello`/`list` answer lists the `features` it understands (`start`, `timeline`, `chat`, `home`, `usage`, `music`, `inbox`, `liveActivity`, `manage`, `stream`, `routes`, `retry`, `relay`, `requestUpdate`, `steer`, `liveTimeline`, `diff`, `images`, `clock`, `revoke`, `foreground`, `resume`). A Mac (or the Tauri app) without them keeps working with the approve/answer/send/stop features only.
 
@@ -215,7 +218,7 @@ While a session works on the Mac, Nook Companion shows it as a **Live Activity**
 - **Rate limits:** a phase change goes out at once (priority 10) but not within 5 seconds of the previous push; a new title or model waits 30 seconds; at most 5 activities at once; a session whose activity just ended does not get a new one within a minute. Start and end pushes (and failed pushes) are logged as `companion_live` in the audit log; a token Apple refuses is dropped.
 - While the app is open it keeps the activities current itself with the same rules, and starts them when the Mac cannot (no push set up, or iOS before 17.2). A session gets one activity: a twin from a push-to-start that crossed a local start is ended.
 
-**Turning it off:** *Live Activities* in the menu (`…`) of the Agents tab on the phone. Off ends every activity and sends `off`: the Mac forgets the phone's tokens and sends nothing until it is turned on again. iOS's own switch (Settings › Nook Companion › Live Activities) works too. On the Mac, Live Activities need push notifications set up and on (Settings › iPhone Companion › Push Notifications).
+**Turning it off:** *Live Activities* in the menu under Nook's orb on the phone. Off ends every activity and sends `off`: the Mac forgets the phone's tokens and sends nothing until it is turned on again. iOS's own switch (Settings › Nook Companion › Live Activities) works too. On the Mac, Live Activities need push notifications set up and on (Settings › iPhone Companion › Push Notifications).
 
 **Privacy:** Live Activity pushes pass through Apple like notifications, and follow the same choice: the session title and folder are only sent when **Include session title** is on. Otherwise a push-started activity shows the agent and its phase; one the app started itself keeps the title it had. Commands, files and answers are never sent.
 

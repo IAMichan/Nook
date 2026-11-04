@@ -12,13 +12,13 @@ struct InboxListView: View {
     @State private var query = ""
     @State private var filter = Filter.all
 
-    /// All chats, the unread ones, or the ones you can answer from here (the Mac writes in them for you).
-    enum Filter { case all, unread, answerable }
+    /// All chats, or only the unread ones.
+    enum Filter { case all, unread }
 
     private var shown: [InboxChatDigest] {
         let words = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return client.inbox.filter { chat in
-            (filter != .unread || chat.unread > 0) && (filter != .answerable || chat.canSend)
+            (filter != .unread || chat.unread > 0)
                 && (words.isEmpty || chat.name.localizedCaseInsensitiveContains(words)
                     || chat.preview.localizedCaseInsensitiveContains(words) || chat.appName.localizedCaseInsensitiveContains(words))
         }
@@ -27,7 +27,7 @@ struct InboxListView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                PanelHeader("Chats", count: client.inbox.filter { $0.unread > 0 }.count)
+                PanelHeader()
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     ConnectionLine()
                     if !client.can(CompanionFeature.inbox) {
@@ -49,17 +49,18 @@ struct InboxListView: View {
                                 }
                             }
                         } else {
-                            NookSearchField(prompt: "Search chats", text: $query)
-                            HStack(spacing: Theme.Spacing.md) {
-                                FilterChip(title: "All", selected: filter == .all) { filter = .all }
-                                FilterChip(title: "Unread", count: client.inbox.filter { $0.unread > 0 }.count, selected: filter == .unread) { filter = .unread }
-                                FilterChip(title: "Can answer", selected: filter == .answerable) { filter = .answerable }
+                            // Finding one among many; a short list needs no search or filter.
+                            if client.inbox.count > 8 {
+                                NookSearchField(prompt: "Search chats", text: $query)
+                                HStack(spacing: Theme.Spacing.md) {
+                                    FilterChip(title: "All", selected: filter == .all) { filter = .all }
+                                    FilterChip(title: "Unread", count: client.inbox.filter { $0.unread > 0 }.count, selected: filter == .unread) { filter = .unread }
+                                }
                             }
                             if shown.isEmpty {
                                 Group {
                                     switch filter {
                                     case .unread: Text("Nothing unread.")
-                                    case .answerable: Text("No chat you can answer from here yet. Link your chat apps in Nook › Settings › Chats on your Mac.")
                                     case .all: Text("No chat matches.")
                                     }
                                 }
@@ -133,15 +134,6 @@ struct InboxRow: View {
                     CountBadge(count: chat.unread)
                         .accessibilityLabel(Text("\(chat.unread) unread"))
                 }
-                // The app, and whether you can answer here or only read.
-                HStack(spacing: Theme.Spacing.xs) {
-                    Text(chat.appName)
-                    if !chat.canSend {
-                        Text(verbatim: "·")
-                        Text("Read only")
-                    }
-                }
-                .font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
             }
         }
         .padding(.horizontal, Theme.Spacing.lg)

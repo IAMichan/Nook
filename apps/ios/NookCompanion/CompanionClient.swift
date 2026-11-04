@@ -53,9 +53,6 @@ final class CompanionClient: ObservableObject {
     @Published private(set) var chatLines: [String: [ChatLine]] = [:]
     /// False when the Mac said Nook has no brain set up, so chatting cannot work yet.
     @Published private(set) var brainReady = true
-    /// Nook's home (what waits, agenda, player, limits) and the usage page, once asked.
-    @Published private(set) var home: HomeDigest?
-    @Published private(set) var usage: UsageDigest?
     /// The Mac's Chats tab: every chat app in one inbox, and the messages of each chat that was opened, by chat id.
     @Published private(set) var inbox: [InboxChatDigest] = []
     @Published private(set) var inboxLines: [String: [InboxLine]] = [:]
@@ -66,8 +63,6 @@ final class CompanionClient: ObservableObject {
     /// Why the inbox may be empty: "chatsoff" (nothing is collected on the Mac) or "chatsaccess" (macOS does not let
     /// Nook read the notifications); nil when it is fine.
     @Published private(set) var inboxStatus: String?
-    /// When `home` was read: the player's position runs on from here.
-    @Published private(set) var homeRead = Date()
     /// Messages that wait for the Mac (`CompanionOutbox`); a session shows its own.
     @Published private(set) var outbox = CompanionOutbox()
     /// The route the live connection (or the last answer) went over.
@@ -290,8 +285,6 @@ final class CompanionClient: ObservableObject {
         featuresKnown = false
         conversations = []
         chatLines = [:]
-        home = nil
-        usage = nil
         inbox = []
         inboxLines = [:]
         inboxTyping = [:]
@@ -964,25 +957,6 @@ final class CompanionClient: ObservableObject {
         OutboxStore.save(outbox, name: outboxName)
     }
 
-    // MARK: Home and usage
-
-    func loadHome() async {
-        guard await supports(CompanionFeature.home) else { return }
-        await perform(CompanionRequest(op: .home), quiet: true)
-    }
-
-    /// `range`: "today", "week" or "month".
-    func loadUsage(range: String) async {
-        guard await supports(CompanionFeature.usage) else { return }
-        await perform(CompanionRequest(op: .usage, item: range), quiet: true)
-    }
-
-    /// "playpause", "next" or "previous".
-    func music(_ command: String) async {
-        guard await supports(CompanionFeature.music) else { return }
-        await perform(CompanionRequest(op: .music, text: command), quiet: true)
-    }
-
     // MARK: The Chats tab
 
     func loadInbox() async {
@@ -1179,12 +1153,6 @@ final class CompanionClient: ObservableObject {
         if let lines = response.messages, let conversation = response.created ?? req.conversation, chatLines[conversation] != lines {
             chatLines[conversation] = lines
         }
-        // The player's position runs on from when it was read, so that time is kept even when nothing else changed.
-        if let home = response.home {
-            if home != self.home { self.home = home }
-            homeRead = Date()
-        }
-        if let usage = response.usage, usage != self.usage { self.usage = usage }
         if let chats = response.inbox {
             if chats != inbox { inbox = chats }
             if response.message != inboxStatus { inboxStatus = response.message }

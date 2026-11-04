@@ -4,15 +4,12 @@ import VisionKit
 struct RootView: View {
     @EnvironmentObject private var client: CompanionClient
     @Environment(\.scenePhase) private var scenePhase
-    @State private var tab = Tab.today
-    @State private var todayPath: [String] = []
+    @StateObject private var router = TabRouter()
     @State private var sessionPath: [String] = []
     @State private var chatPath: [ChatRoute] = []
     @State private var inboxPath: [String] = []
     /// A quick action asked for a new session: the Agents tab opens its New session sheet.
     @State private var newSessionRequested = false
-
-    enum Tab { case today, sessions, chats, nook, usage }
 
     var body: some View {
         Group {
@@ -21,51 +18,21 @@ struct RootView: View {
             case .unpaired, .pairing:
                 PairingView()
             case .connected, .offline:
-                TabView(selection: $tab) {
-                    NavigationStack(path: $todayPath) {
-                        TodayView(openChat: { prompt in
-                            chatPath = [.new(UUID(), prompt)]
-                            tab = .nook
-                        }, openUsage: { tab = .usage }, newSession: {
-                            sessionPath = []
-                            tab = .sessions
-                            newSessionRequested = true
-                        }, openChats: {
-                            inboxPath = []
-                            tab = .chats
-                        })
-                    }
-                    .tabItem { Label("Today", systemImage: "house.fill") }
-                    .tag(Tab.today)
-                    NavigationStack(path: $sessionPath) {
-                        SessionListView(path: $sessionPath, newSessionRequested: $newSessionRequested)
-                    }
-                    .tabItem { Label("Agents", systemImage: "square.stack.3d.up.fill") }
-                    .badge(client.sessions.needingYou)
-                    .tag(Tab.sessions)
-                    // A tab the Mac does not let this phone use (`CompanionScope`) is left out.
-                    if client.allows(.chats) {
-                        NavigationStack(path: $inboxPath) {
-                            InboxListView(path: $inboxPath)
+                // The Mac's panel: one tab at a time, switched in the header row every tab starts with
+                // (`PanelHeader`), no tab bar along the bottom. Each tab keeps where it was.
+                Group {
+                    switch shownTab {
+                    case .nook:
+                        NavigationStack(path: $chatPath) { ChatListView(path: $chatPath) }
+                    case .agents:
+                        NavigationStack(path: $sessionPath) {
+                            SessionListView(path: $sessionPath, newSessionRequested: $newSessionRequested)
                         }
-                        .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right.fill") }
-                        .badge(client.inboxUnread)
-                        .tag(Tab.chats)
+                    case .chats:
+                        NavigationStack(path: $inboxPath) { InboxListView(path: $inboxPath) }
                     }
-                    if client.allows(.nookChat) {
-                        NavigationStack(path: $chatPath) {
-                            ChatListView(path: $chatPath)
-                        }
-                        // Nook's own chats; "Chats" are your chat apps.
-                        .tabItem { Label("Nook", systemImage: "sparkles") }
-                        .tag(Tab.nook)
-                    }
-                    NavigationStack {
-                        UsageScreen()
-                    }
-                    .tabItem { Label("Usage", systemImage: "chart.bar.fill") }
-                    .tag(Tab.usage)
                 }
+                .environmentObject(router)
             }
         }
         .tint(Theme.text)
@@ -74,7 +41,7 @@ struct RootView: View {
         .task { client.appBecameActive() }
         // A prompt link starts on the Agents tab, where its New session sheet opens.
         .onChange(of: client.pendingPrompt) { _, prompt in
-            if prompt != nil { tab = .sessions }
+            if prompt != nil { router.tab = .agents }
         }
         // A quick action on the app's icon: start, ask, answer, or open a session.
         .onChange(of: client.pendingShortcut, initial: true) { _, shortcut in
@@ -83,21 +50,21 @@ struct RootView: View {
             switch shortcut {
             case .newSession:
                 sessionPath = []
-                tab = .sessions
+                router.tab = .agents
                 newSessionRequested = true
             case .askNook:
                 if let blocked = QuickActionBlock.nook(client) {
                     client.notice = blocked
                 } else {
                     chatPath = [.new(UUID(), "")]
-                    tab = .nook
+                    router.tab = .nook
                 }
             case .chats:
                 if let blocked = QuickActionBlock.chats(client) {
                     client.notice = blocked
                 } else {
                     inboxPath = []
-                    tab = .chats
+                    router.tab = .chats
                 }
             case .session(let id):
                 client.openSession = id
@@ -108,7 +75,7 @@ struct RootView: View {
         // A tapped notification opens its session.
         .onChange(of: client.openSession) { _, id in
             guard let id else { return }
-            tab = .sessions
+            router.tab = .agents
             sessionPath = [id]
             client.openSession = nil
         }
@@ -123,6 +90,39 @@ struct RootView: View {
         .alert("", isPresented: Binding(get: { client.notice != nil }, set: { if !$0 { client.notice = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(client.notice ?? "") }
+    }
+
+    /// The chosen tab, or Agents when the Mac does not let this phone use it (`CompanionScope`).
+    private var shownTab: CompanionTab {
+        router.available(client).contains(router.tab) ? router.tab : .agents
+    }
+}
+
+// MARK: Quick actions
+
+/// Why the phone cannot do one of the three things it starts (a session, a question to Nook, an answer in a chat), in
+/// words that say how to change it; nil when it can. An action the Mac does not allow stays in sight and says this when
+/// tapped, so nothing you look for has quietly disappeared.
+enum QuickActionBlock {
+    @MainActor
+    static func session(_ client: CompanionClient) -> String? {
+        if !client.allows(.operate) { return String(localized: "Starting sessions is turned off for this iPhone in Nook on your Mac.") }
+        if !client.can(CompanionFeature.start) { return String(localized: "This Mac cannot start sessions from the phone yet. Update Nook on your Mac.") }
+        return nil
+    }
+
+    @MainActor
+    static func nook(_ client: CompanionClient) -> String? {
+        if !client.allows(.nookChat) { return String(localized: "Chatting with Nook is turned off for this iPhone in Nook on your Mac.") }
+        if !client.can(CompanionFeature.chat) { return String(localized: "Update Nook on your Mac to chat with Nook from your phone.") }
+        return nil
+    }
+
+    @MainActor
+    static func chats(_ client: CompanionClient) -> String? {
+        if !client.allows(.chats) { return String(localized: "Chats are turned off for this iPhone in Nook on your Mac.") }
+        if !client.can(CompanionFeature.inbox) { return String(localized: "Update Nook on your Mac to read and answer your chats from your phone.") }
+        return nil
     }
 }
 
@@ -266,27 +266,23 @@ struct QRScanner: UIViewControllerRepresentable {
 /// you answer right there, then the sessions that work and the recent ones as quiet rows.
 struct SessionListView: View {
     @EnvironmentObject private var client: CompanionClient
-    @ObservedObject private var live = LiveActivities.shared
     @Binding var path: [String]
     /// Set by a quick action elsewhere: open the New session sheet once.
     @Binding var newSessionRequested: Bool
     @State private var composing = false
-    @State private var diagnosing = false
     /// The prompt link the open New session sheet was opened for.
     @State private var link: PromptLink?
-    /// Words to find a session by (its title, folder, branch or agent), and the one project the list keeps to.
+    /// Words to find a session by (its title, folder, branch or agent).
     @State private var query = ""
-    @State private var project: String?
-
-    /// Folders with sessions, the busiest first: the project filter's choices.
-    private var projects: [String] {
-        Dictionary(grouping: client.sessions, by: \.folder).sorted { $0.value.count > $1.value.count }.map(\.key)
-    }
+    /// Recent sessions beyond the first few, shown on request so the list stays short.
+    @State private var showsAllRecent = false
+    /// The Working and Recent shelves, open or folded; remembered.
+    @AppStorage("nook.companion.shelf.working") private var workingOpen = true
+    @AppStorage("nook.companion.shelf.recent") private var recentOpen = true
 
     private var ordered: [SessionDigest] {
         let words = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return client.sessions
-            .filter { project == nil || $0.folder == project }
             .filter { session in
                 words.isEmpty || [session.title, session.folder, session.branch ?? "", session.agent]
                     .contains { $0.localizedCaseInsensitiveContains(words) }
@@ -297,6 +293,9 @@ struct SessionListView: View {
     private var working: [SessionDigest] { ordered.filter { !Self.needsYou($0) && $0.attention == "working" } }
     private var rest: [SessionDigest] { ordered.filter { !Self.needsYou($0) && $0.attention != "working" } }
 
+    /// How many recent sessions show before "Show more".
+    private static let recentShown = 8
+
     static func needsYou(_ session: SessionDigest) -> Bool {
         !session.items.isEmpty || ["approval", "input", "failed", "limited"].contains(session.attention)
     }
@@ -305,40 +304,7 @@ struct SessionListView: View {
         // A list, not a stack, so a row swipes to its actions as in Mail.
         List {
             Group {
-                PanelHeader(title: "Agents", count: needsYou.count, subtitle: client.macName.isEmpty ? nil : client.macName) {
-                    Menu {
-                        // Sessions working on the Mac on the Lock Screen and in the Dynamic Island.
-                        if client.can(CompanionFeature.liveActivity) {
-                            Toggle(isOn: $live.enabled) { Label("Live Activities", systemImage: "platter.filled.top.iphone") }
-                                .disabled(!live.allowedBySystem)
-                        }
-                        // How the phone reaches the Mac right now: the local network, Tailscale, or the relay.
-                        if client.phase == .connected, let route = client.activeRoute {
-                            Section { Label(RouteText.connected(route), systemImage: RouteText.symbol(route)) }
-                        }
-                        // Every paired Mac: the live connection goes to the one that is checked.
-                        Section {
-                            ForEach(client.macs) { mac in
-                                Button { client.switchMac(to: mac.id) } label: {
-                                    if mac.id == client.activeMacID {
-                                        Label(mac.name, systemImage: "checkmark")
-                                    } else {
-                                        Label(mac.name, systemImage: "laptopcomputer")
-                                    }
-                                }
-                            }
-                            Button { client.addingMac = true } label: { Label("Pair another Mac", systemImage: "plus") }
-                        }
-                        Button { diagnosing = true } label: { Label("Check the connection", systemImage: "stethoscope") }
-                        // Opens the update panel on the Mac; installing stays a click there.
-                        if client.can(CompanionFeature.requestUpdate) {
-                            Button { Task { await client.requestMacUpdate() } } label: {
-                                Label("Show the update on your Mac", systemImage: "arrow.down.circle")
-                            }
-                        }
-                        Button("Unpair from this Mac", role: .destructive) { client.unpair() }
-                    } label: { NookIconLabel(symbol: "ellipsis") }
-                    .accessibilityLabel("More")
+                PanelHeader {
                     // Always in sight: a Mac that does not allow it (yet) says why instead.
                     NookIconButton(symbol: "square.and.pencil", label: "New session") { newSession() }
                 }
@@ -350,35 +316,30 @@ struct SessionListView: View {
                         WaitingRow(symbol: "square.and.pencil", title: entry.request.launch?.task ?? "",
                                    detail: String(localized: "New session · waiting for your Mac")) { client.discardWaiting(entry.id) }
                     }
-                    // Finding one among many by search and project scope: words, and the project as chips.
-                    if client.sessions.count > 4 {
+                    // Finding one among many: words that match its title, folder, branch or agent.
+                    if client.sessions.count > 8 {
                         NookSearchField(prompt: "Search sessions", text: $query)
-                        if projects.count > 1 {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: Theme.Spacing.md) {
-                                    FilterChip(title: "All", selected: project == nil) { project = nil }
-                                    ForEach(projects, id: \.self) { folder in
-                                        FilterChip(title: LocalizedStringKey(folder), count: client.sessions.filter { $0.folder == folder }.count,
-                                                   selected: project == folder) { project = project == folder ? nil : folder }
-                                    }
-                                }
-                            }
-                        }
                     }
                     if ordered.isEmpty, !client.sessions.isEmpty {
                         Text("No session matches.")
                             .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary)
                             .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xxl)
                     }
-                    if client.macPushReady == false {
-                        Banner(text: String(localized: "Push notifications are not ready on your Mac yet (Settings › iPhone companion)."),
-                               symbol: "bell.slash.fill", color: Theme.textSecondary)
-                    }
                     ForEach(needsYou) { session in SessionNotice(session: session) { path.append(session.id) } }
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
-                group("Working", working)
-                group("Recent", rest)
+                group("Working", working, open: $workingOpen)
+                group("Recent", showsAllRecent || !query.isEmpty ? rest : Array(rest.prefix(Self.recentShown)), total: rest.count,
+                      open: $recentOpen)
+                if recentOpen, rest.count > Self.recentShown, !showsAllRecent, query.isEmpty {
+                    Button { withAnimation(Theme.reveal) { showsAllRecent = true } } label: {
+                        Text("Show \(rest.count - Self.recentShown) more")
+                            .font(Theme.TextStyle.label).foregroundStyle(Theme.textSecondary)
+                            .frame(maxWidth: .infinity, minHeight: 40)
+                    }
+                    .buttonStyle(PressFade())
+                    .padding(.horizontal, Theme.Spacing.xl)
+                }
                 otherMacs
                 if client.sessions.isEmpty, client.phase == .connected {
                     EmptyState(symbol: "square.stack.3d.up", title: "No sessions",
@@ -399,7 +360,6 @@ struct SessionListView: View {
         .sheet(isPresented: $composing, onDismiss: { link = nil }) {
             NewSessionView(link: link) { id in path.append(id) }
         }
-        .sheet(isPresented: $diagnosing) { DiagnosisSheet() }
         .onChange(of: newSessionRequested, initial: true) { _, requested in
             guard requested else { return }
             newSessionRequested = false
@@ -454,25 +414,32 @@ struct SessionListView: View {
         }
     }
 
+    /// A shelf of sessions: its header folds it; the rows are split by hairlines inset to their text.
     @ViewBuilder
-    private func group(_ title: LocalizedStringKey, _ sessions: [SessionDigest]) -> some View {
+    private func group(_ title: LocalizedStringKey, _ sessions: [SessionDigest], total: Int? = nil, open: Binding<Bool>) -> some View {
         if !sessions.isEmpty {
-            SectionHeader(title: title, count: sessions.count)
+            SectionHeader(title: title, count: total ?? sessions.count, expanded: open)
                 .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.bottom, Theme.Spacing.xs)
-            ForEach(sessions) { session in
-                Button { path.append(session.id) } label: { AgentRow(session: session) }
-                    .buttonStyle(RowPress())
+            if open.wrappedValue {
+                ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
+                    VStack(spacing: 0) {
+                        if index > 0 { RowSeparator(inset: AgentRow.textInset).padding(.trailing, Theme.Spacing.lg) }
+                        Button { path.append(session.id) } label: { AgentRow(session: session) }
+                            .buttonStyle(RowPress())
+                    }
                     .padding(.horizontal, Theme.Spacing.md)
-                    .padding(.vertical, Theme.Spacing.xxs / 2)
                     .contextMenu { SessionQuickActions(session: session) }
                     .sessionSwipeActions(session)
+                }
             }
         }
     }
 }
 
 extension View {
+    /// Shows this only after it stayed for a moment (0.8 s), fading in, so a state that passes quickly never flickers.
+    func appearsAfterDelay() -> some View { modifier(DelayedAppearance()) }
+
     /// A row of a panel built as a `List`: edge to edge on the canvas, without the list's own separator or inset.
     func panelRow() -> some View {
         listRowInsets(EdgeInsets())
@@ -484,6 +451,21 @@ extension View {
     /// right snooze it for an hour (or wake it). Long press shows them all.
     func sessionSwipeActions(_ session: SessionDigest) -> some View {
         modifier(SessionSwipes(session: session))
+    }
+}
+
+private struct DelayedAppearance: ViewModifier {
+    @State private var shown = false
+
+    func body(content: Content) -> some View {
+        // A placeholder without height until then, so the wait has something on screen to run on.
+        VStack(spacing: 0) {
+            if shown { content.transition(.opacity) } else { Color.clear.frame(height: 0) }
+        }
+        .task {
+            try? await Task.sleep(for: .milliseconds(800))
+            withAnimation(.easeOut(duration: 0.25)) { shown = true }
+        }
     }
 }
 
@@ -580,16 +562,32 @@ struct ConnectionLine: View {
             }
         }
         if case .offline(let reason) = client.phase {
-            // What shows is what the Mac said last, not what happens now.
-            if let updated = client.lastUpdated, !client.sessions.isEmpty {
-                Banner(text: String(localized: "Last updated \(updated.formatted(date: .omitted, time: .shortened)) · not connected"),
-                       symbol: "clock.arrow.circlepath", color: Theme.textSecondary)
+            // One quiet line: why, and since when what shows is from; a tap explains more. It waits a moment before it
+            // shows, so a short drop while the phone wakes or changes networks passes unseen.
+            Button { diagnosing = true } label: {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+                    Image(systemName: "wifi.slash")
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                        Text(reason.isEmpty ? String(localized: "Looking for your Mac…") : reason)
+                        if let updated = client.lastUpdated {
+                            Text("Last updated \(updated.formatted(date: .omitted, time: .shortened)) · not connected")
+                                .foregroundStyle(Theme.textTertiary)
+                        }
+                        if let hint = client.awayHint { Text(hint).foregroundStyle(Theme.textTertiary) }
+                    }
+                    Spacer(minLength: Theme.Spacing.md)
+                    Image(systemName: "info.circle").foregroundStyle(Theme.textTertiary)
+                }
+                .font(Theme.TextStyle.detail)
+                .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.leading)
+                .padding(.horizontal, Theme.Spacing.xs)
+                .contentShape(Rectangle())
             }
-            Banner(text: reason.isEmpty ? String(localized: "Looking for your Mac…") : reason, symbol: "wifi.slash")
-            if let hint = client.awayHint { Banner(text: hint, symbol: "globe") }
-            Button { diagnosing = true } label: { Label("Why can't I connect?", systemImage: "stethoscope") }
-                .buttonStyle(ActionButtonStyle())
-                .sheet(isPresented: $diagnosing) { DiagnosisSheet() }
+            .buttonStyle(PressFade())
+            .accessibilityHint(Text("Why can't I connect?"))
+            .appearsAfterDelay()
+            .sheet(isPresented: $diagnosing) { DiagnosisSheet() }
         }
         // The Mac and this app are too far apart in version for some of what the phone does (`CompanionCompatibility`).
         switch client.compatibility {
@@ -598,9 +596,6 @@ struct ConnectionLine: View {
                    symbol: "arrow.down.circle.fill")
         case .phoneTooOld:
             Banner(text: String(localized: "Update the app: Nook on your Mac needs a newer Nook Companion."),
-                   symbol: "arrow.down.circle.fill")
-        case .ok where client.hasUnrecognizedMacFeatures:
-            Banner(text: String(localized: "Update Nook Companion to use everything your Mac offers."),
                    symbol: "arrow.down.circle.fill")
         case .ok:
             EmptyView()
@@ -638,24 +633,19 @@ struct WaitingRow: View {
 struct AgentRow: View {
     let session: SessionDigest
 
-    private var receded: Bool { !SessionListView.needsYou(session) && session.attention != "working" }
-    private var needsAttention: Bool { SessionListView.needsYou(session) }
-    private var isWorking: Bool { session.attention == "working" }
+    /// Only what needs you is set in full strength; work in progress and the rest read quieter.
+    private var receded: Bool { !SessionListView.needsYou(session) }
+    /// Where a row's text starts, for the hairline between rows.
+    static let textInset = Theme.Spacing.lg + 18 + Theme.Spacing.lg
     private var context: String {
         guard let branch = session.branch, !branch.isEmpty else { return session.folder }
         return session.folder + " · " + branch
     }
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.md) {
-            // Accent stripe for attention / working sessions
-            if needsAttention || isWorking {
-                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                    .fill(isWorking ? Theme.accent : Theme.color(session.attention))
-                    .frame(width: 3, height: 26)
-            }
-
-            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+        HStack(spacing: Theme.Spacing.lg) {
+            AgentMark(agent: session.agent, size: 18, quiet: receded && session.attention != "working")
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                 HStack(spacing: Theme.Spacing.md) {
                     Text(session.title)
                         .font(receded ? Theme.TextStyle.body : Theme.TextStyle.strong)
@@ -664,40 +654,15 @@ struct AgentRow: View {
                     Spacer(minLength: Theme.Spacing.md)
                     slot
                 }
-                HStack(spacing: Theme.Spacing.xs) {
-                    Text(session.folder)
-                        .lineLimit(1)
-                    if let branch = session.branch, !branch.isEmpty {
-                        Text("•")
-                            .foregroundStyle(Theme.textTertiary)
-                        Image(systemName: "arrow.triangle.branch")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Theme.textTertiary)
-                        Text(branch)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    Spacer(minLength: Theme.Spacing.md)
-                    AgentMark(agent: session.agent, size: 15, quiet: true)
-                }
-                .font(Theme.TextStyle.detail)
-                .foregroundStyle(Theme.textTertiary)
+                Text(context)
+                    .lineLimit(1).truncationMode(.middle)
+                    .font(Theme.TextStyle.detail)
+                    .foregroundStyle(Theme.textTertiary)
             }
         }
         .padding(.horizontal, Theme.Spacing.lg)
-        .padding(.vertical, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.md + Theme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .fill(needsAttention ? Theme.color(session.attention).opacity(0.05) : (receded ? Color.clear : Theme.surface.opacity(0.5)))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .strokeBorder(
-                    needsAttention ? Theme.color(session.attention).opacity(0.25) : (receded ? Color.clear : Theme.border.opacity(0.5)),
-                    lineWidth: 0.5
-                )
-        )
         .contentShape(Rectangle())
     }
 
@@ -705,7 +670,7 @@ struct AgentRow: View {
     @ViewBuilder
     private var slot: some View {
         if ["working", "ready"].contains(session.attention) || Theme.needsYou(session.attention) {
-            StatusPill(attention: session.attention)
+            StatusPill(attention: session.attention, short: true)
         } else {
             Text(Date(timeIntervalSince1970: session.updated), format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
                 .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary).lineLimit(1)
@@ -730,7 +695,7 @@ struct SessionNotice: View {
                     AgentMark(agent: session.agent, size: 16)
                     Text(session.title).font(Theme.TextStyle.label).foregroundStyle(Theme.textSecondary).lineLimit(1)
                     Spacer(minLength: Theme.Spacing.md)
-                    StatusPill(attention: session.attention)
+                    StatusPill(attention: session.attention, short: true)
                 }
                 .contentShape(Rectangle())
             }
@@ -756,35 +721,9 @@ struct SessionNotice: View {
         }
         .padding(Theme.Spacing.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
-                    .fill(Theme.surface)
-                RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [Theme.color(session.attention).opacity(0.12), Theme.color(session.attention).opacity(0.02)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-            }
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [
-                            Theme.color(session.attention).opacity(0.65),
-                            Theme.color(session.attention).opacity(0.25)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
-        )
-        .shadow(color: Theme.color(session.attention).opacity(0.1), radius: 12, x: 0, y: 4)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
+            .strokeBorder(Theme.color(session.attention).opacity(0.3), lineWidth: 1))
     }
 
     @ViewBuilder
@@ -818,25 +757,10 @@ struct SessionNotice: View {
                 }
             case .question:
                 opener {
-                    HStack(spacing: Theme.Spacing.xs) {
-                        Image(systemName: "bubble.left.and.text.bubble.right.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text("Answer").font(Theme.TextStyle.strong)
-                    }
-                    .foregroundStyle(Theme.ink)
-                    .padding(.horizontal, Theme.Spacing.xl)
-                    .frame(height: 42)
-                    .background(
-                        Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [Theme.text, Theme.text.opacity(0.92)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                            .shadow(color: Color.white.opacity(0.12), radius: 6, x: 0, y: 2)
-                    )
+                    Text("Answer").font(Theme.TextStyle.strong).foregroundStyle(Theme.ink)
+                        .padding(.horizontal, Theme.Spacing.xl + Theme.Spacing.xxs)
+                        .frame(height: 42)
+                        .background(Theme.text, in: Capsule())
                 }
             }
             Spacer(minLength: 0)

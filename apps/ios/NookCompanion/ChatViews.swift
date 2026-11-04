@@ -18,19 +18,17 @@ enum ChatSuggestions {
 
 // MARK: The list
 
-/// Nook's own chats on the Mac: the same conversations as in the notch, newest first, under the panel's title row.
+/// The Nook tab, as on the Mac: Nook himself with the box to ask him something at the bottom, and his recent chats (the
+/// same conversations as in the notch) above it. Asking starts a new chat.
 struct ChatListView: View {
     @EnvironmentObject private var client: CompanionClient
     @Binding var path: [ChatRoute]
+    @State private var text = ""
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                PanelHeader(title: "Nook") {
-                    if client.can(CompanionFeature.chat) {
-                        NookIconButton(symbol: "square.and.pencil", label: "New chat") { path.append(.new(UUID(), "")) }
-                    }
-                }
+                PanelHeader()
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     ConnectionLine()
                     if !client.can(CompanionFeature.chat) {
@@ -45,13 +43,16 @@ struct ChatListView: View {
                             WaitingRow(symbol: "sparkles", title: entry.request.text ?? "",
                                        detail: String(localized: "New chat · waiting for your Mac")) { client.discardWaiting(entry.id) }
                         }
-                        if client.conversations.isEmpty, client.phase == .connected {
-                            AskNook { path.append(.new(UUID(), $0)) }
+                        if client.conversations.isEmpty {
+                            AskNook { ask($0) }
                         }
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
                 if !client.conversations.isEmpty {
+                    SectionHeader(title: "Recent")
+                        .padding(.horizontal, Theme.Spacing.xl)
+                        .padding(.bottom, Theme.Spacing.xs)
                     VStack(spacing: Theme.Spacing.xxs) {
                         ForEach(client.conversations) { conversation in
                             NavigationLink(value: ChatRoute.open(conversation.id)) { ChatRow(conversation: conversation) }
@@ -62,6 +63,18 @@ struct ChatListView: View {
                 }
             }
             .padding(.bottom, Theme.Spacing.xxl)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom) {
+            if client.can(CompanionFeature.chat) {
+                ComposerDock {
+                    SessionComposer(text: $text, prompt: "Ask Nook", canSend: client.brainReady) {
+                        let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        text = ""
+                        ask(question)
+                    }
+                }
+            }
         }
         .refreshable { await client.loadChats() }
         .toolbar(.hidden, for: .navigationBar)
@@ -79,6 +92,12 @@ struct ChatListView: View {
             }
         }
     }
+
+    /// A new chat that opens with this question.
+    private func ask(_ question: String) {
+        guard !question.isEmpty else { return }
+        path.append(.new(UUID(), question))
+    }
 }
 
 /// A conversation with Nook, as a row of the Mac's list: its title with when on the right, and how it ended under it.
@@ -91,7 +110,7 @@ struct ChatRow: View {
                 Text(conversation.title).font(Theme.TextStyle.strong).foregroundStyle(Theme.text).lineLimit(1)
                 Spacer(minLength: Theme.Spacing.md)
                 if conversation.waiting {
-                    StatusPill(attention: "input")
+                    StatusPill(attention: "input", short: true)
                 } else {
                     Text(Date(timeIntervalSince1970: conversation.updated), format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
                         .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary).lineLimit(1)
@@ -108,19 +127,8 @@ struct ChatRow: View {
             }
         }
         .padding(.horizontal, Theme.Spacing.lg)
-        .padding(.vertical, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.md + Theme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .fill(conversation.waiting ? Theme.amber.opacity(0.05) : Theme.surface.opacity(0.4))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .strokeBorder(
-                    conversation.waiting ? Theme.amber.opacity(0.25) : Theme.border.opacity(0.4),
-                    lineWidth: 0.5
-                )
-        )
         .contentShape(Rectangle())
     }
 }
