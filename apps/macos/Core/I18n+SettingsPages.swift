@@ -6,6 +6,7 @@ import Foundation
 
 let settingsPagesTranslations: [AppLanguage: [String: String]] = [
     .en: [
+        "notbuilt.calendar.name": "Google Calendar · Outlook Calendar",
         "settings.agents.notLinked": "Not linked yet (%ld)",
         "settings.brain.searchModels": "Search models",
         "autocomplete.apps.filter.custom": "Customized",
@@ -101,6 +102,7 @@ let settingsPagesTranslations: [AppLanguage: [String: String]] = [
         "remote.addThis": "Add",
     ],
     .nl: [
+        "notbuilt.calendar.name": "Google Agenda · Outlook-agenda",
         "settings.agents.notLinked": "Nog niet gekoppeld (%ld)",
         "settings.brain.searchModels": "Zoek een model",
         "autocomplete.apps.filter.custom": "Aangepast",
@@ -196,6 +198,7 @@ let settingsPagesTranslations: [AppLanguage: [String: String]] = [
         "remote.addThis": "Toevoegen",
     ],
     .de: [
+        "notbuilt.calendar.name": "Google Kalender · Outlook-Kalender",
         "settings.agents.notLinked": "Noch nicht verbunden (%ld)",
         "settings.brain.searchModels": "Modell suchen",
         "autocomplete.apps.filter.custom": "Angepasst",
@@ -291,6 +294,7 @@ let settingsPagesTranslations: [AppLanguage: [String: String]] = [
         "remote.addThis": "Hinzufügen",
     ],
     .fr: [
+        "notbuilt.calendar.name": "Google Agenda · Calendrier Outlook",
         "settings.agents.notLinked": "Pas encore reliés (%ld)",
         "settings.brain.searchModels": "Chercher un modèle",
         "autocomplete.apps.filter.custom": "Personnalisées",
@@ -372,8 +376,8 @@ let settingsPagesTranslations: [AppLanguage: [String: String]] = [
         "settings.tab.privacy.local": "Seulement sur ce Mac",
         "settings.tab.privacy.log": "Journal",
 
-        "settings.chats.empty": "Reliez une messagerie avec le bouton ci-dessus : ses discussions apparaissent dans l’onglet Chats, et vous répondez depuis Nook.",
-        "settings.chats.inChats": "Dans Chats",
+        "settings.chats.empty": "Reliez une messagerie avec le bouton ci-dessus : ses discussions apparaissent dans l’onglet Discussions, et vous répondez depuis Nook.",
+        "settings.chats.inChats": "Dans Discussions",
         "settings.pulls.needsGitHub": "Connectez d’abord GitHub",
         "settings.pulls.needsGitHubDetail": "Les pull requests sont cherchées avec vos comptes GitHub.",
         "settings.pulls.connectGitHub": "Connecter",
@@ -386,6 +390,7 @@ let settingsPagesTranslations: [AppLanguage: [String: String]] = [
         "remote.addThis": "Ajouter",
     ],
     .es: [
+        "notbuilt.calendar.name": "Google Calendar · Calendario de Outlook",
         "settings.agents.notLinked": "Aún sin vincular (%ld)",
         "settings.brain.searchModels": "Buscar un modelo",
         "autocomplete.apps.filter.custom": "Personalizadas",

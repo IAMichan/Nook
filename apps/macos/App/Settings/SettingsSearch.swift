@@ -101,6 +101,7 @@ enum SettingsSearch {
         .init("settings.voice.wakeWord", .sound),
         .init("hub.add", .connections),
         .init("hub.chats", .chats),
+        .init("hub.chats.add", .chats),
         .init("hub.services", .connections),
         .init("hub.own", .connections),
         .init("settings.connections.onYourMac", .connections),
