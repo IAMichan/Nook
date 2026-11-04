@@ -8,8 +8,9 @@ import SwiftUI
 // The list belongs to its tab, so the tab draws the column; `PanelView` hands it what goes on top through the
 // environment (`panelSidebar`), and the tab starts its first column with `PanelSidebarTop`. While that shows, the
 // panel drops its own header (the floating capsule with the tabs). Where no tab column shows (the list put away, a
-// narrow window that shows one column at a time, a task over the tab) the header comes back, so the tabs are always
-// in reach. The notch has no room for a sidebar and never gets the context: it keeps its capsule.
+// narrow window that shows one column at a time) the panel folds the sidebar to a rail of icons (`PanelSidebarTop`
+// with `compact`), so the tabs stay along the left edge. The notch has no room for a sidebar and never gets the
+// context: it keeps its capsule.
 
 /// What the sidebar shows on top, from `PanelView` in the main window.
 struct PanelSidebarContext {
