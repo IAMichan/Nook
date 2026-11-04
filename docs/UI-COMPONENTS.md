@@ -316,7 +316,7 @@ never shows beside itself. Show a tab beside another through it; do not build a 
 | --- | --- | --- |
 | `SettingToggle(_:detail:isOn:)` | `SettingsBlocks.swift` | A switch with its title only; the detail shows on hover and to VoiceOver |
 | `SettingLabel(_:detail:)`, `SettingLabel(_:hint:)` | `SettingsBlocks.swift` | The title of a row with a button or picker: `detail:` keeps a caption for what must be seen (a state, a step), `hint:` shows the title only with the explanation on hover |
-| `StatusRow`, `SettingsHeader`, `Keycap` | `SettingsBlocks.swift` | Status lines, section headers, keyboard keys |
+| `StatusRow`, `SettingsHeader`, `Keycap` | `SettingsBlocks.swift` | Status lines (their buttons are always small, set by the row itself), section headers, keyboard keys |
 | `SettingsSectionTitle(_:info:)`, `SettingsInfoButton` | `SettingsBlocks.swift` | A Settings section header with an optional ⓘ that holds its explanation; use it instead of an explanatory footer. A footer is only for a warning, an error, or the step that unlocks the section |
 | `SettingNote(_:tone:)` | `SettingsBlocks.swift` | The one hint or status line under a setting: `info`, `success`, `warning`, `error`; a warning or error carries a symbol, not only a color |
 | `SettingsLinkRow` | `SettingsBlocks.swift` | A row that leads to another page or flow: tile, title, line under it, chevron; a status symbol only when something is not done |

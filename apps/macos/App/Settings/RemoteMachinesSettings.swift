@@ -20,7 +20,7 @@ struct RemoteMachinesSection: View {
             }
             ForEach(machines) { machine in
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                    HStack(spacing: 10) {
+                    HStack(spacing: NookTheme.Spacing.md) {
                         Image(systemName: "server.rack").foregroundStyle(NookTheme.textSecondary)
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                             Text(machine.name).font(NookTheme.TextStyle.strong)
@@ -187,7 +187,7 @@ private struct AddMachineSheet: View {
                 .disabled(!canAdd)
             }
         }
-        .padding(20)
+        .padding(NookTheme.Spacing.xxl)
         .frame(width: 440)
         .task {
             let existing = RemoteMachines.load()

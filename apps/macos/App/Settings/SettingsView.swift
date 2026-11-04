@@ -7,8 +7,8 @@ import EventKit
 /// Settings pages, in the order of the sidebar. Each subject lives in exactly one place, and everything you link or sign
 /// in to (chat apps, online services, your own servers, the iPhone) lives on one page: `connections`.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case start, general, appearance, shortcuts, notifications, brain, assistant, autocomplete, connections, agents, workspace,
-         privacy
+    case start, general, appearance, shortcuts, notifications, brain, assistant, autocomplete, dictation, connections, agents,
+         workspace, privacy
 
     /// The sidebar groups: four, so the sidebar reads at a glance.
     enum Group: String, CaseIterable, Identifiable {
@@ -22,7 +22,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
             switch self {
             case .nook: return [.start, .general, .appearance, .shortcuts, .notifications]
             // The AI Nook thinks with, what it does with it (and what it remembers), and how you type and talk to it.
-            case .intelligence: return [.brain, .assistant, .autocomplete]
+            case .intelligence: return [.brain, .assistant, .autocomplete, .dictation]
             // Everything Nook is linked to, then the coding agents and where their sessions run.
             case .connect: return [.connections, .agents, .workspace]
             case .security: return [.privacy]
@@ -67,8 +67,6 @@ struct SettingsView: View {
     @State var fetchedModels: [String] = []
     @State var fetchingModels = false
     @State var recommendations: [ModelAdvisor.Recommendation] = []
-    /// The part of Typing & dictation on screen: completing (0) or dictation and voice (1).
-    @AppStorage("settings.typingPart") var typingPart = 0
     /// The mood the large preview under Appearance shows.
     @State var lookPreviewMood: NookMood = .rest
     @ObservedObject var flowStore = FlowStore.shared
@@ -146,22 +144,9 @@ struct SettingsView: View {
             assistantSection
             MemorySettingsSection()
             buddySection
-        // Everything you type and say, in two parts: completing as you type, and dictating and talking to Nook.
-        case .autocomplete:
-            Section {
-                Picker("", selection: $typingPart) {
-                    Text(tr("typing.part.complete")).tag(0)
-                    Text(tr("typing.part.dictate")).tag(1)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-            }
-            .listRowBackground(Color.clear)
-            if typingPart == 0 {
-                AutocompleteSettingsSection()
-            } else {
-                dictationSection
-            }
+        // Completing as you type and dictating are pages of their own, so a page never holds tabs within tabs.
+        case .autocomplete: AutocompleteSettingsSection()
+        case .dictation: dictationSection
         case .connections: ConnectionsPage()
         case .agents: agentsSection
         case .workspace: workspaceSection
@@ -178,8 +163,6 @@ private struct SettingsSidebar: View {
     var badges: [SettingsSection: Int]
     /// What is typed in the search field above the sidebar.
     @State private var searchQuery = ""
-    /// The Typing page's part, set by a search hit that lives in one of its two parts.
-    @AppStorage("settings.typingPart") private var typingPart = 0
 
     var body: some View {
         List(selection: Binding(
@@ -225,7 +208,6 @@ private struct SettingsSidebar: View {
             }
             ForEach(hits) { hit in
                 Button {
-                    if let part = hit.typingPart { typingPart = part }
                     app.settingsSection = hit.section
                     searchQuery = ""
                 } label: {

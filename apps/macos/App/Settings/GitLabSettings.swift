@@ -167,7 +167,7 @@ struct GitLabSetupSheet: View {
 
     @ViewBuilder
     private var manageContent: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: NookTheme.Spacing.md) {
             HealthPill(health: health)
             Spacer()
             if check == .unreachable, !checking, let managing, let stored = GitLabCredentials.token(host: managing) {
@@ -177,7 +177,7 @@ struct GitLabSetupSheet: View {
 
         Divider()
 
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             Text(tr("settings2.service.keyTitle")).font(NookTheme.TextStyle.strong)
             if replacing || check == .rejected {
                 tokenField

@@ -2,7 +2,7 @@ import SwiftUI
 import Charts
 import UniformTypeIdentifiers
 
-/// Settings › Typing & dictation › Completing: suggestions as you type in any app, with a GGUF model on this Mac or the brain's own model.
+/// Settings › Autocomplete: suggestions as you type in any app, with a GGUF model on this Mac or the brain's own model.
 struct AutocompleteSettingsSection: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = AutocompleteStore.shared
@@ -248,7 +248,7 @@ struct AutocompleteSettingsSection: View {
     /// A GGUF model that is already here (found on this Mac or in Nook's folder): use it, or see that it is in use.
     private func presentRow(_ file: CompletionModelFile) -> some View {
         let inUse = autocomplete.activeModel?.identity == file.url.path
-        return HStack(spacing: 10) {
+        return HStack(spacing: NookTheme.Spacing.md) {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(NookTheme.mint).font(NookTheme.font(16))
             SettingLabel(file.title, detail: "\(file.sizeText) · \(sourceLabel(file.source))")
             Spacer()
@@ -295,7 +295,7 @@ struct AutocompleteSettingsSection: View {
         let installed = here != nil
         let ownCopy = downloads.isInstalled(model)
         let inUse = here.map { autocomplete.activeModel?.identity == $0.path } ?? false
-        return HStack(spacing: 10) {
+        return HStack(spacing: NookTheme.Spacing.md) {
             Image(systemName: installed ? "checkmark.circle.fill" : "arrow.down.circle")
                 .foregroundStyle(installed ? NookTheme.mint : NookTheme.textSecondary)
                 .font(NookTheme.font(16))
@@ -479,7 +479,7 @@ struct AutocompleteSettingsSection: View {
     /// One recorded text: where and when it was written, the text, and a button to delete it.
     private func sampleRow(_ sample: CompletionSamples.Sample) -> some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(appName(sample.app) + " · " + sample.date.formatted(date: .abbreviated, time: .shortened))
                     .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                 Text(sample.text).lineLimit(3).textSelection(.enabled)
@@ -565,7 +565,7 @@ struct AutocompleteSettingsSection: View {
         DisclosureGroup(isExpanded: Binding(get: { editingApp == app.bundleID }, set: { editingApp = $0 ? app.bundleID : nil })) {
             appRule(app.bundleID)
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 AppIcon(url: app.url)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(app.name)
@@ -633,7 +633,7 @@ struct AutocompleteSettingsSection: View {
                     TextField(tr("autocomplete.app.instructions"), text: siteInstructions(site), axis: .vertical).lineLimit(1...4)
                     ConfirmedButton(tr("autocomplete.apps.removeSite"), question: tr("confirm.remove", site)) { store.prefs.sites[site] = nil }
                 } label: {
-                    HStack(spacing: 10) {
+                    HStack(spacing: NookTheme.Spacing.md) {
                         SiteIcon(domain: site, fallback: "globe", tint: NookTheme.textSecondary, size: 18)
                         Text(site)
                         Spacer()
@@ -744,7 +744,7 @@ struct AutocompleteSettingsSection: View {
         let recent = stats.recent(30)
         return Group {
             Section {
-                HStack(spacing: 10) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     StatTile(title: tr("autocomplete.stats.today"), value: tr("autocomplete.stats.timesShort", today.takes),
                              detail: tr("autocomplete.stats.words", today.words), symbol: "sun.max.fill")
                     StatTile(title: tr("autocomplete.stats.week"), value: tr("autocomplete.stats.timesShort", week.takes),
@@ -789,7 +789,7 @@ struct AutocompleteSettingsSection: View {
                 Section(tr("autocomplete.stats.topApps")) {
                     let most = max(top.first?.count.takes ?? 1, 1)
                     ForEach(top, id: \.bundleID) { entry in
-                        HStack(spacing: 10) {
+                        HStack(spacing: NookTheme.Spacing.md) {
                             AppIcon(url: InstalledApp.url(of: entry.bundleID))
                             Text(appName(entry.bundleID)).frame(width: 140, alignment: .leading).lineLimit(1)
                             ProgressView(value: Double(entry.count.takes), total: Double(most)).tint(SettingsSection.autocomplete.tileColors.1)

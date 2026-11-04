@@ -4,8 +4,6 @@ import Foundation
 struct SettingsSearchHit: Identifiable {
     let key: String
     let section: SettingsSection
-    /// The part of the Typing page the setting lives on (0 completing, 1 dictating), when the section has parts.
-    var typingPart: Int? = nil
 
     var id: String { key }
     var title: String { tr(key) }
@@ -14,16 +12,14 @@ struct SettingsSearchHit: Identifiable {
 /// The sidebar search of Settings: every setting by the name it has on screen, plus the section names, in the current
 /// language. Typing "sleutel", "iPhone" or "taal" goes straight to the right page.
 enum SettingsSearch {
-    /// A setting's text key, the section that shows it and, on the Typing page, the part it is in.
+    /// A setting's text key and the section that shows it.
     struct Entry {
         let key: String
         let section: SettingsSection
-        let typingPart: Int?
 
-        init(_ key: String, _ section: SettingsSection, typingPart: Int? = nil) {
+        init(_ key: String, _ section: SettingsSection) {
             self.key = key
             self.section = section
-            self.typingPart = typingPart
         }
     }
 
@@ -32,7 +28,7 @@ enum SettingsSearch {
         .init("settings.start.glance", .start),
         .init("settings.overview.appLanguage", .general),
         .init("settings.brain.answerLanguage", .general),
-        .init("flow.settings.translate", .autocomplete, typingPart: 1),
+        .init("flow.settings.translate", .dictation),
         .init("settings.display.accent", .appearance),
         .init("settings.display.look", .appearance),
         .init("settings.display.eyes", .appearance),
@@ -84,17 +80,17 @@ enum SettingsSearch {
         .init("memory.settings.use", .assistant),
         .init("memory.settings.learn", .assistant),
         .init("memory.settings.clear", .assistant),
-        .init("autocomplete.enable", .autocomplete, typingPart: 0),
-        .init("autocomplete.section.model", .autocomplete, typingPart: 0),
-        .init("autocomplete.section.battery", .autocomplete, typingPart: 0),
-        .init("autocomplete.section.apps", .autocomplete, typingPart: 0),
-        .init("autocomplete.section.personal", .autocomplete, typingPart: 0),
-        .init("autocomplete.emoji", .autocomplete, typingPart: 0),
-        .init("flow.settings.enable", .autocomplete, typingPart: 1),
-        .init("flow.settings.dictionary", .autocomplete, typingPart: 1),
-        .init("parakeet.title", .autocomplete, typingPart: 1),
-        .init("settings.voice.speakAnswers", .autocomplete, typingPart: 1),
-        .init("settings.voice.wakeWord", .autocomplete, typingPart: 1),
+        .init("autocomplete.enable", .autocomplete),
+        .init("autocomplete.section.model", .autocomplete),
+        .init("autocomplete.section.battery", .autocomplete),
+        .init("autocomplete.section.apps", .autocomplete),
+        .init("autocomplete.section.personal", .autocomplete),
+        .init("autocomplete.emoji", .autocomplete),
+        .init("flow.settings.enable", .dictation),
+        .init("flow.settings.dictionary", .dictation),
+        .init("parakeet.title", .dictation),
+        .init("settings.voice.speakAnswers", .dictation),
+        .init("settings.voice.wakeWord", .dictation),
         .init("hub.add", .connections),
         .init("hub.chats", .connections),
         .init("hub.services", .connections),
@@ -142,7 +138,7 @@ enum SettingsSearch {
             .map { SettingsSearchHit(key: "settings.section.\($0.rawValue)", section: $0) }
         let settings = index
             .filter { matches(tr($0.key)) }
-            .map { SettingsSearchHit(key: $0.key, section: $0.section, typingPart: $0.typingPart) }
+            .map { SettingsSearchHit(key: $0.key, section: $0.section) }
         return sections + settings
     }
 }

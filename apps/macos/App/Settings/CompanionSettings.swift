@@ -366,7 +366,7 @@ struct CompanionSettingsRows: View {
     }
 
     private func pairing(_ link: PairingLink) -> some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: NookTheme.Spacing.lg) {
             if let url = link.url, let code = QRCodeView(text: url.absoluteString, side: 140, label: tr("companion.qr")) {
                 code
             }

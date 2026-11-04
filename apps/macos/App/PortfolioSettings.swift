@@ -45,7 +45,7 @@ struct PortfolioSettings: View {
     }
 
     private func walletRow(_ wallet: PortfolioWallet) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             HStack {
                 SiteIcon(domain: wallet.network.iconDomain, fallback: "bitcoinsign.circle", size: 18)
                 Text(wallet.network.name)

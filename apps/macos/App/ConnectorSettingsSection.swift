@@ -279,13 +279,13 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
     @ViewBuilder
     private var connectContent: some View {
         if isGitHub && GitHubSignIn.isAvailable {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 gitHubSignInButton
                 SettingNote(tr("settings2.github.easy"))
             }
             DisclosureGroup(isExpanded: $showKeySteps) {
-                VStack(alignment: .leading, spacing: 20) { keySteps }
-                    .padding(.top, 12)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) { keySteps }
+                    .padding(.top, NookTheme.Spacing.lg)
             } label: {
                 Text(tr("settings2.github.useToken")).font(NookTheme.TextStyle.body)
             }
@@ -293,8 +293,8 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
         } else if isGitHub {
             ghCLIButton
             DisclosureGroup(isExpanded: $showKeySteps) {
-                VStack(alignment: .leading, spacing: 20) { keySteps }
-                    .padding(.top, 12)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) { keySteps }
+                    .padding(.top, NookTheme.Spacing.lg)
             } label: {
                 Text(tr("settings2.github.useToken")).font(NookTheme.TextStyle.body)
             }
@@ -307,7 +307,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
     /// Takes over the login of the GitHub CLI, for when there is no OAuth app to sign in with.
     @ViewBuilder
     private var ghCLIButton: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             Button { gitHubSignIn.reconnect() } label: {
                 Label(configured ? tr("connector.relinkGitHub") : tr("connector.useGitHubCLI"), systemImage: "person.badge.key.fill")
                     .frame(maxWidth: .infinity)
@@ -316,7 +316,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             .controlSize(.large)
             .disabled(gitHubSignIn.phase == .checkingCLI || gitHubSignIn.phase == .waitingForCLI)
             if gitHubSignIn.phase == .waitingForCLI {
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     ProgressView().controlSize(.small)
                     Text(tr("connector.githubFinishLogin")).font(NookTheme.TextStyle.detail)
                 }
@@ -378,7 +378,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.textSecondary)
         case .busy:
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 ProgressView().controlSize(.small)
                 Text(tr("settings2.step.checkBusy")).font(NookTheme.TextStyle.body)
             }
@@ -387,7 +387,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
                 .font(NookTheme.TextStyle.strong)
                 .foregroundStyle(ConnectionHealth.working.color)
         case .broken, .off:
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 Label(ServiceState.summary(of: connector, health: health), systemImage: "exclamationmark.triangle.fill")
                     .font(NookTheme.TextStyle.body)
                     .foregroundStyle(ConnectionHealth.broken.color)
@@ -404,7 +404,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
     @ViewBuilder
     private var manageContent: some View {
         SheetPart(tr("sheet.part.status")) {
-            HStack(spacing: 10) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 HealthPill(health: health)
                 Spacer()
                 if health == .broken {
@@ -422,7 +422,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             if replacing && isGitHub {
                 if GitHubSignIn.isAvailable { gitHubSignInButton } else { ghCLIButton }
                 DisclosureGroup(isExpanded: $showKeySteps) {
-                    fieldsAndPaste.padding(.top, 8)
+                    fieldsAndPaste.padding(.top, NookTheme.Spacing.md)
                 } label: {
                     Text(tr("settings2.github.useToken")).font(NookTheme.TextStyle.body)
                 }
@@ -454,7 +454,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
                     .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 6)
+                    .padding(.top, NookTheme.Spacing.sm)
             } label: {
                 Label(tr("settings2.service.whatCanNook"), systemImage: "questionmark.circle")
                     .font(NookTheme.TextStyle.body)
@@ -466,9 +466,9 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
 
     @ViewBuilder
     private var fieldsAndPaste: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             ForEach(connector.configFields, id: \.account) { field in
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                     if connector.configFields.count > 1 {
                         Text(field.label).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                     }
@@ -523,7 +523,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
     private var gitHubSignInButton: some View {
         switch gitHubSignIn.phase {
         case .waiting(let code, let uri):
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 Text(tr("connector.githubCodeHint"))
                     .font(NookTheme.TextStyle.body)
                 Text(code)
@@ -534,11 +534,11 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
                     Button(tr("button.cancel")) { gitHubSignIn.cancel() }
                 }
             }
-            .padding(12)
+            .padding(NookTheme.Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.iris.opacity(0.1)))
         case .failed(let message):
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 Text(message)
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.coral)
@@ -653,7 +653,7 @@ struct ExtraAccountsView: View {
     @State private var primaryLabel = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             Divider()
             Text(tr("accounts.title")).font(NookTheme.TextStyle.strong)
             HStack {
@@ -667,7 +667,7 @@ struct ExtraAccountsView: View {
             }
             ForEach(accounts) { account in
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         Text(account.label).lineLimit(1)
                         // A login or address has no spaces to wrap at: cut in the middle instead of a letter per line.
                         if let identity = account.identity {
