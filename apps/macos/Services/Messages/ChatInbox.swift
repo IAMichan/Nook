@@ -610,15 +610,25 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     var ephemeral: Bool? = nil
 
     /// The emoji the chat's line shows instead of its newest message: one that came after it, on a message still here.
+    /// Measured against the newest message only, never against `activity`: an app that says its chat moved for
+    /// something it shows no line for (a vote on a poll) must not hide the emoji the line is about.
     var newestReaction: ChatReactionNote? {
-        guard let reaction, reaction.date >= last, messages.contains(where: { $0.id == reaction.message }) else { return nil }
+        guard let reaction, reaction.date >= messages.last?.date ?? .distantPast,
+              messages.contains(where: { $0.id == reaction.message }) else { return nil }
         return reaction
     }
 
     /// How many messages it keeps.
     var keeps: Int { bridged == true ? max(capacity ?? 0, ChatInbox.keep) : ChatInbox.notificationKeep }
 
-    var last: Date { max(messages.last?.date ?? .distantPast, activity ?? .distantPast) }
+    /// When the chat last had what its line shows, the same for every app: its newest message, or the emoji put on one
+    /// after it. A chat sorts and is dated by it, so the list never moves a chat up for something it does not show (a
+    /// vote on a poll, a read, an edit), and the line always says why a chat is where it is. Only a chat Nook holds no
+    /// messages of goes by when its app says it last had one (`activity`).
+    var last: Date {
+        guard let newest = messages.last?.date else { return activity ?? .distantPast }
+        return max(newest, newestReaction?.date ?? .distantPast)
+    }
     /// The newest message from someone else: what "read" is about.
     var newestIncoming: Date? { messages.last { !$0.isMine }?.date }
 
@@ -826,6 +836,18 @@ enum ChatCapture {
         return (emoji, target.isEmpty || generic.contains(target.lowercased()) ? nil : target)
     }
 
+    /// A vote on a poll, as a notification says it ("📊 Jan voted in the poll: Friday?", "Heeft gestemd in de peiling
+    /// Etentje"): no message of its own, so it never moves its chat up. A bridge that reads polls puts the vote on the
+    /// poll itself. Only with the poll named (its 📊, or the word), so a message that talks about voting stays a message.
+    static func isPollVote(_ text: String) -> Bool {
+        let plain = unmarked(text).lowercased()
+        guard plain.count <= 400 else { return false }
+        let voted = ["voted", "gestemd", "stemde", "abgestimmt", "a voté", "votó", "voto"].contains(where: plain.contains)
+        let poll = plain.hasPrefix("📊") || plain.contains(": 📊")
+            || ["poll", "peiling", "umfrage", "sondage", "encuesta"].contains(where: plain.contains)
+        return voted && poll
+    }
+
     private static func isEmoji(_ character: Character) -> Bool {
         guard let first = character.unicodeScalars.first else { return false }
         return first.properties.isEmojiPresentation || (first.properties.isEmoji && first.value > 0x238C)
@@ -902,6 +924,8 @@ struct ChatInbox: Codable, Equatable, Sendable {
             return react(reaction, in: key, by: ChatCapture.unmarked(notice.sender.isEmpty ? notice.chat : notice.sender),
                          at: notice.date)
         }
+        // A vote on a poll is no message: the chat stays where it is.
+        if ChatCapture.isPollVote(notice.text) { return false }
         var thread = threads[key] ?? InboxThread(id: key, app: notice.app, name: notice.chat)
         if thread.messages.contains(where: {
             $0.id == id || (!$0.isMine && $0.text == notice.text && abs($0.date.timeIntervalSince(notice.date)) < Self.sameMessageWindow)
@@ -1064,7 +1088,9 @@ struct ChatInbox: Codable, Equatable, Sendable {
         thread.chatID = chat.chatID
         let before = thread
         thread.bridged = true
-        let newestBefore = known?.last
+        // What the chat had before, the app's own word on when it last moved included: a message no newer than that is
+        // no news.
+        let newestBefore = known.map { max($0.messages.last?.date ?? .distantPast, $0.activity ?? .distantPast) }
         // A file a bridge fetched since it last brought this message, new votes on a poll, or your message's new ticks
         // (delivered, read, by whom): the chat shows them now. Ticks only move forward.
         // Looked up by id once: a bridge brings each chat's latest messages on every read, nearly all of them known, and a
@@ -1143,8 +1169,8 @@ struct ChatInbox: Codable, Equatable, Sendable {
         if let activity = chat.activity, thread.activity.map({ activity > $0 }) ?? true { thread.activity = activity }
         // An emoji that came in this read came after the chat's newest message, whatever clock dated that one (the
         // phone's, a server's a little ahead of this Mac).
-        if var note = thread.reaction, note != before.reaction, note.date < thread.last {
-            note.date = thread.last
+        if var note = thread.reaction, note != before.reaction, let newest = thread.messages.last?.date, note.date < newest {
+            note.date = newest
             thread.reaction = note
         }
         if let unread = chat.unread {
@@ -1388,7 +1414,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
     mutating func forgetMessages(of ids: Set<String>) {
         for id in ids {
             guard var thread = threads[id] else { continue }
-            if thread.last > .distantPast { thread.activity = thread.last }
+            if thread.last > thread.activity ?? .distantPast { thread.activity = thread.last }
             thread.messages = []
             thread.reaction = nil
             threads[id] = thread
