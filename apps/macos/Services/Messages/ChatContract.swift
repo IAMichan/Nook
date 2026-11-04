@@ -20,6 +20,8 @@ struct ChatAbilities: Equatable {
     var delete = false
     /// "Mark as read in <app>" tells the app itself, instead of opening it.
     var markRead = false
+    /// "Mark as unread" also marks the chat unread in its app, so it waits there too (else in Nook only).
+    var markUnread = false
     /// The chat can be pinned, muted and archived in its app; `pinned` and `muted` say where it stands.
     var pin = false
     var mute = false
@@ -42,6 +44,7 @@ struct ChatAbilities: Equatable {
         case .edit: return edit
         case .delete: return delete
         case .markRead: return markRead
+        case .markUnread: return markUnread
         case .pin: return pin
         case .mute: return mute
         case .archive: return archive
@@ -61,6 +64,7 @@ enum ChatAction: Equatable {
     case edit
     case delete
     case markRead
+    case markUnread
     case pin
     case mute
     case archive
@@ -85,6 +89,7 @@ enum ChatAction: Equatable {
         case .edit: return "chat_edit"
         case .delete: return "chat_delete"
         case .markRead: return "chat_mark_read"
+        case .markUnread: return "chat_mark_unread"
         case .pin: return "chat_pin"
         case .mute: return "chat_mute"
         case .archive: return "chat_archive"

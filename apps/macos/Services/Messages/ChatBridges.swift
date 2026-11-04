@@ -2077,6 +2077,22 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
         _ = try await post("conversations.mark", ["channel": conversation.id, "ts": ts], auth: auth)
     }
 
+    /// Marks the chat Nook shows as `name` unread in Slack, from its newest message from someone else (else its newest
+    /// one), as Slack's own "Mark unread" does: the read cursor goes back to just before it.
+    func markUnread(name: String) async throws {
+        let (auth, conversation) = try target(name)
+        let thread = ChatCaptureService.shared.loadedInbox.threads[ChatInbox.key(app: app, chat: name)]
+        var newest = thread?.messages.last { !$0.isMine }.flatMap { SlackData.ts(of: $0.id, conversation: conversation.id) }
+        if newest == nil {
+            newest = SlackData.newestTS(try await call("conversations.history", ["channel": conversation.id, "limit": "1"], auth: auth))
+        }
+        guard let ts = newest.flatMap({ SlackData.ts(before: $0) }) else {
+            throw NookError(tr("chats.markUnreadInApp.nothing", "Slack"))
+        }
+        _ = try await post("conversations.mark", ["channel": conversation.id, "ts": ts], auth: auth)
+        changed(conversation)
+    }
+
     /// What Slack is asked with, and the conversation behind the chat Nook shows as `name`.
     private func target(_ name: String) throws -> (SlackData.Auth, SlackData.Conversation) {
         guard let auth = Self.auth, let conversation = conversation(name) else { throw NookError(tr("chat.action.failed")) }

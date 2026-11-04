@@ -14,6 +14,13 @@ final class SlackActionsTests: XCTestCase {
         XCTAssertNil(SlackData.ts(of: "slack-D1-x", conversation: "D1"))
     }
 
+    func testMarkUnreadPutsTheCursorJustBeforeTheMessage() {
+        XCTAssertEqual(SlackData.ts(before: "1700000010.000100"), "1700000010.000099")
+        XCTAssertEqual(SlackData.ts(before: "1700000010.000000"), "1700000009.999999", "across a whole second")
+        XCTAssertEqual(SlackData.ts(before: "1700000010.5"), "1700000010.499999", "a short fraction is microseconds too")
+        XCTAssertNil(SlackData.ts(before: "not-a-ts"))
+    }
+
     func testReactionsAreReadAsEmojiWithYoursMarked() {
         let history: [String: Any] = ["ok": true, "messages": [
             ["ts": "1700000010.000100", "user": "U1", "text": "hello", "reactions": [

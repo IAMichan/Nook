@@ -62,21 +62,21 @@ extension AppModel {
             let (link, jid) = WhatsAppAccounts.shared.route(key)
             // Muting and deleting a chat go through OpenWA; GOWA has no call for either.
             return ChatAbilities(send: true, sends: link.sends, reply: true, react: true, edit: link.canEdit, delete: link.canDelete,
-                                 markRead: link.isConnected, pin: link.canPin, mute: link.canMuteInWhatsApp, archive: link.canArchive,
+                                 markRead: link.isConnected, markUnread: link.canMarkUnreadInWhatsApp, pin: link.canPin, mute: link.canMuteInWhatsApp, archive: link.canArchive,
                                  deleteChat: link.canDeleteChat, pinned: link.isPinned(jid), muted: link.isMutedInWhatsApp(jid), vote: link.canVote)
         case .telegram(let id):
             let telegram = capture.telegramBridge
             return ChatAbilities(send: true, sends: ChatOutgoing.Kind.everything, reply: true, react: true, edit: true, delete: true,
-                                 markRead: true, pin: true, mute: true, archive: true, deleteChat: true,
+                                 markRead: true, markUnread: true, pin: true, mute: true, archive: true, deleteChat: true,
                                  pinned: telegram.isPinned(id), muted: telegram.isMuted(id), vote: true, deleteForMe: true)
         case .teams:
-            // Teams' website session takes text, answers, emoji, edits, deletions and read marks; not files, and it
-            // has no pinning, muting or archiving Nook can reach.
-            return ChatAbilities(send: true, reply: true, react: true, edit: true, delete: true, markRead: true)
+            // Teams' website session takes text, answers, emoji, edits, deletions and read and unread marks; not files,
+            // and it has no pinning, muting or archiving Nook can reach.
+            return ChatAbilities(send: true, reply: true, react: true, edit: true, delete: true, markRead: true, markUnread: true)
         case .slack:
             // Slack's Web API has no pinning, muting or archiving of a direct conversation, and no polls.
             return ChatAbilities(send: true, sends: capture.slackBridge.sends, reply: true, react: true, edit: true, delete: true,
-                                 markRead: true)
+                                 markRead: true, markUnread: true)
         case .messages:
             // Messages lets another app send text and files, and nothing else.
             return ChatAbilities(send: true, sends: capture.messagesBridge.sends)
@@ -84,16 +84,16 @@ extension AppModel {
             // Snapchat for Web takes typed text from Nook, and nothing else Nook can reach.
             return ChatAbilities(send: true)
         case .mail:
-            // Mail sends your answer as a reply and marks mail read; it has no emoji, edits, polls or pinning another
-            // app can reach.
-            return ChatAbilities(send: true, markRead: true)
+            // Mail sends your answer as a reply and marks mail read or unread; it has no emoji, edits, polls or pinning
+            // another app can reach.
+            return ChatAbilities(send: true, markRead: true, markUnread: true)
         case .linked(let id):
             let bridge = capture.serviceBridge
             // A chat the helper does not list (any more) offers only what every network takes: text. The helper has no
             // call to delete a chat in its network: such a chat is removed from Nook only.
-            guard let chat = bridge.chats[id] else { return ChatAbilities(send: true, sends: bridge.sends, markRead: true) }
+            guard let chat = bridge.chats[id] else { return ChatAbilities(send: true, sends: bridge.sends, markRead: true, markUnread: true) }
             return ChatAbilities(send: true, sends: bridge.sends, reply: true, react: chat.canReact,
-                                 edit: chat.canEdit, delete: chat.canDelete, markRead: true,
+                                 edit: chat.canEdit, delete: chat.canDelete, markRead: true, markUnread: true,
                                  pin: true, mute: true, archive: true, pinned: chat.isPinned, muted: chat.isMuted,
                                  vote: chat.canVote)
         case nil:
@@ -296,6 +296,25 @@ extension AppModel {
             case .slack(let chat): try await capture.slackBridge.markRead(name: chat)
             case .linked(let id): try await capture.serviceBridge.markRead(id)
             case .mail(let chat): try await capture.mailBridge.markRead(chatID: chat)
+            case .messages, .snapchat: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
+            }
+        }
+    }
+
+    /// Marks the chat unread in its app too, after your own "Mark as unread": it waits on your phone and in the app as
+    /// its own "Mark as unread" leaves it. Nobody who wrote sees anything. Throws when the app refused it.
+    func markUnreadInChatApp(_ route: ChatRoute, name: String) async throws {
+        let capture = ChatCaptureService.shared
+        try await runInChat(.markUnread, route: route, name: name, result: "doorgegeven") {
+            switch route {
+            case .whatsApp(let key):
+                let (link, jid) = WhatsAppAccounts.shared.route(key)
+                try await link.markUnreadInWhatsApp(jid)
+            case .telegram(let id): try capture.telegramBridge.markUnread(chat: id)
+            case .teams(let chat): try await capture.teamsBridge.markUnread(name: chat)
+            case .slack(let chat): try await capture.slackBridge.markUnread(name: chat)
+            case .linked(let id): try await capture.serviceBridge.markUnread(id)
+            case .mail(let chat): try await capture.mailBridge.markUnread(chatID: chat)
             case .messages, .snapchat: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
             }
         }

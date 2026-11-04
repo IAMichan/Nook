@@ -172,11 +172,12 @@ enum MailChatData {
         return lines.joined(separator: "\n")
     }
 
-    /// Marks these messages read in Mail, which tells their server (and so every other device of yours).
-    static func markReadScript(_ rows: [Row]) -> String {
+    /// Marks these messages read in Mail (or unread again, `read: false`), which tells their server (and so every other
+    /// device of yours).
+    static func markReadScript(_ rows: [Row], read: Bool = true) -> String {
         var lines = ["tell application \"Mail\""]
         for row in rows {
-            lines.append("try\n\(locate(row))\n    set read status of m to true\nend try")
+            lines.append("try\n\(locate(row))\n    set read status of m to \(read)\nend try")
         }
         lines.append("end tell")
         return lines.joined(separator: "\n")
