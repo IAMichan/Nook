@@ -312,8 +312,12 @@ struct AgentRunPanel: View {
             Button(tr("agents.restartAgent")) { workspace.restartAgent(runID) }
                 .disabled(!workspace.canRestartAgent(runID))
                 .help(tr("agents.restartAgent.help"))
-            if run.lineage?.kind == .fork {
-                Button(tr("agents.mergeBack")) {
+            Button(tr("ws.side.new")) {
+                if let id = workspace.openSideChat(runID, question: "") { app.viewModel.selectedAgentID = "run:" + id.uuidString }
+            }
+            .disabled(!workspace.canOpenSideChat(runID))
+            if let lineage = run.lineage, lineage.bringsBack {
+                Button(tr(lineage.kind == .side ? "ws.side.bringBack" : "agents.mergeBack")) {
                     if workspace.mergeBack(runID), let parent = run.lineage?.parentID {
                         app.viewModel.selectedAgentID = "run:" + parent.uuidString
                     }
@@ -1088,6 +1092,15 @@ struct AgentRunPanel: View {
 
     // MARK: Composer
 
+    /// `/btw` or `/side` (with a question): a side chat beside this session, which keeps working (see `SideChat`). It
+    /// opens selected; the question is its first message. False for any other message.
+    private func openSideChat(_ text: String) -> Bool {
+        guard let question = SideChat.question(in: text), workspace.canOpenSideChat(runID) else { return false }
+        draft = ""
+        if let id = workspace.openSideChat(runID, question: question) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
+        return true
+    }
+
     /// The same composer a new session starts with: the agent and its model, mode and permissions for the next turn,
     /// everything else under ⋯, and send (or stop while it works).
     private func composer(_ run: WorkspaceRun) -> some View {
@@ -1096,6 +1109,7 @@ struct AgentRunPanel: View {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             // Return while a queued message is open in the box saves it instead of sending.
             if editingQueued != nil { saveQueuedEdit(); return }
+            if openSideChat(text) { return }
             guard composerModel.hasContent(text), !active else { return }
             let outgoing = composerModel.outgoing(text)
             draft = ""
@@ -1114,6 +1128,8 @@ struct AgentRunPanel: View {
             {
                 if editingQueued != nil { saveQueuedEdit(); return }
                 let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                // `/btw` during a turn: the side chat starts from the last finished turn and this one goes on.
+                if openSideChat(text) { return }
                 guard composerModel.hasContent(text) else { return }
                 let outgoing = composerModel.outgoing(text)
                 draft = ""
@@ -1132,6 +1148,7 @@ struct AgentRunPanel: View {
         let sendNow = {
             if editingQueued != nil { saveQueuedEdit(); return }
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            if openSideChat(text) { return }
             guard composerModel.hasContent(text), !active else { return }
             let outgoing = composerModel.outgoing(text)
             draft = ""
@@ -1146,6 +1163,9 @@ struct AgentRunPanel: View {
         return VStack(alignment: .leading, spacing: 5) {
             UsageLimitBanner(run: run)
             ConnectorSignInBanner(runID: runID)
+            // Its side chats (/btw): open one, or bring its result back here.
+            let sideChats = SideChat.children(of: runID, in: workspace.runs)
+            if !sideChats.isEmpty { SideChatStrip(workspace: workspace, chats: sideChats) }
             // The subagents the agent started since your message (also those still at work in the background after its
             // turn), and its task list.
             let subagents = derived.subagents

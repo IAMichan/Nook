@@ -81,4 +81,63 @@ final class AgentSessionToolsTests: XCTestCase {
             }
         }
     }
+
+    // MARK: Side chats
+
+    func testSideChatCommands() {
+        XCTAssertEqual(SideChat.question(in: "/btw why is the test slow?"), "why is the test slow?")
+        XCTAssertEqual(SideChat.question(in: "  /side  look at the parser \n"), "look at the parser")
+        XCTAssertEqual(SideChat.question(in: "/BTW x"), "x")
+        XCTAssertEqual(SideChat.question(in: "/btw"), "")
+        XCTAssertNil(SideChat.question(in: "/btwx hello"), "another command")
+        XCTAssertNil(SideChat.question(in: "by the way /btw"))
+        XCTAssertNil(SideChat.question(in: "/fork"))
+        let names = AgentCommands.commands(for: .gemini, hasProject: true).map(\.name)
+        XCTAssertTrue(names.contains("btw") && names.contains("side"), "every agent gets a side chat")
+        XCTAssertFalse(AgentCommands.commands(for: .claude, hasProject: true, surface: .chat).contains { $0.name == "btw" })
+    }
+
+    func testSideChatStartsFromTheLastFinishedTurn() {
+        let events = [RunEvent(kind: .user, text: "first"), RunEvent(kind: .assistant, text: "done"),
+                      RunEvent(kind: .user, text: "second"), RunEvent(kind: .tool, text: "make test")]
+        XCTAssertEqual(SideChat.cutoff(events: events, turnRunning: false), 4)
+        XCTAssertEqual(SideChat.cutoff(events: events, turnRunning: true), 2, "the running turn is not finished")
+        XCTAssertEqual(SideChat.cutoff(events: [], turnRunning: true), 0)
+    }
+
+    func testSideChatCopiesTheConversationOnlyWhereTheAgentCanForkAtATurn() {
+        let mark = ConversationMark(session: "s1", provider: .claude, turns: 2, head: "uuid-7")
+        XCTAssertEqual(SideChat.start(provider: .claude, session: "s1", turnRunning: false, lastFinished: mark), .nativeCopy)
+        XCTAssertEqual(SideChat.start(provider: .claude, session: "s1", turnRunning: true, lastFinished: mark),
+                       .nativeCopyAt(session: "s1", head: "uuid-7"))
+        XCTAssertEqual(SideChat.start(provider: .claude, session: "s1", turnRunning: true, lastFinished: nil), .summary,
+                       "no mark of the last finished turn: a summary")
+        XCTAssertEqual(SideChat.start(provider: .claude, session: nil, turnRunning: false, lastFinished: nil), .summary)
+        for provider in RunProvider.allCases where !provider.capabilities.nativeFork {
+            XCTAssertEqual(SideChat.start(provider: provider, session: "s1", turnRunning: false, lastFinished: mark), .summary,
+                           provider.rawValue)
+        }
+    }
+
+    func testSideChatsAreListedOnlyWithTheirParent() {
+        let parent = session(), other = session()
+        var side = session()
+        side.lineage = RunLineage(kind: .side, parentID: parent.id, atEvent: 3)
+        var fork = session()
+        fork.lineage = RunLineage(kind: .fork, parentID: UUID(), atEvent: 1)
+        XCTAssertEqual(SideChat.listed([parent, side, other, fork]).map(\.id), [parent.id, side.id, other.id, fork.id])
+        XCTAssertEqual(SideChat.listed([side, other]).map(\.id), [other.id], "never on its own")
+        XCTAssertEqual(SideChat.children(of: parent.id, in: [parent, side, fork]).map(\.id), [side.id])
+        XCTAssertTrue(side.lineage!.bringsBack)
+        XCTAssertFalse(RunLineage(kind: .comparison, parentID: parent.id, atEvent: 0).bringsBack)
+        XCTAssertEqual(side.lineage?.labelKey, "lineage.sideOf")
+    }
+
+    private func session() -> WorkspaceRun {
+        WorkspaceRun(id: UUID(), title: "t", task: "t", provider: .claude, profileID: "p", model: "", resolvedModel: nil,
+                     mode: .agent, permission: .acceptEdits, isolation: .folder, projectPath: "/w", workingDirectory: "/w",
+                     repoRoot: nil, branch: nil, baseBranch: nil, worktreePath: nil, instructions: "", status: .completed,
+                     statusDetail: nil, providerSessionID: nil, createdAt: Date(), updatedAt: Date(), archived: false,
+                     usage: RunUsage(), turnStartedAt: nil, reviewedAt: nil, lastChangeAt: nil, changedFiles: nil)
+    }
 }

@@ -1050,7 +1050,8 @@ enum WorkspaceRunsSection {
             run.status.isActive || !finished.isSettled(FinishedSessions.key(run: run), lastActive: run.updatedAt)
         }
         let settled = list.filter { !isOpen($0) && now.timeIntervalSince($0.updatedAt) < 24 * 3600 }
-        return list.filter(isOpen) + settled.prefix(settledLimit)
+        // A side chat is listed with its parent only (nested under it), never as a session of its own.
+        return SideChat.listed(list.filter(isOpen) + settled.prefix(settledLimit))
     }
 }
 
