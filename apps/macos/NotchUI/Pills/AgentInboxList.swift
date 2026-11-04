@@ -770,7 +770,10 @@ struct AgentInboxList: View {
     // MARK: Auto-settle
 
     private func autoSettle(rows: [InboxRow], byID: [String: AgentListItem], now: Date) {
-        let ids = store.autoSettleCandidates(rows: rows, prMerged: { id in runID(byID[id]).map { pullRequests.merged($0) } ?? false }, now: now)
+        let workspace = app.workspace
+        let ids = store.autoSettleCandidates(rows: rows, prMerged: { id in
+            runID(byID[id]).map { run in pullRequests.merged(run, since: workspace.lastWrittenAt(run)) } ?? false
+        }, now: now)
         let settle = ids.compactMap { byID[$0] }
         if !settle.isEmpty { store.settle(settle, now: now, record: false) }
     }

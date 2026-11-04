@@ -7,6 +7,9 @@ options:
   developmentLanguage: en
   # Matches the Xcode the project is built with, so Xcode does not ask to "Update to recommended settings".
   xcodeVersion: "26.3"
+configFiles:
+  Debug: Config/Signing.xcconfig
+  Release: Config/Signing.xcconfig
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -27,6 +30,9 @@ targets:
       - path: ../../packages/protocol/Sources
       # The agents' and models' real marks, drawn in code, shared with the Mac app so both show the same logos.
       - path: ../macos/NotchUI/Components/BrandLogo.swift
+        group: Shared from the Mac
+      # The conversation components both apps share: chat rows and bubbles, your messages, the time under them.
+      - path: ../macos/NotchUI/Shared
         group: Shared from the Mac
     dependencies:
       - target: NookActivity
@@ -55,7 +61,6 @@ targets:
       base:
         PRODUCT_NAME: Nook Companion
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.companion
-        DEVELOPMENT_TEAM: ""
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"
     entitlements:
@@ -96,7 +101,6 @@ targets:
       base:
         PRODUCT_NAME: NookActivity
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.companion.activity
-        DEVELOPMENT_TEAM: ""
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: YES
@@ -127,7 +131,6 @@ targets:
       base:
         PRODUCT_NAME: NookNotifications
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.companion.notifications
-        DEVELOPMENT_TEAM: ""
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: YES

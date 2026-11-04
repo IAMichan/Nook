@@ -510,21 +510,20 @@ private struct WaveformDetail: View {
             // As many bars as fit: the wave runs the full width of the card.
             let count = max(1, Int((proxy.size.width + Self.gap) / (Self.barWidth + Self.gap)))
             let rate = energy.plan.progressFrameRate(attended: attended)
-            SeparateGraph {
-                TimelineView(.nookFrames(fps: rate)) { context in
-                    let levels = history.sample(at: context.date, step: 1.0 / max(1, rate)).suffix(count)
-                    HStack(spacing: Self.gap) {
-                        ForEach(Array(levels.enumerated()), id: \.offset) { _, level in
-                            Capsule()
-                                .fill(NookTheme.mint)
-                                .opacity(0.45 + 0.55 * level)
-                                .frame(width: Self.barWidth, height: 4 + 24 * CGFloat(level))
-                        }
+            // perf: the bars follow your voice as it comes in, so they are drawn each frame; only while you speak.
+            TimelineView(.nookFrames(fps: rate)) { context in
+                let levels = history.sample(at: context.date, step: 1.0 / max(1, rate)).suffix(count)
+                HStack(spacing: Self.gap) {
+                    ForEach(Array(levels.enumerated()), id: \.offset) { _, level in
+                        Capsule()
+                            .fill(NookTheme.mint)
+                            .opacity(0.45 + 0.55 * level)
+                            .frame(width: Self.barWidth, height: 4 + 24 * CGFloat(level))
                     }
-                    .frame(width: proxy.size.width, height: 28, alignment: .trailing)
                 }
-                .drawingGroup()
+                .frame(width: proxy.size.width, height: 28, alignment: .trailing)
             }
+            .drawingGroup()
             .frame(width: proxy.size.width, height: 28, alignment: .trailing)
         }
         .frame(maxWidth: .infinity)

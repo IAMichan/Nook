@@ -602,6 +602,13 @@ struct WorkspaceSettingsSection: View {
                 }
             }
         }
+        inheritable(.worktreeCleanup, path) {
+            Picker(tr("settings.ws.projectWorktreeCleanup"), selection: Binding(
+                get: { resolved.worktreeCleanup }, set: { ws.setOverride(.worktreeCleanup, $0 ? "on" : "off", for: path) })) {
+                Text(tr("settings.ws.projectWorktreeCleanup.on")).tag(true)
+                Text(tr("settings.ws.projectWorktreeCleanup.off")).tag(false)
+            }
+        }
         inheritable(.titleInstructions, path) {
             TextField(tr("settings.ws.titleInstructions"), text: Binding(
                 get: { overrideText(.titleInstructions, path) ?? resolved.titleInstructions },
@@ -769,6 +776,7 @@ struct WorkspaceSettingsSection: View {
     }
 
     /// The list and the worktrees keep themselves tidy; one in use or with uncommitted changes always stays.
+    @ViewBuilder
     private var tidying: some View {
         Section {
             Toggle(tr("settings.ws.autoSettle"), isOn: $inbox.autoSettle.enabled)
@@ -783,17 +791,35 @@ struct WorkspaceSettingsSection: View {
                 Text(tr("settings.ws.days", 30)).tag(30)
                 Text(tr("settings.ws.days", 90)).tag(90)
             }
-            Toggle(tr("settings.ws.worktreeCleanupMerged"), isOn: $ws.worktreeCleanupOnMerge)
-            Picker(tr("settings.ws.worktreeCleanupSettled"), selection: $ws.worktreeCleanupDays) {
-                Text(tr("settings.ws.never")).tag(0)
-                Text(tr("settings.ws.days", 3)).tag(3)
-                Text(tr("settings.ws.days", 7)).tag(7)
-                Text(tr("settings.ws.days", 30)).tag(30)
-            }
             Toggle(tr("settings.ws.buildLeftovers"), isOn: $ws.buildLeftoverCleanup)
                 .help(tr("settings.ws.buildLeftovers.help"))
         } header: {
-            SettingsSectionTitle(tr("ws.section.tidy"), info: tr("settings.ws.worktreeCleanup.footer"))
+            SettingsSectionTitle(tr("ws.section.tidy"))
+        }
+        // Worktrees: every rule off until you switch it on, as in t3code; what the latest cleanup did is under them.
+        Section {
+            Toggle(tr("settings.ws.worktreeCleanupMerged"), isOn: $ws.worktreeCleanupOnMerge)
+            daysPicker(tr("settings.ws.worktreeCleanupSettled"), $ws.worktreeCleanupDays)
+            daysPicker(tr("settings.ws.worktreeCleanupInactive"), $ws.worktreeCleanupInactiveDays)
+            Toggle(tr("settings.ws.worktreeCleanupUnchanged"), isOn: $ws.worktreeCleanupUnchanged)
+            Toggle(tr("settings.ws.worktreeCleanupOnDelete"), isOn: $ws.worktreeCleanupOnDelete)
+            Picker(tr("settings.ws.worktreeKeepWhen"), selection: $ws.worktreeKeepWhen) {
+                ForEach(WorktreeCleanup.KeepWhen.allCases) { Text(tr("settings.ws.keepWhen." + $0.rawValue)).tag($0) }
+            }
+            .help(tr("settings.ws.worktreeKeepWhen.help"))
+            WorktreeCleanupReportView(workspace: app.workspace)
+        } header: {
+            SettingsSectionTitle(tr("ws.worktrees.title"), info: tr("settings.ws.worktreeCleanup.footer"))
+        }
+        .onChange(of: ws.worktreeCleanupRules) { _, _ in app.workspace.worktreeCleanupRulesChanged() }
+    }
+
+    private func daysPicker(_ title: String, _ selection: Binding<Int>) -> some View {
+        Picker(title, selection: selection) {
+            Text(tr("settings.ws.never")).tag(0)
+            Text(tr("settings.ws.days", 3)).tag(3)
+            Text(tr("settings.ws.days", 7)).tag(7)
+            Text(tr("settings.ws.days", 30)).tag(30)
         }
     }
 
