@@ -157,6 +157,11 @@ enum GitHubPullRequestDetail {
     /// Merges exactly the head the view showed (`sha`): when someone pushed since, GitHub refuses instead of merging
     /// commits you have not seen. Returns the merge commit's sha. On the patient session: GitHub can take longer than
     /// the usual timeout to merge a large pull request, and a timeout would report a merge that still went through.
+    ///
+    /// GitHub also answers 409 when the base moved while it merged (another pull request landed a moment before) or
+    /// when it has not caught up with a push yet. So a 409 is checked against the head GitHub reports now: still `sha`,
+    /// and the merge is tried again a few times; a different head throws `MergeHeadMoved`, so the page reads the new
+    /// commits instead of failing on the same old head every time.
     static func merge(repo: String, number: Int, method: PullRequestMergeMethod, sha: String, token: String) async throws -> String {
         guard let url = URL(string: "https://api.github.com/repos/\(repo)/pulls/\(number)/merge") else {
             throw NookError("Invalid GitHub address.")
@@ -167,14 +172,41 @@ enum GitHubPullRequestDetail {
         for (key, value) in headers(token) { request.setValue(value, forHTTPHeaderField: key) }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Nook", forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await ConnectorHTTP.patientSession.data(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        guard (200..<300).contains(status), (object["merged"] as? Bool) != false else {
-            throw NookError(PullRequestDetailParser.mergeError(status: status, object: object),
-                            kind: status == 401 ? .auth : .other)
+        var attempt = 0
+        while true {
+            let (data, response) = try await ConnectorHTTP.patientSession.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+            if (200..<300).contains(status), (object["merged"] as? Bool) != false {
+                return (object["sha"] as? String) ?? ""
+            }
+            guard status == 409, !sha.isEmpty else {
+                throw NookError(PullRequestDetailParser.mergeError(status: status, object: object),
+                                kind: status == 401 ? .auth : .other)
+            }
+            let head = await currentHead(repo: repo, number: number, token: token)
+            if let head, head != sha {
+                throw MergeHeadMoved(head: head, message: PullRequestDetailParser.mergeError(status: status, object: object))
+            }
+            attempt += 1
+            guard attempt < 3 else {
+                throw NookError(PullRequestDetailParser.mergeError(status: status, object: object, headMoved: false))
+            }
+            try await Task.sleep(nanoseconds: UInt64(attempt) * 1_500_000_000)
         }
-        return (object["sha"] as? String) ?? ""
+    }
+
+    /// The head GitHub reports for the pull request right now; nil when it could not be read.
+    private static func currentHead(repo: String, number: Int, token: String) async -> String? {
+        guard let pull = (try? await getter(repo: repo, token: token)("/pulls/\(number)")) as? [String: Any] else { return nil }
+        return (pull["head"] as? [String: Any])?["sha"] as? String
+    }
+
+    /// A merge GitHub refused because the branch has commits past the one that was shown: read it again and look.
+    struct MergeHeadMoved: LocalizedError {
+        let head: String
+        let message: String
+        var errorDescription: String? { message }
     }
 
     /// Sends one action from the page (a review, a comment, close, reopen, …; see PullRequestAction), only after your
