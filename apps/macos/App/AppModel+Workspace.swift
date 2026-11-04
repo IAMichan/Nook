@@ -219,11 +219,13 @@ extension AppModel {
             return self.profiles.launchEnvironment(profile)
         }
         workspace.accountHome = { [weak self] profileID in self?.profiles.profile(id: profileID)?.homeURL.path ?? profileID }
-        // "Auto" picks among every connected agent and account.
+        // "Auto" picks among every connected agent and account that Settings › Workspace › Auto model choice allows.
         workspace.autoAccounts = { [weak self] in
             guard let self else { return [] }
             return self.connectedProviders.flatMap { provider in
-                self.connectedProfiles(for: provider).map { AutoModel.Account(provider: provider, profileID: $0.id) }
+                self.connectedProfiles(for: provider)
+                    .filter { self.workspace.settings.autoAllows(provider, profileID: $0.id) }
+                    .map { AutoModel.Account(provider: provider, profileID: $0.id) }
             }
         }
         // "Auto" picks a lighter model as an account's 5-hour or weekly window runs full.

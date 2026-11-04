@@ -340,6 +340,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var effort: String? = nil
     /// "Auto": Nook picks `model` for each turn (see `AutoModel`); nil for a model you chose.
     var autoModel: Bool? = nil
+    /// What the last turn on Auto asked for (`AutoModel.Tier` raw value), so a short follow-up does not drop a hard thread.
+    var autoNeed: Int? = nil
     /// The agent's own task list, as it last reported it.
     var tasks: [RunTaskStep]? = nil
     /// The pull request this session watches: what it last saw, so only news wakes it.
