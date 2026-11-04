@@ -537,6 +537,8 @@ private final class WebViewContainer: NSView {
     /// left, and only the place around it changes.
     override func resizeSubviews(withOldSize oldSize: NSSize) {
         guard webView.superview === self else { return super.resizeSubviews(withOldSize: oldSize) }
+        // The window itself being resized by hand holds the page the same way a dragged panel line does.
+        if window?.inLiveResize == true { WebViewResize.hold() }
         if WebViewResize.held {
             webView.setFrameOrigin(NSPoint(x: 0, y: bounds.height - webView.frame.height))
         } else {
