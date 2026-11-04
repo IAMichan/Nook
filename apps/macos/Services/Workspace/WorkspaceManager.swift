@@ -1947,7 +1947,12 @@ final class WorkspaceManager: ObservableObject {
         wakeSubagent[id] = nil
         mcpAppContexts[id] = nil
         let appFolder = Self.mcpAppFolder(id)
-        Task.detached(priority: .utility) { try? FileManager.default.removeItem(at: appFolder) }
+        // The pages the agent showed (render_page) go with the session.
+        let pageFolder = RenderedPage.file(in: NookPaths.supportDirectory, run: id, page: id).deletingLastPathComponent()
+        Task.detached(priority: .utility) {
+            try? FileManager.default.removeItem(at: appFolder)
+            try? FileManager.default.removeItem(at: pageFolder)
+        }
         prepareTasks.removeValue(forKey: id)?.cancel()
         checkpointIndices[id] = nil
         stopCoordinators[id] = nil

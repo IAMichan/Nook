@@ -212,6 +212,10 @@ extension CompanionServer {
             detail = event.tool
         case .error: kind = .error
         case .system: kind = .notice
+        case .page:
+            // The phone draws no pages: it says which page the agent showed (the page itself stays on the Mac).
+            kind = .notice
+            detail = nil
         case .thinking, .approval, .result: return nil
         }
         let clipped = CompanionPolicy.clip(text)

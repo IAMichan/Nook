@@ -75,6 +75,10 @@ struct EventRow: View {
         case .error:
             TimelineProblemCard(text: event.text)
 
+        case .page:
+            // A page the agent showed (`render_page`), sandboxed and at its own height.
+            RenderedPageRow(event: event).equatable()
+
         case .system where event.tool == "handoff":
             // What the new agent was given: a summary you can read, not a hidden prompt.
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {

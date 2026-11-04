@@ -17,6 +17,8 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "settings.ws.titleInstructions.placeholder": "Begin met het ticketnummer, schrijf in het Engels",
         "settings.ws.stripAgentCredits": "Agentvermeldingen weglaten bij het mergen",
         "settings.ws.stripAgentCredits.detail": "Haalt Co-Authored-By-regels van agents (Claude, Codex, Cursor, Gemini, Copilot…) en ‘Generated with’-regels uit de mergecommit die Nook bij GitHub aanvraagt. Mensen als co-auteur blijven staan; je eigen commits veranderen niet.",
+        "ws.page.help": "Een pagina van de agent, afgeschermd: geen internet en geen toegang tot Nook of je bestanden. Klik om in of uit te klappen.",
+        "ws.page.gone": "Deze pagina is er niet meer.",
     ],
     .en: [
         "ws.question.attach": "Attach a file",
@@ -32,6 +34,8 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "settings.ws.titleInstructions.placeholder": "Start with the ticket number, write in English",
         "settings.ws.stripAgentCredits": "Leave agent credits out when merging",
         "settings.ws.stripAgentCredits.detail": "Removes agents’ Co-Authored-By lines (Claude, Codex, Cursor, Gemini, Copilot…) and “Generated with” lines from the merge commit Nook asks GitHub for. People credited as co-authors stay; your own commits do not change.",
+        "ws.page.help": "A page from the agent, sandboxed: no internet and no access to Nook or your files. Click to fold or unfold.",
+        "ws.page.gone": "This page is no longer there.",
     ],
     .de: [
         "ws.question.attach": "Datei anhängen",
@@ -47,6 +51,8 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "settings.ws.titleInstructions.placeholder": "Mit der Ticketnummer beginnen, auf Englisch schreiben",
         "settings.ws.stripAgentCredits": "Agent-Vermerke beim Mergen weglassen",
         "settings.ws.stripAgentCredits.detail": "Entfernt Co-Authored-By-Zeilen von Agenten (Claude, Codex, Cursor, Gemini, Copilot…) und „Generated with“-Zeilen aus dem Merge-Commit, den Nook bei GitHub anfordert. Menschen als Co-Autoren bleiben; deine eigenen Commits ändern sich nicht.",
+        "ws.page.help": "Eine Seite vom Agenten, abgeschirmt: kein Internet und kein Zugriff auf Nook oder deine Dateien. Klicken zum Ein- oder Ausklappen.",
+        "ws.page.gone": "Diese Seite gibt es nicht mehr.",
     ],
     .fr: [
         "ws.question.attach": "Joindre un fichier",
@@ -62,6 +68,8 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "settings.ws.titleInstructions.placeholder": "Commencer par le numéro de ticket, écrire en anglais",
         "settings.ws.stripAgentCredits": "Omettre les mentions des agents lors du merge",
         "settings.ws.stripAgentCredits.detail": "Retire les lignes Co-Authored-By des agents (Claude, Codex, Cursor, Gemini, Copilot…) et les lignes « Generated with » du commit de merge que Nook demande à GitHub. Les personnes créditées comme coauteurs restent ; vos propres commits ne changent pas.",
+        "ws.page.help": "Une page de l’agent, isolée : pas d’internet ni d’accès à Nook ou à vos fichiers. Cliquez pour replier ou déplier.",
+        "ws.page.gone": "Cette page n’existe plus.",
     ],
     .es: [
         "ws.question.attach": "Adjuntar un archivo",
@@ -77,5 +85,7 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "settings.ws.titleInstructions.placeholder": "Empieza con el número de ticket, escribe en inglés",
         "settings.ws.stripAgentCredits": "Omitir las menciones de agentes al fusionar",
         "settings.ws.stripAgentCredits.detail": "Quita las líneas Co-Authored-By de agentes (Claude, Codex, Cursor, Gemini, Copilot…) y las líneas “Generated with” del commit de fusión que Nook pide a GitHub. Las personas acreditadas como coautoras se quedan; tus propios commits no cambian.",
+        "ws.page.help": "Una página del agente, aislada: sin internet ni acceso a Nook o a tus archivos. Haz clic para plegar o desplegar.",
+        "ws.page.gone": "Esta página ya no está.",
     ],
 ]
