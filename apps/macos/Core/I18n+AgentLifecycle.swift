@@ -20,6 +20,10 @@ let agentLifecycleTranslations: [AppLanguage: [String: String]] = [
         "ws.revert.doneConversation": "Bestanden en gesprek teruggezet naar een eerder punt. De agent weet niets meer van de latere berichten.",
         "ws.revert.conversationFailed": "Het gesprek van de agent kon niet worden teruggezet: %@",
         "ws.revert.conversationExec": "Codex draait via codex exec, dat zijn gesprek niet kan terugzetten.",
+        "ws.permission.auto": "Auto",
+        "ws.permission.auto.help.claude": "De eigen controle van Claude Code keurt gewone stappen goed en vraagt jou bij riskante. Bewerkingen mogen.",
+        "ws.permission.auto.help.codex": "Codex werkt in zijn sandbox; wat hij zou vragen, beoordeelt eerst zijn eigen controleur. Riskante verzoeken komen bij jou.",
+        "ws.permission.auto.help.acp": "Deze agent heeft geen eigen controle: bewerkingen mogen, commando's vragen eerst om je goedkeuring.",
     ],
     .en: [
         "settings.ws.worktreeCleanupMerged": "Remove the worktree once the session's pull request is merged",
@@ -37,6 +41,10 @@ let agentLifecycleTranslations: [AppLanguage: [String: String]] = [
         "ws.revert.doneConversation": "Files and conversation restored to an earlier point. The agent no longer remembers the later messages.",
         "ws.revert.conversationFailed": "The agent's conversation could not be rolled back: %@",
         "ws.revert.conversationExec": "Codex runs through codex exec, which cannot roll back its conversation.",
+        "ws.permission.auto": "Auto",
+        "ws.permission.auto.help.claude": "Claude Code's own reviewer approves routine steps and asks you about risky ones. Edits are allowed.",
+        "ws.permission.auto.help.codex": "Codex runs in its sandbox; what it would ask goes to its own reviewer first. Risky requests come to you.",
+        "ws.permission.auto.help.acp": "This agent has no reviewer of its own: edits are allowed, commands ask for your approval first.",
     ],
     .de: [
         "settings.ws.worktreeCleanupMerged": "Worktree entfernen, sobald der Pull Request der Sitzung gemergt ist",
@@ -54,6 +62,10 @@ let agentLifecycleTranslations: [AppLanguage: [String: String]] = [
         "ws.revert.doneConversation": "Dateien und Gespräch auf einen früheren Stand zurückgesetzt. Der Agent erinnert sich nicht mehr an die späteren Nachrichten.",
         "ws.revert.conversationFailed": "Das Gespräch des Agenten konnte nicht zurückgesetzt werden: %@",
         "ws.revert.conversationExec": "Codex läuft über codex exec, das sein Gespräch nicht zurücksetzen kann.",
+        "ws.permission.auto": "Auto",
+        "ws.permission.auto.help.claude": "Die eigene Prüfung von Claude Code erlaubt Routineschritte und fragt dich bei riskanten. Änderungen sind erlaubt.",
+        "ws.permission.auto.help.codex": "Codex arbeitet in seiner Sandbox; was er fragen würde, prüft zuerst sein eigener Prüfer. Riskante Anfragen kommen zu dir.",
+        "ws.permission.auto.help.acp": "Dieser Agent hat keine eigene Prüfung: Änderungen sind erlaubt, Befehle fragen zuerst um deine Freigabe.",
     ],
     .fr: [
         "settings.ws.worktreeCleanupMerged": "Supprimer le worktree une fois la pull request de la session fusionnée",
@@ -71,6 +83,10 @@ let agentLifecycleTranslations: [AppLanguage: [String: String]] = [
         "ws.revert.doneConversation": "Fichiers et conversation restaurés à un point antérieur. L'agent ne se souvient plus des messages suivants.",
         "ws.revert.conversationFailed": "La conversation de l'agent n'a pas pu être restaurée : %@",
         "ws.revert.conversationExec": "Codex passe par codex exec, qui ne peut pas restaurer sa conversation.",
+        "ws.permission.auto": "Auto",
+        "ws.permission.auto.help.claude": "Le contrôleur de Claude Code approuve les étapes courantes et vous demande pour les risquées. Les modifications sont autorisées.",
+        "ws.permission.auto.help.codex": "Codex travaille dans son sandbox ; ce qu'il demanderait passe d'abord par son propre contrôleur. Les demandes risquées vous parviennent.",
+        "ws.permission.auto.help.acp": "Cet agent n'a pas de contrôleur : les modifications sont autorisées, les commandes demandent d'abord votre accord.",
     ],
     .es: [
         "settings.ws.worktreeCleanupMerged": "Eliminar el worktree cuando se fusione la pull request de la sesión",
@@ -88,5 +104,9 @@ let agentLifecycleTranslations: [AppLanguage: [String: String]] = [
         "ws.revert.doneConversation": "Archivos y conversación restaurados a un punto anterior. El agente ya no recuerda los mensajes posteriores.",
         "ws.revert.conversationFailed": "No se pudo restaurar la conversación del agente: %@",
         "ws.revert.conversationExec": "Codex funciona con codex exec, que no puede restaurar su conversación.",
+        "ws.permission.auto": "Auto",
+        "ws.permission.auto.help.claude": "El revisor propio de Claude Code aprueba los pasos habituales y te pregunta por los arriesgados. Las ediciones están permitidas.",
+        "ws.permission.auto.help.codex": "Codex trabaja en su sandbox; lo que preguntaría pasa primero por su propio revisor. Las peticiones arriesgadas te llegan a ti.",
+        "ws.permission.auto.help.acp": "Este agente no tiene revisor propio: las ediciones están permitidas, los comandos piden tu aprobación primero.",
     ],
 ]

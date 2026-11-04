@@ -611,6 +611,7 @@ extension PermissionPolicy {
         switch self {
         case .ask: return "lock"
         case .acceptEdits: return "pencil"
+        case .auto: return "checkmark.shield"
         case .bypass: return "lock.open"
         }
     }
