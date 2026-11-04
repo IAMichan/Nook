@@ -8,19 +8,21 @@ import UIKit
 enum Theme {
     // MARK: Colors (the values of `NookTheme`)
 
-    /// The canvas behind every screen.
-    static let canvas = Color(hex: 0x0A0A0A)
-    /// A sunken well: code and the field of an answer.
+    /// The canvas behind every screen: pure black as the notch and Mac Nook.
+    static let canvas = Color(hex: 0x000000)
+    /// A sunken well: code, quote blocks and search inputs.
     static let well = Color(hex: 0x080808)
     /// What lifts off the canvas: cards, the composer, a sheet's rows.
-    static let surface = Color(hex: 0x141414)
-    /// A control or chip on a card, your own bubble.
-    static let raised = Color(hex: 0x242424)
+    static let surface = Color(hex: 0x121212)
+    /// A control or chip on a card, elevated interactive pills.
+    static let raised = Color(hex: 0x1E1E22)
     /// The faintest divider between regions.
-    static let hairline = Color(hex: 0x232323)
+    static let hairline = Color(hex: 0x1E1E1E)
+    /// The line between windows and columns.
+    static let border = Color(hex: 0x1F1F1F)
     /// The line between the items of a list: a step brighter than `hairline`.
-    static let separator = Color(hex: 0x323232)
-    /// The quiet fill of a card that groups rows (the Mac's `panelCard`) and of the composer's tray.
+    static let separator = Color(hex: 0x262626)
+    /// The quiet fill of a card that groups rows and of the composer's tray.
     static let field = Color(hex: 0x111111)
     /// The stroke of the composer and its tray at rest.
     static let fieldStroke = Color(hex: 0x282828)
@@ -33,7 +35,7 @@ enum Theme {
     /// Running text a little softer than `text` (the agent's and Nook's answers).
     static let textStrong = Color(hex: 0xDADADA)
     static let textSecondary = Color(hex: 0xA8A8A8)
-    static let textTertiary = Color(hex: 0x8C8C8C)
+    static let textTertiary = Color(hex: 0x949494)
     /// Dark text on a light fill (the primary button, Nook's accent).
     static let ink = Color(hex: 0x0B0B0D)
 
@@ -46,6 +48,14 @@ enum Theme {
     static let violet = Color(hex: 0xAE94F2)
     /// Working, links, and the quote of someone else's message.
     static let blue = Color(hex: 0x8FB3F0)
+    static let accent = blue
+    /// Music playback accent.
+    static let music = Color(hex: 0xF0936A)
+
+    /// Chat app bubble colors (Mac's Chats tab palette).
+    static let chatMine = Color(hex: 0x17493A)
+    static let chatTheirs = Color(hex: 0x232525)
+    static let chatStamp = Color(hex: 0xA3B0AB)
 
     // MARK: Type
 
@@ -84,13 +94,17 @@ enum Theme {
         /// Tags and inline code.
         static let chip: CGFloat = 6
         /// Buttons and fields.
-        static let control: CGFloat = 10
+        static let control: CGFloat = 8
         /// Cards and rows.
-        static let card: CGFloat = 14
-        /// Groups of rows.
+        static let card: CGFloat = 12
+        /// Groups of rows and floating panels.
         static let panel: CGFloat = 16
         /// A message's bubble.
         static let bubble: CGFloat = 18
+        /// A chat app's message bubble.
+        static let chatBubble: CGFloat = 10
+        /// Corner where two consecutive chat bubbles meet.
+        static let chatJoin: CGFloat = 4
         /// The composer: a one-line box is a capsule.
         static let composer: CGFloat = 24
     }
@@ -159,16 +173,17 @@ enum Theme {
 
     // MARK: Bars
 
-    /// The navigation and tab bars in the same greys and type as the screens under them: titles in semibold like the
-    /// Mac's `display`, the tab bar's counts amber like `NookCountBadge`. Set once at launch.
+    /// The navigation and tab bars styled as frosted dark glass matching the Mac's notch and expanded panels.
     static func applyBarAppearance() {
         let navigation = UINavigationBarAppearance()
         navigation.configureWithTransparentBackground()
-        navigation.backgroundColor = UIColor(canvas)
+        navigation.backgroundColor = UIColor(canvas.opacity(0.85))
+        navigation.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
+        navigation.shadowColor = UIColor(hairline)
         navigation.titleTextAttributes = [.foregroundColor: UIColor(text),
                                           .font: UIFont.systemFont(ofSize: 17, weight: .semibold)]
         navigation.largeTitleTextAttributes = [.foregroundColor: UIColor(text),
-                                               .font: UIFont.systemFont(ofSize: 30, weight: .semibold)]
+                                               .font: UIFont.systemFont(ofSize: 28, weight: .bold)]
         UINavigationBar.appearance().standardAppearance = navigation
         UINavigationBar.appearance().scrollEdgeAppearance = navigation
         UINavigationBar.appearance().compactAppearance = navigation
@@ -182,8 +197,12 @@ enum Theme {
         item.normal.titleTextAttributes = [.foregroundColor: UIColor(textTertiary)]
         item.selected.iconColor = UIColor(text)
         item.selected.titleTextAttributes = [.foregroundColor: UIColor(text)]
+
         let tabs = UITabBarAppearance()
-        tabs.configureWithDefaultBackground()
+        tabs.configureWithTransparentBackground()
+        tabs.backgroundColor = UIColor(canvas.opacity(0.88))
+        tabs.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
+        tabs.shadowColor = UIColor(hairline)
         tabs.stackedLayoutAppearance = item
         tabs.inlineLayoutAppearance = item
         tabs.compactInlineLayoutAppearance = item
@@ -203,18 +222,35 @@ extension Color {
 // MARK: Surfaces
 
 extension View {
-    /// A card on the canvas, the Mac's `panelCard`: a fill a step lighter than the canvas and no stroke. With `tint`
-    /// (something that waits on you, an error) it gets a faint edge in that color; only its symbol carries the color.
+    /// A card on the canvas, the Mac's `panelCard`: a fill a step lighter than the canvas with subtle top specular stroke.
+    /// With `tint` (something that waits on you, an error) it gets an ambient wash and a tinted edge.
     func card(padding: CGFloat = Theme.Spacing.xl, tint: Color? = nil) -> some View {
         self
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
-            .overlay {
-                if let tint {
-                    RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
-                        .strokeBorder(tint.opacity(0.35), lineWidth: 1)
+            .background {
+                ZStack {
+                    Theme.surface
+                    if let tint {
+                        tint.opacity(0.04)
+                    }
                 }
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .strokeBorder(
+                        AnyShapeStyle(
+                            tint != nil
+                                ? AnyShapeStyle(tint!.opacity(0.38))
+                                : AnyShapeStyle(LinearGradient(
+                                    colors: [Theme.text.opacity(0.08), Theme.text.opacity(0.015)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ))
+                        ),
+                        lineWidth: 1
+                    )
             }
     }
 
@@ -235,6 +271,17 @@ struct RowGroup<Content: View>: View {
         VStack(spacing: 0) { content }
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [Theme.text.opacity(0.08), Theme.text.opacity(0.015)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+            )
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
     }
 }
@@ -258,7 +305,9 @@ struct SectionHeader: View {
 
     var body: some View {
         HStack(spacing: Theme.Spacing.sm) {
-            Text(title).font(Theme.TextStyle.label).foregroundStyle(Theme.textTertiary)
+            Text(title)
+                .font(Theme.TextStyle.label)
+                .foregroundStyle(urgent ? Theme.amber : Theme.textTertiary)
             if let count {
                 if urgent {
                     CountBadge(count: count)
@@ -270,6 +319,7 @@ struct SectionHeader: View {
         }
         .padding(.horizontal, Theme.Spacing.xs)
         .padding(.top, Theme.Spacing.xl)
+        .padding(.bottom, Theme.Spacing.xxs)
         .accessibilityAddTraits(.isHeader)
     }
 }
@@ -281,11 +331,12 @@ struct CountBadge: View {
     var body: some View {
         if count > 0 {
             Text(count, format: .number)
-                .font(Theme.rounded(12, .semibold)).monospacedDigit()
+                .font(Theme.rounded(11.5, .semibold)).monospacedDigit()
                 .foregroundStyle(Theme.amber)
                 .padding(.horizontal, Theme.Spacing.sm)
                 .frame(minWidth: 20, minHeight: 20)
-                .background(Theme.amber.opacity(0.14), in: Capsule())
+                .background(Theme.amber.opacity(0.16), in: Capsule())
+                .overlay(Capsule().strokeBorder(Theme.amber.opacity(0.28), lineWidth: 0.5))
         }
     }
 }
@@ -296,22 +347,30 @@ struct StatusPill: View {
     let attention: String
 
     var body: some View {
+        let color = Theme.color(attention)
+        let needs = Theme.needsYou(attention)
         HStack(spacing: Theme.Spacing.xs) {
             if attention == "working" {
-                PulseDot(color: Theme.color(attention))
+                PulseDot(color: color, size: 6)
             } else {
-                Image(systemName: Theme.symbol(attention)).font(Theme.font(11, .semibold)).foregroundStyle(Theme.color(attention))
+                Image(systemName: Theme.symbol(attention))
+                    .font(Theme.font(10.5, .semibold))
+                    .foregroundStyle(color)
             }
             Text(Theme.word(attention))
                 .font(Theme.TextStyle.label)
-                .foregroundStyle(Theme.needsYou(attention) ? Theme.text : Theme.textSecondary)
+                .foregroundStyle(needs ? Theme.text : Theme.textSecondary)
                 .lineLimit(1)
         }
+        .padding(.horizontal, Theme.Spacing.sm + 1)
+        .padding(.vertical, 3)
+        .background(color.opacity(needs ? 0.12 : 0.06), in: Capsule())
+        .overlay(Capsule().strokeBorder(color.opacity(needs ? 0.28 : 0.14), lineWidth: 0.5))
         .accessibilityElement(children: .combine)
     }
 }
 
-/// A live dot that breathes, for work in progress; still with Reduce Motion.
+/// A live dot that breathes with an ambient radar ring, for work in progress; still with Reduce Motion.
 struct PulseDot: View {
     let color: Color
     var size: CGFloat = 7
@@ -319,35 +378,120 @@ struct PulseDot: View {
     @State private var on = false
 
     var body: some View {
-        Circle().fill(color)
-            .frame(width: size, height: size)
-            .opacity(on && !reduceMotion ? 0.35 : 1)
-            .frame(width: 12, height: 12)
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { on = true }
+        ZStack {
+            if !reduceMotion {
+                Circle().fill(color)
+                    .frame(width: size, height: size)
+                    .scaleEffect(on ? 1.9 : 1.0)
+                    .opacity(on ? 0 : 0.45)
             }
+            Circle().fill(color)
+                .frame(width: size, height: size)
+        }
+        .frame(width: 12, height: 12)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) { on = true }
+        }
     }
 }
 
-/// Nook himself, as on the Mac: a round light with two eyes, lit like a ball (a highlight top left, shade towards the
-/// edge). Drawn still; the Mac's orb is the one that moves.
+/// Nook himself, as on the Mac: a round pearl lit like a ball (highlight top left, ambient bounce below, soft iris glow),
+/// with expressive eyes that breathe and blink, and playful squish on tap.
 struct NookMark: View {
     var size: CGFloat = 32
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var breathing = false
+    @State private var blinking = false
+    @State private var squishing = false
+
     var body: some View {
         ZStack {
-            Circle().fill(RadialGradient(colors: [.white, Theme.iris, Color(hex: 0xBDBCC4)],
-                                         center: UnitPoint(x: 0.34, y: 0.3), startRadius: 0, endRadius: size * 0.62))
+            // Ambient soft glow
+            Circle()
+                .fill(Theme.iris.opacity(0.18))
+                .frame(width: size * 1.1, height: size * 1.1)
+                .blur(radius: size * 0.12)
+
+            // Sphere base with specular highlight top-left and soft shadow bottom-right
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [.white, Theme.iris, Color(hex: 0xCAC8D2), Color(hex: 0x8C8B96)],
+                        center: UnitPoint(x: 0.34, y: 0.26),
+                        startRadius: 0,
+                        endRadius: size * 0.65
+                    )
+                )
+
+            // Ambient lower bounce light
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [.clear, Color.white.opacity(0.22)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+
+            // Nook's soulful eyes with delicate catchlights
             HStack(spacing: size * 0.16) {
-                Capsule().fill(Theme.ink).frame(width: size * 0.1, height: size * 0.2)
-                Capsule().fill(Theme.ink).frame(width: size * 0.1, height: size * 0.2)
+                eye
+                eye
             }
             .offset(y: -size * 0.02)
+            .scaleEffect(y: blinking ? 0.08 : 1, anchor: .center)
         }
         .frame(width: size, height: size)
-        .shadow(color: Theme.iris.opacity(0.18), radius: size * 0.18)
+        .shadow(color: Theme.iris.opacity(0.22), radius: size * 0.16, y: 1)
+        .scaleEffect(
+            x: squishing ? 1.14 : (breathing && !reduceMotion ? 1.015 : 0.985),
+            y: squishing ? 0.86 : (breathing && !reduceMotion ? 0.985 : 1.015)
+        )
+        .contentShape(Circle())
+        .onTapGesture { squish() }
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) {
+                breathing = true
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(Double.random(in: 3.5...5.5)))
+                guard !reduceMotion else { continue }
+                withAnimation(.easeInOut(duration: 0.1)) { blinking = true }
+                try? await Task.sleep(for: .milliseconds(120))
+                withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) { blinking = false }
+            }
+        }
         .accessibilityHidden(true)
+    }
+
+    private var eye: some View {
+        ZStack(alignment: .topLeading) {
+            Capsule()
+                .fill(Theme.ink)
+                .frame(width: size * 0.095, height: size * 0.22)
+            // Tiny eye shine
+            Circle()
+                .fill(Color.white.opacity(0.85))
+                .frame(width: size * 0.035, height: size * 0.035)
+                .offset(x: size * 0.015, y: size * 0.025)
+        }
+    }
+
+    private func squish() {
+        Haptics.tap()
+        withAnimation(.spring(response: 0.2, dampingFraction: 0.5)) {
+            squishing = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
+                squishing = false
+            }
+        }
     }
 }
 
@@ -364,7 +508,7 @@ struct Banner: View {
             Text(text).foregroundStyle(Theme.textStrong).frame(maxWidth: .infinity, alignment: .leading)
         }
         .font(Theme.TextStyle.detail)
-        .card(padding: Theme.Spacing.lg)
+        .card(padding: Theme.Spacing.lg, tint: color.opacity(0.3))
     }
 }
 
@@ -382,6 +526,7 @@ struct EmptyState<Actions: View>: View {
                 .foregroundStyle(Theme.textSecondary)
                 .frame(width: 64, height: 64)
                 .background(Theme.surface, in: Circle())
+                .overlay(Circle().strokeBorder(LinearGradient(colors: [Theme.text.opacity(0.08), Theme.text.opacity(0.015)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
             VStack(spacing: Theme.Spacing.sm) {
                 Text(title).font(Theme.TextStyle.heading).foregroundStyle(Theme.text)
                 Text(message).font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
@@ -405,7 +550,20 @@ struct PrimaryButtonStyle: ButtonStyle {
             .font(Theme.TextStyle.strong)
             .foregroundStyle(Theme.ink)
             .frame(maxWidth: .infinity, minHeight: 50)
-            .background(configuration.isPressed ? Color.white : Theme.text, in: Capsule())
+            .background(
+                LinearGradient(
+                    colors: configuration.isPressed
+                        ? [Color.white, Color(hex: 0xEDEDF2)]
+                        : [Color(hex: 0xFCFCFE), Color(hex: 0xE6E5EC)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ),
+                in: Capsule()
+            )
+            .overlay(
+                Capsule().strokeBorder(Color.white.opacity(0.5), lineWidth: 0.5)
+            )
+            .shadow(color: Color.white.opacity(configuration.isPressed ? 0.05 : 0.14), radius: 8, y: 2)
             .opacity(isEnabled ? 1 : 0.4)
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .animation(Theme.press, value: configuration.isPressed)
@@ -426,8 +584,31 @@ struct ActionButtonStyle: ButtonStyle {
             .padding(.horizontal, Theme.Spacing.xl)
             .frame(minHeight: 40)
             .frame(maxWidth: .infinity)
-            .background(filled ? (configuration.isPressed ? Color.white : Theme.text) : Theme.raised, in: Capsule())
+            .background {
+                (filled
+                    ? LinearGradient(
+                        colors: configuration.isPressed
+                            ? [Color.white, Color(hex: 0xEDEDF2)]
+                            : [Color(hex: 0xFCFCFE), Color(hex: 0xE6E5EC)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    : LinearGradient(
+                        colors: [Theme.raised, Theme.surface],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .clipShape(Capsule())
+            }
+            .overlay(
+                Capsule().strokeBorder(
+                    filled ? Color.white.opacity(0.5) : Theme.text.opacity(0.08),
+                    lineWidth: 0.5
+                )
+            )
             .opacity(isEnabled ? (configuration.isPressed && !filled ? 0.7 : 1) : 0.4)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .animation(Theme.press, value: configuration.isPressed)
     }
 }
@@ -440,8 +621,14 @@ struct IconButtonLabel: View {
         Image(systemName: symbol)
             .font(Theme.font(15, .semibold))
             .foregroundStyle(Theme.text)
-            .frame(width: 34, height: 34)
+            .frame(width: 36, height: 36)
             .background(Theme.raised, in: Circle())
+            .overlay(
+                Circle().strokeBorder(
+                    LinearGradient(colors: [Theme.text.opacity(0.1), Theme.text.opacity(0.02)], startPoint: .top, endPoint: .bottom),
+                    lineWidth: 0.5
+                )
+            )
     }
 }
 
@@ -458,13 +645,25 @@ struct FilterChip: View {
             HStack(spacing: Theme.Spacing.xs) {
                 Text(title).font(Theme.TextStyle.label)
                 if let count, count > 0 {
-                    Text(count, format: .number).font(Theme.rounded(12, .medium)).monospacedDigit().opacity(0.7)
+                    Text(count, format: .number).font(Theme.rounded(11.5, .medium)).monospacedDigit().opacity(selected ? 0.8 : 0.6)
                 }
             }
             .foregroundStyle(selected ? Theme.ink : Theme.textStrong)
-            .padding(.horizontal, Theme.Spacing.lg + Theme.Spacing.xxs)
+            .padding(.horizontal, Theme.Spacing.lg)
             .frame(minHeight: 32)
-            .background(selected ? Theme.text : Theme.raised, in: Capsule())
+            .background {
+                (selected
+                    ? LinearGradient(colors: [Color.white, Color(hex: 0xEDEDF2)], startPoint: .top, endPoint: .bottom)
+                    : LinearGradient(colors: [Theme.raised, Theme.surface], startPoint: .top, endPoint: .bottom)
+                )
+                .clipShape(Capsule())
+            }
+            .overlay(
+                Capsule().strokeBorder(
+                    selected ? Color.white.opacity(0.5) : Theme.text.opacity(0.08),
+                    lineWidth: 0.5
+                )
+            )
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -492,11 +691,22 @@ struct ChoiceChip: View {
                 Spacer(minLength: 0)
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                     .font(Theme.font(19))
-                    .foregroundStyle(selected ? Theme.text : Theme.textTertiary)
+                    .foregroundStyle(selected ? Theme.iris : Theme.textTertiary)
             }
             .padding(Theme.Spacing.lg)
             .background(selected ? Theme.raised : Theme.surface,
                         in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .strokeBorder(
+                        AnyShapeStyle(
+                            selected
+                                ? AnyShapeStyle(Theme.iris.opacity(0.35))
+                                : AnyShapeStyle(LinearGradient(colors: [Theme.text.opacity(0.08), Theme.text.opacity(0.015)], startPoint: .top, endPoint: .bottom))
+                        ),
+                        lineWidth: 1
+                    )
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

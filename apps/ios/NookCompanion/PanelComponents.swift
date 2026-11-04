@@ -203,10 +203,16 @@ struct NookIconLabel: View {
 
     var body: some View {
         Image(systemName: symbol)
-            .font(Theme.font(size * 0.4, .semibold))
+            .font(Theme.font(size * 0.42, .semibold))
             .foregroundStyle(Theme.text)
             .frame(width: size, height: size)
             .background(Theme.raised, in: Circle())
+            .overlay(
+                Circle().strokeBorder(
+                    LinearGradient(colors: [Theme.text.opacity(0.12), Theme.text.opacity(0.02)], startPoint: .top, endPoint: .bottom),
+                    lineWidth: 0.5
+                )
+            )
             .contentShape(Circle())
     }
 }
@@ -235,7 +241,10 @@ struct NookSplitButton: View {
                 .lineLimit(1)
                 .padding(.horizontal, Theme.Spacing.xl + Theme.Spacing.xxs)
                 .frame(maxHeight: .infinity)
-                .background(Theme.text, in: Capsule())
+                .background(
+                    LinearGradient(colors: [Color.white, Color(hex: 0xEDEDF2)], startPoint: .top, endPoint: .bottom),
+                    in: Capsule()
+                )
                 .contentShape(Capsule())
             }
             .buttonStyle(PressFade())
@@ -256,6 +265,12 @@ struct NookSplitButton: View {
         .padding(3)
         .frame(height: 42)
         .background(Theme.raised, in: Capsule())
+        .overlay(
+            Capsule().strokeBorder(
+                LinearGradient(colors: [Theme.text.opacity(0.12), Theme.text.opacity(0.02)], startPoint: .top, endPoint: .bottom),
+                lineWidth: 0.5
+            )
+        )
         .fixedSize(horizontal: true, vertical: false)
     }
 }
@@ -293,7 +308,7 @@ struct NoticeCard<Actions: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.md) {
-                Image(systemName: symbol).font(Theme.font(14, .semibold)).foregroundStyle(tone)
+                Image(systemName: symbol).font(Theme.font(15, .semibold)).foregroundStyle(tone)
                 VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                     Text(title).font(Theme.TextStyle.strong).foregroundStyle(Theme.text).lineLimit(3)
                     if let detail, !detail.isEmpty {
@@ -305,8 +320,24 @@ struct NoticeCard<Actions: View>: View {
         }
         .padding(Theme.Spacing.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous).strokeBorder(tone.opacity(0.35), lineWidth: 1))
+        .background {
+            ZStack {
+                Theme.surface
+                tone.opacity(0.04)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [tone.opacity(0.45), tone.opacity(0.15)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
     }
 }
 
@@ -314,26 +345,43 @@ struct NoticeCard<Actions: View>: View {
 struct NookSearchField: View {
     let prompt: LocalizedStringKey
     @Binding var text: String
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
-            Image(systemName: "magnifyingglass").font(Theme.font(14, .medium)).foregroundStyle(Theme.textTertiary)
+            Image(systemName: "magnifyingglass")
+                .font(Theme.font(14, .medium))
+                .foregroundStyle(isFocused ? Theme.text : Theme.textTertiary)
             TextField(prompt, text: $text)
                 .font(Theme.TextStyle.body)
                 .foregroundStyle(Theme.text)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .submitLabel(.search)
+                .focused($isFocused)
             if !text.isEmpty {
-                Button { text = "" } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textTertiary)
+                Button {
+                    Haptics.tap()
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(Theme.font(14, .medium))
+                        .foregroundStyle(Theme.textTertiary)
                 }
                 .accessibilityLabel("Clear")
             }
         }
         .padding(.horizontal, Theme.Spacing.lg)
-        .frame(height: 40)
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+        .frame(height: 42)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.control + 2, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.control + 2, style: .continuous)
+                .strokeBorder(
+                    isFocused ? Theme.iris.opacity(0.35) : Theme.fieldStroke,
+                    lineWidth: 1
+                )
+        )
+        .animation(Theme.reveal, value: isFocused)
     }
 }
 
@@ -388,8 +436,8 @@ struct SessionComposer<Controls: View>: View {
         .padding(.top, hasControls ? Theme.Spacing.xl : Theme.Spacing.md)
         .padding(.bottom, Theme.Spacing.md)
         .background(shape.fill(Theme.surface))
-        .overlay(shape.strokeBorder(focused.wrappedValue ? Theme.iris.opacity(0.28) : Theme.fieldStroke, lineWidth: 1))
-        .overlay(shape.strokeBorder(LinearGradient(colors: [Theme.text.opacity(0.06), Theme.text.opacity(0)],
+        .overlay(shape.strokeBorder(focused.wrappedValue ? Theme.iris.opacity(0.35) : Theme.fieldStroke, lineWidth: 1))
+        .overlay(shape.strokeBorder(LinearGradient(colors: [Theme.text.opacity(0.08), Theme.text.opacity(0)],
                                                    startPoint: .top, endPoint: .center), lineWidth: 1).allowsHitTesting(false))
         .animation(Theme.reveal, value: focused.wrappedValue)
         .contentShape(shape)
@@ -418,7 +466,10 @@ struct SessionComposer<Controls: View>: View {
     }
 
     private func round(_ symbol: String, label: LocalizedStringKey, active: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
             Group {
                 if sending {
                     ProgressView().controlSize(.small).tint(Theme.onIris)
@@ -427,8 +478,18 @@ struct SessionComposer<Controls: View>: View {
                 }
             }
             .foregroundStyle(active ? Theme.onIris : Theme.textTertiary)
-            .frame(width: 34, height: 34)
-            .background(active ? Theme.iris : Theme.raised, in: Circle())
+            .frame(width: 36, height: 36)
+            .background {
+                (active
+                    ? LinearGradient(colors: [Color.white, Color(hex: 0xEDEDF2)], startPoint: .top, endPoint: .bottom)
+                    : LinearGradient(colors: [Theme.raised, Theme.surface], startPoint: .top, endPoint: .bottom)
+                )
+                .clipShape(Circle())
+            }
+            .overlay(
+                Circle().strokeBorder(active ? Color.white.opacity(0.6) : Theme.text.opacity(0.08), lineWidth: 0.5)
+            )
+            .shadow(color: active ? Color.white.opacity(0.12) : Color.clear, radius: 4, y: 1)
             .contentShape(Circle())
         }
         .buttonStyle(PressFade())
@@ -551,8 +612,15 @@ struct SuggestionGrid: View {
                     }
                     .padding(Theme.Spacing.lg)
                     .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
-                    .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
+                    .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                            .strokeBorder(
+                                LinearGradient(colors: [Theme.text.opacity(0.08), Theme.text.opacity(0.015)], startPoint: .top, endPoint: .bottom),
+                                lineWidth: 1
+                            )
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
                 }
                 .buttonStyle(PressFade())
             }

@@ -498,8 +498,22 @@ struct InboxBubble: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, Theme.Spacing.lg)
                 .padding(.vertical, Theme.Spacing.md)
-                .background(line.fromMe ? Theme.mint.opacity(0.13) : Theme.raised,
+                .background(line.fromMe ? Theme.chatMine : Theme.chatTheirs,
                             in: RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    (line.fromMe ? Theme.mint : Color.white).opacity(0.14),
+                                    Color.clear
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 0.5
+                        )
+                )
                 if !line.reactions.isEmpty {
                     Text(line.reactions.joined(separator: "  "))
                         .font(Theme.TextStyle.caption)

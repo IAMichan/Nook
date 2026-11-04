@@ -99,7 +99,7 @@ struct ChatRow: View {
             }
             if conversation.busy {
                 HStack(spacing: Theme.Spacing.sm) {
-                    PulseDot(color: Theme.blue, size: 6)
+                    PulseDot(color: Theme.accent, size: 6)
                     Text("Writing…")
                 }
                 .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
@@ -108,8 +108,19 @@ struct ChatRow: View {
             }
         }
         .padding(.horizontal, Theme.Spacing.lg)
-        .padding(.vertical, Theme.Spacing.md + Theme.Spacing.xxs)
+        .padding(.vertical, Theme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                .fill(conversation.waiting ? Theme.amber.opacity(0.05) : Theme.surface.opacity(0.4))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                .strokeBorder(
+                    conversation.waiting ? Theme.amber.opacity(0.25) : Theme.border.opacity(0.4),
+                    lineWidth: 0.5
+                )
+        )
         .contentShape(Rectangle())
     }
 }
