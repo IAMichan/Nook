@@ -153,6 +153,9 @@ struct NewSessionComposer: View {
                     DropdownDivider()
                 }
                 DropdownRow(symbol: "folder.badge.plus", title: tr("ws.new.chooseFolder")) { chooseFolder() }
+                // A folder of its own under ~/.nook/scratch, for a question or a try-out that belongs to no project.
+                DropdownRow(symbol: "tray", title: tr("ws.new.noProject"), detail: tr("ws.new.noProjectDetail"),
+                            chosen: remoteMachine == nil && ScratchProjects.isScratch(config.projectPath)) { chooseNoProject() }
                 DropdownRow(symbol: "arrow.down.circle", title: tr("ws.new.clone")) { showClone = true }
                 // Another machine over SSH (Settings › Agents › Workspace › Machines).
                 let machines = RemoteMachines.load()
@@ -206,6 +209,7 @@ struct NewSessionComposer: View {
             let folder = remoteFolder.isEmpty ? "…" : URL(fileURLWithPath: remoteFolder).lastPathComponent
             return remoteMachine.name + ":" + folder
         }
+        if let project, ScratchProjects.isScratch(project.path) { return tr("ws.new.noProject") }
         return project?.name ?? tr("compose.pickProject")
     }
 
@@ -429,7 +433,10 @@ struct NewSessionComposer: View {
                         .help(tr("ws.remote.baseHelp"))
                 }
             } else {
-                isolationDropdown(worktreeAllowed: worktreeAllowed, reason: worktreeBlockedReason)
+                // A folder that is no git repository has no branch or worktree to choose.
+                if project == nil || project?.repoRoot != nil {
+                    isolationDropdown(worktreeAllowed: worktreeAllowed, reason: worktreeBlockedReason)
+                }
 
                 Spacer(minLength: 8)
 
@@ -521,9 +528,11 @@ struct NewSessionComposer: View {
     // MARK: State
 
     private var projectMenu: (favorites: [String], recent: [String]) {
+        // Folders of sessions without a project stay out of Recent; one you turned into a project is a favorite.
         ProjectSettings.projectMenu(
             favorites: settings.favoriteProjects,
-            recent: [config.projectPath, settings.lastProject] + settings.recentProjects + app.history.sessions.map(\.cwd)
+            recent: ([config.projectPath, settings.lastProject] + settings.recentProjects + app.history.sessions.map(\.cwd))
+                .filter { !ScratchProjects.isScratch($0) }
         )
     }
 
@@ -725,9 +734,12 @@ struct NewSessionComposer: View {
 
     private func select(_ path: String) {
         remoteMachine = nil
+        // A folder made for "No project" that nothing started in goes again when you pick another.
+        if config.projectPath != path { ScratchProjects.discardIfEmpty(config.projectPath) }
         config.projectPath = path
-        // The next new session opens on the project you chose last, also when this one never started.
-        settings.lastProject = path
+        // The next new session opens on the project you chose last, also when this one never started; a session
+        // without a project leaves that alone.
+        if !ScratchProjects.isScratch(path) { settings.lastProject = path }
         applyProjectDefaults(path)
         error = nil
         if let cached = workspace.cachedProject(path) {
@@ -759,6 +771,16 @@ struct NewSessionComposer: View {
             config.baseBranch = base
         } else {
             config.baseBranch = info.currentBranch ?? info.branches.first ?? ""
+        }
+    }
+
+    /// "No project": a new empty folder under ~/.nook/scratch, named after today and what you typed so far; it takes
+    /// the prompt's name when the session starts.
+    private func chooseNoProject() {
+        do {
+            select(try ScratchProjects.create(prompt: config.task))
+        } catch let failure {
+            error = failure.localizedDescription
         }
     }
 
@@ -805,6 +827,10 @@ struct NewSessionComposer: View {
         starting = true
         error = nil
         var request = checkedConfig
+        // A folder made for "No project" before the prompt was typed gets the prompt's name now.
+        if request.remote == nil, ScratchProjects.isScratch(request.projectPath) {
+            request.projectPath = ScratchProjects.rename(request.projectPath, prompt: request.task)
+        }
         // References in the text reach the agent as markers plus the context envelope.
         request.task = composerModel.outgoing(request.task).send
         // In Plan mode the agent is read-only; the safest permissions go along for when you continue later.

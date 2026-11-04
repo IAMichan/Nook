@@ -23,6 +23,10 @@ struct AgentRunPanel: View {
     /// "Back to before this message": the message, and why it could not, if it could not.
     @State private var revertTarget: RunEvent?
     @State private var revertError: String?
+    /// "Edit from here": the message to go back to before and write again, why it could not, and whether it runs.
+    @State private var editTarget: RunEvent?
+    @State private var editError: String?
+    @State private var editWorking = false
     /// Bumped when the session's machine was unlocked with its password, so the field goes away.
     @State private var unlockedAt: Date?
     @State private var reverting = false
@@ -172,6 +176,9 @@ struct AgentRunPanel: View {
                 revertTarget = nil
                 revertError = nil
                 reverting = false
+                editTarget = nil
+                editError = nil
+                editWorking = false
                 openBlocks = []
                 expanded = []
                 countedLines = [:]
@@ -578,6 +585,8 @@ struct AgentRunPanel: View {
         }
         if let target = revertTarget {
             revertConfirmation(target)
+        } else if let target = editTarget {
+            editConfirmation(target)
         } else if confirmDelete {
             deleteConfirmation(run)
         } else if let question = workspace.questions[runID]?.first {
@@ -936,7 +945,11 @@ struct AgentRunPanel: View {
                 workspace.send(runID, text: tr("ws.plan.implementPrompt"))
             }
         } else if event.kind == .user {
-            eventView(event)
+            eventView(event, onEdit: workspace.canEditFromHere(runID, before: event.date) ? {
+                editError = nil
+                revertTarget = nil
+                editTarget = event
+            } : nil)
                 .contextMenu {
                     // "Edit from here": the worktree's files go back to how they were before this message.
                     Button(tr("ws.revert.menu")) {
@@ -1009,7 +1022,54 @@ struct AgentRunPanel: View {
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.surface))
     }
 
-    private func eventView(_ event: RunEvent, final: Bool = true, extras: AnyView? = nil, answerable: Bool = false) -> some View {
+    /// "Edit from here": go back to before the message, keeping the files as they are or putting them back too (only
+    /// where they can go back, see `canRevert`), then the message and its pictures are in the composer again.
+    private func editConfirmation(_ target: RunEvent) -> some View {
+        let canRevertFiles = workspace.canRevert(runID, before: target.date)
+        return AdaptiveActionRow(spacing: NookTheme.Spacing.md) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                Text(tr("ws.edit.confirm"))
+                    .font(NookTheme.TextStyle.strong)
+                    .foregroundStyle(NookTheme.paper)
+                Text(editError ?? tr(canRevertFiles ? "ws.edit.detail" : "ws.edit.detailKeepOnly", ToolSummary.oneLine(target.text, 60)))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(editError == nil ? NookTheme.textSecondary : NookTheme.coralSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } actions: {
+            NookGhostButton(title: tr("button.cancel")) { editTarget = nil }
+            NookGhostButton(title: tr("ws.edit.keepFiles")) { editFromHere(target, revertingFiles: false) }
+            if canRevertFiles {
+                NookPrimaryButton(title: editWorking ? tr("ws.revert.working") : tr("ws.edit.revertFiles")) {
+                    editFromHere(target, revertingFiles: true)
+                }
+            }
+        }
+        .padding(NookTheme.Spacing.lg)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.surface))
+    }
+
+    private func editFromHere(_ target: RunEvent, revertingFiles: Bool) {
+        guard !editWorking else { return }
+        editWorking = true
+        Task {
+            do {
+                try await workspace.editFromHere(runID, before: target.date, revertingFiles: revertingFiles)
+                editTarget = nil
+                // The message goes back into the composer: its words, and the pictures that went as paths in it.
+                let parts = ImageAttachment.splittingPaths(from: target.text)
+                draft = parts.text
+                images = parts.images.compactMap(ImageAttachment.init(url:))
+                focused = true
+            } catch {
+                editError = error.localizedDescription
+            }
+            editWorking = false
+        }
+    }
+
+    private func eventView(_ event: RunEvent, final: Bool = true, extras: AnyView? = nil, answerable: Bool = false,
+                           onEdit: (() -> Void)? = nil) -> some View {
         EventRow(
             event: event,
             final: final,
@@ -1025,7 +1085,8 @@ struct AgentRunPanel: View {
             showFile: sideLink.showFile,
             // A session on another machine has its files there, not on this Mac.
             directory: workspace.run(runID).flatMap { $0.isRemote ? nil : $0.workingDirectory },
-            shownFile: sideLink.shownFile
+            shownFile: sideLink.shownFile,
+            onEdit: onEdit
         )
         // Undone by going back to before an earlier message: the agent no longer remembers it.
         .opacity(event.rolledBack == true ? 0.45 : 1)

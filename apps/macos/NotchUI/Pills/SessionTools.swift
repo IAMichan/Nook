@@ -368,7 +368,9 @@ struct SessionWorkbench<Conversation: View>: View {
                     TurnDiffPanel(turns: outputs.turns, selection: Binding(get: { diffSelection ?? selection }, set: { diffSelection = $0 }),
                                   directory: directory.isEmpty ? nil : directory, wide: PanelLayout.wide($outputsWidth),
                                   load: runID.flatMap { id in
-                                      workspace.run(id)?.isRemote == false ? { turn, files in try await gitDiff(id, turn: turn, files: files) } : nil
+                                      workspace.run(id)?.isRemote == false ? { turn, files, options in
+                                          try await gitDiff(id, turn: turn, files: files, options: options)
+                                      } : nil
                                   }) {
                         withAnimation(NookTheme.reveal) { diffSelection = nil }
                     }
@@ -526,11 +528,11 @@ struct SessionWorkbench<Conversation: View>: View {
     }
 
     /// The real diff of these files in this turn (or in all turns), from the session's git snapshots.
-    private func gitDiff(_ id: UUID, turn: TurnDiff, files: [TurnDiff.File]) async throws -> String {
+    private func gitDiff(_ id: UUID, turn: TurnDiff, files: [TurnDiff.File], options: DiffReadOptions) async throws -> String {
         guard let start = turn.start, let end = turn.end else { return "" }
         var parts: [String] = []
         for file in files {
-            parts.append(try await workspace.turnDiff(id, path: file.path, start: start, end: end))
+            parts.append(try await workspace.turnDiff(id, path: file.path, start: start, end: end, options: options))
         }
         return parts.filter { !$0.isEmpty }.joined(separator: "\n")
     }

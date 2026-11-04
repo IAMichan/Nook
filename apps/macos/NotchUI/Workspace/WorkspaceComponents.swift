@@ -186,8 +186,10 @@ struct WSEmptyState: View {
 }
 
 /// A unified diff as a code review shows it: line numbers of the old and new file in a gutter, hunks as separators,
-/// added and removed lines tinted, and the changed words of an edited line highlighted. Long lines wrap. Code in a
-/// language `SyntaxTokenizer` knows shows plain first and gets its syntax colors once a background task has them.
+/// added and removed lines tinted, and the changed words of an edited line highlighted. Code in a language
+/// `SyntaxTokenizer` knows shows plain first and gets its syntax colors once a background task has them. Inside a
+/// `StackedDiffList` it follows the list's `DiffDisplay`: long lines wrap or scroll sideways, the old and new file
+/// stand side by side, and the words of a find are marked.
 struct DiffText: View, Equatable {
     /// Review comments on this file: shown under their line. With `onComment`, hovering a line
     /// offers a comment button.
@@ -207,16 +209,22 @@ struct DiffText: View, Equatable {
     @State private var colored: DiffSyntaxStyle.Lines?
     @State private var editing: Int?
     @State private var commentDraft = ""
+    @Environment(\.diffDisplay) private var display
+    /// The width the diff is given, so lines that scroll sideways (not wrapped) still fill it.
+    @State private var width: Double = 0
 
     /// What the comment actions act on (a session and file): with the same diff in another session, the view is drawn
     /// again so its actions are that session's.
     private let scope: String?
+    /// The file's path as the stacked list names it: the scroll ids of the lines, and which file a find's match is in.
+    private let anchor: String?
 
     init(text: String, comments: [ReviewComment] = [],
          onComment: ((_ line: Int?, _ code: String, _ text: String) -> Void)? = nil,
          onRemoveComment: ((UUID) -> Void)? = nil, stacked: Bool = false, path: String? = nil, scope: String? = nil) {
         self.scope = scope
         self.stacked = stacked
+        self.anchor = path
         self.text = text
         syntaxPath = path ?? DiffSyntax.firstPath(in: text)
         let key = DiffSyntax.Key(path: syntaxPath, text: text)
@@ -244,7 +252,7 @@ struct DiffText: View, Equatable {
     /// a row of its own. The closures do the same for the same `scope`.
     static func == (a: DiffText, b: DiffText) -> Bool {
         a.syntaxKey == b.syntaxKey && a.syntaxPath == b.syntaxPath && a.stacked == b.stacked && a.scope == b.scope
-            && a.comments == b.comments
+            && a.anchor == b.anchor && a.comments == b.comments
             && (a.onComment == nil) == (b.onComment == nil) && (a.onRemoveComment == nil) == (b.onRemoveComment == nil)
     }
 
@@ -257,7 +265,16 @@ struct DiffText: View, Equatable {
 
     var body: some View {
         Group {
-            if stacked {
+            if stacked && !display.wrap {
+                // Lines keep their length and the file scrolls sideways; every line is at least as wide as the view, so
+                // the tints of the short ones still reach its edge.
+                ScrollView(.horizontal) {
+                    LazyVStack(alignment: .leading, spacing: 0) { lines }
+                        .frame(minWidth: width, alignment: .leading)
+                }
+                .background(WS.code)
+                .onLayoutWidthChange { width = $0 }
+            } else if stacked {
                 // Lazy as well inside the list's own lazy stack: a long file builds only the lines in view, not all of
                 // them at once when it scrolls in.
                 LazyVStack(alignment: .leading, spacing: 0) { lines }
@@ -284,6 +301,9 @@ struct DiffText: View, Equatable {
 
     @ViewBuilder
     private var lines: some View {
+        if display.split && stacked {
+            splitLines
+        } else {
                 ForEach(rows.indices, id: \.self) { index in
                     let row = rows[index]
                     switch row.kind {
@@ -292,6 +312,7 @@ struct DiffText: View, Equatable {
                     case .note: noteRow(row)
                     case .context, .add, .remove:
                         lineRow(row, index: index)
+                            .id(rowID(index))
                         // Most diffs have no comments: no search through them for every line.
                         if !comments.isEmpty {
                             ForEach(comments.filter { $0.code == row.raw && $0.line == row.new }) { comment in
@@ -303,15 +324,68 @@ struct DiffText: View, Equatable {
                         }
                     }
                 }
+        }
+    }
+
+    /// The old file on the left and the new on the right (`SplitDiff`); hunk headers and notes span both. Comments show
+    /// under the line they are on; new ones are written in the one-column view.
+    @ViewBuilder
+    private var splitLines: some View {
+        let split = SplitDiff.lines(rows)
+        ForEach(split.indices, id: \.self) { index in
+            let line = split[index]
+            if let full = line.full {
+                switch rows[full].kind {
+                case .hunk: hunkRow(rows[full])
+                case .file: EmptyView()
+                default: noteRow(rows[full])
+                }
+            } else {
+                DiffSplitRow(left: line.left.map(cell), right: line.right.map(cell), numberWidth: numberWidth, wrap: display.wrap)
+                    .equatable()
+                    .id(rowID(line.left ?? line.right ?? index))
+                if !comments.isEmpty, let right = line.right {
+                    ForEach(comments.filter { $0.code == rows[right].raw && $0.line == rows[right].new }) { comment in
+                        commentRow(comment)
+                    }
+                }
+            }
+        }
+    }
+
+    private func cell(_ index: Int) -> DiffSplitRow.Cell {
+        let row = rows[index]
+        return DiffSplitRow.Cell(row: row, code: marked(colored?[index] ?? code(row), row: index), tint: accent(row.kind))
+    }
+
+    /// The scroll id of a code line, which a find in the stacked list scrolls to.
+    private func rowID(_ index: Int) -> String {
+        DiffFind.rowID(path: anchor ?? "", row: index)
     }
 
     private func lineRow(_ row: UnifiedDiff.Row, index: Int) -> some View {
-        DiffLineRow(row: row, code: colored?[index] ?? code(row), tint: accent(row.kind), numberWidth: numberWidth,
-                    commentable: onComment != nil, editing: editing == index) {
+        DiffLineRow(row: row, code: marked(colored?[index] ?? code(row), row: index), tint: accent(row.kind),
+                    numberWidth: numberWidth, commentable: onComment != nil, editing: editing == index,
+                    wrap: display.wrap || !stacked) {
             commentDraft = ""
             editing = index
         }
         .equatable()
+    }
+
+    /// The words of an open find marked in the line, the selected match stronger than the others.
+    private func marked(_ code: AttributedString, row index: Int) -> AttributedString {
+        guard !display.query.isEmpty else { return code }
+        let current = display.current.flatMap { $0.path == anchor && $0.row == index ? $0.occurrence : nil }
+        var code = code
+        var start = code.startIndex
+        var occurrence = 0
+        while start < code.endIndex, let range = code[start...].range(of: display.query, options: DiffFind.options) {
+            code[range].backgroundColor = NookTheme.amber.opacity(occurrence == current ? 0.75 : 0.28)
+            occurrence += 1
+            start = range.upperBound
+        }
+        return code
     }
 
     /// The line's code, with the changed part of an edited line on a stronger tint.
@@ -445,7 +519,7 @@ struct DiffText: View, Equatable {
 /// One code line of a `DiffText`: the old and new line number, the marker, and the code. A view of its own with its own
 /// hover, so the pointer passing over lines (also while the list scrolls under it) redraws only the line it enters and
 /// leaves, not every line of the diff.
-private struct DiffLineRow: View, Equatable {
+struct DiffLineRow: View, Equatable {
     static let markerWidth: CGFloat = 16
     private static let codeColor = NookTheme.textStrong
 
@@ -457,12 +531,14 @@ private struct DiffLineRow: View, Equatable {
     let commentable: Bool
     /// The comment editor is open under this line: no button over it.
     let editing: Bool
+    /// Long lines wrap; otherwise they keep their length and the diff scrolls sideways.
+    let wrap: Bool
     let comment: () -> Void
     @State private var hovering = false
 
     static func == (a: DiffLineRow, b: DiffLineRow) -> Bool {
         a.row == b.row && a.code == b.code && a.tint == b.tint && a.numberWidth == b.numberWidth
-            && a.commentable == b.commentable && a.editing == b.editing
+            && a.commentable == b.commentable && a.editing == b.editing && a.wrap == b.wrap
     }
 
     var body: some View {
@@ -476,7 +552,8 @@ private struct DiffLineRow: View, Equatable {
             Text(code)
                 .font(NookTheme.mono(11.5))
                 .foregroundStyle(row.kind == .context ? Self.codeColor.opacity(0.82) : Self.codeColor)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(wrap ? nil : 1)
+                .fixedSize(horizontal: !wrap, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.trailing, 28)
                 .textSelection(.enabled)
@@ -513,6 +590,60 @@ private struct DiffLineRow: View, Equatable {
             .padding(.trailing, 7)
             .frame(width: numberWidth, alignment: .trailing)
             .padding(.top, 1)
+    }
+}
+
+/// One line of a side-by-side diff: the old file's row on the left, the new file's on the right, each with its line
+/// number, marker and code; an empty side (a line only added or only removed) stays blank.
+struct DiffSplitRow: View, Equatable {
+    struct Cell: Equatable {
+        let row: UnifiedDiff.Row
+        let code: AttributedString
+        let tint: Color?
+    }
+
+    let left: Cell?
+    let right: Cell?
+    let numberWidth: CGFloat
+    let wrap: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            side(left, number: left?.row.old)
+            NookDivider(vertical: true)
+            side(right, number: right?.row.new)
+        }
+    }
+
+    private func side(_ cell: Cell?, number: Int?) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            Text(number.map(String.init) ?? "")
+                .font(NookTheme.mono(10.5))
+                .foregroundStyle(WS.tertiary)
+                .padding(.trailing, 7)
+                .frame(width: numberWidth, alignment: .trailing)
+                .padding(.top, 1)
+            Text(verbatim: cell?.row.kind == .add ? "+" : cell?.row.kind == .remove ? "−" : "")
+                .font(NookTheme.mono(11.5, .semibold))
+                .foregroundStyle(cell?.tint ?? .clear)
+                .frame(width: DiffLineRow.markerWidth, alignment: .center)
+            Text(cell?.code ?? AttributedString(" "))
+                .font(NookTheme.mono(11.5))
+                .foregroundStyle(cell?.row.kind == .context ? NookTheme.textStrong.opacity(0.82) : NookTheme.textStrong)
+                .lineLimit(wrap ? nil : 1)
+                .fixedSize(horizontal: !wrap, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, NookTheme.Spacing.md)
+                .textSelection(.enabled)
+        }
+        .padding(.vertical, 1.5)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(alignment: .leading) {
+            HStack(spacing: 0) {
+                (cell == nil ? WS.subtle.opacity(0.3) : cell?.tint?.opacity(0.16) ?? WS.subtle.opacity(0.5)).frame(width: numberWidth)
+                (cell == nil ? WS.subtle.opacity(0.3) : cell?.tint?.opacity(0.08) ?? .clear)
+            }
+        }
     }
 }
 

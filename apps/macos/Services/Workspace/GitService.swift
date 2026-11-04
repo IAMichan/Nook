@@ -92,6 +92,19 @@ struct GitFileChange: Equatable, Identifiable, Sendable {
     var id: String { path }
 }
 
+/// One commit in the diff panel's list of commits.
+struct GitCommitSummary: Equatable, Identifiable, Sendable {
+    /// The full hash.
+    let id: String
+    /// The first parent; nil for the first commit of a repository.
+    var parent: String?
+    var subject: String
+    var author: String
+    var date: Date?
+
+    var shortID: String { String(id.prefix(7)) }
+}
+
 struct GitStatus: Equatable, Sendable {
     var branch: String?
     var upstream: String?
@@ -328,25 +341,71 @@ struct GitService: Sendable {
         return (ahead: parts[1], behind: parts[0])
     }
 
-    /// Diff of a single file relative to HEAD (or empty tree if no commits exist yet).
-    func diff(_ directory: String, file: GitFileChange) throws -> String {
+    /// Diff of a single file relative to HEAD (or empty tree if no commits exist yet). `ignoreWhitespace` leaves out
+    /// changes that only touch whitespace (`-w`).
+    func diff(_ directory: String, file: GitFileChange, ignoreWhitespace: Bool = false) throws -> String {
+        let whitespace = ignoreWhitespace ? ["-w"] : []
         if file.kind == .untracked {
             // Exit code 1 means "differences exist" here, not an error.
-            return try run(["diff", "--no-color", "--no-index", "--", "/dev/null", file.path], in: directory, okStatuses: [0, 1])
+            return try run(["diff", "--no-color"] + whitespace + ["--no-index", "--", "/dev/null", file.path], in: directory,
+                           okStatuses: [0, 1])
         }
         let base = hasCommits(directory) ? "HEAD" : Self.emptyTree
-        var arguments = ["diff", "--no-color", "-M", base, "--"]
+        var arguments = ["diff", "--no-color", "-M"] + whitespace + [base, "--"]
         if let old = file.oldPath { arguments.append(old) }
         arguments.append(file.path)
         return try run(arguments, in: directory)
     }
 
     /// One file between two snapshots (`to` nil: the files as they are now), for what a single turn changed.
-    func diff(_ directory: String, path: String, from: String, to: String?) throws -> String {
-        var arguments = ["diff", "--no-color", "-M", from]
+    func diff(_ directory: String, path: String, from: String, to: String?, ignoreWhitespace: Bool = false) throws -> String {
+        var arguments = ["diff", "--no-color", "-M"] + (ignoreWhitespace ? ["-w"] : []) + [from]
         if let to { arguments.append(to) }
         arguments += ["--", path]
         return try run(arguments, in: directory)
+    }
+
+    /// Makes `directory` a git repository (`git init`), for a session folder that becomes a project.
+    func initRepository(_ directory: String) throws {
+        _ = try run(["init"], in: directory)
+    }
+
+    // MARK: Commits
+
+    /// The newest `count` commits of the current branch, newest first, for the diff panel's list of commits.
+    func commits(_ directory: String, count: Int = 50) -> [GitCommitSummary] {
+        guard hasCommits(directory),
+              let text = try? run(["log", "-n", String(count), "--no-color", "--format=" + Self.logFormat], in: directory, timeout: 15)
+        else { return [] }
+        return Self.parseLog(text)
+    }
+
+    /// The files one commit changed, with their lines, against its first parent (the empty tree for the first commit).
+    func changes(_ directory: String, commit: GitCommitSummary) throws -> [GitFileChange] {
+        let parent = commit.parent ?? Self.emptyTree
+        var files = Self.parseNameStatus(try run(["diff", "--name-status", "-z", "-M", parent, commit.id], in: directory))
+        let counts = Self.parseNumstat((try? run(["diff", "--numstat", "-z", "-M", parent, commit.id], in: directory)) ?? "")
+        for index in files.indices {
+            if let count = counts[files[index].path] {
+                files[index].added = count.added
+                files[index].removed = count.removed
+            }
+        }
+        return files
+    }
+
+    /// Fields of `git log`, split by the unit separator, one commit per record separator: hash, parents, subject,
+    /// author, author date (Unix seconds).
+    static let logFormat = "%H%x1f%P%x1f%s%x1f%an%x1f%at%x1e"
+
+    static func parseLog(_ text: String) -> [GitCommitSummary] {
+        text.split(separator: "\u{1e}").compactMap { record in
+            let fields = record.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\u{1f}")
+            guard fields.count >= 5, !fields[0].isEmpty else { return nil }
+            let parents = fields[1].split(separator: " ").map(String.init)
+            return GitCommitSummary(id: fields[0], parent: parents.first, subject: fields[2], author: fields[3],
+                                    date: TimeInterval(fields[4]).map { Date(timeIntervalSince1970: $0) })
+        }
     }
 
     /// Lines added and removed per file between two snapshots (`to` nil: the files as they are now), keyed by the path

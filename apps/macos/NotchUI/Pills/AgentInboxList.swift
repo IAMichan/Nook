@@ -37,6 +37,8 @@ struct AgentInboxList: View {
     @State private var clickedID: String?
     /// The past sessions by id, made again only when the history changes (`pastSession`).
     @State private var pastIndex = PastSessionIndex()
+    /// The row being renamed from its menu, by its id.
+    @State private var renaming: String?
 
     private static let wakeFormat: DateFormatter = {
         let format = DateFormatter()
@@ -530,7 +532,16 @@ struct AgentInboxList: View {
             .selectable(active: selection.isActive, selected: selection.contains(item.id)) {
                 withAnimation(NookTheme.reveal) { selection.toggle(item.id) }
             }
-            .contextMenu { contextMenu(item, entry) }
+            .contextMenu { contextMenu(item, entry, in: section) }
+            // "Rename": a field over the row's title, Return keeps the name and Escape leaves it.
+            .overlay {
+                if renaming == item.id, let id = runID(item) {
+                    InboxRenameField(name: item.title) { name in
+                        if let name { app.workspace.rename(id, to: name) }
+                        renaming = nil
+                    }
+                }
+            }
             .onDrag {
                 dragging = item.id
                 return NSItemProvider(object: item.id as NSString)
@@ -573,9 +584,30 @@ struct AgentInboxList: View {
     }
 
     @ViewBuilder
-    private func contextMenu(_ item: AgentListItem, _ entry: InboxEntry) -> some View {
+    private func contextMenu(_ item: AgentListItem, _ entry: InboxEntry, in section: InboxSection) -> some View {
+        if runID(item) != nil {
+            Button(tr("agents.run.rename")) { renaming = item.id }
+        }
         Button(entry.row.pinned ? tr("inbox.unpin") : tr("inbox.pin")) {
             withAnimation(NookTheme.reveal) { entry.row.pinned ? store.unpin(item.id) : pinAndUnsettle(item, entry) }
+        }
+        // Pinned sessions keep the order you give them: one step up or down, as dragging does.
+        if section.kind == .pinned, let index = section.rows.firstIndex(where: { $0.id == entry.id }) {
+            Button(tr("inbox.moveUp")) {
+                withAnimation(NookTheme.reveal) { store.reorder(item.id, toIndex: index - 1, within: section) }
+            }
+            .disabled(index == 0)
+            Button(tr("inbox.moveDown")) {
+                withAnimation(NookTheme.reveal) { store.reorder(item.id, toIndex: index + 1, within: section) }
+            }
+            .disabled(index >= section.rows.count - 1)
+        }
+        // With auto-settle on, one session can stay out of it (`AutoSettlePolicy.Settings.perThreadOptOut`).
+        if store.autoSettle.enabled, !entry.row.settled {
+            let optedOut = store.autoSettle.perThreadOptOut.contains(item.id)
+            Button(tr(optedOut ? "inbox.autoSettle.allow" : "inbox.autoSettle.keep")) {
+                if optedOut { store.autoSettle.perThreadOptOut.remove(item.id) } else { store.autoSettle.perThreadOptOut.insert(item.id) }
+            }
         }
         // A busy session can be settled too: a turn that hangs should not stay in the list forever.
         if item.id.hasPrefix("past:") && entry.row.settled {
@@ -759,6 +791,35 @@ struct AgentInboxList: View {
 }
 
 /// A section or a row as a place to drop a dragged session.
+/// The field that renames a session in the list, over its row: it starts with the name selected, Return keeps the new
+/// name (`done` with it) and Escape or leaving the field keeps the old one (`done` with nil).
+private struct InboxRenameField: View {
+    let name: String
+    let done: (String?) -> Void
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField(tr("ws.title.placeholder"), text: $draft)
+            .textFieldStyle(.plain)
+            .font(NookTheme.TextStyle.body)
+            .foregroundStyle(NookTheme.paper)
+            .focused($focused)
+            .focusOnAppear($focused)
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).stroke(NookTheme.fieldStroke))
+            .onAppear { draft = name }
+            .onSubmit {
+                let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                done(trimmed.isEmpty || trimmed == name ? nil : trimmed)
+            }
+            .onExitCommand { done(nil) }
+            .onChange(of: focused) { _, now in if !now { done(nil) } }
+    }
+}
+
 private struct DropTarget: ViewModifier {
     let kind: InboxSection.Kind
     let section: InboxSection

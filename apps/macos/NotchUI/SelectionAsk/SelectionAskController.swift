@@ -20,6 +20,8 @@ final class SelectionAskModel: ObservableObject {
     @Published var draft = ""
     /// Quotes the selection into the session's reply box; nil where there is none.
     fileprivate(set) var quote: ((String) -> Void)?
+    /// Selection Ask is off: over words of a session's answer the bar is only the floating Quote button.
+    @Published fileprivate(set) var quoteOnly = false
     /// The chat around a selection made in a chat (`TranscriptSelection`), which goes with every question about it.
     fileprivate(set) var context: String?
 
@@ -217,13 +219,17 @@ final class SelectionAskController {
     // MARK: Showing
 
     private func look(in window: NSWindow, press: NSPoint?, release: NSPoint?) {
-        guard app?.settings.selectionAsk == true, window.isVisible, !(window is SelectionAskPanel) else { return }
+        let asks = app?.settings.selectionAsk == true
+        guard window.isVisible, !(window is SelectionAskPanel) else { return }
+        // With Selection Ask off only a session's answer offers its floating Quote, read from its own text view.
+        guard asks || SelectionReader.offersQuote(in: window) else { return }
         reading?.cancel()
         reading = Task { @MainActor [weak self] in
             // A double click selects its word as the button goes up: let the view settle first.
             try? await Task.sleep(nanoseconds: 60_000_000)
             guard !Task.isCancelled, let found = await SelectionReader.read(in: window, press: press, release: release),
-                  !Task.isCancelled, let self else { return }
+                  !Task.isCancelled, let self, asks || found.quote != nil else { return }
+            self.model.quoteOnly = !asks
             // Words in a chat's message: the chat around them goes with the question.
             let point = window.convertPoint(fromScreen: press ?? NSPoint(x: found.anchor.midX, y: found.anchor.midY))
             // The card is open about something else: a new selection asks about the new words instead.
