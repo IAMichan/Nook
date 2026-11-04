@@ -72,12 +72,15 @@ extension View {
     /// A right-click on this view opens `menu` instead of anything under it: selectable text answers a right-click with
     /// the system's own menu (Copy, Look Up, Services) before SwiftUI's `.contextMenu` hears it, so a chat message
     /// whose text can be selected never showed its own menu. Watches the mouse only while `enabled` (the view is in
-    /// sight), so a long chat does not hold a watcher per message.
+    /// sight), so a long chat does not hold a watcher per message, and has its AppKit view only then: one per message
+    /// was moved along with every step of scrolling a long chat.
     /// With `copiesSelection`, words selected in the view (its selectable text) come first in the menu as Copy, which
     /// copies only them: the system's own menu that offered that never shows here.
     func onRightClickMenu(enabled: Bool, copiesSelection: Bool = false,
                           _ menu: @escaping () -> [NookMenuEntry]) -> some View {
-        background(RightClickReader(enabled: enabled, copiesSelection: copiesSelection, menu: menu))
+        background {
+            if enabled { RightClickReader(enabled: true, copiesSelection: copiesSelection, menu: menu) }
+        }
     }
 }
 
