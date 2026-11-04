@@ -117,11 +117,17 @@ private struct LockScreenActivity: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: Theme.Spacing.lg) {
-            Image(systemName: look.symbol)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(look.color)
-                .frame(width: 36, height: 36)
-                .background(look.color.opacity(0.16), in: Circle())
+            ZStack {
+                Circle()
+                    .fill(look.color.opacity(0.14))
+                Circle()
+                    .strokeBorder(look.color.opacity(0.28), lineWidth: 0.5)
+                Image(systemName: look.symbol)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(look.color)
+            }
+            .frame(width: 38, height: 38)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(look.title).font(.headline).foregroundStyle(Theme.text).lineLimit(1)
                 Text([look.agent, look.detail].filter { !$0.isEmpty }.joined(separator: " · "))
