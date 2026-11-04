@@ -40,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // The main window stays open until you close it: after a restart (a new build) it is back.
             model.openWindow(activate: false)
         }
+        // The tabs that had a window of their own are back too.
+        TabWindowController.shared.restore(app: model)
     }
 
     /// Clicking Nook's Dock icon (there while one of its windows is open) brings that window back.
