@@ -475,6 +475,10 @@ private struct ChatBubbleView: View, Equatable {
     @State private var showingInfo = false
     /// The bubble is in view or close to it: only then does its media load, play or move (`chatMediaLive`).
     @State private var near = false
+    /// The pointer came onto the bubble since it came near view: only then are its menu button and its react and reply
+    /// buttons made. Built for every message, hidden, each one's AppKit menu, popovers and tooltips were moved along
+    /// with every step of scrolling. Kept once made, so a menu or picker that took the pointer away stays open.
+    @State private var armed = false
     @Environment(\.chatFetchFile) private var fetchFile
     /// A document's first page, made once the bubble comes near view.
     @State private var filePreview: NSImage?
@@ -644,11 +648,13 @@ private struct ChatBubbleView: View, Equatable {
                         // Words selected in the bubble come first in it, as Copy.
                         .onRightClickMenu(enabled: near, copiesSelection: true) { menuItems.entries }
                         .overlay(alignment: .topTrailing) {
-                            MessageMenuButton(bubble: bubble, items: menuItems, onPicture: bare)
-                                .padding(NookTheme.Spacing.xs)
-                                .opacity(hovering ? 1 : 0)
-                                .allowsHitTesting(hovering)
-                                .animation(NookTheme.hover, value: hovering)
+                            if armed {
+                                MessageMenuButton(bubble: bubble, items: menuItems, onPicture: bare)
+                                    .padding(NookTheme.Spacing.xs)
+                                    .opacity(hovering ? 1 : 0)
+                                    .allowsHitTesting(hovering)
+                                    .animation(NookTheme.hover, value: hovering)
+                            }
                         }
                         .popover(isPresented: $showingInfo, arrowEdge: .bottom) {
                             if let ticks = bubble.ticks { MessageInfoView(ticks: ticks, readers: bubble.readers) }
@@ -664,9 +670,16 @@ private struct ChatBubbleView: View, Equatable {
             .outside(bubble.fromMe ? .leading : .trailing, spacing: NookTheme.Spacing.sm) { actions }
             if !bubble.fromMe { Spacer(minLength: 70) }
         }
-        .onHover { hovering = $0 }
+        .onHover { inside in
+            hovering = inside
+            if inside, !armed { armed = true }
+        }
         .environment(\.chatMediaLive, near)
         .chatNearView($near)
+        // Far from view again: its buttons go, until the pointer comes back onto it.
+        .onChange(of: near) { _, near in
+            if !near, armed, !picking, !showingInfo { armed = false }
+        }
         // A file the chat names but Nook does not have yet (it came in while the chat was open, or fetching it failed)
         // is asked of its app as the bubble comes into view, and again a few times while it stays there.
         .task(id: near && bubble.file == nil && bubble.attachment != nil ? bubble.id : nil) {
@@ -686,7 +699,7 @@ private struct ChatBubbleView: View, Equatable {
     /// Answer this message and react to it: shown while the pointer is on the bubble, where the chat can be answered.
     @ViewBuilder
     private var actions: some View {
-        if onReply != nil || onReact != nil {
+        if armed, onReply != nil || onReact != nil {
             let shown = hovering || picking
             HStack(spacing: NookTheme.Spacing.xxs) {
                 if let onReact {
