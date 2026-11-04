@@ -690,6 +690,7 @@ enum PullRequestDetailParser {
             return "GitHub could not merge it just now (409)." + (message.isEmpty ? "" : " " + message) + " Try again in a moment."
         case 409: return "The branch changed since you opened it (409). Look at the new commits and try again."
         case 422: return "GitHub refused the merge (422)." + (message.isEmpty ? "" : " " + message)
+        case 500..<600: return "GitHub had a problem on its side (\(status)" + (message.isEmpty ? "" : ", \(message)") + "). The pull request was not merged; try again in a moment."
         default: return message.isEmpty ? "GitHub returned an error (\(status))." : "GitHub: " + message
         }
     }
