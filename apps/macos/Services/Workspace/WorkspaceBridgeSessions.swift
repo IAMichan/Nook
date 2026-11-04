@@ -59,6 +59,7 @@ enum BridgeSessionArguments {
         case .error: return "error"
         case .system: return "note"
         case .result: return "result"
+        case .page: return "page"
         }
     }
 

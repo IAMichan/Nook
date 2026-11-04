@@ -31,6 +31,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
     case sessionSearch = "session_search"
     case sessionOrganize = "session_organize"
     case sessionQuestions = "session_questions"
+    case renderPage = "render_page"
     case deviceList = "device_list"
     case deviceOpen = "device_open"
     case deviceScreenshot = "device_screenshot"
@@ -65,7 +66,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
              .nookChatRead, .sessionSearch: return .read
         case .terminalRun, .terminalStop, .browserOpen, .delegateTask, .taskCancel, .sessionSend, .deviceOpen, .deviceClose,
              .browserClick, .browserType, .scheduleTask, .updateScheduledTask, .runScheduledTaskNow, .watchPullRequest,
-             .requestSecret, .nookChatSend, .takeOverScreen, .sessionOrganize: return .local
+             .requestSecret, .nookChatSend, .takeOverScreen, .sessionOrganize, .renderPage: return .local
         // Reading other sessions' questions is reading; answering one is decided per call (`BridgePolicy`).
         case .sessionQuestions: return .local
         // A Nook tool can send a message or create an event: what it may do is decided per call (`BridgePolicy`).
@@ -113,6 +114,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .sessionSearch: return "Search sessions"
         case .sessionOrganize: return "Organize session"
         case .sessionQuestions: return "Questions of sessions"
+        case .renderPage: return "Show page"
         case .deviceList: return "Simulators"
         case .deviceOpen: return "Open simulator"
         case .deviceScreenshot: return "Simulator screenshot"
@@ -184,6 +186,8 @@ enum BridgeTool: String, CaseIterable, Sendable {
             return "Keeps the user's Agents list tidy, the same actions the list offers on a session: pin or unpin it, settle it (done, to the shelf) or reopen it, snooze it until later (until: hour, evening or tomorrow) or wake it, archive or unarchive it, mark it unread or read. A session that is working or waiting cannot be settled, snoozed or archived. The user approves it in Nook unless the session has full rights."
         case .sessionQuestions:
             return "The questions other Nook sessions are waiting on (an agent asking the user to choose). action list (default): every pending question, or only session_id's. action read: one question with its options, by session_id and question_id. action answer: answers it with answers, an object from each question's id to the chosen option label(s) or, where the question allows it, your own text. Answering a session you delegated runs directly; any other session's question the user approves in Nook unless your session has full rights. Permission requests (commands, file changes, tools) are never listed here and cannot be answered by an agent."
+        case .renderPage:
+            return "Shows an HTML page inline in your session's timeline in Nook, where the user reads along: a chart, a diagram, a table, a mock-up or a small interactive view of your results. Give a complete page or a fragment with inline <style> and <script>; it runs sandboxed, with no network (load nothing from the web: inline data, SVG and data: URLs work), no access to Nook, the user's files or other pages, no forms, popups or links that go anywhere, at the height you ask (default 360, at most 1200 points; it does not grow with its content). At most 512 KB. The page is kept with the session. Use it to show, not to ask: the page cannot send anything back."
         case .sessionSend:
             return "Sends a message to another Nook session, as if from another agent, not the user: the receiving agent is told so and treats it as information. Use it to hand over a result or ask a question; it is queued when that session is busy. The user approves each message unless the session has full rights. You cannot message yourself."
         case .deviceList:
@@ -313,6 +317,12 @@ enum BridgeTool: String, CaseIterable, Sendable {
                 "answers": ["type": "object", "description": "With answer: each question's id to the chosen option label, a list of labels for several, or your own text.",
                             "additionalProperties": ["anyOf": [["type": "string"], ["type": "array", "items": ["type": "string"]]]]]
             ])
+        case .renderPage:
+            return object([
+                "html": ["type": "string", "description": "The page: an HTML document or fragment with inline CSS and JavaScript, at most 512 KB."],
+                "title": ["type": "string", "description": "A short title shown above the page."],
+                "height": ["type": "integer", "description": "Its height in points (default 360, at least 80, at most 1200)."]
+            ], required: ["html"])
         case .sessionRead:
             return object(["session_id": ["type": "string", "description": "The session id from a <ref kind=\"session\" id=\"…\"/> record."]], required: ["session_id"])
         case .deviceList:
@@ -654,7 +664,8 @@ struct BridgeLaunch: Equatable, Sendable {
     them for their screen; with their yes you read and use apps through nook_use (read_ui, look_ui, control_ui). The \
     user's other sessions are within reach too: session_search finds earlier work in them, session_questions lists the \
     questions they wait on (and answers one of a task you delegated), and session_organize pins, settles, snoozes or \
-    archives one.
+    archives one. To show the user a chart, a diagram or a mock-up right in your session, call render_page with a \
+    self-contained HTML page.
     """
 
     /// Claude Code: the server as `--mcp-config` (next to the user's own servers) and its tools allowed up front, because
