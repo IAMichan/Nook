@@ -1421,7 +1421,7 @@ struct AgentRunPanel: View {
             AgentModelPicker(providers: providers, provider: run.provider, profileID: run.profileID, model: chosenModel, showsAccounts: idle) { provider, accountID, option in
                 let profileID = accountID ?? (provider == run.provider ? run.profileID : app.connectedProfiles(for: provider).first?.id ?? run.profileID)
                 let chosen = option ?? (provider == run.provider ? chosenModel : workspace.settings.model(for: provider))
-                workspace.applySelection(runID, provider: provider, profileID: profileID, model: chosen)
+                workspace.applySelection(runID, provider: provider, profileID: profileID, model: chosen, resumeIfLimited: true)
             }
         }
         .help(run.resolvedModel ?? tr("ws.new.model"))
