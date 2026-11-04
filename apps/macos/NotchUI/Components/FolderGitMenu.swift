@@ -162,12 +162,12 @@ final class FolderGitModel: ObservableObject {
         }
     }
 
-    func diff(_ file: GitFileChange) async throws -> String {
+    func diff(_ file: GitFileChange, options: DiffReadOptions = .standard) async throws -> String {
         guard let git, let root else { throw GitError(tr("ws.error.noGit")) }
         let ref = file.kind == .untracked ? nil : comparedTo
         return try await Task.detached(priority: .userInitiated) {
-            guard let ref else { return try git.diff(root, file: file) }
-            return try git.diff(root, path: file.path, from: ref, to: nil)
+            guard let ref else { return try git.diff(root, file: file, ignoreWhitespace: options.ignoreWhitespace) }
+            return try git.diff(root, path: file.path, from: ref, to: nil, ignoreWhitespace: options.ignoreWhitespace)
         }.value
     }
 
@@ -354,9 +354,9 @@ struct FolderChangesSheet: View {
             if files.isEmpty {
                 StackedDiffNote(text: loaded ? tr("agents.git.noChanges") : tr("ws.timeline.working"))
             } else {
-                StackedDiffList(files: files, scope: model.directory, expanded: $expanded, showsTree: showsTree) { file in
+                StackedDiffList(files: files, scope: model.directory, expanded: $expanded, showsTree: showsTree) { file, options in
                     guard let change = model.changes.first(where: { $0.path == file.path }) else { return "" }
-                    return try await model.diff(change)
+                    return try await model.diff(change, options: options)
                 }
             }
         }

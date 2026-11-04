@@ -44,6 +44,12 @@ enum SelectionReader {
         return FoundSelection(text: words, anchor: pointer, quote: nil)
     }
 
+    /// True when the view with the keyboard is a session's answer that can quote its words into the reply box.
+    static func offersQuote(in window: NSWindow) -> Bool {
+        guard let text = window.firstResponder as? NSTextView, !text.isEditable else { return false }
+        return (text.delegate as? SelectableProse.Coordinator)?.quote != nil
+    }
+
     // MARK: Web pages
 
     /// Read in the page's own frame, in a world of Nook's (`.defaultClient`), so the page cannot answer for it. Nothing

@@ -20,12 +20,14 @@ struct EventRow: View {
     /// The folder relative paths resolve in, and the file the side panel shows now.
     var directory: String? = nil
     var shownFile: String? = nil
+    /// "Edit from here" under a message of yours; nil where the session cannot go back to before it.
+    var onEdit: (() -> Void)? = nil
 
     var body: some View {
         switch event.kind {
         case .user:
             // Each turn starts as its own block, as in the Nook chat and an agent's transcript.
-            TranscriptUserMessage(text: event.text, date: event.date)
+            TranscriptUserMessage(text: event.text, date: event.date, onEdit: onEdit)
                 .padding(.top, TranscriptStyle.turnGap - NookTheme.Spacing.sm)
                 .padding(.bottom, NookTheme.Spacing.xxs)
 
