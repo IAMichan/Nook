@@ -61,9 +61,9 @@ targets:
     entitlements:
       path: NookCompanion/NookCompanion.entitlements
       properties:
-        # Becomes production in a distribution build. Needs Push Notifications on the app id nl.imdigital.nook.companion.
-        aps-environment: development
-        com.apple.developer.usernotifications.time-sensitive: true
+        # Temporarily off so a Personal Team can sign the app. Push Notifications (aps-environment: development, production
+        # in a distribution build) and Time Sensitive Notifications (com.apple.developer.usernotifications.time-sensitive)
+        # need a paid team and both capabilities on the app id nl.imdigital.nook.companion; put them back with one.
         # Shared with NookNotifications: the push keys it opens relay pushes with (PushKeyStore). Needs the App Group
         # group.nl.imdigital.nook.companion on both app ids.
         com.apple.security.application-groups: [group.nl.imdigital.nook.companion]
