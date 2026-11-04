@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Assistant: what Nook sees, how it thinks along, what it remembers (`MemorySettingsSection`), and Nook as a
-/// friend, in that order.
+/// Settings › Assistant: what Nook sees, how it thinks along, Double Tap, and what Nook may do on its own, in that order.
+/// What it remembers has a page of its own (Memory); Nook as a buddy is under Appearance.
 extension SettingsView {
     // MARK: Assistant
 
@@ -34,16 +34,51 @@ extension SettingsView {
                             .buttonStyle(.link)
                     }
                 }
-                // How a suggestion shows, and the apps it is switched off in, are with every other notice.
-                SettingsLinkRow(title: tr("notices.settings.suggestionsLink"), section: .notifications) { app.settingsSection = .notifications }
-                // The same choice as in the chat's composer and the Double Tap field (⇧Tab there).
+            }
+            doubleTapSection
+            // The same choice as in the chat's composer and the Double Tap field (⇧Tab there).
+            Section(tr("nookAccess.title")) {
                 Picker(tr("nookAccess.title"), selection: $settings.nookAccess) {
                     ForEach(NookAccess.allCases) { level in Text(level.short).tag(level) }
                 }
                 .pickerStyle(.segmented)
+                .labelsHidden()
                 SettingNote(settings.nookAccess.detail + " " + tr("nookAccess.always"))
             }
         }
+    }
+
+    // MARK: Double Tap
+
+    /// Double Tap: the feature and its key together, so turning it on and choosing its key happen in one place.
+    private var doubleTapSection: some View {
+        Section {
+            // What a double tap can do takes four paragraphs; they show on hover, so the section stays short.
+            Toggle(tr("doubletap.settings.enable"), isOn: $doubleTap.enabled)
+                .help(doubleTapHelp)
+            Picker(tr("doubletap.settings.key"), selection: $doubleTap.key) {
+                ForEach(FlowKey.allCases) { key in
+                    Text(key == .fn ? "fn" : tr("flow.settings.keyRight", key.symbol)).tag(key)
+                }
+            }
+            .disabled(!doubleTap.enabled)
+            Toggle(tr("takeover.settings.onTap"), isOn: $doubleTap.taskOnTap)
+                .disabled(!doubleTap.enabled)
+                .help(tr("takeover.settings.onTapDetail", doubleTap.key.symbol))
+        } header: {
+            Text(tr("doubletap.settings.title"))
+        } footer: {
+            // Only a conflict is worth reading here.
+            if doubleTap.enabled && doubleTap.conflictsWithFlow {
+                SettingNote(tr("doubletap.settings.conflict"), tone: .warning)
+            }
+        }
+    }
+
+    /// Everything a double tap can do, as one tooltip.
+    private var doubleTapHelp: String {
+        [tr("doubletap.settings.askDetail", doubleTap.key.symbol), tr("doubletap.settings.writeDetail"),
+         tr("doubletap.settings.editDetail"), tr("doubletap.settings.detail")].joined(separator: "\n\n")
     }
 
     // MARK: Buddy
@@ -60,7 +95,7 @@ extension SettingsView {
             .pickerStyle(.segmented)
             .disabled(!settings.buddyMoments)
             // How he sounds in the chosen tone: the morning greeting on a day with three events.
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
                 NookOrb(mood: .cozy, size: 26, animated: false, glow: false)
                     .frame(width: 30, height: 30)
                 Text(tr(BuddyPlanner.lineKey(BuddyMoment(kind: .morning, id: "preview", count: 3), tone: settings.buddyTone), 3))

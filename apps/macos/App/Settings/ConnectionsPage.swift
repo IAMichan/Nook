@@ -21,7 +21,7 @@ final class ConnectionsRoute: ObservableObject {
 /// - What you have is listed by kind, each in the same row shape, with what stopped working first and its Fix button.
 /// - The Mac's own apps are switches; chat options and watched pull requests come last.
 ///
-/// The coding agents and the AI Nook thinks with have pages of their own; a row here leads to each.
+/// The coding agents and the AI Nook thinks with have pages of their own in the sidebar.
 struct ConnectionsPage: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var mcpStore = MCPServerStore.shared
@@ -79,7 +79,6 @@ struct ConnectionsPage: View {
             if matches("Spotify " + tr("music.connect.title")) { MusicConnectionSection() }
         }
         Group {
-            if query.isEmpty { elsewhereSection }
             localSection
             if query.isEmpty {
                 ChatOptionsSection()
@@ -173,22 +172,6 @@ struct ConnectionsPage: View {
             iPhoneRow(options)
         } header: {
             Text(tr("hub.cat.devices"))
-        }
-    }
-
-    /// The AI Nook thinks with and the coding agents are signed in to on their own pages: a row leads to each.
-    private var elsewhereSection: some View {
-        Section {
-            SettingsLinkRow(title: SettingsSection.brain.title,
-                            detail: settings.brainReady ? settings.activeModelName : tr("settings.checklist.brain.notReady"),
-                            section: .brain, state: settings.brainReady ? .done : .todo) {
-                app.settingsSection = .brain
-            }
-            SettingsLinkRow(title: SettingsSection.agents.title, detail: tr("hub.agents.detail"), section: .agents) {
-                app.settingsSection = .agents
-            }
-        } header: {
-            Text(tr("hub.elsewhere"))
         }
     }
 
@@ -336,7 +319,7 @@ struct ConnectionsPage: View {
                 app.connectors.refresh(source)
             }
         )) {
-            HStack(spacing: 10) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 SiteIcon(domain: source.iconDomain, fallback: source.symbol, tint: source.accent, size: 20, source: source.id)
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {

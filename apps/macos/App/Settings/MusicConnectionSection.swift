@@ -1,9 +1,33 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Connections › Music: what "Add to queue" in the Music tab goes through. Spotify needs a sign-in with the
-/// user's own Spotify app (its client ID); Music needs nothing but the Accessibility permission Nook already asks for.
+/// Settings › Connections › Music: one Spotify row in the shape of every linked service, with its steps in a sheet.
 struct MusicConnectionSection: View {
+    @ObservedObject private var spotify = SpotifySignIn.shared
+    @State private var showing = false
+
+    var body: some View {
+        Section {
+            ServiceRowLayout(domain: "spotify.com", symbol: "music.note", tint: NookTheme.iris, title: "Spotify",
+                             detail: tr("music.connect.rowDetail"), status: spotify.isSignedIn ? .connected : .notLinked) {
+                Button(spotify.isSignedIn ? tr("settings2.manage") : tr("hub.setUp")) { showing = true }
+            }
+        } header: {
+            Text(tr("music.connect.title"))
+        }
+        .sheet(isPresented: $showing) {
+            SettingsFormSheet(title: "Spotify", subtitle: tr("music.connect.rowDetail")) {
+                ServiceTile(domain: "spotify.com", fallback: "music.note", tint: NookTheme.iris, size: 48)
+            } content: {
+                MusicConnectionForm()
+            }
+        }
+    }
+}
+
+/// What "Add to queue" in the Music tab goes through. Spotify needs a sign-in with the user's own Spotify app (its client
+/// ID); Music needs nothing but the Accessibility permission Nook already asks for.
+private struct MusicConnectionForm: View {
     @ObservedObject private var spotify = SpotifySignIn.shared
     @AppStorage("spotifyClientID") private var clientID = ""
     @State private var copiedRedirect = false
@@ -66,9 +90,9 @@ struct MusicConnectionSection: View {
                     SettingNote(message, tone: .error)
                 }
             }
+        }
+        Section {
             SettingNote(tr("music.connect.appleMusic"))
-        } header: {
-            Text(tr("music.connect.title"))
         }
     }
 }
