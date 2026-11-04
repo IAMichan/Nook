@@ -259,7 +259,7 @@ final class WorkspaceBridge: ObservableObject {
     /// The answer for a refused call, in words the agent can act on.
     static func refusal(_ reason: BridgeVerdict.Reason) -> String {
         switch reason {
-        case .disabled: return "The user has switched off agent access to Nook's workspace (Settings › Agents › Workspace)."
+        case .disabled: return "The user has switched off agent access to Nook's workspace (Settings › Automation)."
         case .planMode: return "This session is in Plan mode: it may read, not start processes or open pull requests. Describe the step in your plan instead."
         case .dangerous: return "Nook refuses this command through its terminal because it is dangerous. Ask the user to run it themselves if it is really needed."
         case .needsReview, .outward, .delegation, .schedule, .secret, .action, .screen: return "The user did not approve this in Nook."

@@ -95,6 +95,8 @@ final class AppModel: ObservableObject {
     var quota: QuotaService { QuotaService(hub: hub, codex: codex, antigravity: antigravityUsage) }
     /// Currently selected settings section.
     @Published var settingsSection: SettingsSection = .start
+    /// The tab each Settings page with tabs (`SettingsSection.tabs`) shows, kept while Nook runs.
+    @Published var settingsTabs: [SettingsSection: Int] = [:]
 
     private(set) lazy var tools: NookTools = {
         let tools = NookTools(calendar: calendar, store: store, screen: screen) { [weak self] in

@@ -2,7 +2,7 @@
 
 Coding agents (such as Claude Code and Codex) can use Nook's integrated workspace directly: start long-running dev servers in a visible Nook terminal, open and inspect pages in Nook's built-in browser (including console errors and screenshots), delegate subtasks to other agents, and propose pull requests that you approve right in the notch.
 
-Agents connect through a lightweight local MCP server (`nook-mcp`) that forwards requests over a user-only Unix domain socket to Nook. Sessions started inside Nook receive it automatically; external terminal sessions can be linked with one click in **Settings › Workspace**.
+Agents connect through a lightweight local MCP server (`nook-mcp`) that forwards requests over a user-only Unix domain socket to Nook. Sessions started inside Nook receive it automatically; external terminal sessions can be linked with one click in **Settings › Automation**.
 
 ## Core Principles
 
@@ -37,7 +37,7 @@ Claude Code / Codex ──stdio (MCP)──▶ nook-mcp (Perl) ──bridge.sock
 
 ### Connecting External Terminal Agents
 
-For sessions you launch yourself in an external terminal, click **Connect** in **Settings › Workspace** (or run):
+For sessions you launch yourself in an external terminal, click **Connect** in **Settings › Automation** (or run):
 
 ```sh
 claude mcp add --scope user nook -- ~/.nook/nook-mcp --agent claude-code
@@ -95,7 +95,7 @@ Agents and Nook Chat share one set of tools (`AppModel.allTools`), in both direc
 - **The screen.** An agent can hand a whole task to Nook with `nook_use` `take_over` (Nook does it on this Mac with its own checkpoints; the agent gets the summary, so this also works when the screen is kept on this Mac), or ask for the screen itself with `take_over_screen` and work with `read_ui`, `look_ui` and `control_ui` (`WorkspaceBridge+Screen.swift`).
 - **Music.** `search_music` and `play_music` (`AppModel+MusicTools.swift`) use the Music tab's search (Spotify's Web API when connected, otherwise the Music library) and play a track by id or by the best match; `media_control` keeps pausing and skipping.
 
-Every coding agent gets these tools: they are part of the bridge, which every agent Nook runs (and every agent linked in Settings › Workspace) receives.
+Every coding agent gets these tools: they are part of the bridge, which every agent Nook runs (and every agent linked in Settings › Automation) receives.
 
 ## Multi-Agent Delegation (`delegate_task`)
 

@@ -28,12 +28,12 @@ enum SettingsCatalog {
               about: "Language Nook answers in; auto is the language of the question."),
         Entry(id: "nook_style", kind: .choice(["minimal", "classic", "playful"]), section: "appearance",
               about: "How Nook's face looks: minimal (dots, no mouth), classic (the usual look) or playful (round eyes, a talking mouth)."),
-        Entry(id: "notch_placement", kind: .choice(["notch", "floating"]), section: "general",
+        Entry(id: "notch_placement", kind: .choice(["notch", "floating"]), section: "notch",
               about: "Nook in the notch, or floating anywhere on screen."),
-        Entry(id: "notch_on_all_screens", kind: .toggle, section: "general", about: "A notch on every connected screen."),
-        Entry(id: "hide_when_idle", kind: .toggle, section: "general", about: "Hide Nook when there is nothing to show."),
-        Entry(id: "open_on_hover", kind: .toggle, section: "general", about: "Open the panel when pointing at the notch."),
-        Entry(id: "open_window_at_launch", kind: .toggle, section: "general", about: "Open the main window every time Nook starts."),
+        Entry(id: "notch_on_all_screens", kind: .toggle, section: "notch", about: "A notch on every connected screen."),
+        Entry(id: "hide_when_idle", kind: .toggle, section: "notch", about: "Hide Nook when there is nothing to show."),
+        Entry(id: "open_on_hover", kind: .toggle, section: "notch", about: "Open the panel when pointing at the notch."),
+        Entry(id: "open_window_at_launch", kind: .toggle, section: "notch", about: "Open the main window every time Nook starts."),
         Entry(id: "energy_mode", kind: .choice(["automatic", "saver", "full"]), section: "general",
               about: "How much Nook does by himself on battery or a busy Mac: automatic (steps back when needed), saver (always light) or full (never slows down)."),
         Entry(id: "web_search", kind: .toggle, section: "assistant", about: "Search the web when a question needs it."),
@@ -43,10 +43,10 @@ enum SettingsCatalog {
               about: "Read the text of all windows on all screens, on the Mac, so answers are ready at once."),
         Entry(id: "screens_with_every_question", kind: .toggle, section: "assistant",
               about: "Use the screens with every question, not only when the user points at something."),
-        Entry(id: "speak_answers", kind: .toggle, section: "dictation", about: "Read answers aloud after a spoken question."),
-        Entry(id: "wake_word", kind: .toggle, section: "dictation", about: "Listen for \"Hey Nook\"."),
+        Entry(id: "speak_answers", kind: .toggle, section: "sound", about: "Read answers aloud after a spoken question."),
+        Entry(id: "wake_word", kind: .toggle, section: "sound", about: "Listen for \"Hey Nook\"."),
         Entry(id: "dictation", kind: .toggle, section: "dictation", about: "Dictate anywhere by holding a key."),
-        Entry(id: "agent_sounds", kind: .toggle, section: "notifications", about: "A sound when an agent waits or is done."),
+        Entry(id: "agent_sounds", kind: .toggle, section: "sound", about: "A sound when an agent waits or is done."),
         Entry(id: "notices_agents", kind: .choice(["card", "strip", "system", "off"]), section: "notifications",
               about: "How a coding agent that is done, failed or waits shows: a card, one line, a macOS notification, or only in the list. Permission requests always reach the user."),
         Entry(id: "notices_chats", kind: .choice(["card", "strip", "system", "off"]), section: "notifications",
@@ -57,7 +57,7 @@ enum SettingsCatalog {
               about: "How a Think Along suggestion shows: its card, one line that opens it, a macOS notification, or only in the list."),
         Entry(id: "use_memory", kind: .toggle, section: "memory", about: "Use what Nook remembers with every question."),
         Entry(id: "learn_from_chats", kind: .toggle, section: "memory", about: "Let Nook learn from conversations by itself."),
-        Entry(id: "online_lyrics", kind: .toggle, section: "privacy", about: "Look up song lyrics online.")
+        Entry(id: "online_lyrics", kind: .toggle, section: "connections", about: "Look up song lyrics online.")
     ]
 
     static var ids: [String] { entries.map(\.id) }

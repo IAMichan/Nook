@@ -1,44 +1,56 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Coding agents: linking each agent, its accounts, and what they used, on one page without tabs.
-/// Settings › Workspace: what a new session starts with, automation, and the machines sessions can run on over SSH.
-/// The iPhone is linked with everything else you link, under Settings › Accounts & connections.
+/// Settings › Coding agents: linking each agent and who you are signed in as with it. Settings › Usage: what they used,
+/// on a page of its own. How sessions start and where they run are under Sessions and Machines.
 extension SettingsView {
     // MARK: Agents
 
     var agentsSection: some View {
         Group {
             // First which agents are linked to Nook (and show their progress in the notch), then who you are signed in
-            // as with each (and the agents that speak ACP), then what they used.
+            // as with each (and the agents that speak ACP).
             Section {
-                ForEach(AgentConfigInstaller.Target.allCases) { target in
-                    agentRow(target)
+                // The linked ones first; the agents you have not linked are folded away once one is, so the page shows
+                // yours rather than every agent there is.
+                let linked = AgentConfigInstaller.Target.allCases.filter { target in
+                    if case .notInstalled = agentStates[target] ?? .notInstalled { return false }
+                    return true
+                }
+                let others = AgentConfigInstaller.Target.allCases.filter { !linked.contains($0) }
+                ForEach(linked) { target in agentRow(target) }
+                if linked.isEmpty {
+                    ForEach(others) { target in agentRow(target) }
+                } else if !others.isEmpty {
+                    DisclosureGroup(tr("settings.agents.notLinked", others.count)) {
+                        ForEach(others) { target in agentRow(target) }
+                    }
                 }
                 // Antigravity needs its release downloaded before Nook can run it: set up with the other agents.
                 LabeledContent("Antigravity") { AntigravitySetupRow(inSettings: true) }
+                // How Nook talks to Codex is part of setting Codex up, not of how sessions behave.
+                Toggle(tr("settings.ws.codexAppServer"), isOn: $workspace.codexAppServer)
             } header: {
                 Text(tr("settings.agents.linkAgents"))
             }
             AccountsSettingsSection()
-            // What they used: plan limits per account, tokens and costs. The week recap lives here only, so the menu bar
-            // stays calm.
+        }
+    }
+
+    // MARK: Usage
+
+    /// Plan limits per account, tokens and costs, and the week recap, which lives here only so the menu bar stays calm.
+    var usageSettingsSection: some View {
+        Group {
             Section {
                 LabeledContent {
                     Button(tr("button.view")) { app.showWeekRecap() }
                 } label: {
                     SettingLabel(tr("settings.agents.weekRecap"), hint: tr("settings.agents.weekRecapDetail"))
                 }
-            } header: {
-                Text(tr("settings.agents.usage"))
+                Toggle(tr("settings.ws.showCost"), isOn: $workspace.showCost)
             }
             usageSection
         }
-    }
-
-    // MARK: Workspace
-
-    var workspaceSection: some View {
-        WorkspaceSettingsSection()
     }
 }

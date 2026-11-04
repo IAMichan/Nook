@@ -74,6 +74,15 @@ struct SettingsHeader: View {
                 Text(section.subtitle).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
             }
             Spacer(minLength: 0)
+            // The page's main step, always in sight however long the page (`SettingsPageAction`).
+            if let action = SettingsPageAction.button(for: section) {
+                Button {
+                    SettingsPageAction.shared.requested = section
+                } label: {
+                    Label(action.title, systemImage: action.symbol)
+                }
+                .buttonStyle(.borderedProminent)
+            }
         }
         .padding(.bottom, NookTheme.Spacing.md)
     }
@@ -404,7 +413,17 @@ struct Keycap: View {
 
 
 /// Workspace preferences: default settings for new sessions, worktree location, editor, and terminal.
+/// Settings › Sessions (what a new session starts with, where things open, how sessions behave and tidy up, one tab
+/// each) and Settings › Automation (scheduled tasks and what agents may use of Nook). The machines sessions run on have
+/// a page of their own (`RemoteMachinesSection`).
 struct WorkspaceSettingsSection: View {
+    enum Part {
+        /// The Sessions page on one of its tabs (`SettingsSection.sessions.tabs`).
+        case sessions(Int)
+        case automation
+    }
+
+    let part: Part
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var ws = WorkspaceSettings.shared
     @ObservedObject private var inbox = InboxStore.shared
@@ -413,18 +432,21 @@ struct WorkspaceSettingsSection: View {
     @AppStorage(AgentCredits.settingKey) private var stripAgentCredits = false
     @State private var showScheduled = false
     /// Which defaults the "New session" section edits: "" for all projects, else a project folder (see `ProjectSettings`).
-    @State private var scope = ""
+    /// Kept by Settings, so it stays while you switch between the Sessions tabs (each tab is drawn anew).
+    @Binding var scope: String
 
     var body: some View {
-        // What a new session starts with and where it opens, how sessions behave and tidy up, then automation; the raw
-        // traffic log is folded away last.
-        Group {
-            defaults
+        switch part {
+        case .sessions(0): defaults
+        case .sessions(1):
             openIn
-            behavior
+            commitStyle
+        case .sessions(2): behavior
+        case .sessions: tidying
+        case .automation:
+            // What runs by itself, then what agents may use; the raw traffic log is folded away last.
             scheduled
             bridge
-            RemoteMachinesSection()
             advanced
         }
     }
@@ -704,11 +726,8 @@ struct WorkspaceSettingsSection: View {
         return tr("settings.ws.onlineModelsDetail") + (date.map { " " + tr("settings.ws.modelListDate", $0) } ?? "")
     }
 
-    /// How sessions behave and are tidied up, in three short groups: while a session runs, when it stops or Nook
-    /// restarts, and how the list keeps itself tidy.
-    @ViewBuilder
-    private var behavior: some View {
-        // How Nook writes commit messages and pull requests.
+    /// How Nook writes commit messages and pull requests.
+    private var commitStyle: some View {
         Section {
             Picker(tr("settings.ws.commitStyle"), selection: $ws.commitStyle) {
                 ForEach(CommitStyle.allCases) { Text(tr("settings.ws.commitStyle." + $0.rawValue)).tag($0) }
@@ -724,6 +743,12 @@ struct WorkspaceSettingsSection: View {
         } header: {
             SettingsSectionTitle(tr("settings.ws.commitStyle"), info: tr("settings.ws.commitStyle.footer"))
         }
+    }
+
+    /// How sessions behave: while one runs, how the list shows them, and when one stops or Nook restarts. What an
+    /// agent costs is shown on Usage, Codex's app-server is set with the agents.
+    @ViewBuilder
+    private var behavior: some View {
         Section(tr("settings.ws.behavior")) {
             Toggle(tr("settings.ws.autoTitles"), isOn: $ws.autoTitles)
             // Also used by "Regenerate title" in a session's menu; a project can set its own under its defaults.
@@ -731,8 +756,6 @@ struct WorkspaceSettingsSection: View {
                       prompt: Text(tr("settings.ws.titleInstructions.placeholder")), axis: .vertical)
                 .lineLimit(1...4)
             Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
-            Toggle(tr("settings.ws.showCost"), isOn: $ws.showCost)
-            Toggle(tr("settings.ws.codexAppServer"), isOn: $ws.codexAppServer)
             // How the session list is laid out belongs with how sessions behave, not with tidying up.
             Toggle(tr("settings.ws.inboxProjects"), isOn: $inbox.groupByProject)
             Toggle(tr("settings.ws.inboxWorking"), isOn: $inbox.showWorking)
@@ -743,7 +766,10 @@ struct WorkspaceSettingsSection: View {
             Toggle(tr("settings.ws.continueAfterRelaunch"), isOn: $ws.continueAfterRelaunch)
             Toggle(tr("settings.ws.confirmQuit"), isOn: $confirmQuit)
         }
-        // The list and the worktrees keep themselves tidy; one in use or with uncommitted changes always stays.
+    }
+
+    /// The list and the worktrees keep themselves tidy; one in use or with uncommitted changes always stays.
+    private var tidying: some View {
         Section {
             Toggle(tr("settings.ws.autoSettle"), isOn: $inbox.autoSettle.enabled)
             if inbox.autoSettle.enabled {
@@ -823,11 +849,26 @@ struct WorkspaceSettingsSection: View {
 /// The organizations and repositories whose open pull requests show under Agents › Pull requests, beside your own and
 /// your reviews. Searched with every connected GitHub account; shown under Settings › Apps & accounts.
 struct WatchedPullRequestsSection: View {
+    @EnvironmentObject private var app: AppModel
     @ObservedObject private var watching = PullRequestWatchSettings.shared
     @State private var text = ""
     @State private var invalid = false
 
+    /// Pull requests are searched with your GitHub accounts: without one, the page says so first.
+    private var gitHubLinked: Bool {
+        (app.connectors.source(id: "github") as? any CloudConnectorConfig)?.isConfigured ?? false
+    }
+
     var body: some View {
+        if !gitHubLinked {
+            Section {
+                LabeledContent {
+                    Button(tr("settings.pulls.connectGitHub")) { app.openConnections(.add(nil)) }
+                } label: {
+                    SettingLabel(tr("settings.pulls.needsGitHub"), hint: tr("settings.pulls.needsGitHubDetail"))
+                }
+            }
+        }
         Section {
             SettingToggle(tr("settings.pulls.myOrganizations"), detail: tr("settings.pulls.myOrganizationsDetail"),
                           isOn: $watching.includeOrganizations)

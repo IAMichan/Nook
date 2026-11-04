@@ -330,17 +330,14 @@ extension SettingsView {
                     get: { settings.activeProviderModel },
                     set: { settings.setProviderModel($0) }
                 ))
-                Menu(tr("button.choose")) {
-                    let models = fetchedModels.isEmpty ? settings.provider.suggestedModels : fetchedModels
-                    ForEach(models, id: \.self) { id in
-                        Button { settings.setProviderModel(id) } label: {
-                            Label { Text(id) } icon: { LogoImage.brand(BrandLogo.forName(id) ?? BrandLogo.forProvider(settings.provider)) }
-                        }
+                // A searchable list: a service's own list can hold hundreds of models (OpenRouter), too many for a menu.
+                Button(tr("button.choose")) { choosingModel = true }
+                    .popover(isPresented: $choosingModel, arrowEdge: .bottom) {
+                        BrainModelChooser(models: fetchedModels.isEmpty ? settings.provider.suggestedModels : fetchedModels,
+                                        current: settings.activeProviderModel, provider: settings.provider,
+                                        pick: { settings.setProviderModel($0); choosingModel = false },
+                                        fetch: { choosingModel = false; Task { await fetchModels() } })
                     }
-                    Divider()
-                    Button(tr("button.fetchModels")) { Task { await fetchModels() } }
-                }
-                .fixedSize()
                 if fetchingModels { ProgressView().controlSize(.small) }
                 if !settings.provider.seesImages(model: settings.activeProviderModel) { NoImagesBadge() }
             }
@@ -635,5 +632,40 @@ struct NoImagesBadge: View {
             .foregroundStyle(NookTheme.textSecondary)
             .help(tr("brain.noImages.help"))
             .accessibilityLabel(tr("brain.noImages.help"))
+    }
+}
+
+/// The models of the chosen service to pick from, with a search field over them, and fetching the service's own list.
+struct BrainModelChooser: View {
+    let models: [String]
+    let current: String
+    let provider: AIProvider
+    let pick: (String) -> Void
+    let fetch: () -> Void
+    @State private var query = ""
+
+    private var shown: [String] {
+        let text = query.trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? models : models.filter { $0.localizedCaseInsensitiveContains(text) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            NookSearchField(prompt: tr("settings.brain.searchModels"), text: $query, style: .inline)
+            ScrollView {
+                VStack(spacing: NookTheme.Spacing.xxs) {
+                    ForEach(shown, id: \.self) { id in
+                        SettingsPickRow(title: id, detail: provider.title, selected: id == current) { pick(id) }
+                    }
+                    if shown.isEmpty { SettingNote(tr("settings.search.none")) }
+                }
+            }
+            .frame(height: min(CGFloat(max(shown.count, 1)) * 48, 320))
+            NookDivider()
+            Button(tr("button.fetchModels"), action: fetch)
+                .buttonStyle(.link)
+        }
+        .padding(NookTheme.Spacing.lg)
+        .frame(width: 340)
     }
 }
