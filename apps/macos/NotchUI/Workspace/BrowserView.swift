@@ -947,6 +947,8 @@ struct SessionBrowserCorner: View {
     var room: CGSize = CGSize(width: 10_000, height: 10_000)
     /// How far it can go down from its resting place above the composer, over the composer to the chat's bottom edge.
     var below: CGFloat = 0
+    /// How far it can go right from its resting place, over the panels beside the chat to the row's edge.
+    var right: CGFloat = 0
     let expand: () -> Void
     @ObservedObject private var browsers = SessionBrowsers.shared
     /// Where you dragged the card to, from its corner; it keeps that while the chat is open.
@@ -954,7 +956,7 @@ struct SessionBrowserCorner: View {
     @State private var dragStart: CGSize?
 
     private func clamped(_ size: CGSize) -> CGSize {
-        CGSize(width: min(0, max(-room.width, size.width)), height: min(below, max(-room.height, size.height)))
+        CGSize(width: min(right, max(-room.width, size.width)), height: min(below, max(-room.height, size.height)))
     }
 
     var body: some View {
@@ -964,12 +966,13 @@ struct SessionBrowserCorner: View {
             if let store {
                 SessionBrowserCard(store: store, directory: directory, expand: expand, close: { browsers.putAway(store) },
                                    drag: { translation in
-                    let start = dragStart ?? moved
+                    let start = dragStart ?? clamped(moved)
                     dragStart = start
                     moved = clamped(CGSize(width: start.width + translation.width, height: start.height + translation.height))
                 }, dragEnded: { dragStart = nil })
                     .id(ObjectIdentifier(store))
-                    .offset(moved)
+                    // Clamped here too: a panel that closes takes the room the card was moved into with it.
+                    .offset(clamped(moved))
                     .transition(.scale(scale: 0.92, anchor: .bottomTrailing).combined(with: .opacity))
             }
         }
