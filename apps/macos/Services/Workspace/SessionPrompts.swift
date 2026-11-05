@@ -68,6 +68,11 @@ enum SessionPrompts {
         "About \(path):\(line): \(note.trimmingCharacters(in: .whitespacesAndNewlines))\n\n> \(code)"
     }
 
+    /// The open page, for a question you write yourself.
+    static func page(url: String, title: String, text: String) -> String {
+        "About this page, \(url):\n\n" + untrusted("page_title", title) + "\n\n" + untrusted("page_text", text)
+    }
+
     /// An element you pointed at in Nook's browser, with what you said about it.
     static func pageElement(url: String, selector: String, text: String, note: String) -> String {
         let said = note.trimmingCharacters(in: .whitespacesAndNewlines)
