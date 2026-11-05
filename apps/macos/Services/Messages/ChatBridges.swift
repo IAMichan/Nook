@@ -1684,6 +1684,9 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
                 for conversation in conversations { active[conversation.id] = max(active[conversation.id] ?? 0, conversation.updated) }
                 conversationsAt = Date()
             }
+            uniqueNames = ChatNames.unique(conversations.map {
+                ChatNames.Chat(id: $0.id, app: app, name: SlackData.chatName($0, users: users, me: me))
+            })
             // Where you stand in each conversation, as Slack's website asks it (Slack answers it for the website's sign-in):
             // reading a chat in Slack reads it in Nook too. A pasted token gets no answer to that: it asks each
             // conversation that may still be unread instead. Without either Nook counts new messages itself.
@@ -1754,14 +1757,14 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
                 remember(messages, in: conversation.id)
                 handed.insert(conversation.id)
                 if let picture { handedAvatars[conversation.id] = picture }
-                chats.append(BridgedChat(app: app, name: SlackData.chatName(conversation, users: users, me: me),
+                chats.append(BridgedChat(app: app, name: shownName(conversation),
                                          messages: messages, unread: unread(conversation.id, marks: marks), avatar: picture,
                                          members: members.isEmpty ? nil : members, deleted: deleted))
             }
             // A chat read (or marked unread) in Slack since, without a new message: its count follows.
             for conversation in conversations where !handed.contains(conversation.id) && recent[conversation.id] != nil
                 && marks[conversation.id] != nil && marks[conversation.id] != lastRead[conversation.id] {
-                chats.append(BridgedChat(app: app, name: SlackData.chatName(conversation, users: users, me: me), messages: [],
+                chats.append(BridgedChat(app: app, name: shownName(conversation), messages: [],
                                          unread: unread(conversation.id, marks: marks)))
                 handed.insert(conversation.id)
             }
@@ -1773,7 +1776,7 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
                                                   ext: url.pathExtension.isEmpty ? "png" : url.pathExtension).path != before,
                       let picture = await avatar(of: user), picture != before else { continue }
                 handedAvatars[conversation.id] = picture
-                chats.append(BridgedChat(app: app, name: SlackData.chatName(conversation, users: users, me: me), messages: [],
+                chats.append(BridgedChat(app: app, name: shownName(conversation), messages: [],
                                          unread: nil, avatar: picture))
             }
             if !marks.isEmpty { lastRead = marks }
@@ -1838,9 +1841,17 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
         return (memberIDs[conversation.id] ?? []).compactMap { id in users[id].map { ChatTagPerson(name: $0, id: id) } }
     }
 
+    /// The name a conversation shows in Nook: two different ones of one name are told apart (`ChatNames`), made once
+    /// per read: every lookup by name goes through all of them.
+    private var uniqueNames: [String: String] = [:]
+
+    private func shownName(_ conversation: SlackData.Conversation) -> String {
+        uniqueNames[conversation.id] ?? SlackData.chatName(conversation, users: users, me: me)
+    }
+
     private func conversation(_ name: String) -> SlackData.Conversation? {
         let key = ChatInbox.key(app: app, chat: name)
-        return conversations.first { ChatInbox.key(app: app, chat: SlackData.chatName($0, users: users, me: me)) == key }
+        return conversations.first { ChatInbox.key(app: app, chat: shownName($0)) == key }
     }
 
     func canLoadOlder(name: String) -> Bool { isReady && conversation(name) != nil }
@@ -1886,7 +1897,7 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
                 let messages = SlackData.messages(["messages": [match]], conversation: conversation, users: users, me: me)
                     .filter { ChatHistorySearch.matches($0, [word]) }
                 guard !messages.isEmpty else { continue }
-                let name = SlackData.chatName(conversation, users: users, me: me)
+                let name = shownName(conversation)
                 found.append((BridgedChat(app: app, name: name, messages: [], unread: nil), messages))
             }
         }

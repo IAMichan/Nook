@@ -156,11 +156,21 @@ final class TeamsWebDataTests: XCTestCase {
         XCTAssertFalse(TeamsWebData.caughtUp(history, last: ChatJSON.date("2026-10-23T11:00:00.000Z")))
     }
 
+    /// Two Teams chats of one name, in one account, are told apart; each answer then finds its own chat.
+    func testTeamsChatsOfOneNameAreToldApart() {
+        let named = TeamsData.uniquelyNamed([[TeamsData.Chat(id: "1", name: "Jan", isGroup: false),
+                                              TeamsData.Chat(id: "2", name: "Jan", isGroup: false),
+                                              TeamsData.Chat(id: "3", name: "", isGroup: false)]])[0]
+        XCTAssertNotEqual(named[0].name, named[1].name)
+        XCTAssertEqual(named[2].name, "", "named by its messages later")
+    }
+
     /// A picture sent as a file lives in SharePoint, which Nook does not reach: a file row, never a photo that keeps waiting.
     func testPictureSentAsFileIsAFileRow() {
         let picture = TeamsWebData.file("[{\"fileName\":\"finance.png\"}]")
         XCTAssertEqual(picture, ChatMedia(kind: .file, name: "finance.png", outOfReach: true))
         XCTAssertEqual(picture?.isPictureComing, false)
+        XCTAssertEqual(TeamsWebData.file("[{\"fileName\":\"a.png\"},{\"fileName\":\"b.png\"},{\"title\":\"c.png\"}]")?.name, "a.png +2")
     }
 
     /// A picture pasted into a Teams message shows as itself, fetched from Teams' media service only; an image from

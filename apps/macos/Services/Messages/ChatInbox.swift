@@ -653,6 +653,50 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+/// Two different chats of one app with one name, told apart in the name they show: every chat in the shared inbox and
+/// every answer goes by that name, so two people called the same never share a row, and an answer never reaches the
+/// wrong one. Each gets a short mark made from its own id, so it stays the same across reads and launches. Every bridge
+/// that knows its chats by an id of their own runs its names through this. Messages goes by the person, Snapchat's website
+/// shows no ids, and WhatsApp and Mail key their chats by id.
+enum ChatNames {
+    struct Chat {
+        var id: String
+        var app: String
+        var name: String
+        /// What makes two chats the same one to you (the same person in two threads): they then keep one row.
+        var same: String? = nil
+    }
+
+    private static let separator = " · "
+
+    /// The name each chat shows, by its id: its own, or with its mark when another chat of its app has that name too.
+    static func unique(_ chats: [Chat]) -> [String: String] {
+        let byName = Dictionary(grouping: chats.filter { !$0.name.isEmpty }) { ChatInbox.key(app: $0.app, chat: $0.name) }
+        var names: [String: String] = [:]
+        for group in byName.values {
+            let shared = Set(group.map { $0.same ?? $0.id }).count > 1
+            for chat in group { names[chat.id] = shared ? chat.name + separator + mark(chat.same ?? chat.id) : chat.name }
+        }
+        return names
+    }
+
+    /// The name a chat had before it got its mark; nil for a name without one. The row of that name held both chats.
+    static func unmarked(_ name: String) -> String? {
+        guard let range = name.range(of: separator, options: .backwards) else { return nil }
+        let tail = name[range.upperBound...]
+        guard tail.count == 4, tail.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else { return nil }
+        return String(name[..<range.lowerBound])
+    }
+
+    /// Four hex digits (FNV-1a): `hashValue` differs per launch.
+    private static func mark(_ id: String) -> String {
+        var hash: UInt32 = 2_166_136_261
+        for byte in id.utf8 { hash = (hash ^ UInt32(byte)) &* 16_777_619 }
+        let hex = String(hash & 0xffff, radix: 16)
+        return String(repeating: "0", count: 4 - hex.count) + hex
+    }
+}
+
 /// Where a chat stands, the same for every chat app: something new, read in Nook while the app itself still shows it
 /// unread (it did not hear that you read it), or read everywhere.
 enum ChatReadState: Equatable, Sendable {
@@ -1084,6 +1128,11 @@ struct ChatInbox: Codable, Equatable, Sendable {
                                                      || (chat.avatar != nil && chat.avatar != known?.avatar) || described))
                 || (known == nil && gone == nil && chat.listed)
         else { return false }
+        // Two chats that shared a row now each have their own: the old row held both, and their app has their messages.
+        if known == nil, chat.chatID == nil, let shared = ChatNames.unmarked(chat.name) {
+            let old = Self.key(app: chat.app, chat: shared)
+            if threads[old]?.bridged == true { threads[old] = nil }
+        }
         var thread = known ?? InboxThread(id: key, app: chat.app, name: chat.name)
         thread.chatID = chat.chatID
         let before = thread
