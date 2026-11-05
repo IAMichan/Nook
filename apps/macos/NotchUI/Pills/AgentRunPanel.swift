@@ -601,19 +601,19 @@ struct AgentRunPanel: View {
     /// What sits under the timeline: an approval, a confirmation, the agent's question, or the composer.
     @ViewBuilder
     private func bottomBar(_ run: WorkspaceRun) -> some View {
-        if let pending = workspace.approvals[runID], let first = pending.first {
-            approval(run, first, more: pending.count - 1).chatColumn()
-        } else if let request = bridge.pending.first(where: { $0.caller.kind == .run(runID) }) {
-            // A command or pull request the agent asks for through Nook's workspace.
-            let approval = ApprovalCenter.make(request)
-            ApprovalView(approval: approval, inline: true) { app.approvals.decide(approval, $0) }.chatColumn()
-        }
         if let target = revertTarget {
             revertConfirmation(target)
         } else if let target = editTarget {
             editConfirmation(target)
         } else if confirmDelete {
             deleteConfirmation(run)
+        } else if let pending = workspace.approvals[runID], let first = pending.first {
+            // What the agent waits for takes the composer's place until answered, in every kind of session.
+            approval(run, first, more: pending.count - 1).chatColumn()
+        } else if let request = bridge.pending.first(where: { $0.caller.kind == .run(runID) }) {
+            // A command or pull request the agent asks for through Nook's workspace.
+            let approval = ApprovalCenter.make(request)
+            ApprovalView(approval: approval, inline: true) { app.approvals.decide(approval, $0) }.chatColumn()
         } else if let question = workspace.questions[runID]?.first {
             // The agent asks something: its question takes the composer's place until answered (Stop stays).
             RunQuestionPanel(question: question, agent: run.provider.displayName, folder: run.workingDirectory,

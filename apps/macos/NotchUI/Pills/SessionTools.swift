@@ -64,7 +64,7 @@ enum SessionTool: String {
 /// The panels' quiet icons in a session's header, one per side as in an editor: the bottom panel and the side panel on
 /// the right (`SidePanelToggle`), each with the mark of its side, and in the notch the session list on the left (the
 /// main window has `PanelSidebarToggle` for it). The terminal and the browser open from the panels themselves (their tabs, + and the list of tools). The bottom panel
-/// opens on what it showed last, the terminal by default; the side panel always on the list of tools, with no tab open.
+/// opens on what it showed last, the terminal by default; so does the side panel, or on the list of tools with no tab open.
 /// When the agent started a process or opened a page that you have not looked at yet, the side panel's icon carries a
 /// small dot. The same goes for a plan or another output the agent made.
 struct SessionToolSwitch: View {
@@ -133,16 +133,13 @@ struct SessionToolSwitch: View {
         }
     }
 
-    /// Opens the side panel on the list of tools, with no tab open yet, or closes it with its tabs.
+    /// Puts the side panel away with its tabs, or opens it again on what it showed.
     private var panelToggle: some View {
         let open = viewModel.sessionTool != .conversation
         let base = open ? tr("agents.tool.close") : tr("agents.tool.panel")
         let help = fresh ? base + " · " + tr("bridge.tool.unseen") : base
         return SidePanelToggle(edge: .trailing, open: open, fresh: fresh, help: help) {
-            // Closing it also closes its tabs (a file or diff that took its place may have left some); it always
-            // opens on the list of tools.
-            viewModel.closeSidePanel()
-            if !open { viewModel.sessionTool = .picker }
+            viewModel.toggleSidePanel()
         }
     }
 }
@@ -238,9 +235,9 @@ private struct SessionPanelSlot {
 /// A session in the Agents tab together with the tools it works with. The conversation stays in view; a terminal, the
 /// browser or the changes open in a side panel on its right or a bottom panel under it, each in a tab you open with +
 /// and close with its cross. A tool is open in one of the two at a time. With no tab open a panel lists the tools.
-/// Drag the line beside (or above) a panel to make it wider (or taller). A turn's diff opens in the Changes tab, and the
-/// tool panel and a file the conversation opened take turns on the right (`SessionSideLink`). With room to spare the session panel stays docked
-/// as the first column on the right of the conversation, with any tool, diff or file panel to its right.
+/// Drag the line beside (or above) a panel to make it wider (or taller). A turn's diff opens in the Changes tab and a
+/// file in the File tab (`SessionSideLink`). With room to spare the session panel is a card
+/// on the right of the conversation until you close it, with the tool panel to its right.
 struct SessionWorkbench<Conversation: View>: View {
     @ObservedObject var viewModel: NotchViewModel
     let directory: String
@@ -269,8 +266,6 @@ struct SessionWorkbench<Conversation: View>: View {
     /// What the conversation found the agent produced (`SessionOutputsReport`), and the output the outputs tab shows.
     @State private var outputs = SessionOutputsReport()
     @State private var outputSelection: String?
-    /// A file the agent read or wrote that you clicked (`SessionSideLink`).
-    @State private var filePreview: String?
     /// What the Changes tab shows, picked in a turn's card; nil for what the branch changed.
     @State private var diffSelection: TurnDiffSelection?
     /// The command the agent runs that the Terminal tab shows (its event's id), opened from the conversation's live
@@ -300,7 +295,10 @@ struct SessionWorkbench<Conversation: View>: View {
         viewModel[keyPath: slot.tabs].filter(usable)
     }
 
-    private var detailOpen: Bool { filePreview != nil }
+    /// The file in view in the File tab: a step in the conversation marks it.
+    private var shownFile: String? {
+        shown(.side) == .file ? fileViewer.target?.path : nil
+    }
 
     var body: some View {
         let side = shown(.side)
@@ -383,14 +381,6 @@ struct SessionWorkbench<Conversation: View>: View {
                     panel(.side, tool: side)
                         .sidePanel(.trailing, width: $toolWidth, defaultWidth: PanelLayout.tool, available: totalWidth,
                                    rest: conversationRoom)
-                } else if let filePreview {
-                    FilePreviewPanel(path: filePreview, wide: PanelLayout.wide($outputsWidth)) {
-                        withAnimation(NookTheme.reveal) { self.filePreview = nil }
-                    }
-                    .id(filePreview)
-                    .focusArea(.sidePanel)
-                    .sidePanel(.trailing, width: $outputsWidth, defaultWidth: PanelLayout.outputs, available: totalWidth,
-                               rest: conversationRoom)
                 }
             }
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -401,7 +391,7 @@ struct SessionWorkbench<Conversation: View>: View {
                 }
             }
             // The panels on the right, and the docked session panel that steps aside for them, open and close at once.
-            .sidePanelsOpenAtOnce(RightPanels(side: sideOpen, covering: covering, file: filePreview, docked: docked))
+            .sidePanelsOpenAtOnce(RightPanels(side: sideOpen, covering: covering, docked: docked))
             // Over a bottom panel the columns' lines end at its line instead of running on to the window's bottom.
             .transformEnvironment(\.lineBleed) { if bottom != .conversation { $0.bottom = 0 } }
             // The bottom panel runs the full width of the workbench, under the docked session panel and the side panel too.
@@ -444,12 +434,8 @@ struct SessionWorkbench<Conversation: View>: View {
             if !Task.isCancelled { app.prefetchPullRequestLink(url) }
         }
         .onChange(of: docked) { _, now in wasDocked = now }
-        .onChange(of: sideOpen) { _, open in
-            if open { withAnimation(NookTheme.reveal) { filePreview = nil } }
-        }
         .onChange(of: runID) { _, _ in
             diffSelection = nil
-            filePreview = nil
             consoleEventID = nil
         }
         .animation(NookTheme.reveal, value: bottom == .conversation)
@@ -505,35 +491,23 @@ struct SessionWorkbench<Conversation: View>: View {
         return true
     }
 
-    /// ⌥⌘B: the side panel on its list of tools, or closed with its tabs, as its button in the header does.
-    private func toggleSidePanel() {
-        let open = viewModel.sessionTool != .conversation
-        viewModel.closeSidePanel()
-        if !open { viewModel.sessionTool = .picker }
-    }
-
-    /// ⌘W while the keyboard is in a side or bottom panel: closes the tab in view there (a diff or file beside the
-    /// conversation closes itself). A terminal is left to `WindowKeys`, which closes just that terminal; anywhere else
+    /// ⌘W while the keyboard is in a side or bottom panel: closes the tab in view there. A terminal is left to `WindowKeys`, which closes just that terminal; anywhere else
     /// the key goes on and closes the window.
     private func closeFocusedTab() -> Bool {
         guard let window = NSApp.keyWindow, KeyCommandCenter.focusedTerminal(window.firstResponder) == nil,
               let area = FocusAreas.shared.area(of: window.firstResponder, in: window), area.isPanel else { return false }
         let slot: SessionPanelSlot = area == .bottomPanel ? .bottom : .side
         withAnimation(NookTheme.reveal) {
-            if area == .sidePanel, viewModel.sessionTool == .conversation, filePreview != nil {
-                filePreview = nil
-            } else {
-                let tool = viewModel[keyPath: slot.tool]
-                switch tool {
-                case .conversation, .picker:
-                    if area == .bottomPanel { viewModel.bottomTool = .conversation } else { viewModel.closeSidePanel() }
-                case .browser:
-                    if let page = BrowserStore.existing?.page.id { closeSessionTab(.browser(page), in: slot) } else { closeTab(.browser, in: slot) }
-                case .pullRequest:
-                    if let id = viewModel.activeSidePullRequest { closeSessionTab(.pullRequest(id), in: slot) } else { closeTab(.pullRequest, in: slot) }
-                default:
-                    closeTab(tool, in: slot)
-                }
+            let tool = viewModel[keyPath: slot.tool]
+            switch tool {
+            case .conversation, .picker:
+                if area == .bottomPanel { viewModel.bottomTool = .conversation } else { viewModel.toggleSidePanel() }
+            case .browser:
+                if let page = BrowserStore.existing?.page.id { closeSessionTab(.browser(page), in: slot) } else { closeTab(.browser, in: slot) }
+            case .pullRequest:
+                if let id = viewModel.activeSidePullRequest { closeSessionTab(.pullRequest(id), in: slot) } else { closeTab(.pullRequest, in: slot) }
+            default:
+                closeTab(tool, in: slot)
             }
         }
         return true
@@ -543,7 +517,6 @@ struct SessionWorkbench<Conversation: View>: View {
     private struct RightPanels: Equatable {
         let side: Bool
         let covering: Bool
-        let file: String?
         let docked: Bool
     }
 
@@ -566,21 +539,18 @@ struct SessionWorkbench<Conversation: View>: View {
                 return
             }
             consoleEventID = id
-            if viewModel.bottomTool != .terminal {
-                filePreview = nil
-                viewModel.sessionTool = .terminal
-            }
+            if viewModel.bottomTool != .terminal { viewModel.sessionTool = .terminal }
         }
     }
 
-    /// Opens a file in the side panel; the file that is open already closes again.
+    /// Opens a file in the File tab; the file in view there already closes the tab again.
     private func showFile(_ file: String) {
         withAnimation(NookTheme.reveal) {
-            if filePreview == file {
-                filePreview = nil
+            if shownFile == file {
+                closeTab(.file, in: .side)
             } else {
-                filePreview = file
-                viewModel.sessionTool = .conversation
+                fileViewer.open(FileTarget(path: file))
+                viewModel.sessionTool = .file
             }
         }
     }
@@ -588,7 +558,6 @@ struct SessionWorkbench<Conversation: View>: View {
     /// Opens the Changes tab on a turn (and a file): where it is open already, otherwise in the side panel.
     private func openDiff(_ selection: TurnDiffSelection) {
         withAnimation(NookTheme.reveal) {
-            filePreview = nil
             diffSelection = selection
             if viewModel.bottomTool != .changes { viewModel.sessionTool = .changes }
         }
@@ -621,7 +590,7 @@ struct SessionWorkbench<Conversation: View>: View {
     /// conversation. A terminal, page or diff you have open beside it stays; then only the tab's dot says so (false).
     private func openOutput(_ id: String) -> Bool {
         let side = viewModel.sessionTool
-        let sideFree = (side == .conversation && !detailOpen) || side == .picker
+        let sideFree = side == .conversation || side == .picker
         guard viewModel.bottomTool == .outputs || side == .outputs || sideFree else { return false }
         outputSelection = id
         if viewModel.bottomTool != .outputs, side != .outputs {
@@ -635,7 +604,7 @@ struct SessionWorkbench<Conversation: View>: View {
     private func openSubagents() -> Bool {
         let side = viewModel.sessionTool
         if viewModel.bottomTool == .subagents || side == .subagents { return true }
-        guard (side == .conversation && !detailOpen) || side == .picker else { return false }
+        guard side == .conversation || side == .picker else { return false }
         withAnimation(NookTheme.reveal) { viewModel.sessionTool = .subagents }
         return true
     }
@@ -670,7 +639,7 @@ struct SessionWorkbench<Conversation: View>: View {
                          showPullRequestList: { withAnimation(NookTheme.swap) { viewModel.showSidePullRequestList() } },
                          closeTab: { closeSessionTab($0, in: slot) },
                          close: {
-                             if slot.tool == \NotchViewModel.sessionTool { viewModel.closeSidePanel() } else { viewModel.bottomTool = .conversation }
+                             if slot.tool == \NotchViewModel.sessionTool { viewModel.toggleSidePanel() } else { viewModel.bottomTool = .conversation }
                          },
                          console: runID.flatMap { run in consoleEventID.map { CommandConsoleRef(run: run, event: $0) } },
                          showConsole: { id in withAnimation(NookTheme.reveal) { consoleEventID = id } },
