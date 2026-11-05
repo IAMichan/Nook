@@ -54,8 +54,10 @@ targets:
       # Shared with the iOS companion (apps/ios): protocol, sealing, hashing.
       - path: ../../packages/protocol/Sources
       # The companion relay's code (apps/relay), which Settings deploys to the user's own Cloudflare account
-      # (CloudflareRelayDeployer); in the app as Resources/worker.
+      # (CloudflareRelayDeployer); in the app as Resources/worker. No intermediate groups: XcodeGen would put the "apps"
+      # group in the project twice, next to the one for packages, and Xcode refuses to open a project like that.
       - path: ../relay/worker
+        createIntermediateGroups: false
         type: folder
         buildPhase: resources
     dependencies:
