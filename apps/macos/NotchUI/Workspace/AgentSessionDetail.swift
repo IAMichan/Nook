@@ -167,15 +167,6 @@ struct AgentSessionDetail: View {
                 steps(session)
             }
 
-            if session.status == .waiting && session.approvalID == nil && !app.demoMode, !session.summary.isEmpty,
-               app.hub.question(for: session.id) == nil {
-                waitingNote(session)
-            }
-
-            if session.approvalID != nil, !session.diff.isEmpty {
-                approvalDiff(session)
-            }
-
             if app.demoMode {
                 Spacer(minLength: 0)
                 liveBottomBar(session, shown: shown, known: past)
@@ -189,14 +180,21 @@ struct AgentSessionDetail: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// What sits under a live session's conversation: an approval, or the composer with its error line and tray.
+    /// What sits under a live session's conversation: what the agent waits for, or the composer with its error line and
+    /// tray. A question or an approval takes the composer's place until answered, in every kind of session.
     private func liveBottomBar(_ session: AgentSession, shown: AgentSession, known: PastSession?) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            // The agent's question sits right above the composer, where you answer.
+            // What the agent is waiting on stands right above where you answer.
+            if session.status == .waiting && session.approvalID == nil && !app.demoMode, !session.summary.isEmpty,
+               app.hub.question(for: session.id) == nil {
+                waitingNote(session).chatColumn()
+            }
+            if session.approvalID != nil, !session.diff.isEmpty {
+                approvalDiff(session).chatColumn()
+            }
             if !app.demoMode, let question = app.hub.question(for: session.id) {
                 questionPanel(question).chatColumn()
-            }
-            if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {
+            } else if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {
                 let approval = ApprovalCenter.make(request)
                 ApprovalView(approval: approval, inline: true) { app.approvals.decide(approval, $0) }
             } else if !app.demoMode, let request = bridgeRequest(for: session) {

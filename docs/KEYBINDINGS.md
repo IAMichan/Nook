@@ -59,8 +59,9 @@ shows what your file could not use, and the keys that claim the same chord.
 | ⌥⌘↩ | `composer.startInBackground` | `composerFocus` | In the new-session box: starts the session without opening it, and keeps a fresh box with the same folder, agent and worktree choices |
 | ⌘B | `sidebar.toggle` | `!terminalFocus` | Puts the Agents list away, or brings it back |
 | ⌘J | `terminal.toggle` | | The terminal in the bottom panel under the session, and again to put it away |
-| ⌥⌘B | `sidePanel.toggle` | | The side panel on its list of tools, or closed with its tabs |
-| ⌘W | `tab.close` | `terminalFocus \|\| panelFocus` | With a terminal focused: closes that terminal; with a side or bottom panel focused: closes its tab in view (a diff or file beside the conversation closes itself). Anywhere else ⌘W closes the window as before |
+| ⌥⌘B | `sidePanel.toggle` | | Puts the side panel away with its tabs, or opens it again on what it showed |
+| ⇧⌘B | `sessionPanel.toggle` | `!terminalFocus` | The session panel beside the conversation, where the window has room for it |
+| ⌘W | `tab.close` | `terminalFocus \|\| panelFocus` | With a terminal focused: closes that terminal; with a side or bottom panel focused: closes its tab in view. Anywhere else ⌘W closes the window as before |
 | ⌘D / ⇧⌘D | `terminal.splitRight` / `terminal.splitDown` | `terminalFocus` | A new terminal in the same folder beside or under the focused one (up to four in a split) |
 | F6 / ⇧F6 | `focus.next` / `focus.previous` | | The keyboard to the next or previous part of the window: the session list, the conversation, the composer, the side panel, the bottom panel (only the parts on screen, round the end, back where it was in each part) |
 
