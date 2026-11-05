@@ -44,6 +44,13 @@ claude mcp add --scope user nook -- ~/.nook/nook-mcp --agent claude-code
 codex mcp add nook -- ~/.nook/nook-mcp --agent codex
 ```
 
+### Android devices
+
+The device tools also take Android devices when the Android SDK is installed (`ANDROID_HOME`, or Android Studio's folder):
+`device_list` shows what `adb` sees and the virtual devices that can start, under ids that begin with `android`.
+`device_screenshot` takes a picture through `adb`, and the agent drives the device with `adb` in its own shell. The Simulator
+page shows them below the simulators, as a picture refreshed about once a second: touching the screen from Nook is iOS only.
+
 ### Scripts: the `nook` command line
 
 Nook installs `~/.nook/nook`, a Perl script that makes the same calls over the same socket. Add `~/.nook` to your `PATH` to

@@ -42,6 +42,7 @@ struct SimulatorView: View {
                 PatientSpinner()
             }
         }
+        .safeAreaInset(edge: .bottom) { AndroidDevicesView() }
         .task { await hub.prepare() }
         .onAppear { hub.viewers += 1 }
         .onReceive(NotificationCenter.default.publisher(for: .nookOpenSimulator)) { note in
