@@ -46,7 +46,7 @@ shows what your file could not use, and the keys that claim the same chord.
 | ⇧⌘L | `selection.quote` | `!terminalFocus && !editableFocus` | Words selected in an agent's answer go with your next message, as a chip above the composer |
 | ⌘L | `selection.ask` | `!terminalFocus && !editableFocus` | The same, and the keyboard goes to the composer to ask about them |
 | ⇧⌘[ / ⇧⌘] | `session.previous` / `session.next` | | The chat above or below on Chats; the repository tab on the left or right on the Actions page |
-| ⌘D | `diff.toggle` | `!terminalFocus` | The latest turn's changes beside the session, and again to close them |
+| ⌘D | `diff.toggle` | `!terminalFocus` | The Changes tab on the latest turn (or the branch), and again to close it |
 | ⇧⌘M | `modelPicker.toggle` | `!terminalFocus` | Opens the model picker of the composer on screen (↑ ↓ move over the models, Return picks, Escape closes) |
 | ⇧⌘S | `session.settle` | `!terminalFocus` | Settles the open session, or brings a settled one back |
 | ⇧⌘P | `session.pin` | `!terminalFocus` | Pins the open session, or unpins it |
@@ -57,7 +57,7 @@ shows what your file could not use, and the keys that claim the same chord.
 | ⌘O | `session.openInEditor` | `!terminalFocus` | Opens the open session's folder in your editor (Settings › Workspace), else in Finder |
 | ⇧⌘C | `session.copyReference` | `!terminalFocus && !editableFocus` | Copies the open session's folder and branch: `/code/app (feature/x)` |
 | ⌥⌘↩ | `composer.startInBackground` | `composerFocus` | In the new-session box: starts the session without opening it, and keeps a fresh box with the same folder, agent and worktree choices |
-| ⌘B | `sidebar.toggle` | `!terminalFocus` | Puts the Agents list away beside a session, or brings it back |
+| ⌘B | `sidebar.toggle` | `!terminalFocus` | Puts the Agents list away, or brings it back |
 | ⌘J | `terminal.toggle` | | The terminal in the bottom panel under the session, and again to put it away |
 | ⌥⌘B | `sidePanel.toggle` | | The side panel on its list of tools, or closed with its tabs |
 | ⌘W | `tab.close` | `terminalFocus \|\| panelFocus` | With a terminal focused: closes that terminal; with a side or bottom panel focused: closes its tab in view (a diff or file beside the conversation closes itself). Anywhere else ⌘W closes the window as before |
