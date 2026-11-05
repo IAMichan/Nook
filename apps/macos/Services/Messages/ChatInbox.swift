@@ -1140,6 +1140,11 @@ struct ChatInbox: Codable, Equatable, Sendable {
             }
             if let note = thread.reaction, gone.contains(note.message) { thread.reaction = nil }
         }
+        // You wrote in this chat, so what came before that is read, in every app, as WhatsApp itself has it. An app that
+        // counts from an old read mark would otherwise make the whole chat unread as soon as your message moves it.
+        // A little before your message: a clock behind yours must not hide an answer that came right after it.
+        let answered = (thread.messages + messages).filter(\.isMine).map(\.date).max()?
+            .addingTimeInterval(-Self.sameMessageWindow)
         var ids = Set(thread.messages.map(\.id))
         // A chat its app knows by an id (`chatID`) gets every message under the app's own id, never also as a
         // notification: two messages with the same words in a row ("ok", "ok") are two. Elsewhere the same words from the
@@ -1154,7 +1159,8 @@ struct ChatInbox: Codable, Equatable, Sendable {
             thread.messages.insert(message.isDeleted ? message.withdrawn() : message, at: index)
             ids.insert(message.id)
             // History (fetched on opening the chat, or after the Mac slept) is never new, nor is a deleted message.
-            if chat.unread == nil, !chat.history, let newestBefore, !message.isMine, !message.isDeleted, message.date > newestBefore {
+            if chat.unread == nil, !chat.history, let newestBefore, !message.isMine, !message.isDeleted, message.date > newestBefore,
+               message.date > answered ?? .distantPast {
                 thread.unread += 1
             }
         }
@@ -1174,9 +1180,11 @@ struct ChatInbox: Codable, Equatable, Sendable {
             thread.reaction = note
         }
         if let unread = chat.unread {
-            if let read = thread.readInNook {
-                // Read in Nook: only what came in after that is new here, never more than the app itself counts. A chat
-                // Nook holds no messages of goes by when its app says it last had one.
+            // Marked unread by hand stays so: your own message does not take that back.
+            let read = [thread.readInNook, thread.markedUnread == nil ? answered : nil].compactMap { $0 }.max()
+            if let read {
+                // Read in Nook or answered: only what came in after that is new here, never more than the app itself
+                // counts. A chat Nook holds no messages of goes by when its app says it last had one.
                 let fresh = thread.messages.filter { !$0.isMine && $0.date > read }.count
                 thread.unread = thread.messages.isEmpty ? ((thread.activity ?? .distantPast) > read ? unread : 0) : min(unread, fresh)
             } else if thread.markedUnread != nil {

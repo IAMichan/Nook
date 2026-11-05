@@ -84,7 +84,7 @@ extension ChatBubble {
         attachment = kind == .audio ? (file.name.flatMap { $0.isEmpty ? nil : $0 } ?? file.label) : file.label
         guard let url = file.url else {
             // A picture its app still fetches: a photo-shaped tile until it is here, not a file row.
-            if kind == .photo || kind == .gif { media = .photoComing }
+            if file.isPictureComing { media = .photoComing }
             return
         }
         self.file = url
