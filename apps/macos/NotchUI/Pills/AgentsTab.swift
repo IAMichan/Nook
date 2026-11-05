@@ -118,7 +118,7 @@ struct AgentsTab: View {
                         case .pullRequests: PullRequestsPanel()
                         case .actions: ActionsPanel()
                         case .terminals: AgentsToolPage(title: tr("agents.footer.terminals")) { TerminalsView() }
-                        case .browser: AgentsToolPage(title: tr("agents.footer.browser")) { BrowserView() }
+                        case .browser: AgentsToolPage(title: tr("agents.footer.browser")) { BrowserView(store: .shared) }
                         case .worktrees: AgentsToolPage(title: tr("agents.footer.worktrees")) { WorktreesView() }
                         case .simulator: AgentsToolPage(title: tr("agents.footer.simulator")) { SimulatorView() }
                         case .new:
@@ -863,7 +863,9 @@ struct AgentListRow: View, Equatable {
     /// card lists the files with their lines.
     private var changes: some View {
         changeCount
-            .detailCard(enabled: showsChangesCard, onDetail: $onDetail) { RowChangesCard(directory: item.path) }
+            .detailCard(enabled: showsChangesCard, onDetail: $onDetail) {
+                RowChangesCard(directory: item.path, countedAdded: item.linesAdded, countedRemoved: item.linesRemoved)
+            }
     }
 
     @ViewBuilder

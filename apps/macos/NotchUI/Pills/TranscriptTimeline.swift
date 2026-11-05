@@ -11,7 +11,7 @@ struct TranscriptConversation: View {
     let accent: Color
     /// The agent is working: keep reading and show that it is busy.
     var working = false
-    /// Shown when the transcript gives nothing (yet).
+    /// Shown when the transcript gives nothing once it was read, or when there is none to read.
     var fallback: [AgentChatMessage] = []
     var onReply: ((String) -> Void)? = nil
     var footer: String? = nil
@@ -54,9 +54,13 @@ struct TranscriptConversation: View {
         messages.isEmpty && readPath != path ? TranscriptCache.messages(path) ?? [] : messages
     }
 
+    /// There is no transcript to wait for, or this view's read of it is done.
+    private var readFinished: Bool {
+        (path.isEmpty && load == nil) || (loaded && readPath == path)
+    }
+
     private var shown: [AgentChatMessage] {
-        let read = transcriptMessages
-        return read.isEmpty ? fallback : read
+        TranscriptPresentation.shown(read: transcriptMessages, fallback: fallback, readFinished: readFinished)
     }
 
     /// The session's key in TimelineVisitStore: its transcript; nil for a conversation read from elsewhere.
@@ -80,7 +84,7 @@ struct TranscriptConversation: View {
                     // Lazy: a long conversation only lays out what is on screen.
                     LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                         if shown.isEmpty {
-                            if loaded || (path.isEmpty && load == nil) {
+                            if readFinished {
                                 Text(tr("agents.noMessagesInTranscript"))
                                     .font(NookTheme.TextStyle.body)
                                     .foregroundStyle(NookTheme.textTertiary)

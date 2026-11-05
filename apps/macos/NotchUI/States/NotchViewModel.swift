@@ -16,9 +16,8 @@ struct SessionLayout {
     var bottomTabs: [SessionTool]
     var pullRequestTabs: [SidePullRequestTab]
     var activePullRequest: UUID?
-    /// The file its File tab showed, and the page in the browser while it had the browser open.
+    /// The file its File tab showed.
     var file: FileTarget?
-    var page: URL?
 
     /// Only the conversation was in view: nothing to bring back.
     var isEmpty: Bool { sideTool == .conversation && sideTabs.isEmpty && bottomTool == .conversation }
@@ -162,14 +161,13 @@ final class NotchViewModel: ObservableObject {
         let layout = SessionLayout(
             sideTool: sessionTool, sideTabs: sessionTabs, bottomTool: bottomTool, bottomTabs: bottomTabs,
             pullRequestTabs: sidePullRequestTabs, activePullRequest: activeSidePullRequest,
-            file: sessionTabs.contains(.file) ? FileViewerStore.shared.target : nil,
-            page: sessionTabs.contains(.browser) || (bottomTool != .conversation && bottomTabs.contains(.browser))
-                ? BrowserStore.existing?.pageURL : nil)
+            file: sessionTabs.contains(.file) ? FileViewerStore.shared.target : nil)
         return layout.isEmpty ? nil : layout
     }
 
-    /// Shows a session's panels as it left them, or only its conversation without `layout`. Nook has one browser and one
-    /// file viewer for every session, so the page and the file it showed load again when another session changed them.
+    /// Shows a session's panels as it left them, or only its conversation without `layout`. Each session has its own
+    /// browser, which keeps its pages; Nook has one file viewer, so the file it showed loads again when another session
+    /// changed it.
     /// An artifact does not come back: it is put away when its session's side panel closes.
     private func restoreSessionLayout(_ layout: SessionLayout?) {
         closeSidePanel()
@@ -177,7 +175,6 @@ final class NotchViewModel: ObservableObject {
             bottomTool = .conversation
             return
         }
-        if let page = layout.page, BrowserStore.existing?.pageURL != page { BrowserStore.shared.open(page) }
         if let file = layout.file, FileViewerStore.shared.target != file { FileViewerStore.shared.open(file) }
         bottomTabs = layout.bottomTabs
         bottomTool = layout.bottomTool
