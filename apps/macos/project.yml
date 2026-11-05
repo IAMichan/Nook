@@ -399,6 +399,7 @@ targets:
       - path: Services/Workspace/LimitPool.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/WorkspaceBridgeArguments.swift
+      - path: Services/Workspace/BrowserSession.swift
       - path: Services/Workspace/WorkspaceBridgeSessions.swift
       - path: Services/Workspace/RenderedPage.swift
       - path: Services/Workspace/TimelinePresentation.swift

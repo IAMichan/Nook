@@ -318,9 +318,10 @@ button, the window remembers its tab (and opens at an agent that waits for you),
 
 In the window the tabs live in a sidebar along the left edge (`PanelSidebar.swift`): `PanelView` hands
 the tab a `PanelSidebarContext` through the environment, and the tab's first column starts with `PanelSidebarTop`
-(the title bar's row with search, talk and split view, then the tabs as rows: the selected
-one with a filled mark on `rowSelected` and a hairline edge, and at the end what goes on there — waiting sessions in
-amber or a pulse while one works, unread chats, the bars while music plays — or its shortcut under the pointer) and carries `.panelSidebarColumn()`.
+(the title bar's row with search, talk and split view, then the tabs on one 34 pt bar: the selected one with its mark,
+name and what goes on there on `rowSelected` — waiting sessions in amber or a pulse while one works, unread chats as a
+`NookCountBadge`, the bars while music plays — and the others only their mark with that status as a dot on its corner,
+amber for what waits for you and blue for what is busy, their name and shortcut in the tooltip) and carries `.panelSidebarColumn()`.
 The window has an empty unified toolbar, so its title bar is a 52 pt row (`PanelSidebarMetrics.titleBand`) with the
 traffic lights in the middle: the sidebar's column runs up into it and a session's header is centered on it. A scroll
 view may draw past its top into that row, so a conversation's header stands on the canvas above it
