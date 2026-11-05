@@ -29,15 +29,20 @@ targets:
       - path: Shared
       - path: ../../packages/protocol/Sources
       # The agents' and models' real marks, drawn in code, shared with the Mac app so both show the same logos.
+      # Everything from the Mac stays in one group without intermediate groups: XcodeGen would also list these files
+      # under an "apps" group, and Xcode refuses to open a project with a member in two groups.
       - path: ../macos/NotchUI/Components/BrandLogo.swift
         group: Shared from the Mac
+        createIntermediateGroups: false
       # The one theme: colors, the type scale (Dynamic Type on the phone), radii, spacing and motion.
       - path: ../macos/NotchUI/Theme/NookTheme.swift
         group: Shared from the Mac
+        createIntermediateGroups: false
       # The components both apps share: buttons, badges, list parts, agent logos and rows, chat rows and bubbles, your
       # messages and the time under them.
       - path: ../macos/NotchUI/Shared
         group: Shared from the Mac
+        createIntermediateGroups: false
     dependencies:
       - target: NookActivity
       - target: NookNotifications
@@ -87,6 +92,8 @@ targets:
       - path: NookActivity
       - path: Shared
       - path: ../macos/NotchUI/Theme/NookTheme.swift
+        group: Shared from the Mac
+        createIntermediateGroups: false
       - path: NookCompanion/Theme.swift
       - path: NookCompanion/Localizable.xcstrings
       # The only shared protocol file it needs: the activity's attributes and content.
