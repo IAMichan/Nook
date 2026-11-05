@@ -7,15 +7,25 @@ struct RowChangesCard: View {
     @State private var loaded = false
     /// More than this and the rest is counted under the list: the card stays a glance, the session has the full diff.
     static let limit = 12
+    /// The lines the row shows for this session, counted as it edited; git can have nothing left of them (the work went
+    /// straight onto the default branch, or the folder is gone), and the card then says so instead of "no changes".
+    let countedAdded: Int
+    let countedRemoved: Int
 
-    init(directory: String) {
+    init(directory: String, countedAdded: Int = 0, countedRemoved: Int = 0) {
         _model = StateObject(wrappedValue: FolderGitModel.make(directory: directory))
+        self.countedAdded = countedAdded
+        self.countedRemoved = countedRemoved
     }
 
     var body: some View {
         let files = model.changes
-        HoverCard(title: tr("agents.git.changes", files.count)) {
-            if files.isEmpty {
+        let counted = countedAdded + countedRemoved > 0
+        HoverCard(title: files.isEmpty && counted ? tr("agents.panel.changes") : tr("agents.git.changes", files.count)) {
+            if files.isEmpty, counted, loaded {
+                PullRequestLineCounts(additions: countedAdded, deletions: countedRemoved)
+                HoverCardRow(symbol: "checkmark.circle", text: tr("agents.row.changes.counted"))
+            } else if files.isEmpty {
                 HoverCardRow(symbol: loaded ? "checkmark.circle" : "hourglass",
                              text: loaded ? tr("agents.git.noChanges") : tr("connect.status.loading"))
             } else {
