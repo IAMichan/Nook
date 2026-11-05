@@ -248,16 +248,24 @@ struct TurnDiffPanel: View {
                     let loaded = (try? await load(current, [source], options)) ?? ""
                     return loaded.isEmpty ? fallback : loaded
                 }
+                // The cache of read diffs is shared: two worktrees of one repository have the same paths.
+                let scope = (runID?.uuidString ?? directory ?? "") + "|turn|" + selection.turn
+                // Git's paths start at the repository, a file step's at the session's folder, which may lie deeper.
+                let focus = selection.file.map { file in
+                    files.first { $0.path == file || $0.path.hasSuffix("/" + file) }?.path ?? file
+                }
                 if let runID {
-                    RunDiffList(runID: runID, files: files, scope: "turn|" + selection.turn, expanded: $expanded,
-                                showsTree: showFiles, focus: selection.file, diff: read)
+                    RunDiffList(runID: runID, files: files, scope: scope, expanded: $expanded, showsTree: showFiles,
+                                focus: focus, diff: read)
                         .id(selection.turn)
                 } else {
-                    StackedDiffList(files: files, scope: "turn|" + selection.turn, expanded: $expanded, showsTree: showFiles,
-                                    focus: selection.file, diff: read)
+                    StackedDiffList(files: files, scope: scope, expanded: $expanded, showsTree: showFiles,
+                                    focus: focus, diff: read)
                         .id(selection.turn)
                 }
             }
+            // Under the list, also when the choice shows no files: comments you made stay yours to send.
+            if let runID { ReviewCommentsBar(runID: runID) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear { if let file = selection.file { expanded = [file] } }
@@ -265,8 +273,7 @@ struct TurnDiffPanel: View {
         // Git is read when the panel opens and again when one of its choices is picked; never while it sits idle.
         .task(id: directory) {
             await git.refresh()
-            // Not a git folder (or not on this Mac): the agent's turns are what there is to show.
-            if selection.source.isGit, !git.isRepository { selection = TurnDiffSelection(turn: TurnDiffSelection.all) }
+            fallBackFromGit()
         }
         // A session Nook runs: what the agent wrote or committed shows without asking.
         .background { if let runID { RunGitWatcher(runID: runID) { Task { await git.refresh() } } } }
@@ -276,7 +283,14 @@ struct TurnDiffPanel: View {
             case .uncommitted, .branch: await git.refresh()
             case .turns, .turn: break
             }
+            fallBackFromGit()
         }
+    }
+
+    /// Not a git folder (or not on this Mac): the agent's turns are what there is to show, with the file you came for.
+    private func fallBackFromGit() {
+        guard selection.source.isGit, git.loaded, !git.isRepository else { return }
+        selection = TurnDiffSelection(turn: TurnDiffSelection.all, file: selection.file)
     }
 
     /// The tab's bar (`SidePanelToolbar`): what to show and how many files it changed, then read git again and the

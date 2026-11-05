@@ -625,11 +625,13 @@ struct AgentRunPanel: View {
             deleteConfirmation(run)
         } else if let pending = workspace.approvals[runID], let first = pending.first {
             // What the agent waits for takes the composer's place until answered, in every kind of session.
-            approval(run, first, more: pending.count - 1).chatColumn()
+            approval(run, first, more: pending.count - 1).chatColumn().sessionComposerBounds()
         } else if let request = bridge.pending.first(where: { $0.caller.kind == .run(runID) }) {
             // A command or pull request the agent asks for through Nook's workspace.
             let approval = ApprovalCenter.make(request)
-            ApprovalView(approval: approval, inline: true) { app.approvals.decide(approval, $0) }.chatColumn()
+            ApprovalView(approval: approval, inline: true) { app.approvals.decide(approval, $0) }
+                .chatColumn()
+                .sessionComposerBounds()
         } else if let question = workspace.questions[runID]?.first {
             // The agent asks something: its question takes the composer's place until answered (Stop stays).
             RunQuestionPanel(question: question, agent: run.provider.displayName, folder: run.workingDirectory,
@@ -638,6 +640,7 @@ struct AgentRunPanel: View {
             }
             .id(question.id)
             .chatColumn()
+            .sessionComposerBounds()
         } else {
             // Redrawn on its own with every keystroke, without the conversation above it.
             Observing(composerState) { composer(run) }.chatColumn()

@@ -24,7 +24,10 @@ final class GitDiffSources: ObservableObject {
 
     /// Reads the folder's git state and its newest commits again.
     func refresh() async {
-        guard !folder.directory.isEmpty else { return }
+        guard !folder.directory.isEmpty else {
+            loaded = true
+            return
+        }
         await folder.refresh()
         // The folder's own changes are published on it, not here: say once that they may have changed.
         objectWillChange.send()
