@@ -31,17 +31,21 @@ extension CompanionServer {
             return LaunchOptions.Project(path: info.path, name: info.name,
                                          canWorktree: canGit && info.repoRoot != nil && info.hasCommits)
         }
-        let defaultAgent = agents.contains { $0.id == settings.defaultProvider.rawValue } ? settings.defaultProvider.rawValue : agents.first?.id
         let last = WorkspacePathPolicy.normalize(settings.lastProject)
+        let defaultProject = projects.contains { $0.path == last } ? last : projects.first?.path
+        // The phone's form opens on one project, with what you last chose there.
+        let defaults = settings.composerDefaults(for: defaultProject)
+        let defaultAgent = [defaults.provider, settings.defaultProvider].first { provider in agents.contains { $0.id == provider.rawValue } }?.rawValue
+            ?? agents.first?.id
         let options = LaunchOptions(agents: agents, projects: projects,
                                     defaultAgent: defaultAgent,
-                                    defaultProject: projects.contains { $0.path == last } ? last : projects.first?.path,
-                                    defaultPlan: settings.defaultMode == .plan,
-                                    defaultWorktree: settings.defaultIsolation == .worktree)
+                                    defaultProject: defaultProject,
+                                    defaultPlan: defaults.mode == .plan,
+                                    defaultWorktree: defaults.isolation == .worktree)
         return CompanionResponse(id: request.id, ok: true, launch: options)
     }
 
-    /// Starts a session the way the composer would, with your remembered account, model and effort for that agent.
+    /// Starts a session the way the composer would, with your remembered account, model and effort for that agent in that folder.
     func launch(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
         let workspace = app.workspace
         let settings = workspace.settings
@@ -63,21 +67,18 @@ extension CompanionServer {
         config.title = String((launch.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(80))
         config.task = task
         config.provider = provider
-        let connected = app.connectedProfiles(for: provider)
-        if let saved = settings.profile(for: provider), connected.contains(where: { $0.id == saved }) {
-            config.profileID = saved
-        } else {
-            config.profileID = connected.first?.id ?? app.profiles.preferredProfile(provider.kind).id
-        }
+        let defaults = settings.composerDefaults(for: project)
+        config.profileID = defaults.profile(for: provider, connected: app.connectedProfiles(for: provider).map(\.id))
+            ?? app.profiles.preferredProfile(provider.kind).id
         // A model from the phone only when it is one the composer offers this agent; else your default.
         if let model = launch.model, app.models(for: provider).contains(model) {
             config.model = model
         } else {
-            config.model = settings.model(for: provider)
+            config.model = defaults.model(for: provider)
         }
-        config.effort = settings.effort(for: provider)
+        config.effort = defaults.effort(for: provider)
         config.mode = plan ? .plan : .agent
-        config.permission = phonePermission(provider, preferred: settings.permission(for: provider), plan: plan)
+        config.permission = phonePermission(provider, preferred: defaults.permission(for: provider), plan: plan)
         config.projectPath = project
         config.worktreeRoot = settings.worktreeRoot
         if launch.worktree {
