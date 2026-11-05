@@ -73,6 +73,10 @@ struct SessionToolSwitch: View {
     let directory: String
     /// The agent made a plan or another output you have not seen yet.
     var outputsFresh = false
+    /// The session panel beside the conversation, while the window has room for it: whether it is open. Without room
+    /// (nil) the branch button in the header opens it instead, so there is no toggle.
+    var sessionPanelOpen: Bool? = nil
+    var toggleSessionPanel: () -> Void = {}
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @AppStorage("nook.agents.bottomTool") private var lastBottomTool = SessionTool.terminal.rawValue
     /// The session list on the left of the Agents tab is put away (`AgentsTab`).
@@ -82,6 +86,11 @@ struct SessionToolSwitch: View {
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
             if sidebar == nil { listToggle }
+            if let sessionPanelOpen {
+                SidePanelToggle(edge: .trailing, symbol: "list.bullet.rectangle", open: sessionPanelOpen,
+                                help: tr(sessionPanelOpen ? "agents.sessionPanel.hide" : "agents.sessionPanel.show"),
+                                action: toggleSessionPanel)
+            }
             bottomToggle
             panelToggle
         }
@@ -244,10 +253,12 @@ struct SessionWorkbench<Conversation: View>: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
     @ObservedObject private var bridge = WorkspaceBridge.shared
+    @ObservedObject private var fileViewer = FileViewerStore.shared
     @AppStorage("nook.agents.bottomTool") private var lastBottomTool = SessionTool.terminal.rawValue
     @AppStorage("nook.agents.toolWidth") private var toolWidth = PanelLayout.tool
-    @AppStorage("nook.agents.outputsWidth") private var outputsWidth = PanelLayout.outputs
     @AppStorage("nook.agents.bottomHeight") private var bottomHeight = BottomPanelLayout.standard
+    /// You closed the session panel: it stays closed, in every session, until you open it again.
+    @AppStorage("nook.agents.sessionPanelClosed") private var sessionPanelClosed = false
     /// Starts at the size the last session measured: each session gets its own workbench, and starting from zero docked
     /// the session panel only after the first layout, sliding it in on every switch.
     @State private var totalWidth: Double = SessionWorkbenchSize.width
@@ -309,26 +320,25 @@ struct SessionWorkbench<Conversation: View>: View {
         let rightRoom = sideOpen && !covering
             ? SidePanelRoom.of(PanelSplit.width(toolWidth, minimum: PanelLayout.minimumPanel, available: totalWidth,
                                                 rest: conversationRoom))
-            : detailOpen
-                ? SidePanelRoom.of(PanelSplit.width(outputsWidth, minimum: PanelLayout.minimumPanel, available: totalWidth,
-                                                    rest: conversationRoom))
-                : 0
-        let needed = PanelLayout.sessionPanelRoom + (wasDocked ? 0 : PanelLayout.dockHysteresis)
-        let docked = dockSessionPanel && !directory.isEmpty && totalWidth - rightRoom >= needed
+            : 0
+        let needed = PanelLayout.sessionPanelRoom + (wasDocked || sessionPanelClosed ? 0 : PanelLayout.dockHysteresis)
+        let canDock = dockSessionPanel && !directory.isEmpty && totalWidth - rightRoom >= needed
+        let docked = canDock && !sessionPanelClosed
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 0) {
                 VStack(spacing: 0) {
-                    // Docked, the switch sits above the session panel instead of in the conversation's header.
-                    conversation(docked ? AnyView(EmptyView()) : AnyView(SessionToolSwitch(viewModel: viewModel, directory: directory,
-                                                           outputsFresh: toolsFresh)))
+                    // The toggles stay in the conversation's header whatever opens beside it, so they never move.
+                    conversation(AnyView(SessionToolSwitch(viewModel: viewModel, directory: directory, outputsFresh: toolsFresh,
+                                                           sessionPanelOpen: canDock ? docked : nil,
+                                                           toggleSessionPanel: { sessionPanelClosed.toggle() })))
                         // A pull request link in the conversation opens in the side panel.
                         .environment(\.pullRequestLinksBeside, true)
                         // The conversation hands up what the agent produced, and opens a new plan in the outputs tab.
                         .environment(\.sessionOutputs, SessionOutputsLink(shown: outputsShown, open: openOutput,
                                                                           subagentsShown: subagentsShown, openSubagents: openSubagents))
                         .environment(\.sessionPanelDocked, docked)
-                        // A diff or file the conversation opens takes the right side from the tool panel.
-                        .environment(\.sessionSide, SessionSideLink(shownFile: filePreview, panelOpen: sideOpen, showFile: showFile, openDiff: openDiff,
+                        // A diff or file the conversation opens is a tab of the side panel.
+                        .environment(\.sessionSide, SessionSideLink(shownFile: shownFile, panelOpen: sideOpen, showFile: showFile, openDiff: openDiff,
                                                                      toggleConsole: toggleConsole))
                         .onPreferenceChange(SessionOutputsReport.self) { outputs = $0 }
                         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -358,11 +368,9 @@ struct SessionWorkbench<Conversation: View>: View {
                 .focusArea(.conversation)
                 if docked {
                     // Always the leftmost side panel on the right side, right next to the conversation, with any tool, diff
-                    // or file panel to its right. The switch takes the height of the conversation's header.
+                    // or file panel to its right. It starts level with the conversation, under the header's line.
                     VStack(alignment: .trailing, spacing: 0) {
-                        SessionToolSwitch(viewModel: viewModel, directory: directory, outputsFresh: toolsFresh)
-                            .frame(height: 30)
-                            .padding(.trailing, NookTheme.Spacing.xs)
+                        Color.clear.frame(height: 30)
                         DockedSessionPanel(directory: directory, runID: runID, agentWorking: agentWorking) {
                             if let runID { workspace.markReviewed(runID) }
                             viewModel.sessionTool = .changes
@@ -472,7 +480,13 @@ struct SessionWorkbench<Conversation: View>: View {
         .keyCommands(["panel.reopenClosed": reopenClosed])
         // ⌘J the terminal under the conversation, ⌥⌘B the side panel, ⌘W the tab of the panel with the keyboard.
         .keyCommands(["terminal.toggle": toggleTerminal,
-                      "sidePanel.toggle": { toggleSidePanel(); return true },
+                      // ⇧⌘B the session panel; without room for it the key goes on.
+                      "sessionPanel.toggle": {
+                          guard canDock else { return false }
+                          sessionPanelClosed.toggle()
+                          return true
+                      },
+                      "sidePanel.toggle": { viewModel.toggleSidePanel(); return true },
                       "tab.close": { closeFocusedTab() }])
     }
 
