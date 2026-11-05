@@ -195,7 +195,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .sessionSend:
             return "Sends a message to another Nook session, as if from another agent, not the user: the receiving agent is told so and treats it as information. Use it to hand over a result or ask a question; it is queued when that session is busy. The user approves each message unless the session has full rights. You cannot message yourself."
         case .deviceList:
-            return "Lists the iOS Simulators on this Mac, whether each is booted, and which ones this session has open in Nook's Simulator page. Call it before device_open when you do not know a device id."
+            return "Lists the iOS Simulators on this Mac and the Android devices adb sees or can start (ids starting with android), whether each is booted, and which ones this session has open in Nook's Simulator page. Call it before device_open when you do not know a device id."
         case .deviceOpen:
             return "Opens an iOS Simulator in Nook's Simulator page, where the user watches it live (booting it if needed), and returns the agent-device command with the exact flags to drive it (snapshot, click, fill, open, install), plus a quick start. Without device_id it takes the booted simulator, otherwise the first one."
         case .deviceScreenshot:
@@ -688,6 +688,7 @@ struct BridgeLaunch: Equatable, Sendable {
     session with delegate_task: it sees only the brief you write, never has more rights than you, and its result comes back \
     through task_status (or Nook tells you when it has finished). For an iOS app, device_open shows an iOS Simulator in \
     Nook (the user watches it live) and gives you the agent-device command to drive it; device_screenshot shows you the screen. \
+    For an Android app the same tools take the android ids from device_list, and you drive the device with adb. \
     In Nook's browser, browser_snapshot lists the elements with refs for browser_click and browser_type. After opening a pull \
     request, watch_pull_request tells you when checks fail or pass, a merge conflict appears, reviews arrive or it is merged. schedule_task proposes \
     recurring work (the user approves it), and request_secret asks the user for an API key by name instead of you asking \

@@ -519,16 +519,25 @@ final class WorkspaceBridge: ObservableObject {
     /// it, its screenshot, and closing it.
     private func device(_ tool: BridgeTool, _ arguments: [String: Any], _ caller: BridgeCaller) async throws -> BridgeRPC.ToolResult {
         if case .refuse(let reason) = verdict(tool, caller) { return .error(Self.refusal(reason)) }
+        let requestedID = ((arguments["device_id"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let deviceKey = caller.directory + "|" + caller.agent
+        if AndroidDevices.isAndroid(requestedID) || (requestedID.isEmpty && openDevices[deviceKey]?.last.map(AndroidDevices.isAndroid) == true && tool != .deviceList && tool != .deviceOpen) {
+            return await androidDevice(tool, requestedID.isEmpty ? (openDevices[deviceKey]?.last ?? "") : requestedID, arguments, caller, key: deviceKey)
+        }
         let hub = DeviceHubService.shared
         defer { hub.stopWhenIdle() }
         await hub.prepare()
-        guard hub.state == .ready else { return .error(Self.hubProblem(hub.state)) }
+        let android = tool == .deviceList ? await Task.detached(priority: .userInitiated) { AndroidDevices.all() }.value : []
+        guard hub.state == .ready else {
+            guard !android.isEmpty else { return .error(Self.hubProblem(hub.state)) }
+            return BridgeRPC.ToolResult(text: McpApp.json(["devices": android.map(Self.androidRow)]) ?? "{}")
+        }
         await hub.refreshDevices()
         let key = caller.directory + "|" + caller.agent
         let requested = ((arguments["device_id"] as? String) ?? "").trimmingCharacters(in: .whitespaces)
         switch tool {
         case .deviceList:
-            let devices = hub.devices.map { ["id": $0.id, "name": $0.name, "version": $0.version, "booted": $0.booted] as [String: Any] }
+            let devices: [[String: Any]] = android.map(Self.androidRow) + hub.devices.map { ["id": $0.id, "name": $0.name, "version": $0.version, "booted": $0.booted] as [String: Any] }
             let object: [String: Any] = ["devices": devices, "open": openDevices[key] ?? [], "problem": hub.problem ?? ""]
             return BridgeRPC.ToolResult(text: McpApp.json(object) ?? "{}")
         case .deviceOpen:
@@ -560,6 +569,47 @@ final class WorkspaceBridge: ObservableObject {
             guard let udid = requested.isEmpty ? openDevices[key]?.last : requested else { return BridgeRPC.ToolResult(text: "{}") }
             openDevices[key]?.removeAll { $0 == udid }
             if (arguments["shutdown"] as? Bool) == true { await hub.shutdown(udid) }
+            return BridgeRPC.ToolResult(text: "{}")
+        default:
+            return .error("Unknown device tool.")
+        }
+    }
+
+    private static func androidRow(_ device: AndroidDevice) -> [String: Any] {
+        ["id": device.id, "name": device.name, "platform": "android", "booted": device.running]
+    }
+
+    /// An Android device: no device hub, only adb.
+    private func androidDevice(_ tool: BridgeTool, _ id: String, _ arguments: [String: Any], _ caller: BridgeCaller,
+                               key: String) async -> BridgeRPC.ToolResult {
+        let devices = await Task.detached(priority: .userInitiated) { AndroidDevices.all() }.value
+        guard let device = devices.first(where: { $0.id == id }) else { return .error("No such Android device. Call device_list.") }
+        switch tool {
+        case .deviceOpen:
+            guard let serial = device.serial else {
+                do {
+                    try AndroidDevices.boot(avd: String(id.dropFirst(AndroidDevices.idPrefix.count + 5)))
+                    audit(.deviceOpen, caller, device.name, "boot")
+                    return BridgeRPC.ToolResult(text: "Starting \(device.name). Call device_list until it runs under an android: id, then device_open that id.")
+                } catch {
+                    return .error(error.localizedDescription)
+                }
+            }
+            openDevices[key, default: []].removeAll { $0 == id }
+            openDevices[key, default: []].append(id)
+            audit(.deviceOpen, caller, device.name, "open")
+            return BridgeRPC.ToolResult(text: AndroidDevices.quickStart(serial: serial))
+        case .deviceScreenshot:
+            guard let serial = device.serial else { return .error("\(device.name) is not running.") }
+            guard let png = await Task.detached(priority: .userInitiated, operation: { AndroidDevices.screenshot(serial: serial) }).value else {
+                return .error("adb gave no picture of \(device.name).")
+            }
+            return BridgeRPC.ToolResult(text: "Screenshot of \(device.name)", imageBase64: png.base64EncodedString(), imageMimeType: "image/png")
+        case .deviceClose:
+            openDevices[key]?.removeAll { $0 == id }
+            if (arguments["shutdown"] as? Bool) == true, let serial = device.serial {
+                await Task.detached(priority: .userInitiated) { AndroidDevices.shutdown(serial: serial) }.value
+            }
             return BridgeRPC.ToolResult(text: "{}")
         default:
             return .error("Unknown device tool.")

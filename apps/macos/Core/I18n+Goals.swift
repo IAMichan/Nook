@@ -5,6 +5,10 @@ import Foundation
 
 let goalTranslations: [AppLanguage: [String: String]] = [
     .en: [
+        "sim.android.title": "Android devices",
+        "sim.android.show": "Show",
+        "sim.android.start": "Start",
+        "sim.android.screen": "Screen of the Android device",
         "bridge.approval.start": "%@ wants to start a %@ session",
         "palette.triage": "Investigate a problem with Nook",
         "sched.public.toggle": "Receive webhooks from the internet",
@@ -29,6 +33,10 @@ let goalTranslations: [AppLanguage: [String: String]] = [
         "ws.goal.failed": "The goal could not be changed: %@",
     ],
     .nl: [
+        "sim.android.title": "Android-toestellen",
+        "sim.android.show": "Toon",
+        "sim.android.start": "Start",
+        "sim.android.screen": "Scherm van het Android-toestel",
         "bridge.approval.start": "%@ wil een %@-sessie starten",
         "palette.triage": "Een probleem met Nook onderzoeken",
         "sched.public.toggle": "Webhooks van internet ontvangen",
@@ -53,6 +61,10 @@ let goalTranslations: [AppLanguage: [String: String]] = [
         "ws.goal.failed": "Het doel kon niet worden gewijzigd: %@",
     ],
     .de: [
+        "sim.android.title": "Android-Geräte",
+        "sim.android.show": "Anzeigen",
+        "sim.android.start": "Starten",
+        "sim.android.screen": "Bildschirm des Android-Geräts",
         "bridge.approval.start": "%@ möchte eine %@-Sitzung starten",
         "palette.triage": "Ein Problem mit Nook untersuchen",
         "sched.public.toggle": "Webhooks aus dem Internet empfangen",
@@ -77,6 +89,10 @@ let goalTranslations: [AppLanguage: [String: String]] = [
         "ws.goal.failed": "Das Ziel konnte nicht geändert werden: %@",
     ],
     .fr: [
+        "sim.android.title": "Appareils Android",
+        "sim.android.show": "Afficher",
+        "sim.android.start": "Démarrer",
+        "sim.android.screen": "Écran de l’appareil Android",
         "bridge.approval.start": "%@ veut démarrer une session %@",
         "palette.triage": "Examiner un problème de Nook",
         "sched.public.toggle": "Recevoir des webhooks depuis Internet",
@@ -101,6 +117,10 @@ let goalTranslations: [AppLanguage: [String: String]] = [
         "ws.goal.failed": "L’objectif n’a pas pu être modifié : %@",
     ],
     .es: [
+        "sim.android.title": "Dispositivos Android",
+        "sim.android.show": "Mostrar",
+        "sim.android.start": "Iniciar",
+        "sim.android.screen": "Pantalla del dispositivo Android",
         "bridge.approval.start": "%@ quiere iniciar una sesión de %@",
         "palette.triage": "Investigar un problema de Nook",
         "sched.public.toggle": "Recibir webhooks desde Internet",
