@@ -132,9 +132,9 @@ final class FolderGitModel: ObservableObject {
                 let remotes = git.remotes(root)
                 let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
                 let base = git.defaultBranch(root, remote: remote).map { git.comparisonBase(root, base: $0, remote: remote) }
-                // Against where the branch left its base (else its upstream), so committed work still counts as a change.
+                // Against where the branch left its base (else its upstream), so committed and merged work still counts.
                 let comparedTo = status.flatMap { status in
-                    [base, status.upstream].compactMap { $0 }.lazy.compactMap { git.mergeBase(root, base: $0) }.first
+                    [base, status.upstream].compactMap { $0 }.lazy.compactMap { git.branchPoint(root, base: $0) }.first
                 }
                 refs = Refs(root: root, key: key, at: Date(), branches: local, remotes: remotes, base: base, comparedTo: comparedTo)
             }

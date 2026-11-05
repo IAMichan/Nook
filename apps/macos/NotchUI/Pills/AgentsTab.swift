@@ -849,7 +849,9 @@ struct AgentListRow: View, Equatable {
     /// card lists the files with their lines.
     private var changes: some View {
         changeCount
-            .detailCard(enabled: showsChangesCard, onDetail: $onDetail) { RowChangesCard(directory: item.path) }
+            .detailCard(enabled: showsChangesCard, onDetail: $onDetail) {
+                RowChangesCard(directory: item.path, countedAdded: item.linesAdded, countedRemoved: item.linesRemoved)
+            }
     }
 
     @ViewBuilder

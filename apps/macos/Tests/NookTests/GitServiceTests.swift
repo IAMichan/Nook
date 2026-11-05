@@ -118,6 +118,42 @@ final class GitServiceIntegrationTests: XCTestCase {
         XCTAssertFalse(git.isValidBranchName("bad..name", in: repo))
     }
 
+    private func commit(_ file: String, in directory: String) throws {
+        try "regel\n".write(toFile: directory + "/" + file, atomically: true, encoding: .utf8)
+        try git.run(["add", file], in: directory)
+        try git.run(["-c", "commit.gpgsign=false", "commit", "-m", file], in: directory)
+    }
+
+    func testChangesOfABranchSurviveItsMergeCommit() throws {
+        let branch = root + "/worktrees/repo/klaar"
+        try git.addWorktree(repo: repo, path: branch, branch: "nook/klaar", base: "main")
+        try commit("voor.txt", in: repo)
+        try commit("werk.txt", in: branch)
+        let fork = try XCTUnwrap(git.mergeBase(branch, base: "main"))
+        XCTAssertEqual(git.branchPoint(branch, base: "main"), fork, "not merged yet: the plain merge base")
+
+        try git.run(["-c", "commit.gpgsign=false", "merge", "--no-ff", "-m", "merge", "nook/klaar"], in: repo)
+        try commit("na.txt", in: repo)
+        let head = try git.run(["rev-parse", "HEAD"], in: branch).trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertEqual(git.mergeBase(branch, base: "main"), head, "merged: the tip is part of main, the diff would be empty")
+        XCTAssertEqual(git.branchPoint(branch, base: "main"), fork)
+
+        let status = try git.status(branch)
+        let changes = try git.changes(branch, since: try XCTUnwrap(git.branchPoint(branch, base: "main")), status: status)
+        XCTAssertEqual(changes.map(\.path), ["werk.txt"], "the branch's own work, not what main did around it")
+    }
+
+    func testABranchWithoutWorkHasNoChangesWhileItsBaseMovesOn() throws {
+        let branch = root + "/worktrees/repo/leeg"
+        try git.addWorktree(repo: repo, path: branch, branch: "nook/leeg", base: "main")
+        let head = try git.run(["rev-parse", "HEAD"], in: branch).trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertEqual(git.branchPoint(branch, base: "main"), head, "main has not moved")
+        try commit("verder.txt", in: repo)
+        try commit("nog-verder.txt", in: repo)
+        XCTAssertEqual(git.branchPoint(branch, base: "main"), head, "behind main is not merged work")
+        XCTAssertEqual(git.branchPoint(repo, base: "main"), git.mergeBase(repo, base: "main"), "the base branch itself")
+    }
+
     func testWorktreeLifecycle() throws {
         let path = root + "/worktrees/repo/taak-a"
         try git.addWorktree(repo: repo, path: path, branch: "nook/taak-a", base: "main")
