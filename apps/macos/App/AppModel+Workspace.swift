@@ -173,7 +173,20 @@ final class WindowPresence: ObservableObject {
 /// The buttons in that row (the panel toggles, a side panel's tabs and cross, the sidebar's head) work on the first
 /// click, as a toolbar's do, also while the window is in the background: otherwise that click only brought the window
 /// forward and the button seemed not to respond. Below the row a first click still only activates the window.
+///
+/// The view reports no safe area. With the title bar's safe area, a scroll view that starts inside that row grows up to
+/// the window's top, whatever `.ignoresSafeArea` and `.clipped()` around it say, and lies over what sits above it: the
+/// panel toggles over the docked session panel and a side panel's tabs and cross stopped taking clicks. The content is
+/// measured from the window's top anyway (`PanelSidebarMetrics.titleBand`).
 final class WorkspaceHostingView<Content: View>: NSHostingView<Content> {
+    required init(rootView: Content) {
+        super.init(rootView: rootView)
+        safeAreaRegions = []
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
     override var mouseDownCanMoveWindow: Bool { false }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
