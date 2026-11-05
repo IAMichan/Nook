@@ -41,6 +41,7 @@ struct AgentRunPanel: View {
     /// The agent's skills for `$`, read from its skill folders.
     @State private var skills: [Skill] = []
     @State private var scroll = ScrollModel()
+    @StateObject private var pinRoom = TurnPinRoom()
     @State private var atEnd = true
     /// Read only by the handlers: as state, each start and stop of a scroll drew every block of the run again.
     @State private var scrollPhase = Unobserved(ScrollPhase.idle)
@@ -713,6 +714,7 @@ struct AgentRunPanel: View {
                             // While the agent writes, only the block it writes into is drawn again.
                             .equatable()
                         }
+                        .pinProbe(block.id.uuidString, room: pinRoom)
                         .id(block.id)
                     }
                     if active {
@@ -731,11 +733,13 @@ struct AgentRunPanel: View {
                     if run.status == .failed || run.status == .stopped {
                         recovery(run, events: events, blocks: blocks, proxy: proxy)
                     }
+                    Observing(pinRoom) { Color.clear.frame(height: pinRoom.height) }
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .scrollTargetLayout()
                 .chatColumn()
             }
+            .coordinateSpace(name: TurnPinRoom.space)
             .scrollPosition($position)
             // The files and lines of every finished turn from git (`countTurns`): again when a turn ends or a snapshot is made.
             .task(id: "\(runID)|\(memo.turns.count)|\(memo.turns.last?.files.count ?? 0)|\(run.checkpoints?.count ?? 0)") {
@@ -750,7 +754,7 @@ struct AgentRunPanel: View {
             // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
             .composerInset {
                 VStack(spacing: NookTheme.Spacing.lg) { bottomBar(run) }
-                    .toEndPill(scroll.mode == .free && !atEnd && !finding) {
+                    .toEndPill(scroll.awayFromEnd && !atEnd && !finding) {
                         scroll.jumpedToEnd()
                         withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
                     }
@@ -774,6 +778,7 @@ struct AgentRunPanel: View {
                             insetTop: geometry.contentInsets.top, insetBottom: geometry.contentInsets.bottom)
             } action: { old, frame in
                 viewport.frame = frame
+                pinRoom.update(frame)
                 keepEnd(old, frame, proxy)
             }
             .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
@@ -828,6 +833,8 @@ struct AgentRunPanel: View {
                 findQuery = wanted
             }
             .onChange(of: events.count) { _, _ in
+                // The agent went on to its tools and the reply filled the view: follow its work from here.
+                scroll.contentGrew(toolActivityStarted: events.last?.kind == .tool, overflows: pinRoom.height == 0)
                 // Not animated, and only when the view is off its end: at the end `defaultScrollAnchor` and `keepEnd`
                 // already hold it there, and an animated scroll on every new event fought them.
                 guard scroll.shouldFollowEnd, !atEnd else { return }
@@ -835,9 +842,31 @@ struct AgentRunPanel: View {
                 still.disablesAnimations = true
                 withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
-            // You sent something: it is the newest thing and follows again, also when you had scrolled up.
+            // You sent something: it is the newest thing and shows again, also when you had scrolled up.
             .onChange(of: sentCount) { _, _ in settleAtEnd(proxy) }
-            .onChange(of: events.last(where: { $0.kind == .user })?.id) { _, _ in settleAtEnd(proxy) }
+            .onChange(of: events.last(where: { $0.kind == .user })?.id) { old, new in
+                // A message that came in at the end stands near the top with the reply under it. The timeline loading
+                // or going back to an earlier message only lands at the end.
+                if old != nil, let new, !finding, events.suffix(2).contains(where: { $0.id == new }), let row = memo.marks.last?.row,
+                   let id = UUID(uuidString: row) {
+                    pinSent(id, proxy)
+                } else {
+                    settleAtEnd(proxy)
+                }
+            }
+        }
+    }
+
+    /// Brings the message you sent near the top of the view, with room under it for the reply, until you scroll away.
+    private func pinSent(_ id: UUID, _ proxy: ScrollViewProxy) {
+        pinRoom.hold(row: id.uuidString, in: viewport.frame)
+        scroll.sent(messageID: id)
+        DispatchQueue.main.async { proxy.scrollTo(id, anchor: .top) }
+        for delay in [0.1, 0.25, 0.4] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard scroll.anchorMessageID == id, let offset = pinRoom.settle(in: viewport.frame) else { return }
+                DispatchQueue.main.async { position.scrollTo(y: offset) }
+            }
         }
     }
 
@@ -877,7 +906,7 @@ struct AgentRunPanel: View {
     /// there. Only moving while the sizes stay the same is you scrolling away.
     private func keepEnd(_ old: ScrollFrame, _ new: ScrollFrame, _ proxy: ScrollViewProxy) {
         let resized = new.content != old.content || new.container != old.container || new.insetBottom != old.insetBottom
-        guard resized, !finding else { return }
+        guard resized, !finding, scroll.mode != .anchoringNewTurn else { return }
         let wasAtEnd = old.maxOffset - old.offset <= 1
         guard scroll.shouldFollowEnd || wasAtEnd, scrollPhase.value == .idle, new.maxOffset - new.offset > 0.5 else { return }
         scroll.reachedEnd()

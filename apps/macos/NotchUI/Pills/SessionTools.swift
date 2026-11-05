@@ -262,6 +262,8 @@ struct SessionWorkbench<Conversation: View>: View {
     @State private var totalWidth: Double = SessionWorkbenchSize.width
     @State private var totalHeight: Double = SessionWorkbenchSize.height
     @State private var dragStart: Double?
+    /// The side panel takes the whole workbench, for a long diff or a page: until you restore it or it closes.
+    @State private var panelMaximized = false
     /// The bottom panel's height while its line is dragged (`PanelDrag`).
     @State private var liveBottomHeight: Double?
     /// What the conversation found the agent produced (`SessionOutputsReport`), and the output the outputs tab shows.
@@ -311,8 +313,8 @@ struct SessionWorkbench<Conversation: View>: View {
         let conversationRoom = PanelLayout.minimumConversation + PanelSplit.handle
         // Too narrow for the conversation beside the side panel: the panel covers the conversation until you close it,
         // instead of both squeezing until neither reads.
-        let covering = sideOpen
-            && !PanelSplit.fits(minimum: PanelLayout.minimumPanel + NookTheme.Spacing.sm, available: totalWidth, rest: conversationRoom)
+        let tooNarrow = !PanelSplit.fits(minimum: PanelLayout.minimumPanel + NookTheme.Spacing.sm, available: totalWidth, rest: conversationRoom)
+        let covering = sideOpen && (tooNarrow || panelMaximized)
         // The width the right panel actually takes (not the one it was dragged to) and the room of the conversation's
         // own panels, so a window that gets narrower gives up the docked column first; under that room it is the branch
         // button's popover again.
@@ -370,7 +372,7 @@ struct SessionWorkbench<Conversation: View>: View {
                     .fixedSidePanel(width: PanelLayout.sessionPanel)
                 }
                 if sideOpen && !covering {
-                    panel(.side, tool: side)
+                    panel(.side, tool: side, maximized: $panelMaximized)
                         .sidePanel(.trailing, width: $toolWidth, defaultWidth: PanelLayout.tool, available: totalWidth,
                                    rest: conversationRoom)
                 }
@@ -397,7 +399,7 @@ struct SessionWorkbench<Conversation: View>: View {
             }
             .overlay {
                 if covering {
-                    panel(.side, tool: side)
+                    panel(.side, tool: side, maximized: tooNarrow ? nil : $panelMaximized)
                         // With the list away, its tabs stay clear of the traffic lights and the list's toggle.
                         .padding(.leading, headerInset)
                         .background(NookTheme.notch)
@@ -465,7 +467,10 @@ struct SessionWorkbench<Conversation: View>: View {
             if SessionTool.panelTools.contains(next) { lastBottomTool = next.rawValue }
             panelTakesFocus = true
         }
-        .onChange(of: side) { _, _ in panelTakesFocus = true }
+        .onChange(of: side) { _, next in
+            panelTakesFocus = true
+            if next == .conversation { panelMaximized = false }
+        }
         // The Changes tab put away: it opens on the branch again, not on the turn it last came from.
         .onChange(of: changesShown) { _, shown in
             if !shown { diffSelection = nil }
@@ -660,8 +665,8 @@ struct SessionWorkbench<Conversation: View>: View {
         PanelDrag.step($liveBottomHeight, to: BottomPanelLayout.height(start - offset, available: totalHeight))
     }
 
-    private func panel(_ slot: SessionPanelSlot, tool: SessionTool) -> some View {
-        SessionToolPanel(directory: directory, runID: runID, tool: tool, tabs: tabs(slot), pullRequest: viewModel.sidePullRequest,
+    private func panel(_ slot: SessionPanelSlot, tool: SessionTool, maximized: Binding<Bool>? = nil) -> some View {
+        SessionToolPanel(directory: directory, runID: runID, tool: tool, maximized: maximized, tabs: tabs(slot), pullRequest: viewModel.sidePullRequest,
                          pullRequestTabs: viewModel.sidePullRequestTabs, activePullRequest: viewModel.activeSidePullRequest,
                          outputs: outputs.outputs, outputSelection: $outputSelection, outputsFresh: outputs.fresh,
                          subagents: outputs.subagents, subagentsFresh: outputs.subagentsFresh,
@@ -802,6 +807,8 @@ private struct SessionToolPanel: View {
     let directory: String
     let runID: UUID?
     let tool: SessionTool
+    /// Whether it takes the whole workbench; nil for the bottom panel, and while it must cover the conversation anyway.
+    var maximized: Binding<Bool>? = nil
     let tabs: [SessionTool]
     let pullRequest: PullRequestOpenRequest?
     let pullRequestTabs: [SidePullRequestTab]
@@ -929,6 +936,12 @@ private struct SessionToolPanel: View {
         SidePanelTabBar(items: tabs.flatMap(tabItems), selected: selectedTab, onSelect: selectTab, onClose: closeTab) {
             addMenu
         } trailing: {
+            if let maximized {
+                ToolbarIconButton(maximized.wrappedValue ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                                  tr(maximized.wrappedValue ? "agents.tool.restore" : "agents.tool.maximize")) {
+                    maximized.wrappedValue.toggle()
+                }
+            }
             SidePanelCloseButton(help: closeHelp, action: close)
         }
     }
