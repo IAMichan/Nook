@@ -278,6 +278,8 @@ private struct SidePanelWidenButton: View {
 /// that panel has something you have not seen.
 struct SidePanelToggle: View {
     let edge: Edge
+    /// A mark of its own, for a panel that is not simply the one on `edge`.
+    var symbol: String? = nil
     let open: Bool
     var fresh = false
     let help: String
@@ -285,7 +287,7 @@ struct SidePanelToggle: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: edge.panelSymbol)
+            Image(systemName: symbol ?? edge.panelSymbol)
                 .font(NookTheme.font(13, .medium))
                 .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
                 .frame(width: 28, height: 28)

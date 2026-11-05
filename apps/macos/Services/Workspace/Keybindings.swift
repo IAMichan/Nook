@@ -371,7 +371,7 @@ enum Keybindings {
         "session.previous", "session.next", "diff.toggle", "modelPicker.toggle", "session.settle", "session.pin",
         "session.undo", "session.interrupt", "panel.reopenClosed", "selection.quote", "selection.ask",
         "session.back", "session.forward", "session.rename", "session.openInEditor", "session.copyReference",
-        "composer.startInBackground", "sidebar.toggle", "terminal.toggle", "sidePanel.toggle", "tab.close",
+        "composer.startInBackground", "sidebar.toggle", "terminal.toggle", "sidePanel.toggle", "sessionPanel.toggle", "tab.close",
         "terminal.splitRight", "terminal.splitDown", "focus.next", "focus.previous",
     ] + (1...SessionJump.count).map(SessionJump.command)
 
@@ -409,6 +409,7 @@ enum Keybindings {
         KeybindingRule(key: "mod+b", command: "sidebar.toggle", when: "!terminalFocus"),
         KeybindingRule(key: "mod+j", command: "terminal.toggle", when: nil),
         KeybindingRule(key: "mod+alt+b", command: "sidePanel.toggle", when: nil),
+        KeybindingRule(key: "mod+shift+b", command: "sessionPanel.toggle", when: "!terminalFocus"),
         // ⌘W closes the window unless a terminal or a panel tab has the keyboard.
         KeybindingRule(key: "mod+w", command: "tab.close", when: "terminalFocus || panelFocus"),
         // ⌘D is the diff everywhere else (`!terminalFocus`), so the two never meet.
