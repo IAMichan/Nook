@@ -1,0 +1,75 @@
+import Foundation
+
+// A session's folder and terminals on the phone, to read. The Mac decides what leaves it: only inside the session's folder,
+// no secrets by name, and within the size of one answer. Foundation only, tested on its own.
+
+/// One terminal of a session: its last lines.
+struct TerminalDigest: Codable, Equatable, Identifiable, Sendable {
+    var id: String
+    var title: String
+    var running: Bool
+    var output: String
+}
+
+/// One folder, or one file's text.
+struct FolderDigest: Codable, Equatable, Sendable {
+    struct Entry: Codable, Equatable, Identifiable, Sendable {
+        var name: String
+        var isFolder: Bool
+        var size: Int?
+        var id: String { name }
+    }
+
+    /// Relative to the session's folder; empty is the folder itself.
+    var path: String
+    var entries: [Entry]? = nil
+    var text: String? = nil
+    /// The file was longer than one answer holds, or is no text.
+    var truncated: Bool? = nil
+    var binary: Bool? = nil
+}
+
+enum CompanionWorkspace {
+    static let maxTextBytes = 128 * 1024
+    static let maxEntries = 500
+    static let maxTerminalLines = 200
+
+    /// `.git` and what holds keys by its name: these never go to the phone.
+    static func isSecret(_ name: String) -> Bool {
+        let lower = name.lowercased()
+        if lower == ".git" || lower == ".ssh" || lower == ".aws" || lower == ".npmrc" || lower == ".netrc" { return true }
+        if lower == ".env" || lower.hasPrefix(".env.") { return !lower.hasSuffix(".example") && !lower.hasSuffix(".sample") }
+        if lower.hasPrefix("id_rsa") || lower.hasPrefix("id_ed25519") { return true }
+        return [".pem", ".key", ".p12", ".pfx", ".keychain"].contains { lower.hasSuffix($0) }
+    }
+
+    /// The real path of `relative` in `folder`, or nil when it leaves the folder or passes a secret. Links are followed first,
+    /// so one that points out of the folder stays out. `resolve` is the file system's; tests give their own.
+    static func path(_ relative: String, in folder: String,
+                     resolve: (String) -> String = { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }) -> String? {
+        let parts = relative.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard !parts.contains(".."), !parts.contains(where: isSecret), !relative.hasPrefix("/") else { return nil }
+        let root = resolve(folder)
+        let full = resolve(([folder] + parts).joined(separator: "/"))
+        guard full == root || full.hasPrefix(root + "/") else { return nil }
+        // A link inside the folder can hide a secret's real name.
+        guard !full.dropFirst(root.count).split(separator: "/").map(String.init).contains(where: isSecret) else { return nil }
+        return full
+    }
+
+    /// A file's bytes as an answer.
+    static func digest(path: String, data: Data) -> FolderDigest {
+        let head = data.prefix(maxTextBytes)
+        guard !head.contains(0), let text = String(data: head, encoding: .utf8) ?? String(data: head.dropLast(3), encoding: .utf8) else {
+            return FolderDigest(path: path, binary: true)
+        }
+        return FolderDigest(path: path, text: text, truncated: data.count > maxTextBytes ? true : nil)
+    }
+
+    /// A folder's entries: folders first, without secrets, cut at `maxEntries`.
+    static func listing(path: String, entries: [FolderDigest.Entry]) -> FolderDigest {
+        let shown = entries.filter { !isSecret($0.name) }
+            .sorted { ($0.isFolder ? 0 : 1, $0.name.lowercased()) < ($1.isFolder ? 0 : 1, $1.name.lowercased()) }
+        return FolderDigest(path: path, entries: Array(shown.prefix(maxEntries)), truncated: shown.count > maxEntries ? true : nil)
+    }
+}

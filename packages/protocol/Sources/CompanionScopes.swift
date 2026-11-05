@@ -39,6 +39,8 @@ enum CompanionScopes {
         .decide: .scope(.approve), .answer: .scope(.approve),
         .send: .scope(.operate), .stop: .scope(.operate), .options: .scope(.operate), .start: .scope(.operate),
         .manage: .scope(.operate),
+        // What a project holds goes further than a session's own changes.
+        .terminals: .scope(.operate), .files: .scope(.operate),
         .inbox: .scope(.chats), .inboxChat: .scope(.chats), .inboxSend: .scope(.chats), .inboxMark: .scope(.chats),
         .music: .scope(.music),
         .chats: .scope(.nookChat), .chat: .scope(.nookChat), .ask: .scope(.nookChat), .chatStop: .scope(.nookChat),
@@ -46,7 +48,7 @@ enum CompanionScopes {
 
     /// The scope each `CompanionFeature` belongs to; a feature not listed is about the connection and always offered.
     static let featureScopes: [String: CompanionScope] = [
-        CompanionFeature.start: .operate, CompanionFeature.manage: .operate, CompanionFeature.steer: .operate,
+        CompanionFeature.start: .operate, CompanionFeature.manage: .operate, CompanionFeature.workspace: .operate, CompanionFeature.steer: .operate,
         CompanionFeature.images: .operate, CompanionFeature.liveTimeline: .read, CompanionFeature.resume: .read, CompanionFeature.diff: .read,
         CompanionFeature.timeline: .read, CompanionFeature.home: .read, CompanionFeature.usage: .read,
         CompanionFeature.liveActivity: .read,

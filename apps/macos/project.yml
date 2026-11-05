@@ -373,6 +373,7 @@ targets:
       - path: ../../packages/protocol/Sources/CompanionCompatibility.swift
       - path: ../../packages/protocol/Sources/CompanionDiagnosis.swift
       - path: ../../packages/protocol/Sources/CompanionScopes.swift
+      - path: ../../packages/protocol/Sources/CompanionWorkspace.swift
       - path: ../../packages/protocol/Sources/CompanionPairings.swift
       - path: ../../packages/protocol/Sources/CompanionDiagnosticsLog.swift
       - path: ../../packages/protocol/Sources/CompanionResilience.swift
