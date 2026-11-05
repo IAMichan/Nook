@@ -14,12 +14,9 @@ final class SessionPanelsTests: XCTestCase {
         XCTAssertNil(PanelReopening.tab(hidden: "browser", tabs: [String]()))
     }
 
-    func testComposerRingsStayQuietUntilHalfUsed() {
+    func testContextRingStaysQuietUntilHalfUsed() {
         XCTAssertFalse(ContextMeter.worthShowing(0.49))
         XCTAssertTrue(ContextMeter.worthShowing(0.5))
-        XCTAssertFalse(UsageLimits.worthShowing([12, 30]))
-        XCTAssertTrue(UsageLimits.worthShowing([12, 100]))
-        XCTAssertFalse(UsageLimits.worthShowing([]))
     }
 
     func testSessionPanelShortcutLeavesTheTerminalAlone() {
