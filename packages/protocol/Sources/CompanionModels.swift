@@ -106,6 +106,9 @@ enum CompanionOp: String, Codable, Sendable, CaseIterable {
     /// What a session changed in its folder (`session`): every changed file with its lines and its patch
     /// (`CompanionResponse.diff`, `CompanionFeature.diff`).
     case diff
+    /// A session's terminals with their last lines (`terminals` in the answer), and one folder or file of its folder (`item`:
+    /// the path in it; `folder` in the answer). See `CompanionWorkspace`.
+    case terminals, files
     /// Nook's own chats: the list, one conversation (`conversation`), a question (`text`; a new conversation when
     /// `conversation` is nil) and stopping the answer that is being written.
     case chats, chat, ask, chatStop
@@ -173,6 +176,8 @@ enum CompanionFeature {
     static let liveTimeline = "liveTimeline"
     /// The Mac answers `diff` with a session's changed files.
     static let diff = "diff"
+    /// The Mac answers `terminals` and `files`.
+    static let workspace = "workspace"
     /// The Mac takes pictures with `send` and `start` (`CompanionRequest.images`).
     static let images = "images"
     /// The Mac says its own time with a `stale` refusal (`CompanionResponse.macTime`), so the phone can correct for a clock
@@ -186,7 +191,7 @@ enum CompanionFeature {
     /// `watch` may name the last entry the phone has (`item`): the Mac answers with only what came after
     /// (`TimelineDelta.resume`).
     static let resume = "resume"
-    static let all = [start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate,
+    static let all = [workspace, start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate,
                       steer, liveTimeline, diff, images, clock, revoke, foreground, resume]
 }
 
@@ -336,6 +341,8 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     var timelineAfter: String? = nil
     /// The changed files of `diff`, the most changed first.
     var diff: [DiffFileDigest]? = nil
+    var terminals: [TerminalDigest]? = nil
+    var folder: FolderDigest? = nil
     /// With a `stale` refusal (`CompanionFeature.clock`): the Mac's time (seconds since 1970), so the phone can correct
     /// for its clock (`CompanionClock`).
     var macTime: Double? = nil

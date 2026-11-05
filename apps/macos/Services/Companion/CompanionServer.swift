@@ -603,6 +603,10 @@ final class CompanionServer: ObservableObject {
             return await watchSession(request, deviceID: deviceID, app: app)
         case .diff:
             return await diff(request, app: app)
+        case .terminals:
+            return terminals(request, app: app)
+        case .files:
+            return await files(request, app: app)
         case .manage:
             return manage(request, app: app)
         case .chats:
