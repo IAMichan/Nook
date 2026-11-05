@@ -100,6 +100,12 @@ extension AgentActivity {
 }
 
 enum TranscriptPresentation {
+    /// What a conversation shows. The fallback (the last prompt and reply) only stands in for a transcript that gave
+    /// nothing: shown during the read, the last answer flashed up before the whole conversation replaced it.
+    static func shown(read: [AgentChatMessage], fallback: [AgentChatMessage], readFinished: Bool) -> [AgentChatMessage] {
+        read.isEmpty && readFinished ? fallback : read
+    }
+
     /// The rows of a conversation. `working`: the agent works on the last turn, which shows its progress. Once it is done,
     /// the last turn folds into "Worked for …" over its answer like every earlier one.
     static func rows(_ messages: [AgentChatMessage], working: Bool) -> [TranscriptRow] {

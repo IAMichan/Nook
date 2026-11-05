@@ -25,6 +25,15 @@ final class TranscriptPresentationTests: XCTestCase {
         ]
     }
 
+    func testFallbackWaitsForTheRead() {
+        let fallback = [message("r", .assistant, "Klaar: de bug is opgelost.")]
+        let read = finishedTurn()
+        XCTAssertEqual(TranscriptPresentation.shown(read: [], fallback: fallback, readFinished: false), [])
+        XCTAssertEqual(TranscriptPresentation.shown(read: [], fallback: fallback, readFinished: true), fallback)
+        XCTAssertEqual(TranscriptPresentation.shown(read: read, fallback: fallback, readFinished: false), read)
+        XCTAssertEqual(TranscriptPresentation.shown(read: read, fallback: fallback, readFinished: true), read)
+    }
+
     func testFinishedTurnFoldsEverythingBeforeItsAnswer() {
         let rows = TranscriptPresentation.rows(finishedTurn() + [message("u2", .user, "Nog iets", at: 100)], working: false)
         XCTAssertEqual(rows.map(\.id), ["u1", "fold:t1", "x2", "u2"])

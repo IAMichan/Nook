@@ -116,7 +116,7 @@ struct AgentsTab: View {
                         case .pullRequests: PullRequestsPanel()
                         case .actions: ActionsPanel()
                         case .terminals: AgentsToolPage(title: tr("agents.footer.terminals")) { TerminalsView() }
-                        case .browser: AgentsToolPage(title: tr("agents.footer.browser")) { BrowserView() }
+                        case .browser: AgentsToolPage(title: tr("agents.footer.browser")) { BrowserView(store: .shared) }
                         case .worktrees: AgentsToolPage(title: tr("agents.footer.worktrees")) { WorktreesView() }
                         case .simulator: AgentsToolPage(title: tr("agents.footer.simulator")) { SimulatorView() }
                         case .new:
