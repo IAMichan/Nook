@@ -55,6 +55,8 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Fixed
 
+- Xcode 27 opens `Nook.xcodeproj` and `NookCompanion.xcodeproj` again: XcodeGen no longer lists a group or file in two
+  groups, which Xcode 27 refuses with "is a member of more than one group".
 - Scrolling through every chat of every app in the Chats tab no longer stutters: a chat picture that comes in redraws
   only the faces instead of the whole tab, app icons are drawn once into a small bitmap, the row's hover button is
   made only under the pointer, and a chat that changes no longer makes every other row again.
