@@ -70,7 +70,7 @@ final class TextGenerationTests: XCTestCase {
         XCTAssertEqual(TextGeneration.pullRequestTitle("\n"), "Update project changes")
     }
 
-    func testRunnerWithAFakeClaude() throws {
+    func testRunnerWithAFakeClaude() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("fake-claude-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -82,7 +82,7 @@ final class TextGenerationTests: XCTestCase {
         printf '{"type":"result","structured_output":{"title":"%s","needsRefinement":false}}\\n' "$last"
         """.write(to: script, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
-        let answer = TextGenerationRunner.run(engine: .claude, executable: script.path, environment: [:], prompt: "regel een\nZoekfunctie",
+        let answer = await TextGenerationRunner.run(engine: .claude, executable: script.path, environment: [:], prompt: "regel een\nZoekfunctie",
                                               schema: TextGeneration.titleSchema, cwd: folder.path, timeout: 20)
         XCTAssertEqual(answer?["title"] as? String, "Zoekfunctie")
     }
