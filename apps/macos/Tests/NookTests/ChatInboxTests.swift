@@ -659,6 +659,49 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(marked.threads[hand]?.unread, 1)
     }
 
+    /// Two people with one name are two rows and two addressees, in every app; the marks stay the same across reads.
+    func testChatsOfOneNameAreToldApart() {
+        let chats = [ChatNames.Chat(id: "a", app: "teams", name: "Jan"), ChatNames.Chat(id: "b", app: "teams", name: "jan"),
+                     ChatNames.Chat(id: "c", app: "teams", name: "Lisa"), ChatNames.Chat(id: "d", app: "slack", name: "Jan"),
+                     ChatNames.Chat(id: "e", app: "teams", name: "")]
+        let names = ChatNames.unique(chats)
+        XCTAssertNotEqual(ChatInbox.key(app: "teams", chat: names["a"]!), ChatInbox.key(app: "teams", chat: names["b"]!))
+        XCTAssertEqual(ChatNames.unmarked(names["a"]!), "Jan")
+        XCTAssertEqual(names["c"], "Lisa", "a name of its own stays as it is")
+        XCTAssertEqual(names["d"], "Jan", "another app's chat is no clash")
+        XCTAssertNil(names["e"], "a chat without a name yet is left alone")
+        XCTAssertEqual(ChatNames.unique(chats.reversed()), names, "the order of a read changes nothing")
+        XCTAssertNil(ChatNames.unmarked("Team · Sales"))
+        XCTAssertNil(ChatNames.unmarked("Jan"))
+
+        // Two threads with one person keep one row.
+        let same = ChatNames.unique([ChatNames.Chat(id: "r1", app: "instagram", name: "Arjan", same: "p"),
+                                     ChatNames.Chat(id: "r2", app: "instagram", name: "Arjan", same: "p")])
+        XCTAssertEqual(Set(same.values), ["Arjan"])
+
+        // The row that held both goes; a row of the same name from notifications only stays.
+        var inbox = ChatInbox()
+        inbox.merge(BridgedChat(app: "teams", name: "Jan", messages: [message("1", "mixed")], unread: 0))
+        inbox.merge(BridgedChat(app: "teams", name: names["a"]!, messages: [message("2", "mine")], unread: 0))
+        inbox.merge(BridgedChat(app: "teams", name: names["b"]!, messages: [message("3", "theirs")], unread: 0))
+        XCTAssertNil(inbox.threads[ChatInbox.key(app: "teams", chat: "Jan")])
+        XCTAssertEqual(inbox.threads.count, 2)
+    }
+
+    /// Instagram's two threads with one person are one chat with one name; two people with one name are not.
+    func testHelperToldApartByPerson() {
+        func room(_ id: String, _ other: String) -> [String: Any] {
+            ["id": id, "accountID": "local-instagram", "network": "instagram", "title": "Arjan", "type": "single",
+             "unreadCount": 0, "participants": ["items": [["id": "@me", "fullName": "Me", "isSelf": true],
+                                                          ["id": other, "fullName": "Arjan", "isSelf": false]]]]
+        }
+        let same = ChatServiceData.chats(["items": [room("r1", "@p"), room("r2", "@p")]])
+        XCTAssertEqual(same.map(\.title), ["Arjan", "Arjan"])
+        let two = ChatServiceData.chats(["items": [room("r1", "@p"), room("r2", "@q")]])
+        XCTAssertEqual(two.count, 2)
+        XCTAssertNotEqual(two[0].title, two[1].title)
+    }
+
     func testMarkReadInAppReadsItEverywhere() {
         var inbox = ChatInbox()
         let key = ChatInbox.key(app: "telegram", chat: "Anna")

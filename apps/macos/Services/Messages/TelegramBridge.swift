@@ -182,22 +182,37 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         guard isReady else { return [] }
         let ids = changed.intersection(shown)
         let gone = deleted
+        if !ids.isEmpty { nameChats() }
         changed = []
         deleted = [:]
         return ids.compactMap { id in
             guard let chat = chats[id], !chat.title.isEmpty else { return nil }
             let people = (members[id] ?? []).filter { $0 != meID }.compactMap { users[$0] }
-            return BridgedChat(app: app, name: chat.title, messages: messages[id] ?? [], unread: chat.unread, avatar: chat.avatar,
+            return BridgedChat(app: app, name: shownName(chat), messages: messages[id] ?? [], unread: chat.unread, avatar: chat.avatar,
                                members: people.isEmpty ? nil : people, deleted: gone[id] ?? [])
         }
     }
+
+    /// Two different chats you have with one name, told apart (`ChatNames`), by the chat's id; made at each read that
+    /// brings something, since people's names change.
+    private var uniqueNames: [Int64: String] = [:]
+
+    private func nameChats() {
+        let names = ChatNames.unique(chats.values.filter { shown.contains($0.id) }.map {
+            ChatNames.Chat(id: String($0.id), app: app, name: $0.title)
+        })
+        uniqueNames = Dictionary(uniqueKeysWithValues: names.compactMap { key, name in Int64(key).map { ($0, name) } })
+    }
+
+    /// The name a chat shows in Nook.
+    private func shownName(_ chat: TelegramData.Chat) -> String { uniqueNames[chat.id] ?? chat.title }
 
     // MARK: Scrolling back
 
     /// The chat Nook shows as `name`.
     private func chatID(_ name: String) -> Int64? {
         let key = ChatInbox.key(app: app, chat: name)
-        return chats.first { !$0.value.title.isEmpty && ChatInbox.key(app: app, chat: $0.value.title) == key }?.key
+        return chats.first { !$0.value.title.isEmpty && ChatInbox.key(app: app, chat: shownName($0.value)) == key }?.key
     }
 
     func canLoadOlder(name: String) -> Bool { isReady && chatID(name) != nil }
@@ -249,7 +264,7 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
                 guard let id = TelegramData.int64(object["chat_id"]), let chat = chats[id], !chat.title.isEmpty,
                       let message = TelegramData.message(object, chat: chat, users: users),
                       ChatHistorySearch.matches(message, [word]) else { continue }
-                found.append((BridgedChat(app: app, name: chat.title, messages: [], unread: nil, avatar: chat.avatar), [message]))
+                found.append((BridgedChat(app: app, name: shownName(chat), messages: [], unread: nil, avatar: chat.avatar), [message]))
             }
         }
         return ChatHistorySearch.chats(found)
@@ -345,7 +360,7 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         case "updateChatAction":
             // Telegram repeats an action every few seconds while it lasts, and lets it go after six without a word.
             if let action = TelegramData.chatAction(object), action.user != meID, let chat = chats[action.chat], !chat.title.isEmpty {
-                let key = ChatInbox.key(app: app, chat: chat.title)
+                let key = ChatInbox.key(app: app, chat: shownName(chat))
                 if let kind = action.kind {
                     ChatTypingCenter.shared.typing(chat: key, person: String(action.user),
                                                    name: chat.isGroup ? users[action.user] ?? "" : "", kind: kind, seconds: 6)
@@ -402,8 +417,8 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
                 shown.insert(id)
                 // Their message is here: they stopped typing it.
                 if let user = TelegramData.int64((message["sender_id"] as? [String: Any])?["user_id"]),
-                   let title = chats[id]?.title, !title.isEmpty {
-                    ChatTypingCenter.shared.stopped(chat: ChatInbox.key(app: app, chat: title), person: String(user))
+                   let chat = chats[id], !chat.title.isEmpty {
+                    ChatTypingCenter.shared.stopped(chat: ChatInbox.key(app: app, chat: shownName(chat)), person: String(user))
                 }
             }
         case "updateMessageSendSucceeded":
@@ -693,8 +708,8 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
 
     /// The chat Nook shows under this name, newest first when two share it.
     func chatID(named name: String) -> Int64? {
-        chats.values.filter { $0.title == name && shown.contains($0.id) }.max { $0.order < $1.order }?.id
-            ?? chats.values.first { $0.title == name }?.id
+        chats.values.filter { shownName($0) == name && shown.contains($0.id) }.max { $0.order < $1.order }?.id
+            ?? chats.values.first { shownName($0) == name }?.id
     }
 
     /// Sends what you typed to a chat, as an answer to `replyTo` (a message's id in Nook) when set. The chat shows it

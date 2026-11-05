@@ -58,6 +58,9 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 - Chats list rows now follow their chat: a chat that moved to another group no longer keeps its old line and time, and
   shows as selected.
 - Writing in an old chat no longer marks all its messages unread, in every chat app.
+- Two different chats of one name in Teams, Slack, Telegram or a chat helper network are now two rows with a short mark,
+  and an answer reaches the right chat. Answers in a row with two threads to one person go to the newest.
+- A Teams message with several files says how many there are.
 - A picture that never arrives shows as a named file that opens its app instead of an empty tile. Teams files in
   SharePoint or OneDrive show that way at once.
 - Xcode 27 opens `Nook.xcodeproj` and `NookCompanion.xcodeproj` again: XcodeGen no longer lists a group or file in two

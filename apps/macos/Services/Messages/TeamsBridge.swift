@@ -251,7 +251,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
                 failure = failure ?? error
             }
         }
-        let distinct = TeamsData.distinguish(lists.map { $0.chats }, labels: lists.map { $0.account.label })
+        let distinct = TeamsData.uniquelyNamed(TeamsData.distinguish(lists.map { $0.chats }, labels: lists.map { $0.account.label }))
         for (index, entry) in lists.enumerated() {
             result += await readWeb(distinct[index], account: entry.account)
         }
@@ -284,7 +284,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
             isWorking = false
             throw failure
         }
-        let named = TeamsData.distinguish(listed.map { $0.chats }, labels: listed.map { $0.account.label })
+        let named = TeamsData.uniquelyNamed(TeamsData.distinguish(listed.map { $0.chats }, labels: listed.map { $0.account.label }))
         for (index, entry) in listed.enumerated() {
             for chat in named[index] { sources[ChatInbox.key(app: app, chat: chat.name)] = .graph(account: entry.account.id, chat: chat) }
             result += await read(named[index], account: entry.account, bearer: entry.bearer)

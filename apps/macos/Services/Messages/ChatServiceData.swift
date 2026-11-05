@@ -59,7 +59,22 @@ enum ChatServiceData {
         return (chat.last ?? .distantPast) >= (other.last ?? .distantPast)
     }
 
+    /// The chats the helper lists, with two different chats of one name told apart (`ChatNames`). Two threads with the
+    /// same person (Instagram keeps those) stay one row: `isNewest` picks the one answers go to.
     static func chats(_ json: [String: Any]) -> [Chat] {
+        let chats = listedChats(json)
+        let names = ChatNames.unique(chats.map { chat in
+            let person = chat.isGroup ? nil : chat.people.keys.filter { $0 != chat.me }.sorted().first
+            return ChatNames.Chat(id: chat.id, app: chat.app, name: chat.title, same: person.map { (chat.account ?? "") + "|" + $0 })
+        })
+        return chats.map { chat in
+            var named = chat
+            named.title = names[chat.id] ?? chat.title
+            return named
+        }
+    }
+
+    private static func listedChats(_ json: [String: Any]) -> [Chat] {
         (json["items"] as? [[String: Any]] ?? []).compactMap { chat in
             guard let id = chat["id"] as? String, chat["isArchived"] as? Bool != true, chat["merge"] == nil,
                   (chat["mergedIntoChatID"] as? String ?? "").isEmpty,
