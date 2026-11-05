@@ -462,6 +462,12 @@ struct SessionWorkbench<Conversation: View>: View {
             diffSelection = nil
             consoleEventID = nil
         }
+        // A task, not onChange: it also runs for the workbench a row's card just opened, after the change above.
+        .task(id: viewModel.sessionDiffToOpen) {
+            guard let selection = viewModel.sessionDiffToOpen else { return }
+            viewModel.sessionDiffToOpen = nil
+            openDiff(selection)
+        }
         .animation(NookTheme.reveal, value: bottom == .conversation)
         .onChange(of: bottom) { _, next in
             if SessionTool.panelTools.contains(next) { lastBottomTool = next.rawValue }
@@ -887,7 +893,13 @@ private struct SessionToolPanel: View {
                     if let pullRequest {
                         // The page's own top bar starts with the arrow back to the list to pick another, so there is no
                         // extra row above it.
-                        PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item, onUpdate: { updated in
+                        let listed = PullRequestStore.shared.accounts.first { $0.id == pullRequest.account }
+                            .map { $0.reviews + $0.mine + $0.watched } ?? []
+                        PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item,
+                                              stack: PullRequestStack.stack(of: pullRequest.item, in: listed) ?? [],
+                                              stackHistory: PullRequestStack.history(of: pullRequest.item, in: listed) ?? [],
+                                              onOpenPullRequest: { openPullRequest(PullRequestOpenRequest(account: pullRequest.account, item: $0)) },
+                                              onUpdate: { updated in
                             updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
                         }, onBack: showPullRequestList, waitsForPanel: opening)
                             .id(pullRequest.account + " " + pullRequest.item.id)

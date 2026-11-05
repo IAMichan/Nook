@@ -52,7 +52,46 @@ final class PullRequestStackTests: XCTestCase {
             XCTAssertEqual(positions[pr.id]?.index, one?.index, "#\(pr.number)")
             XCTAssertEqual(positions[pr.id]?.count, one?.count, "#\(pr.number)")
         }
-        XCTAssertEqual(positions.count, 3)
+        XCTAssertEqual(positions.count, 4, "the merged one on top of #3 keeps its place")
+    }
+
+    func testAMergedPullRequestStaysInItsStacksHistory() {
+        let bottom = item(1, head: "a", state: .merged)
+        let middle = item(2, head: "b", base: "a")
+        let top = item(3, head: "c", base: "b")
+        let all = [top, middle, bottom]
+        XCTAssertEqual(PullRequestStack.history(of: top, in: all)?.map(\.number), [1, 2, 3])
+        XCTAssertEqual(PullRequestStack.history(of: bottom, in: all)?.map(\.number), [1, 2, 3])
+        XCTAssertEqual(PullRequestStack.stack(of: top, in: all)?.map(\.number), [2, 3], "only what is left to merge")
+        XCTAssertEqual(PullRequestStack.mergeOrder(upTo: top, in: all).map(\.number), [2, 3])
+        XCTAssertEqual(PullRequestStack.position(of: middle, in: all)?.index, 2)
+        XCTAssertEqual(PullRequestStack.position(of: middle, in: all)?.count, 3)
+        XCTAssertEqual(PullRequestStack.position(of: middle, in: all)?.merged, 1)
+    }
+
+    func testAMergedLongLivedBranchIsNoStep() {
+        let release = item(1, head: "develop", state: .merged)
+        let feature = item(2, head: "f", base: "develop")
+        XCTAssertNil(PullRequestStack.history(of: feature, in: [release, feature]))
+        XCTAssertNil(PullRequestStack.history(of: release, in: [release, feature]))
+        XCTAssertTrue(PullRequestStack.positions(in: [release, feature]).isEmpty)
+    }
+
+    func testTheLiveOneWinsOverAMergedOneOnTheSameBranch() {
+        let oldMerged = item(1, head: "a", state: .merged)
+        let live = item(2, head: "a")
+        let upper = item(3, head: "b", base: "a")
+        let mergedSibling = item(4, head: "s", base: "a", state: .merged)
+        let all = [oldMerged, live, upper, mergedSibling]
+        XCTAssertEqual(PullRequestStack.history(of: upper, in: all)?.map(\.number), [2, 3])
+        XCTAssertEqual(PullRequestStack.history(of: live, in: [live, mergedSibling, item(5, head: "o", base: "a")])?.map(\.number), [2, 5])
+    }
+
+    func testAClosedPullRequestHasNoHistory() {
+        let closed = item(1, head: "a", state: .closed)
+        let upper = item(2, head: "b", base: "a")
+        XCTAssertNil(PullRequestStack.history(of: closed, in: [closed, upper]))
+        XCTAssertNil(PullRequestStack.history(of: upper, in: [closed, upper]))
     }
 
     func testALoopOfBasesEnds() {
