@@ -604,6 +604,40 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(loaded.threads[key]?.readState, .read)
     }
 
+    /// You wrote in a chat, so what came before it is read, in every app: an app that counts from an old read mark (a chat
+    /// you never read there) does not make the whole chat unread once your message moves it.
+    func testYourOwnMessageReadsWhatCameBefore() {
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        let old = (0..<3).map { InboxMessage(id: "m\($0)", text: "old \($0)", date: start.addingTimeInterval(Double($0))) }
+        let mine = InboxMessage(id: "mine", text: "hi", date: start.addingTimeInterval(1000), fromMe: true)
+        let later = InboxMessage(id: "later", text: "new", date: start.addingTimeInterval(2000))
+
+        var inbox = ChatInbox()
+        inbox.merge(BridgedChat(app: "teams", name: "Old chat", messages: old, unread: 0))
+        let key = ChatInbox.key(app: "teams", chat: "Old chat")
+        inbox.merge(BridgedChat(app: "teams", name: "Old chat", messages: old + [mine], unread: 3))
+        XCTAssertEqual(inbox.threads[key]?.unread, 0, "the app's count from its old read mark is no news")
+        inbox.merge(BridgedChat(app: "teams", name: "Old chat", messages: old + [mine, later], unread: 4))
+        XCTAssertEqual(inbox.threads[key]?.unread, 1, "only what came after your message is new")
+
+        // An app that gives no count: what Nook missed before your message is no news either.
+        var counted = ChatInbox()
+        counted.merge(BridgedChat(app: "messages", name: "Quiet", messages: [old[0]], unread: nil))
+        let quiet = ChatInbox.key(app: "messages", chat: "Quiet")
+        counted.merge(BridgedChat(app: "messages", name: "Quiet", messages: old + [mine], unread: nil))
+        XCTAssertEqual(counted.threads[quiet]?.unread, 0)
+        counted.merge(BridgedChat(app: "messages", name: "Quiet", messages: [later], unread: nil))
+        XCTAssertEqual(counted.threads[quiet]?.unread, 1)
+
+        // Marked unread by hand: it stays so, also after your own message.
+        var marked = ChatInbox()
+        marked.merge(BridgedChat(app: "teams", name: "Marked", messages: old + [mine], unread: 0))
+        let hand = ChatInbox.key(app: "teams", chat: "Marked")
+        marked.markUnread(hand)
+        marked.merge(BridgedChat(app: "teams", name: "Marked", messages: old + [mine], unread: 0))
+        XCTAssertEqual(marked.threads[hand]?.unread, 1)
+    }
+
     func testMarkReadInAppReadsItEverywhere() {
         var inbox = ChatInbox()
         let key = ChatInbox.key(app: "telegram", chat: "Anna")
