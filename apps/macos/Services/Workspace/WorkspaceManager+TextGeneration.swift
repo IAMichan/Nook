@@ -12,7 +12,7 @@ extension WorkspaceManager {
         let environment = accountEnvironment(pick == provider ? (profileID ?? pick.kind.rawValue) : pick.kind.rawValue)
         let engine: TextGeneration.Engine = pick == .claude ? .claude : .codex
         return await Task.detached(priority: .utility) {
-            TextGenerationRunner.run(engine: engine, executable: executable, environment: environment, prompt: prompt,
+            await TextGenerationRunner.run(engine: engine, executable: executable, environment: environment, prompt: prompt,
                                      schema: schema, cwd: cwd, timeout: timeout, model: model)
         }.value
     }

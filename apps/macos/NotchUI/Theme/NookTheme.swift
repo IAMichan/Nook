@@ -1,5 +1,13 @@
 import SwiftUI
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
+
+// One theme for both apps: Nook on the Mac and Nook Companion on the iPhone (apps/ios/project.yml compiles this file
+// too, as `Theme` there). The only differences are where a platform asks for one: the phone's type follows Dynamic Type
+// (`TextStyle`), and the Mac's own window transitions stay on the Mac.
 
 extension Color {
     /// Creates a color from a hex integer, e.g. `Color(hex: 0x8B7BFF)`.
@@ -122,11 +130,19 @@ enum NookTheme {
         static let attribute = adaptive(dark: 0xD9C27E, light: 0x86690F)
 
         private static func adaptive(dark: UInt32, light: UInt32) -> Color {
+            #if os(macOS)
             Color(nsColor: NSColor(name: nil) { appearance in
                 let hex = appearance.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? light : dark
                 return NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
                                blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
             })
+            #else
+            Color(uiColor: UIColor { traits in
+                let hex = traits.userInterfaceStyle == .light ? light : dark
+                return UIColor(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
+                               blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+            })
+            #endif
         }
     }
 
@@ -194,25 +210,39 @@ enum NookTheme {
     /// big line on a page (home's greeting, a settings page) is `display`.
     enum TextStyle {
         /// Timestamps, counts, and the smallest metadata.
-        static var caption: Font { NookTheme.font(10.5, .medium) }
+        static var caption: Font { NookTheme.textFont(10.5, .medium) }
         /// The line under a title: a setting's explanation, a hint, a row's second line, or an error message.
-        static var detail: Font { NookTheme.font(12) }
+        static var detail: Font { NookTheme.textFont(12) }
         /// Secondary labels, badges, chips, and metadata.
-        static var label: Font { NookTheme.font(11.5, .medium) }
+        static var label: Font { NookTheme.textFont(11.5, .medium) }
         /// Body text in rows, cards, chat, and the composer.
-        static var body: Font { NookTheme.font(14) }
+        static var body: Font { NookTheme.textFont(14) }
         /// A composer's choices (model, mode, access): a step under `strong`, so they fit a narrow box.
-        static var control: Font { NookTheme.font(13, .medium) }
+        static var control: Font { NookTheme.textFont(13, .medium) }
         /// A row title or a button: medium rather than bold, so a list of titles stays calm and the text carries it.
-        static var strong: Font { NookTheme.font(14, .medium) }
+        static var strong: Font { NookTheme.textFont(14, .medium) }
         /// The title of a panel, a list, or a card.
-        static var title: Font { NookTheme.font(15, .semibold) }
+        static var title: Font { NookTheme.textFont(15, .semibold) }
         /// The heading of a sheet or a setup step.
-        static var heading: Font { NookTheme.font(18, .semibold) }
+        static var heading: Font { NookTheme.textFont(18, .semibold) }
         /// The one large line of a page: home's greeting, a settings page's title.
-        static var display: Font { NookTheme.font(22, .semibold) }
+        static var display: Font { NookTheme.textFont(22, .semibold) }
         /// Inline code and paths at body size.
-        static var code: Font { NookTheme.mono(13) }
+        static var code: Font { NookTheme.textFont(13, design: .monospaced) }
+    }
+
+    /// How much larger text is on the phone than on the Mac at the same place in the scale: the Mac's 14 pt body is the
+    /// phone's 16 pt (`.callout`), held further from the eye.
+    static let phoneTextScale: CGFloat = 16.0 / 14.0
+
+    /// A size of the type scale: as written on the Mac; on the phone a step larger and following the text size you chose
+    /// (Dynamic Type), so the two apps keep the same proportions.
+    static func textFont(_ size: CGFloat, _ weight: Font.Weight = .regular, design: Font.Design = .default) -> Font {
+        #if os(macOS)
+        .system(size: size, weight: weight, design: design)
+        #else
+        .system(size: UIFontMetrics.default.scaledValue(for: size * phoneTextScale), weight: weight, design: design)
+        #endif
     }
 
     // Typography: SF Pro for text, SF Mono for code and paths.
@@ -312,6 +342,7 @@ private struct NotchContentFade: ViewModifier {
     }
 }
 
+#if os(macOS)
 extension AnyTransition {
     static var notchContent: AnyTransition {
         // Reduce Motion: a plain fade, without the blur and the scale.
@@ -326,3 +357,4 @@ extension AnyTransition {
         )
     }
 }
+#endif

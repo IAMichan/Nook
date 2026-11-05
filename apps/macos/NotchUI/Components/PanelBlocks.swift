@@ -114,7 +114,6 @@ extension View {
     }
 }
 
-/// How many things wait for you: a small amber count (a tab, a list's title). Zero shows nothing.
 /// A button drawn as a `NookSearchField` that opens a search instead of being one (the Chats tab's rail of icons opens
 /// Search everything with it): the same field, glyph and inset, the prompt, and the shortcut as a `NookKeyHint`.
 /// `compact` is only the glyph, for a rail of icons.
@@ -170,22 +169,6 @@ struct NookKeyHint: View {
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.smoke))
             .fixedSize()
             .accessibilityHidden(true)
-    }
-}
-
-struct NookCountBadge: View {
-    let count: Int
-
-    var body: some View {
-        if count > 0 {
-            // Amber numerals on a faint wash, not a solid amber pill: it tells without shouting.
-            Text("\(count)")
-                .font(NookTheme.rounded(10, .semibold))
-                .foregroundStyle(NookTheme.amber)
-                .padding(.horizontal, NookTheme.Spacing.xs)
-                .frame(minWidth: 16, minHeight: 16)
-                .background(Capsule().fill(NookTheme.amber.opacity(0.14)))
-        }
     }
 }
 
@@ -254,90 +237,6 @@ struct PanelNewButton: View {
     }
 }
 
-/// A group's name inside a list or a page ("Pinned", "For you"): small, quiet, never uppercase.
-struct NookSectionLabel: View {
-    let title: String
-    /// Lines the label up with the text of the rows under it: a list's rows by default, a page's own edge with less.
-    var inset: CGFloat = NookTheme.Spacing.lg
-
-    init(_ title: String, inset: CGFloat = NookTheme.Spacing.lg) {
-        self.title = title
-        self.inset = inset
-    }
-
-    var body: some View {
-        Text(title)
-            .font(NookTheme.TextStyle.label)
-            .foregroundStyle(NookTheme.textTertiary)
-            .lineLimit(1)
-            .padding(.horizontal, inset)
-            .accessibilityAddTraits(.isHeader)
-    }
-}
-
-/// A filter chip in a row of them ("All", "Sessions 4"): a quiet capsule, filled with the accent when chosen, with an
-/// optional count after the title.
-struct NookFilterChip: View {
-    let title: String
-    var count: Int? = nil
-    let selected: Bool
-    /// The state of what the chip stands for (a workflow's newest run), shown only while it runs or when it failed.
-    var mark: (outcome: PullRequestCheck.Outcome, running: Bool)? = nil
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: NookTheme.Spacing.xs) {
-                if let mark, mark.outcome == .failing || mark.outcome == .pending {
-                    CheckOutcomeGlyph(outcome: mark.outcome, size: 10, running: mark.running)
-                }
-                Text(title).font(NookTheme.TextStyle.label)
-                if let count {
-                    Text("\(count)").font(NookTheme.rounded(11, .medium)).opacity(0.7)
-                }
-            }
-            .foregroundStyle(selected ? NookTheme.onIris : (hovering ? NookTheme.paper : NookTheme.textStrong))
-            .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-            .padding(.vertical, NookTheme.Spacing.xs + 1)
-            .background(Capsule().fill(selected ? NookTheme.iris : NookTheme.smoke))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .animation(NookTheme.hover, value: hovering)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-}
-
-/// The one hairline between rows or regions. `inset` leaves room on the leading side (under a row's icon).
-struct NookDivider: View {
-    var vertical = false
-    var inset: CGFloat = 0
-    /// A line that marks something (where the new messages start) takes that state's color.
-    var tint: Color = NookTheme.border
-
-    var body: some View {
-        if vertical {
-            Rectangle().fill(tint).frame(width: 1)
-        } else {
-            Rectangle().fill(tint).frame(height: 1).padding(.leading, inset)
-        }
-    }
-}
-
-/// The line between two items of a list (a chat in the Chats tab): clearer than a `NookDivider`, inset
-/// to the rows' text, with a little room above and below. Put it before every item but the first.
-struct NookRowSeparator: View {
-    var body: some View {
-        Rectangle().fill(NookTheme.separator)
-            .frame(height: 1)
-            .padding(.horizontal, NookTheme.Spacing.lg)
-            .padding(.vertical, NookTheme.Spacing.xxs)
-            .accessibilityHidden(true)
-    }
-}
-
 /// A notice that comes in while the panel is open (a permission request, an agent's question, a short note): the
 /// shared `NookNotice` in one quiet bar under the tabs, with its actions on the right. `tone` tints the mark and the
 /// edge for something risky. With `countdown` the notice closes by itself and ends in the OK with its ring; a request
@@ -380,39 +279,14 @@ struct PanelNoticeBar<Trailing: View>: View {
     }
 }
 
-extension View {
-    /// The quiet card that groups rows (home's "For you", a list of results): the field fill, the panel's corners, no
-    /// stroke. Rows inside are split with `NookDivider`.
-    func panelCard() -> some View {
-        background(NookTheme.field)
-            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
-    }
-}
-
-/// What something says beside its buttons (a confirmation, a recovery card, a banner): the buttons on the right while
-/// the text keeps a readable width (`readable`) beside them, and on a line of their own under it in a narrow tab, instead
-/// of the text squeezed to a word per line next to buttons that never shrink.
-struct AdaptiveActionRow<Message: View, Actions: View>: View {
-    var spacing: CGFloat = NookTheme.Spacing.md
-    var alignment: VerticalAlignment = .center
-    /// The narrowest the message may get before the buttons move under it.
-    var readable: CGFloat = 180
-    @ViewBuilder let message: () -> Message
-    @ViewBuilder let actions: () -> Actions
-
-    var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: alignment, spacing: spacing) {
-                message().frame(minWidth: 0, idealWidth: readable, maxWidth: .infinity, alignment: .leading)
-                HStack(spacing: NookTheme.Spacing.sm) { actions() }.fixedSize()
-            }
-            VStack(alignment: .leading, spacing: spacing) {
-                message().frame(maxWidth: .infinity, alignment: .leading)
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    Spacer(minLength: 0)
-                    actions()
-                }
-            }
+extension NookFilterChip {
+    /// A chip whose mark is the state of a workflow's newest run, shown only while it runs or when it failed.
+    init(title: String, count: Int? = nil, selected: Bool, mark: (outcome: PullRequestCheck.Outcome, running: Bool)?,
+         action: @escaping () -> Void) {
+        let glyph = mark.flatMap { mark in
+            mark.outcome == .failing || mark.outcome == .pending
+                ? AnyView(CheckOutcomeGlyph(outcome: mark.outcome, size: 10, running: mark.running)) : nil
         }
+        self.init(title: title, count: count, selected: selected, mark: glyph, action: action)
     }
 }

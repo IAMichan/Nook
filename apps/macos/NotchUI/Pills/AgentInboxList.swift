@@ -490,38 +490,19 @@ struct AgentInboxList: View {
         let open = !collapsed.contains(section.kind)
         let count = section.rows.count + section.hiddenCount
         let ghost = ghostLabel(for: section.kind, sections: sections)
-        return Button {
+        return NookShelfHeader(title: tr("inbox.section." + section.kind.rawValue), count: count, open: open) {
             withAnimation(NookTheme.reveal) {
                 store.setShelf(section.kind, collapsed: open)
             }
-        } label: {
-            HStack(spacing: NookTheme.Spacing.md) {
-                Text(tr("inbox.section." + section.kind.rawValue))
+        } accessory: {
+            if let ghost {
+                Text(ghost)
                     .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(NookTheme.textSecondary)
-                Spacer(minLength: 0)
-                if let ghost {
-                    Text(ghost)
-                        .font(NookTheme.TextStyle.label)
-                        .foregroundStyle(NookTheme.iris)
-                        .padding(.horizontal, NookTheme.Spacing.sm).padding(.vertical, NookTheme.Spacing.xxs)
-                        .background(Capsule().fill(NookTheme.iris.opacity(0.14)))
-                }
-                Text("\(count)")
-                    .font(NookTheme.TextStyle.detail.monospacedDigit())
-                    .foregroundStyle(NookTheme.textTertiary)
-                Image(systemName: "chevron.down")
-                    .font(NookTheme.font(10, .semibold))
-                    .rotationEffect(.degrees(open ? 0 : -90))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .frame(width: Self.chevronWidth)
+                    .foregroundStyle(NookTheme.iris)
+                    .padding(.horizontal, NookTheme.Spacing.sm).padding(.vertical, NookTheme.Spacing.xxs)
+                    .background(Capsule().fill(NookTheme.iris.opacity(0.14)))
             }
-            .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-            .frame(height: 32)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .accessibilityValue(open ? tr("compose.queue.expanded") : "")
     }
 
     /// What dropping the dragged row on this section would do, named before you let go.

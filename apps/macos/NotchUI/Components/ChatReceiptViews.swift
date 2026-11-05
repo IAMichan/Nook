@@ -143,23 +143,11 @@ struct ChatPersonBadge: View {
     let name: String
     var size: CGFloat = 22
 
-    private static let colors: [Color] = [NookTheme.mint, NookTheme.blue, NookTheme.violet, NookTheme.music]
-
     /// Each person's own color in a chat, the same every time: their name in a group's bubbles, their initials.
-    static func tint(for name: String) -> Color {
-        colors[ChatTimeline.colorIndex(for: name, count: colors.count)]
-    }
+    static func tint(for name: String) -> Color { ChatPersonTint.color(for: name) }
 
     var body: some View {
-        let tint = Self.tint(for: name)
-        Circle()
-            .fill(tint.opacity(0.16))
-            .overlay(
-                Text(WAJID.initials(name))
-                    .font(NookTheme.rounded(size * 0.4, .semibold))
-                    .foregroundStyle(tint)
-            )
-            .frame(width: size, height: size)
+        ChatInitialsFace(name: name, initials: WAJID.initials(name), size: size, scale: 0.4)
             .accessibilityHidden(true)
     }
 }

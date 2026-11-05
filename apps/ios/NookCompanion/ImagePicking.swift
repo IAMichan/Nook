@@ -64,9 +64,9 @@ struct ImageTray: View {
                             } label: {
                                 Image(systemName: "xmark")
                                     .font(Theme.font(9, .bold))
-                                    .foregroundStyle(Theme.text)
+                                    .foregroundStyle(Theme.paper)
                                     .frame(width: 20, height: 20)
-                                    .background(Theme.raised, in: Circle())
+                                    .background(Theme.smoke, in: Circle())
                             }
                             .offset(x: 6, y: -6)
                             .accessibilityLabel("Remove picture")
@@ -91,7 +91,7 @@ struct AttachPictureButton: View {
                 .font(Theme.font(14, .semibold))
                 .foregroundStyle(images.count >= CompanionImage.maxCount ? Theme.textTertiary : Theme.textSecondary)
                 .frame(width: 34, height: 34)
-                .background(Theme.raised, in: Circle())
+                .background(Theme.smoke, in: Circle())
         }
         .disabled(images.count >= CompanionImage.maxCount)
         .accessibilityLabel("Add a picture")

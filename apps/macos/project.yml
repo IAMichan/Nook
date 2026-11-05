@@ -264,6 +264,7 @@ targets:
       - path: Services/Messages/BeeperImport.swift
       - path: Services/Messages/ChatLinkData.swift
       - path: Services/Messages/ChatMedia.swift
+      - path: Services/Messages/ChatParallel.swift
       - path: Services/Messages/ChatFormat.swift
       - path: Services/Messages/ChatHiddenMessages.swift
       - path: Services/Messages/ChatPoll.swift

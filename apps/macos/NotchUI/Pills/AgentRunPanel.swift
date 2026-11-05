@@ -152,7 +152,9 @@ struct AgentRunPanel: View {
                 workspace.requestTimeline(runID)
                 visit = TimelineVisitStore.shared.visit(for: Self.visitKey(runID))
                 if let visit { openBlocks = visit.open }
-                if run.repoRoot != nil { workspace.refreshGit(runID) }
+                // Quiet: the branch shown so far stays up while it is read again, and only a change redraws (a spinner
+                // first would redraw every view that follows the workspace twice as the session opens).
+                if run.repoRoot != nil { workspace.refreshGit(runID, quiet: true) }
                 // The agent's connection opens now, so your first message goes straight in.
                 workspace.prewarm(runID)
                 focused = true
@@ -173,7 +175,7 @@ struct AgentRunPanel: View {
             .onChange(of: runID) { previous, _ in
                 rememberVisit(previous)
                 workspace.requestTimeline(runID)
-                if workspace.run(runID)?.repoRoot != nil { workspace.refreshGit(runID) }
+                if workspace.run(runID)?.repoRoot != nil { workspace.refreshGit(runID, quiet: true) }
                 workspace.prewarm(runID)
                 // The draft of the session you left stays saved, and the one of this session comes back.
                 composerState.show(session: runID.uuidString)
