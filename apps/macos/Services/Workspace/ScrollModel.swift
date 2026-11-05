@@ -26,6 +26,8 @@ struct ScrollModel: Equatable, Sendable {
     private(set) var cancelQueuedScrolls = false
 
     var shouldFollowEnd: Bool { mode == .following }
+    /// The conversation does not follow its end by itself: the "Scroll to end" pill is the way back there.
+    var awayFromEnd: Bool { mode != .following }
     /// `userScrolled()` would change nothing now. A view that reports every frame of a scroll (or every step of a drag
     /// on the rail) checks this first, so it writes its state once instead of drawing the whole conversation again for
     /// each frame, which made scrolling stutter.
@@ -73,6 +75,25 @@ struct ScrollModel: Equatable, Sendable {
 
     func jumpPill(awayFor: TimeInterval) -> Bool {
         mode == .free && !isFinding && awayFor >= Self.pillDelay
+    }
+}
+
+/// A message you just sent, held near the top of the view while the reply grows under it. The end of a conversation can
+/// only reach the top of the view with room under the reply; as the reply grows it takes that room over, so what you
+/// read stands still and no blank end stays behind.
+struct TurnPin: Equatable, Sendable {
+    /// How far down the content the message starts: measured once it is laid out, its height from before it came in
+    /// until then.
+    let messageTop: Double
+    /// Distance between the top edge and the message.
+    var anchorOffset = 24.0
+
+    /// The room under the reply that brings the message to `anchorOffset`, in `frame`, which holds `current` of it now.
+    /// The container has already given up the composer's height (a safe area inset), so that does not count again;
+    /// checked on a real scroll view, where counting it left the message that much lower.
+    func room(in frame: ScrollFrame, current: Double) -> Double {
+        let below = frame.content - current - messageTop
+        return max(0, frame.container - anchorOffset - below)
     }
 }
 

@@ -174,9 +174,9 @@ private struct ChangesDiffList: View, Equatable {
     var body: some View {
         StackedDiffList(files: files, scope: scope, expanded: $expanded, showsTree: showsTree,
                         focus: focus, diff: diff) { file, text in
-            DiffText(text: text, comments: comments.filter { $0.path == file.path },
+            DiffText(text: text, comments: comments.filter { $0.path == file.path && ($0.scope == nil || $0.scope == scope) },
                      onComment: { line, code, comment in
-                         workspace.addReviewComment(runID, ReviewComment(path: file.path, line: line, code: code, text: comment))
+                         workspace.addReviewComment(runID, ReviewComment(path: file.path, line: line, code: code, text: comment, scope: scope))
                      },
                      onRemoveComment: { workspace.removeReviewComment(runID, $0) }, stacked: true, path: file.path,
                      scope: runID.uuidString + "\n" + file.path)

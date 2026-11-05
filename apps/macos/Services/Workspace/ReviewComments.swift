@@ -12,6 +12,8 @@ struct ReviewComment: Identifiable, Equatable, Sendable {
     /// The diff line it is about, with its +, - or space.
     var code: String
     var text: String
+    /// The diff it was made on: the same line number means another line in another diff of the file.
+    var scope: String? = nil
 }
 
 enum ReviewComments {
