@@ -218,6 +218,8 @@ final class WorkspaceManager: ObservableObject {
     @Published var agentVersions: [RunProvider: String] = [:]
     /// When the repository was last asked for the manifest, and when each agent's version was read (with its path).
     var manifestAttempted: Date?
+    /// The model list of each agent (see `modelMenu`), by `effortKey`.
+    var modelChoiceMemo: [String: ModelChoiceMemo] = [:]
     var versionsRead: [RunProvider: (path: String, at: Date)] = [:]
     /// Sessions waiting for a usage limit to reset, to go on then; and Codex's latest limits per session.
     var limitResumes: [UUID: Task<Void, Never>] = [:]
@@ -278,6 +280,8 @@ final class WorkspaceManager: ObservableObject {
     var turns: [UUID: TurnState] = [:]
     private var saveTask: Task<Void, Never>?
     private var eventSaves: [UUID: Task<Void, Never>] = [:]
+    /// A pending save of the session list that streaming asked for (see `scheduleRunsCatchUp`).
+    private var runsCatchUp: Task<Void, Never>?
     /// The session list as it was last handed to the store: a timeline save only rewrites `runs.json` when it changed.
     private var savedRuns: [WorkspaceRun]?
     /// A change to `events` was announced less than `eventsPublishInterval` ago; `eventsDirty` says another one followed.
@@ -2440,6 +2444,9 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
+    private static let eventSaveInterval: UInt64 = 5_000_000_000
+    private static let runsCatchUpInterval: UInt64 = 30_000_000_000
+
     func scheduleSave() {
         saveTask?.cancel()
         saveTask = Task { [weak self] in
@@ -2454,23 +2461,29 @@ final class WorkspaceManager: ObservableObject {
     func scheduleEventSave(_ id: UUID) {
         guard eventSaves[id] == nil else { return }
         eventSaves[id] = Task { [weak self] in
-            // Each save compares the whole timeline with the log and appends what changed (new events are written at once
-            // by `append`); while an answer streams,
-            // every two seconds is plenty: a crash loses at most the last two seconds of text.
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            // Each save compares the whole timeline with the log and writes every changed event in full, so a long answer
+            // is written again each time (new events are written at once by `append`). While an answer streams, every five
+            // seconds is plenty: a crash loses at most the last five seconds of text.
+            try? await Task.sleep(nanoseconds: Self.eventSaveInterval)
             guard let self else { return }
             self.eventSaves[id] = nil
-            // The session list only when it changed since it was last written (a new event bumps `updatedAt`).
-            var runsSnapshot: [WorkspaceRun]?
-            if self.runsLoaded, self.savedRuns != self.runs {
-                runsSnapshot = self.runs
-                self.savedRuns = self.runs
-            }
-            if let list = self.events[id] {
-                self.store.saveEventsAsync(id, list, runs: runsSnapshot)
-            } else if let runsSnapshot {
-                self.store.saveRunsAsync(runsSnapshot)
-            }
+            if let list = self.events[id] { self.store.saveEventsAsync(id, list) }
+            self.scheduleRunsCatchUp()
+        }
+    }
+
+    /// What streaming changes in the session list is only the time of the last event: a real change saves on its own
+    /// (`scheduleSave`), and quitting saves everything. The list holds every session, so it is written now and then, once,
+    /// however many sessions stream.
+    private func scheduleRunsCatchUp() {
+        guard runsCatchUp == nil else { return }
+        runsCatchUp = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.runsCatchUpInterval)
+            guard let self else { return }
+            self.runsCatchUp = nil
+            guard self.runsLoaded, self.savedRuns != self.runs else { return }
+            self.savedRuns = self.runs
+            self.store.saveRunsAsync(self.runs)
         }
     }
 }

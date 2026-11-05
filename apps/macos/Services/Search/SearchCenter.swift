@@ -7,6 +7,9 @@ import Combine
 /// every coding agent's own transcript files: the sessions Nook follows and every earlier (settled) one. The index holds the
 /// newest messages of each chat; after each query every chat app's whole history is searched too (`ChatSearchBridge`,
 /// the same for every app), and what it finds joins the hits as it comes in.
+///
+/// All of this is built when search opens and let go a while after it closes, never at launch: it reads every session and
+/// transcript on disk and holds their text, which is a lot to spend on a panel that may stay closed all day.
 @MainActor
 final class SearchCenter: ObservableObject {
     static let shared = SearchCenter()
@@ -25,6 +28,7 @@ final class SearchCenter: ObservableObject {
     private var text = ""
     private var searchTask: Task<Void, Never>?
     private var indexTask: Task<Void, Never>?
+    private var releaseTask: Task<Void, Never>?
     private var loadedAt: Date?
     /// The index's own hits for the text in the field, before what the chat apps' history found is added.
     private var indexHits: [SearchHit] = []
@@ -41,7 +45,9 @@ final class SearchCenter: ObservableObject {
     /// Passages of the agents' own transcript files, by path, with the file's modification date they were read at.
     private static var agentTranscripts: [String: (modified: Date, passages: [SearchPassage])] = [:]
     /// How many transcript files are read before the index is built again with them: results fill in as they are read.
-    private static let transcriptBatch = 40
+    private static let transcriptBatch = 150
+    /// How long the index stays after the panel closed, for opening search again at once.
+    private static let keepFor: UInt64 = 600_000_000_000
     private static let recentKey = "nook.search.recent"
     private static let recentLimit = 8
     /// Most hits shown; the kind filter picks from these.
@@ -49,6 +55,7 @@ final class SearchCenter: ObservableObject {
 
     /// Collects every document and indexes them; the sessions' transcripts on disk follow in a second pass.
     func load(_ app: AppModel, force: Bool = false) {
+        releaseTask?.cancel()
         if let loadedAt, !force, !index.isEmpty, Date().timeIntervalSince(loadedAt) < 30 {
             return
         }
@@ -133,9 +140,26 @@ final class SearchCenter: ObservableObject {
         forgetHistory()
     }
 
-    /// Cancels search typing debounce without interrupting indexing.
+    /// The panel closed. Cancels search typing debounce without interrupting indexing, and lets go of the index after a
+    /// while unless search opens again.
     func cancelSearch() {
         searchTask?.cancel()
+        releaseTask?.cancel()
+        releaseTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.keepFor)
+            guard !Task.isCancelled else { return }
+            self?.release()
+        }
+    }
+
+    private func release() {
+        cancel()
+        reset()
+        index = SearchIndex([])
+        loadedAt = nil
+        indexing = false
+        Self.transcripts = [:]
+        Self.agentTranscripts = [:]
     }
 
     /// What the field holds now: scored after a short pause, so a burst of keystrokes is one search.

@@ -90,6 +90,7 @@ final class NowPlayingService: ObservableObject {
     /// Views showing the playing track in full (position, volume): while there is one, the player is polled every tick.
     private var viewers = 0
     private var observers: [NSObjectProtocol] = []
+    private var appObserver: NSObjectProtocol?
     private var lastPoll = Date.distantPast
     private var startedAt = Date()
     /// The one queue every Apple Event to the players runs on (also used by `LyricsService`), so the compiled script
@@ -114,19 +115,29 @@ final class NowPlayingService: ObservableObject {
                 })
             }
         }
+        if appObserver == nil {
+            // A player that quits or crashes announces nothing, and the safety net below is slow.
+            appObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
+            ) { [weak self] note in
+                let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                guard let id = app?.bundleIdentifier, Self.players.contains(where: { $0.bundleID == id }) else { return }
+                Task { @MainActor in self?.pollSoon() }
+            }
+        }
         timer = Timer.scheduledCoalesced(withTimeInterval: 2.0) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                if self.viewers == 0, EnergyMonitor.shared.plan.reasons.contains(.displayAsleep) { return }
+                let signals = EnergyMonitor.shared.signals
+                if self.viewers == 0, signals.displayAsleep || signals.away { return }
                 // Nothing playing: the players' notifications announce a start, so the safety net can be slow. Right after
                 // launch it keeps checking every other tick until a player answers: a player that was still starting (or a cold
                 // first AppleScript run) should not keep the Music tab away for ten seconds.
                 let settling = self.current == nil && Date().timeIntervalSince(self.startedAt) < 20
-                // Playing and on screen: every few seconds, for the volume (the position is estimated between polls, and each poll
-                // is a dozen Apple Events to the player). Playing but out of sight: the players'
-                // notifications announce every track and play/pause change, and the position is estimated, so a check
-                // every fifteen seconds is enough (each one is an Apple Event round trip to the player).
-                let interval: TimeInterval = settling ? 4 : (self.current?.isPlaying == true ? (self.viewers > 0 ? 5 : 15) : 10)
+                // On screen: every few seconds, for the volume (the position is estimated between polls, and each poll is a
+                // dozen Apple Events to the player, which wake it). Out of sight: the players' notifications announce every
+                // track and play/pause change and the position is estimated, so this is only the safety net.
+                let interval: TimeInterval = settling ? 4 : (self.viewers > 0 ? 5 : 60 * EnergyMonitor.shared.plan.slowdown)
                 if Date().timeIntervalSince(self.lastPoll) < interval - 0.5 { return }
                 self.poll()
             }

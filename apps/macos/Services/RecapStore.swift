@@ -132,9 +132,15 @@ final class RecapStore {
         // Keep only the last ten weeks.
         let cutoff = Self.keyFormatter.string(from: Date().addingTimeInterval(-70 * 86_400))
         days = days.filter { $0.key >= cutoff }
-        guard let data = try? JSONEncoder().encode(days) else { return }
-        try? data.write(to: url, options: .atomic)
+        // Every few seconds while you work, and a whole file each time: not on the main thread.
+        let days = days, url = url
+        Self.saves.async {
+            guard let data = try? JSONEncoder().encode(days) else { return }
+            try? data.write(to: url, options: .atomic)
+        }
     }
+
+    private static let saves = DispatchQueue(label: "nook.recap.save", qos: .utility)
 
     // MARK: Summary
 
