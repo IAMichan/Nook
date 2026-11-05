@@ -406,7 +406,7 @@ struct SessionComposer<Controls: View>: View {
 
     private var box: some View {
         let focused = focus ?? $ownFocus
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             let images = imagesBinding?.wrappedValue ?? []
             let files = ComposerAttachments.split(text).files
             if !images.isEmpty || !files.isEmpty {
@@ -436,7 +436,7 @@ struct SessionComposer<Controls: View>: View {
             }
         }
         // The send button sits 8 pt from the bottom and trailing edges, so with `Radius.composer` its circle runs
-        // parallel to the corner; the text starts 16 pt in, and a one-line box is a 48 pt capsule.
+        // parallel to the corner; the text starts 16 pt in.
         .padding(.leading, NookTheme.Spacing.xl)
         .padding(.trailing, NookTheme.Spacing.md)
         .padding(.top, choicesBelow ? NookTheme.Spacing.md : NookTheme.Spacing.xl)
@@ -484,6 +484,7 @@ struct SessionComposer<Controls: View>: View {
     private var controlRow: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
             ComposerDensityFit(content: controls(), minGap: NookTheme.Spacing.md)
+            if let trayAccessory { trayAccessory }
             sendCluster
         }
         .padding(.leading, -NookTheme.Spacing.md)
@@ -666,7 +667,7 @@ struct ComposerPill: View {
                 RoomyText(text: shown)
             }
         }
-        .font(NookTheme.TextStyle.label)
+        .font(NookTheme.TextStyle.control)
         .foregroundStyle(tint ?? (hovering ? NookTheme.paper : NookTheme.textSecondary))
         .padding(.horizontal, NookTheme.Spacing.md)
         .frame(height: 28)
@@ -685,7 +686,7 @@ struct ComposerPill: View {
             } else if let dot {
                 Circle().fill(dot).frame(width: 7, height: 7)
             } else if let symbol {
-                Image(systemName: symbol).font(NookTheme.font(11, .medium))
+                Image(systemName: symbol).font(NookTheme.font(13, .medium))
             }
             if !iconOnly {
                 Text(shown).lineLimit(1)

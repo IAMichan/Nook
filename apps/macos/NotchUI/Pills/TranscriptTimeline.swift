@@ -350,7 +350,7 @@ private struct TranscriptRowView: View, Equatable {
                     }
                 }
             }
-            .padding(.bottom, isFinal ? NookTheme.Spacing.lg : NookTheme.Spacing.xxs)
+            .padding(.bottom, isFinal ? 0 : NookTheme.Spacing.xxs)
         case .thinking(let message):
             thinking(message)
         case .step(let step) where directory != nil && SharedFiles.isShare(step):
@@ -693,12 +693,16 @@ struct TranscriptNotice: View {
     var body: some View {
         switch message.notice {
         case .compacted(let tokens):
-            HStack(spacing: NookTheme.Spacing.sm) {
+            // A rule on both sides, as `TimelineNewDivider`, so the turn before it reads as closed.
+            HStack(spacing: NookTheme.Spacing.md) {
+                NookDivider()
                 Image(systemName: "arrow.down.right.and.arrow.up.left")
                 Text(tokens.map { tr("agents.notice.compactedFrom", TokenTally.format($0)) } ?? tr("agents.notice.compacted"))
                     .lineLimit(1)
+                    .fixedSize()
+                NookDivider()
             }
-            .font(NookTheme.TextStyle.caption)
+            .font(NookTheme.TextStyle.label)
             .foregroundStyle(NookTheme.textTertiary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, NookTheme.Spacing.md)

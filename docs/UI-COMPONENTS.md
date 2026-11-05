@@ -53,8 +53,9 @@ and a selected row stands a full step above a hovered one with a `selectionMark`
   row under the pointer and the selected one lift. A session row reads as a thread in t3code (`AgentListRow`): the
   folder with the status or time, the name, and a line with the branch (a worktree's with its own mark), the changes
   (`+12 −3`, or the changed files) and the pull request, with the agent's logo at its end. Under a project's header the
-  folder line goes, the logo moves before the name (under the folder's mark), and the second line shows only when there
-  is a branch, a change or a pull request. Model, machine and the first prompt are in the hover card.
+  folder line goes, the name lines up with the project's name, and the second line shows only when there is a branch, a
+  change or a pull request; without one the row is 36 pt and the logo stands beside the status. The status's mark and
+  word both wear its color, and Snoozed and Settled are shelves docked at the list's foot, kept folded or open. Model, machine and the first prompt are in the hover card.
 - **No boxes around groups.** Toolbar groups (`.toolbarGroup()`) and the composer's choices have no fill or stroke of
   their own; a gap separates them (`ComposerDivider`), and a button gets a fill only under the pointer. Badges in a
   row (`RowBadgeBackground`) have no fill: a mark and a word. A card that reports a problem (recovery, an error, a
@@ -62,8 +63,8 @@ and a selected row stands a full step above a hovered one with a `selectionMark`
 - **One reading column.** A conversation and its composer are one centered column of at most 736 pt
   (`.chatColumn()`, `PanelLayout.chatColumn`), so lines stay readable in a wide window. `SessionComposer` keeps to
   that column by itself, so every chat with an agent or with Nook gets the same composer: a `Radius.composer` box on
-  `surface` with a hairline outline and a faint light on its top edge, the text 16 pt in, the choices underneath and
-  the round send button 8 pt from the corner (a one-line box is a 48 pt capsule). Your own message is a soft
+  `surface` with a hairline outline and a faint light on its top edge, the text 16 pt in, the choices inside the box on
+  one row with the round send button, 8 pt from the corner. Only a notch card keeps its choices in a tray under the box. Your own message is a soft
   `NookTheme.bubble` with `Radius.bubble` and no edge; the agent's answer has no bubble, its running text in
   `textStrong` (a step under the headings in `paper`) with relaxed line spacing.
 - **One message component.** Every conversation (the Nook chat, a session Nook runs, an agent's own transcript, and
@@ -262,6 +263,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `DropdownHeader`, `DropdownRow`, `DropdownDivider`, `ComposerDropdown` | `ComposerDropdown.swift` | Menus of the composer and pickers; `DropdownRow(favorite:)` adds a favorite star (the model menus) |
 | `ModelPickerDropdown`, `ModelPicker` | `ModelPicker.swift` | The one model picker, drawn the same everywhere: the agents' (`AgentModelPicker`: a new session, a running one, a conversation continued in Nook) and Nook's own brain in the chat (`BrainChip`). One width, a rail of places (this Mac's local models first, set apart, where the caller can run them; then an agent or service per logo, once per account when it has several, its badge telling them apart) with a "+" that opens Settings, and a column with the place's name, an optional line (the account, or what "On your Mac" means), rows above the search (several models), the search, the models (`ModelPickerItem`: logo, star, "New", a disabled reason) and actions (a model typed in the search, fetch models), and a Settings link. Callers hand over `ModelPickerPlace`s and a `ModelPickerList` per place; never build a second model menu |
 | `NookAccessMenu` | `NookAccessMenu.swift` | What Nook may do by itself (`NookAccess`: Ask first, Small things right away, More by itself) as a choice in a composer, the Nook chat's and the Double Tap field's counterpart of an agent's access menu; ⇧Tab (`composer.access`) moves to the next level while its composer has the keyboard. Next to `BrainChip` wherever you write to Nook |
+| `.conversationCard()` | `Shared/CardBackground.swift` | A card in a conversation (plan, question, task list, subagent): the field fill, a hairline and `Radius.conversationCard`. State shows in its marks, not in a tinted edge. Approvals (`ApprovalView(inline: true)`) and errors (`TimelineProblemCard`) are rows of the timeline instead, lined up with the work lines. |
 | `ComposerTray`, `ComposerTrayDivider` | `ComposerTray.swift` | The tray tucked behind the composer box: under it for a new session (folder and branch), above it for a running one (watched pull request, queued messages). Anything that belongs to the next message goes in here instead of a loose strip. `SessionComposer.choicesBelowBox()` puts the agent, model and mode choices in such a tray, so the box stays one line (the chat of a running session uses it) |
 | `ComposerQuoteChips` | `ComposerQuoteChips.swift` | Passages of an answer picked for the next message (right-click › Quote in Your Message / Ask About This on a selection, or ⇧⌘L / ⌘L), as removable chips in the `ComposerTray` above the box; they go out as Markdown quotes in front of what you type (`ComposerQuotes`) |
 | `SelectionAskBar`, `SelectionAskCard`, `SelectionAskRoot` | `SelectionAsk/SelectionAskViews.swift` | The bar above words selected anywhere in Nook (Ask Nook, Explain, Translate, Quote; with Selection Ask off, only the floating Quote over words of a session's answer) and the card with Nook's answer under them, with the chat's own `ChatMessageView` and a `SessionComposer` for a follow-up; shown by `SelectionAskController` in a child panel of the window. Never build a second "ask about this" popover |
@@ -323,7 +325,8 @@ The window has an empty unified toolbar, so its title bar is a 52 pt row (`Panel
 traffic lights in the middle: the sidebar's column runs up into it and a session's header is centered on it. A scroll
 view may draw past its top into that row, so a conversation's header stands on the canvas above it
 (`.conversationHeaderBackground()`); every header of a conversation uses it. The tab's list
-follows under it, with its `PanelListHeader` as a quiet section label (`sidebarTitle`, "Sessions" under Agents), and
+follows under it, with its `PanelListHeader` as a quiet section label (`sidebarTitle`; Agents instead has a `ghost` `NookSearchField`
+and its buttons on one row, and back and forward beside the traffic lights), and
 the `PanelFooter` at the bottom. A tab without a list (Music) gets the column from `PanelView`. While a tab draws the
 head (`PanelSidebarShown`), the panel leaves out its floating capsule and the window its left margin and its own Nook;
 when no column shows it (the list put away, one column at a time, a task over the tab), the capsule comes back. A new

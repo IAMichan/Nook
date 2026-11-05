@@ -8,6 +8,7 @@ import AppKit
 /// The list is a side panel like the ones on the right (`SidePanel.swift`): drag its line to resize it, and beside a
 /// session put it away with the button at the end of its title row or the left toggle in the session's header.
 struct AgentsTab: View {
+    @Environment(\.panelSidebar) private var sidebar
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var finishedMarks = FinishedSessions.shared
@@ -64,8 +65,11 @@ struct AgentsTab: View {
             if listShown {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                     // In the main window the list is the sidebar: the tabs and Search on top of it.
-                    PanelSidebarTop()
-                    listHeader(selection)
+                    PanelSidebarTop(history: AnyView(SessionHistoryButtons(
+                        current: selectedID(selection),
+                        back: { goBack(entries) }, forward: { goForward(entries) })))
+                    // In the sidebar the search field and these buttons share one row, as t3code's threads header.
+                    if sidebar == nil { listHeader(selection) }
                     sessionList(entries, selection: selection)
                     if !app.demoMode {
                         PanelFooter(selected: selectedID(selection), open: { open($0) },
@@ -208,17 +212,21 @@ struct AgentsTab: View {
     /// (the same close button every side panel ends with); the left toggle in the session's header brings it back.
     private func listHeader(_ selection: Selection) -> some View {
         let isNew: Bool = { if case .new = selection { return true }; return false }()
-        return PanelListHeader(tr("tab.agents"), sidebarTitle: tr("sidebar.sessions")) {
-            if !app.demoMode {
-                PanelNewButton(label: tr("agents.newSession"), active: isNew) { open("new") }
-            }
-            if canHideList(selection) {
-                SidePanelCloseButton(help: tr("agents.list.hide")) {
-                    withAnimation(NookTheme.reveal) { listHidden = true }
-                }
+        return PanelListHeader(tr("tab.agents"), sidebarTitle: tr("sidebar.sessions")) { listActions(selection, isNew: isNew) }
+            .padding(.bottom, NookTheme.Spacing.xs)
+    }
+
+    /// New session, and the cross that puts the list away: beside the title in the notch, beside the search in the sidebar.
+    @ViewBuilder
+    private func listActions(_ selection: Selection, isNew: Bool) -> some View {
+        if !app.demoMode {
+            PanelNewButton(label: tr("agents.newSession"), active: isNew) { open("new") }
+        }
+        if canHideList(selection) {
+            SidePanelCloseButton(help: tr("agents.list.hide")) {
+                withAnimation(NookTheme.reveal) { listHidden = true }
             }
         }
-        .padding(.bottom, NookTheme.Spacing.xs)
     }
 
     // MARK: Selection
@@ -254,11 +262,27 @@ struct AgentsTab: View {
     }
 
     /// The keys that act on the list and the open session. Each lets the key go (false) when it has nothing to act on.
+    /// Whether a session on the back and forward trail is still in the list.
+    private func exists(_ id: String, in entries: ListEntries) -> Bool {
+        entries.running.contains { $0.id == id } || entries.earlier.contains { $0.id == id }
+    }
+
+    @discardableResult
+    private func goBack(_ entries: ListEntries) -> Bool {
+        guard let id = SessionHistory.shared.back(exists: { exists($0, in: entries) }) else { return false }
+        open(id)
+        return true
+    }
+
+    @discardableResult
+    private func goForward(_ entries: ListEntries) -> Bool {
+        guard let id = SessionHistory.shared.forward(exists: { exists($0, in: entries) }) else { return false }
+        open(id)
+        return true
+    }
+
     private func sessionKeys(_ entries: ListEntries, selection: Selection, stacked: Bool) -> [String: () -> Bool] {
         let item = currentItem(entries, selection)
-        let exists: (String) -> Bool = { id in
-            entries.running.contains { $0.id == id } || entries.earlier.contains { $0.id == id }
-        }
         let actions = item.map { OpenSessionActions(item: $0, app: app) }
         return [
             "sidebar.toggle": {
@@ -266,16 +290,8 @@ struct AgentsTab: View {
                 withAnimation(NookTheme.reveal) { listHidden.toggle() }
                 return true
             },
-            "session.back": {
-                guard let id = SessionHistory.shared.back(exists: exists) else { return false }
-                open(id)
-                return true
-            },
-            "session.forward": {
-                guard let id = SessionHistory.shared.forward(exists: exists) else { return false }
-                open(id)
-                return true
-            },
+            "session.back": { goBack(entries) },
+            "session.forward": { goForward(entries) },
             "session.pin": { actions?.togglePin() ?? false },
             "session.settle": { actions?.toggleSettled() ?? false },
             "session.interrupt": { actions?.interrupt() ?? false },
@@ -395,8 +411,8 @@ struct AgentsTab: View {
         let current = selectedID(selection)
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             TimelineView(.nookTicks(every: 30)) { context in
-                AgentInboxList(items: entries.running, past: entries.earlier,
-                               current: current, now: context.date) { open($0) }
+                AgentInboxList(items: entries.running, past: entries.earlier, current: current, now: context.date,
+                               headerActions: sidebar == nil ? nil : AnyView(listActions(selection, isNew: current == "new"))) { open($0) }
             }
         }
     }
@@ -698,7 +714,11 @@ struct AgentListRow: View, Equatable {
     /// Too narrow for the status's word beside the name (a narrow sidebar): the status is only its mark.
     @State private var narrow = false
     /// Below this width a one-line row keeps the name readable by showing the status as its mark only.
-    static let narrowWidth: CGFloat = 240
+    static let narrowWidth: CGFloat = 200
+    /// A row of one line, and the first line of a row under its project's header, as t3code's.
+    static let lineHeight: CGFloat = 36
+    /// Where the name starts under a project's header: past the folder's mark, so it lines up with the project's name.
+    static let groupedIndent: CGFloat = 36
 
     /// No fill at rest: the rows read as one list, and only the one under the pointer or the selected one lifts.
     private var background: Color { NookTheme.rowFill(selected: selected, hovering: hovering || keyFocused, rest: .clear) }
@@ -718,7 +738,7 @@ struct AgentListRow: View, Equatable {
                     .onHover { onActions = $0 }
                     .rowActionsBackdrop(background)
                     // Level with the first line, where the status they replace sits.
-                    .padding(.top, compact ? NookTheme.Spacing.xs : NookTheme.Spacing.xxs + NookTheme.Spacing.xxs)
+                    .padding(.top, compact ? (Self.lineHeight - 22) / 2 : NookTheme.Spacing.md)
                     .padding(.trailing, NookTheme.Spacing.md)
                     .opacity(hovering ? 1 : 0)
                     .allowsHitTesting(hovering)
@@ -750,11 +770,11 @@ struct AgentListRow: View, Equatable {
         Group {
             if slim { slimBody } else if grouped { groupedBody } else { fullBody }
         }
-        .padding(.horizontal, compact ? NookTheme.Spacing.md : NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+        .padding(.leading, grouped ? Self.groupedIndent : NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+        .padding(.trailing, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         .padding(.vertical, compact ? NookTheme.Spacing.sm : NookTheme.Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: compact ? NookTheme.Radius.control : NookTheme.Radius.card,
-                                     style: .continuous).fill(background))
+        .frame(maxWidth: .infinity, minHeight: compact ? Self.lineHeight : nil, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(background))
         // Only whether it is narrow is kept, so resizing the list redraws a row only when that flips.
         .onGeometryChange(for: Bool.self) { $0.size.width < Self.narrowWidth } action: { narrow = $0 }
         .selectionMark(selected)
@@ -798,16 +818,16 @@ struct AgentListRow: View, Equatable {
     /// Anything for the line under the name: a branch, changes, or a pull request.
     private var hasMeta: Bool { shownBranch != nil || hasChanges || !pullRequests.isEmpty }
 
-    /// "[worktree] feature/calm-ui  +120 −8  [#12]": the branch (a worktree's with the worktree mark), cut in the middle
-    /// when it is long, then what the session changed and its pull request.
+    /// "[worktree] feature/calm-ui  [#12]  +120 −8": the branch (a worktree's with the worktree mark), cut in the middle
+    /// when it is long, then the pull request and what the session changed.
     private var metaLine: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             if let branch = shownBranch {
                 AgentRowBranch(branch: branch, worktree: item.worktree)
             }
             Spacer(minLength: 0)
-            changes
             pullRequestPill
+            changes
         }
         .font(NookTheme.TextStyle.detail)
         .foregroundStyle(NookTheme.textTertiary)
@@ -852,20 +872,25 @@ struct AgentListRow: View, Equatable {
         }
     }
 
-    /// Under the project's header: the agent's logo, the name with the marks before it, and the status or how long ago on
-    /// the right; under it, lined up with the name, the branch, changes and pull request when there are any.
+    /// Under the project's header, lined up with its name: the name with the marks before it and the status or how long
+    /// ago on the right; under it the branch, pull request and changes, ending in the agent's logo. Without those the
+    /// row is one line and the logo stands beside the status.
     private var groupedBody: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                logo(size: 13)
                 marks
                 title
                 Spacer(minLength: NookTheme.Spacing.xs)
+                if !hasMeta { logo(size: 13) }
                 slot.opacity(hovering && actions != nil ? 0 : 1)
             }
+            .frame(minHeight: Self.lineHeight - NookTheme.Spacing.lg)
             if hasMeta {
-                metaLine
-                    .padding(.leading, 13 + NookTheme.Spacing.sm + (item.account == nil ? 0 : 3))
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    metaLine
+                    logo(size: 13)
+                }
+                .frame(height: 16)
             }
         }
     }
@@ -894,7 +919,7 @@ struct AgentListRow: View, Equatable {
 
     private var slimBody: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            AgentMark(agent: item.agent, account: item.account, size: 13, dimmed: true, ring: background)
+            AgentMark(agent: item.agent, account: item.account, size: 16, dimmed: true, ring: background)
             Text(item.title)
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.textSecondary)

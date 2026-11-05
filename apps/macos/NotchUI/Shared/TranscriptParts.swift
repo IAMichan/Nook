@@ -9,10 +9,10 @@ enum TranscriptStyle {
     /// The size of the words of a message on the Mac; the phone follows Dynamic Type (`TextStyle.body`).
     static let textSize: CGFloat = 14
     /// The room above each of your messages: every turn starts as a block of its own.
-    static let turnGap = NookTheme.Spacing.xxl
+    static let turnGap = NookTheme.Spacing.xl
     /// Your words stay narrower than the answer, so the thread reads as a conversation at a glance; a little less on
     /// the narrow phone.
-    static let bubbleInset: CGFloat = SharedMetrics.isPhone ? 56 : 64
+    static let bubbleInset: CGFloat = SharedMetrics.isPhone ? 56 : 96
     /// A message of yours longer than this folds to its first lines, with "Show full message" under it.
     static let foldCharacters = 600
     static let foldLines = 8
@@ -39,8 +39,7 @@ struct TranscriptUserBubble<Content: View>: View {
         HStack(spacing: 0) {
             Spacer(minLength: TranscriptStyle.bubbleInset)
             content()
-                .padding(.horizontal, NookTheme.Spacing.xl)
-                .padding(.vertical, NookTheme.Spacing.lg)
+                .padding(NookTheme.Spacing.lg)
                 .background(RoundedRectangle(cornerRadius: NookTheme.Radius.bubble, style: .continuous).fill(NookTheme.bubble))
         }
     }

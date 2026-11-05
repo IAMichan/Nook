@@ -71,7 +71,7 @@ struct TranscriptUserMessage<Attachments: View>: View {
         Text(string)
             .font(NookTheme.font(TranscriptStyle.textSize))
             .foregroundStyle(NookTheme.paper)
-            .lineSpacing(3)
+            .lineSpacing(5)
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
             .transcriptFolded(folded)
@@ -106,7 +106,7 @@ struct TranscriptReply<Extras: View, Actions: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
                 if !text.isEmpty {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                         if let author, !author.isEmpty {

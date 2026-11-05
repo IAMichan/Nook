@@ -608,6 +608,8 @@ struct BrowserView: View {
     @ObservedObject private var store = BrowserStore.shared
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @State private var asking = false
+    /// The pointer is on the address field, which shows its fill only then.
+    @State private var addressHovering = false
     /// Shown beside the chat: a button that puts the browser away again.
     var onClose: (() -> Void)?
 
@@ -634,8 +636,10 @@ struct BrowserView: View {
                         .onSubmit { store.go(store.address) }
                 }
                 .padding(.horizontal, NookTheme.Spacing.sm)
-                .frame(height: 26)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(WS.subtle))
+                .frame(height: SidePanelMetrics.toolbar)
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+                    .fill(addressHovering ? WS.subtle : .clear))
+                .onHover { addressHovering = $0 }
                 ToolbarIconButton("arrow.up.forward.app", tr("browser.openExternal"), enabled: store.webView.url != nil) {
                     store.openInDefaultBrowser()
                 }

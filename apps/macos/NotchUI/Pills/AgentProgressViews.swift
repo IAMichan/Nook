@@ -152,7 +152,7 @@ struct TaskChecklistCard: View {
                         .monospacedDigit()
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.down")
-                        .font(NookTheme.font(8.5, .bold))
+                        .font(NookTheme.font(10, .semibold))
                         .rotationEffect(.degrees(collapsed ? -90 : 0))
                         .foregroundStyle(NookTheme.textTertiary)
                 }
@@ -166,10 +166,7 @@ struct TaskChecklistCard: View {
                 TaskListRows(steps: steps).transition(.opacity)
             }
         }
-        .padding(.horizontal, NookTheme.Spacing.lg)
-        .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .panelCard()
+        .conversationCard(padding: NookTheme.Spacing.lg)
         .animation(NookTheme.reveal, value: steps)
     }
 }

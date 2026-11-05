@@ -90,11 +90,12 @@ struct AgentSessionDetail: View {
 
     /// "nook / Agents-pagina rustiger maken" with the branch button on the right.
     private func header(folder: String, title: String, directory: String, agentWorking: Bool) -> some View {
-        HStack(spacing: NookTheme.Spacing.md) {
+        HStack(spacing: NookTheme.Spacing.lg) {
             // The folder keeps its name before the title gives way, but truncates too in a narrow window instead of
             // pushing the header past the conversation.
             Text(folder)
-                .foregroundStyle(NookTheme.textTertiary)
+                .fontWeight(.medium)
+                .foregroundStyle(NookTheme.textSecondary)
                 .lineLimit(1)
                 .layoutPriority(1)
             Text("/").foregroundStyle(NookTheme.textTertiary)
@@ -164,9 +165,8 @@ struct AgentSessionDetail: View {
                 steps(session)
             }
 
-            if !app.demoMode, let question = app.hub.question(for: session.id) {
-                questionPanel(question)
-            } else if session.status == .waiting && session.approvalID == nil && !app.demoMode, !session.summary.isEmpty {
+            if session.status == .waiting && session.approvalID == nil && !app.demoMode, !session.summary.isEmpty,
+               app.hub.question(for: session.id) == nil {
                 waitingNote(session)
             }
 
@@ -190,13 +190,17 @@ struct AgentSessionDetail: View {
     /// What sits under a live session's conversation: an approval, or the composer with its error line and tray.
     private func liveBottomBar(_ session: AgentSession, shown: AgentSession, known: PastSession?) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+            // The agent's question sits right above the composer, where you answer.
+            if !app.demoMode, let question = app.hub.question(for: session.id) {
+                questionPanel(question).chatColumn()
+            }
             if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {
                 let approval = ApprovalCenter.make(request)
-                ApprovalView(approval: approval) { app.approvals.decide(approval, $0) }
+                ApprovalView(approval: approval, inline: true) { app.approvals.decide(approval, $0) }
             } else if !app.demoMode, let request = bridgeRequest(for: session) {
                 // A command or pull request this agent asks for through Nook's workspace.
                 let approval = ApprovalCenter.make(request)
-                ApprovalView(approval: approval) { app.approvals.decide(approval, $0) }
+                ApprovalView(approval: approval, inline: true) { app.approvals.decide(approval, $0) }
             } else {
                 errorLine
                 VStack(spacing: 0) {
@@ -251,8 +255,7 @@ struct AgentSessionDetail: View {
         .scrollIndicators(.never)
         .frame(maxHeight: 90)
         .fixedSize(horizontal: false, vertical: true)
-        .padding(NookTheme.Spacing.lg)
-        .cardBackground(NookTheme.surface, stroke: NookTheme.amber.opacity(0.25), radius: NookTheme.Radius.panel, style: .continuous)
+        .conversationCard()
     }
 
     /// The change an approval is about, scrollable so it can be read in full before deciding.
@@ -339,7 +342,6 @@ struct AgentSessionDetail: View {
             SessionComposer(text: $composerState.draft, prompt: session.placeholder, onSend: { draft = "" }) {
                 agentPill(name: session.name, profile: nil)
             }
-            .choicesBelowBox()
             .images($composerState.images)
         } else {
             SessionComposer(
@@ -358,7 +360,6 @@ struct AgentSessionDetail: View {
                 if canTakeOver { turnControls(kind: AgentKind(agentName: session.name)) }
             }
             .rich(composerModel, composerConfig(folder: session.cwd))
-            .choicesBelowBox()
             .images($composerState.images)
             .trailing { ComposerMic(text: $composerState.draft) }
         }
@@ -498,7 +499,7 @@ struct AgentSessionDetail: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             ScrollView {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     ForEach(Array(item.options.enumerated()), id: \.offset) { number, option in
                         let chosen = picks.contains(option.label)
                         SessionQuestionOptionButton(
@@ -530,9 +531,7 @@ struct AgentSessionDetail: View {
                 }
             }
         }
-        .padding(NookTheme.Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(NookTheme.surface, stroke: NookTheme.amber.opacity(0.25), radius: NookTheme.Radius.panel, style: .continuous)
+        .conversationCard()
     }
 
     private func answer(_ request: AgentQuestionRequest, index: Int, labels: [String]) {
@@ -655,7 +654,6 @@ struct AgentSessionDetail: View {
                         if app.canContinueInNook(session) { turnControls(kind: session.agent) }
                     }
                     .rich(composerModel, composerConfig(folder: session.cwd))
-                    .choicesBelowBox()
                     .images($composerState.images)
                     .trailing { ComposerMic(text: $composerState.draft) }
                 }
@@ -781,18 +779,18 @@ private struct SessionQuestionOptionButton: View {
 
                 trailingIndicator
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.vertical, NookTheme.Spacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
                     .fill(backgroundColor)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
                     .stroke(borderColor, lineWidth: isHovered || chosen ? 1.2 : 1)
             )
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -848,20 +846,14 @@ private struct SessionQuestionOptionButton: View {
         if chosen {
             return NookTheme.amber.opacity(0.12)
         } else if isHovered {
-            return NookTheme.smoke.opacity(0.85)
+            return NookTheme.rowHover
         } else {
-            return NookTheme.field
+            return .clear
         }
     }
 
     private var borderColor: Color {
-        if chosen {
-            return NookTheme.amber.opacity(0.55)
-        } else if isHovered {
-            return NookTheme.amber.opacity(0.45)
-        } else {
-            return Color.white.opacity(0.04)
-        }
+        chosen ? NookTheme.amber.opacity(0.55) : .clear
     }
 }
 

@@ -231,11 +231,12 @@ struct AgentRunPanel: View {
 
     /// "nook / Agents-pagina rustiger maken" (double-click the name to rename it) with the branch button on the right.
     private func header(_ run: WorkspaceRun) -> some View {
-        HStack(spacing: NookTheme.Spacing.md) {
+        HStack(spacing: NookTheme.Spacing.lg) {
             // The folder keeps its name before the title gives way, but truncates too in a narrow conversation instead
             // of pushing the header past it (under a wide side panel).
             Text(run.projectName)
-                .foregroundStyle(NookTheme.textTertiary)
+                .fontWeight(.medium)
+                .foregroundStyle(NookTheme.textSecondary)
                 .lineLimit(1)
                 .layoutPriority(1)
                 .help(AgentPathFormat.tilde(run.workingDirectory))
@@ -603,7 +604,7 @@ struct AgentRunPanel: View {
         } else if let request = bridge.pending.first(where: { $0.caller.kind == .run(runID) }) {
             // A command or pull request the agent asks for through Nook's workspace.
             let approval = ApprovalCenter.make(request)
-            ApprovalView(approval: approval) { app.approvals.decide(approval, $0) }.chatColumn()
+            ApprovalView(approval: approval, inline: true) { app.approvals.decide(approval, $0) }.chatColumn()
         }
         if let target = revertTarget {
             revertConfirmation(target)
@@ -1128,7 +1129,7 @@ struct AgentRunPanel: View {
 
     private func approval(_ run: WorkspaceRun, _ pending: PendingPermission, more: Int) -> some View {
         let request = ApprovalCenter.make(pending, run: run)
-        return ApprovalView(approval: request, more: more) { app.approvals.decide(request, $0) }
+        return ApprovalView(approval: request, more: more, inline: true) { app.approvals.decide(request, $0) }
     }
 
     /// Inline instead of a dialog: the notch is a panel, not a window that sheets can attach to.
@@ -1276,7 +1277,6 @@ struct AgentRunPanel: View {
                     effortMenu(run)
                 }
                 .rich(composerModel, composerConfig(run))
-                .choicesBelowBox()
                 .trailing { composerTrailing(run) }
                 .trayTrailing { usageLimits(run) }
                 // While it works, what you type steers the turn or waits in line, and Cmd+Return does the other.

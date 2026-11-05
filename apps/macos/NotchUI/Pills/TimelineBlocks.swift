@@ -291,23 +291,26 @@ struct PlanCard: View {
     private var collapsible: Bool { PlanPreview.needsExpand(text) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: "list.bullet.clipboard").font(NookTheme.font(11, .semibold))
-                Text(tr("ws.plan.title")).font(NookTheme.TextStyle.strong)
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
+            HStack(spacing: NookTheme.Spacing.md) {
+                Image(systemName: "list.bullet.clipboard")
+                    .font(NookTheme.font(13, .medium))
+                    .foregroundStyle(NookTheme.textSecondary)
+                Text(title).font(NookTheme.TextStyle.strong).lineLimit(1)
                 Spacer(minLength: 0)
                 CopyIconButton(tr("ws.plan.copy"), height: 20, width: 20) { text }
                 iconButton("square.and.arrow.down", tr("ws.plan.save"), save)
             }
-            .foregroundStyle(NookTheme.iris)
+            .foregroundStyle(NookTheme.paper)
             MarkdownView(text: collapsible && !open ? PlanPreview.preview(text) : text, size: 14)
             if collapsible {
                 Button { withAnimation(NookTheme.reveal) { open.toggle() } } label: {
                     Text(open ? tr("ws.plan.collapse") : tr("ws.plan.expand"))
                         .font(NookTheme.TextStyle.label)
-                        .foregroundStyle(NookTheme.iris)
+                        .foregroundStyle(NookTheme.textSecondary)
                 }
                 .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
             }
             if canAct {
                 HStack(spacing: NookTheme.Spacing.md) {
@@ -319,8 +322,7 @@ struct PlanCard: View {
                 }
             }
         }
-        .padding(NookTheme.Spacing.lg)
-        .cardBackground(NookTheme.surface, stroke: NookTheme.iris.opacity(0.25), radius: NookTheme.Radius.panel, style: .continuous)
+        .conversationCard()
     }
 
     private func iconButton(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {

@@ -5,10 +5,11 @@ import SwiftUI
 // wherever it is used, so a change here changes every place at once. Never rebuild one of these inline.
 
 /// The one search field: a magnifying glass, the text, and a clear button once there is something to clear. Escape
-/// clears it too. `panel` sits in a list in the notch or window (a soft filled field), `inline` sits in a Settings form
-/// row (the form draws the row), `large` heads a command palette.
+/// clears it too. `panel` sits in a list in the notch or window (a soft filled field), `ghost` reads as one more row of
+/// the sidebar (no fill until the pointer is on it), `inline` sits in a Settings form row (the form draws the row),
+/// `large` heads a command palette.
 struct NookSearchField: View {
-    enum Style { case panel, inline, large }
+    enum Style { case panel, ghost, inline, large }
 
     let prompt: String
     @Binding var text: String
@@ -18,11 +19,19 @@ struct NookSearchField: View {
     var onSubmit: (() -> Void)? = nil
     /// Escape after the text is cleared (e.g. to close a palette or drop focus).
     var onEscape: (() -> Void)? = nil
+    @State private var hovering = false
+
+    private var glyphSize: CGFloat {
+        switch style {
+        case .large, .ghost: return 13
+        case .panel, .inline: return 11
+        }
+    }
 
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
+        HStack(spacing: style == .ghost ? NookTheme.Spacing.md : NookTheme.Spacing.sm) {
             Image(systemName: "magnifyingglass")
-                .font(NookTheme.font(style == .large ? 13 : 11, .medium))
+                .font(NookTheme.font(glyphSize, .medium))
                 .foregroundStyle(NookTheme.textTertiary)
                 .accessibilityHidden(true)
             field
@@ -35,13 +44,17 @@ struct NookSearchField: View {
         .background {
             if style == .panel {
                 RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field)
+            } else if style == .ghost, hovering {
+                RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.rowHover)
             }
         }
+        .onHover { if style == .ghost { hovering = $0 } }
     }
 
     private var height: CGFloat? {
         switch style {
         case .panel: return 30
+        case .ghost: return 32
         case .inline: return nil
         case .large: return 44
         }
