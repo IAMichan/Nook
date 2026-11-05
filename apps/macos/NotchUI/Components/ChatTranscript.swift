@@ -463,6 +463,8 @@ private struct ChatBubbleView: View, Equatable {
     @Environment(\.chatFetchFile) private var fetchFile
     /// A document's first page, made once the bubble comes near view.
     @State private var filePreview: NSImage?
+    /// Its app did not hand over the picture after every ask: the bubble names it instead of keeping an empty tile.
+    @State private var pictureNeverCame = false
 
     /// Lines a long message shows until "Read more".
     private static let foldedLines = 12
@@ -496,8 +498,8 @@ private struct ChatBubbleView: View, Equatable {
     private var mediaOnly: Bool {
         guard bubble.text.isEmpty, bubble.quote == nil, bubble.poll == nil else { return false }
         switch bubble.media {
-        case .photo, .photoComing: return true
-        case .video, .gif: return true
+        case .photoComing: return !pictureNeverCame
+        case .photo, .video, .gif: return true
         default: return false
         }
     }
@@ -601,9 +603,13 @@ private struct ChatBubbleView: View, Equatable {
                 ChatPhotoLoader(url: url, name: attachment, onZoom: onZoom, onOpen: onOpen)
             }
         case .photoComing:
-            Button(action: onOpen) { ChatPhotoPlaceholder(name: attachment) }
-                .buttonStyle(.plain)
-                .help(tr("card.attachment.view"))
+            if pictureNeverCame {
+                AttachmentButton(name: attachment, action: onOpen)
+            } else {
+                Button(action: onOpen) { ChatPhotoPlaceholder(name: attachment) }
+                    .buttonStyle(.plain)
+                    .help(tr("card.attachment.view"))
+            }
         case .video(let url):
             VideoTile(url: url, poster: bubble.image, name: attachment)
         case .gif(let url):
@@ -687,6 +693,9 @@ private struct ChatBubbleView: View, Equatable {
                 if Task.isCancelled { return }
                 await fetchFile(bubble.id)
             }
+            // The same for every app: a picture its app cannot give (expired, removed, too large) is named, and opens there.
+            try? await Task.sleep(for: .seconds(10))
+            if !Task.isCancelled, bubble.media == .photoComing { pictureNeverCame = true }
         }
         .task(id: near ? bubble.file : nil) {
             guard near, case .file = bubble.media, let file = bubble.file, bubble.image == nil, filePreview == nil else { return }

@@ -839,6 +839,10 @@ final class ChatInboxTests: XCTestCase {
 
     func testAPhotoSentAsADocumentShowsAsAPhoto() {
         XCTAssertEqual(ChatMedia(kind: .file, name: "IMG_2041.JPG").shownKind, .photo)
+        XCTAssertTrue(ChatMedia(kind: .file, name: "IMG_2041.JPG").isPictureComing, "a photo sent as a document waits as one")
+        XCTAssertTrue(ChatMedia(kind: .gif).isPictureComing)
+        XCTAssertFalse(ChatMedia(kind: .file, name: "plan.pdf").isPictureComing)
+        XCTAssertFalse(ChatMedia(kind: .photo, outOfReach: true).isPictureComing, "out of reach is never waited for")
         XCTAssertEqual(ChatMedia(kind: .file, path: "/tmp/chat/1/screenshot.png").shownKind, .photo, "no name: by its file")
         XCTAssertEqual(ChatMedia(kind: .file, name: "party.gif").shownKind, .gif)
         XCTAssertEqual(ChatMedia(kind: .file, name: "clip.mov").shownKind, .video)
