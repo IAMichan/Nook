@@ -159,6 +159,19 @@ enum TeamsData {
         }
     }
 
+    /// The chats of every account, with two different chats of one name told apart (`ChatNames`). A chat without a name
+    /// yet stays so.
+    static func uniquelyNamed(_ lists: [[Chat]]) -> [[Chat]] {
+        let names = ChatNames.unique(lists.flatMap { $0 }.map { ChatNames.Chat(id: $0.id, app: "teams", name: $0.name) })
+        return lists.map { list in
+            list.map { chat in
+                var named = chat
+                named.name = names[chat.id] ?? chat.name
+                return named
+            }
+        }
+    }
+
     /// The link to the next page of a list, nil on the last.
     static func nextLink(_ json: [String: Any]) -> URL? {
         (json["@odata.nextLink"] as? String).flatMap(URL.init(string:))
