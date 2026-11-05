@@ -193,22 +193,19 @@ extension AppModel {
         UUID(uuidString: ((input["session_id"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
-    /// Starts a session the way the composer would: the user's remembered account, model, effort and rights for that
-    /// agent, only in a folder the user already worked in.
+    /// Starts a session the way the composer would: the user's remembered agent for that folder and the account, model,
+    /// effort and rights for that agent, only in a folder the user already worked in.
     private func startAgentSession(_ input: [String: Any]) async throws -> String {
         let task = ((input["task"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !task.isEmpty else { throw NookError("Give the task for the agent.") }
         let settings = workspace.settings
         let asked = ((input["agent"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let provider = asked.isEmpty ? settings.defaultProvider
+        let named = asked.isEmpty ? settings.defaultProvider
             : RunProvider.allCases.first { $0.rawValue == asked || $0.displayName.lowercased() == asked }
-        guard let provider, provider != .acp else { throw NookError("Unknown agent \"\(asked)\".") }
+        guard var provider = named, provider != .acp else { throw NookError("Unknown agent \"\(asked)\".") }
         let machineName = ((input["machine"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !machineName.isEmpty {
             return try await startRemoteAgentSession(task: task, provider: provider, machineName: machineName, input: input)
-        }
-        guard connectedProviders.contains(provider), workspace.executable(provider) != nil else {
-            throw NookError("\(provider.displayName) is not installed or signed in on this Mac.")
         }
 
         var seen = Set<String>()
@@ -228,7 +225,17 @@ extension AppModel {
             throw NookError("Agents start only in a project folder the user worked in before: " + projects.prefix(8).map { ($0 as NSString).lastPathComponent }.joined(separator: ", "))
         }
 
-        var config = sessionConfig(task: task, provider: provider, plan: (input["plan"] as? Bool) ?? false)
+        // Without a named agent, the one you last used in this folder, while it can run here.
+        let folderProvider = settings.composerDefaults(for: folder).provider
+        if asked.isEmpty, folderProvider != .acp, connectedProviders.contains(folderProvider),
+           workspace.executable(folderProvider) != nil {
+            provider = folderProvider
+        }
+        guard connectedProviders.contains(provider), workspace.executable(provider) != nil else {
+            throw NookError("\(provider.displayName) is not installed or signed in on this Mac.")
+        }
+
+        var config = sessionConfig(task: task, provider: provider, folder: folder, plan: (input["plan"] as? Bool) ?? false)
         config.projectPath = folder
         let id = try await workspace.start(config, allowSharedFolder: true)
         return "Started \(provider.displayName) in \((folder as NSString).lastPathComponent) | session id \(id.uuidString)"
@@ -253,30 +260,26 @@ extension AppModel {
         guard RemoteMachines.isValidDirectory(directory) else {
             throw NookError("Give the folder on \(machine.name) as an absolute path or one from its home, like ~/code/app.")
         }
-        var config = sessionConfig(task: task, provider: provider, plan: (input["plan"] as? Bool) ?? false)
+        var config = sessionConfig(task: task, provider: provider, folder: nil, plan: (input["plan"] as? Bool) ?? false)
         config.remote = RemoteTarget(machine: machine, directory: directory)
         let id = try await workspace.start(config, allowSharedFolder: true)
         UserDefaults.standard.set(directory, forKey: "agents.remoteFolder." + machine.id)
         return "Started \(provider.displayName) on \(machine.name) in \(directory) | session id \(id.uuidString)"
     }
 
-    /// The user's remembered account, model, effort and rights for the agent, as the composer would use them.
-    private func sessionConfig(task: String, provider: RunProvider, plan wantsPlan: Bool) -> NewRunConfig {
-        let settings = workspace.settings
+    /// The user's remembered account, model, effort and rights for the agent in this folder, as the composer would use them.
+    private func sessionConfig(task: String, provider: RunProvider, folder: String?, plan wantsPlan: Bool) -> NewRunConfig {
+        let defaults = workspace.settings.composerDefaults(for: folder)
         let plan = wantsPlan && provider.capabilities.planMode
         var config = NewRunConfig()
         config.task = task
         config.provider = provider
-        let connected = connectedProfiles(for: provider)
-        if let saved = settings.profile(for: provider), connected.contains(where: { $0.id == saved }) {
-            config.profileID = saved
-        } else {
-            config.profileID = connected.first?.id ?? profiles.preferredProfile(provider.kind).id
-        }
-        config.model = settings.model(for: provider)
-        config.effort = settings.effort(for: provider)
+        config.profileID = defaults.profile(for: provider, connected: connectedProfiles(for: provider).map(\.id))
+            ?? profiles.preferredProfile(provider.kind).id
+        config.model = defaults.model(for: provider)
+        config.effort = defaults.effort(for: provider)
         config.mode = plan ? .plan : .agent
-        let permission = settings.permission(for: provider)
+        let permission = defaults.permission(for: provider)
         config.permission = provider.capabilities.policies.contains(permission) ? permission : (provider.capabilities.policies.first ?? .acceptEdits)
         config.isolation = .folder
         return config

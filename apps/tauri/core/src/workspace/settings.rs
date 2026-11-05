@@ -6,7 +6,31 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use super::models::{ExecutionMode, IsolationMode, PermissionPolicy, RunProvider};
+use super::models::{ExecutionMode, IsolationMode, NewRunConfig, PermissionPolicy, RunProvider};
+
+/// What was chosen for one agent in one folder.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderAgentChoice {
+    pub profile_id: String,
+    /// Empty: the agent's own default.
+    pub model: String,
+    /// `None`: the agent's own default, also when another folder has a level.
+    pub effort: Option<String>,
+}
+
+/// What the new-session composer last chose in one folder (`FolderChoices` on the Mac).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderChoices {
+    pub provider: RunProvider,
+    pub mode: ExecutionMode,
+    pub permission: PermissionPolicy,
+    pub isolation: IsolationMode,
+    /// Per agent, so going back to it in this folder finds its account, model and effort again.
+    #[serde(default)]
+    pub agents: BTreeMap<String, FolderAgentChoice>,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -38,6 +62,8 @@ pub struct WorkspaceSettings {
     pub favorite_projects: Vec<String>,
     /// Eerder gekozen projecten, nieuwste eerst.
     pub recent_projects: Vec<String>,
+    /// The composer's last choices per folder, on top of the `default_*` values above.
+    pub folder_choices: BTreeMap<String, FolderChoices>,
 }
 
 impl Default for WorkspaceSettings {
@@ -59,6 +85,7 @@ impl Default for WorkspaceSettings {
             last_project: String::new(),
             favorite_projects: vec![],
             recent_projects: vec![],
+            folder_choices: BTreeMap::new(),
         }
     }
 }
@@ -110,11 +137,33 @@ impl WorkspaceSettings {
         self.recent_projects.truncate(12);
     }
 
+    /// Keeps what `config` chose for its folder. `permission` is the one you chose: a plan runs with a safer one.
+    pub fn remember_folder_choices(&mut self, config: &NewRunConfig, permission: PermissionPolicy) {
+        let path = clean_project_path(&config.project_path);
+        if path.is_empty() {
+            return;
+        }
+        let mut agents = self.folder_choices.remove(&path).map(|c| c.agents).unwrap_or_default();
+        agents.insert(
+            config.provider.id().into(),
+            FolderAgentChoice {
+                profile_id: config.profile_id.clone(),
+                model: config.model.clone(),
+                effort: config.effort.clone().filter(|e| !e.is_empty()),
+            },
+        );
+        self.folder_choices.insert(
+            path,
+            FolderChoices { provider: config.provider, mode: config.mode, permission, isolation: config.isolation, agents },
+        );
+    }
+
     pub fn forget_project(&mut self, path: &str) {
         let clean = clean_project_path(path);
         if clean.is_empty() {
             return;
         }
+        self.folder_choices.remove(&clean);
         self.recent_projects.retain(|p| clean_project_path(p) != clean);
         self.favorite_projects.retain(|p| clean_project_path(p) != clean);
         if clean_project_path(&self.last_project) == clean {
@@ -189,5 +238,37 @@ mod tests {
         assert!(!back.show_cost);
         assert!(back.default_efforts.is_empty() && back.default_profiles.is_empty(), "old files still load");
         assert!(back.worktree_root().ends_with("worktrees"));
+        assert!(back.folder_choices.is_empty(), "old files still load");
+    }
+
+    #[test]
+    fn folder_choices_stay_per_folder_and_per_agent() {
+        let mut s = WorkspaceSettings::default();
+        let mut config = NewRunConfig {
+            provider: RunProvider::Claude,
+            profile_id: "work".into(),
+            model: "opus".into(),
+            effort: Some("high".into()),
+            project_path: "/app/".into(),
+            ..Default::default()
+        };
+        s.remember_folder_choices(&config, PermissionPolicy::AcceptEdits);
+        config.provider = RunProvider::Codex;
+        config.model = "gpt".into();
+        config.effort = None;
+        s.remember_folder_choices(&config, PermissionPolicy::AcceptEdits);
+
+        let app = &s.folder_choices["/app"];
+        assert_eq!(app.provider, RunProvider::Codex);
+        assert_eq!(app.agents["claude"].model, "opus", "the other agent's choices stay");
+        assert_eq!(app.agents["codex"].effort, None);
+        assert_eq!(s.folder_choices.len(), 1);
+
+        let json = serde_json::to_string(&s).unwrap();
+        let back: WorkspaceSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.folder_choices, s.folder_choices);
+
+        s.forget_project("/app");
+        assert!(s.folder_choices.is_empty());
     }
 }
