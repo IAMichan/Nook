@@ -63,13 +63,12 @@ final class SearchCenter: ObservableObject {
         if index.isEmpty {
             indexing = true
         }
-        let transcripts = Self.transcripts.mapValues { $0.passages }
-        let agentTranscripts = Self.agentTranscripts.mapValues { $0.passages }
         indexTask = Task { [weak self] in
-            let documents = app.searchDocuments(transcripts: transcripts, agentTranscripts: agentTranscripts)
+            guard let self else { return }
+            let documents = await self.documents(app, priority: .userInitiated)
             guard !Task.isCancelled else { return }
             let first = await Task.detached(priority: .userInitiated) { SearchIndex(documents) }.value
-            guard let self, !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return }
             self.index = first
             self.loadedAt = Date()
             if !self.text.isEmpty { self.rerun() }
@@ -104,10 +103,25 @@ final class SearchCenter: ObservableObject {
         }
     }
 
+    /// Everything to index. The sessions in memory go through the text of their whole timeline, and that happens off the
+    /// main thread; the rest is quick to gather.
+    private func documents(_ app: AppModel, priority: TaskPriority) async -> [SearchDocument] {
+        let runs = app.workspace.runs
+        let timelines = app.workspace.events
+        let live = await Task.detached(priority: priority) {
+            var passages: [UUID: [SearchPassage]] = [:]
+            for run in runs {
+                if let events = timelines[run.id] { passages[run.id] = AppModel.searchPassages(events, run: run) }
+            }
+            return passages
+        }.value
+        return app.searchDocuments(transcripts: Self.transcripts.mapValues { $0.passages }.merging(live) { _, new in new },
+                                   agentTranscripts: Self.agentTranscripts.mapValues { $0.passages })
+    }
+
     /// The index again with every transcript read so far; false when the load was cancelled meanwhile.
     private func rebuild(_ app: AppModel) async -> Bool {
-        let full = app.searchDocuments(transcripts: Self.transcripts.mapValues { $0.passages },
-                                       agentTranscripts: Self.agentTranscripts.mapValues { $0.passages })
+        let full = await documents(app, priority: .utility)
         guard !Task.isCancelled else { return false }
         let complete = await Task.detached(priority: .utility) { SearchIndex(full) }.value
         guard !Task.isCancelled else { return false }

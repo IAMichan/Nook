@@ -459,7 +459,7 @@ final class WorkspaceManager: ObservableObject {
     func timelineForSearch(_ id: UUID) async -> [RunEvent] {
         if let loaded = events[id] { return loaded }
         let store = store
-        return await Task.detached(priority: .utility) { store.loadEvents(id) }.value
+        return await Task.detached(priority: .utility) { store.peekEvents(id) }.value
     }
 
     /// The text of the session's last answer, from memory only: a released timeline is not read back for it, and asking
