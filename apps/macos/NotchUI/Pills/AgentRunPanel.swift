@@ -150,6 +150,7 @@ struct AgentRunPanel: View {
             }
             .onAppear {
                 workspace.requestTimeline(runID)
+                landsOnLoad = !workspace.isTimelineLoaded(runID)
                 visit = TimelineVisitStore.shared.visit(for: Self.visitKey(runID))
                 if let visit { openBlocks = visit.open }
                 // Quiet: the branch shown so far stays up while it is read again, and only a change redraws (a spinner
@@ -645,7 +646,12 @@ struct AgentRunPanel: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     if events.isEmpty {
-                        ListEmptyNote(tr("agents.run.empty"))
+                        // Still being read from disk is not an empty conversation.
+                        if workspace.isTimelineLoaded(runID) {
+                            ListEmptyNote(tr("agents.run.empty"))
+                        } else {
+                            PatientSpinner().frame(height: 160)
+                        }
                     }
                     // Finished turns fold to "Worked for …", tool calls in a row to one sentence.
                     ForEach(blocks) { block in
@@ -706,7 +712,9 @@ struct AgentRunPanel: View {
             }
             // Following the end while the answer streams: the scroll view keeps its bottom in place as the content grows,
             // instead of a `scrollTo` (a layout down to the end and a scroll) for every streamed update.
-            .defaultScrollAnchor(run.status.isActive && scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
+            // A session opens at its end, also when its timeline arrives after the first frame: never at its first messages.
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
+            .defaultScrollAnchor((run.status.isActive || landsOnLoad) && scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
             .scrollIndicators(.never)
             // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
             .composerInset {
