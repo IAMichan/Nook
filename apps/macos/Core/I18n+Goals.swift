@@ -5,6 +5,7 @@ import Foundation
 
 let goalTranslations: [AppLanguage: [String: String]] = [
     .en: [
+        "bridge.approval.start": "%@ wants to start a %@ session",
         "palette.triage": "Investigate a problem with Nook",
         "sched.public.toggle": "Receive webhooks from the internet",
         "sched.public.help": "Services such as GitHub can start this Mac's webhook tasks through the relay from Settings › iPhone. The Mac must be on and Nook open. Every request must still be signed.",
@@ -28,6 +29,7 @@ let goalTranslations: [AppLanguage: [String: String]] = [
         "ws.goal.failed": "The goal could not be changed: %@",
     ],
     .nl: [
+        "bridge.approval.start": "%@ wil een %@-sessie starten",
         "palette.triage": "Een probleem met Nook onderzoeken",
         "sched.public.toggle": "Webhooks van internet ontvangen",
         "sched.public.help": "Diensten zoals GitHub kunnen de webhook-taken van deze Mac starten via de relay uit Instellingen › iPhone. De Mac moet aanstaan en Nook open zijn. Elk verzoek moet nog steeds ondertekend zijn.",
@@ -51,6 +53,7 @@ let goalTranslations: [AppLanguage: [String: String]] = [
         "ws.goal.failed": "Het doel kon niet worden gewijzigd: %@",
     ],
     .de: [
+        "bridge.approval.start": "%@ möchte eine %@-Sitzung starten",
         "palette.triage": "Ein Problem mit Nook untersuchen",
         "sched.public.toggle": "Webhooks aus dem Internet empfangen",
         "sched.public.help": "Dienste wie GitHub können die Webhook-Aufgaben dieses Macs über das Relay aus Einstellungen › iPhone starten. Der Mac muss eingeschaltet und Nook geöffnet sein. Jede Anfrage muss weiterhin signiert sein.",
@@ -74,6 +77,7 @@ let goalTranslations: [AppLanguage: [String: String]] = [
         "ws.goal.failed": "Das Ziel konnte nicht geändert werden: %@",
     ],
     .fr: [
+        "bridge.approval.start": "%@ veut démarrer une session %@",
         "palette.triage": "Examiner un problème de Nook",
         "sched.public.toggle": "Recevoir des webhooks depuis Internet",
         "sched.public.help": "Des services comme GitHub peuvent lancer les tâches webhook de ce Mac via le relais défini dans Réglages › iPhone. Le Mac doit être allumé et Nook ouvert. Chaque requête doit toujours être signée.",
@@ -97,6 +101,7 @@ let goalTranslations: [AppLanguage: [String: String]] = [
         "ws.goal.failed": "L’objectif n’a pas pu être modifié : %@",
     ],
     .es: [
+        "bridge.approval.start": "%@ quiere iniciar una sesión de %@",
         "palette.triage": "Investigar un problema de Nook",
         "sched.public.toggle": "Recibir webhooks desde Internet",
         "sched.public.help": "Servicios como GitHub pueden iniciar las tareas webhook de este Mac a través del relé de Ajustes › iPhone. El Mac debe estar encendido y Nook abierto. Cada solicitud debe seguir firmada.",

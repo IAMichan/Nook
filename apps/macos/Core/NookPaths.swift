@@ -35,6 +35,10 @@ enum NookPaths {
     static var spaceFreeBridgeURL: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/nook-mcp")
     }
+    /// The command line for scripts (`NookCommandLine`).
+    static var commandLineURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/nook")
+    }
     static var databaseURL: URL { supportDirectory.appendingPathComponent("nook.sqlite") }
     /// Folders of sessions started without a project (`ScratchProjects`): ~/.nook/scratch, beside ~/.nook/worktrees.
     static var scratchDirectory: URL {

@@ -59,6 +59,7 @@ final class WorkspaceBridge: ObservableObject {
         guard !started else { return }
         started = true
         installed = (try? WorkspaceBridgeScript.install()) != nil
+        _ = try? NookCommandLine.install()
         server.onMessage = { [weak self] data, connection in
             Task { @MainActor in
                 if let self { self.handle(data, connection) } else { connection.reply(nil) }
@@ -170,6 +171,10 @@ final class WorkspaceBridge: ObservableObject {
             return caller(run)
         }
         let folder = WorkspacePathPolicy.normalize(context.cwd)
+        // A script never takes the rights of a session that happens to work in its folder.
+        if context.agentID == NookCommandLine.agentID {
+            return BridgeCaller(kind: .external, agent: "Command line", title: "", directory: folder, mode: nil, permission: nil)
+        }
         guard !folder.isEmpty else { return nil }
         if let run = app.workspace.activeRuns.first(where: { WorkspacePathPolicy.normalize($0.workingDirectory) == folder }) {
             return caller(run)
@@ -214,6 +219,7 @@ final class WorkspaceBridge: ObservableObject {
             case .sessionRead: return sessionRead(arguments)
             case .sessionList: return sessionList(arguments)
             case .sessionSend: return await sessionSend(arguments, caller, context)
+            case .sessionStart: return await sessionStart(arguments, caller, context)
             case .sessionSearch: return await sessionSearch(arguments)
             case .sessionOrganize: return await sessionOrganize(arguments, caller, context)
             case .sessionQuestions: return await sessionQuestions(arguments, caller, context)
@@ -837,6 +843,9 @@ final class WorkspaceBridge: ObservableObject {
               let summary = workspace.sessionSummary(id) else {
             return .error("No such session. Use the id from the reference the user gave you.")
         }
+        if (arguments["status_only"] as? Bool) == true, let run = workspace.run(id) {
+            return BridgeRPC.ToolResult(text: workspace.snapshot(of: run).state.rawValue)
+        }
         return BridgeRPC.ToolResult(text: summary)
     }
 
@@ -849,7 +858,9 @@ final class WorkspaceBridge: ObservableObject {
     }
 
     private func sessionSend(_ arguments: [String: Any], _ caller: BridgeCaller, _ context: Context) async -> BridgeRPC.ToolResult {
-        guard let app, case .run(let senderID) = caller.kind else { return .error(DelegationPolicy.Denial.notARun.message) }
+        guard let app else { return .error("Nook is not ready.") }
+        var senderID: UUID?
+        if case .run(let id) = caller.kind { senderID = id }
         let message = ((arguments["message"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else { return .error("Give the message to send.") }
         guard let id = UUID(uuidString: ((arguments["session_id"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)),
