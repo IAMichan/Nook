@@ -1944,6 +1944,7 @@ final class WorkspaceManager: ObservableObject {
             Task.detached(priority: .utility) { git.removeCheckpoints(root, session: id) }
         }
         runs.removeAll { $0.id == id }
+        SessionBrowsers.shared.discard(run: id)
         events[id] = nil
         timelineUse[id] = nil
         evictedTimelines.remove(id)
