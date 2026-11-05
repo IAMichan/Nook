@@ -436,6 +436,8 @@ struct SessionWorkbench<Conversation: View>: View {
         }
         // The branch button in the conversation's header and the docked session panel both read it.
         .environment(\.sessionPullRequest, outputs.pullRequest)
+        // What the side panel hands over lands in this session's composer.
+        .environment(\.sessionContextTarget, directory.isEmpty && runID == nil ? nil : SessionContextTarget(run: runID, directory: directory))
         // The pull request the conversation links last is the one you are likely to open: read it ahead, once the
         // session has settled in, so its link opens on the page at once.
         .task(id: outputs.pullRequest) {

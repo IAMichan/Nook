@@ -68,6 +68,13 @@ struct AgentSessionDetail: View {
             perform { try await app.continueInNook(session, endingTerminal: true) }
         }
         .onAppear { composerState.show(session: selectionID) }
+        // What the side panel hands to this session lands in the draft, to read before sending.
+        .onReceive(ComposerInbox.shared.$delivery.compactMap { $0 }) { _ in
+            guard case .live(let session) = selection,
+                  let text = ComposerInbox.shared.take(run: nil, directory: session.cwd) else { return }
+            draft = SessionPrompts.merging(text, into: draft)
+            composerFocused = true
+        }
         .composerFocusOnAppear($composerFocused)
         .onChange(of: selectionID) { _, id in
             composerFocused = true

@@ -42,6 +42,12 @@ needs a column in that matrix.
 | AI providers | the providers behind the Brain | `AIProvider`, the single `prepareRun` pipeline |
 | Platforms | `apps/macos`, `apps/ios`, `apps/linux`, `apps/windows`, `apps/android`, `apps/tauri` | `packages/protocol`, the companion protocol ([`COMPANION.md`](COMPANION.md)) |
 
+## Side panel to composer
+
+Everything the side panel hands to a session (Explain, Ask, Fix, Resolve on a pull request, an element pointed at in the
+browser, a remark on a file's line) goes through `ComposerInbox` into the draft, as text from `SessionPrompts`. Both
+composers take it (`AgentRunPanel`, `AgentSessionDetail`), so every coding agent gets it alike and none is left out.
+
 ## Chat feature matrix
 
 `✓` = shown, `–` = the app does not say it (left out on purpose), `?` = not checked yet.

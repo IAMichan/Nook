@@ -115,6 +115,10 @@ struct FileViewer: View {
     @State private var content: FileViewContent?
     @State private var reloads = 0
     @State private var markdownPreview = false
+    @Environment(\.sessionContextTarget) private var session
+    /// The line you are writing a remark about, and the remark.
+    @State private var commentLine: Int?
+    @State private var commentNote = ""
 
     init(target: FileTarget, opened: UUID = UUID(), beside: Bool = false, directory: String = "",
          openOther: @escaping (FileTarget) -> Void = { _ in }) {
@@ -129,6 +133,29 @@ struct FileViewer: View {
     private var name: String { (target.path as NSString).lastPathComponent }
     private var folder: String { (target.path as NSString).deletingLastPathComponent }
     private var isMarkdown: Bool { SyntaxLanguage.detect(path: target.path) == .markdown }
+    /// A notebook reads as a document, with its source one click away like a Markdown file's.
+    private var isNotebook: Bool { (target.path as NSString).pathExtension.lowercased() == "ipynb" }
+
+    private func commentBar(_ line: Int, lines: [String]) -> some View {
+        let send = {
+            guard let session, !commentNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            ComposerInbox.shared.add(SessionPrompts.fileLine(path: target.path, line: line, code: lines[line - 1], note: commentNote), to: session)
+            commentLine = nil
+            commentNote = ""
+        }
+        return HStack(spacing: NookTheme.Spacing.sm) {
+            Text(tr("file.viewer.line", line)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+            TextField(tr("file.viewer.comment"), text: $commentNote)
+                .textFieldStyle(.plain)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.paper)
+                .onSubmit(send)
+            ToolbarIconButton("arrow.up.circle", tr("session.context.add"), send)
+            SidePanelCloseButton(help: tr("button.cancel")) { commentLine = nil }
+        }
+        .padding(.horizontal, NookTheme.Spacing.lg)
+        .frame(height: SidePanelMetrics.toolbar)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -141,17 +168,19 @@ struct FileViewer: View {
                 case .text(let lines, let tokens):
                     if editor.editing {
                         FileTextEditor(text: $editor.draft, onSave: { if editor.save() { reloads += 1 } })
-                    } else if isMarkdown && markdownPreview {
+                    } else if (isMarkdown || isNotebook) && markdownPreview {
                         ScrollView(.vertical) {
-                            MarkdownView(text: lines.joined(separator: "\n"))
+                            let source = lines.joined(separator: "\n")
+                            MarkdownView(text: isNotebook ? (NotebookDocument.markdown(from: source) ?? source) : source)
                                 .environment(\.fileLinkBase, folder)
                                 .environment(\.pullRequestLinksBeside, beside)
                                 .padding(NookTheme.Spacing.xl)
                         }
                     } else {
                         FileCodeView(lines: lines, tokens: tokens, line: FileViewing.clampedLine(target.line, count: lines.count),
-                                     scrollKey: opened)
+                                     scrollKey: opened, comment: session == nil ? nil : { commentLine = $0 })
                             .equatable()
+                        if let commentLine, commentLine <= lines.count { commentBar(commentLine, lines: lines) }
                     }
                 case .preview:
                     QuickLookView(url: URL(fileURLWithPath: target.path))
@@ -198,7 +227,7 @@ struct FileViewer: View {
             if editor.editing {
                 editActions
             } else {
-                if isMarkdown, case .text = content {
+                if isMarkdown || isNotebook, case .text = content {
                     ToolbarIconButton(markdownPreview ? "chevron.left.forwardslash.chevron.right" : "eye",
                                       markdownPreview ? tr("code.source") : tr("code.preview")) { markdownPreview.toggle() }
                 }
@@ -346,6 +375,8 @@ private struct FileCodeView: View, Equatable {
     /// The link's line (1-based): scrolled to and marked.
     let line: Int?
     let scrollKey: UUID
+    /// Starts a remark on a line (1-based), from the + on its number. Nil outside a session.
+    var comment: ((Int) -> Void)? = nil
     /// The lines already in their colors, by index with what they were made from, so scrolling back over a line does
     /// not build it again.
     @State private var styledLines = StyledLines()
@@ -357,6 +388,7 @@ private struct FileCodeView: View, Equatable {
     /// Drawn again only when the file, its colors or the marked line changed (with `.equatable()` where it is used).
     nonisolated static func == (a: FileCodeView, b: FileCodeView) -> Bool {
         a.line == b.line && a.scrollKey == b.scrollKey && a.lines == b.lines && a.tokens == b.tokens
+            && (a.comment == nil) == (b.comment == nil)
     }
 
     private var numberWidth: CGFloat { CGFloat(max(String(lines.count).count, 2)) * 6.6 + 18 }
@@ -385,10 +417,7 @@ private struct FileCodeView: View, Equatable {
     private func row(_ index: Int) -> some View {
         let marked = line == index + 1
         return HStack(alignment: .top, spacing: 0) {
-            Text(verbatim: String(index + 1))
-                .font(NookTheme.mono(10.5))
-                .foregroundStyle(marked ? NookTheme.paper : WS.tertiary)
-                .padding(.trailing, NookTheme.Spacing.md)
+            FileLineNumber(number: index + 1, marked: marked, comment: comment)
                 .frame(width: numberWidth, alignment: .trailing)
                 .padding(.top, 1)
             Text(styled(index))
@@ -422,6 +451,35 @@ private struct FileCodeView: View, Equatable {
         }
         styledLines.byIndex[index] = (text, found, result)
         return result
+    }
+}
+
+/// A line's number; with the pointer on it, the + that starts a remark on that line.
+private struct FileLineNumber: View {
+    let number: Int
+    let marked: Bool
+    let comment: ((Int) -> Void)?
+    @State private var hovering = false
+
+    var body: some View {
+        Group {
+            if hovering, let comment {
+                Button { comment(number) } label: {
+                    Image(systemName: "plus.bubble").font(NookTheme.mono(10.5)).foregroundStyle(NookTheme.paper)
+                }
+                .buttonStyle(.plain)
+                .help(tr("file.viewer.comment"))
+                .accessibilityLabel(tr("file.viewer.comment"))
+            } else {
+                Text(verbatim: String(number))
+                    .font(NookTheme.mono(10.5))
+                    .foregroundStyle(marked ? NookTheme.paper : WS.tertiary)
+            }
+        }
+        .padding(.trailing, NookTheme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
     }
 }
 

@@ -479,6 +479,17 @@ enum BridgeBrowserScript {
         """
     }
 
+    /// A ring where the agent acts, so you see where it clicks or types. Only drawn, never in the way of the page.
+    static let agentMark = """
+    (function (t) { var r = t.getBoundingClientRect(), m = document.createElement('div');
+      m.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;width:22px;height:22px;border-radius:50%;' +
+        'border:2px solid #7c6cf0;background:rgba(124,108,240,.25);transition:transform .5s ease-out,opacity .5s ease-out;' +
+        'left:' + (r.left + r.width / 2 - 11) + 'px;top:' + (r.top + r.height / 2 - 11) + 'px';
+      document.documentElement.appendChild(m);
+      requestAnimationFrame(function () { m.style.transform = 'scale(1.8)'; m.style.opacity = '0'; });
+      setTimeout(function () { m.remove(); }, 700); })(e);
+    """
+
     static func click(_ target: Target) -> String {
         """
         (function () {
@@ -487,6 +498,7 @@ enum BridgeBrowserScript {
           if (!e) return JSON.stringify({ ok: false, error: 'No such element on the page. Take a new browser_snapshot.' });
           if (e.disabled) return JSON.stringify({ ok: false, error: 'That element is disabled.' });
           e.scrollIntoView({ block: 'center' });
+          \(agentMark)
           if (e.focus) e.focus();
           e.click();
           return JSON.stringify({ ok: true, element: __nookDescribe(e) });
@@ -505,6 +517,7 @@ enum BridgeBrowserScript {
           if (e.disabled || e.readOnly) return JSON.stringify({ ok: false, error: 'That field cannot be edited.' });
           var value = \(literal(value)), append = \(append ? "true" : "false");
           e.scrollIntoView({ block: 'center' });
+          \(agentMark)
           if (e.focus) e.focus();
           if (e.isContentEditable) {
             if (!append) { document.execCommand('selectAll', false, null); }
