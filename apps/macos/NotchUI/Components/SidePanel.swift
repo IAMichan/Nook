@@ -13,10 +13,11 @@ import SwiftUI
 // - What a tab shows starts with one bar of the same height under that header (`SidePanelToolbar`): the browser's
 //   address, the terminal's folder, the changes' counts, a file's name. A tab with nothing to show says so with a
 //   `WSEmptyState`, never an empty pane.
-// - A session's header has one toggle per side (`SidePanelToggle`): the list on the left, the bottom panel, the side
-//   panel on the right, each with the mark of its side (`Edge.panelSymbol`), lit while it is open.
-// - The tool panel and a diff or file the conversation opens take turns on the right instead of stacking
-//   (`SessionSideLink`, `SessionDetailOpen`).
+// - A session's header has one toggle per side (`SidePanelToggle`): the bottom panel and the side panel on the right,
+//   each with the mark of its side (`Edge.panelSymbol`), lit while it is open. The list on the left has its toggle in
+//   one spot beside the traffic lights (`PanelSidebarToggle`); only the notch keeps it in the header.
+// - A turn's diff opens in the tool panel's Changes tab. The tool panel and a file the conversation opens take turns on
+//   the right instead of stacking (`SessionSideLink`, `SessionDetailOpen`).
 
 extension Edge {
     /// The mark of the panel on this side of a conversation, on the toggle in a session's header that shows or hides it.
@@ -323,6 +324,8 @@ struct SessionSideLink {
 
 extension EnvironmentValues {
     @Entry var sessionSide = SessionSideLink()
+    /// How far a conversation's header starts in: past the traffic lights and the list's toggle while the list is away.
+    @Entry var sessionHeaderInset: CGFloat = 0
 }
 
 /// From the conversation up to its workbench: where its composer sits, so a page the agent opened floats just above it.

@@ -16,6 +16,7 @@ struct AgentSessionDetail: View {
     let selection: AgentSessionSelection
     /// In the notch: the terminal and browser icons, next to the branch button.
     var headerAccessory: AnyView? = nil
+    @Environment(\.sessionHeaderInset) private var headerInset
     /// What you type, held without being observed: as state of this view, every key drew the whole conversation above
     /// the composer again. Only the composer watches it (`Observing`), as in `AgentRunPanel`.
     @State private var composerState = SessionDraftState()
@@ -119,6 +120,7 @@ struct AgentSessionDetail: View {
         }
         .font(NookTheme.TextStyle.body)
         .frame(height: 30)
+        .padding(.leading, headerInset)
         .conversationHeaderBackground()
     }
 

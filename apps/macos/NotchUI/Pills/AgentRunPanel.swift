@@ -72,6 +72,7 @@ struct AgentRunPanel: View {
     /// The outputs tab of the side panel around this session (`SessionWorkbench`), which shows what the agent produced.
     @Environment(\.sessionOutputs) private var outputsLink
     @Environment(\.sessionSide) private var sideLink
+    @Environment(\.sessionHeaderInset) private var headerInset
     /// The outputs (by signature) you have seen, for the dot on the outputs tab; nil until the session shows.
     @State private var seenOutputs: Set<String>?
     /// The subagents (`Subagents.signature`) you have seen, for the dot on the Subagents tab; nil until the session shows.
@@ -294,6 +295,7 @@ struct AgentRunPanel: View {
         }
         .font(NookTheme.TextStyle.body)
         .frame(height: 30)
+        .padding(.leading, headerInset)
         .conversationHeaderBackground()
     }
 
