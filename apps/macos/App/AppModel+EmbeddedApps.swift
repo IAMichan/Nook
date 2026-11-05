@@ -97,7 +97,7 @@ extension AppModel {
               forced || (AgentLinkTarget.current() == .app && NSEvent.modifierFlags.isDisjoint(with: [.command, .control]))
         else { return false }
         if openArtifact(url, beside: true) != nil { return true }
-        BrowserStore.shared.open(url)
+        SessionBrowsers.shared.inView.open(url)
         viewModel.sessionTool = .browser
         return true
     }

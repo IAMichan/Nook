@@ -3,10 +3,11 @@ import SwiftUI
 import WebKit
 import Security
 
-/// The browser in Nook's window, with one or more tabs (`BrowserPage`). You browse as usual; Nook can read the open page
+/// A browser in Nook's window, with one or more tabs (`BrowserPage`). You browse as usual; Nook can read the open page
 /// when you ask (a read tool), and only navigates on its own after your approval (an action). It keeps no history beyond
 /// the session and stores no passwords. Everything that acts on "the page" (agents, the bridge, the chat) acts on the
-/// tab in view.
+/// tab in view. `shared` is Nook's own browser (the chat, Agents › Browser); every agent session has one of its own
+/// (`SessionBrowsers`), so one agent opening a page leaves the page of another alone.
 @MainActor
 final class BrowserStore: ObservableObject {
     /// Made on first use: a web view starts WebKit's own processes, so Nook only pays for them once the browser is used.
@@ -35,29 +36,43 @@ final class BrowserStore: ObservableObject {
     /// How many browser pages (notch, workspace window) show the web view now. While one does, a page Nook opens is
     /// already in sight and needs no popup.
     var shownInWorkbench = 0
+    /// How many chats show the page in their corner now.
+    var shownInChat = 0
     private var watchers: [UUID: AnyCancellable] = [:]
+    /// The session this browser belongs to; nil for Nook's own browser.
+    let session: BrowserSession.Key?
 
-    /// One website data store for every tab, so a sign-in in one tab holds in the others. Nothing of it is written to disk.
-    let dataStore = WKWebsiteDataStore.nonPersistent()
+    /// One website data store for every tab of every browser, so a sign-in holds everywhere. Nothing of it is written to disk.
+    private static let dataStore = WKWebsiteDataStore.nonPersistent()
 
-    private init() {
-        let first = BrowserPage(dataStore: dataStore)
+    init(session: BrowserSession.Key? = nil) {
+        self.session = session
+        let first = BrowserPage(dataStore: Self.dataStore)
         pages = [first]
         page = first
+        first.store = self
         watch(first)
         updateTabs()
     }
 
-    /// Whether `page` is in sight now: the tab in view while a browser page, the popup or a chat corner shows it.
-    func isShowing(_ page: BrowserPage) -> Bool {
-        page === self.page
-            && (shownInWorkbench > 0 || BrowserPopup.shared.isVisible || SessionBrowserOwner.shared.shownInChat > 0)
+    /// Whether something shows this browser now: a browser page, a chat corner or (Nook's own) the popup.
+    private var inView: Bool {
+        shownInWorkbench > 0 || shownInChat > 0 || (session == nil && BrowserPopup.shared.isVisible)
+    }
+
+    /// Whether `page` is in sight now: the tab in view while the browser is.
+    func isShowing(_ page: BrowserPage) -> Bool { page === self.page && inView }
+
+    /// One of the places showing the browser went: with none left, its tabs may be put away after a while.
+    func leftView() {
+        if !inView { outOfSight() }
     }
 
     /// Opens an empty tab after the one in view and brings it into view.
     @discardableResult
     func newTab() -> BrowserPage {
-        let made = BrowserPage(dataStore: dataStore)
+        let made = BrowserPage(dataStore: Self.dataStore)
+        made.store = self
         let index = pages.firstIndex { $0 === page }.map { $0 + 1 } ?? pages.count
         pages.insert(made, at: index)
         watch(made)
@@ -120,8 +135,15 @@ final class BrowserStore: ObservableObject {
     var pageURL: URL? { page.pageURL }
     var pageTitle: String { page.pageTitle }
 
-    func go(_ input: String) { page.go(input) }
-    func open(_ url: URL) { page.open(url) }
+    /// You browse yourself now, or the chat does: the page is no longer what an agent opened for its chat's corner.
+    func go(_ input: String) {
+        SessionBrowsers.shared.putAway(self)
+        page.go(input)
+    }
+    func open(_ url: URL) {
+        SessionBrowsers.shared.putAway(self)
+        page.open(url)
+    }
     func load(_ url: URL, by agent: String, timeout: TimeInterval = 15) async -> String? {
         await page.load(url, by: agent, timeout: timeout)
     }
@@ -137,9 +159,16 @@ final class BrowserStore: ObservableObject {
     /// The browser shows again: the tab in view comes back.
     func inSight() { page.inSight() }
 
-    /// Shows a page you asked for (a pull request Nook made, say) in Nook's own browser: the small window beside where you
-    /// are, unless a browser page is already in view.
+    /// The session's tabs are done with: its pages go and their web views stop.
+    func discard() { pages.forEach { $0.discard() } }
+
+    /// Shows a page you asked for (a pull request Nook made, say) in the browser of the session in view when its browser
+    /// shows, otherwise in Nook's own browser: the small window beside where you are, unless a browser page is already in view.
     static func show(_ url: URL) {
+        if let inPanel = SessionBrowsers.shared.shownInPanel {
+            inPanel.open(url)
+            return
+        }
         shared.open(url)
         BrowserPopup.shared.show()
     }
@@ -234,6 +263,8 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
     /// When the page was last loaded again after its process crashed.
     private var lastCrashReload = Date.distantPast
     let webView: WKWebView
+    /// The browser this tab is in.
+    weak var store: BrowserStore?
     /// The page put away while the browser was out of sight (see `outOfSight`), and its title.
     private var parked: (url: URL, title: String)?
     private var parkTask: Task<Void, Never>?
@@ -297,7 +328,7 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
         parkTask?.cancel()
         parkTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: Self.parkSeconds * 1_000_000_000)
-            guard !Task.isCancelled, let self, self.parked == nil, BrowserStore.existing?.isShowing(self) != true,
+            guard !Task.isCancelled, let self, self.parked == nil, self.store?.isShowing(self) != true,
                   !self.loading, let url = self.webView.url, url.scheme != "about" else { return }
             self.parked = (url, self.webView.title ?? "")
             self.webView.loadHTMLString("", baseURL: nil)
@@ -326,7 +357,6 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
         guard let url = BrowserSearchEngine.address(input, engine: .current()) else { return }
         parked = nil
         openedBy = nil
-        SessionBrowserOwner.shared.owner = nil
         webView.load(URLRequest(url: url))
     }
 
@@ -334,7 +364,6 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
     func open(_ url: URL) {
         parked = nil
         openedBy = nil
-        SessionBrowserOwner.shared.owner = nil
         lastError = nil
         webView.load(URLRequest(url: url))
     }
@@ -602,11 +631,10 @@ struct WebViewHost: NSViewRepresentable {
     }
 }
 
-/// Agents › Browser.
+/// A browser's page: Nook's own in Agents › Browser and beside the chat, a session's own beside that session.
 struct BrowserView: View {
     @EnvironmentObject private var app: AppModel
-    @ObservedObject private var store = BrowserStore.shared
-    @ObservedObject private var bridge = WorkspaceBridge.shared
+    @ObservedObject var store: BrowserStore
     @State private var asking = false
     /// The pointer is on the address field, which shows its fill only then.
     @State private var addressHovering = false
@@ -676,17 +704,15 @@ struct BrowserView: View {
         }
         // In view: whatever an agent opens here is seen, also while you watch.
         .onAppear {
-            bridge.markBrowserSeen()
             store.shownInWorkbench += 1
             store.inSight()
             // The web view can only be in one place: here now, so the popup goes.
-            BrowserPopup.shared.close()
+            if store.session == nil { BrowserPopup.shared.close() }
         }
         .onDisappear {
             store.shownInWorkbench = max(0, store.shownInWorkbench - 1)
-            if store.shownInWorkbench == 0, SessionBrowserOwner.shared.shownInChat == 0 { store.outOfSight() }
+            store.leftView()
         }
-        .onChange(of: bridge.unseen) { _, _ in bridge.markBrowserSeen() }
     }
 
     /// Hands the open page to the chat as an attachment, like dropping a file.
@@ -712,7 +738,7 @@ struct BrowserView: View {
     }
 }
 
-/// A small floating window that shows Nook's browser when the chat or an agent opens a page while no browser page is in
+/// A small floating window that shows Nook's own browser when the chat or an agent opens a page while no browser page is in
 /// view, so you can follow along. It does not take focus from the app you are in.
 @MainActor
 final class BrowserPopup: NSObject, NSWindowDelegate {
@@ -758,9 +784,7 @@ final class BrowserPopup: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         panel = nil
-        if let store = BrowserStore.existing, store.shownInWorkbench == 0, SessionBrowserOwner.shared.shownInChat == 0 {
-            store.outOfSight()
-        }
+        BrowserStore.existing?.leftView()
     }
 
     /// The full browser: in the main window when that is in front, otherwise in the notch.
@@ -815,38 +839,99 @@ private struct BrowserPopupView: View {
     }
 }
 
-/// Which session's agent opened the page in Nook's browser. That page shows small in the bottom right corner of that
-/// session's chat (`SessionBrowserCorner`) and nowhere else: not in a window over every app, not in other chats. Its own
-/// object, so a chat can watch it without starting the browser.
+/// The browsers of the agent sessions, one for each session that used one, and which of them show in the corner of their
+/// session's chat (`SessionBrowserCorner`). A chat watches this object without starting a browser.
 @MainActor
-final class SessionBrowserOwner: ObservableObject {
-    static let shared = SessionBrowserOwner()
+final class SessionBrowsers: ObservableObject {
+    static let shared = SessionBrowsers()
 
-    struct Owner: Equatable {
-        /// The session Nook runs, when it is one.
-        let run: UUID?
-        /// Where the agent works; identifies a session Nook does not run.
-        let directory: String
+    /// Not `@Published`: views ask for their browser while they draw, and that may make it (see `make`).
+    private var stores: [BrowserSession.Key: BrowserStore] = [:]
+    /// The sessions whose agent opened a page that shows in their chat's corner, until you browse yourself or put it away.
+    @Published private var corners: Set<BrowserSession.Key> = []
+    /// The sessions on screen, the latest last: the notch and the main window can both show one.
+    private var shown: [BrowserSession] = []
+
+    /// The browser that shows for `session`, without starting one; Nook's own when it is no session.
+    func existing(_ session: BrowserSession) -> BrowserStore? {
+        guard session.own != nil else { return BrowserStore.existing }
+        return session.key(among: Set(stores.keys)).flatMap { stores[$0] }
     }
 
-    /// The session whose agent opened the current page; nil once you browse yourself or put the page away.
-    @Published var owner: Owner?
-    /// How many chats show the page in their corner now: while one does, the page is in sight and is not put away.
-    var shownInChat = 0
+    /// The browser that shows for `session`, started if there is none yet: you opened it there.
+    func store(_ session: BrowserSession) -> BrowserStore {
+        existing(session) ?? ownStore(session)
+    }
 
-    func opened(by caller: BridgeCaller) {
-        switch caller.kind {
-        case .run(let id): owner = Owner(run: id, directory: caller.directory)
-        case .external: owner = Owner(run: nil, directory: caller.directory)
+    /// The session's very own browser, also when it shows its folder's now: an agent opening a page leaves other pages alone.
+    func ownStore(_ session: BrowserSession) -> BrowserStore {
+        guard let key = session.own else { return .shared }
+        return stores[key] ?? make(key)
+    }
+
+    private func make(_ key: BrowserSession.Key) -> BrowserStore {
+        let made = BrowserStore(session: key)
+        stores[key] = made
+        // Later: this can run while a view draws, and a change may not be published then.
+        DispatchQueue.main.async { [weak self] in self?.objectWillChange.send() }
+        return made
+    }
+
+    /// What an agent reads and drives: its session's page, or without one the page you opened in Nook's own browser.
+    func existing(for caller: BridgeCaller) -> BrowserStore? {
+        if let own = existing(caller.browserSession), own.pageURL != nil { return own }
+        return BrowserStore.existing
+    }
+
+    /// The session was deleted: its browser goes with it.
+    func discard(run: UUID) {
+        let key = BrowserSession.Key.run(run)
+        corners.remove(key)
+        stores.removeValue(forKey: key)?.discard()
+    }
+
+    // MARK: The chat's corner
+
+    /// The page shows in the corner of its session's chat.
+    func showInCorner(_ store: BrowserStore) {
+        if let key = store.session { corners.insert(key) }
+    }
+
+    /// The corner lets go of the page.
+    func putAway(_ store: BrowserStore) {
+        if let key = store.session, corners.contains(key) { corners.remove(key) }
+    }
+
+    /// The browser to show in the corner of `session`'s chat, if its agent opened a page.
+    func corner(_ session: BrowserSession) -> BrowserStore? {
+        guard let key = session.key(among: Set(stores.keys)), corners.contains(key) else { return nil }
+        return stores[key]
+    }
+
+    // MARK: The session on screen
+
+    func appeared(_ session: BrowserSession) { shown.append(session) }
+
+    func disappeared(_ session: BrowserSession) {
+        if let index = shown.lastIndex(of: session) { shown.remove(at: index) }
+    }
+
+    /// The browser for a page you open now: that of the session on screen, otherwise Nook's own.
+    var inView: BrowserStore { shown.last.map(store) ?? .shared }
+
+    /// The browser of the session on screen, when its panel shows it.
+    var shownInPanel: BrowserStore? {
+        shown.last.flatMap(existing).flatMap { $0.shownInWorkbench > 0 ? $0 : nil }
+    }
+}
+
+extension BridgeCaller {
+    /// The session whose browser this agent uses.
+    var browserSession: BrowserSession {
+        switch kind {
+        case .run(let id): return BrowserSession(run: id, directory: directory)
+        case .external: return BrowserSession(run: nil, directory: directory)
         }
-    }
-
-    /// Whether the session shown with `runID` in `directory` is the one whose agent opened the page.
-    func owns(runID: UUID?, directory: String) -> Bool {
-        guard let owner else { return false }
-        if let run = owner.run, let runID { return run == runID }
-        guard !owner.directory.isEmpty, !directory.isEmpty else { return false }
-        return WorkspacePathPolicy.normalize(owner.directory) == WorkspacePathPolicy.normalize(directory)
     }
 }
 
@@ -863,7 +948,7 @@ struct SessionBrowserCorner: View {
     /// How far it can go down from its resting place above the composer, over the composer to the chat's bottom edge.
     var below: CGFloat = 0
     let expand: () -> Void
-    @ObservedObject private var owner = SessionBrowserOwner.shared
+    @ObservedObject private var browsers = SessionBrowsers.shared
     /// Where you dragged the card to, from its corner; it keeps that while the chat is open.
     @State private var moved: CGSize = .zero
     @State private var dragStart: CGSize?
@@ -873,15 +958,17 @@ struct SessionBrowserCorner: View {
     }
 
     var body: some View {
-        let shown = !hidden && owner.owns(runID: runID, directory: directory)
+        let store = hidden ? nil : browsers.corner(BrowserSession(run: runID, directory: directory))
+        let shown = store != nil
         ZStack(alignment: .bottomTrailing) {
-            if shown {
-                SessionBrowserCard(store: BrowserStore.shared, directory: directory, expand: expand, close: { owner.owner = nil },
+            if let store {
+                SessionBrowserCard(store: store, directory: directory, expand: expand, close: { browsers.putAway(store) },
                                    drag: { translation in
                     let start = dragStart ?? moved
                     dragStart = start
                     moved = clamped(CGSize(width: start.width + translation.width, height: start.height + translation.height))
                 }, dragEnded: { dragStart = nil })
+                    .id(ObjectIdentifier(store))
                     .offset(moved)
                     .transition(.scale(scale: 0.92, anchor: .bottomTrailing).combined(with: .opacity))
             }
@@ -945,16 +1032,15 @@ struct SessionBrowserCard: View {
         .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).stroke(NookTheme.fieldStroke, lineWidth: 1))
         .shadow(color: NookTheme.notch.opacity(0.45), radius: 14, y: 6)
         .onAppear {
-            SessionBrowserOwner.shared.shownInChat += 1
+            store.shownInChat += 1
             store.inSight()
             // The web view can only be in one place: here now, so the popup goes.
-            BrowserPopup.shared.close()
+            if store.session == nil { BrowserPopup.shared.close() }
             WorkspaceBridge.shared.markSeen(directory, SessionTool.browser.rawValue)
         }
         .onDisappear {
-            let owner = SessionBrowserOwner.shared
-            owner.shownInChat = max(0, owner.shownInChat - 1)
-            if owner.shownInChat == 0, store.shownInWorkbench == 0, !BrowserPopup.shared.isVisible { store.outOfSight() }
+            store.shownInChat = max(0, store.shownInChat - 1)
+            store.leftView()
         }
     }
 }

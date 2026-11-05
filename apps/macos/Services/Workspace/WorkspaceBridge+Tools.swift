@@ -295,9 +295,9 @@ extension WorkspaceBridge {
 
     private static let nothingOpen = "Nothing is open in Nook's browser. Open a page with browser_open first."
 
-    func browserSnapshot(_ arguments: [String: Any]) async throws -> BridgeRPC.ToolResult {
+    func browserSnapshot(_ arguments: [String: Any], _ caller: BridgeCaller) async throws -> BridgeRPC.ToolResult {
         // Looking must not start the browser; a page put away out of sight comes back first.
-        guard let browser = BrowserStore.existing, browser.pageURL != nil else { return .error(Self.nothingOpen) }
+        guard let browser = SessionBrowsers.shared.existing(for: caller), browser.pageURL != nil else { return .error(Self.nothingOpen) }
         let limit = min(400, max(1, BridgeArgs.int(arguments["limit"]) ?? 150))
         let object = BridgeBrowserScript.result(try await browser.evaluate(BridgeBrowserScript.snapshot(limit: limit)))
         let lines = (object["lines"] as? [String]) ?? []
@@ -308,7 +308,7 @@ extension WorkspaceBridge {
     }
 
     func browserInteract(_ tool: BridgeTool, _ arguments: [String: Any], _ caller: BridgeCaller, _ context: Context) async throws -> BridgeRPC.ToolResult {
-        guard let browser = BrowserStore.existing, let page = browser.pageURL else { return .error(Self.nothingOpen) }
+        guard let browser = SessionBrowsers.shared.existing(for: caller), let page = browser.pageURL else { return .error(Self.nothingOpen) }
         let target: BridgeBrowserScript.Target
         switch BridgeBrowserScript.target(arguments) {
         case .failure(let error): return .error(error.message)
@@ -354,11 +354,11 @@ extension WorkspaceBridge {
         return BridgeRPC.ToolResult(text: "\(verb) \(element) on \(page.absoluteString). Check the result with browser_snapshot, browser_read or browser_wait_for.")
     }
 
-    func browserWaitFor(_ arguments: [String: Any]) async -> BridgeRPC.ToolResult {
+    func browserWaitFor(_ arguments: [String: Any], _ caller: BridgeCaller) async -> BridgeRPC.ToolResult {
         let text = BridgeArgs.string(arguments["text"])
         let selector = BridgeArgs.string(arguments["selector"])
         guard text != nil || selector != nil else { return .error("Give the text or selector to wait for.") }
-        guard let browser = BrowserStore.existing, browser.pageURL != nil else { return .error(Self.nothingOpen) }
+        guard let browser = SessionBrowsers.shared.existing(for: caller), browser.pageURL != nil else { return .error(Self.nothingOpen) }
         let gone = BridgeArgs.bool(arguments["gone"]) ?? false
         let timeout = min(30, max(1, BridgeArgs.int(arguments["timeout_seconds"]) ?? 10))
         let script = BridgeBrowserScript.condition(text: text, selector: selector, gone: gone)
