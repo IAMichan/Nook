@@ -123,8 +123,7 @@ final class NookTerminalView: LocalProcessTerminalView {
         Task { @MainActor in
             if TerminalLinks.isURL(text), let url = URL(string: text) {
                 if TerminalLinks.isLocal(url) {
-                    BrowserStore.shared.open(url)
-                    BrowserPopup.shared.show()
+                    BrowserStore.show(url)
                 } else {
                     NSWorkspace.shared.open(url)
                 }
@@ -743,9 +742,10 @@ struct SessionTerminalActions: View {
     private func run(_ script: ProjectScript) {
         store.open(in: directory, command: script.command, title: script.name)
         guard script.autoOpenPreview, let url = script.previewURL else { return }
+        let browser = SessionBrowsers.shared.inView
         Task {
             try? await Task.sleep(nanoseconds: 4_000_000_000)
-            BrowserStore.shared.go(url.absoluteString)
+            browser.go(url.absoluteString)
         }
     }
 }

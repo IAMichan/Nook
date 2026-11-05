@@ -351,8 +351,9 @@ extension WorkspaceManager {
     /// The forge's page for a new pull request opens in Nook's browser, in the corner of the session's chat, never in a
     /// tab of another browser: the pull request made there shows above the composer as soon as the forge has it.
     func openRequestPage(_ page: URL, run id: UUID?, directory: String, branch: String? = nil) {
-        SessionBrowserOwner.shared.owner = SessionBrowserOwner.Owner(run: id, directory: directory)
-        Task { _ = await BrowserStore.shared.load(page, by: "Nook") }
+        let browser = SessionBrowsers.shared.ownStore(BrowserSession(run: id, directory: directory))
+        SessionBrowsers.shared.showInCorner(browser)
+        Task { _ = await browser.load(page, by: "Nook") }
         if let id {
             PullRequestSync.shared.expect(id)
         } else if let branch {

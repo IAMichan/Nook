@@ -139,7 +139,7 @@ struct NookChatView: View {
                         EmbeddedAppPane()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        BrowserView(onClose: { viewModel.browserBesideChat = false })
+                        BrowserView(store: .shared, onClose: { viewModel.browserBesideChat = false })
                             .background(NookTheme.field)
                             .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
                             .frame(maxWidth: .infinity, maxHeight: .infinity)

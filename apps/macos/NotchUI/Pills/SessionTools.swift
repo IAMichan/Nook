@@ -462,6 +462,13 @@ struct SessionWorkbench<Conversation: View>: View {
                 }
             }
         }
+        // Links, scripts and pages you open go to the browser of the session on screen.
+        .onAppear { SessionBrowsers.shared.appeared(browserSession) }
+        .onDisappear { SessionBrowsers.shared.disappeared(browserSession) }
+        .onChange(of: browserSession) { old, new in
+            SessionBrowsers.shared.disappeared(old)
+            SessionBrowsers.shared.appeared(new)
+        }
         .onChange(of: runID) { _, _ in
             diffSelection = nil
             filePreview = nil
@@ -517,6 +524,10 @@ struct SessionWorkbench<Conversation: View>: View {
         if !open { viewModel.sessionTool = .picker }
     }
 
+    /// This session's browser, if it was started.
+    private var browser: BrowserStore? { SessionBrowsers.shared.existing(browserSession) }
+    private var browserSession: BrowserSession { BrowserSession(run: runID, directory: directory) }
+
     /// ⌘W while the keyboard is in a side or bottom panel: closes the tab in view there (a diff or file beside the
     /// conversation closes itself). A terminal is left to `WindowKeys`, which closes just that terminal; anywhere else
     /// the key goes on and closes the window.
@@ -535,7 +546,7 @@ struct SessionWorkbench<Conversation: View>: View {
                 case .conversation, .picker:
                     if area == .bottomPanel { viewModel.bottomTool = .conversation } else { viewModel.closeSidePanel() }
                 case .browser:
-                    if let page = BrowserStore.existing?.page.id { closeSessionTab(.browser(page), in: slot) } else { closeTab(.browser, in: slot) }
+                    if let page = browser?.page.id { closeSessionTab(.browser(page), in: slot) } else { closeTab(.browser, in: slot) }
                 case .pullRequest:
                     if let id = viewModel.activeSidePullRequest { closeSessionTab(.pullRequest(id), in: slot) } else { closeTab(.pullRequest, in: slot) }
                 default:
@@ -690,7 +701,7 @@ struct SessionWorkbench<Conversation: View>: View {
             }
         case .browser(let id):
             // One of several browser tabs goes by itself; the last one closes the browser like any tool.
-            if let browser = BrowserStore.existing, browser.pages.count > 1 {
+            if let browser, browser.pages.count > 1 {
                 withAnimation(NookTheme.swap) { browser.close(id) }
             } else {
                 closeTab(.browser, in: slot)
@@ -814,17 +825,26 @@ private struct SessionToolPanel: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @ObservedObject private var files = FileViewerStore.shared
+    /// Says when this session's browser was started.
+    @ObservedObject private var browsers = SessionBrowsers.shared
     /// The browser's tabs with their titles, and the one in view, once the browser was started (it is not started for it).
     @State private var browserTabs: [BrowserStore.Tab] = []
     @State private var browserActive: UUID?
     /// The panel still slides in: a pull request page it opens on waits with its full page until it is in place.
     @State private var opening = true
 
+    private var browserSession: BrowserSession { BrowserSession(run: runID, directory: directory) }
+    /// This session's browser, if it was started.
+    private var startedBrowser: BrowserStore? { browsers.existing(browserSession) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             if tool == .terminal, console == nil { SidePanelToolbar { SessionTerminalBar(directory: directory) } }
-            if tool == .browser, !directory.isEmpty { DevServerStrip(directory: directory) }
+            if tool == .browser, !directory.isEmpty {
+                let browser = browsers.store(browserSession)
+                DevServerStrip(directory: directory, browser: browser).id(ObjectIdentifier(browser))
+            }
             Group {
                 switch tool {
                 case .picker:
@@ -860,7 +880,9 @@ private struct SessionToolPanel: View {
                 case .file:
                     SessionFilePanel(directory: directory)
                 default:
-                    BrowserView()
+                    let browser = browsers.store(browserSession)
+                    // Its own view for each browser: it counts itself as showing that browser.
+                    BrowserView(store: browser).id(ObjectIdentifier(browser))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -874,10 +896,17 @@ private struct SessionToolPanel: View {
         }
         .onChange(of: tool) { _, next in bridge.markSeen(directory, next.rawValue) }
         .onChange(of: bridge.unseen) { _, _ in bridge.markSeen(directory, tool.rawValue) }
-        .onReceive(BrowserStore.existing?.$tabs.eraseToAnyPublisher() ?? Empty<[BrowserStore.Tab], Never>().eraseToAnyPublisher()) {
+        // Another session without a browser shows none of the last one's tabs.
+        .onChange(of: startedBrowser.map(ObjectIdentifier.init)) { _, started in
+            if started == nil {
+                browserTabs = []
+                browserActive = nil
+            }
+        }
+        .onReceive(startedBrowser?.$tabs.eraseToAnyPublisher() ?? Empty<[BrowserStore.Tab], Never>().eraseToAnyPublisher()) {
             browserTabs = $0
         }
-        .onReceive(BrowserStore.existing?.$page.map(\.id).eraseToAnyPublisher() ?? Empty<UUID, Never>().eraseToAnyPublisher()) {
+        .onReceive(startedBrowser?.$page.map(\.id).eraseToAnyPublisher() ?? Empty<UUID, Never>().eraseToAnyPublisher()) {
             browserActive = $0
         }
     }
@@ -904,7 +933,7 @@ private struct SessionToolPanel: View {
         case .tool(let item): show(item)
         case .pullRequest(let id): selectPullRequest(id)
         case .browser(let id):
-            BrowserStore.shared.select(id)
+            browsers.store(browserSession).select(id)
             show(.browser)
         }
     }
@@ -928,7 +957,7 @@ private struct SessionToolPanel: View {
         let item = SessionTool.browser
         let fresh = item != tool && bridge.hasUnseen(directory, item.rawValue)
         let add = AnyView(ToolbarIconButton("plus", tr("browser.newTab"), width: 20) {
-            BrowserStore.shared.newTab()
+            browsers.store(browserSession).newTab()
             show(.browser)
         })
         guard !browserTabs.isEmpty else {
@@ -1051,8 +1080,8 @@ struct AgentsToolPage<Content: View>: View {
 /// one tap opens it. Checked every few seconds while the browser is open; without any there is no bar.
 struct DevServerStrip: View {
     let directory: String
+    @ObservedObject var browser: BrowserStore
     @State private var servers: [DevServer] = []
-    @ObservedObject private var browser = BrowserStore.shared
 
     var body: some View {
         // A VStack, not a Group: it exists while still empty, so the scan below starts.

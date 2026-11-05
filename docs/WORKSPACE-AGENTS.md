@@ -53,7 +53,7 @@ codex mcp add nook -- ~/.nook/nook-mcp --agent codex
 | `terminal_read` | Reads recent output lines from a terminal in the same project directory, including running state and exit code. | Immediate |
 | `terminal_list` | Lists terminals in the same project directory and which session started them. | Immediate |
 | `terminal_stop` | Sends `Ctrl-C` (and optionally closes) a terminal started by the same agent. | Immediate |
-| `browser_open` | Opens a URL in Nook's workspace browser and waits for load completion. Allows `https://` and local `http://` (`localhost`, `127.0.0.1`, `*.localhost`). | Immediate |
+| `browser_open` | Opens a URL in the browser of the agent's own session and waits for load completion. Every session has its own browser, so two agents never replace each other's page; `browser_read`, `browser_screenshot` and the tools that drive the page act on that browser too, or on Nook's own browser (Agents › Browser) while the session has no page open. Allows `https://` and local `http://` (`localhost`, `127.0.0.1`, `*.localhost`). | Immediate |
 | `browser_read` | Returns page title, URL, visible text, and console errors/warnings since page load. | Immediate |
 | `browser_screenshot` | Captures a JPEG screenshot of the page for layout verification. | Immediate |
 | `pull_request_create` | Pushes the branch and opens a pull request via your connected GitHub account (or opens the GitHub compare URL). | Requires approval, unless the session runs with **Allow everything** |
