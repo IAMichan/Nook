@@ -133,3 +133,5 @@ Its complete source is in `apps/chatd` of this repository.
 ## Optional Downloaded Models & External Runtimes
 
 Nook does not bundle any AI model weights or proprietary agent binaries in this repository. When you choose to download local MLX/GGUF models (from Hugging Face) or connect external coding-agent CLIs (such as Claude Code, Codex, Gemini CLI, or Google Antigravity's ACP server), those downloads and tools are governed by their respective licenses and terms of use (for example, the [Google Gemma Terms of Use](https://ai.google.dev/gemma/terms), the [Meta Llama Community License](https://www.llama.com/llama3_1/license/), and the Apache-2.0 / Qwen licenses).
+
+[Mermaid](https://github.com/mermaid-js/mermaid) 12.3.0 ships in `apps/macos/Resources/mermaid` (`dist/mermaid.min.js` from the npm package, sha256 `336df803d87a38b70a01e736e666c8f7601d2ce42f5e47c8fafe5d721074b9a3`) under the MIT license; its license text is in that folder.

@@ -67,7 +67,13 @@ struct AgentSessionDetail: View {
                        detail: tr("confirm.endSession.detail"), confirmTitle: tr("agents.nook.takeOver")) { session in
             perform { try await app.continueInNook(session, endingTerminal: true) }
         }
-        .onAppear { composerState.show(session: selectionID) }
+        .onAppear {
+            composerState.show(session: selectionID)
+            takeFromSidePanel()
+        }
+        // What the side panel hands to this session lands in the draft, to read before sending; also when it arrived
+        // while this composer was not on screen.
+        .onReceive(ComposerInbox.shared.$delivery.compactMap { $0 }) { _ in takeFromSidePanel() }
         .composerFocusOnAppear($composerFocused)
         .onChange(of: selectionID) { _, id in
             composerFocused = true
@@ -77,6 +83,13 @@ struct AgentSessionDetail: View {
             choice = nil
             turnSettings = AgentTurnSettings()
         }
+    }
+
+    private func takeFromSidePanel() {
+        guard case .live(let session) = selection,
+              let text = ComposerInbox.shared.take(run: nil, directory: session.cwd) else { return }
+        draft = SessionPrompts.merging(text, into: draft)
+        composerFocused = true
     }
 
     private var selectionID: String {

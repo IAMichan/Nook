@@ -40,6 +40,8 @@ enum PullRequestAction: Equatable, Sendable {
     case markDraft(nodeID: String)
     /// Merges into another branch from now on.
     case changeBase(String)
+    /// Lets the workflow run of a contributor start; GitHub holds those until someone with write access approves.
+    case approveWorkflow(runID: Int)
 
     static let markReadyMutation =
         "mutation NookMarkReady($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { isDraft } } }"
@@ -100,6 +102,8 @@ enum PullRequestAction: Equatable, Sendable {
             let name = branch.trimmingCharacters(in: .whitespaces)
             guard !name.isEmpty else { return nil }
             return Request(method: "PATCH", path: pull, body: ["base": name])
+        case .approveWorkflow(let runID):
+            return Request(method: "POST", path: "/repos/\(repo)/actions/runs/\(runID)/approve", body: nil)
         }
     }
 
@@ -117,6 +121,7 @@ enum PullRequestAction: Equatable, Sendable {
         case .markReady: return "github_ready_pr"
         case .markDraft: return "github_draft_pr"
         case .changeBase: return "github_change_base"
+        case .approveWorkflow: return "github_approve_workflow"
         }
     }
 
@@ -136,6 +141,7 @@ enum PullRequestAction: Equatable, Sendable {
         case .markReady: return "\(target) ready for review"
         case .markDraft: return "\(target) convert to draft"
         case .changeBase(let branch): return "\(target) base: \(branch)"
+        case .approveWorkflow(let runID): return "\(target) approve workflow run \(runID)"
         }
     }
 

@@ -166,6 +166,10 @@ struct AgentRunPanel: View {
                 loadComposerState(run)
             }
             .onDisappear { rememberVisit(runID) }
+            // What the side panel hands to this session lands in the draft, to read before sending; also when it
+            // arrived while this composer was not on screen.
+            .onReceive(ComposerInbox.shared.$delivery.compactMap { $0 }) { _ in takeFromSidePanel() }
+            .onAppear { takeFromSidePanel() }
             // F2 or the command palette's Rename: the name field in the header, with the keyboard in it.
             .onReceive(SessionRenameRequest.shared.$pending.removeDuplicates()) { id in
                 guard id == runID, let title = workspace.run(runID)?.title else { return }
@@ -420,6 +424,12 @@ struct AgentRunPanel: View {
         panel.canCreateDirectories = true
         guard panel.runAboveNotch() == .OK, let url = panel.url else { return }
         try? SessionExport.markdown(run, events: workspace.timeline(runID)).write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private func takeFromSidePanel() {
+        guard let text = ComposerInbox.shared.take(run: runID, directory: workspace.run(runID)?.workingDirectory ?? "") else { return }
+        draft = SessionPrompts.merging(text, into: draft)
+        focused = true
     }
 
     private func addTerminalOutput(_ run: WorkspaceRun) {

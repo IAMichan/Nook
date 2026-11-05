@@ -87,6 +87,7 @@ final class PullRequestActionState: ObservableObject {
 struct PullRequestMoreMenu: View {
     @ObservedObject var state: PullRequestActionState
     let detail: PullRequestDetail
+    @Environment(\.sessionContextTarget) private var session
     var loading = false
     /// When the page last heard from GitHub, said in the menu's tooltip.
     var fetchedAt: Date? = nil
@@ -120,6 +121,20 @@ struct PullRequestMoreMenu: View {
             }
             DropdownRow(symbol: "terminal", title: tr("agents.pr.action.copyCheckout")) {
                 copy(Self.checkout(detail), tr("agents.pr.action.copied"))
+            }
+            if let session {
+                DropdownDivider()
+                DropdownRow(symbol: "text.bubble", title: tr("session.context.explain")) {
+                    ComposerInbox.shared.add(SessionPrompts.explain(detail.sessionRef), to: session)
+                }
+                DropdownRow(symbol: "plus.bubble", title: tr("session.context.ask")) {
+                    ComposerInbox.shared.add(SessionPrompts.ask(detail.sessionRef), to: session)
+                }
+                if !detail.failingCheckNames.isEmpty {
+                    DropdownRow(symbol: "hammer", title: tr("session.context.fixChecks")) {
+                        ComposerInbox.shared.add(SessionPrompts.fixChecks(detail.sessionRef, failing: detail.failingCheckNames), to: session)
+                    }
+                }
             }
             if detail.isOpen {
                 DropdownDivider()
@@ -428,6 +443,7 @@ struct PullRequestActionPanel: View {
         case .markReady: return tr("agents.pr.confirm.ready", target)
         case .markDraft: return tr("agents.pr.confirm.draft", target)
         case .changeBase(let branch): return tr("agents.pr.confirm.changeBase", target, branch)
+        case .approveWorkflow: return tr("agents.pr.confirm.approveWorkflow", target)
         }
     }
 
@@ -445,6 +461,7 @@ struct PullRequestActionPanel: View {
         case .markReady: return PullRequestIcon.symbol(.open)
         case .markDraft: return PullRequestIcon.symbol(.draft)
         case .changeBase: return "arrow.triangle.branch"
+        case .approveWorkflow: return "checkmark.shield"
         }
     }
 

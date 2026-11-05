@@ -16,6 +16,7 @@ import SwiftUI
 /// current while open).
 struct PullRequestDetailView: View {
     @EnvironmentObject var app: AppModel
+    @Environment(\.sessionContextTarget) var sessionContext
     let accountID: String
     let item: PullRequestItem
     /// Beside the pull request list (a side panel): the button that leaves it closes the panel, on the right. The
@@ -119,6 +120,10 @@ struct PullRequestDetailView: View {
     }
 
     var body: some View {
+        pageBody.environment(\.sessionPullRequestRef, detail?.sessionRef)
+    }
+
+    private var pageBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerBlock.pullRequestPageColumn()
             if confirmStackMerge || mergingStack { stackMergeBar.padding(.top, NookTheme.Spacing.sm).pullRequestPageColumn() }
