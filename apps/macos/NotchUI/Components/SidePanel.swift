@@ -331,6 +331,12 @@ struct SessionComposerBounds: PreferenceKey {
     static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = nextValue() ?? value }
 }
 
+/// The conversation of a session above its composer: where the page its agent opened rests, for the row that floats it.
+struct SessionBrowserRest: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = nextValue() ?? value }
+}
+
 /// The room a side panel of `width` takes with its drag line and gap.
 enum SidePanelRoom {
     static func of(_ width: Double) -> Double { width + PanelSplit.handle + Double(SidePanelMetrics.gap) }
