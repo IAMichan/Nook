@@ -10,3 +10,16 @@ final class NookTriageTests: XCTestCase {
         XCTAssertTrue(text.hasSuffix("What went wrong:"))
     }
 }
+
+final class NookCommandLineTests: XCTestCase {
+    func testTheScriptSpeaksAsTheOutsideCaller() {
+        XCTAssertTrue(NookCommandLine.contents.contains("agent => '\(NookCommandLine.agentID)'"))
+        XCTAssertTrue(NookCommandLine.contents.hasPrefix("#!/usr/bin/perl"))
+    }
+
+    func testStartingASessionAsksUnlessTheCallerHasFullRights() {
+        let tool = BridgeTool.sessionStart
+        XCTAssertEqual(tool.effect, .local)
+        XCTAssertTrue(tool.approvalReadsAsProse)
+    }
+}

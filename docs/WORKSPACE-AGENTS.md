@@ -44,6 +44,23 @@ claude mcp add --scope user nook -- ~/.nook/nook-mcp --agent claude-code
 codex mcp add nook -- ~/.nook/nook-mcp --agent codex
 ```
 
+### Scripts: the `nook` command line
+
+Nook installs `~/.nook/nook`, a Perl script that makes the same calls over the same socket. Add `~/.nook` to your `PATH` to
+type `nook`.
+
+```sh
+id=$(nook start . "Find why the tests are slow")   # waits for your approval in Nook
+nook send "$id" "Now fix it" --wait                # exit 0 done, 1 failed, 2 waits for you, 3 Nook is not running
+nook read "$id"
+nook list
+```
+
+A script is always an outside caller: it never takes the rights of a session that works in the same folder, so starting and
+messaging sessions wait for your approval, and a session it starts asks you before it acts. `nook tools` and
+`nook call <tool> <json>` reach every other tool under the same rules. Only your own user can open the socket; there is no
+remote access to it.
+
 ## Available MCP Tools
 
 | Tool | Description | Policy |
@@ -57,6 +74,7 @@ codex mcp add nook -- ~/.nook/nook-mcp --agent codex
 | `browser_read` | Returns page title, URL, visible text, and console errors/warnings since page load. | Immediate |
 | `browser_screenshot` | Captures a JPEG screenshot of the page for layout verification. | Immediate |
 | `pull_request_create` | Pushes the branch and opens a pull request via your connected GitHub account (or opens the GitHub compare URL). | Requires approval, unless the session runs with **Allow everything** |
+| `session_start` | Starts a new session in a folder, with rights that ask you. Used by `nook start`. | Requires approval, unless the session runs with full rights |
 | `orchestrator_capabilities` | Lists which agents Nook can spawn for delegated subtasks, available models, and current session permissions. | Immediate |
 | `delegate_task` | Delegates a focused subtask (`research`, `review`, `design`, `test`, `implementation`) to a child agent session visible beside the parent. | Requires approval (unless session has full access); disabled in Plan mode |
 | `task_status` | Returns status (`queued`, `running`, `waiting`, `completed`, `failed`, `cancelled`) and latest output of a delegated task. | Immediate |
