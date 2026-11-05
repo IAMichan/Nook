@@ -61,8 +61,9 @@ enum SessionTool: String {
     var help: String { tr("agents.tool." + rawValue) }
 }
 
-/// The panels' quiet icons in a session's header, one per side as in an editor: the session list on the left, the
-/// bottom panel and the side panel on the right (`SidePanelToggle`), each with the mark of its side. The terminal and the browser open from the panels themselves (their tabs, + and the list of tools). The bottom panel
+/// The panels' quiet icons in a session's header, one per side as in an editor: the bottom panel and the side panel on
+/// the right (`SidePanelToggle`), each with the mark of its side, and in the notch the session list on the left (the
+/// main window has `PanelSidebarToggle` for it). The terminal and the browser open from the panels themselves (their tabs, + and the list of tools). The bottom panel
 /// opens on what it showed last, the terminal by default; the side panel always on the list of tools, with no tab open.
 /// When the agent started a process or opened a page that you have not looked at yet, the side panel's icon carries a
 /// small dot. The same goes for a plan or another output the agent made.
@@ -76,10 +77,11 @@ struct SessionToolSwitch: View {
     @AppStorage("nook.agents.bottomTool") private var lastBottomTool = SessionTool.terminal.rawValue
     /// The session list on the left of the Agents tab is put away (`AgentsTab`).
     @AppStorage(AgentsListVisibility.hiddenKey) private var listHidden = false
+    @Environment(\.panelSidebar) private var sidebar
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
-            listToggle
+            if sidebar == nil { listToggle }
             bottomToggle
             panelToggle
         }
