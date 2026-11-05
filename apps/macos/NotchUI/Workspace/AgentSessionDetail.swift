@@ -374,6 +374,7 @@ struct AgentSessionDetail: View {
                 agentMenu(name: session.name, kind: AgentKind(agentName: session.name), profile: app.profile(for: session),
                           canSwitch: canTakeOver)
                 if canTakeOver { turnControls(kind: AgentKind(agentName: session.name)) }
+                ComposerUsageRing.forAccount(app.profile(for: session), app: app)
             }
             .rich(composerModel, composerConfig(folder: session.cwd))
             .images($composerState.images)
@@ -668,6 +669,7 @@ struct AgentSessionDetail: View {
                         agentMenu(name: session.agent.name, kind: session.agent, profile: app.profile(for: session),
                                   canSwitch: app.canContinueInNook(session))
                         if app.canContinueInNook(session) { turnControls(kind: session.agent) }
+                        ComposerUsageRing.forAccount(app.profile(for: session), app: app)
                     }
                     .rich(composerModel, composerConfig(folder: session.cwd))
                     .images($composerState.images)

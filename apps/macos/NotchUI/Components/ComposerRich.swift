@@ -532,7 +532,7 @@ struct ComposerContextRing: View {
     }
 }
 
-/// How much of its subscription the session's account has used, at the right end of the choices under the composer: a
+/// How much of its subscription the session's account has used, among the choices of the composer, right after the effort: a
 /// small ring filled to the window that runs out first, with its percentage beside it, amber from 75 % and coral from 90 %. Click for every window as one line each (`UsageLimitRows`, reset and pace in their tooltips) and "All limits",
 /// the usage limits modal with every account (`UsageModal`). Every agent that reports limits gets it.
 struct ComposerUsageRing: View {
@@ -542,6 +542,19 @@ struct ComposerUsageRing: View {
     @State private var open = false
     @State private var hovering = false
     private static let shownLimits = 6
+
+    /// The ring for an account, in every session composer and from the first percent, working or not: nothing only for an
+    /// agent that reports no limits. Built in the caller's body rather than as a view of its own, so the percentage follows
+    /// the caller's updates.
+    @ViewBuilder
+    static func forAccount(_ profile: AgentProfile?, app: AppModel) -> some View {
+        if let profile {
+            let limits = app.quota.limits(for: profile)
+            if !limits.isEmpty {
+                ComposerUsageRing(limits: limits, account: AccountLabel.name(profile, app: app))
+            }
+        }
+    }
 
     /// The fullest window: only shows 100 % once every window is full; otherwise the fullest one that is not (at most 99 %).
     private var used: Int {
