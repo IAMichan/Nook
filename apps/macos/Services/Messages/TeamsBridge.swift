@@ -339,24 +339,21 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
             sessions[account.id, default: Session()].retries = retries
         }
         let me = sessions[account.id]?.me
-        let moved = chats.filter { chat in chat.last.map { seen[chat.id] != $0 } ?? false }.prefix(Self.perRead)
+        let moved = Array(chats.filter { chat in chat.last.map { seen[chat.id] != $0 } ?? false }.prefix(Self.perRead))
         var fetched: Set<String> = []
         var result: [BridgedChat] = []
-        for chat in moved {
+        // Every moved chat's history is asked side by side (`ChatParallel`). One chat Graph refuses (a chat you left, a
+        // moment's hiccup) must not lose the others' new messages: it stays unseen and is read again next time. A lost
+        // sign-in or a rate limit stops asking for histories this round; the other chats still show with their newest
+        // message.
+        let answers = await ChatParallel.ask(moved) { [self] chat -> ChatParallel.Asked<[String: Any]> in
             var messagesURL = URLComponents(string: "https://graph.microsoft.com/v1.0/me/chats/" + chat.id + "/messages")!
             messagesURL.queryItems = [URLQueryItem(name: "$top", value: String(Self.history))]
-            guard let url = messagesURL.url else { continue }
-            // One chat Graph refuses (a chat you left, a moment's hiccup) must not lose the others' new messages:
-            // it stays unseen and is read again next time. A lost sign-in or a rate limit stops reading histories for
-            // this round; the other chats still show with their newest message.
-            let answer: [String: Any]
-            do {
-                answer = try await get(url, token: bearer)
-            } catch let error as NookError where error.kind == .auth || error.kind == .rateLimited {
-                break
-            } catch {
-                continue
-            }
+            guard let url = messagesURL.url else { return .failed(NookError(tr("chat.action.failed"))) }
+            return await ChatParallel.asking { try await get(url, token: bearer) }
+        }
+        for (chat, asked) in zip(moved, answers) {
+            guard case .answered(let answer)? = asked else { continue }
             let messages = TeamsData.messages(answer, chat: chat, me: me)
             // A chat whose messages do not list the announced one yet stays unseen and is read again next round
             // (a few times at most, so a message Graph never lists does not keep it read forever).
@@ -430,17 +427,33 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         }.prefix(Self.perRead)
         var fetched: Set<String> = []
         var result: [BridgedChat] = []
-        for var chat in moved {
+        // Every moved chat is asked side by side (`ChatParallel`): its history, its pictures, and how far the others read
+        // your messages. What Nook remembers of each is written below, one chat after another, in their order. A lost
+        // sign-in or a rate limit stops asking this round.
+        let asked = await ChatParallel.ask(Array(moved)) { [self] chat -> ChatParallel.Asked<WebRead> in
             let address = session.base + "/v1/users/ME/conversations/" + ChatJSON.segment(chat.id)
                 + "/messages?view=msnp24Equivalent%7CsupportsMessageProperties&pageSize=\(Self.history)&startTime=1"
-            let answer: [String: Any]
-            do {
-                answer = try await webGet(address, token: session.token, account: account.id)
-            } catch let error as NookError where error.kind == .auth || error.kind == .rateLimited {
-                break
-            } catch {
-                continue
+            let json: [String: Any]
+            switch await ChatParallel.asking({ try await webGet(address, token: session.token, account: account.id) }) {
+            case .answered(let value): json = value
+            case .failed(let error): return .failed(error)
+            case .refused(let error): return .refused(error)
             }
+            var named = chat
+            if named.name.isEmpty { named.name = TeamsWebData.people(json, me: session.me).joined(separator: ", ") }
+            guard !named.name.isEmpty else { return .answered(WebRead(answer: json, messages: [])) }
+            var messages = await withPictures(TeamsWebData.messages(json, chat: named, me: session.me), account: account)
+            // How far the others read it: your messages get their ticks and readers, as in every app that says so.
+            if messages.contains(where: \.isMine), let horizons = try? await webGet(
+                session.base + "/v1/threads/" + ChatJSON.segment(chat.id) + "/consumptionhorizons", token: session.token, account: account.id) {
+                messages = TeamsWebData.read(messages, horizons: TeamsWebData.horizons(horizons, me: session.me), group: named.isGroup,
+                                             names: TeamsWebData.displayNames(json))
+            }
+            return .answered(WebRead(answer: json, messages: messages))
+        }
+        for (var chat, reply) in zip(moved, asked) {
+            guard case .answered(let read)? = reply else { continue }
+            let answer = read.answer
             if chat.name.isEmpty {
                 chat.name = TeamsWebData.people(answer, me: session.me).joined(separator: ", ")
                 if !chat.name.isEmpty { state.names[chat.id] = chat.name }
@@ -459,13 +472,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
             fetched.insert(chat.id)
             guard !chat.name.isEmpty else { continue }
             sources[ChatInbox.key(app: app, chat: chat.name)] = .web(account: account.id, chat: chat)
-            var messages = await withPictures(TeamsWebData.messages(answer, chat: chat, me: session.me), account: account)
-            // How far the others read it: your messages get their ticks and readers, as in every app that says so.
-            if messages.contains(where: \.isMine), let horizons = try? await webGet(
-                session.base + "/v1/threads/" + ChatJSON.segment(chat.id) + "/consumptionhorizons", token: session.token, account: account.id) {
-                messages = TeamsWebData.read(messages, horizons: TeamsWebData.horizons(horizons, me: session.me), group: chat.isGroup,
-                                             names: TeamsWebData.displayNames(answer))
-            }
+            let messages = read.messages
             // Messages deleted since (here or in Teams) leave the chat in Nook too.
             result.append(BridgedChat(app: app, name: chat.name, messages: messages,
                                       unread: TeamsData.unread(messages, readUntil: chat.readUntil), listed: true,
@@ -478,6 +485,13 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
             result.append(BridgedChat(app: app, name: chat.name, messages: preview, unread: unread, listed: true))
         }
         return result
+    }
+
+    /// What the website answered for one moved chat: the answer itself, and its messages with their pictures and how far
+    /// the others read them (none for a chat whose name its messages do not tell).
+    private struct WebRead {
+        var answer: [String: Any]
+        var messages: [InboxMessage]
     }
 
     // MARK: Scrolling back
