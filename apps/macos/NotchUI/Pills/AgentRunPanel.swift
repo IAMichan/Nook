@@ -72,6 +72,7 @@ struct AgentRunPanel: View {
     /// The outputs tab of the side panel around this session (`SessionWorkbench`), which shows what the agent produced.
     @Environment(\.sessionOutputs) private var outputsLink
     @Environment(\.sessionSide) private var sideLink
+    @Environment(\.sessionHeaderInset) private var headerInset
     /// The outputs (by signature) you have seen, for the dot on the outputs tab; nil until the session shows.
     @State private var seenOutputs: Set<String>?
     /// The subagents (`Subagents.signature`) you have seen, for the dot on the Subagents tab; nil until the session shows.
@@ -268,6 +269,16 @@ struct AgentRunPanel: View {
                         renaming = true
                     }
                     .help(tr("ws.title.renameHelp"))
+                Menu { sessionActions(run) } label: {
+                    Image(systemName: "chevron.down")
+                        .font(NookTheme.font(9, .bold))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .composerMenu()
+                .help(tr("chat.more"))
+                .accessibilityLabel(tr("chat.more"))
             }
             if let lineage = run.lineage { LineageLink(workspace: workspace, lineage: lineage) }
             Spacer(minLength: 8)
@@ -299,102 +310,108 @@ struct AgentRunPanel: View {
         }
         .font(NookTheme.TextStyle.body)
         .frame(height: 30)
+        .padding(.leading, headerInset)
         .conversationHeaderBackground()
     }
 
-    /// Everything else you can do with this session: settings for the next turn, retry, archive, delete.
+    /// What goes into the message: a file, the stash, the terminal's last lines. The session's own actions are in the
+    /// menu beside its title (`sessionActions`).
     private func actionsMenu(_ run: WorkspaceRun) -> some View {
-        let idle = !run.status.isActive
-        return ComposerPlusMenu(attach: { attachFile(run) }) {
+        ComposerPlusMenu(attach: { attachFile(run) }) {
             Button(tr("compose.stash.set")) {
                 if let text = composerModel.stashKey(composerText: draft) { draft = text; ComposerDraftStore.shared.setStash(composerModel.stash) }
             }
             .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && composerModel.stash.entries.isEmpty)
-            Divider()
-            Button(tr("agents.run.details")) { app.viewModel.open(.details(runID)) }
-            Divider()
-            if run.status.isActive {
-                Button(tr("ws.action.stop")) { workspace.stop(runID) }
-            } else if run.status == .failed || run.status == .stopped {
-                Button(tr("ws.action.retry")) { workspace.retry(runID) }
-            }
-            let finishKey = FinishedSessions.key(run: run)
-            let isFinished = finishedMarks.contains(finishKey)
-            Button(isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark")) {
-                if isFinished { finishedMarks.reopenByUser(finishKey) } else { finishedMarks.mark(finishKey) }
-            }
-            .disabled(run.status.isActive)
-            Button(tr("agents.run.rename")) {
-                titleDraft = run.title
-                renaming = true
-            }
-            // A new written title from the first message and the latest ones, with your title rules.
-            Button(tr("ws.title.regenerate")) { workspace.regenerateTitle(runID) }
-            // A fork starts from this session; switching moves it to another agent with a summary of what happened.
-            Button(tr("agents.fork")) {
-                if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
-            }
-            .disabled(!workspace.canTransfer(runID))
-            // Ends the agent's process; the next message resumes the conversation with new skills, plugins and MCP servers.
-            Button(tr("agents.restartAgent")) { workspace.restartAgent(runID) }
-                .disabled(!workspace.canRestartAgent(runID))
-                .help(tr("agents.restartAgent.help"))
-            Button(tr("ws.side.new")) {
-                if let id = workspace.openSideChat(runID, question: "") { app.viewModel.selectedAgentID = "run:" + id.uuidString }
-            }
-            .disabled(!workspace.canOpenSideChat(runID))
-            if let lineage = run.lineage, lineage.bringsBack {
-                Button(tr(lineage.kind == .side ? "ws.side.bringBack" : "agents.mergeBack")) {
-                    if workspace.mergeBack(runID), let parent = run.lineage?.parentID {
-                        app.viewModel.selectedAgentID = "run:" + parent.uuidString
-                    }
-                }
-                .disabled(!workspace.canTransfer(runID))
-            }
-            // PR watch: CI, reviews and comments on the session's pull request wake the agent.
-            if run.prWatch != nil {
-                Button(tr("ws.prwatch.stop")) { workspace.watchPullRequest(runID, url: nil) }
-            } else {
-                let watchable = watchablePullRequest()
-                Button(tr("ws.prwatch.start")) { workspace.watchPullRequest(runID, url: watchable) }
-                    .disabled(watchable == nil)
-            }
-            // Connectors the agent cannot use until you sign in, also the ones you hid above the composer.
-            if let connectors = workspace.connectorSignIns[runID], !connectors.isEmpty {
-                Menu(tr("ws.connector.menu")) {
-                    ForEach(connectors) { connector in
-                        Button(connector.waiting ? tr("ws.connector.waiting", connector.title) : tr("ws.connector.signInTo", connector.title)) {
-                            workspace.signInConnector(runID, name: connector.name)
-                        }
-                        .disabled(connector.waiting)
-                    }
-                }
-            }
-            // Kept local: copy it, or save it where you want.
-            Button(tr("ws.export.copy")) {
-                Pasteboard.copy(SessionExport.markdown(run, events: workspace.timeline(runID)))
-            }
-            Button(tr("ws.export.save")) { saveMarkdown(run) }
             // Terminal context: the last lines of this session's terminal go with your message.
             Button(tr("ws.context.terminal")) { addTerminalOutput(run) }
                 .disabled(TerminalStore.shared.sessions(in: run.workingDirectory).isEmpty)
-            Button(tr("button.openFolder")) {
-                NSWorkspace.shared.open(URL(fileURLWithPath: run.workingDirectory, isDirectory: true))
-            }
-            .disabled(run.isRemote)
-            Button(tr("agents.run.changes")) {
-                if headerAccessory != nil { app.viewModel.sessionTool = .changes } else { app.viewModel.open(.changes(runID, file: nil)) }
-            }
-            .disabled(run.repoRoot == nil)
-            Divider()
-            Button(tr("agents.run.archive")) {
-                workspace.setArchived(runID, true)
-                app.viewModel.selectedAgentID = ""
-            }
-            .disabled(!idle)
-            Button(tr("agents.run.delete"), role: .destructive) { confirmDelete = true }
-                .disabled(!idle)
         }
+    }
+
+    /// Everything you can do with this session itself: retry, rename, fork, export, archive, delete.
+    @ViewBuilder
+    private func sessionActions(_ run: WorkspaceRun) -> some View {
+        let idle = !run.status.isActive
+            Button(tr("agents.run.details")) { app.viewModel.open(.details(runID)) }
+        Divider()
+        if run.status.isActive {
+            Button(tr("ws.action.stop")) { workspace.stop(runID) }
+        } else if run.status == .failed || run.status == .stopped {
+            Button(tr("ws.action.retry")) { workspace.retry(runID) }
+        }
+        let finishKey = FinishedSessions.key(run: run)
+        let isFinished = finishedMarks.contains(finishKey)
+        Button(isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark")) {
+            if isFinished { finishedMarks.reopenByUser(finishKey) } else { finishedMarks.mark(finishKey) }
+        }
+        .disabled(run.status.isActive)
+        Button(tr("agents.run.rename")) {
+            titleDraft = run.title
+            renaming = true
+        }
+        // A new written title from the first message and the latest ones, with your title rules.
+        Button(tr("ws.title.regenerate")) { workspace.regenerateTitle(runID) }
+        // A fork starts from this session; switching moves it to another agent with a summary of what happened.
+        Button(tr("agents.fork")) {
+            if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
+        }
+        .disabled(!workspace.canTransfer(runID))
+        // Ends the agent's process; the next message resumes the conversation with new skills, plugins and MCP servers.
+        Button(tr("agents.restartAgent")) { workspace.restartAgent(runID) }
+            .disabled(!workspace.canRestartAgent(runID))
+            .help(tr("agents.restartAgent.help"))
+        Button(tr("ws.side.new")) {
+            if let id = workspace.openSideChat(runID, question: "") { app.viewModel.selectedAgentID = "run:" + id.uuidString }
+        }
+        .disabled(!workspace.canOpenSideChat(runID))
+        if let lineage = run.lineage, lineage.bringsBack {
+            Button(tr(lineage.kind == .side ? "ws.side.bringBack" : "agents.mergeBack")) {
+                if workspace.mergeBack(runID), let parent = run.lineage?.parentID {
+                    app.viewModel.selectedAgentID = "run:" + parent.uuidString
+                }
+            }
+            .disabled(!workspace.canTransfer(runID))
+        }
+        // PR watch: CI, reviews and comments on the session's pull request wake the agent.
+        if run.prWatch != nil {
+            Button(tr("ws.prwatch.stop")) { workspace.watchPullRequest(runID, url: nil) }
+        } else {
+            let watchable = watchablePullRequest()
+            Button(tr("ws.prwatch.start")) { workspace.watchPullRequest(runID, url: watchable) }
+                .disabled(watchable == nil)
+        }
+        // Connectors the agent cannot use until you sign in, also the ones you hid above the composer.
+        if let connectors = workspace.connectorSignIns[runID], !connectors.isEmpty {
+            Menu(tr("ws.connector.menu")) {
+                ForEach(connectors) { connector in
+                    Button(connector.waiting ? tr("ws.connector.waiting", connector.title) : tr("ws.connector.signInTo", connector.title)) {
+                        workspace.signInConnector(runID, name: connector.name)
+                    }
+                    .disabled(connector.waiting)
+                }
+            }
+        }
+        // Kept local: copy it, or save it where you want.
+        Button(tr("ws.export.copy")) {
+            Pasteboard.copy(SessionExport.markdown(run, events: workspace.timeline(runID)))
+        }
+        Button(tr("ws.export.save")) { saveMarkdown(run) }
+        Button(tr("button.openFolder")) {
+            NSWorkspace.shared.open(URL(fileURLWithPath: run.workingDirectory, isDirectory: true))
+        }
+        .disabled(run.isRemote)
+        Button(tr("agents.run.changes")) {
+            if headerAccessory != nil { app.viewModel.sessionTool = .changes } else { app.viewModel.open(.changes(runID, file: nil)) }
+        }
+        .disabled(run.repoRoot == nil)
+        Divider()
+        Button(tr("agents.run.archive")) {
+            workspace.setArchived(runID, true)
+            app.viewModel.selectedAgentID = ""
+        }
+        .disabled(!idle)
+        Button(tr("agents.run.delete"), role: .destructive) { confirmDelete = true }
+            .disabled(!idle)
     }
 
     /// The session's machine when it logs in with a password that was not typed in this run of Nook yet.
@@ -558,17 +575,18 @@ struct AgentRunPanel: View {
     private func usageLimits(_ run: WorkspaceRun) -> some View {
         if let profile = app.profile(for: run) {
             let limits = app.quota.limits(for: profile)
-            if !limits.isEmpty {
+            if UsageLimits.worthShowing(limits.map(\.percent)) {
                 ComposerUsageRing(limits: limits, account: AccountLabel.name(profile, app: app))
             }
         }
     }
 
-    /// The context ring, and the microphone next to it.
+    /// The context ring once the window starts to fill, and the microphone next to it.
     @ViewBuilder
     private func composerTrailing(_ run: WorkspaceRun) -> some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
-            if let window = run.usage.contextWindow, let used = run.usage.contextTokens, window > 0 {
+            if let window = run.usage.contextWindow, let used = run.usage.contextTokens, window > 0,
+               ContextMeter.worthShowing(Double(used) / Double(window)) {
                 // Every agent that compacts on `/compact` (Claude Code, Codex, an ACP agent that offers it) gets the button.
                 let compacts = AgentCommands.canCompact(run.provider, offered: workspace.acpCommands[runID] ?? [])
                 ComposerContextRing(used: used, window: window,
@@ -610,19 +628,21 @@ struct AgentRunPanel: View {
     /// What sits under the timeline: an approval, a confirmation, the agent's question, or the composer.
     @ViewBuilder
     private func bottomBar(_ run: WorkspaceRun) -> some View {
-        if let pending = workspace.approvals[runID], let first = pending.first {
-            approval(run, first, more: pending.count - 1).chatColumn()
-        } else if let request = bridge.pending.first(where: { $0.caller.kind == .run(runID) }) {
-            // A command or pull request the agent asks for through Nook's workspace.
-            let approval = ApprovalCenter.make(request)
-            ApprovalView(approval: approval, inline: true) { app.approvals.decide(approval, $0) }.chatColumn()
-        }
         if let target = revertTarget {
             revertConfirmation(target)
         } else if let target = editTarget {
             editConfirmation(target)
         } else if confirmDelete {
             deleteConfirmation(run)
+        } else if let pending = workspace.approvals[runID], let first = pending.first {
+            // What the agent waits for takes the composer's place until answered, in every kind of session.
+            approval(run, first, more: pending.count - 1).chatColumn().sessionComposerBounds()
+        } else if let request = bridge.pending.first(where: { $0.caller.kind == .run(runID) }) {
+            // A command or pull request the agent asks for through Nook's workspace.
+            let approval = ApprovalCenter.make(request)
+            ApprovalView(approval: approval, inline: true) { app.approvals.decide(approval, $0) }
+                .chatColumn()
+                .sessionComposerBounds()
         } else if let question = workspace.questions[runID]?.first {
             // The agent asks something: its question takes the composer's place until answered (Stop stays).
             RunQuestionPanel(question: question, agent: run.provider.displayName, folder: run.workingDirectory,
@@ -631,6 +651,7 @@ struct AgentRunPanel: View {
             }
             .id(question.id)
             .chatColumn()
+            .sessionComposerBounds()
         } else {
             // Redrawn on its own with every keystroke, without the conversation above it.
             Observing(composerState) { composer(run) }.chatColumn()
@@ -1119,7 +1140,15 @@ struct AgentRunPanel: View {
             onChoose: answerable ? { workspace.send(runID, text: $0) } : nil,
             expanded: expanded.contains(event.id),
             toggle: { toggle(event.id) },
-            openFile: { path in app.viewModel.open(.changes(runID, file: path)) },
+            openFile: { path in
+                // In the session's Changes tab; a session on another machine has no git here, so its own review.
+                if headerAccessory != nil, let run = workspace.run(runID), !run.isRemote {
+                    sideLink.openDiff(TurnDiffSelection(turn: TurnDiffSelection.branch,
+                                                        file: TurnDiff.relative(path, to: run.workingDirectory)))
+                } else {
+                    app.viewModel.open(.changes(runID, file: path))
+                }
+            },
             decide: { decision in
                 if let request = event.callID { workspace.decide(runID, requestID: request, decision) }
             },

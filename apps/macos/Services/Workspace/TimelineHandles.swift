@@ -89,6 +89,9 @@ enum ContextMeter {
     /// Past the warning line the meter suggests summarizing the conversation (`/compact`) before the window runs out.
     static func suggestsCompact(_ fraction: Double) -> Bool { level(fraction) != .normal }
 
+    /// The composer stays quiet until half the window is used: only then does the ring tell you something.
+    static func worthShowing(_ fraction: Double) -> Bool { fraction >= 0.5 }
+
     static func percentText(_ fraction: Double) -> String {
         let pct = min(max(fraction, 0), 1) * 100
         if pct < 10 { return String(format: "%.1f%%", pct) }

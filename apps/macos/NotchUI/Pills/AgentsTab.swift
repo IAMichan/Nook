@@ -61,13 +61,15 @@ struct AgentsTab: View {
         let stacked = PanelLayout.stacks(totalWidth)
         let listShown = stacked ? !listHidden : !listHidden || !canHideList(selection)
         let entries = listEntries(live: live, past: past, transcripts: transcripts)
+        // In the main window the list goes away altogether; `PanelSidebarToggle` brings it back.
+        let collapsed = sidebar != nil && !listShown
         HStack(alignment: .top, spacing: 0) {
             if listShown {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                     // In the main window the list is the sidebar: the tabs and Search on top of it.
                     PanelSidebarTop(history: AnyView(SessionHistoryButtons(
                         current: selectedID(selection),
-                        back: { goBack(entries) }, forward: { goForward(entries) })))
+                        back: { goBack(entries) }, forward: { goForward(entries) })), hasToggle: true)
                     // In the sidebar the search field and these buttons share one row, as t3code's threads header.
                     if sidebar == nil { listHeader(selection) }
                     sessionList(entries, selection: selection)
@@ -133,8 +135,22 @@ struct AgentsTab: View {
                         }
                     }
                 }
-                .padding(.leading, listShown ? 10 : 0)
+                .environment(\.sessionHeaderInset, collapsed ? PanelSidebarMetrics.collapsedHeaderInset : 0)
+                // A page without a session's header starts under the title bar's row, clear of the traffic lights.
+                .padding(.top, collapsed && !workbench(selection) ? PanelSidebarMetrics.titleBand - PanelSidebarMetrics.contentTop : 0)
+                .padding(.leading, listShown ? 10 : collapsed ? PanelSidebarMetrics.collapsedContentLeading : 0)
                 .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+        }
+        .background {
+            // The sidebar is away by choice: no rail, and no header with a capsule in its place.
+            if collapsed { Color.clear.preference(key: PanelSidebarShown.self, value: true) }
+        }
+        .overlay(alignment: .topLeading) {
+            if sidebar != nil {
+                PanelSidebarToggle(open: listShown) {
+                    withAnimation(NookTheme.reveal) { listHidden.toggle() }
+                }
             }
         }
         // Switching sessions is a hard cut: the next one shows with its panels in place, nothing slides in. Inside the
@@ -208,24 +224,19 @@ struct AgentsTab: View {
 
     // MARK: List header
 
-    /// "Agents" with the button that starts a new session, and beside a session the cross that puts the list away
-    /// (the same close button every side panel ends with); the left toggle in the session's header brings it back.
+    /// "Agents" with the button that starts a new session. The left toggle brings the list back and puts it away:
+    /// beside the traffic lights in the main window, in the session's header in the notch.
     private func listHeader(_ selection: Selection) -> some View {
         let isNew: Bool = { if case .new = selection { return true }; return false }()
         return PanelListHeader(tr("tab.agents"), sidebarTitle: tr("sidebar.sessions")) { listActions(selection, isNew: isNew) }
             .padding(.bottom, NookTheme.Spacing.xs)
     }
 
-    /// New session, and the cross that puts the list away: beside the title in the notch, beside the search in the sidebar.
+    /// New session: beside the title in the notch, beside the search in the sidebar.
     @ViewBuilder
     private func listActions(_ selection: Selection, isNew: Bool) -> some View {
         if !app.demoMode {
             PanelNewButton(label: tr("agents.newSession"), active: isNew) { open("new") }
-        }
-        if canHideList(selection) {
-            SidePanelCloseButton(help: tr("agents.list.hide")) {
-                withAnimation(NookTheme.reveal) { listHidden = true }
-            }
         }
     }
 
@@ -311,10 +322,13 @@ struct AgentsTab: View {
         }
     }
 
-    /// The list can be put away only where the session's header shows the toggle that brings it back: a session in a
-    /// workbench on this Mac, not one on another machine (its header has no panel toggles) and not the sample data.
+    /// The list can be put away where something brings it back: anywhere in the main window (`PanelSidebarToggle`). In
+    /// the notch only where the session's header shows the toggle: a session in a workbench on this Mac, not one on
+    /// another machine (its header has no panel toggles) and not the sample data.
     private func canHideList(_ selection: Selection) -> Bool {
-        guard !app.demoMode, workbench(selection) else { return false }
+        guard !app.demoMode else { return false }
+        if sidebar != nil { return true }
+        guard workbench(selection) else { return false }
         if case .run(let id) = selection, app.workspace.run(id)?.remote != nil { return false }
         return true
     }

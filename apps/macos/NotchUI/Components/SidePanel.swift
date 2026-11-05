@@ -13,10 +13,11 @@ import SwiftUI
 // - What a tab shows starts with one bar of the same height under that header (`SidePanelToolbar`): the browser's
 //   address, the terminal's folder, the changes' counts, a file's name. A tab with nothing to show says so with a
 //   `WSEmptyState`, never an empty pane.
-// - A session's header has one toggle per side (`SidePanelToggle`): the list on the left, the bottom panel, the side
-//   panel on the right, each with the mark of its side (`Edge.panelSymbol`), lit while it is open.
-// - The tool panel and a diff or file the conversation opens take turns on the right instead of stacking
-//   (`SessionSideLink`, `SessionDetailOpen`).
+// - A session's header has one toggle per side (`SidePanelToggle`): the bottom panel and the side panel on the right,
+//   each with the mark of its side (`Edge.panelSymbol`), lit while it is open. The list on the left has its toggle in
+//   one spot beside the traffic lights (`PanelSidebarToggle`); only the notch keeps it in the header.
+// - A turn's diff opens in the tool panel's Changes tab and a file in its File tab (`SessionSideLink`), so a session has
+//   one panel on the right, at one width.
 
 extension Edge {
     /// The mark of the panel on this side of a conversation, on the toggle in a session's header that shows or hides it.
@@ -161,18 +162,16 @@ private struct ListPanelSide: ViewModifier {
 }
 
 /// The top row of a side panel: what it shows on the left (a `SidePanelTitle`, or a picker), its own actions, and at
-/// the end the buttons every panel has: wider or narrower when `wide` is given, then the close button.
+/// the end the close button every panel has.
 struct SidePanelHeader<Leading: View, Actions: View>: View {
     let closeHelp: String
-    let wide: Binding<Bool>?
     let close: () -> Void
     let leading: Leading
     let actions: Actions
 
-    init(closeHelp: String, wide: Binding<Bool>? = nil, close: @escaping () -> Void,
+    init(closeHelp: String, close: @escaping () -> Void,
          @ViewBuilder leading: () -> Leading, @ViewBuilder actions: () -> Actions) {
         self.closeHelp = closeHelp
-        self.wide = wide
         self.close = close
         self.leading = leading()
         self.actions = actions()
@@ -184,7 +183,6 @@ struct SidePanelHeader<Leading: View, Actions: View>: View {
             Spacer(minLength: NookTheme.Spacing.xs)
             HStack(spacing: NookTheme.Spacing.xxs) {
                 actions
-                if let wide { SidePanelWidenButton(wide: wide) }
                 SidePanelCloseButton(help: closeHelp, action: close)
             }
         }
@@ -193,9 +191,9 @@ struct SidePanelHeader<Leading: View, Actions: View>: View {
 }
 
 extension SidePanelHeader where Actions == EmptyView {
-    init(closeHelp: String, wide: Binding<Bool>? = nil, close: @escaping () -> Void,
+    init(closeHelp: String, close: @escaping () -> Void,
          @ViewBuilder leading: () -> Leading) {
-        self.init(closeHelp: closeHelp, wide: wide, close: close, leading: leading) { EmptyView() }
+        self.init(closeHelp: closeHelp, close: close, leading: leading) { EmptyView() }
     }
 }
 
@@ -261,22 +259,12 @@ struct PanelBackButton: View {
     }
 }
 
-/// Wider or narrower: switches a panel between its two usual widths (`PanelLayout.wide`).
-private struct SidePanelWidenButton: View {
-    @Binding var wide: Bool
-
-    var body: some View {
-        ToolbarIconButton(wide ? "arrow.right.to.line" : "arrow.left.to.line", tr(wide ? "ws.outputs.narrow" : "ws.outputs.widen")) {
-            // Without a slide: sliding the width laid the whole panel and what sits beside it out again on every frame.
-            PanelDrag.still { wide.toggle() }
-        }
-    }
-}
-
 /// A button in a session's header that opens or closes the panel on `edge`: lit while it is open, with a dot when
 /// that panel has something you have not seen.
 struct SidePanelToggle: View {
     let edge: Edge
+    /// A mark of its own, for a panel that is not simply the one on `edge`.
+    var symbol: String? = nil
     let open: Bool
     var fresh = false
     let help: String
@@ -284,7 +272,7 @@ struct SidePanelToggle: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: edge.panelSymbol)
+            Image(systemName: symbol ?? edge.panelSymbol)
                 .font(NookTheme.font(13, .medium))
                 .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
                 .frame(width: 28, height: 28)
@@ -308,8 +296,8 @@ struct SidePanelToggle: View {
 
 // MARK: One panel on the right
 
-/// From a session's workbench to the conversation inside it: opens a turn's diff or a file step in the side panel on
-/// the right (to the right of the docked session panel, taking turns with the tool panel), and reports which file is shown.
+/// From a session's workbench to the conversation inside it: opens a turn's diff in the Changes tab or a file step in the
+/// File tab of the side panel on the right, and reports which file is shown.
 /// A command the agent runs opens in the panel's Terminal tab (`toggleConsole`), with its output as it comes in.
 struct SessionSideLink {
     var shownFile: String? = nil
@@ -323,12 +311,22 @@ struct SessionSideLink {
 
 extension EnvironmentValues {
     @Entry var sessionSide = SessionSideLink()
+    /// How far a conversation's header starts in: past the traffic lights and the list's toggle while the list is away.
+    @Entry var sessionHeaderInset: CGFloat = 0
 }
 
 /// From the conversation up to its workbench: where its composer sits, so a page the agent opened floats just above it.
 struct SessionComposerBounds: PreferenceKey {
     static let defaultValue: Anchor<CGRect>? = nil
     static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = nextValue() ?? value }
+}
+
+extension View {
+    /// What takes the composer's place (an approval, a question) tells the workbench the same, so a page the agent opened
+    /// floats above its buttons.
+    func sessionComposerBounds() -> some View {
+        anchorPreference(key: SessionComposerBounds.self, value: .bounds) { $0 }
+    }
 }
 
 /// The conversation of a session above its composer: where the page its agent opened rests, for the row that floats it.

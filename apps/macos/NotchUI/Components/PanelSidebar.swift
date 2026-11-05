@@ -9,8 +9,9 @@ import SwiftUI
 // environment (`panelSidebar`), and the tab starts its first column with `PanelSidebarTop`. While that shows, the
 // panel drops its own header (the floating capsule with the tabs). Where no tab column shows (the list put away, a
 // narrow window that shows one column at a time) the panel folds the sidebar to a rail of icons (`PanelSidebarTop`
-// with `compact`), so the tabs stay along the left edge. The notch has no room for a sidebar and never gets the
-// context: it keeps its capsule.
+// with `compact`), so the tabs stay along the left edge. Agents is the exception: its list goes away altogether, with
+// `PanelSidebarToggle` in one spot beside the traffic lights to bring it back (⌘1 and on still switch tabs). The notch
+// has no room for a sidebar and never gets the context: it keeps its capsule.
 
 /// What the sidebar shows on top, from `PanelView` in the main window.
 struct PanelSidebarContext {
@@ -34,6 +35,13 @@ enum PanelSidebarMetrics {
     static let contentTop: CGFloat = (titleBand - 30) / 2
     /// The room the traffic lights take from the window's left edge (they end near 80 pt).
     static let trafficLights: CGFloat = 88
+    /// The toggle that puts the Agents list away (`PanelSidebarToggle`): right of the traffic lights, in the same spot
+    /// with the list out or away.
+    static let toggle: CGFloat = 28
+    /// How far a conversation's header starts from the content's edge with the list away, past the traffic lights and
+    /// the toggle. The content itself starts `collapsedContentLeading` from the window's edge.
+    static let collapsedContentLeading: CGFloat = NookTheme.Spacing.lg
+    static let collapsedHeaderInset: CGFloat = trafficLights + toggle + NookTheme.Spacing.sm - collapsedContentLeading
     /// The head of the sidebar fills the title bar's row.
     static let head: CGFloat = titleBand
     /// A tab in the rail of icons, and the search field above them.
@@ -48,9 +56,9 @@ enum PanelSidebarMetrics {
     static let mark: CGFloat = 18
     /// Room between the window's edge and the sidebar's rows, and the same between its rows and the line on its right.
     static let inset: CGFloat = NookTheme.Spacing.md
-    /// The narrowest the head fits in: the room for the traffic lights, back and forward, then search and talk (28 pt
-    /// each) and split view (30 pt), with the row's spacing between them. A column narrower than this would push its
-    /// rows off the left edge.
+    /// The narrowest the head fits in: the room for the traffic lights, the Agents toggle or Search, back and forward,
+    /// then talk (28 pt each) and split view (30 pt), with the row's spacing between them. A column narrower than this
+    /// would push its rows off the left edge.
     static let headWidth: CGFloat = trafficLights - inset + 28 * 4 + 30 + NookTheme.Spacing.xxs * 6
     /// The narrowest the sidebar's whole column gets: its head with the inset on the left and the gap to its line on the
     /// right. Narrower, search would slide under the traffic lights and split view past the line on the right.
@@ -91,6 +99,9 @@ struct PanelSidebarTop: View {
     var compact = false
     /// Back and forward through what you opened, right of the traffic lights, for a tab that keeps such a trail.
     var history: AnyView? = nil
+    /// The tab floats `PanelSidebarToggle` over the head, in the spot right of the traffic lights. Its list has a search
+    /// field of its own, so the head leaves out Search (⌘K still opens it).
+    var hasToggle = false
     @Environment(\.panelSidebar) private var context
 
     var body: some View {
@@ -136,17 +147,35 @@ struct PanelSidebarTop: View {
         HStack(spacing: NookTheme.Spacing.xxs) {
             Color.clear
                 .frame(width: PanelSidebarMetrics.trafficLights - PanelSidebarMetrics.inset)
+            if hasToggle { Color.clear.frame(width: PanelSidebarMetrics.toggle) }
             if !compact, let history { history }
             Spacer(minLength: 0)
             if !compact {
-                NookIconButton(systemName: "magnifyingglass", label: tr("search.button"), size: 28, action: context.search)
-                    .help(tr("search.button"))
+                if !hasToggle {
+                    NookIconButton(systemName: "magnifyingglass", label: tr("search.button"), size: 28, action: context.search)
+                        .help(tr("search.button"))
+                }
                 NookIconButton(systemName: "mic", label: tr("button.talk"), size: 28, action: context.talk)
                 PanelSplitButton(current: context.current)
             }
         }
         .frame(height: PanelSidebarMetrics.head)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Shows or puts away the Agents list. It floats over the window instead of sitting in the list, so it stays in one spot
+/// right of the traffic lights, with the list out or away, on every page of the tab.
+struct PanelSidebarToggle: View {
+    let open: Bool
+    let action: () -> Void
+
+    var body: some View {
+        SidePanelToggle(edge: .leading, open: open, help: tr(open ? "agents.list.hide" : "agents.list.show"), action: action)
+            .frame(width: PanelSidebarMetrics.toggle, height: PanelSidebarMetrics.toggle)
+            .padding(.leading, PanelSidebarMetrics.trafficLights)
+            // Up to the middle of the title bar's row, from the content's top.
+            .offset(y: (PanelSidebarMetrics.titleBand - PanelSidebarMetrics.toggle) / 2 - PanelSidebarMetrics.contentTop)
     }
 }
 

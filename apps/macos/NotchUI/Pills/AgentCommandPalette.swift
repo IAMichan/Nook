@@ -196,7 +196,7 @@ struct AgentCommandPalette: View {
         ]
         // The panels, where the open page has them.
         for (command, symbol) in [("sidebar.toggle", "sidebar.left"), ("terminal.toggle", "terminal"),
-                                  ("sidePanel.toggle", "sidebar.right")] where offers(command) {
+                                  ("sidePanel.toggle", "sidebar.right"), ("sessionPanel.toggle", "list.bullet.rectangle")] where offers(command) {
             out.append(Entry(id: "n:" + command, group: .navigation, symbol: symbol, title: tr("keys.command." + command),
                              command: command) { run(command) })
         }
