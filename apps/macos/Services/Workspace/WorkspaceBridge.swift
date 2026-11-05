@@ -119,15 +119,6 @@ final class WorkspaceBridge: ObservableObject {
         if unseen[key]?.isEmpty == true { unseen[key] = nil }
     }
 
-    /// The browser is shared by every session: looking at it anywhere counts for all of them.
-    func markBrowserSeen() {
-        guard unseen.values.contains(where: { $0.contains("browser") }) else { return }
-        for key in Array(unseen.keys) {
-            unseen[key]?.remove("browser")
-            if unseen[key]?.isEmpty == true { unseen[key] = nil }
-        }
-    }
-
     func hasUnseen(_ directory: String, _ tool: String) -> Bool {
         guard !directory.isEmpty else { return false }
         return unseen[WorkspacePathPolicy.normalize(directory)]?.contains(tool) == true
@@ -228,9 +219,9 @@ final class WorkspaceBridge: ObservableObject {
             case .sessionQuestions: return await sessionQuestions(arguments, caller, context)
             case .renderPage: return renderPage(arguments, caller)
             case .deviceList, .deviceOpen, .deviceScreenshot, .deviceClose: return try await device(tool, arguments, caller)
-            case .browserSnapshot: return try await browserSnapshot(arguments)
+            case .browserSnapshot: return try await browserSnapshot(arguments, caller)
             case .browserClick, .browserType: return try await browserInteract(tool, arguments, caller, context)
-            case .browserWaitFor: return await browserWaitFor(arguments)
+            case .browserWaitFor: return await browserWaitFor(arguments, caller)
             case .listScheduledTasks: return listScheduledTasks(arguments, caller)
             case .scheduleTask: return try await scheduleTask(arguments, caller, context)
             case .updateScheduledTask: return await updateScheduledTask(arguments, caller, context)
@@ -305,7 +296,7 @@ final class WorkspaceBridge: ObservableObject {
         lines.append("")
         lines.append("## Browser")
         // Describing the browser must not start it: never opened means nothing open.
-        if let browser = BrowserStore.existing, let url = browser.pageURL {
+        if let browser = SessionBrowsers.shared.existing(for: caller), let url = browser.pageURL {
             lines.append("- \(browser.pageTitle) · \(url.absoluteString)" + (browser.openedBy.map { " (opened by \($0))" } ?? ""))
         } else {
             lines.append("- nothing open")
@@ -466,9 +457,10 @@ final class WorkspaceBridge: ObservableObject {
             return .error("Nook's browser opens https addresses, and http only on this Mac (localhost, 127.0.0.1). \"\(raw)\" is neither.")
         }
         if case .refuse(let reason) = verdict(.browserOpen, caller) { return .error(Self.refusal(reason)) }
-        let browser = BrowserStore.shared
+        // The session's own browser, so a page another session has open stays where it is.
+        let browser = SessionBrowsers.shared.ownStore(caller.browserSession)
         // Seen as it opens, in the caller's own chat only: small in its bottom right corner (SessionBrowserCorner).
-        SessionBrowserOwner.shared.opened(by: caller)
+        SessionBrowsers.shared.showInCorner(browser)
         let failure = await browser.load(url, by: caller.agent)
         markUnseen(caller.directory, SessionTool.browser.rawValue)
         audit(.browserOpen, caller, url.absoluteString, failure ?? "geladen")
@@ -480,7 +472,7 @@ final class WorkspaceBridge: ObservableObject {
     }
 
     private func browserRead(_ caller: BridgeCaller) async throws -> BridgeRPC.ToolResult {
-        let browser = BrowserStore.shared
+        guard let browser = SessionBrowsers.shared.existing(for: caller) else { throw NookError(tr("workbench.browser.nothingOpen")) }
         let page = try await browser.pageText()
         let console = await browser.consoleMessages()
         var text = "# \(page.title)\nURL: \(page.url)\n\n\(page.text.isEmpty ? "(no visible text)" : page.text)"
@@ -489,7 +481,7 @@ final class WorkspaceBridge: ObservableObject {
     }
 
     private func browserScreenshot(_ arguments: [String: Any], _ caller: BridgeCaller) async throws -> BridgeRPC.ToolResult {
-        let browser = BrowserStore.shared
+        guard let browser = SessionBrowsers.shared.existing(for: caller) else { throw NookError(tr("workbench.browser.nothingOpen")) }
         let image = try await browser.screenshot(maxWidth: (arguments["max_width"] as? Int) ?? 1280)
         let address = browser.webView.url?.absoluteString ?? ""
         return BridgeRPC.ToolResult(text: "Screenshot of \(address)", imageBase64: image.base64EncodedString(),

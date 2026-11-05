@@ -417,9 +417,10 @@ struct SessionPanel: View {
     private func runScript(_ script: ProjectScript) {
         done { app.openTerminal(in: directory, command: script.command, title: script.name) }
         guard script.autoOpenPreview, let url = script.previewURL else { return }
+        let browser = SessionBrowsers.shared.store(BrowserSession(run: runID, directory: directory))
         Task {
             try? await Task.sleep(nanoseconds: 4_000_000_000)
-            BrowserStore.shared.go(url.absoluteString)
+            browser.go(url.absoluteString)
         }
     }
 
