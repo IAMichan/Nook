@@ -1,9 +1,10 @@
 import Foundation
 
 // Forking a session and switching it to another agent. The new agent
-// cannot read the old agent's conversation, so what happened is handed over as a short, readable summary at the start of
-// its first turn. It is built from the timeline without a model, so it is deterministic, bounded, and visible to you in
-// the timeline: nothing is slipped into a prompt unseen. A handoff is a summary, not native context parity.
+// cannot read the old agent's conversation, so what happened is handed over at the start of its first turn: a budgeted
+// selection of the timeline, not a summary a model wrote. Messages keep their own words; commands and changed files take a
+// line. It is deterministic, bounded, and visible to you in the timeline: nothing is slipped into a prompt unseen.
+// What did not fit stays readable through `session_read` for an agent with Nook's tools.
 // Foundation only, so tests can use it independently.
 
 /// What a fork or a switch lets the new agent start from.
@@ -33,8 +34,9 @@ enum ContextTransfer {
 enum ContextHandoff {
     /// The most the summary may cost the new agent, in tokens.
     static let tokenBudget = 16_000
-    /// What one item may say: a message, or a tool call / file change.
-    static let messageLimit = 600
+    /// What one message may say, in its own words; a longer one is cut with a note where the rest is.
+    static let messageLimit = 6_000
+    /// What one tool call or file change may say.
     static let lineLimit = 160
 
     struct Rendered: Equatable, Sendable {
@@ -50,28 +52,42 @@ enum ContextHandoff {
 
     /// The summary of `events` from index `start` on, or nil when there is nothing to tell. The newest items are kept when
     /// the budget runs out; the summary says how many older ones are left out.
+    /// `session` is where the rest can be read (`session_read`); nil for an agent without Nook's tools.
     static func render(events: [RunEvent], from start: Int = 0, source: String, budget: Int = tokenBudget, header customHeader: String? = nil,
-                       footer customFooter: String? = nil) -> Rendered? {
+                       footer customFooter: String? = nil, session: UUID? = nil) -> Rendered? {
         let slice = events.indices.contains(start) ? Array(events[start...]) : []
         let lines = slice.compactMap(line)
         guard !lines.isEmpty else { return nil }
 
         let header = customHeader ?? "[Context handoff] This session continues work that \(source) did before you. What happened (oldest first; you cannot see that conversation):"
+        // The request that started it all stays, whatever else has to go.
+        let original = slice.first { $0.kind == .user }.flatMap(line)
+        let originalIndex = original.flatMap { lines.firstIndex(of: $0) }
         var kept: [String] = []
-        var used = approxTokens(header) + 40
-        for line in lines.reversed() {
+        var used = approxTokens(header) + 40 + (original.map { approxTokens($0) + 1 } ?? 0)
+        var firstKept = lines.count
+        for (index, line) in lines.enumerated().reversed() where index != originalIndex {
             let cost = approxTokens(line) + 1
-            if used + cost > budget, !kept.isEmpty { break }
+            if used + cost > budget, !kept.isEmpty || original != nil { break }
             kept.append(line)
             used += cost
+            firstKept = index
         }
         kept.reverse()
-        let omitted = lines.count - kept.count
+        // A short conversation stays in order with its first request in place.
+        if let original, let originalIndex { kept.insert(original, at: originalIndex < firstKept ? 0 : kept.count) }
+        let included = kept.count
+        let omitted = lines.count - included
         var parts = [header]
-        if omitted > 0 { parts.append("(\(omitted) earlier item\(omitted == 1 ? "" : "s") left out)") }
+        if omitted > 0 {
+            let more = session.map { " Read them with session_read, session \($0.uuidString), if you need them" } ?? ""
+            parts.append("(\(omitted) earlier item\(omitted == 1 ? "" : "s") left out.\(more))")
+            // The first request first, then what is left of the rest.
+            if original != nil { parts.append(kept.removeFirst()); parts.append("(…)") }
+        }
         parts += kept
         parts.append(customFooter ?? "[End of handoff] Continue from here. Check the files yourself before relying on any of this.")
-        return Rendered(text: parts.joined(separator: "\n"), included: kept.count, omitted: omitted, coveredEvents: events.count)
+        return Rendered(text: parts.joined(separator: "\n"), included: included, omitted: omitted, coveredEvents: events.count)
     }
 
     /// One timeline entry as a line of the summary; nil for entries that say nothing about the work.
@@ -79,9 +95,9 @@ enum ContextHandoff {
         let text = event.text.trimmingCharacters(in: .whitespacesAndNewlines)
         switch event.kind {
         case .user:
-            return text.isEmpty ? nil : "- User: " + clip(text, messageLimit)
+            return text.isEmpty ? nil : "- User: " + whole(text)
         case .assistant:
-            return text.isEmpty ? nil : "- Agent: " + clip(text, messageLimit)
+            return text.isEmpty ? nil : "- Agent: " + whole(text)
         case .tool:
             guard !text.isEmpty else { return nil }
             return "- Ran: " + clip(text, lineLimit) + (event.state == .failed ? " (failed)" : "")
@@ -97,6 +113,11 @@ enum ContextHandoff {
         case .thinking, .approval, .system, .result:
             return nil
         }
+    }
+
+    /// A message in its own words, line breaks included.
+    private static func whole(_ text: String) -> String {
+        text.count > messageLimit ? String(text.prefix(messageLimit)) + "… (cut here)" : text
     }
 
     private static func clip(_ text: String, _ limit: Int) -> String {

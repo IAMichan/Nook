@@ -428,6 +428,7 @@ struct WorkspaceSettingsSection: View {
     @ObservedObject private var ws = WorkspaceSettings.shared
     @ObservedObject private var inbox = InboxStore.shared
     @ObservedObject private var webhook = WebhookListener.shared
+    @ObservedObject private var relay = WebhookRelayClient.shared
     @AppStorage(AppDelegate.confirmQuitKey) private var confirmQuit = true
     @AppStorage(AgentCredits.settingKey) private var stripAgentCredits = false
     @State private var showScheduled = false
@@ -463,6 +464,12 @@ struct WorkspaceSettingsSection: View {
                     SettingNote(tr("sched.settings.listening", Int(port)), tone: .success)
                 } else if case .failed(let message) = webhook.state {
                     SettingNote(tr("sched.webhook.failed", message), tone: .warning)
+                }
+                Toggle(tr("sched.public.toggle"), isOn: $ws.scheduledWebhooksPublic)
+                    .help(tr("sched.public.help"))
+                if ws.scheduledWebhooksPublic {
+                    SettingNote(tr("sched.public.readable"), tone: .warning)
+                    if relay.state == .noRelay { SettingNote(tr("sched.public.noRelay"), tone: .warning) }
                 }
                 Button(tr("sched.settings.open")) { showScheduled = true }
             }
@@ -608,6 +615,15 @@ struct WorkspaceSettingsSection: View {
                 Text(tr("settings.ws.projectWorktreeCleanup.on")).tag(true)
                 Text(tr("settings.ws.projectWorktreeCleanup.off")).tag(false)
             }
+        }
+        inheritable(.browserSignIns, path) {
+            Toggle(tr("settings.ws.browserSignIns"), isOn: Binding(
+                get: { resolved.browserSignIns },
+                set: {
+                    ws.setOverride(.browserSignIns, $0 ? "on" : "off", for: path)
+                    if !$0 { BrowserProfiles.forget(project: path) }
+                }))
+                .help(tr("settings.ws.browserSignIns.help"))
         }
         inheritable(.titleInstructions, path) {
             TextField(tr("settings.ws.titleInstructions"), text: Binding(

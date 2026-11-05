@@ -233,6 +233,9 @@ final class WorkspaceManager: ObservableObject {
     var awaitingCheckpoint: [UUID: String] = [:]
     /// A queued message sent right away while a turn was active: sent as soon as that turn ends.
     var pendingSendNow: [UUID: String] = [:]
+    /// A goal Codex takes with the turn that is starting, and a goal control that waits for the connection (`SessionGoals`).
+    var codexGoalStarting: [UUID: SessionGoalCommand] = [:]
+    var codexGoalWaiting: [UUID: SessionGoalCommand] = [:]
     /// When GitHub was last asked about a branch's pull request ("owner/repo branch"), so it is asked once a minute at most.
     var pullRequestChecked: [String: Date] = [:]
     /// The pull request links Nook has seen in a conversation: the first sight of one is asked about at once.
@@ -1039,6 +1042,13 @@ final class WorkspaceManager: ObservableObject {
             return true
         }
         loadTimeline(id)
+        // Codex takes a goal through calls of its own, not as the words of a turn.
+        if !shown, let turn = codexGoalTurn(id, message: clean, executable: executable) {
+            guard let prompt = turn else { return true }
+            displayPrompt[id] = clean
+            launchTurn(id, prompt: prompt, executable: executable, showPrompt: true)
+            return true
+        }
         // After a fork or a switch of agent the first turn starts with the summary; it stays until a turn ends well.
         // What the timeline shows: your words, without a handoff summary or the context envelope of references.
         let visible = ContextRefs.visible(clean)
@@ -1566,6 +1576,8 @@ final class WorkspaceManager: ObservableObject {
             feed(id, .toolUpdated(id: callID, output: output, state: isError ? .failed : (background ? .running : .done)))
         case .backgroundTask(let update):
             noteBackgroundSubagent(id, update)
+        case .goal(let update):
+            noteGoal(id, update)
         case .subagentStep(let parent, let step):
             noteSubagentStep(id, parent: parent, step)
         case .usage(let messageID, let tokens, let model):

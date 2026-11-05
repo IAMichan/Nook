@@ -304,6 +304,16 @@ extension AppModel {
         // Project scripts run in a terminal that belongs to the session's folder, without taking you away from where you are.
         workspace.runScript = { folder, command, title in _ = TerminalStore.shared.open(in: folder, command: command, title: title) }
         workspace.openTerminalFolders = { TerminalStore.shared.sessions.map(\.directory) }
+        BrowserProfiles.project = { [weak self] key in
+            switch key {
+            case .run(let id): return self?.workspace.run(id)?.projectPath
+            case .folder(let folder):
+                return self?.workspace.runs.first { WorkspacePathPolicy.normalize($0.workingDirectory) == folder }?.projectPath ?? folder
+            }
+        }
+        BrowserProfiles.keepsSignIns = { [weak self] project in
+            self?.workspace.settings.sessionDefaults(for: project).browserSignIns ?? false
+        }
         startWorkspaceBridge()
         // Sessions a restart cut off go on, once the agents' executables are known (history loads in the background).
         Task { @MainActor [weak self] in
