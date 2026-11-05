@@ -288,6 +288,7 @@ extension AppModel {
         }
         // The tray above the composer reads its pull request with the same accounts, into the one shared status.
         PullRequestStatusStore.shared.fetch = workspace.pullRequestSnapshot
+        PullRequestSync.shared.seedStatuses(watches: workspace.runs.compactMap(\.prWatch))
         workspace.pullRequestLookup = { repo, branch in
             guard let found = await SourceForge.requests(repo: repo, branch: branch) else { return (nil, false) }
             let open = found.first { $0.state.isOpen }.flatMap { URL(string: $0.url) }

@@ -57,6 +57,16 @@ final class PullRequestSync: ObservableObject {
         return PullRequestBadge.text(links: PullRequestStatusStore.shared.current(folderLinks[Self.folderKey(path: path, branch: branch)] ?? []))
     }
 
+    /// Hands the states kept across restarts, and those of the sessions' `watches`, to the shared status, so a pull request
+    /// shows the state it had from the first frame after a launch instead of "open" until its first read.
+    func seedStatuses(watches: [PullRequestWatch]) {
+        let kept = Array(links.values.joined()) + folderLinks.values.joined() + earlier.values.joined()
+        let watched = watches.compactMap { watch in
+            PullRequestState(rawValue: watch.state).map { (url: watch.url, glyph: PullRequestStatus.glyph(state: $0, conflicted: watch.conflicted ?? false)) }
+        }
+        PullRequestStatusStore.shared.seed(kept.map { ($0.url, PullRequestStatus.glyph(state: $0.state, conflicted: $0.conflicted)) } + watched)
+    }
+
     nonisolated static func folderKey(path: String, branch: String) -> String { path + "\n" + branch }
 
     func merged(_ id: UUID) -> Bool { PullRequestSettlement.shouldSettle(links: links[id] ?? []) }
