@@ -1256,19 +1256,42 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
             // The chats read before one that fails are already marked seen: their messages must still go to the inbox, or
             // they never come again. The failed one stays stale and is read again at the next tick.
             var failure: Error?
-            for chat in listed where stale.contains(chat.id) || (chat.last.map({ seen[chat.id] != $0 }) ?? (seen[chat.id] == nil)) {
-                // Before the read: a change told while it runs marks the chat again, for the next turn.
-                stale.remove(chat.id)
-                let answer: [String: Any]
+            // The chats told to have changed first (a chat you just opened is one): they are asked first and show first.
+            let moved = listed.filter { chat in
+                stale.contains(chat.id) || (chat.last.map { seen[chat.id] != $0 } ?? (seen[chat.id] == nil))
+            }
+            let due = moved.filter { stale.contains($0.id) } + moved.filter { !stale.contains($0.id) }
+            // Before the read: a change told while it runs marks the chat again, for the next turn.
+            for chat in due { stale.remove(chat.id) }
+            // Every chat's messages, files and picture are asked side by side (`ChatParallel`); what Nook remembers of
+            // them is written below, one chat after another, as the answers come in their order.
+            let answers = await ChatParallel.map(due) { [self] chat -> Result<ServiceRead, Error> in
                 do {
-                    answer = try await get(Self.path(chat.id) + "/messages", ["limit": String(Self.history)], token: token)
+                    let answer = try await get(Self.path(chat.id) + "/messages", ["limit": String(Self.history)], token: token)
+                    let messages = await withFiles(ChatServiceData.messages(answer, chat: chat), token: token)
+                    let deleted = ChatServiceData.deleted(answer, chat: chat)
+                    let shows = !messages.isEmpty || !deleted.isEmpty
+                    return .success(ServiceRead(messages: messages, deleted: deleted,
+                                                picture: shows ? await local(chat.picture, token: token) : nil))
                 } catch {
+                    return .failure(error)
+                }
+            }
+            for (chat, answer) in zip(due, answers) {
+                let read: ServiceRead
+                switch answer {
+                case .success(let value)?:
+                    read = value
+                case .failure(let error)?:
                     stale.insert(chat.id)
                     failure = error
                     continue
+                case nil:
+                    stale.insert(chat.id)
+                    continue
                 }
-                let messages = await withFiles(ChatServiceData.messages(answer, chat: chat), token: token)
-                let deleted = ChatServiceData.deleted(answer, chat: chat)
+                let messages = read.messages
+                let deleted = read.deleted
                 // The chat moved to a message the answer does not hold yet (the app tells of a chat a moment before its
                 // message is there): read it again at the next turns, a few times, instead of waiting for the chat to
                 // move once more. Its row would show an older message than the chat until then.
@@ -1284,7 +1307,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                 covered.insert(chat.app)
                 chatIDs[chat.app + "|" + chat.title] = chat.id
                 guard !messages.isEmpty || !deleted.isEmpty else { continue }
-                let picture = await local(chat.picture, token: token)
+                let picture = read.picture
                 if picture != nil { reportedPicture[chat.id] = chat.picture }
                 let account = chat.account ?? ChatLinker.shared.accountName(for: chat.app)
                 result.append(BridgedChat(app: chat.app, name: chat.title, messages: messages, unread: chat.unread, avatar: picture,
@@ -1300,6 +1323,14 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
             isWorking = false
             throw error
         }
+    }
+
+    /// What the helper answered for one chat that moved: its newest messages with their files, the messages deleted from
+    /// it, and its picture on this Mac.
+    private struct ServiceRead {
+        var messages: [InboxMessage]
+        var deleted: [String]
+        var picture: String?
     }
 
     /// How many older messages one scroll back asks for: the helper's batch (`paginateBatch` in apps/chatd).
@@ -1661,18 +1692,18 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
             // inbox, or they never come again. The failed one is read again next time; a rate limit or a lost sign-in
             // ends this round.
             var failure: Error?
-            for conversation in pick() {
-                var parameters = ["channel": conversation.id, "limit": String(Self.firstHistory)]
-                if let ts = newest[conversation.id] { parameters["oldest"] = ts }
-                var listed: [[String: Any]] = []
-                var read: [InboxMessage]
-                do {
+            // Every picked conversation is asked side by side (`ChatParallel`): as many requests as before, in a fraction
+            // of the time. What Nook remembers of each is written below, one after another, in their order.
+            let picked = pick()
+            let asked = await ChatParallel.ask(picked) { [self] conversation -> ChatParallel.Asked<SlackRead> in
+                await ChatParallel.asking {
+                    var parameters = ["channel": conversation.id, "limit": String(Self.firstHistory)]
+                    if let ts = newest[conversation.id] { parameters["oldest"] = ts }
                     // After the first read every page newer than the last one read comes in, not only the newest 30: a
                     // busy conversation would otherwise skip what came between two reads for good.
                     let jsons = try await pages("conversations.history", parameters, auth: auth,
                                                 maxPages: newest[conversation.id] == nil ? 1 : Self.catchUpPages)
-                    listed = jsons.flatMap { $0["messages"] as? [[String: Any]] ?? [] }
-                    read = jsons.flatMap { SlackData.messages($0, conversation: conversation, users: users, me: me) }
+                    var read = jsons.flatMap { SlackData.messages($0, conversation: conversation, users: users, me: me) }
                     for ts in stale[conversation.id] ?? [] {
                         let again = try await call("conversations.history", [
                             "channel": conversation.id, "oldest": ts, "latest": ts, "inclusive": "true", "limit": "1",
@@ -1682,15 +1713,24 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
                             read.append(message)
                         }
                     }
-                } catch let error as NookError where error.kind == .auth || error.kind == .rateLimited {
+                    return SlackRead(listed: jsons.flatMap { $0["messages"] as? [[String: Any]] ?? [] },
+                                     messages: await withFiles(read.sorted { $0.date < $1.date }, auth: auth))
+                }
+            }
+            for (conversation, reply) in zip(picked, asked) {
+                let listed: [[String: Any]]
+                let messages: [InboxMessage]
+                switch reply {
+                case .answered(let read)?:
+                    listed = read.listed
+                    messages = read.messages
+                case .failed(let error)?, .refused(let error)?:
                     failure = error
-                    break
-                } catch {
-                    failure = error
+                    continue
+                case nil:
                     continue
                 }
                 stale[conversation.id] = nil
-                let messages = await withFiles(read.sorted { $0.date < $1.date }, auth: auth)
                 if let last = listed.compactMap({ $0["ts"] as? String })
                     .max(by: { (Double($0) ?? 0) < (Double($1) ?? 0) }) {
                     newest[conversation.id] = last
@@ -1741,6 +1781,13 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
             isWorking = false
             throw error
         }
+    }
+
+    /// What Slack answered for one conversation: the raw messages (for the newest `ts`), and the messages as Nook shows
+    /// them with their files.
+    private struct SlackRead {
+        var listed: [[String: Any]]
+        var messages: [InboxMessage]
     }
 
     /// How many conversations a read asks `conversations.info` at most, the busiest first.
