@@ -19,7 +19,37 @@ struct HoverCard<Content: View>: View {
         .padding(NookTheme.Spacing.lg + NookTheme.Spacing.xxs)
         .frame(minWidth: 220, maxWidth: 320, alignment: .leading)
         .background(DropdownStyle.panel)
-        .accessibilityElement(children: .combine)
+        // Not combined: a card can hold buttons, and those stay reachable one by one.
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// A line of a hover card that does something: lit under the pointer, as wide as the card, and a click closes the card.
+struct HoverCardButton<Label: View>: View {
+    let help: String
+    let action: () -> Void
+    @ViewBuilder let label: Label
+    @State private var hovering = false
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        Button {
+            dismiss()
+            action()
+        } label: {
+            label
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(NookTheme.Spacing.xs)
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+                    .fill(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(-NookTheme.Spacing.xs)
+        .onHover { hovering = $0 }
+        .pointerStyle(.link)
+        .help(help)
+        .accessibilityHint(help)
     }
 }
 
@@ -45,54 +75,84 @@ struct HoverCardRow: View {
     }
 }
 
-/// Opens a card next to the view once the pointer rests on it a moment, so sweeping over a list stays quiet.
-/// A click closes it again. While `suppressed` (the pointer is on the row's own buttons) it stays closed: an open popover
-/// takes the first click outside it to close itself, so a click on such a button would otherwise do nothing.
+/// Opens a card next to the view once the pointer rests on it a moment, so sweeping over a list stays quiet. The card
+/// stays while the pointer is on the view or on the card, and waits a moment after it left either, so you can cross the
+/// gap between them and click what the card holds. A click on the view closes it. While `suppressed` (the pointer is on
+/// the row's own buttons) it stays closed: an open popover takes the first click outside it to close itself, so a click
+/// on such a button would otherwise do nothing.
 private struct HoverCardModifier<Card: View>: ViewModifier {
     let arrowEdge: Edge
     let suppressed: Bool
+    /// Told whether the card is open.
+    var presented: Binding<Bool>? = nil
     let card: () -> Card
     @State private var hovering = false
+    @State private var onCard = false
     @State private var showCard = false
     @State private var delay: Task<Void, Never>?
+
+    private static var openDelay: Duration { .milliseconds(650) }
+    /// Long enough to reach a card next to the row, short enough that it is gone before the next row's card comes.
+    private static var closeDelay: Duration { .milliseconds(300) }
 
     func body(content: Content) -> some View {
         content
             .onHover { inside in
                 hovering = inside
-                schedule(inside)
+                update()
             }
-            .simultaneousGesture(TapGesture().onEnded { schedule(false) })
-            .onChange(of: suppressed) { _, _ in schedule(hovering) }
+            .simultaneousGesture(TapGesture().onEnded {
+                delay?.cancel()
+                showCard = false
+            })
+            .onChange(of: suppressed) { _, _ in update() }
+            .onChange(of: showCard) { _, shown in
+                // A popover closed by a click elsewhere never reports the pointer leaving it.
+                if !shown { onCard = false }
+                presented?.wrappedValue = shown
+            }
             .onDisappear { delay?.cancel() }
             // Only on the row under the pointer: a popover on every row of a long list was carried along while it
             // scrolled. Behind the view, at its size, so the card points at the same place.
             .background {
                 if hovering || showCard {
-                    Color.clear.popover(isPresented: $showCard, arrowEdge: arrowEdge) { card() }
+                    Color.clear.popover(isPresented: $showCard, arrowEdge: arrowEdge) {
+                        card().onHover { inside in
+                            onCard = inside
+                            update()
+                        }
+                    }
                 }
             }
     }
 
-    private func schedule(_ inside: Bool) {
+    private func update() {
         delay?.cancel()
-        guard inside, !suppressed else {
+        if suppressed, !onCard {
             showCard = false
-            return
-        }
-        delay = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(650))
-            if !Task.isCancelled, hovering { showCard = true }
+        } else if showCard {
+            guard !hovering, !onCard else { return }
+            delay = Task { @MainActor in
+                try? await Task.sleep(for: Self.closeDelay)
+                if !Task.isCancelled { showCard = false }
+            }
+        } else if hovering {
+            delay = Task { @MainActor in
+                try? await Task.sleep(for: Self.openDelay)
+                if !Task.isCancelled, hovering { showCard = true }
+            }
         }
     }
 }
 
 /// A part of a row with a card of its own: underlined as soon as the pointer is on it, so you see which part it found
-/// before the card opens.
+/// before the card opens. The row holds its own card back while the pointer is here or this card is open, also on the
+/// way from here to the card.
 private struct DetailCardModifier<Card: View>: ViewModifier {
     let onDetail: Binding<Bool>
     let card: () -> Card
     @State private var hovering = false
+    @State private var cardOpen = false
 
     func body(content: Content) -> some View {
         content
@@ -105,9 +165,10 @@ private struct DetailCardModifier<Card: View>: ViewModifier {
             .pointerStyle(.link)
             .onHover { inside in
                 withAnimation(NookTheme.hover) { hovering = inside }
-                onDetail.wrappedValue = inside
+                onDetail.wrappedValue = inside || cardOpen
             }
-            .hoverCard(card)
+            .onChange(of: cardOpen) { _, open in onDetail.wrappedValue = hovering || open }
+            .modifier(HoverCardModifier(arrowEdge: .trailing, suppressed: false, presented: $cardOpen, card: card))
     }
 }
 

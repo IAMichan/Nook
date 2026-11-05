@@ -705,6 +705,10 @@ struct AgentListRow: View, Equatable {
     var jumpHint: Int? = nil
     /// The keyboard is on this row in the list (↑/↓ after F6): lit as under the pointer.
     var keyFocused = false
+    /// Opens the session with a pull request beside it, from the card of the row's badge.
+    var openPullRequest: (URL) -> Void = { _ in }
+    /// Opens the session on a file's change (its path relative to the session's folder), from the card of the row's changes.
+    var openChange: (String) -> Void = { _ in }
     let action: () -> Void
 
     /// What the row draws, so `.equatable()` skips redrawing a row whose inputs did not change. The closures are left
@@ -852,7 +856,7 @@ struct AgentListRow: View, Equatable {
     private var pullRequestPill: some View {
         if let badge = pullRequests.badge {
             PullRequestPill(badge: badge, compact: true, tooltip: false)
-                .detailCard(onDetail: $onDetail) { RowPullRequestCard(pullRequests: pullRequests) }
+                .detailCard(onDetail: $onDetail) { RowPullRequestCard(pullRequests: pullRequests, onOpen: openPullRequest) }
         }
     }
 
@@ -864,7 +868,7 @@ struct AgentListRow: View, Equatable {
     private var changes: some View {
         changeCount
             .detailCard(enabled: showsChangesCard, onDetail: $onDetail) {
-                RowChangesCard(directory: item.path, countedAdded: item.linesAdded, countedRemoved: item.linesRemoved)
+                RowChangesCard(directory: item.path, countedAdded: item.linesAdded, countedRemoved: item.linesRemoved, onOpen: openChange)
             }
     }
 

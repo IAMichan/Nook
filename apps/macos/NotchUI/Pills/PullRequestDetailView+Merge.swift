@@ -12,18 +12,19 @@ extension PullRequestDetailView {
         return Array(stack[...index])
     }
 
-    /// The stack this pull request stands in, bottom first: a click opens another one of it, and the last line merges
-    /// the stack up to here.
+    /// The stack this pull request stands in, bottom first, with the ones that merged: a click opens another one of it,
+    /// and the last line merges the stack up to here.
     var stackMenu: some View {
-        let index = (stack.firstIndex { $0.id == item.id } ?? 0) + 1
+        let index = (stackHistory.firstIndex { $0.id == item.id } ?? 0) + 1
         return Menu {
-            Section(tr("agents.pulls.stack.title", stack.count)) {
-                ForEach(Array(stack.enumerated()), id: \.element.id) { position, member in
+            Section(tr("agents.pulls.stack.title", stackHistory.count)) {
+                ForEach(Array(stackHistory.enumerated()), id: \.element.id) { position, member in
                     Button {
                         if member.id != item.id { onOpenPullRequest?(member) }
                     } label: {
                         let mark = member.id == item.id ? "✓ " : ""
-                        Text(mark + "\(position + 1). #\(member.number) \(member.title)")
+                        let state = member.state == .merged ? " · " + tr("agents.pr.state.merged") : ""
+                        Text(mark + "\(position + 1). #\(member.number) \(member.title)" + state)
                     }
                     .disabled(onOpenPullRequest == nil && member.id != item.id)
                 }
@@ -36,7 +37,7 @@ extension PullRequestDetailView {
         } label: {
             HStack(spacing: NookTheme.Spacing.xxs) {
                 PullRequestStateIcon(glyph: .stack, tinted: false)
-                Text("\(index)/\(stack.count)").font(NookTheme.TextStyle.caption).monospacedDigit()
+                Text("\(index)/\(stackHistory.count)").font(NookTheme.TextStyle.caption).monospacedDigit()
             }
             .foregroundStyle(NookTheme.textSecondary)
             .frame(height: 28)
@@ -45,7 +46,7 @@ extension PullRequestDetailView {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help(tr("agents.pulls.stack.position", index, stack.count))
+        .help(tr("agents.pulls.stack.position", index, stackHistory.count))
     }
 
     /// "Merge #1, #2 and #3 from the bottom up?" with its second click, or the progress while it runs.
