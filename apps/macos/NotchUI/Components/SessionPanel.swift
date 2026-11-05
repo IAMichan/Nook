@@ -124,6 +124,8 @@ struct SessionPanel: View {
     @ObservedObject private var pullRequestSync = PullRequestSync.shared
     /// The rows you turned off, by name; right-click the panel to choose.
     @AppStorage("agents.panel.hidden") private var hiddenRaw = ""
+    /// The session's pull requests past the first few.
+    @State private var allPullRequests = false
 
     init(model: FolderGitModel, runID: UUID?, agentWorking: Bool, showChanges: @escaping () -> Void,
          close: @escaping () -> Void, docked: Bool = false) {
@@ -151,6 +153,8 @@ struct SessionPanel: View {
     }
     private var run: WorkspaceRun? { runID.flatMap { workspace.run($0) } }
 
+    private static let shownPullRequests = 5
+
     /// The rows that can be turned off, in the order they show.
     private static let optionalRows = ["machine", "openIn", "scripts", "branch", "commit", "changes", "pullRequests"]
 
@@ -172,12 +176,18 @@ struct SessionPanel: View {
 
     @ViewBuilder
     private var pullRequestRows: some View {
-        ForEach(pullRequests.prefix(5)) { link in
+        let links = pullRequests
+        ForEach(allPullRequests ? links[...] : links.prefix(Self.shownPullRequests)) { link in
             PanelRow(icon: AnyView(PullRequestStateIcon(glyph: glyph(link))),
                      title: link.title ?? link.repository,
                      trailing: AnyView(Text(verbatim: "#\(link.number)").font(NookTheme.mono(11))),
                      help: link.url,
                      action: { if let url = URL(string: link.url) { _ = app.openPullRequestLink(url, beside: true) } })
+        }
+        if links.count > Self.shownPullRequests {
+            PanelRow(icon: symbol(allPullRequests ? "chevron.up" : "chevron.down"),
+                     title: allPullRequests ? tr("agents.panel.showLess") : tr("agents.panel.showMore", links.count - Self.shownPullRequests),
+                     action: { allPullRequests.toggle() })
         }
     }
 

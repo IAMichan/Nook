@@ -135,6 +135,8 @@ struct FileViewer: View {
     private var isMarkdown: Bool { SyntaxLanguage.detect(path: target.path) == .markdown }
     /// A notebook reads as a document, with its source one click away like a Markdown file's.
     private var isNotebook: Bool { (target.path as NSString).pathExtension.lowercased() == "ipynb" }
+    /// A diagram's source; its picture is one click away.
+    private var isMermaid: Bool { ["mmd", "mermaid"].contains((target.path as NSString).pathExtension.lowercased()) }
 
     private func commentBar(_ line: Int, lines: [String]) -> some View {
         let send = {
@@ -168,6 +170,8 @@ struct FileViewer: View {
                 case .text(let lines, let tokens):
                     if editor.editing {
                         FileTextEditor(text: $editor.draft, onSave: { if editor.save() { reloads += 1 } })
+                    } else if isMermaid && markdownPreview {
+                        CodeRenderView(language: "mermaid", code: lines.joined(separator: "\n"))
                     } else if (isMarkdown || isNotebook) && markdownPreview {
                         ScrollView(.vertical) {
                             let source = lines.joined(separator: "\n")
@@ -227,7 +231,7 @@ struct FileViewer: View {
             if editor.editing {
                 editActions
             } else {
-                if isMarkdown || isNotebook, case .text = content {
+                if isMarkdown || isNotebook || isMermaid, case .text = content {
                     ToolbarIconButton(markdownPreview ? "chevron.left.forwardslash.chevron.right" : "eye",
                                       markdownPreview ? tr("code.source") : tr("code.preview")) { markdownPreview.toggle() }
                 }

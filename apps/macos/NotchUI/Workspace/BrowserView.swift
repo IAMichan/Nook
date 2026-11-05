@@ -697,6 +697,9 @@ struct BrowserView: View {
                     ToolbarIconButton(picking ? "xmark.circle" : "cursorarrow.rays", tr(picking ? "browser.annotate.cancel" : "browser.annotate"),
                                       enabled: store.webView.url != nil) { annotate() }
                 }
+                if session != nil {
+                    ToolbarIconButton("text.badge.plus", tr("browser.addPage"), enabled: store.webView.url != nil && !asking) { addPage() }
+                }
                 ToolbarIconButton("plus.bubble", tr("workbench.browser.askHelp"), enabled: store.webView.url != nil && !asking) {
                     askAboutPage()
                 }
@@ -771,6 +774,21 @@ struct BrowserView: View {
         }
         .frame(maxWidth: 320)
         .padding(.bottom, NookTheme.Spacing.xl)
+    }
+
+    /// The whole page for the session's agent, in its composer.
+    private func addPage() {
+        guard let session else { return }
+        asking = true
+        Task {
+            defer { asking = false }
+            do {
+                let page = try await store.pageText()
+                ComposerInbox.shared.add(SessionPrompts.page(url: page.url, title: page.title, text: page.text), to: session)
+            } catch {
+                ToastCenter.shared.error(error.localizedDescription)
+            }
+        }
     }
 
     /// Starts pointing, or stops when you already are.

@@ -5,6 +5,9 @@ import Foundation
 
 let sessionContextTranslations: [AppLanguage: [String: String]] = [
     .en: [
+        "browser.addPage": "Add this page to the composer",
+        "agents.panel.showMore": "Show %ld more",
+        "agents.panel.showLess": "Show less",
         "session.context.added": "Added to the composer. Read it over, then send.",
         "session.context.add": "Add to the composer",
         "session.context.explain": "Explain in this session",
@@ -31,6 +34,9 @@ let sessionContextTranslations: [AppLanguage: [String: String]] = [
         "agents.panel.row.pullRequests": "Pull requests",
     ],
     .nl: [
+        "browser.addPage": "Deze pagina aan de composer toevoegen",
+        "agents.panel.showMore": "Nog %ld tonen",
+        "agents.panel.showLess": "Minder tonen",
         "session.context.added": "Toegevoegd aan de composer. Lees het na en verstuur het dan.",
         "session.context.add": "Aan de composer toevoegen",
         "session.context.explain": "Laten uitleggen in deze sessie",
@@ -57,6 +63,9 @@ let sessionContextTranslations: [AppLanguage: [String: String]] = [
         "agents.panel.row.pullRequests": "Pull requests",
     ],
     .de: [
+        "browser.addPage": "Diese Seite zum Composer hinzufügen",
+        "agents.panel.showMore": "%ld weitere anzeigen",
+        "agents.panel.showLess": "Weniger anzeigen",
         "session.context.added": "Zum Composer hinzugefügt. Lies es durch und sende es dann.",
         "session.context.add": "Zum Composer hinzufügen",
         "session.context.explain": "In dieser Sitzung erklären lassen",
@@ -83,6 +92,9 @@ let sessionContextTranslations: [AppLanguage: [String: String]] = [
         "agents.panel.row.pullRequests": "Pull Requests",
     ],
     .fr: [
+        "browser.addPage": "Ajouter cette page au champ de saisie",
+        "agents.panel.showMore": "Afficher %ld de plus",
+        "agents.panel.showLess": "Afficher moins",
         "session.context.added": "Ajouté au champ de saisie. Relisez, puis envoyez.",
         "session.context.add": "Ajouter au champ de saisie",
         "session.context.explain": "Faire expliquer dans cette session",
@@ -109,6 +121,9 @@ let sessionContextTranslations: [AppLanguage: [String: String]] = [
         "agents.panel.row.pullRequests": "Pull requests",
     ],
     .es: [
+        "browser.addPage": "Añadir esta página al cuadro de texto",
+        "agents.panel.showMore": "Mostrar %ld más",
+        "agents.panel.showLess": "Mostrar menos",
         "session.context.added": "Añadido al cuadro de texto. Revísalo y envíalo.",
         "session.context.add": "Añadir al cuadro de texto",
         "session.context.explain": "Pedir una explicación en esta sesión",

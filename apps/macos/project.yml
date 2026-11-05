@@ -60,6 +60,10 @@ targets:
         createIntermediateGroups: false
         type: folder
         buildPhase: resources
+      # Mermaid's script, so a diagram draws without asking a server (see THIRD-PARTY-NOTICES.md).
+      - path: Resources/mermaid
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: MLXSwiftLM
         product: MLXLLM
@@ -411,6 +415,7 @@ targets:
       - path: Services/Workspace/ReviewComments.swift
       - path: Services/Workspace/SessionPrompts.swift
       - path: Services/Workspace/BrowserPicker.swift
+      - path: Services/Workspace/MermaidPage.swift
       - path: Services/Workspace/ComposerQuotes.swift
       - path: Services/SelectionAsk.swift
       - path: Services/Workspace/UnifiedDiff.swift
