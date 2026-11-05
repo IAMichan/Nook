@@ -16,6 +16,7 @@ struct AgentSessionDetail: View {
     let selection: AgentSessionSelection
     /// In the notch: the terminal and browser icons, next to the branch button.
     var headerAccessory: AnyView? = nil
+    @Environment(\.sessionHeaderInset) private var headerInset
     /// What you type, held without being observed: as state of this view, every key drew the whole conversation above
     /// the composer again. Only the composer watches it (`Observing`), as in `AgentRunPanel`.
     @State private var composerState = SessionDraftState()
@@ -132,6 +133,7 @@ struct AgentSessionDetail: View {
         }
         .font(NookTheme.TextStyle.body)
         .frame(height: 30)
+        .padding(.leading, headerInset)
         .conversationHeaderBackground()
     }
 
@@ -178,15 +180,6 @@ struct AgentSessionDetail: View {
                 steps(session)
             }
 
-            if session.status == .waiting && session.approvalID == nil && !app.demoMode, !session.summary.isEmpty,
-               app.hub.question(for: session.id) == nil {
-                waitingNote(session)
-            }
-
-            if session.approvalID != nil, !session.diff.isEmpty {
-                approvalDiff(session)
-            }
-
             if app.demoMode {
                 Spacer(minLength: 0)
                 liveBottomBar(session, shown: shown, known: past)
@@ -200,20 +193,30 @@ struct AgentSessionDetail: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// What sits under a live session's conversation: an approval, or the composer with its error line and tray.
+    /// What sits under a live session's conversation: what the agent waits for, or the composer with its error line and
+    /// tray. A question or an approval takes the composer's place until answered, in every kind of session.
     private func liveBottomBar(_ session: AgentSession, shown: AgentSession, known: PastSession?) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            // The agent's question sits right above the composer, where you answer.
-            if !app.demoMode, let question = app.hub.question(for: session.id) {
-                questionPanel(question).chatColumn()
+            // What the agent is waiting on stands right above where you answer.
+            if session.status == .waiting && session.approvalID == nil && !app.demoMode, !session.summary.isEmpty,
+               app.hub.question(for: session.id) == nil {
+                waitingNote(session).chatColumn()
             }
+            if session.approvalID != nil, !session.diff.isEmpty {
+                approvalDiff(session).chatColumn()
+            }
+            // An approval goes first: the agent is held up on it now, and a question can outlive the hook that asked it.
             if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {
                 let approval = ApprovalCenter.make(request)
                 ApprovalView(approval: approval, inline: true) { app.approvals.decide(approval, $0) }
+                    .sessionComposerBounds()
             } else if !app.demoMode, let request = bridgeRequest(for: session) {
                 // A command or pull request this agent asks for through Nook's workspace.
                 let approval = ApprovalCenter.make(request)
                 ApprovalView(approval: approval, inline: true) { app.approvals.decide(approval, $0) }
+                    .sessionComposerBounds()
+            } else if !app.demoMode, let question = app.hub.question(for: session.id) {
+                questionPanel(question).chatColumn().sessionComposerBounds()
             } else {
                 errorLine
                 VStack(spacing: 0) {

@@ -20,7 +20,7 @@ struct SessionLayout {
     var file: FileTarget?
 
     /// Only the conversation was in view: nothing to bring back.
-    var isEmpty: Bool { sideTool == .conversation && bottomTool == .conversation }
+    var isEmpty: Bool { sideTool == .conversation && sideTabs.isEmpty && bottomTool == .conversation }
 }
 
 /// What only the notch itself draws: its state and size, the pointer on it, and the strip under it. Published apart from
@@ -125,15 +125,28 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
-    /// The tools open as tabs in a session's side panel, in the order you opened them. They go when the side panel
-    /// closes (`closeSidePanel`): it always opens on the list of tools to choose from.
+    /// The tools open as tabs in a session's side panel, in the order you opened them. They stay while the panel is
+    /// put away (`toggleSidePanel`), so it opens again on what it showed; with none it opens on the list of tools.
     @Published var sessionTabs: [SessionTool] = []
 
-    /// Closes a session's side panel with all its tabs, so it opens again on the list of tools instead of on what it
-    /// showed before.
+    /// The tab the side panel showed when it was put away.
+    private var hiddenSideTool: SessionTool?
+
+    /// Puts a session's side panel away with its tabs, or opens it again on the tab it showed: as the bottom panel does.
+    func toggleSidePanel() {
+        if sessionTool != .conversation {
+            hiddenSideTool = sessionTool
+            sessionTool = .conversation
+        } else {
+            sessionTool = PanelReopening.tab(hidden: hiddenSideTool, tabs: sessionTabs) ?? .picker
+        }
+    }
+
+    /// Closes a session's side panel and drops all its tabs: another session's panels are about to take its place.
     func closeSidePanel() {
         if sessionTabs.contains(.artifact) { EmbeddedAppStore.shared.closeArtifact() }
         sessionTool = .conversation
+        hiddenSideTool = nil
         sessionTabs = []
         sidePullRequestTabs = []
         activeSidePullRequest = nil

@@ -292,8 +292,8 @@ extension EnvironmentValues {
     @Entry var sessionPanelDocked = false
 }
 
-/// The session panel as a column beside the conversation, for a window with room for it. It is the same panel the
-/// branch button opens as a popover when the window is narrower.
+/// The session panel as a card beside the conversation, as tall as what it holds, for a window with room for it, until
+/// you close it. It is the same panel the branch button opens as a popover when the window is narrower or it is closed.
 struct DockedSessionPanel: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @StateObject private var model: FolderGitModel
@@ -311,6 +311,10 @@ struct DockedSessionPanel: View {
     var body: some View {
         ScrollView {
             SessionPanel(model: model, runID: runID, agentWorking: agentWorking, showChanges: showChanges, close: {}, docked: true)
+                .cardBackground(NookTheme.field, stroke: NookTheme.border, radius: NookTheme.Radius.conversationCard, style: .continuous)
+                // The scroll view would cut off the card's outline.
+                .padding(.vertical, NookTheme.Spacing.xxs)
+                .padding(.trailing, NookTheme.Spacing.sm)
         }
         .scrollIndicators(.never)
         .task(id: model.directory) {
@@ -334,8 +338,7 @@ struct FolderChangesSheet: View {
     @State private var showsTree = false
     @State private var loaded = false
 
-    /// `stacked` is kept for the side panel's call; the stacked list fits a narrow panel and a wide one alike.
-    init(directory: String, stacked: Bool = false) {
+    init(directory: String) {
         _model = StateObject(wrappedValue: FolderGitModel.make(directory: directory))
     }
 
