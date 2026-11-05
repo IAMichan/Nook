@@ -4,7 +4,7 @@ import AppKit
 /// Starting a session in the notch: one question, one field, and a few quiet choices underneath.
 /// "What should we build in nook?" — type the task, press Return. Agent and account, mode, permissions, effort,
 /// where it works (this folder or a new worktree) and the branch it starts from are small menus, already set to
-/// your last choices. Nothing else to fill in: title, branch name and worktree location are derived.
+/// your last choices in this folder. Nothing else to fill in: title, branch name and worktree location are derived.
 struct NewSessionComposer: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
@@ -670,41 +670,34 @@ struct NewSessionComposer: View {
     }
 
     private func prepare() {
-        // Your default agent, unless it is not connected: then the first one that is.
-        let connected = app.connectedProviders
-        let provider = connected.contains(settings.defaultProvider) ? settings.defaultProvider : (connected.first ?? settings.defaultProvider)
-        config.provider = provider
-        config.profileID = rememberedProfile(for: provider) ?? app.profiles.preferredProfile(provider.kind).id
-        config.model = settings.model(for: provider)
-        config.mode = settings.defaultMode
-        config.permission = settings.permission(for: provider)
-        config.effort = settings.effort(for: provider)
-        config.isolation = settings.defaultIsolation
         config.worktreeRoot = settings.worktreeRoot
         let menu = projectMenu
-        let initial = settings.lastProject.isEmpty ? (menu.favorites.first ?? menu.recent.first) : settings.lastProject
-        if let initial, FileManager.default.fileExists(atPath: initial) { select(initial) }
+        let last = settings.lastProject.isEmpty ? (menu.favorites.first ?? menu.recent.first) : settings.lastProject
+        let initial = last.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
+        applyFolderDefaults(initial)
+        if let initial { select(initial) }
     }
 
     private func choose(_ provider: RunProvider, account: String) {
         if config.provider != provider {
             config.provider = provider
-            config.model = settings.sessionDefaults(for: config.projectPath).model(for: provider)
-            config.effort = settings.effort(for: provider)
+            let defaults = settings.composerDefaults(for: config.projectPath)
+            config.model = defaults.model(for: provider)
+            config.effort = defaults.effort(for: provider)
             config.permission = config.permission.steppedDown(within: provider.capabilities.policies)
         }
         config.profileID = account
     }
 
-    /// The account you last chose for this agent while it is still connected, else its first connected one.
+    /// The account you last chose for this agent in this folder or else anywhere, while it is still connected, else its
+    /// first connected one.
     private func rememberedProfile(for provider: RunProvider) -> String? {
-        let connected = app.connectedProfiles(for: provider)
-        if let saved = settings.profile(for: provider), connected.contains(where: { $0.id == saved }) { return saved }
-        return connected.first?.id
+        settings.composerDefaults(for: config.projectPath)
+            .profile(for: provider, connected: app.connectedProfiles(for: provider).map(\.id))
     }
 
-    /// Keeps what you just chose for the next new session, so it does not fall back to the defaults.
-    /// What the project sets for itself (Settings › Workspace, per project) stays out of the global defaults.
+    /// Keeps what you just chose for the next new session in this folder, and as the start for folders without choices
+    /// of their own. What the project sets for itself (Settings › Workspace, per project) stays out of the global defaults.
     private func remember() {
         let path = config.projectPath
         if !settings.isOverridden(.provider, for: path) { settings.defaultProvider = config.provider }
@@ -714,19 +707,25 @@ struct NewSessionComposer: View {
         if !settings.isOverridden(.permission, for: path) { settings.defaultPermission = config.permission }
         settings.setEffort(config.effort, for: config.provider)
         if !settings.isOverridden(.isolation, for: path) { settings.defaultIsolation = config.isolation }
+        // What runs on another machine says nothing about this folder.
+        if remoteMachine == nil { settings.rememberFolderChoices(config) }
     }
 
-    /// A folder with its own defaults starts with them; what it does not set keeps your current choice.
-    private func applyProjectDefaults(_ path: String) {
-        let resolved = settings.sessionDefaults(for: path)
-        if settings.isOverridden(.provider, for: path), resolved.provider != config.provider,
-           app.connectedProviders.contains(resolved.provider) {
-            choose(resolved.provider, account: rememberedProfile(for: resolved.provider)
-                   ?? app.profiles.preferredProfile(resolved.provider.kind).id)
-        }
-        if settings.isOverridden(.model(config.provider), for: path) { config.model = resolved.model(for: config.provider) }
-        if settings.isOverridden(.permission, for: path) { config.permission = resolved.permission(for: config.provider) }
-        if settings.isOverridden(.isolation, for: path) { config.isolation = resolved.isolation }
+    /// Sets the choices to what a new session in `folder` starts with. Your agent for it, unless that is not connected:
+    /// then your default one, or else the first that is.
+    private func applyFolderDefaults(_ folder: String?) {
+        let defaults = settings.composerDefaults(for: folder)
+        let connected = app.connectedProviders
+        let provider = [defaults.provider, settings.defaultProvider].first(where: connected.contains)
+            ?? connected.first ?? defaults.provider
+        config.provider = provider
+        config.profileID = defaults.profile(for: provider, connected: app.connectedProfiles(for: provider).map(\.id))
+            ?? app.profiles.preferredProfile(provider.kind).id
+        config.model = defaults.model(for: provider)
+        config.mode = defaults.mode
+        config.permission = defaults.permission(for: provider)
+        config.effort = defaults.effort(for: provider)
+        config.isolation = defaults.isolation
     }
 
     private func chooseMachine(_ machine: RemoteMachine) {
@@ -741,12 +740,14 @@ struct NewSessionComposer: View {
     private func select(_ path: String) {
         remoteMachine = nil
         // A folder made for "No project" that nothing started in goes again when you pick another.
-        if config.projectPath != path { ScratchProjects.discardIfEmpty(config.projectPath) }
+        if config.projectPath != path {
+            ScratchProjects.discardIfEmpty(config.projectPath)
+            applyFolderDefaults(path)
+        }
         config.projectPath = path
         // The next new session opens on the project you chose last, also when this one never started; a session
         // without a project leaves that alone.
         if !ScratchProjects.isScratch(path) { settings.lastProject = path }
-        applyProjectDefaults(path)
         error = nil
         if let cached = workspace.cachedProject(path) {
             applyInspectedProject(cached, for: path)
@@ -767,7 +768,7 @@ struct NewSessionComposer: View {
         let canWorktree = info.repoRoot != nil && info.hasCommits && workspace.gitAvailable == true
         if !canWorktree {
             config.isolation = .folder
-        } else if config.isolation == .folder && settings.sessionDefaults(for: path).isolation == .worktree {
+        } else if config.isolation == .folder && settings.composerDefaults(for: path).isolation == .worktree {
             config.isolation = .worktree
         }
         if !config.baseBranch.isEmpty, info.branches.contains(config.baseBranch) {

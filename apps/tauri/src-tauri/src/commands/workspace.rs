@@ -132,6 +132,7 @@ pub async fn workspace_start(state: State<'_, WorkspaceState>, mut config: NewRu
     if config.isolation == IsolationMode::Worktree && config.branch_name.trim().is_empty() {
         config.branch_name = nook_core::workspace::models::branch_name(&config.task, Uuid::new_v4());
     }
+    let picked_permission = config.permission;
     // In Plan-modus leest de agent alleen; de veiligste rechten gaan mee voor als je later verdergaat.
     if config.mode == ExecutionMode::Plan {
         config.permission = config.provider.capabilities().policies.first().copied().unwrap_or_default();
@@ -151,6 +152,7 @@ pub async fn workspace_start(state: State<'_, WorkspaceState>, mut config: NewRu
     s.default_mode = chosen.mode;
     s.default_isolation = chosen.isolation;
     s.default_permission = chosen.permission;
+    s.remember_folder_choices(&chosen, picked_permission);
     s.save_to(&WorkspaceSettings::file());
     Ok(id.to_string())
 }

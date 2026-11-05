@@ -1,7 +1,7 @@
 <script lang="ts">
   // Een sessie starten (`NewSessionComposer` op de Mac): één vraag, één veld en een paar rustige keuzes eronder.
   // "Wat zullen we bouwen in nook?" — typ de opdracht, druk op Enter. Agent en account, model, modus, rechten, denkniveau, waar hij
-  // werkt (deze map of een nieuwe worktree) en de branch waar hij van start staan al op je laatste keuzes. Titel,
+  // werkt (deze map of een nieuwe worktree) en de branch waar hij van start staan al op je laatste keuzes in deze map. Titel,
   // branchnaam en de plek van de worktree volgen vanzelf.
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { agentApi, type AgentProfile } from "../../../lib/agents";
@@ -32,6 +32,8 @@
   let textarea = $state<HTMLTextAreaElement>();
   let selectionRequest = 0;
   let prepared = false;
+  /// The folder whose choices the composer shows.
+  let folderApplied = "";
 
   const settings = $derived(workspace.settings);
   const runnable = $derived(workspace.providers.filter((p) => p.supported));
@@ -114,7 +116,7 @@
     const list = connected.map((p) => p.provider);
     const p = list.includes(settings!.defaultProvider) ? settings!.defaultProvider : (list[0] ?? settings!.defaultProvider);
     choose(p, null);
-    config.model = settings!.defaultModels[p] ?? "";
+    config.model = rememberedModel(p);
     config.effort = rememberedEffort(p);
     config.mode = settings!.defaultMode;
     config.isolation = settings!.defaultIsolation;
@@ -131,7 +133,7 @@
   function choose(p: RunProvider, account: string | null) {
     if (config.provider !== p) {
       config.provider = p;
-      config.model = settings?.defaultModels[p] ?? "";
+      config.model = rememberedModel(p);
       config.effort = rememberedEffort(p);
     }
     const caps = workspace.provider(p)?.capabilities.policies ?? ["acceptEdits"];
@@ -140,25 +142,64 @@
       config.permission = caps.includes(preferred) ? preferred : "acceptEdits";
     }
     const own = profilesFor(p);
-    // The account you last chose for this agent while it is still there, else its preferred or first one.
-    const saved = settings?.defaultProfiles?.[p];
-    const remembered = saved && own.some((x) => x.id === saved) ? saved : null;
+    // The account you last chose for this agent in this folder or else anywhere, while it is still there, else its
+    // preferred or first one.
+    const remembered = [folderChoices(config.projectPath)?.agents[p]?.profileId, settings?.defaultProfiles?.[p]].find((saved) => saved && own.some((x) => x.id === saved));
     config.profileId = account ?? remembered ?? (own.find((x) => x.preferred) ?? own[0])?.id ?? p;
   }
 
-  /// The effort last chosen for this agent, while the agent still offers it.
+  /// What you last chose in this folder, if anything.
+  function folderChoices(path: string) {
+    return settings?.folderChoices?.[cleanProjectPath(path)];
+  }
+
+  /// The model last chosen for this agent in this folder, else anywhere.
+  function rememberedModel(p: RunProvider): string {
+    return folderChoices(config.projectPath)?.agents[p]?.model ?? settings?.defaultModels[p] ?? "";
+  }
+
+  /// The effort last chosen for this agent in this folder, else anywhere, while the agent still offers it.
   function rememberedEffort(p: RunProvider): string | null {
-    const saved = settings?.defaultEfforts?.[p];
+    const chosen = folderChoices(config.projectPath)?.agents[p];
+    const saved = chosen ? chosen.effort : settings?.defaultEfforts?.[p];
     return saved && effortLevels(p).includes(saved) ? saved : null;
   }
 
-  /// Keeps what you just chose for the next new session, so it does not fall back to the defaults.
+  /// Sets the choices to what a new session in the current folder starts with. Your agent for it, unless that is not
+  /// connected: then your default one, or else the first that is.
+  function applyFolderChoices() {
+    if (!settings) return;
+    const saved = folderChoices(config.projectPath);
+    const list = connected.map((p) => p.provider);
+    const p = [saved?.provider, settings.defaultProvider].find((x) => x && list.includes(x)) ?? list[0] ?? settings.defaultProvider;
+    config.provider = p;
+    config.mode = saved?.mode ?? settings.defaultMode;
+    config.permission = saved?.permission ?? settings.defaultPermission;
+    config.isolation = saved?.isolation ?? settings.defaultIsolation;
+    config.model = rememberedModel(p);
+    config.effort = rememberedEffort(p);
+    choose(p, null);
+  }
+
+  /// Keeps what you just chose for the next new session in this folder, and as the start for folders without choices
+  /// of their own.
   function remember() {
     if (!settings) return;
     const p = config.provider;
     const efforts = { ...(settings.defaultEfforts ?? {}) };
     if (config.effort) efforts[p] = config.effort;
     else delete efforts[p];
+    const folder = cleanProjectPath(config.projectPath);
+    const folders = { ...(settings.folderChoices ?? {}) };
+    if (folder) {
+      folders[folder] = {
+        provider: p,
+        mode: config.mode,
+        permission: config.permission,
+        isolation: config.isolation,
+        agents: { ...(folders[folder]?.agents ?? {}), [p]: { profileId: config.profileId, model: config.model, effort: config.effort } },
+      };
+    }
     workspaceApi
       .saveSettings({
         ...$state.snapshot(settings),
@@ -169,6 +210,7 @@
         defaultMode: config.mode,
         defaultPermission: config.permission,
         defaultIsolation: config.isolation,
+        folderChoices: folders,
       })
       .catch(() => {});
   }
@@ -184,9 +226,14 @@
       if (request !== selectionRequest) return "stale";
       project = info;
       config.projectPath = info.path;
+      const folder = cleanProjectPath(info.path);
+      if (folder !== folderApplied) {
+        folderApplied = folder;
+        applyFolderChoices();
+      }
       const canWorktree = !!info.repoRoot && info.hasCommits && !!workspace.overview?.gitAvailable;
       if (!canWorktree) config.isolation = "folder";
-      else if (config.isolation === "folder" && settings?.defaultIsolation === "worktree") config.isolation = "worktree";
+      else if (config.isolation === "folder" && (folderChoices(folder)?.isolation ?? settings?.defaultIsolation) === "worktree") config.isolation = "worktree";
       config.baseBranch = info.defaultBase && info.branches.includes(info.defaultBase) ? info.defaultBase : (info.currentBranch ?? info.branches[0] ?? "");
       return info.verdict === "ok" ? "ok" : "failed";
     } catch (e) {

@@ -35,7 +35,7 @@ extension WorkspaceManager {
               decision.provider != config.provider || decision.profileID != config.profileID else { return config }
         var config = config
         if decision.provider != config.provider {
-            config.effort = settings.effort(for: decision.provider)
+            config.effort = settings.composerDefaults(for: config.projectPath).effort(for: decision.provider)
             config.permission = config.permission.steppedDown(within: decision.provider.capabilities.policies)
             if config.mode == .plan, !decision.provider.capabilities.planMode { config.mode = .agent }
         }

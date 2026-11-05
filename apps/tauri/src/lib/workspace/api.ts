@@ -95,6 +95,23 @@ export interface ProviderInfo {
   installCommand: string;
 }
 
+/// What was chosen for one agent in one folder.
+export interface FolderAgentChoice {
+  profileId: string;
+  model: string;
+  /// Null: the agent's own default, also when another folder has a level.
+  effort: string | null;
+}
+
+/// What the new-session composer last chose in one folder.
+export interface FolderChoices {
+  provider: RunProvider;
+  mode: ExecutionMode;
+  permission: PermissionPolicy;
+  isolation: IsolationMode;
+  agents: Record<string, FolderAgentChoice>;
+}
+
 export interface WorkspaceSettings {
   defaultProvider: RunProvider;
   defaultModels: Record<string, string>;
@@ -114,6 +131,8 @@ export interface WorkspaceSettings {
   lastProject: string;
   favoriteProjects?: string[];
   recentProjects: string[];
+  /// The composer's last choices per folder, on top of the defaults above.
+  folderChoices?: Record<string, FolderChoices>;
 }
 
 export interface WorkspaceOverview {

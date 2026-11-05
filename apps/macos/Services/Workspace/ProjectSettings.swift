@@ -102,7 +102,107 @@ struct ProjectOverrides: Codable, Equatable, Sendable {
     }
 }
 
+/// What you last chose in the new-session composer for one folder. Values are raw strings, so one that a later version
+/// no longer knows falls back on its own instead of losing the whole folder.
+struct FolderChoices: Codable, Equatable, Sendable {
+    /// What was chosen for one agent. Stored apart per agent, so going back to it in this folder finds them again.
+    struct Agent: Codable, Equatable, Sendable {
+        var profileID: String
+        /// Empty: the agent's own default.
+        var model: String
+        /// Nil: the agent's own default, also when another folder has a level.
+        var effort: String?
+    }
+
+    var provider: String
+    var mode: String
+    var permission: String
+    var isolation: String
+    /// Raw agent → what was chosen for it here.
+    var agents: [String: Agent] = [:]
+}
+
+/// Every folder's `FolderChoices` (UserDefaults, JSON). Unlike `ProjectOverrides`, which you set in Settings and which a
+/// subfolder inherits, these follow the composer and hold for exactly the folder they were made in.
+struct FolderChoicesStore: Codable, Equatable, Sendable {
+    /// Normalized folder path → its choices.
+    var byFolder: [String: FolderChoices] = [:]
+
+    func choices(for folder: String?) -> FolderChoices? {
+        folder.flatMap { byFolder[WorkspacePathPolicy.normalize($0)] }
+    }
+
+    /// Keeps what `config` chose for its folder. A folder made for "No project" is used once, so it keeps nothing.
+    mutating func remember(_ config: NewRunConfig) {
+        let path = WorkspacePathPolicy.normalize(config.projectPath)
+        guard !path.isEmpty, !ScratchProjects.isScratch(path) else { return }
+        var choices = byFolder[path] ?? FolderChoices(provider: "", mode: "", permission: "", isolation: "")
+        choices.provider = config.provider.rawValue
+        choices.mode = config.mode.rawValue
+        choices.permission = config.permission.rawValue
+        choices.isolation = config.isolation.rawValue
+        choices.agents[config.provider.rawValue] = .init(profileID: config.profileID, model: config.model, effort: config.effort)
+        byFolder[path] = choices
+    }
+
+    mutating func forget(_ folder: String) { byFolder[WorkspacePathPolicy.normalize(folder)] = nil }
+}
+
+/// What the new-session composer starts with in a folder: what the folder sets in Settings, else what you last chose
+/// there, else your last choices anywhere. The other ways to start a session read the same values.
+struct ComposerDefaults: Equatable, Sendable {
+    var session: SessionDefaults
+    var mode: ExecutionMode
+    /// The accounts last chosen per agent, in the order to try them: this folder's first.
+    var profiles: [String: [String]]
+    /// The effort for each agent this folder chose for; other agents use `globalEfforts`.
+    var folderEfforts: [String: String?]
+    var globalEfforts: [String: String]
+
+    var provider: RunProvider { session.provider }
+    var isolation: IsolationMode { session.isolation }
+
+    func model(for provider: RunProvider) -> String { session.model(for: provider) }
+
+    func permission(for provider: RunProvider) -> PermissionPolicy { session.permission(for: provider) }
+
+    /// The account to use among the `connected` ones, nil when none of them is remembered or connected.
+    func profile(for provider: RunProvider, connected: [String]) -> String? {
+        (profiles[provider.rawValue] ?? []).first(where: connected.contains) ?? connected.first
+    }
+
+    /// The effort for this agent, while the agent still offers it. An ACP agent's levels are the ones its session
+    /// offered: the level stays, and a session that does not offer it skips it (see `AcpSessionSettings`).
+    func effort(for provider: RunProvider) -> String? {
+        let level = folderEfforts[provider.rawValue] ?? globalEfforts[provider.rawValue]
+        return level.flatMap { provider.usesACP || EffortLevels.isOffered($0, for: provider, model: nil) ? $0 : nil }
+    }
+}
+
 enum ProjectSettings {
+    /// The composer's defaults for a folder: what it sets in `overrides` wins over `choices`, which win over the global
+    /// values, so an explicit setting stays in charge of whatever the composer remembers.
+    static func composerDefaults(global: SessionDefaults, mode: ExecutionMode, profiles: [String: String],
+                                 efforts: [String: String], overrides: ProjectOverrides,
+                                 choices: FolderChoices?, folder: String?) -> ComposerDefaults {
+        var base = global
+        var result = ComposerDefaults(session: global, mode: mode, profiles: profiles.mapValues { [$0] },
+                                      folderEfforts: [:], globalEfforts: efforts)
+        if let choices {
+            base.provider = RunProvider(rawValue: choices.provider) ?? global.provider
+            base.permission = PermissionPolicy(rawValue: choices.permission) ?? global.permission
+            base.isolation = IsolationMode(rawValue: choices.isolation) ?? global.isolation
+            result.mode = ExecutionMode(rawValue: choices.mode) ?? mode
+            for (agent, chosen) in choices.agents {
+                base.models[agent] = chosen.model
+                result.profiles[agent] = [chosen.profileID] + (profiles[agent].map { [$0] } ?? [])
+                result.folderEfforts[agent] = .some(chosen.effort)
+            }
+        }
+        result.session = resolve(global: base, overrides: overrides, folder: folder)
+        return result
+    }
+
     /// The two layers the resolver reads: the global values and the folder's overrides.
     static func layers(global: SessionDefaults, overrides: [String: SettingValue]) -> SettingsResolver.Layers {
         var layers = SettingsResolver.Layers()
