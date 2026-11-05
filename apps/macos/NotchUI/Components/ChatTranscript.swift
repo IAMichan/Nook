@@ -463,8 +463,11 @@ private struct ChatBubbleView: View, Equatable {
     @Environment(\.chatFetchFile) private var fetchFile
     /// A document's first page, made once the bubble comes near view.
     @State private var filePreview: NSImage?
-    /// Its app did not hand over the picture after every ask: the bubble names it instead of keeping an empty tile.
-    @State private var pictureNeverCame = false
+    /// Pictures whose app did not hand them over after every ask, by message: the bubble names them instead of keeping
+    /// an empty tile, also when it scrolled away and is made again.
+    private static var unfetchedPictures: Set<String> = []
+    private var pictureNeverCame: Bool { gaveUpOnPicture || Self.unfetchedPictures.contains(bubble.id) }
+    @State private var gaveUpOnPicture = false
 
     /// Lines a long message shows until "Read more".
     private static let foldedLines = 12
@@ -695,7 +698,10 @@ private struct ChatBubbleView: View, Equatable {
             }
             // The same for every app: a picture its app cannot give (expired, removed, too large) is named, and opens there.
             try? await Task.sleep(for: .seconds(10))
-            if !Task.isCancelled, bubble.media == .photoComing { pictureNeverCame = true }
+            if !Task.isCancelled, bubble.media == .photoComing {
+                Self.unfetchedPictures.insert(bubble.id)
+                gaveUpOnPicture = true
+            }
         }
         .task(id: near ? bubble.file : nil) {
             guard near, case .file = bubble.media, let file = bubble.file, bubble.image == nil, filePreview == nil else { return }

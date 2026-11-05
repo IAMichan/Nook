@@ -12,6 +12,19 @@ final class ChatInboxTests: XCTestCase {
 
     // MARK: Which app
 
+    /// Instagram keeps two threads with some people, under one name: answers go to the one that moved last.
+    func testAnswersGoToTheNewestChatOfOneName() {
+        func chat(_ id: String, _ last: TimeInterval?) -> ChatServiceData.Chat {
+            ChatServiceData.Chat(id: id, app: "instagram", title: "Arjan", isGroup: false, unread: 0,
+                                 last: last.map(Date.init(timeIntervalSince1970:)))
+        }
+        XCTAssertTrue(ChatServiceData.isNewest(chat("a", 10), than: nil))
+        XCTAssertTrue(ChatServiceData.isNewest(chat("a", 20), than: chat("b", 10)))
+        XCTAssertFalse(ChatServiceData.isNewest(chat("b", 10), than: chat("a", 20)), "an old thread read later takes nothing over")
+        XCTAssertTrue(ChatServiceData.isNewest(chat("a", 10), than: chat("a", 20)), "the same chat stays")
+        XCTAssertFalse(ChatServiceData.isNewest(chat("b", nil), than: chat("a", 20)))
+    }
+
     func testMacAppsByTheirBundle() {
         XCTAssertEqual(MessagingApps.app(bundleID: "ru.keepcoder.Telegram")?.id, "telegram")
         XCTAssertEqual(MessagingApps.app(bundleID: "ORG.telegram.desktop")?.id, "telegram")
@@ -619,6 +632,14 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(inbox.threads[key]?.unread, 0, "the app's count from its old read mark is no news")
         inbox.merge(BridgedChat(app: "teams", name: "Old chat", messages: old + [mine, later], unread: 4))
         XCTAssertEqual(inbox.threads[key]?.unread, 1, "only what came after your message is new")
+
+        // A clock a little behind yours: an answer dated just before your message is still new.
+        var behind = ChatInbox()
+        behind.merge(BridgedChat(app: "teams", name: "Clock", messages: old, unread: 0))
+        let clock = ChatInbox.key(app: "teams", chat: "Clock")
+        let reply = InboxMessage(id: "reply", text: "ok", date: start.addingTimeInterval(990))
+        behind.merge(BridgedChat(app: "teams", name: "Clock", messages: old + [reply, mine], unread: 1))
+        XCTAssertEqual(behind.threads[clock]?.unread, 1)
 
         // An app that gives no count: what Nook missed before your message is no news either.
         var counted = ChatInbox()
