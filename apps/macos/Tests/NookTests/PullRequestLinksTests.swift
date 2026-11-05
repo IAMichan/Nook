@@ -359,6 +359,31 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(rows.map(\.pullRequest), [watched, nil])
     }
 
+    func testAWatchedEarlierPullRequestLeavesTheCurrentBranchItsOwn() {
+        var first = link(1, head: "feat-a"); first.url = "https://github.com/a/b/pull/1"
+        var second = link(2, head: "feat-b"); second.url = "https://github.com/a/b/pull/2"
+        let rows = SessionBranches.rows(earlier: ["feat-a"], earlierLinks: [first], current: "feat-b",
+                                        currentPullRequest: URL(string: first.url), currentLinks: [second])
+        XCTAssertEqual(rows.map(\.pullRequest), [URL(string: first.url), URL(string: second.url)])
+    }
+
+    func testAWatchedEarlierPullRequestOfAnUnnamedBranchKeepsItsRow() {
+        var first = link(1, head: "feat-a"); first.url = "https://github.com/a/b/pull/1"
+        var second = link(2, head: "feat-b"); second.url = "https://github.com/a/b/pull/2"
+        let rows = SessionBranches.rows(earlier: [], earlierLinks: [first], current: "feat-b",
+                                        currentPullRequest: URL(string: first.url), currentLinks: [second])
+        XCTAssertEqual(rows.map(\.pullRequest), [URL(string: first.url), URL(string: second.url)])
+    }
+
+    func testTheWatchedOneOfTheCurrentBranchStaysItsRow() {
+        var first = link(1, head: "feat-a"); first.url = "https://github.com/a/b/pull/1"
+        var older = link(2, head: "feat-b"); older.url = "https://github.com/a/b/pull/2"; older.state = .closed
+        var newer = link(3, head: "feat-b"); newer.url = "https://github.com/a/b/pull/3"
+        let rows = SessionBranches.rows(earlier: ["feat-a"], earlierLinks: [first], current: "feat-b",
+                                        currentPullRequest: URL(string: older.url), currentLinks: [newer, older])
+        XCTAssertEqual(rows.last?.pullRequest, URL(string: older.url))
+    }
+
     func testManyBranchesFoldTheOlderOnes() {
         let url = URL(string: "https://github.com/a/b/pull/1")!
         let rows = [SessionBranches.Row(branch: "a", pullRequest: url, isCurrent: false),
