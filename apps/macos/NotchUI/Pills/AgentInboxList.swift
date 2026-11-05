@@ -385,12 +385,11 @@ struct AgentInboxList: View {
         return foldButton(group, name: name, open: open, hovered: hovered, canStart: folder != nil)
             .overlay(alignment: .trailing) {
                 if let folder {
-                    ToolbarIconButton("square.and.pencil", tr("inbox.project.newSession", name), height: 24, width: 24) {
+                    ToolbarIconButton("square.and.pencil", tr("inbox.project.newSession", name),
+                                      height: Self.newSessionWidth, width: Self.newSessionWidth) {
                         newSession(in: folder)
                     }
-                    .opacity(hovered ? 1 : 0)
-                    .allowsHitTesting(hovered)
-                    // Before the chevron, where a folded project's count stands.
+                    // Just before the chevron, in the room `foldButton` keeps free.
                     .padding(.trailing, Self.chevronWidth + NookTheme.Spacing.md + NookTheme.Spacing.xs)
                 }
             }
@@ -402,6 +401,7 @@ struct AgentInboxList: View {
     }
 
     private static let chevronWidth: CGFloat = 12
+    private static let newSessionWidth: CGFloat = 24
 
     private func foldButton(_ group: InboxProjectGroup, name: String, open: Bool, hovered: Bool, canStart: Bool) -> some View {
         Button {
@@ -433,7 +433,11 @@ struct AgentInboxList: View {
                     Text("\(group.rows.count)")
                         .font(NookTheme.TextStyle.detail.monospacedDigit())
                         .foregroundStyle(NookTheme.textTertiary)
-                        .opacity(hovered && canStart ? 0 : 1)
+                }
+                // Keeps the name and the count clear of the new-session button laid over this row. The button sits closer
+                // to the chevron than this stack's spacing, so the room it needs here is that much smaller.
+                if canStart {
+                    Color.clear.frame(width: Self.newSessionWidth - NookTheme.Spacing.md, height: 1)
                 }
                 Image(systemName: "chevron.down")
                     .font(NookTheme.font(10, .semibold))
