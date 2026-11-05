@@ -344,13 +344,14 @@ enum TeamsWebData {
     }
 
     /// The first file sent with a message (its "files" property, a JSON list as text), by its name: it lives in
-    /// SharePoint or OneDrive, which Nook does not reach, so it shows as a file that opens in Teams.
+    /// SharePoint or OneDrive, which Nook does not reach, so it shows as a file that opens in Teams (`outOfReach`), also a
+    /// picture.
     static func file(_ value: Any?) -> ChatMedia? {
         guard let text = value as? String, let data = text.data(using: .utf8),
               let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]],
               let name = list.lazy.compactMap({ ($0["fileName"] as? String) ?? ($0["title"] as? String) }).first(where: { !$0.isEmpty })
         else { return nil }
-        return ChatMedia(kind: ChatMedia.kind(mimeType: nil, name: name), name: name)
+        return ChatMedia(kind: .file, name: name, outOfReach: true)
     }
 
     /// The first picture pasted into a message, as the website sends one: an `<img>` of Teams' media service

@@ -12,6 +12,19 @@ final class ChatInboxTests: XCTestCase {
 
     // MARK: Which app
 
+    /// Instagram keeps two threads with some people, under one name: answers go to the one that moved last.
+    func testAnswersGoToTheNewestChatOfOneName() {
+        func chat(_ id: String, _ last: TimeInterval?) -> ChatServiceData.Chat {
+            ChatServiceData.Chat(id: id, app: "instagram", title: "Arjan", isGroup: false, unread: 0,
+                                 last: last.map(Date.init(timeIntervalSince1970:)))
+        }
+        XCTAssertTrue(ChatServiceData.isNewest(chat("a", 10), than: nil))
+        XCTAssertTrue(ChatServiceData.isNewest(chat("a", 20), than: chat("b", 10)))
+        XCTAssertFalse(ChatServiceData.isNewest(chat("b", 10), than: chat("a", 20)), "an old thread read later takes nothing over")
+        XCTAssertTrue(ChatServiceData.isNewest(chat("a", 10), than: chat("a", 20)), "the same chat stays")
+        XCTAssertFalse(ChatServiceData.isNewest(chat("b", nil), than: chat("a", 20)))
+    }
+
     func testMacAppsByTheirBundle() {
         XCTAssertEqual(MessagingApps.app(bundleID: "ru.keepcoder.Telegram")?.id, "telegram")
         XCTAssertEqual(MessagingApps.app(bundleID: "ORG.telegram.desktop")?.id, "telegram")
@@ -604,6 +617,48 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(loaded.threads[key]?.readState, .read)
     }
 
+    /// You wrote in a chat, so what came before it is read, in every app: an app that counts from an old read mark (a chat
+    /// you never read there) does not make the whole chat unread once your message moves it.
+    func testYourOwnMessageReadsWhatCameBefore() {
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        let old = (0..<3).map { InboxMessage(id: "m\($0)", text: "old \($0)", date: start.addingTimeInterval(Double($0))) }
+        let mine = InboxMessage(id: "mine", text: "hi", date: start.addingTimeInterval(1000), fromMe: true)
+        let later = InboxMessage(id: "later", text: "new", date: start.addingTimeInterval(2000))
+
+        var inbox = ChatInbox()
+        inbox.merge(BridgedChat(app: "teams", name: "Old chat", messages: old, unread: 0))
+        let key = ChatInbox.key(app: "teams", chat: "Old chat")
+        inbox.merge(BridgedChat(app: "teams", name: "Old chat", messages: old + [mine], unread: 3))
+        XCTAssertEqual(inbox.threads[key]?.unread, 0, "the app's count from its old read mark is no news")
+        inbox.merge(BridgedChat(app: "teams", name: "Old chat", messages: old + [mine, later], unread: 4))
+        XCTAssertEqual(inbox.threads[key]?.unread, 1, "only what came after your message is new")
+
+        // A clock a little behind yours: an answer dated just before your message is still new.
+        var behind = ChatInbox()
+        behind.merge(BridgedChat(app: "teams", name: "Clock", messages: old, unread: 0))
+        let clock = ChatInbox.key(app: "teams", chat: "Clock")
+        let reply = InboxMessage(id: "reply", text: "ok", date: start.addingTimeInterval(990))
+        behind.merge(BridgedChat(app: "teams", name: "Clock", messages: old + [reply, mine], unread: 1))
+        XCTAssertEqual(behind.threads[clock]?.unread, 1)
+
+        // An app that gives no count: what Nook missed before your message is no news either.
+        var counted = ChatInbox()
+        counted.merge(BridgedChat(app: "messages", name: "Quiet", messages: [old[0]], unread: nil))
+        let quiet = ChatInbox.key(app: "messages", chat: "Quiet")
+        counted.merge(BridgedChat(app: "messages", name: "Quiet", messages: old + [mine], unread: nil))
+        XCTAssertEqual(counted.threads[quiet]?.unread, 0)
+        counted.merge(BridgedChat(app: "messages", name: "Quiet", messages: [later], unread: nil))
+        XCTAssertEqual(counted.threads[quiet]?.unread, 1)
+
+        // Marked unread by hand: it stays so, also after your own message.
+        var marked = ChatInbox()
+        marked.merge(BridgedChat(app: "teams", name: "Marked", messages: old + [mine], unread: 0))
+        let hand = ChatInbox.key(app: "teams", chat: "Marked")
+        marked.markUnread(hand)
+        marked.merge(BridgedChat(app: "teams", name: "Marked", messages: old + [mine], unread: 0))
+        XCTAssertEqual(marked.threads[hand]?.unread, 1)
+    }
+
     func testMarkReadInAppReadsItEverywhere() {
         var inbox = ChatInbox()
         let key = ChatInbox.key(app: "telegram", chat: "Anna")
@@ -839,6 +894,10 @@ final class ChatInboxTests: XCTestCase {
 
     func testAPhotoSentAsADocumentShowsAsAPhoto() {
         XCTAssertEqual(ChatMedia(kind: .file, name: "IMG_2041.JPG").shownKind, .photo)
+        XCTAssertTrue(ChatMedia(kind: .file, name: "IMG_2041.JPG").isPictureComing, "a photo sent as a document waits as one")
+        XCTAssertTrue(ChatMedia(kind: .gif).isPictureComing)
+        XCTAssertFalse(ChatMedia(kind: .file, name: "plan.pdf").isPictureComing)
+        XCTAssertFalse(ChatMedia(kind: .photo, outOfReach: true).isPictureComing, "out of reach is never waited for")
         XCTAssertEqual(ChatMedia(kind: .file, path: "/tmp/chat/1/screenshot.png").shownKind, .photo, "no name: by its file")
         XCTAssertEqual(ChatMedia(kind: .file, name: "party.gif").shownKind, .gif)
         XCTAssertEqual(ChatMedia(kind: .file, name: "clip.mov").shownKind, .video)

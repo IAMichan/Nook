@@ -55,6 +55,11 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Fixed
 
+- Chats list rows now follow their chat: a chat that moved to another group no longer keeps its old line and time, and
+  shows as selected.
+- Writing in an old chat no longer marks all its messages unread, in every chat app.
+- A picture that never arrives shows as a named file that opens its app instead of an empty tile. Teams files in
+  SharePoint or OneDrive show that way at once.
 - Xcode 27 opens `Nook.xcodeproj` and `NookCompanion.xcodeproj` again: XcodeGen no longer lists a group or file in two
   groups, which Xcode 27 refuses with "is a member of more than one group".
 - Scrolling through every chat of every app in the Chats tab no longer stutters: a chat picture that comes in redraws

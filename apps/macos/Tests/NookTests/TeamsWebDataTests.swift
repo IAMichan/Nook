@@ -146,7 +146,7 @@ final class TeamsWebDataTests: XCTestCase {
         ]]
         let messages = TeamsWebData.messages(history, chat: chats[1], me: me)
         XCTAssertEqual(messages.map(\.text), ["", "", "Mine"], "oldest first; no activity; a deleted message without its text")
-        XCTAssertEqual(messages[1].media, ChatMedia(kind: .file, name: "plan.pdf"), "a message with only a file shows that file")
+        XCTAssertEqual(messages[1].media, ChatMedia(kind: .file, name: "plan.pdf", outOfReach: true), "a message with only a file shows that file")
         XCTAssertEqual(messages.first?.isDeleted, true)
         XCTAssertEqual(messages[1].sender, "Bo")
         XCTAssertEqual(messages.last?.isMine, true)
@@ -154,6 +154,13 @@ final class TeamsWebDataTests: XCTestCase {
         XCTAssertEqual(TeamsWebData.myName(history, me: me), "Me Myself")
         XCTAssertTrue(TeamsWebData.caughtUp(history, last: ChatJSON.date("2026-10-23T10:02:00.000Z")))
         XCTAssertFalse(TeamsWebData.caughtUp(history, last: ChatJSON.date("2026-10-23T11:00:00.000Z")))
+    }
+
+    /// A picture sent as a file lives in SharePoint, which Nook does not reach: a file row, never a photo that keeps waiting.
+    func testPictureSentAsFileIsAFileRow() {
+        let picture = TeamsWebData.file("[{\"fileName\":\"finance.png\"}]")
+        XCTAssertEqual(picture, ChatMedia(kind: .file, name: "finance.png", outOfReach: true))
+        XCTAssertEqual(picture?.isPictureComing, false)
     }
 
     /// A picture pasted into a Teams message shows as itself, fetched from Teams' media service only; an image from

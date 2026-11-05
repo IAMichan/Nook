@@ -18,6 +18,15 @@ struct ChatMedia: Codable, Equatable, Sendable {
     var seconds: Double? = nil
     /// Where the bridge fetches it from (Slack's or the chat helper's address for it), while it is not on this Mac yet.
     var source: String? = nil
+    /// Its app keeps it where no bridge reaches (Teams' files in SharePoint or OneDrive): it will never be on this Mac, so
+    /// the chat names it at once instead of waiting for it. Any app says so the same way; nil: it can be fetched.
+    var outOfReach: Bool? = nil
+
+    /// A picture that is not on this Mac but can still come: its chat shows a photo-shaped tile until it is here.
+    var isPictureComing: Bool {
+        guard outOfReach != true else { return false }
+        return shownKind == .photo || shownKind == .gif
+    }
 
     /// The file on this Mac, if it is (still) there.
     var url: URL? {

@@ -53,6 +53,12 @@ enum ChatServiceData {
     }
 
     /// The chats of /v1/chats, without archived ones, merged ones and those of networks Nook does not know.
+    /// Whether answers in a row Nook shows for two chats of one name go to `chat`: the one that moved last.
+    static func isNewest(_ chat: Chat, than other: Chat?) -> Bool {
+        guard let other, other.id != chat.id else { return true }
+        return (chat.last ?? .distantPast) >= (other.last ?? .distantPast)
+    }
+
     static func chats(_ json: [String: Any]) -> [Chat] {
         (json["items"] as? [[String: Any]] ?? []).compactMap { chat in
             guard let id = chat["id"] as? String, chat["isArchived"] as? Bool != true, chat["merge"] == nil,

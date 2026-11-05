@@ -24,23 +24,46 @@ struct ChatsListRows<Menu: View>: View, Equatable {
     }
 
     var body: some View {
+        // One flat list, not a list per group: a chat that moved to another group ("Yesterday" to "Today") was then the
+        // same row in two nested lists, and the lazy stack could keep drawing its old line, its old time and no selection.
         LazyVStack(spacing: NookTheme.Spacing.xxs) {
-            ForEach(sections) { section in
-                let open = searching || !collapsed.contains(section.group)
-                ChatsGroupHeader(title: section.group.title, count: section.entries.count, open: open,
-                                 first: section.group == sections.first?.group) { toggle(section.group) }
-                    .disabled(searching)
-                if open {
-                    let top = section.entries.first?.id
-                    ForEach(section.entries) { entry in
-                        ChatsListItem(entry: entry, separated: entry.id != top, selected: entry.id == selected, day: day,
-                                      typing: typing[entry.id], rowAction: rowAction(entry),
-                                      select: { select(entry.id) }, menu: { menu(entry) })
-                            .equatable()
-                            .id(entry.id)
-                    }
+            ForEach(ChatsListLine.lines(sections, collapsed: collapsed, searching: searching)) { line in
+                switch line {
+                case .group(let section, let open):
+                    ChatsGroupHeader(title: section.group.title, count: section.entries.count, open: open,
+                                     first: section.group == sections.first?.group) { toggle(section.group) }
+                        .disabled(searching)
+                case .chat(let entry, let separated):
+                    ChatsListItem(entry: entry, separated: separated, selected: entry.id == selected, day: day,
+                                  typing: typing[entry.id], rowAction: rowAction(entry),
+                                  select: { select(entry.id) }, menu: { menu(entry) })
+                        .equatable()
                 }
             }
+        }
+    }
+}
+
+/// One line of the Chats list: a group's title, or a chat in it. A chat's line has the chat's id, which stays the same
+/// when it moves to another group, so the list moves the row (and scrolling to a chat finds it by that id).
+enum ChatsListLine: Identifiable, Equatable {
+    case group(ChatsSection, open: Bool)
+    case chat(ChatsEntry, separated: Bool)
+
+    var id: String {
+        switch self {
+        case .group(let section, _): return "group:\(section.group.rawValue)"
+        case .chat(let entry, _): return entry.id
+        }
+    }
+
+    /// The lines in order: each group's title, and its chats unless it is folded (a search shows every group open).
+    static func lines(_ sections: [ChatsSection], collapsed: Set<ChatsGroup>, searching: Bool) -> [ChatsListLine] {
+        sections.flatMap { section -> [ChatsListLine] in
+            let open = searching || !collapsed.contains(section.group)
+            let top = section.entries.first?.id
+            return [.group(section, open: open)]
+                + (open ? section.entries.map { .chat($0, separated: $0.id != top) } : [])
         }
     }
 }
