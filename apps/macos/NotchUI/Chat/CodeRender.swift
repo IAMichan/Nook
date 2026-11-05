@@ -4,7 +4,7 @@ import WebKit
 
 /// A code block of HTML, SVG or Mermaid shown as what it draws. Agent HTML
 /// runs without JavaScript, in a store that keeps nothing, and cannot navigate anywhere; Mermaid gets only Nook's own page
-/// with the pinned Mermaid script.
+/// (`MermaidPage`) with the script that ships with Nook, so a diagram needs no network.
 struct CodeRenderView: NSViewRepresentable {
     let language: String
     let code: String
@@ -13,12 +13,21 @@ struct CodeRenderView: NSViewRepresentable {
         ["html", "svg", "mermaid"].contains(language.lowercased())
     }
 
+    /// Read once, when the first diagram draws.
+    private static let mermaidScript: String? = Bundle.main.url(forResource: "mermaid.min", withExtension: "js", subdirectory: "mermaid")
+        .flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = language.lowercased() == "mermaid"
+        let mermaid = language.lowercased() == "mermaid"
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = mermaid
+        if mermaid, let script = Self.mermaidScript {
+            configuration.userContentController.addUserScript(
+                WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
         view.setValue(false, forKey: "drawsBackground")
@@ -52,15 +61,7 @@ struct CodeRenderView: NSViewRepresentable {
         coordinator.shown = code
         switch language.lowercased() {
         case "mermaid":
-            let escaped = code.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
-            let page = """
-            <!doctype html><html><head><meta charset="utf-8">
-            <style>body{margin:0;padding:12px;background:#0F0F13;color:#F4F3F7;font-family:-apple-system}</style>
-            <script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script></head>
-            <body><pre class="mermaid">\(escaped)</pre>
-            <script>mermaid.initialize({startOnLoad:true,theme:'dark',securityLevel:'strict'});</script></body></html>
-            """
-            view.loadHTMLString(page, baseURL: nil)
+            view.loadHTMLString(Self.mermaidScript == nil ? "<pre>\(MermaidPage.escaped(code))</pre>" : MermaidPage.html(code), baseURL: nil)
         case "svg":
             view.loadHTMLString("<!doctype html><html><body style=\"margin:0;background:#fff\">\(code)</body></html>", baseURL: nil)
         default:
