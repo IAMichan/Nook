@@ -87,6 +87,10 @@ enum UsageLimits {
         return resets.compactMap { $0 }.max()
     }
 
+    /// The composer stays quiet until a window is half used: only then does the ring tell you something. A full window
+    /// counts too, also when `effectiveHighestPercent` looks past it.
+    static func worthShowing(_ percents: [Double]) -> Bool { percents.contains { $0 >= 50 } }
+
     /// The percentage to indicate across a list of window percentages: only indicates 100% when all windows are full;
     /// otherwise shows the highest non-full window (capped at 99%).
     static func effectiveHighestPercent(_ percents: [Double]) -> Double {
