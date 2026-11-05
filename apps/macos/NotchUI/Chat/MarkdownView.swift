@@ -38,8 +38,8 @@ extension MarkdownBlock {
                 let url = link.flatMap { isSafeLink($0) || isFileLink($0) ? $0 : nil }
                 piece.link = url
                 if code {
-                    piece.font = .system(size: size - 1.5, design: .monospaced)
-                    piece.backgroundColor = NookTheme.field
+                    piece.font = .system(size: size * 0.85, design: .monospaced)
+                    piece.backgroundColor = NookTheme.graphite
                     piece.foregroundColor = NookTheme.textStrong
                 } else if run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true {
                     // Running text is a step softer than `paper`; bold keeps the full white, so it stands out without weight.
@@ -295,8 +295,8 @@ struct MarkdownView: View, Equatable {
                 CalloutBlock(callout: callout, size: size)
             } else {
                 HStack(spacing: NookTheme.Spacing.lg) {
-                    Capsule().fill(NookTheme.line2).frame(width: 3)
-                    paragraph(text, color: NookTheme.textSecondary)
+                    Rectangle().fill(NookTheme.textStrong.opacity(0.35)).frame(width: 2)
+                    paragraph(text, color: NookTheme.textStrong)
                 }
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -370,13 +370,15 @@ private struct MarkdownCodeBlock: View {
     let size: CGFloat
     /// HTML, SVG and Mermaid: shown as what they draw instead of their source.
     @State private var rendered = false
+    /// How far the code and its language sit from the block's edge.
+    private static let inset: CGFloat = 14
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // The language on the left, preview and copy as quiet symbol buttons on the right.
             HStack(spacing: NookTheme.Spacing.xxs) {
                 Text(language.isEmpty ? "code" : language)
-                    .font(NookTheme.TextStyle.caption)
+                    .font(NookTheme.mono(11))
                     .foregroundStyle(NookTheme.textTertiary)
                 Spacer()
                 if CodeRenderView.canRender(language) {
@@ -385,7 +387,7 @@ private struct MarkdownCodeBlock: View {
                 }
                 CopyIconButton(tr("button.copy")) { code }
             }
-            .padding(.leading, NookTheme.Spacing.lg)
+            .padding(.leading, Self.inset)
             .padding(.trailing, NookTheme.Spacing.sm)
             .padding(.top, NookTheme.Spacing.sm)
             if rendered {
@@ -396,17 +398,17 @@ private struct MarkdownCodeBlock: View {
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     Text(code)
-                        .font(NookTheme.mono(size - 1.5))
+                        .font(NookTheme.mono(size - 1))
                         .lineSpacing(3)
                         .foregroundStyle(NookTheme.textStrong)
                         .fixedSize(horizontal: true, vertical: true)
-                        .padding(.horizontal, NookTheme.Spacing.lg)
+                        .padding(.horizontal, Self.inset)
                         .padding(.top, NookTheme.Spacing.xs)
                         .padding(.bottom, NookTheme.Spacing.lg)
                 }
             }
         }
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.well))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.well))
     }
 }
 
@@ -516,17 +518,15 @@ private struct TableBlock: View, Equatable {
     // Split into small typed parts: as one expression the grid takes the compiler too long to type-check.
     private func grid(_ numbers: [Bool]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 0) {
+            Grid(alignment: .leading, horizontalSpacing: NookTheme.Spacing.xxl, verticalSpacing: 0) {
                 headerRow(numbers)
                 ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
                     Divider().overlay(NookTheme.line2).gridCellColumns(header.count)
                     bodyRow(row, index: rowIndex)
                 }
             }
-            .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.xxs)
         }
-        .panelCard()
     }
 
     private func headerRow(_ numbers: [Bool]) -> some View {
@@ -540,8 +540,8 @@ private struct TableBlock: View, Equatable {
     private func headerCell(_ cell: String, numeric: Bool) -> some View {
         let alignment: HorizontalAlignment = numeric ? .trailing : .leading
         return Text(MarkdownBlock.inline(cell, size: size, files: fileLinkBase != nil))
-            .font(NookTheme.font(size - 1.5, .semibold))
-            .foregroundStyle(NookTheme.textTertiary)
+            .font(NookTheme.font(size, .semibold))
+            .foregroundStyle(NookTheme.paper)
             .gridColumnAlignment(alignment)
             .padding(.vertical, NookTheme.Spacing.md)
     }
@@ -557,7 +557,7 @@ private struct TableBlock: View, Equatable {
     private func bodyCell(_ cell: String, column: Int) -> some View {
         let weight: Font.Weight = column == 0 ? .medium : .regular
         return Text(MarkdownBlock.inline(cell, size: size, files: fileLinkBase != nil))
-            .font(NookTheme.font(size - 0.5, weight))
+            .font(NookTheme.font(size, weight))
             .monospacedDigit()
             .foregroundStyle(NookTheme.textStrong)
             .fixedSize(horizontal: false, vertical: true)

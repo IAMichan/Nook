@@ -39,7 +39,7 @@ struct TranscriptWorkLine: View {
 
     /// The label, then its detail on the same line, so a long command or path truncates as one sentence.
     private var labelText: Text {
-        let color = tint ?? (reveals == true ? NookTheme.paper : hovering && clickable ? NookTheme.textSecondary : NookTheme.textTertiary)
+        let color = tint ?? (reveals == true || (hovering && clickable) ? NookTheme.paper : NookTheme.textSecondary)
         let head = Text(label).foregroundStyle(color)
         guard let detail, !detail.isEmpty else { return head }
         return head + Text(" ") + Text(detail)
@@ -187,7 +187,7 @@ struct TranscriptWorkGroup<Steps: View>: View {
                                failed: tally.failed, checks: tally.checks, lines: tally.lines, open: open, action: toggle)
             if open {
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) { steps() }
+                    VStack(alignment: .leading, spacing: 0) { steps() }
                 }
                 .defaultScrollAnchor(.bottom, for: .sizeChanges)
                 .frame(maxHeight: 288)
@@ -232,11 +232,11 @@ struct TranscriptFoldLine: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: NookTheme.Spacing.sm) {
+            HStack(spacing: NookTheme.Spacing.xs) {
                 // The sentence first; the checks beside it make do with what is left.
                 Text(text).lineLimit(1).layoutPriority(1)
                 Image(systemName: "chevron.right")
-                    .font(NookTheme.font(9, .bold))
+                    .font(NookTheme.font(11, .semibold))
                     .rotationEffect(.degrees(open ? 90 : 0))
                 if !checks.isEmpty { VerificationChips(checks: checks) }
                 Spacer(minLength: 0)

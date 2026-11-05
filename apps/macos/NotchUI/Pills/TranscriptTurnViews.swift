@@ -71,7 +71,7 @@ struct TurnChangesCard: View {
                 .padding(.bottom, NookTheme.Spacing.sm)
             }
         }
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.well))
     }
 
     private func header(_ tree: ChangedFilesTree) -> some View {
@@ -86,7 +86,7 @@ struct TurnChangesCard: View {
                         .font(NookTheme.font(9, .bold))
                         .rotationEffect(.degrees(folded ? 0 : 90))
                     Text(tr("agents.turn.changedFiles", turn.files.count))
-                        .foregroundStyle(NookTheme.textSecondary)
+                        .foregroundStyle(NookTheme.paper)
                     EditLinesLabel(lines: turn.lines, size: 11)
                 }
                 .contentShape(Rectangle())

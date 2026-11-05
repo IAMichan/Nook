@@ -229,11 +229,12 @@ struct AgentRunPanel: View {
 
     /// "nook / Agents-pagina rustiger maken" (double-click the name to rename it) with the branch button on the right.
     private func header(_ run: WorkspaceRun) -> some View {
-        HStack(spacing: NookTheme.Spacing.md) {
+        HStack(spacing: NookTheme.Spacing.lg) {
             // The folder keeps its name before the title gives way, but truncates too in a narrow conversation instead
             // of pushing the header past it (under a wide side panel).
             Text(run.projectName)
-                .foregroundStyle(NookTheme.textTertiary)
+                .fontWeight(.medium)
+                .foregroundStyle(NookTheme.textSecondary)
                 .lineLimit(1)
                 .layoutPriority(1)
                 .help(AgentPathFormat.tilde(run.workingDirectory))
@@ -1274,7 +1275,6 @@ struct AgentRunPanel: View {
                     effortMenu(run)
                 }
                 .rich(composerModel, composerConfig(run))
-                .choicesBelowBox()
                 .trailing { composerTrailing(run) }
                 .trayTrailing { usageLimits(run) }
                 // While it works, what you type steers the turn or waits in line, and Cmd+Return does the other.

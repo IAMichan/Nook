@@ -39,7 +39,7 @@ struct SidePanelTabBar<Value: Hashable, Add: View, Trailing: View>: View {
         HStack(spacing: NookTheme.Spacing.xs) {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: NookTheme.Spacing.xxs) {
+                    HStack(spacing: NookTheme.Spacing.xs) {
                         ForEach(items) { item in
                             SidePanelTab(item: item, active: item.value == selected,
                                          select: { onSelect(item.value) }, close: { onClose(item.value) })
@@ -60,7 +60,8 @@ struct SidePanelTabBar<Value: Hashable, Add: View, Trailing: View>: View {
     }
 }
 
-/// A small tab: the icon, the title and a cross at the end that closes it, on a soft fill while selected.
+/// A small tab: the icon and the title, on a soft fill while selected. Under the pointer the cross that closes it takes
+/// the icon's place, so a tab never changes width and a row of tabs stays free of crosses.
 private struct SidePanelTab<Value: Hashable>: View {
     let item: SidePanelTabItem<Value>
     let active: Bool
@@ -70,42 +71,43 @@ private struct SidePanelTab<Value: Hashable>: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            // The mark stays where it is; the cross that closes the tab sits at the trailing edge.
-            item.icon
-                .overlay(alignment: .bottomTrailing) {
-                    if item.fresh {
-                        Circle().fill(NookTheme.iris).frame(width: 5, height: 5).offset(x: 2, y: 2)
+            ZStack {
+                item.icon
+                    .overlay(alignment: .bottomTrailing) {
+                        if item.fresh {
+                            Circle().fill(NookTheme.iris).frame(width: 5, height: 5).offset(x: 2, y: 2)
+                        }
                     }
+                    .opacity(hovering ? 0 : 1)
+                    .accessibilityHidden(true)
+                Button(action: close) {
+                    Image(systemName: "xmark")
+                        .font(NookTheme.font(9, .bold))
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
                 }
-                .frame(width: 16, height: 16)
-                .accessibilityHidden(true)
+                .buttonStyle(.plain)
+                .opacity(hovering ? 1 : 0)
+                .allowsHitTesting(hovering)
+                .help(tr("tab.close"))
+                .accessibilityLabel(tr("tab.close") + " " + item.title)
+            }
+            .frame(width: 16, height: 16)
             Button(action: select) {
                 Text(item.title)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(maxWidth: 132, alignment: .leading)
+                    .frame(maxWidth: 108, alignment: .leading)
                     .fixedSize(horizontal: true, vertical: false)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(item.help ?? item.title)
-            // Always takes its room, so the tab does not change width when the cross appears.
-            Button(action: close) {
-                Image(systemName: "xmark")
-                    .font(NookTheme.font(8.5, .bold))
-                    .frame(width: 16, height: 16)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .opacity(hovering || active ? 1 : 0)
-            .allowsHitTesting(hovering || active)
-            .help(tr("tab.close"))
-            .accessibilityLabel(tr("tab.close") + " " + item.title)
         }
         .font(NookTheme.TextStyle.detail)
-        .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textTertiary)
-        .padding(.leading, NookTheme.Spacing.xs)
-        .padding(.trailing, NookTheme.Spacing.xs)
+        .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textSecondary)
+        .padding(.leading, NookTheme.Spacing.sm)
+        .padding(.trailing, NookTheme.Spacing.md)
         .frame(height: 24)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
             .fill(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear)))
@@ -143,7 +145,7 @@ struct SidePanelLauncher: View {
     private var available: [SidePanelLaunch] { items.filter { $0.disabledReason == nil } }
 
     var body: some View {
-        VStack(spacing: NookTheme.Spacing.md) {
+        VStack(spacing: NookTheme.Spacing.lg) {
             Text(title)
                 .font(NookTheme.TextStyle.strong)
                 .foregroundStyle(NookTheme.paper)
@@ -152,7 +154,7 @@ struct SidePanelLauncher: View {
                     row(item)
                 }
             }
-            .frame(maxWidth: 280)
+            .frame(maxWidth: 320)
         }
         .padding(.horizontal, NookTheme.Spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -188,15 +190,15 @@ struct SidePanelLauncher: View {
         let lit = enabled && available.firstIndex(where: { $0.id == item.id }) == highlight
         return Button(action: item.open) {
             HStack(spacing: 10) {
-                NookSymbol(item.symbol, size: 13)
-                    .font(NookTheme.font(12, .medium))
+                NookSymbol(item.symbol, size: 16)
+                    .font(NookTheme.font(13, .medium))
                     .frame(width: 16)
                 Text(item.title).lineLimit(1)
                 Spacer(minLength: NookTheme.Spacing.sm)
                 Text(String(item.key).uppercased())
-                    .font(NookTheme.mono(10.5, .medium))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
-                    .frame(minWidth: 18, minHeight: 18)
+                    .frame(minWidth: 20, minHeight: 20)
                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.line2))
             }
             .font(NookTheme.TextStyle.body)

@@ -79,7 +79,8 @@ struct ChangesSheet: View {
             }
             .padding(.horizontal, embedded ? NookTheme.Spacing.sm : 14)
             .frame(height: embedded ? SidePanelMetrics.toolbar : 48)
-            NookDivider()
+            .padding(.bottom, embedded ? SidePanelMetrics.toolbarGap : 0)
+            if !embedded { NookDivider() }
             if files.isEmpty {
                 StackedDiffNote(text: tr("ws.changes.noDiffDetail"))
             } else {

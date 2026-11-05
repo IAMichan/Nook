@@ -27,7 +27,7 @@ struct ComposerTray<Content: View>: View {
     }
 
     private var shape: UnevenRoundedRectangle {
-        let radius = NookTheme.Radius.sheet
+        let radius = NookTheme.Radius.composer
         return edge == .bottom
             ? UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius, style: .continuous)
             : UnevenRoundedRectangle(topLeadingRadius: radius, topTrailingRadius: radius, style: .continuous)

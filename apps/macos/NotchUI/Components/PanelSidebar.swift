@@ -41,10 +41,11 @@ enum PanelSidebarMetrics {
     /// The column a row's mark stands in.
     static let mark: CGFloat = 18
     /// Room between the window's edge and the sidebar's rows, and the same between its rows and the line on its right.
-    static let inset: CGFloat = NookTheme.Spacing.lg
-    /// The narrowest the head fits in: the room for the traffic lights, then search and talk (28 pt) and split view
-    /// (30 pt), with the row's spacing between them. A column narrower than this would push its rows off the left edge.
-    static let headWidth: CGFloat = trafficLights - inset + 28 + 28 + 30 + NookTheme.Spacing.xxs * 4
+    static let inset: CGFloat = NookTheme.Spacing.md
+    /// The narrowest the head fits in: the room for the traffic lights, back and forward, then search and talk (28 pt
+    /// each) and split view (30 pt), with the row's spacing between them. A column narrower than this would push its
+    /// rows off the left edge.
+    static let headWidth: CGFloat = trafficLights - inset + 28 * 4 + 30 + NookTheme.Spacing.xxs * 6
     /// The narrowest the sidebar's whole column gets: its head with the inset on the left and the gap to its line on the
     /// right. Narrower, search would slide under the traffic lights and split view past the line on the right.
     static let minimumColumn: Double = Double(inset + headWidth + SidePanelMetrics.sidebarGap)
@@ -82,6 +83,8 @@ struct PanelSidebarShown: PreferenceKey {
 /// outside the main window. `compact` is the rail of icons the Chats tab folds its sidebar into.
 struct PanelSidebarTop: View {
     var compact = false
+    /// Back and forward through what you opened, right of the traffic lights, for a tab that keeps such a trail.
+    var history: AnyView? = nil
     @Environment(\.panelSidebar) private var context
 
     var body: some View {
@@ -114,6 +117,7 @@ struct PanelSidebarTop: View {
         HStack(spacing: NookTheme.Spacing.xxs) {
             Color.clear
                 .frame(width: PanelSidebarMetrics.trafficLights - PanelSidebarMetrics.inset)
+            if !compact, let history { history }
             Spacer(minLength: 0)
             if !compact {
                 NookIconButton(systemName: "magnifyingglass", label: tr("search.button"), size: 28, action: context.search)
@@ -124,6 +128,36 @@ struct PanelSidebarTop: View {
         }
         .frame(height: PanelSidebarMetrics.head)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Back and forward through the sessions you opened, as ⌘[ and ⌘]. `SessionHistory` is not observed, so nothing else
+/// redraws when you open a session: these two read it again once the session on screen changed, after it was recorded.
+struct SessionHistoryButtons: View {
+    /// The session on screen.
+    let current: String
+    let back: () -> Void
+    let forward: () -> Void
+    @State private var canGoBack = false
+    @State private var canGoForward = false
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xxs) {
+            button("arrow.left", tr("a11y.back"), enabled: canGoBack, back)
+            button("arrow.right", tr("a11y.forward"), enabled: canGoForward, forward)
+        }
+        .task(id: current) {
+            await Task.yield()
+            canGoBack = SessionHistory.shared.trail.canGoBack
+            canGoForward = SessionHistory.shared.trail.canGoForward
+        }
+    }
+
+    private func button(_ symbol: String, _ label: String, enabled: Bool, _ action: @escaping () -> Void) -> some View {
+        ToolbarIconButton(symbol, label, height: 28, width: 28, enabled: enabled, symbolSize: 13) {
+            if enabled { action() }
+        }
+        .help(label)
     }
 }
 
