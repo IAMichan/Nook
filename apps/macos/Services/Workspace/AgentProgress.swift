@@ -37,9 +37,10 @@ enum Verification {
     /// What kind of check a shell command is, or nil when it is not one. Looks at every part of a chain
     /// ("cd app && npm test") and keeps the most important.
     static func kind(command: String) -> VerificationCheck.Kind? {
-        let separators = CharacterSet(charactersIn: ";|&\n")
-        return command.components(separatedBy: separators).compactMap(segmentKind).min()
+        command.components(separatedBy: separators).compactMap(segmentKind).min()
     }
+
+    private static let separators = CharacterSet(charactersIn: ";|&\n")
 
     private static func segmentKind(_ segment: String) -> VerificationCheck.Kind? {
         var words = segment.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
@@ -48,7 +49,8 @@ enum Verification {
             words.removeFirst()
         }
         guard let first = words.first else { return nil }
-        let head = URL(fileURLWithPath: first).lastPathComponent.lowercased()
+        // Not through URL: this runs for every command of a timeline, on the main thread, each time a turn changes.
+        let head = (first.split(separator: "/").last.map(String.init) ?? first).lowercased()
         let rest = words.dropFirst().map { $0.lowercased() }
         // "bash scripts/core-tests.sh": the script is the command.
         if ["bash", "sh", "zsh"].contains(head), let script = rest.first, script.hasSuffix(".sh") {

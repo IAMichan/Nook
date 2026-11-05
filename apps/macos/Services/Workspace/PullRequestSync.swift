@@ -168,6 +168,9 @@ final class PullRequestSync: ObservableObject {
                 // Away from the Mac or saving power, every git process and GitHub request can come less often.
                 try? await Task.sleep(for: Self.tick * EnergyMonitor.shared.plan.slowdown)
                 guard let self else { return }
+                // Nobody at the Mac or its displays asleep: the first tick back catches up (as `PullRequestBackgroundRefresh`).
+                let signals = EnergyMonitor.shared.signals
+                if signals.away || signals.displayAsleep { continue }
                 self.refresh(now: Date())
             }
         }

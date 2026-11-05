@@ -440,7 +440,9 @@ final class AgentHistory: ObservableObject {
                         apiKey: profile.kind == .claude && profile.usesAPIKey && apiKeysRead.keys[profile.id] == true)
         }
         // Accounts first: the full scan below can take seconds, but who is logged in is known almost instantly.
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        // Asked for by someone, it hurries; the background refresh stays out of the way of what you are doing.
+        let qos: DispatchQoS.QoSClass = showsProgress ? .userInitiated : .utility
+        DispatchQueue.global(qos: qos).async { [weak self] in
             let quick = scanner.quickScan(homes)
             Task { @MainActor in
                 guard let self else { return }

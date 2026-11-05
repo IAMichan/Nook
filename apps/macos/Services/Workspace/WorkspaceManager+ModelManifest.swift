@@ -3,6 +3,14 @@ import Foundation
 /// The model manifest at work (see ModelManifest): a fresh copy from Nook's repository, fetched through `NetworkGuard` and
 /// never while you keep the model list offline, and the agents' own versions, so a model that needs a newer agent says
 /// which update unlocks it. The menus are built here for the composer and the session settings alike.
+/// A list of model choices and what it was made from.
+struct ModelChoiceMemo {
+    var manifest: ModelManifest?
+    var offered: [AgentModel]
+    var installed: String?
+    var choices: [ModelChoice]
+}
+
 extension WorkspaceManager {
     static var manifestStoreURL: URL {
         NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true).appendingPathComponent("model-manifest.json")
@@ -66,11 +74,24 @@ extension WorkspaceManager {
     // MARK: Menus
 
     /// One agent's model and effort controls (see `AgentModelMenu`): an ACP agent you added by its profile.
+    ///
+    /// Composers ask for this in their body, which runs for every change of the workspace, so the list of models is kept
+    /// until what it is made from changes: making it parses the version of every model in the manifest.
     func modelMenu(for provider: RunProvider, profileID: String? = nil) -> AgentModelMenu {
-        AgentModelMenu(provider: provider, manifest: modelManifest, offered: offeredModels(provider, profileID: profileID),
-                       offeredEfforts: agentEfforts[Self.effortKey(provider, profileID: profileID)] ?? [],
-                       installed: agentVersions[provider], custom: settings.customModels(for: provider),
-                       favorites: settings.favoriteModels(for: provider))
+        let key = Self.effortKey(provider, profileID: profileID)
+        let offered = offeredModels(provider, profileID: profileID)
+        let installed = agentVersions[provider]
+        var menu = AgentModelMenu(provider: provider, manifest: modelManifest, offered: offered,
+                                  offeredEfforts: agentEfforts[key] ?? [], installed: installed,
+                                  custom: settings.customModels(for: provider), favorites: settings.favoriteModels(for: provider))
+        if let memo = modelChoiceMemo[key], memo.installed == installed, memo.offered == offered, memo.manifest == modelManifest {
+            menu.knownChoices = memo.choices
+        } else {
+            let choices = menu.choices
+            modelChoiceMemo[key] = ModelChoiceMemo(manifest: modelManifest, offered: offered, installed: installed, choices: choices)
+            menu.knownChoices = choices
+        }
+        return menu
     }
 
     /// The models to offer an agent (see `AgentModelMenu.choices`).

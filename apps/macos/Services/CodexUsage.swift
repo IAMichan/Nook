@@ -23,6 +23,7 @@ final class CodexUsage: ObservableObject {
 
     /// Query `codex app-server` at most this often, unless a session log was modified in the interim.
     private nonisolated static let appServerInterval: TimeInterval = 5 * 60
+    private nonisolated static let idleSlowdown: Double = 6
     private nonisolated static let appServerRetryInterval: TimeInterval = 10 * 60
 
     func start() {
@@ -190,7 +191,9 @@ final class CodexUsage: ObservableObject {
 
         // On battery or away, `codex app-server` (a Node process each time) is started less often (`EnergyPlan.slowdown`).
         // Someone looking at the limits (`maxAge`) makes it due sooner.
-        let due = lastAppServerFetch.map { Date().timeIntervalSince($0) >= maxAge ?? appServerInterval * slowdown } ?? true
+        // With no session since the last reading, Codex used nothing here: half an hour is enough for what it used elsewhere.
+        let quiet: Double = sessionChanged ? 1 : idleSlowdown
+        let due = lastAppServerFetch.map { Date().timeIntervalSince($0) >= maxAge ?? appServerInterval * slowdown * quiet } ?? true
         // A running session rewrites its log every minute, and each response in it carries the same limits the app-server
         // reports. Read those instead of starting a whole `codex app-server` each minute; it still runs when due.
         if hasSnapshot, sessionChanged, !due, let latest = sessions.first,
