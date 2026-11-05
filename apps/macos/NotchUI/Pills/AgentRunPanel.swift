@@ -570,18 +570,6 @@ struct AgentRunPanel: View {
         }
     }
 
-    /// The subscription limits of the account this session runs on, for every agent that reports them: at the right end
-    /// of the row of choices under the box.
-    @ViewBuilder
-    private func usageLimits(_ run: WorkspaceRun) -> some View {
-        if let profile = app.profile(for: run) {
-            let limits = app.quota.limits(for: profile)
-            if UsageLimits.worthShowing(limits.map(\.percent)) {
-                ComposerUsageRing(limits: limits, account: AccountLabel.name(profile, app: app))
-            }
-        }
-    }
-
     /// The context ring once the window starts to fill, and the microphone next to it.
     @ViewBuilder
     private func composerTrailing(_ run: WorkspaceRun) -> some View {
@@ -1351,10 +1339,10 @@ struct AgentRunPanel: View {
                     ComposerDivider()
                     permissionMenu(run)
                     effortMenu(run)
+                    ComposerUsageRing.forAccount(app.profile(for: run), app: app)
                 }
                 .rich(composerModel, composerConfig(run))
                 .trailing { composerTrailing(run) }
-                .trayTrailing { usageLimits(run) }
                 // While it works, what you type steers the turn or waits in line, and Cmd+Return does the other.
                 .queueing(active ? deliver(preferred) : nil,
                           alternate: active ? deliver(preferred == .steer ? .queue : .steer, now: true) : nil,
