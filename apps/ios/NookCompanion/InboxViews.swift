@@ -31,8 +31,8 @@ struct InboxListView: View {
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     ConnectionLine()
                     if !client.can(CompanionFeature.inbox) {
-                        EmptyState(symbol: "arrow.down.circle", title: "Update Nook on your Mac",
-                                   message: "Update Nook on your Mac to read and answer your chats from your phone.") {}
+                        WSEmptyState(symbol: "arrow.down.circle", title: String(localized: "Update Nook on your Mac"),
+                                   message: String(localized: "Update Nook on your Mac to read and answer your chats from your phone."))
                     } else {
                         if client.inboxStatus == "chatsaccess" {
                             Banner(text: String(localized: "Nook cannot read the notifications on your Mac: give it Full Disk Access in System Settings."),
@@ -41,20 +41,20 @@ struct InboxListView: View {
                         if client.inbox.isEmpty {
                             if client.phase == .connected {
                                 if client.inboxStatus == "chatsoff" {
-                                    EmptyState(symbol: "bubble.left.and.bubble.right", title: "Chats are off on your Mac",
-                                               message: "Link WhatsApp or turn on Chats in Nook › Settings › Connections to see every chat here.") {}
+                                    WSEmptyState(symbol: "bubble.left.and.bubble.right", title: String(localized: "Chats are off on your Mac"),
+                                               message: String(localized: "Link WhatsApp or turn on Chats in Nook › Settings › Connections to see every chat here."))
                                 } else {
-                                    EmptyState(symbol: "bubble.left.and.bubble.right", title: "No chats yet",
-                                               message: "New messages from WhatsApp and your other chat apps on your Mac show up here.") {}
+                                    WSEmptyState(symbol: "bubble.left.and.bubble.right", title: String(localized: "No chats yet"),
+                                               message: String(localized: "New messages from WhatsApp and your other chat apps on your Mac show up here."))
                                 }
                             }
                         } else {
                             // Finding one among many; a short list needs no search or filter.
                             if client.inbox.count > 8 {
                                 NookSearchField(prompt: "Search chats", text: $query)
-                                HStack(spacing: Theme.Spacing.md) {
-                                    FilterChip(title: "All", selected: filter == .all) { filter = .all }
-                                    FilterChip(title: "Unread", count: client.inbox.filter { $0.unread > 0 }.count, selected: filter == .unread) { filter = .unread }
+                                HStack(spacing: Theme.Spacing.xs) {
+                                    NookFilterChip(title: String(localized: "All"), selected: filter == .all) { filter = .all }
+                                    NookFilterChip(title: String(localized: "Unread"), count: client.inbox.filter { $0.unread > 0 }.count, selected: filter == .unread) { filter = .unread }
                                 }
                             }
                             if shown.isEmpty {
@@ -75,7 +75,7 @@ struct InboxListView: View {
                 .padding(.bottom, Theme.Spacing.md)
                 VStack(spacing: 0) {
                     ForEach(Array(shown.enumerated()), id: \.element.id) { index, chat in
-                        if index > 0 { RowSeparator(inset: Theme.Spacing.lg + SharedMetrics.avatar + Theme.Spacing.lg).padding(.trailing, Theme.Spacing.lg) }
+                        if index > 0 { NookRowSeparator() }
                         NavigationLink(value: chat.id) { InboxRow(chat: chat) }
                             .buttonStyle(RowPress())
                             .contextMenu { markButton(chat) }
@@ -122,14 +122,14 @@ struct InboxRow: View {
                            typing: InboxTyping.text(chat.typing ?? [])) {
             InboxAvatar(name: chat.name, app: chat.app, size: SharedMetrics.avatar)
         } trailing: {
-            CountBadge(count: chat.unread)
+            NookCountBadge(count: chat.unread)
                 .accessibilityLabel(Text("\(chat.unread) unread"))
         }
     }
 }
 
-/// A chat's initials on a quiet grey, with its app's mark in the app's own color in the corner: the color lives in the
-/// logo only, as on the Mac.
+/// A chat's initials in the person's own color (`ChatInitialsFace`, shared with the Mac), with its app's mark in the
+/// app's own color in the corner.
 struct InboxAvatar: View {
     let name: String
     let app: String
@@ -143,19 +143,17 @@ struct InboxAvatar: View {
 
     var body: some View {
         let style = Self.style(app)
-        Text(initials)
-            .font(Theme.rounded(size * 0.36, .semibold))
-            .foregroundStyle(Theme.textStrong)
-            .frame(width: size, height: size)
-            .background(Theme.raised, in: Circle())
+        // The Mac's `ChatsAvatar`: the initials in the person's own color, the app as a badge on the corner.
+        ChatInitialsFace(name: name, initials: initials, size: size)
             .overlay(alignment: .bottomTrailing) {
                 Image(systemName: style.symbol)
                     .font(Theme.font(size * 0.2, .bold))
                     .foregroundStyle(.white)
-                    .frame(width: size * 0.4, height: size * 0.4)
+                    .frame(width: size * 0.42, height: size * 0.42)
                     .background(style.color, in: Circle())
-                    .overlay(Circle().strokeBorder(Theme.surface, lineWidth: 2))
-                    .offset(x: 3, y: 3)
+                    .padding(Theme.Spacing.xxs / 2)
+                    .background(Circle().fill(Theme.canvas))
+                    .offset(x: Theme.Spacing.xs, y: Theme.Spacing.xxs)
             }
             .accessibilityHidden(true)
     }
@@ -399,7 +397,7 @@ struct InboxMessageInfo: View {
             List {
                 Section {
                     Text(line.text.isEmpty ? (line.attachment ?? "") : line.text)
-                        .font(Theme.TextStyle.body).foregroundStyle(Theme.text).lineLimit(4)
+                        .font(Theme.TextStyle.body).foregroundStyle(Theme.paper).lineLimit(4)
                 } footer: {
                     Text("\(read.count) of \(readers.count) have read it")
                 }
@@ -418,7 +416,7 @@ struct InboxMessageInfo: View {
             Section {
                 ForEach(Array(people.enumerated()), id: \.offset) { _, person in
                     HStack {
-                        Text(person.name).font(Theme.TextStyle.body).foregroundStyle(Theme.text).lineLimit(1)
+                        Text(person.name).font(Theme.TextStyle.body).foregroundStyle(Theme.paper).lineLimit(1)
                         Spacer(minLength: Theme.Spacing.md)
                         if let date = person.date {
                             Text(Date(timeIntervalSince1970: date), format: .dateTime.weekday(.abbreviated).hour().minute())

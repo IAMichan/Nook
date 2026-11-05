@@ -15,19 +15,20 @@ struct DiagnosisSheet: View {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
                     if let result {
                         Text(DiagnosisText.headline(result.cause, mac: macName))
-                            .font(Theme.TextStyle.heading).foregroundStyle(Theme.text)
+                            .font(Theme.TextStyle.heading).foregroundStyle(Theme.paper)
                             .fixedSize(horizontal: false, vertical: true)
                         if let ms = result.fastestMilliseconds {
                             Text("Answered in \(ms) ms").font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
                         }
-                        RowGroup {
+                        VStack(spacing: 0) {
                             ForEach(Array(result.hops.enumerated()), id: \.offset) { index, state in
-                                if index > 0 { RowSeparator(inset: Theme.Spacing.xxxl + Theme.Spacing.md) }
+                                if index > 0 { NookDivider(inset: Theme.Spacing.xxxl + Theme.Spacing.md) }
                                 HopRow(state: state, mac: macName)
                             }
                         }
+                        .panelCard()
                         if !result.steps.isEmpty {
-                            SectionHeader(title: "What to do")
+                            SectionHeader(title: String(localized: "What to do"))
                             VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                                 ForEach(Array(result.steps.enumerated()), id: \.offset) { index, step in
                                     HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.lg) {
@@ -47,16 +48,15 @@ struct DiagnosisSheet: View {
                         Text("Checking every way to reach your Mac…")
                             .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary).frame(maxWidth: .infinity)
                     }
-                    Button { Task { await check() } } label: { Label("Check again", systemImage: "arrow.clockwise") }
-                        .buttonStyle(ActionButtonStyle())
+                    NookGhostButton(title: String(localized: "Check again"), symbol: "arrow.clockwise") { Task { await check() } }
                         .disabled(checking)
                     // The local connection log, without addresses, names or keys; nothing is sent anywhere.
-                    Button {
+                    NookGhostButton(title: copied ? String(localized: "Copied") : String(localized: "Copy diagnostics"),
+                                    symbol: copied ? "checkmark" : "doc.on.doc") {
                         UIPasteboard.general.string = client.diagnosticsBundle()
                         copied = true
                         Haptics.success()
-                    } label: { Label(copied ? LocalizedStringKey("Copied") : LocalizedStringKey("Copy diagnostics"), systemImage: copied ? "checkmark" : "doc.on.doc") }
-                        .buttonStyle(ActionButtonStyle())
+                    }
                     Text("Diagnostics stay on this iPhone until you paste them somewhere; addresses, names and keys are left out.")
                         .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary)
                 }
@@ -66,12 +66,12 @@ struct DiagnosisSheet: View {
             .navigationTitle("Why can't I connect?")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.foregroundStyle(Theme.text) }
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.foregroundStyle(Theme.paper) }
             }
             .task { await check() }
         }
         .preferredColorScheme(.dark)
-        .tint(Theme.text)
+        .tint(Theme.paper)
     }
 
     private var macName: String { client.macName.isEmpty ? String(localized: "your Mac") : client.macName }

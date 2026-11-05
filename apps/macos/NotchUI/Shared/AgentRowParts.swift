@@ -1,0 +1,86 @@
+import SwiftUI
+
+// A coding agent's session in a list, as both apps show it (apps/ios/project.yml compiles this file too): the Mac's
+// `AgentListRow` and the phone's `AgentRow` fill the same layout, so a session reads the same on either.
+
+/// Three lines, as a thread in t3code: the folder with the status or how long ago on the right; the session's name;
+/// and the branch (with what changed and its pull request, where the app knows them) with the agent's logo at its end.
+/// Without anything for the third line the logo moves up beside the name and the row keeps two lines.
+struct AgentRowLayout<Slot: View, Title: View, Logo: View, Meta: View>: View {
+    let folder: String
+    /// The folder's full path, on hover on the Mac.
+    var folderHelp = ""
+    /// Something for the third line: a branch, changes or a pull request.
+    let hasMeta: Bool
+    /// The right end of the first line: the status, or how long ago.
+    @ViewBuilder var slot: () -> Slot
+    /// The name, with any quiet marks before it (pinned, forked).
+    @ViewBuilder var title: () -> Title
+    @ViewBuilder var logo: () -> Logo
+    @ViewBuilder var meta: () -> Meta
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Image(systemName: "folder").font(NookTheme.textFont(9.5, .semibold))
+                Text(folder)
+                    .lineLimit(1)
+                    .help(folderHelp)
+                Spacer(minLength: NookTheme.Spacing.sm)
+                slot()
+            }
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.textTertiary)
+            .frame(minHeight: 18, maxHeight: SharedMetrics.isPhone ? nil : 18)
+
+            HStack(spacing: NookTheme.Spacing.sm) {
+                title()
+                Spacer(minLength: NookTheme.Spacing.xs)
+                if !hasMeta { logo() }
+            }
+
+            if hasMeta {
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    meta()
+                    logo()
+                }
+                .padding(.top, NookTheme.Spacing.xxs)
+            }
+        }
+    }
+}
+
+/// A session's name in its row: medium paper while it matters, regular grey once it recedes. It gives way last, so the
+/// status and the pull request shrink to their marks first.
+struct AgentRowTitle: View {
+    let title: String
+    var receded = false
+    var dimmed = false
+
+    var body: some View {
+        Text(title)
+            .font(receded ? NookTheme.TextStyle.body : NookTheme.TextStyle.strong)
+            .foregroundStyle(dimmed || receded ? NookTheme.textSecondary : NookTheme.paper)
+            .lineLimit(1)
+            .layoutPriority(1)
+    }
+}
+
+/// The branch on a session's third line, cut in the middle when it is long; a worktree's with its own mark.
+struct AgentRowBranch: View {
+    let branch: String
+    var worktree = false
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            Image(systemName: worktree ? "arrow.triangle.branch.square" : "arrow.triangle.branch")
+                .font(NookTheme.textFont(9.5, .semibold))
+                .help(worktree ? sharedText("agents.row.worktree", "Works in its own worktree")
+                               : sharedText("agents.row.branch", "Branch"))
+            Text(branch)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}

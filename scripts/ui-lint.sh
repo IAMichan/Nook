@@ -27,7 +27,7 @@ cd "$(dirname "$0")/../apps/macos"
 OWN_COLORS=(
   "NotchUI/Theme/NookTheme.swift"
   "NotchUI/Components/BrandLogo.swift"
-  "NotchUI/Components/AgentLogo.swift"
+  "NotchUI/Shared/AgentLogo.swift"
   "NotchUI/Components/StatusStyleView.swift"
   "NotchUI/Components/ComposerDropdown.swift"
   "NotchUI/Chat/ChatChartView.swift"
