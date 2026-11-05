@@ -142,12 +142,12 @@ enum PanelLayout {
     /// The widest a page of blocks reads (usage, a pull request): centered on a wider window.
     static let pageColumn: CGFloat = 960
     /// The session list on the left of the Agents tab.
-    static let agentsList: Double = 280
+    static let agentsList: Double = 256
     /// A session's results on the right; "widen" in its header jumps to `outputsWide`.
     static let outputs: Double = 400
     static let outputsWide: Double = 620
     /// The side panel with a session's terminal, browser or changes.
-    static let tool: Double = 460
+    static let tool: Double = 540
     /// The session panel (machine, scripts, branch, changes) docked beside a session, and the room the rest of the
     /// window needs before it docks; under that it is the branch button's popover.
     static let sessionPanel: CGFloat = 300

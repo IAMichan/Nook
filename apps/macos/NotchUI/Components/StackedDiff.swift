@@ -61,25 +61,25 @@ struct StackedDiffToolbar: View {
     var body: some View {
         let files = hideTests ? files.filter { !DiffFileFilter.isTest($0.path) } : files
         let allOpen = !files.isEmpty && files.allSatisfy { expanded.contains($0.id) }
-        HStack(spacing: NookTheme.Spacing.xxs) {
+        HStack(spacing: NookTheme.Spacing.xs) {
             EditLinesLabel(lines: EditLines(added: files.reduce(0) { $0 + ($1.additions ?? 0) },
                                             removed: files.reduce(0) { $0 + ($1.deletions ?? 0) }), size: 11)
                 .padding(.trailing, NookTheme.Spacing.xs)
             ToolbarIconButton("text.word.spacing", tr(ignoreWhitespace ? "agents.diff.showWhitespace" : "agents.diff.hideWhitespace"),
-                              selected: ignoreWhitespace) { ignoreWhitespace.toggle() }
+                              height: 28, width: 28, selected: ignoreWhitespace, symbolSize: 13) { ignoreWhitespace.toggle() }
             ToolbarIconButton("testtube.2", tr(hideTests ? "agents.diff.showTests" : "agents.diff.hideTests"),
-                              selected: hideTests) { hideTests.toggle() }
+                              height: 28, width: 28, selected: hideTests, symbolSize: 13) { hideTests.toggle() }
             ToolbarIconButton("arrow.turn.down.left", tr(wrap ? "agents.diff.noWrap" : "agents.diff.wrap"),
-                              selected: wrap) { wrap.toggle() }
+                              height: 28, width: 28, selected: wrap, symbolSize: 13) { wrap.toggle() }
             ToolbarIconButton(split ? "rectangle.split.2x1" : "rectangle", tr(split ? "agents.diff.unified" : "agents.diff.split"),
-                              selected: split) { split.toggle() }
+                              height: 28, width: 28, selected: split, symbolSize: 13) { split.toggle() }
             ToolbarIconButton(allOpen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                              tr(allOpen ? "agents.diff.collapseAll" : "agents.diff.expandAll"), enabled: !files.isEmpty) {
+                              tr(allOpen ? "agents.diff.collapseAll" : "agents.diff.expandAll"), height: 28, width: 28, enabled: !files.isEmpty, symbolSize: 13) {
                 // Not animated: fading every diff in at once laid all of them out on each frame.
                 expanded = allOpen ? [] : Set(files.map(\.id))
             }
             ToolbarIconButton(showsTree ? "sidebar.trailing" : "sidebar.right",
-                              tr(showsTree ? "agents.diff.hideFiles" : "agents.diff.showFiles")) {
+                              tr(showsTree ? "agents.diff.hideFiles" : "agents.diff.showFiles"), height: 28, width: 28, symbolSize: 13) {
                 withAnimation(NookTheme.reveal) { showsTree.toggle() }
             }
         }
@@ -134,7 +134,7 @@ struct StackedDiffList<Content: View>: View {
                             Section {
                                 if expanded.contains(file.id) {
                                     StackedDiffBody(file: file, scope: scope, options: options, diff: diff, content: content)
-                                        .padding(.bottom, NookTheme.Spacing.sm)
+                                        .padding(.bottom, NookTheme.Spacing.md)
                                 }
                             } header: {
                                 StackedDiffHeader(file: file, open: expanded.contains(file.id)) { toggle(file) }
@@ -354,7 +354,6 @@ private struct StackedDiffHeader: View {
         .overlay(alignment: .leading) {
             if hovering { NookTheme.paper.opacity(0.24).frame(width: 3) }
         }
-        .overlay(alignment: .bottom) { NookDivider() }
         .contentShape(Rectangle())
         .onTapGesture(perform: toggle)
         .onHover { hovering = $0 }

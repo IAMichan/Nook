@@ -158,16 +158,16 @@ enum NookTheme {
         /// Sheets and the composer tray.
         static let sheet: CGFloat = 14
         /// Your own message's bubble in a conversation.
-        static let bubble: CGFloat = 18
+        static let bubble: CGFloat = 16
         /// A chat app's message bubble: tighter than Nook's own, so long runs of messages stay compact.
         static let chatBubble: CGFloat = 10
         /// Where two bubbles of one run meet, on the writer's side: a small rounding, so the run stacks as one column.
         static let chatJoin: CGFloat = 4
         /// Pills and the notch's own corners.
         static let pill: CGFloat = 20
-        /// The composer box: round enough that its one-line form, with the 32 pt send button 8 pt from the edge, is a
-        /// capsule whose corners run parallel to the button.
-        static let composer: CGFloat = 24
+        /// The composer box, and the tray that runs on from it. With the 32 pt send button 8 pt from the edge, its corner
+        /// runs parallel to the button's.
+        static let composer: CGFloat = 16
     }
 
     /// Spacing on a 4 pt grid. Use these for padding and stack spacing so the panels line up.
@@ -201,6 +201,8 @@ enum NookTheme {
         static var label: Font { NookTheme.font(11.5, .medium) }
         /// Body text in rows, cards, chat, and the composer.
         static var body: Font { NookTheme.font(14) }
+        /// A composer's choices (model, mode, access): a step under `strong`, so they fit a narrow box.
+        static var control: Font { NookTheme.font(13, .medium) }
         /// A row title or a button: medium rather than bold, so a list of titles stays calm and the text carries it.
         static var strong: Font { NookTheme.font(14, .medium) }
         /// The title of a panel, a list, or a card.

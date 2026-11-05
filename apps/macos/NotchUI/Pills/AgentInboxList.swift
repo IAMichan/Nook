@@ -18,9 +18,11 @@ struct AgentInboxList: View {
     let past: [AgentListItem]
     let current: String
     let now: Date
+    /// In the sidebar: the list's own buttons, in one row with the search field.
+    var headerActions: AnyView? = nil
     let select: (String) -> Void
 
-    @State private var collapsed: Set<InboxSection.Kind> = [.snoozed, .settled]
+    @Environment(\.inPanelSidebar) private var inSidebar
     @State private var settledLimit = InboxLayout.settledPage
     @State private var dragging: String?
     @State private var targeted: InboxSection.Kind?
@@ -167,6 +169,7 @@ struct AgentInboxList: View {
                         if selection.isActive { selection.clear() } else { selection.begin() }
                     }
                 }
+                headerActions
             }
             if let hint {
                 Text(hint)
@@ -191,16 +194,13 @@ struct AgentInboxList: View {
                                 sectionView(section, sections: sections, byID: byID, shown: shown)
                             }
                             ForEach(groups) { group in projectView(group, sections: sections, byID: byID, shown: shown) }
-                            ForEach(sections.filter { $0.kind == .snoozed }, id: \.kind) { section in
-                                sectionView(section, sections: sections, byID: byID, shown: shown)
-                            }
                         } else {
-                            ForEach(sections.filter { $0.kind != .settled }, id: \.kind) { section in
+                            ForEach(sections.filter { !Self.isDocked($0.kind) }, id: \.kind) { section in
                                 sectionView(section, sections: sections, byID: byID, shown: shown)
                             }
                         }
-                        // Only the docked settled shelf left (or nothing): say so instead of an empty space.
-                        if sections.allSatisfy({ $0.kind == .settled }) { emptyState }
+                        // Only the docked shelves left (or nothing): say so instead of an empty space.
+                        if sections.allSatisfy({ Self.isDocked($0.kind) }) { emptyState }
                     }
                 }
                 // A session opened from elsewhere (the keyboard, a card, search) is brought into view in the list; a click
@@ -222,9 +222,9 @@ struct AgentInboxList: View {
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
             }
-            // What you settled sits at the foot of the list, above the footer, its header above its rows.
-            if let settled = sections.first(where: { $0.kind == .settled }) {
-                settledShelf(settled, sections: sections, byID: byID, shown: shown)
+            // What you snoozed and settled sits at the foot of the list, above the footer, each header above its rows.
+            ForEach(sections.filter { Self.isDocked($0.kind) }, id: \.kind) { section in
+                dockedShelf(section, sections: sections, byID: byID, shown: shown)
             }
             undoNotice
             if selection.isActive {
@@ -272,7 +272,7 @@ struct AgentInboxList: View {
 
     /// The whole panel is empty: no search, nothing loading, and at most a closed shelf of settled sessions below.
     private func showsEmptyState(_ sections: [InboxSection]) -> Bool {
-        showsSetUp && sections.allSatisfy { $0.kind == .settled } && collapsed.contains(.settled)
+        showsSetUp && sections.allSatisfy { Self.isDocked($0.kind) } && sections.allSatisfy { collapsed.contains($0.kind) }
     }
 
     @ViewBuilder
@@ -284,10 +284,16 @@ struct AgentInboxList: View {
     // MARK: Search
 
     private var searchField: some View {
-        NookSearchField(prompt: tr("inbox.search.placeholder"), text: $store.query)
+        NookSearchField(prompt: tr("inbox.search.placeholder"), text: $store.query, style: inSidebar ? .ghost : .panel)
     }
 
     // MARK: Sections
+
+    /// The shelves at the foot of the list, under the scrolling rows.
+    private static func isDocked(_ kind: InboxSection.Kind) -> Bool { kind == .snoozed || kind == .settled }
+
+    /// The shelves you folded, kept across launches. Snoozed and Settled start folded.
+    private var collapsed: Set<InboxSection.Kind> { store.collapsedShelves }
 
     /// What a section draws: a folded shelf still shows the session that is open on the right.
     private func rows(of section: InboxSection) -> [InboxEntry] {
@@ -309,7 +315,6 @@ struct AgentInboxList: View {
                 shelfHeader(section, sections: sections, byID: byID)
                 ForEach(rows(of: section)) { entry in
                     entryRow(entry, in: section, sections: sections, byID: byID, shown: shown)
-                        .padding(.leading, store.groupByProject ? NookTheme.Spacing.xl : 0)
                 }
             }
             .padding(.top, NookTheme.Spacing.md)
@@ -341,16 +346,12 @@ struct AgentInboxList: View {
         let active = home[.active] ?? InboxSection(kind: .active, rows: [])
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             projectHeader(group, folder: folder(of: group, byID: byID))
-            // Indented under the header, so the logo of each session lines up with the folder's mark above it.
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                ForEach(rows(of: group), id: \.entry.id) { pair in
-                    entryRow(pair.entry, in: home[pair.kind] ?? active, sections: sections, byID: byID, shown: shown)
-                }
+            // Full width, so a row's fill runs under the header's; each row indents its name to the project's name.
+            ForEach(rows(of: group), id: \.entry.id) { pair in
+                entryRow(pair.entry, in: home[pair.kind] ?? active, sections: sections, byID: byID, shown: shown)
             }
-            // The chevron's room (`Spacing.lg`) and its gap: the logo sits under the folder's mark, the name under its name.
-            .padding(.leading, NookTheme.Spacing.xl)
         }
-        .padding(.top, NookTheme.Spacing.xs)
+        .padding(.top, NookTheme.Spacing.md)
         .modifier(DropTarget(kind: .active, section: active, list: self, sections: sections, byID: byID, row: nil))
     }
 
@@ -380,16 +381,19 @@ struct AgentInboxList: View {
     private func projectHeader(_ group: InboxProjectGroup, folder: String?) -> some View {
         let open = !store.collapsedProjects.contains(group.project) || !store.query.isEmpty
         let name = group.project.isEmpty || group.project == "no folder" ? tr("inbox.project.none") : group.project
-        return HStack(spacing: 0) {
-            foldButton(group, name: name, open: open)
-            if let folder {
-                ToolbarIconButton("plus", tr("inbox.project.newSession", name), height: 22, width: 22) {
-                    newSession(in: folder)
+        let hovered = hoveredProject == group.project
+        return foldButton(group, name: name, open: open, hovered: hovered, canStart: folder != nil)
+            .overlay(alignment: .trailing) {
+                if let folder {
+                    ToolbarIconButton("square.and.pencil", tr("inbox.project.newSession", name), height: 24, width: 24) {
+                        newSession(in: folder)
+                    }
+                    .opacity(hovered ? 1 : 0)
+                    .allowsHitTesting(hovered)
+                    // Before the chevron, where a folded project's count stands.
+                    .padding(.trailing, Self.chevronWidth + NookTheme.Spacing.md + NookTheme.Spacing.xs)
                 }
-                .opacity(hoveredProject == group.project ? 1 : 0)
-                .padding(.trailing, NookTheme.Spacing.sm)
             }
-        }
         .onHover { inside in
             withAnimation(NookTheme.hover) {
                 if inside { hoveredProject = group.project } else if hoveredProject == group.project { hoveredProject = nil }
@@ -397,7 +401,9 @@ struct AgentInboxList: View {
         }
     }
 
-    private func foldButton(_ group: InboxProjectGroup, name: String, open: Bool) -> some View {
+    private static let chevronWidth: CGFloat = 12
+
+    private func foldButton(_ group: InboxProjectGroup, name: String, open: Bool, hovered: Bool, canStart: Bool) -> some View {
         Button {
             withAnimation(NookTheme.reveal) {
                 if store.collapsedProjects.contains(group.project) {
@@ -407,31 +413,38 @@ struct AgentInboxList: View {
                 }
             }
         } label: {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: "chevron.down")
-                    .font(NookTheme.font(8.5, .bold))
-                    .rotationEffect(.degrees(open ? 0 : -90))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .frame(width: NookTheme.Spacing.lg)
+            // The folder's mark is 16 wide, so with this padding and gap a session's name (36 in) lines up with the project's.
+            HStack(spacing: NookTheme.Spacing.md + NookTheme.Spacing.xxs) {
                 Image(systemName: open ? "folder" : "folder.fill")
-                    .font(NookTheme.TextStyle.label)
+                    .font(NookTheme.font(13, .medium))
                     .foregroundStyle(NookTheme.textSecondary)
+                    .frame(width: NookTheme.Spacing.xl)
                 Text(name)
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(NookTheme.textSecondary)
+                    .font(NookTheme.TextStyle.strong)
+                    .foregroundStyle(NookTheme.textStrong)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Text("\(group.rows.count)")
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(NookTheme.textTertiary)
                 // Folded, the header still says that something in it waits for you.
                 if !open && group.needsYou {
                     Circle().fill(NookTheme.amber).frame(width: 6, height: 6)
                 }
                 Spacer(minLength: 0)
+                if !open {
+                    Text("\(group.rows.count)")
+                        .font(NookTheme.TextStyle.detail.monospacedDigit())
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .opacity(hovered && canStart ? 0 : 1)
+                }
+                Image(systemName: "chevron.down")
+                    .font(NookTheme.font(10, .semibold))
+                    .rotationEffect(.degrees(open ? 0 : -90))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .frame(width: Self.chevronWidth)
             }
-            .padding(.horizontal, NookTheme.Spacing.md)
-            .frame(height: 26)
+            .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+            .frame(height: 32)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+                .fill(hovered ? NookTheme.rowHover : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -440,16 +453,14 @@ struct AgentInboxList: View {
         .accessibilityValue(open ? tr("compose.queue.expanded") : "")
     }
 
-    /// The settled shelf, docked at the foot of the list: opening it lifts its header and lays its rows out below,
-    /// scrolling on their own once they no longer fit.
-    private func settledShelf(_ section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem],
+    /// A shelf docked at the foot of the list: opening it lifts its header and lays its rows out below, scrolling on their
+    /// own once they no longer fit.
+    private func dockedShelf(_ section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem],
                               shown: [String]) -> some View {
         let open = !collapsed.contains(section.kind)
         let list = VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             ForEach(rows(of: section)) { entry in
                 entryRow(entry, in: section, sections: sections, byID: byID, shown: shown)
-                    // Under its header as a session sits under its project's: the same indent, so the shelf is no wider.
-                    .padding(.leading, store.groupByProject ? NookTheme.Spacing.xl : 0)
             }
             if open && section.hiddenCount > 0 {
                 Button { settledLimit += InboxLayout.settledPage } label: {
@@ -481,14 +492,14 @@ struct AgentInboxList: View {
         let ghost = ghostLabel(for: section.kind, sections: sections)
         return Button {
             withAnimation(NookTheme.reveal) {
-                if open { collapsed.insert(section.kind) } else { collapsed.remove(section.kind) }
+                store.setShelf(section.kind, collapsed: open)
             }
         } label: {
             HStack(spacing: NookTheme.Spacing.md) {
-                Text(tr("inbox.section." + section.kind.rawValue, count))
+                Text(tr("inbox.section." + section.kind.rawValue))
                     .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(section.kind == .snoozed ? NookTheme.textSecondary : NookTheme.textTertiary)
-                NookDivider()
+                    .foregroundStyle(NookTheme.textSecondary)
+                Spacer(minLength: 0)
                 if let ghost {
                     Text(ghost)
                         .font(NookTheme.TextStyle.label)
@@ -496,13 +507,17 @@ struct AgentInboxList: View {
                         .padding(.horizontal, NookTheme.Spacing.sm).padding(.vertical, NookTheme.Spacing.xxs)
                         .background(Capsule().fill(NookTheme.iris.opacity(0.14)))
                 }
+                Text("\(count)")
+                    .font(NookTheme.TextStyle.detail.monospacedDigit())
+                    .foregroundStyle(NookTheme.textTertiary)
                 Image(systemName: "chevron.down")
-                    .font(NookTheme.font(8.5, .bold))
+                    .font(NookTheme.font(10, .semibold))
                     .rotationEffect(.degrees(open ? 0 : -90))
                     .foregroundStyle(NookTheme.textTertiary)
+                    .frame(width: Self.chevronWidth)
             }
-            .padding(.horizontal, NookTheme.Spacing.lg)
-            .frame(height: 28)
+            .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+            .frame(height: 32)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -874,7 +889,7 @@ extension AgentInboxList {
         if let section = sections.first(where: { $0.rows.contains { $0.id == keyRow } }),
            section.kind != .pinned, section.kind != .active {
             withAnimation(NookTheme.reveal) {
-                if fold { collapsed.insert(section.kind) } else { collapsed.remove(section.kind) }
+                store.setShelf(section.kind, collapsed: fold)
             }
             return .handled
         }

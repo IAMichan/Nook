@@ -24,20 +24,16 @@ extension AgentDisplayState {
     var tone: StatusTone { AgentStatusStyle.tone(self) }
 }
 
-/// A status as a small neutral badge that sits in a row's 12pt meta line, where the "55 min" would otherwise be.
-/// Only the symbol (or the live dot) carries the status color; the word stays in the row's own greys, and turns
-/// paper-white when the agent waits on you. That keeps a list of badges calm instead of a row of colored blocks.
+/// A status as a small badge that sits in a row's 12pt meta line, where the "55m" would otherwise be: the mark and the
+/// word both in the status color, without a fill, so a status reads at a glance and a list of them stays free of blocks.
 /// It wears `RowBadgeBackground`, like `PullRequestPill`, so a row with a badge is as tall as one without.
-/// `detail` follows a middle dot in tabular digits, such as "3m" or "tot 9:00".
+/// `detail` follows the word in tabular digits, such as "3m" or "tot 9:00".
 struct AgentStatusBadge: View {
     let state: AgentDisplayState
     var detail: String? = nil
     var long = false
     /// Only the mark, for a row too narrow for the word: the word and the detail move to its tooltip.
     var markOnly = false
-
-    /// Approval, input and failure: the ones you have to act on.
-    private var needsYou: Bool { AgentStatusStyle.priority(state) >= AgentStatusStyle.priority(.failed) }
 
     var body: some View {
         let tint = state.tone.color
@@ -54,13 +50,13 @@ struct AgentStatusBadge: View {
             if !markOnly {
                 Text(long ? state.longWord : state.word)
                     .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(needsYou ? NookTheme.paper : NookTheme.textSecondary)
+                    .foregroundStyle(tint)
                     .lineLimit(1)
             }
             if let detail, !markOnly {
-                Text("· \(detail)")
-                    .font(NookTheme.TextStyle.caption.monospacedDigit())
-                    .foregroundStyle(NookTheme.textTertiary)
+                Text(detail)
+                    .font(NookTheme.TextStyle.label.monospacedDigit())
+                    .foregroundStyle(tint)
                     .lineLimit(1)
             }
         }

@@ -262,24 +262,27 @@ struct ToolbarIconButton: View {
     var enabled: Bool = true
     /// A toggle that is on (a diff's display option): lit and on a quiet fill, also at rest.
     var selected: Bool = false
+    /// The symbol's size: larger in a diff's toolbar, whose buttons are 28 pt.
+    var symbolSize: CGFloat = 11
     let action: () -> Void
     @State private var hovering = false
 
     init(_ symbol: String, _ label: String, height: CGFloat = 24, width: CGFloat = 24, enabled: Bool = true,
-         selected: Bool = false, _ action: @escaping () -> Void) {
+         selected: Bool = false, symbolSize: CGFloat = 11, _ action: @escaping () -> Void) {
         self.symbol = symbol
         self.label = label
         self.height = height
         self.width = width
         self.enabled = enabled
         self.selected = selected
+        self.symbolSize = symbolSize
         self.action = action
     }
 
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(NookTheme.font(11, .medium))
+                .font(NookTheme.font(symbolSize, .medium))
                 .foregroundStyle(!enabled ? NookTheme.textTertiary.opacity(0.5)
                                  : (hovering || selected ? NookTheme.paper : NookTheme.textSecondary))
                 .frame(width: width, height: height)

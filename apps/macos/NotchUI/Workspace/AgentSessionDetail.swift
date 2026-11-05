@@ -90,11 +90,12 @@ struct AgentSessionDetail: View {
 
     /// "nook / Agents-pagina rustiger maken" with the branch button on the right.
     private func header(folder: String, title: String, directory: String, agentWorking: Bool) -> some View {
-        HStack(spacing: NookTheme.Spacing.md) {
+        HStack(spacing: NookTheme.Spacing.lg) {
             // The folder keeps its name before the title gives way, but truncates too in a narrow window instead of
             // pushing the header past the conversation.
             Text(folder)
-                .foregroundStyle(NookTheme.textTertiary)
+                .fontWeight(.medium)
+                .foregroundStyle(NookTheme.textSecondary)
                 .lineLimit(1)
                 .layoutPriority(1)
             Text("/").foregroundStyle(NookTheme.textTertiary)
@@ -339,7 +340,6 @@ struct AgentSessionDetail: View {
             SessionComposer(text: $composerState.draft, prompt: session.placeholder, onSend: { draft = "" }) {
                 agentPill(name: session.name, profile: nil)
             }
-            .choicesBelowBox()
             .images($composerState.images)
         } else {
             SessionComposer(
@@ -358,7 +358,6 @@ struct AgentSessionDetail: View {
                 if canTakeOver { turnControls(kind: AgentKind(agentName: session.name)) }
             }
             .rich(composerModel, composerConfig(folder: session.cwd))
-            .choicesBelowBox()
             .images($composerState.images)
             .trailing { ComposerMic(text: $composerState.draft) }
         }
@@ -655,7 +654,6 @@ struct AgentSessionDetail: View {
                         if app.canContinueInNook(session) { turnControls(kind: session.agent) }
                     }
                     .rich(composerModel, composerConfig(folder: session.cwd))
-                    .choicesBelowBox()
                     .images($composerState.images)
                     .trailing { ComposerMic(text: $composerState.draft) }
                 }
