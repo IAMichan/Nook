@@ -573,7 +573,7 @@ struct FloatingWorkingControl: View {
                                 Text("Wake").font(Theme.TextStyle.label).foregroundStyle(Theme.ink)
                                     .padding(.horizontal, Theme.Spacing.lg)
                                     .frame(height: 28)
-                                    .background(Theme.text, in: Capsule())
+                                    .background(Theme.paper, in: Capsule())
                             }
                             .buttonStyle(PressFade())
                         }
@@ -591,7 +591,7 @@ struct FloatingWorkingControl: View {
                 Button(action: onScrollToEnd) {
                     Image(systemName: "arrow.down")
                         .font(Theme.font(14, .semibold))
-                        .foregroundStyle(Theme.text)
+                        .foregroundStyle(Theme.paper)
                         .frame(width: 40, height: 40)
                         .floatingGlass(Circle())
                 }
@@ -615,7 +615,7 @@ extension View {
             glassEffect(.regular, in: shape)
         } else {
             background(.ultraThinMaterial, in: shape)
-                .overlay(shape.stroke(Theme.text.opacity(0.08), lineWidth: 1))
+                .overlay(shape.stroke(Theme.paper.opacity(0.08), lineWidth: 1))
         }
     }
 }

@@ -17,7 +17,7 @@ final class UIConsistencyTests: XCTestCase {
     private static let ownColors: Set<String> = [
         "NotchUI/Theme/NookTheme.swift",
         "NotchUI/Components/BrandLogo.swift",
-        "NotchUI/Components/AgentLogo.swift",
+        "NotchUI/Shared/AgentLogo.swift",
         "NotchUI/Components/StatusStyleView.swift",
         "NotchUI/Components/ComposerDropdown.swift",
         "NotchUI/Chat/ChatChartView.swift",

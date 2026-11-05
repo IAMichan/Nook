@@ -18,8 +18,8 @@ struct SessionChangesView: View {
             LazyVStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 if files.isEmpty {
                     if loaded {
-                        EmptyState(symbol: "checkmark.circle", title: "No changes",
-                                   message: "The session's folder has no changes against its last commit.") {}
+                        WSEmptyState(symbol: "checkmark.circle", title: String(localized: "No changes"),
+                                   message: String(localized: "The session's folder has no changes against its last commit."))
                     } else {
                         ProgressView().controlSize(.large).frame(maxWidth: .infinity).padding(.top, Theme.Spacing.xxxl)
                     }
@@ -99,7 +99,7 @@ private struct DiffFileCard: View {
                         .foregroundStyle(Theme.textTertiary)
                         .rotationEffect(.degrees(open ? 90 : 0))
                     VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                        Text(verbatim: name).font(Theme.TextStyle.strong).foregroundStyle(Theme.text).lineLimit(1)
+                        Text(verbatim: name).font(Theme.TextStyle.strong).foregroundStyle(Theme.paper).lineLimit(1)
                         if !folder.isEmpty {
                             Text(verbatim: folder).font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
                                 .lineLimit(1).truncationMode(.head)
@@ -131,19 +131,9 @@ private struct DiffFileCard: View {
                 }
             }
         }
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [Theme.text.opacity(0.08), Theme.text.opacity(0.015)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 1
-                )
-        )
+        // A changed file as the Mac's diff shows it: on `surface`, framed by `line2`.
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        .cardBackground(Theme.surface, stroke: Theme.line2, radius: Theme.Radius.card, style: .continuous)
     }
 }
 
@@ -187,9 +177,7 @@ private struct PatchView: View {
                     Spacer(minLength: 0)
                     Button("Clear") { withAnimation(Theme.reveal) { first = nil; last = nil } }
                         .font(Theme.TextStyle.label).foregroundStyle(Theme.textSecondary)
-                    Button { writing = true } label: { Label("Comment", systemImage: "text.bubble") }
-                        .buttonStyle(ActionButtonStyle())
-                        .fixedSize()
+                    NookPrimaryButton(title: String(localized: "Comment"), symbol: "text.bubble") { writing = true }
                 }
                 .padding(Theme.Spacing.lg)
                 .transition(.opacity)

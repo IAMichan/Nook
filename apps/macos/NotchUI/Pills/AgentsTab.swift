@@ -766,43 +766,20 @@ struct AgentListRow: View, Equatable {
     /// name; and the branch, its changes, the pull request and the agent's logo. Without any of those the logo moves up
     /// beside the name and the row keeps two lines. The hover card has the rest.
     private var fullBody: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-            HStack(spacing: NookTheme.Spacing.xs) {
-                NookSymbol("folder", size: 10).font(NookTheme.font(9.5, .semibold))
-                Text(item.folder)
-                    .lineLimit(1)
-                    .help(AgentPathFormat.tilde(item.path))
-                Spacer(minLength: NookTheme.Spacing.sm)
-                slot.opacity(hovering && actions != nil ? 0 : 1)
-            }
-            .font(NookTheme.TextStyle.detail)
-            .foregroundStyle(NookTheme.textTertiary)
-            .frame(height: 18)
-
-            HStack(spacing: NookTheme.Spacing.sm) {
-                marks
-                title
-                Spacer(minLength: NookTheme.Spacing.xs)
-                if !hasMeta { logo(size: 14) }
-            }
-
-            if hasMeta {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    metaLine
-                    logo(size: 14)
-                }
-                .padding(.top, NookTheme.Spacing.xxs)
-            }
+        AgentRowLayout(folder: item.folder, folderHelp: AgentPathFormat.tilde(item.path), hasMeta: hasMeta) {
+            slot.opacity(hovering && actions != nil ? 0 : 1)
+        } title: {
+            marks
+            title
+        } logo: {
+            logo(size: 14)
+        } meta: {
+            metaLine
         }
     }
 
     private var title: some View {
-        Text(item.title)
-            .font(receded ? NookTheme.TextStyle.body : NookTheme.TextStyle.strong)
-            .foregroundStyle(dimmed || receded ? NookTheme.textSecondary : NookTheme.paper)
-            .lineLimit(1)
-            // The name gives way last: the status and the pull request shrink to their marks first.
-            .layoutPriority(1)
+        AgentRowTitle(title: item.title, receded: receded, dimmed: dimmed)
     }
 
     private func logo(size: CGFloat) -> some View {
@@ -826,15 +803,7 @@ struct AgentListRow: View, Equatable {
     private var metaLine: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             if let branch = shownBranch {
-                HStack(spacing: NookTheme.Spacing.xs) {
-                    NookSymbol(item.worktree ? "arrow.triangle.branch.square" : "arrow.triangle.branch", size: 10)
-                        .font(NookTheme.font(9.5, .semibold))
-                        .help(item.worktree ? tr("agents.row.worktree") : tr("agents.row.branch"))
-                    Text(branch)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                .accessibilityElement(children: .combine)
+                AgentRowBranch(branch: branch, worktree: item.worktree)
             }
             Spacer(minLength: 0)
             changes

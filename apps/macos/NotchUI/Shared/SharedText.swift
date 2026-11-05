@@ -27,4 +27,8 @@ enum SharedMetrics {
     static let avatar: CGFloat = 40
     /// Room around a row of a list: a finger needs a taller row than a pointer.
     static let rowVertical: CGFloat = isPhone ? NookTheme.Spacing.lg : NookTheme.Spacing.md
+    /// A text button (`NookPrimaryButton`, `NookGhostButton`, `NookSplitButton`): 38 pt for a pointer, 44 for a finger.
+    static let buttonHeight: CGFloat = isPhone ? 44 : 38
+    /// A round symbol button (`NookIconButton`, the "…" menu).
+    static let iconButton: CGFloat = isPhone ? 40 : 34
 }

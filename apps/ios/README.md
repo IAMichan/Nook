@@ -17,7 +17,9 @@ Select an iPhone simulator (or, for a physical device, put your Apple Developer 
 
 ```text
 NookCompanion/   SwiftUI app: QR pairing, session list, inline actions, APNs push notifications
-  Theme.swift            the one design: colors, radii, spacing, cards, buttons, status pills, agent icons
+  Theme.swift            `Theme` = the Mac's `NookTheme`, plus how a session's state reads and the system bars
+  ThemeViews.swift       cards, section headers, status pills and banners, built on the parts shared with the Mac
+  PanelComponents.swift  the panel's header and tabs, the search field, the composer and starters
   CompanionViews.swift   root (Nook, Agents, Chats), pairing, session overview
   SessionViews.swift     a session as a conversation, starting a new session
   ChatViews.swift        Nook's own chats, shared bubble and composer
@@ -28,3 +30,9 @@ Shared/          what the app and the extension share (ActivityKit attributes, h
 ```
 
 The wire protocol, ChaCha20-Poly1305 sealing, and SHA-256/HMAC helpers are shared with the macOS app via [`packages/protocol`](../../packages/protocol).
+
+The design is shared too: the app compiles the Mac's theme (`apps/macos/NotchUI/Theme/NookTheme.swift`) and its shared
+components (`apps/macos/NotchUI/Shared`: buttons, badges, list parts, agent logos and rows, chat rows and bubbles, your
+messages), so both apps look the same; see *Shared with the iPhone* in [`docs/UI-COMPONENTS.md`](../../docs/UI-COMPONENTS.md).
+To look at the screens without a Mac, run a Debug build with the launch arguments `-NookDemo` (sample sessions, chats and
+a conversation) and optionally `-NookDemoShow agents|session|chats|chat`.

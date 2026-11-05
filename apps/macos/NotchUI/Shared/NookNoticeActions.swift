@@ -49,7 +49,7 @@ struct NookNoticeActions: View {
             if hasTrailing {
                 Spacer(minLength: NookTheme.Spacing.xs)
                 if !more.isEmpty { NookMoreMenu(actions: more) }
-                if let onVoice { NookIconButton(systemName: "mic", label: tr("card.voiceAdjust"), action: onVoice) }
+                if let onVoice { NookIconButton(systemName: "mic", label: sharedText("card.voiceAdjust", "Adjust with your voice"), action: onVoice) }
             }
         }
     }
@@ -69,7 +69,7 @@ struct NookSplitButton: View {
             Button(action: primary.perform) {
                 HStack(spacing: 7) {
                     if let symbol = primary.symbol { Image(systemName: symbol).font(NookTheme.font(12, .bold)) }
-                    Text(primary.label).font(NookTheme.font(14, .semibold))
+                    Text(primary.label).font(NookTheme.textFont(14, .semibold))
                 }
                 .foregroundStyle(NookTheme.ink)
                 .lineLimit(1)
@@ -85,7 +85,7 @@ struct NookSplitButton: View {
             Button(action: secondary.perform) {
                 HStack(spacing: 6) {
                     if let symbol = secondary.symbol { Image(systemName: symbol).font(NookTheme.font(compact ? 11 : 12, .semibold)) }
-                    Text(secondary.label).font(NookTheme.font(compact ? 13 : 14, .semibold))
+                    Text(secondary.label).font(NookTheme.textFont(compact ? 13 : 14, .semibold))
                 }
                 .foregroundStyle(hoveringSecondary ? NookTheme.paper : NookTheme.textSecondary)
                 .lineLimit(1)
@@ -99,7 +99,7 @@ struct NookSplitButton: View {
             .onHover { hoveringSecondary = $0 }
         }
         .padding(3)
-        .frame(height: 38)
+        .frame(height: SharedMetrics.buttonHeight)
         .background(Capsule().fill(NookTheme.smoke))
         .hoverLift(hoveringPrimary || hoveringSecondary)
     }
@@ -108,7 +108,7 @@ struct NookSplitButton: View {
 /// A round "…" that opens a notification's less common actions as a menu, each with its symbol.
 struct NookMoreMenu: View {
     let actions: [NookNoticeAction]
-    var size: CGFloat = 34
+    var size: CGFloat = SharedMetrics.iconButton
     @State private var hovering = false
 
     var body: some View {
@@ -132,7 +132,7 @@ struct NookMoreMenu: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .onHover { hovering = $0 }
-        .help(tr("card.more"))
-        .accessibilityLabel(tr("card.more"))
+        .help(sharedText("card.more", "More"))
+        .accessibilityLabel(sharedText("card.more", "More"))
     }
 }

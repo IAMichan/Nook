@@ -303,3 +303,41 @@ struct ChatTypingDots: View {
         #endif
     }
 }
+
+// MARK: Faces
+
+/// Each person's own color in a chat, the same every time and in both apps: their name in a group's bubbles, their
+/// initials in a list.
+enum ChatPersonTint {
+    static let colors: [Color] = [NookTheme.mint, NookTheme.blue, NookTheme.violet, NookTheme.music]
+
+    static func color(for name: String) -> Color {
+        var hash: UInt32 = 2_166_136_261
+        for byte in name.lowercased().utf8 {
+            hash ^= UInt32(byte)
+            hash = hash &* 16_777_619
+        }
+        return colors[Int(hash % UInt32(colors.count))]
+    }
+}
+
+/// Someone without a photo: their initials in their own color (`ChatPersonTint`) on a soft circle of it.
+struct ChatInitialsFace: View {
+    let name: String
+    let initials: String
+    let size: CGFloat
+    /// The initials' size against the circle.
+    var scale: CGFloat = 0.36
+
+    var body: some View {
+        let tint = ChatPersonTint.color(for: name)
+        Circle()
+            .fill(tint.opacity(0.16))
+            .overlay(
+                Text(initials)
+                    .font(NookTheme.rounded(size * scale, .semibold))
+                    .foregroundStyle(tint)
+            )
+            .frame(width: size, height: size)
+    }
+}
