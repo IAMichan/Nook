@@ -29,6 +29,8 @@ final class SearchCenter: ObservableObject {
     private var searchTask: Task<Void, Never>?
     private var indexTask: Task<Void, Never>?
     private var releaseTask: Task<Void, Never>?
+    /// Search panels on screen: the notch and the main window each have their own, and share this index.
+    private var openPanels = 0
     private var loadedAt: Date?
     /// The index's own hits for the text in the field, before what the chat apps' history found is added.
     private var indexHits: [SearchHit] = []
@@ -59,6 +61,9 @@ final class SearchCenter: ObservableObject {
         if let loadedAt, !force, !index.isEmpty, Date().timeIntervalSince(loadedAt) < 30 {
             return
         }
+        // The list of earlier sessions refreshes every few minutes while nobody looks: search is someone looking. What it
+        // finds is in the next load.
+        app.history.refresh(showsProgress: false)
         indexTask?.cancel()
         if index.isEmpty {
             indexing = true
@@ -140,10 +145,17 @@ final class SearchCenter: ObservableObject {
         forgetHistory()
     }
 
-    /// The panel closed. Cancels search typing debounce without interrupting indexing, and lets go of the index after a
-    /// while unless search opens again.
+    func panelOpened() {
+        openPanels += 1
+        releaseTask?.cancel()
+    }
+
+    /// A panel closed. Cancels search typing debounce without interrupting indexing; with no panel left, lets go of the
+    /// index after a while unless search opens again.
     func cancelSearch() {
         searchTask?.cancel()
+        openPanels = max(0, openPanels - 1)
+        guard openPanels == 0 else { return }
         releaseTask?.cancel()
         releaseTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: Self.keepFor)
