@@ -35,10 +35,22 @@ struct RootView: View {
                 .environmentObject(router)
             }
         }
-        .tint(Theme.text)
+        .tint(Theme.paper)
         .preferredColorScheme(.dark)
         .background(Theme.canvas.ignoresSafeArea())
         .task { client.appBecameActive() }
+        #if DEBUG
+        // `-NookDemoShow agents|chats|session|chat` with `-NookDemo`: opens that screen of the demo.
+        .task {
+            switch UserDefaults.standard.string(forKey: "NookDemoShow") {
+            case "agents": router.tab = .agents
+            case "session": router.tab = .agents; sessionPath = ["s2"]
+            case "chats": router.tab = .chats
+            case "chat": router.tab = .chats; inboxPath = ["w1"]
+            default: break
+            }
+        }
+        #endif
         // A prompt link starts on the Agents tab, where its New session sheet opens.
         .onChange(of: client.pendingPrompt) { _, prompt in
             if prompt != nil { router.tab = .agents }
@@ -142,7 +154,7 @@ struct PairingView: View {
                     NookMark(size: 72)
                         .padding(.bottom, Theme.Spacing.md)
                     Text("Nook on your iPhone")
-                        .font(Theme.TextStyle.display).foregroundStyle(Theme.text).multilineTextAlignment(.center)
+                        .font(Theme.TextStyle.display).foregroundStyle(Theme.paper).multilineTextAlignment(.center)
                     Text("Follow your agents, approve what they ask, start new work, and chat with Nook.")
                         .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
                 }
@@ -165,8 +177,7 @@ struct PairingView: View {
                     if client.phase == .pairing {
                         ProgressView().controlSize(.large).frame(minHeight: 50)
                     } else if DataScannerViewController.isSupported {
-                        Button { scanning = true } label: { Label("Scan the code", systemImage: "qrcode.viewfinder") }
-                            .buttonStyle(PrimaryButtonStyle())
+                        NookPrimaryButton(title: String(localized: "Scan the code"), symbol: "qrcode.viewfinder") { scanning = true }
                     }
                     if pasting || !DataScannerViewController.isSupported {
                         VStack(spacing: Theme.Spacing.md) {
@@ -175,8 +186,7 @@ struct PairingView: View {
                                 .font(Theme.TextStyle.code)
                                 .padding(Theme.Spacing.lg)
                                 .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
-                            Button("Pair") { client.pair(link: text) }
-                                .buttonStyle(ActionButtonStyle(filled: true))
+                            NookPrimaryButton(title: String(localized: "Pair")) { client.pair(link: text) }
                                 .disabled(text.isEmpty || client.phase == .pairing)
                         }
                         .card(padding: Theme.Spacing.lg)
@@ -211,11 +221,11 @@ private struct PairingStep: View {
     var body: some View {
         HStack(alignment: .top, spacing: Theme.Spacing.lg) {
             Text(number, format: .number)
-                .font(Theme.rounded(13, .bold)).foregroundStyle(Theme.text)
+                .font(Theme.rounded(13, .bold)).foregroundStyle(Theme.paper)
                 .frame(width: 28, height: 28)
                 .background(
                     Circle()
-                        .fill(Theme.raised)
+                        .fill(Theme.smoke)
                         .overlay(Circle().strokeBorder(Theme.hairline, lineWidth: 0.5))
                 )
             Text(text)
@@ -306,7 +316,7 @@ struct SessionListView: View {
             Group {
                 PanelHeader {
                     // Always in sight: a Mac that does not allow it (yet) says why instead.
-                    NookIconButton(symbol: "square.and.pencil", label: "New session") { newSession() }
+                    NookIconButton(systemName: "square.and.pencil", label: String(localized: "New session")) { newSession() }
                 }
                 .buttonStyle(.borderless)
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
@@ -328,8 +338,8 @@ struct SessionListView: View {
                     ForEach(needsYou) { session in SessionNotice(session: session) { path.append(session.id) } }
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
-                group("Working", working, open: $workingOpen)
-                group("Recent", showsAllRecent || !query.isEmpty ? rest : Array(rest.prefix(Self.recentShown)), total: rest.count,
+                group(String(localized: "Working"), working, open: $workingOpen)
+                group(String(localized: "Recent"), showsAllRecent || !query.isEmpty ? rest : Array(rest.prefix(Self.recentShown)), total: rest.count,
                       open: $recentOpen)
                 if recentOpen, rest.count > Self.recentShown, !showsAllRecent, query.isEmpty {
                     Button { withAnimation(Theme.reveal) { showsAllRecent = true } } label: {
@@ -342,11 +352,9 @@ struct SessionListView: View {
                 }
                 otherMacs
                 if client.sessions.isEmpty, client.phase == .connected {
-                    EmptyState(symbol: "square.stack.3d.up", title: "No sessions",
-                               message: "Sessions of your coding agents on your Mac show up here.") {
-                        Button { newSession() } label: { Label("New session", systemImage: "plus") }
-                            .buttonStyle(PrimaryButtonStyle())
-                    }
+                    WSEmptyState(symbol: "square.stack.3d.up", title: String(localized: "No sessions"),
+                                 message: String(localized: "Sessions of your coding agents on your Mac show up here."),
+                                 action: (String(localized: "New session"), { newSession() }))
                 }
                 Color.clear.frame(height: Theme.Spacing.xxl)
             }
@@ -398,8 +406,8 @@ struct SessionListView: View {
                 (Self.needsYou($0) ? 1 : 0, $0.updated) > (Self.needsYou($1) ? 1 : 0, $1.updated)
             }
             if !sessions.isEmpty {
-                SectionHeader(title: "On \(mac.name)", count: sessions.filter(Self.needsYou).count, urgent: sessions.contains(where: Self.needsYou))
-                    .padding(.horizontal, Theme.Spacing.xl)
+                SectionHeader(title: String(localized: "On \(mac.name)"), count: sessions.filter(Self.needsYou).count, urgent: sessions.contains(where: Self.needsYou))
+                    .padding(.horizontal, Theme.Spacing.md)
                     .padding(.bottom, Theme.Spacing.xs)
                 ForEach(sessions.prefix(10)) { session in
                     Button {
@@ -414,22 +422,20 @@ struct SessionListView: View {
         }
     }
 
-    /// A shelf of sessions: its header folds it; the rows are split by hairlines inset to their text.
+    /// A shelf of sessions, as the Mac's Agents list: its header folds it; the rows stand without lines between them,
+    /// and only the one under your finger lifts.
     @ViewBuilder
-    private func group(_ title: LocalizedStringKey, _ sessions: [SessionDigest], total: Int? = nil, open: Binding<Bool>) -> some View {
+    private func group(_ title: String, _ sessions: [SessionDigest], total: Int? = nil, open: Binding<Bool>) -> some View {
         if !sessions.isEmpty {
             SectionHeader(title: title, count: total ?? sessions.count, expanded: open)
-                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.horizontal, Theme.Spacing.md)
             if open.wrappedValue {
-                ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
-                    VStack(spacing: 0) {
-                        if index > 0 { RowSeparator(inset: AgentRow.textInset).padding(.trailing, Theme.Spacing.lg) }
-                        Button { path.append(session.id) } label: { AgentRow(session: session) }
-                            .buttonStyle(RowPress())
-                    }
-                    .padding(.horizontal, Theme.Spacing.md)
-                    .contextMenu { SessionQuickActions(session: session) }
-                    .sessionSwipeActions(session)
+                ForEach(sessions) { session in
+                    Button { path.append(session.id) } label: { AgentRow(session: session) }
+                        .buttonStyle(RowPress())
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .contextMenu { SessionQuickActions(session: session) }
+                        .sessionSwipeActions(session)
                 }
             }
         }
@@ -483,7 +489,7 @@ private struct SessionSwipes: ViewModifier {
             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                 if actions.contains(.archive) {
                     Button { run(.archive) } label: { Label("Archive", systemImage: "archivebox") }
-                        .tint(Theme.raised)
+                        .tint(Theme.smoke)
                 }
                 if actions.contains(.end) {
                     Button(role: .destructive) { run(.end) } label: { Label("End session", systemImage: "xmark.circle") }
@@ -552,13 +558,11 @@ struct ConnectionLine: View {
             Banner(text: String(localized: "\(name) removed this iPhone. Pair again to use it from here."),
                    symbol: "xmark.shield.fill", color: Theme.coral)
             HStack(spacing: Theme.Spacing.md) {
-                Button("Pair again") {
+                NookPrimaryButton(title: String(localized: "Pair again")) {
                     client.revokedMac = nil
                     client.addingMac = true
                 }
-                .buttonStyle(ActionButtonStyle())
-                Button("Not now") { client.revokedMac = nil }
-                    .font(Theme.TextStyle.label).foregroundStyle(Theme.textSecondary)
+                NookGhostButton(title: String(localized: "Not now")) { client.revokedMac = nil }
             }
         }
         if case .offline(let reason) = client.phase {
@@ -627,41 +631,36 @@ struct WaitingRow: View {
     }
 }
 
-/// A session in a list, the Mac's `AgentListRow`: its name with the status (or how long ago) on the right, and where it
-/// works with the agent's logo underneath. A row that asks nothing of you recedes, so what needs you is the only loud
-/// thing.
+/// A session in a list, the Mac's `AgentListRow` in the same shared layout (`AgentRowLayout`): the folder with the
+/// status (or how long ago) on the right, the session's name, and its branch with the agent's logo at the end. A row
+/// that asks nothing of you recedes, so what needs you is the only loud thing; the logo is grey at rest, as on the Mac.
 struct AgentRow: View {
     let session: SessionDigest
 
     /// Only what needs you is set in full strength; work in progress and the rest read quieter.
     private var receded: Bool { !SessionListView.needsYou(session) }
-    /// Where a row's text starts, for the hairline between rows.
-    static let textInset = Theme.Spacing.lg + 18 + Theme.Spacing.lg
-    private var context: String {
-        guard let branch = session.branch, !branch.isEmpty else { return session.folder }
-        return session.folder + " · " + branch
+    private var branch: String? {
+        guard let branch = session.branch, !branch.isEmpty, branch != session.folder else { return nil }
+        return branch
     }
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.lg) {
-            AgentMark(agent: session.agent, size: 18, quiet: receded && session.attention != "working")
-            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                HStack(spacing: Theme.Spacing.md) {
-                    Text(session.title)
-                        .font(receded ? Theme.TextStyle.body : Theme.TextStyle.strong)
-                        .foregroundStyle(receded ? Theme.textSecondary : Theme.text)
-                        .lineLimit(1)
-                    Spacer(minLength: Theme.Spacing.md)
-                    slot
-                }
-                Text(context)
-                    .lineLimit(1).truncationMode(.middle)
+        AgentRowLayout(folder: session.folder, hasMeta: branch != nil) {
+            slot
+        } title: {
+            AgentRowTitle(title: session.title, receded: receded)
+        } logo: {
+            AgentMark(agent: session.agent, size: 14, quiet: receded && session.attention != "working")
+        } meta: {
+            if let branch {
+                AgentRowBranch(branch: branch)
                     .font(Theme.TextStyle.detail)
                     .foregroundStyle(Theme.textTertiary)
+                Spacer(minLength: 0)
             }
         }
-        .padding(.horizontal, Theme.Spacing.lg)
-        .padding(.vertical, Theme.Spacing.md + Theme.Spacing.xxs)
+        .padding(.horizontal, Theme.Spacing.md + Theme.Spacing.xxs)
+        .padding(.vertical, SharedMetrics.rowVertical)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
     }
@@ -672,9 +671,19 @@ struct AgentRow: View {
         if ["working", "ready"].contains(session.attention) || Theme.needsYou(session.attention) {
             StatusPill(attention: session.attention, short: true)
         } else {
-            Text(Date(timeIntervalSince1970: session.updated), format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
-                .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary).lineLimit(1)
+            Text(Self.age(Date().timeIntervalSince1970 - session.updated))
+                .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary).fixedSize()
         }
+    }
+
+    /// Short, as the Mac's lists (`AgentFormat.short`): "now", "12 min", "3 h", "2 d".
+    static func age(_ interval: TimeInterval) -> String {
+        let minutes = Int(max(0, interval) / 60)
+        if minutes < 1 { return String(localized: "now") }
+        if minutes < 60 { return String(localized: "\(minutes) min") }
+        let hours = minutes / 60
+        if hours < 24 { return String(localized: "\(hours) h") }
+        return String(localized: "\(hours / 24) d")
     }
 }
 
@@ -702,7 +711,7 @@ struct SessionNotice: View {
 
             if let item {
                 VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                    Text(item.title).font(Theme.TextStyle.strong).foregroundStyle(Theme.text).lineLimit(4)
+                    Text(item.title).font(Theme.TextStyle.strong).foregroundStyle(Theme.paper).lineLimit(4)
                     if !item.detail.isEmpty {
                         Text(item.detail).font(Theme.TextStyle.code).foregroundStyle(Theme.textSecondary).lineLimit(2)
                             .padding(Theme.Spacing.md)
@@ -721,9 +730,8 @@ struct SessionNotice: View {
         }
         .padding(Theme.Spacing.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
-            .strokeBorder(Theme.color(session.attention).opacity(0.3), lineWidth: 1))
+        .cardBackground(Theme.surface, stroke: Theme.color(session.attention).opacity(0.35), radius: Theme.Radius.panel,
+                        style: .continuous)
     }
 
     @ViewBuilder
@@ -743,24 +751,24 @@ struct SessionNotice: View {
                 ApproveOffLabel()
             case .approval:
                 if item.canAllow {
-                    NookSplitButton(primary: NoticeAction(label: "Allow", symbol: "checkmark") {
+                    NookSplitButton(primary: NookNoticeAction(String(localized: "Allow"), symbol: "checkmark") {
                         Haptics.success(); Task { await client.decide(session, item: item, allow: true) }
-                    }, secondary: NoticeAction(label: "Deny") {
+                    }, secondary: NookNoticeAction(String(localized: "Deny")) {
                         Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }
                     })
                 } else {
-                    Button("Deny") { Haptics.warning(); Task { await client.decide(session, item: item, allow: false) } }
-                        .buttonStyle(ActionButtonStyle(color: Theme.coral))
-                        .fixedSize()
+                    NookGhostButton(title: String(localized: "Deny")) {
+                        Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }
+                    }
                     Label("Only on your Mac: this one is risky or unknown.", systemImage: "lock.fill")
                         .font(Theme.TextStyle.detail).foregroundStyle(Theme.amber)
                 }
             case .question:
                 opener {
-                    Text("Answer").font(Theme.TextStyle.strong).foregroundStyle(Theme.ink)
-                        .padding(.horizontal, Theme.Spacing.xl + Theme.Spacing.xxs)
-                        .frame(height: 42)
-                        .background(Theme.text, in: Capsule())
+                    Text("Answer").font(Theme.textFont(14, .semibold)).foregroundStyle(Theme.ink)
+                        .padding(.horizontal, 18)
+                        .frame(height: SharedMetrics.buttonHeight)
+                        .background(Theme.paper, in: Capsule())
                 }
             }
             Spacer(minLength: 0)

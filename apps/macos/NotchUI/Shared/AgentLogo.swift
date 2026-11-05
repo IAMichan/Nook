@@ -1,5 +1,7 @@
 import SwiftUI
 
+// Shared with the iPhone (apps/ios/project.yml): an agent's logo looks the same in both apps.
+
 /// The mark of a coding agent, drawn in code so every agent has one without image assets: the real brand marks where we
 /// have them (Claude, OpenAI for Codex, Gemini, …), Antigravity's arch, and a letter for the rest.
 struct AgentLogo: View {
@@ -9,11 +11,6 @@ struct AgentLogo: View {
 
     init(agent: String, size: CGFloat = 16) {
         self.agent = agent
-        self.size = size
-    }
-
-    init(_ kind: AgentKind, size: CGFloat = 16) {
-        self.agent = kind.name
         self.size = size
     }
 
@@ -84,23 +81,13 @@ private struct ArchGlyph: Shape {
 enum AccountKind {
     case personal, work, apiKey
 
-    private static let workWords = ["werk", "work", "zakelijk", "business", "bedrijf", "company", "team", "kantoor", "office", "arbeit", "firma"]
-
-    /// Work when the account belongs to an organization, or when you named it that way ("Werk", "Business");
-    /// otherwise personal.
-    @MainActor
-    static func of(_ profile: AgentProfile, app: AppModel) -> AccountKind {
-        if let organization = app.history.profileAccounts[profile.id]?.organization, !organization.isEmpty { return .work }
-        let label = profile.label.lowercased()
-        if workWords.contains(where: { label.contains($0) }) { return .work }
-        return .personal
-    }
+    fileprivate static let workWords = ["werk", "work", "zakelijk", "business", "bedrijf", "company", "team", "kantoor", "office", "arbeit", "firma"]
 
     var label: String {
         switch self {
-        case .personal: return tr("agents.account.personal")
-        case .work: return tr("agents.account.work")
-        case .apiKey: return tr("accounts.method.apiKey")
+        case .personal: return sharedText("agents.account.personal", "Personal account")
+        case .work: return sharedText("agents.account.work", "Work account")
+        case .apiKey: return sharedText("accounts.method.apiKey", "API key")
         }
     }
 
@@ -174,3 +161,23 @@ extension View {
         }
     }
 }
+
+#if os(macOS)
+extension AgentLogo {
+    init(_ kind: AgentKind, size: CGFloat = 16) {
+        self.init(agent: kind.name, size: size)
+    }
+}
+
+extension AccountKind {
+    /// Work when the account belongs to an organization, or when you named it that way ("Werk", "Business");
+    /// otherwise personal.
+    @MainActor
+    static func of(_ profile: AgentProfile, app: AppModel) -> AccountKind {
+        if let organization = app.history.profileAccounts[profile.id]?.organization, !organization.isEmpty { return .work }
+        let label = profile.label.lowercased()
+        if workWords.contains(where: { label.contains($0) }) { return .work }
+        return .personal
+    }
+}
+#endif

@@ -153,38 +153,6 @@ struct InfoRow: View {
     }
 }
 
-/// Empty state view: calm presentation with a single clear call-to-action.
-struct WSEmptyState: View {
-    let symbol: String
-    let title: String
-    let message: String
-    var action: (title: String, run: () -> Void)?
-
-    var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: symbol)
-                .font(NookTheme.font(26, .light))
-                .foregroundStyle(WS.tertiary)
-            Text(title)
-                .font(NookTheme.TextStyle.title)
-                .foregroundStyle(WS.text)
-                .multilineTextAlignment(.center)
-            Text(message)
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(WS.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
-                .fixedSize(horizontal: false, vertical: true)
-            if let action {
-                NookPrimaryButton(title: action.title, action: action.run)
-                    .padding(.top, NookTheme.Spacing.xs)
-            }
-        }
-        .padding(30)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
 /// A unified diff as a code review shows it: line numbers of the old and new file in a gutter, hunks as separators,
 /// added and removed lines tinted, and the changed words of an edited line highlighted. Code in a language
 /// `SyntaxTokenizer` knows shows plain first and gets its syntax colors once a background task has them. Inside a
