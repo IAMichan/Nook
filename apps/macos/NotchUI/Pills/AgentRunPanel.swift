@@ -1317,7 +1317,8 @@ struct AgentRunPanel: View {
         // A session that worked on more than one branch lists each, with the state of its pull request.
         let branches = workspace.run(runID).map { run in
             SessionBranches.rows(earlier: run.earlierBranches ?? [], earlierLinks: pullRequestSync.earlier[runID] ?? [],
-                                 current: run.branch, currentPullRequest: pullRequest)
+                                 current: run.branch, currentPullRequest: pullRequest,
+                                 currentLinks: pullRequestSync.links[runID] ?? [])
         } ?? []
         // A pull request the git button is writing or opening shows here already, where it will appear.
         let pending = workspace.quickGitProgress(runID).flatMap { $0.action.proposes ? $0.step : nil }
@@ -1330,7 +1331,7 @@ struct AgentRunPanel: View {
                         if hasPullRequests || !waiting.isEmpty { ComposerTrayDivider() }
                     }
                     if !branches.isEmpty {
-                        branchList(branches, watch: watch, canWatchCurrent: canWatch)
+                        branchList(branches, watch: watch, canWatchCurrent: watchable != nil)
                     } else if let pullRequest {
                         PullRequestWatchStrip(url: pullRequest, watch: watch, toggle: canWatch ? {
                             workspace.watchPullRequest(runID, url: watch == nil ? pullRequest : nil)
