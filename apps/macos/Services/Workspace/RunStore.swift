@@ -77,9 +77,11 @@ final class RunStore: @unchecked Sendable {
         try write(Self.encoder.encode(runs), to: runsURL)
     }
 
-    func saveRunsAsync(_ runs: [WorkspaceRun]) {
+    /// - Parameter failed: called, off the main thread, when the list could not be written.
+    func saveRunsAsync(_ runs: [WorkspaceRun], failed: (@Sendable () -> Void)? = nil) {
         ioQueue.async { [weak self] in
-            try? self?.saveRuns(runs)
+            guard let self else { return }
+            do { try self.saveRuns(runs) } catch { failed?() }
         }
     }
 

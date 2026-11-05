@@ -161,4 +161,14 @@ final class UsageReportTests: XCTestCase {
         XCTAssertEqual(store.peekEvents(id).map(\.text), ["second"])
         XCTAssertEqual(store.loadEvents(id).map(\.id), [event.id])
     }
+
+    func testAFailedWriteOfTheSessionListIsReported() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("runs-\(UUID().uuidString)")
+        let store = RunStore(directory: folder)
+        try FileManager.default.removeItem(at: folder)
+
+        let failed = expectation(description: "the failure is reported")
+        store.saveRunsAsync([TestData.run(status: .completed)]) { failed.fulfill() }
+        wait(for: [failed], timeout: 5)
+    }
 }
