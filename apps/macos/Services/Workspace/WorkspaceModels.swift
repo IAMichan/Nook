@@ -376,6 +376,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var autoNeed: Int? = nil
     /// The agent's own task list, as it last reported it.
     var tasks: [RunTaskStep]? = nil
+    /// The goal the agent works toward, as it reported it (see `SessionGoals`).
+    var goal: SessionGoal? = nil
     /// The pull request this session watches: what it last saw, so only news wakes it.
     var prWatch: PullRequestWatch? = nil
     /// Runs on another machine over SSH; `workingDirectory` is then a path on that machine.

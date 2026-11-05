@@ -151,6 +151,15 @@ final class ScheduledTaskStore: ObservableObject {
                 DispatchQueue.main.async { self?.apply(enabled: enabled, port: port) }
             }
             .store(in: &cancellables)
+        WebhookListener.shared.attach(self)
+        $tasks.map { $0.contains { $0.enabled && $0.rule.isWebhook } }
+            .combineLatest(settings.$scheduledTasksEnabled, settings.$scheduledWebhooksPublic)
+            .map { $0 && $1 && $2 }
+            .removeDuplicates()
+            .sink { wanted in
+                DispatchQueue.main.async { WebhookRelayClient.shared.set(wanted: wanted) }
+            }
+            .store(in: &cancellables)
     }
 
     private func apply(enabled: Bool, port: Int) {

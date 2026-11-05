@@ -16,6 +16,13 @@ It is a [Cloudflare Worker](https://developers.cloudflare.com/workers/) with one
 [Durable Object](https://developers.cloudflare.com/durable-objects/) per room. An idle connection costs nothing: the
 keep-alive is answered without waking the room. Personal use fits in Cloudflare's free plan.
 
+## Webhooks
+
+The same Worker can pass webhooks for scheduled tasks to a Mac (`worker/hooks.js`, Settings › Agents › Automation). The Mac
+connects out with a token; the public address names a room derived from that token, so it can be used to send but not to
+listen. Senders such as GitHub speak plain HTTPS, so **these bodies are readable to the relay**, unlike the companion's
+sealed traffic. It stores none of them, and the Mac checks each request's signature with a secret the relay never sees.
+
 ## Turning it on
 
 In Nook on the Mac: **Settings › Devices › Away from home › Reach this Mac away from home**.

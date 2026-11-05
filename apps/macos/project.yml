@@ -392,6 +392,9 @@ targets:
       - path: Services/Workspace/AgentReadiness.swift
       - path: Services/Workspace/AgentSignInFailure.swift
       - path: Services/Workspace/ModelComparison.swift
+      - path: Services/Workspace/SessionGoal.swift
+      - path: Services/Workspace/WebhookRelay.swift
+      - path: Services/Workspace/NookTriage.swift
       - path: Services/Workspace/SyntaxTokenizer.swift
       - path: Services/Workspace/Keybindings.swift
       - path: Services/Workspace/PanelReopening.swift

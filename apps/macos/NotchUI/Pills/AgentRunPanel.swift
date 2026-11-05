@@ -1308,6 +1308,9 @@ struct AgentRunPanel: View {
             // Its side chats (/btw): open one, or bring its result back here.
             let sideChats = SideChat.children(of: runID, in: workspace.runs)
             if !sideChats.isEmpty { SideChatStrip(workspace: workspace, chats: sideChats) }
+            if let goal = run.goal {
+                GoalStrip(goal: goal, canPause: workspace.takesGoalOutsideTurns(runID)) { workspace.goalControl(runID, $0) }
+            }
             // The subagents the agent started since your message (also those still at work in the background after its
             // turn), and its task list.
             let subagents = derived.subagents
