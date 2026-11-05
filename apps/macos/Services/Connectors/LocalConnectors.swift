@@ -790,6 +790,20 @@ final class BrowserConnector: ContextSource {
     let accent = Color(hex: 0x5AC8FA)
     private(set) var status = ConnectorStatus()
     private var tabs: [Tab] = []
+    /// A browser came to the front since the last read (or there was no read yet).
+    private var browserUsed = true
+    private var activationWatch: NSObjectProtocol?
+
+    private func watchBrowsers() {
+        guard activationWatch == nil else { return }
+        activationWatch = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard let id = app?.bundleIdentifier, Self.browsers.contains(where: { $0.bundle == id }) else { return }
+            Task { @MainActor in self?.browserUsed = true }
+        }
+    }
 
     private static let browsers: [(name: String, bundle: String, safari: Bool)] = [
         ("Safari", "com.apple.Safari", true),
@@ -804,11 +818,20 @@ final class BrowserConnector: ContextSource {
     var refreshInterval: TimeInterval { 180 }
 
     func refresh() async {
+        watchBrowsers()
         let runningBrowsers = Self.browsers.filter { ScriptText.isRunning($0.bundle) }
         guard !runningBrowsers.isEmpty else {
             tabs = []
             return
         }
+        // Tabs only change while you use a browser: until then the last read still holds, and scripting it would only hold
+        // it up. A browser that quit takes its tabs along.
+        let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        guard browserUsed || runningBrowsers.contains(where: { $0.bundle == frontmost }) else {
+            tabs.removeAll { tab in !runningBrowsers.contains { $0.name == tab.browser } }
+            return
+        }
+        browserUsed = false
 
         let results = await withTaskGroup(of: (Int, [Tab], Bool).self) { group in
             for (index, browser) in runningBrowsers.enumerated() {
