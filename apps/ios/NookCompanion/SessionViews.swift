@@ -35,7 +35,7 @@ struct SessionDetailView: View {
                         if client.can(CompanionFeature.timeline), !entries.isEmpty {
                             TranscriptConversation(entries: entries, working: session.attention == "working")
                         } else if !session.excerpt.isEmpty {
-                            SectionHeader(title: "Latest reply")
+                            SectionHeader(title: String(localized: "Latest reply"))
                             TranscriptReply(text: session.excerpt, footer: false)
                         }
                         // Messages that wait in the outbox until the Mac takes them.
@@ -168,7 +168,7 @@ struct SessionDetailView: View {
                 }
             }
         } else {
-            EmptyState(symbol: "tray", title: "This session is gone.", message: "It was closed or archived on your Mac.") {}
+            WSEmptyState(symbol: "tray", title: String(localized: "This session is gone."), message: String(localized: "It was closed or archived on your Mac."))
                 .screen()
         }
     }
@@ -254,7 +254,7 @@ struct SessionDetailView: View {
                 Button(role: .destructive) { confirmArchive = true } label: { Label("Archive", systemImage: "archivebox") }
             }
         } label: {
-            Image(systemName: "ellipsis").foregroundStyle(Theme.text)
+            Image(systemName: "ellipsis").foregroundStyle(Theme.paper)
         }
         .accessibilityLabel("More")
     }
@@ -287,7 +287,7 @@ private struct SessionHeader: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             HStack(spacing: Theme.Spacing.md) {
                 AgentLogo(agent: session.agent, size: 18)
-                Text(session.agent).font(Theme.TextStyle.strong).foregroundStyle(Theme.text).lineLimit(1)
+                Text(session.agent).font(Theme.TextStyle.strong).foregroundStyle(Theme.paper).lineLimit(1)
                 Spacer(minLength: Theme.Spacing.md)
                 StatusPill(attention: session.attention)
             }
@@ -299,10 +299,10 @@ private struct SessionHeader: View {
                     Button(action: review) {
                         Label("Changes", systemImage: "plusminus")
                             .font(Theme.TextStyle.label)
-                            .foregroundStyle(Theme.text)
+                            .foregroundStyle(Theme.paper)
                             .padding(.horizontal, Theme.Spacing.md)
                             .padding(.vertical, Theme.Spacing.xs)
-                            .background(Theme.raised, in: Capsule())
+                            .background(Theme.smoke, in: Capsule())
                     }
                     .buttonStyle(PressFade())
                 }
@@ -339,19 +339,18 @@ private struct RejectedMessageCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             Label {
-                Text("Not sent").foregroundStyle(Theme.text)
+                Text("Not sent").foregroundStyle(Theme.paper)
             } icon: {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.coral)
             }
             .font(Theme.TextStyle.label)
             Text(verbatim: message.reason).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
             if !message.text.isEmpty {
-                Text(verbatim: message.text).font(Theme.TextStyle.body).foregroundStyle(Theme.text).lineLimit(3)
+                Text(verbatim: message.text).font(Theme.TextStyle.body).foregroundStyle(Theme.paper).lineLimit(3)
             }
             HStack(spacing: Theme.Spacing.md) {
-                Button("Edit and send again", action: edit).buttonStyle(ActionButtonStyle()).fixedSize()
-                Button("Discard", role: .destructive, action: discard)
-                    .font(Theme.TextStyle.label).foregroundStyle(Theme.coral)
+                NookPrimaryButton(title: String(localized: "Edit and send again"), action: edit)
+                NookGhostButton(title: String(localized: "Discard"), action: discard)
             }
         }
         .card(tint: Theme.coral)
@@ -396,12 +395,12 @@ struct ItemView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             Label {
-                Text(heading).foregroundStyle(Theme.text)
+                Text(heading).foregroundStyle(Theme.paper)
             } icon: {
                 Image(systemName: item.kind == .approval ? "hand.raised.fill" : "questionmark.bubble.fill").foregroundStyle(Theme.amber)
             }
             .font(Theme.TextStyle.label)
-            Text(item.title).font(Theme.TextStyle.body).foregroundStyle(Theme.text).textSelection(.enabled)
+            Text(item.title).font(Theme.TextStyle.body).foregroundStyle(Theme.paper).textSelection(.enabled)
             if !item.detail.isEmpty {
                 Text(item.detail).font(Theme.TextStyle.code).foregroundStyle(Theme.textSecondary)
                     .padding(Theme.Spacing.md)
@@ -413,15 +412,15 @@ struct ItemView: View {
                 ApproveOffLabel()
             case .approval:
                 if item.canAllow {
-                    NookSplitButton(primary: NoticeAction(label: "Allow", symbol: "checkmark") {
+                    NookSplitButton(primary: NookNoticeAction(String(localized: "Allow"), symbol: "checkmark") {
                         Haptics.success(); Task { await client.decide(session, item: item, allow: true) }
-                    }, secondary: NoticeAction(label: "Deny") {
+                    }, secondary: NookNoticeAction(String(localized: "Deny")) {
                         Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }
                     })
                 } else {
-                    Button("Deny") { Haptics.warning(); Task { await client.decide(session, item: item, allow: false) } }
-                        .buttonStyle(ActionButtonStyle(color: Theme.coral))
-                        .fixedSize()
+                    NookGhostButton(title: String(localized: "Deny")) {
+                        Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }
+                    }
                 }
                 if !item.canAllow {
                     Label("This is risky or unknown: it can only be allowed on your Mac.", systemImage: "lock.fill")
@@ -429,10 +428,11 @@ struct ItemView: View {
                 }
             case .question:
                 if item.canAllow {
-                    VStack(spacing: Theme.Spacing.md) {
-                        ForEach(item.options, id: \.self) { option in
-                            Button(option) { Haptics.success(); Task { await client.answer(session, item: item, text: option) } }
-                                .buttonStyle(ActionButtonStyle())
+                    VStack(spacing: Theme.Spacing.sm) {
+                        ForEach(Array(item.options.enumerated()), id: \.offset) { number, option in
+                            QuestionOptionRow(title: option, number: number) {
+                                Haptics.success(); Task { await client.answer(session, item: item, text: option) }
+                            }
                         }
                     }
                     SessionComposer(text: $text, prompt: "Your own answer") {
@@ -502,8 +502,8 @@ struct NewSessionView: View {
                 if let options {
                     content(options)
                 } else if loaded {
-                    EmptyState(symbol: "wifi.slash", title: "Your Mac does not answer.",
-                               message: "Is the companion on, and are you on the same Wi‑Fi?") {}
+                    WSEmptyState(symbol: "wifi.slash", title: String(localized: "Your Mac does not answer."),
+                               message: String(localized: "Is the companion on, and are you on the same Wi‑Fi?"))
                 } else {
                     ProgressView().controlSize(.large).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -511,7 +511,7 @@ struct NewSessionView: View {
             .screen()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.foregroundStyle(Theme.text) }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.foregroundStyle(Theme.paper) }
             }
             .onAppear(perform: prepare)
             .task {
@@ -521,17 +521,17 @@ struct NewSessionView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .tint(Theme.text)
+        .tint(Theme.paper)
     }
 
     @ViewBuilder
     private func content(_ options: LaunchOptions) -> some View {
         if options.agents.isEmpty {
-            EmptyState(symbol: "person.crop.circle.badge.questionmark", title: "No agent is ready on your Mac.",
-                       message: "Connect one in Nook › Settings › Agents.") {}
+            WSEmptyState(symbol: "person.crop.circle.badge.questionmark", title: String(localized: "No agent is ready on your Mac."),
+                       message: String(localized: "Connect one in Nook › Settings › Agents."))
         } else if options.projects.isEmpty {
-            EmptyState(symbol: "folder", title: "No folders yet.",
-                       message: "Start a session on your Mac once: its folder then shows up here.") {}
+            WSEmptyState(symbol: "folder", title: String(localized: "No folders yet."),
+                       message: String(localized: "Start a session on your Mac once: its folder then shows up here."))
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
@@ -554,8 +554,8 @@ struct NewSessionView: View {
                                 ComposerDivider()
                                 Button { withAnimation(Theme.reveal) { plan.toggle() } } label: {
                                     ComposerPill(symbol: "list.bullet.clipboard", text: String(localized: "Plan first"),
-                                                 tint: plan ? Theme.text : nil, showsChevron: false)
-                                        .background(plan ? Theme.raised : Color.clear,
+                                                 tint: plan ? Theme.paper : nil, showsChevron: false)
+                                        .background(plan ? Theme.smoke : Color.clear,
                                                     in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
                                 }
                                 .buttonStyle(.plain)
@@ -594,9 +594,9 @@ struct NewSessionView: View {
                 }
             }
         } label: {
-            (Text("What should we build in ").foregroundStyle(Theme.text)
-             + Text(verbatim: chosenProject?.name ?? "…").foregroundStyle(Theme.text).underline(true, pattern: .dot, color: Theme.textTertiary)
-             + Text(verbatim: "?").foregroundStyle(Theme.text))
+            (Text("What should we build in ").foregroundStyle(Theme.paper)
+             + Text(verbatim: chosenProject?.name ?? "…").foregroundStyle(Theme.paper).underline(true, pattern: .dot, color: Theme.textTertiary)
+             + Text(verbatim: "?").foregroundStyle(Theme.paper))
                 .font(Theme.TextStyle.display)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -712,5 +712,37 @@ struct NewSessionView: View {
         let parts = path.split(separator: "/", omittingEmptySubsequences: true)
         guard parts.count >= 2, parts[0] == "Users" else { return path }
         return "~/" + parts.dropFirst(2).joined(separator: "/")
+    }
+}
+
+/// One answer to an agent's question, the Mac's option row in a question card: its number on a small key, the answer,
+/// on `field` with a faint edge.
+struct QuestionOptionRow: View {
+    let title: String
+    let number: Int
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.md) {
+                Text(number < 9 ? "\(number + 1)" : "·")
+                    .font(Theme.textFont(11, .semibold, design: .monospaced))
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(minWidth: 22, minHeight: 22)
+                    .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+                Text(title)
+                    .font(Theme.textFont(13, .semibold))
+                    .foregroundStyle(Theme.paper)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: Theme.Spacing.xs)
+            }
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, Theme.Spacing.md + 1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cardBackground(Theme.field, stroke: Theme.paper.opacity(0.08), radius: Theme.Radius.card, style: .continuous)
+            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        }
+        .buttonStyle(PressFade())
     }
 }

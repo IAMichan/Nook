@@ -74,15 +74,29 @@ and a selected row stands a full step above a hovered one with a `selectionMark`
   (`TranscriptWork.swift`), whether Nook runs the session or it comes from the agent's own transcript. In an agent's conversation, one Nook runs or one from its own
   transcript, only the final answer of a turn has the footer, the turn's changed files sit inside that answer above
   it, and the newest answer's options can be clicked. Never draw a message bubble or an answer of your own.
-- **Shared with the iPhone.** The parts of a conversation both apps draw live in `apps/macos/NotchUI/Shared`, which
-  the Mac compiles with the rest of `NotchUI` and the iPhone app (`apps/ios/project.yml`) compiles as well:
-  `ChatListRowContent` (a chat's row in a list), `ChatBubbleShape`, `ChatDayDivider`, `ChatQuote`, `MessageTicks` and
-  `MessageTicksMark`, `ChatTypingBubble`, `TranscriptStyle`, `TranscriptUserBubble`, `.transcriptFolded` and
-  `TranscriptTime`. They take everything from `NookTheme` (on the phone, `Theme` under that name) and differ per
-  platform only through `SharedMetrics` (a finger-sized row, the phone's narrower bubble inset) and `#if os(macOS)`
-  where the platform asks for it (Nook's tick grid on the Mac). Texts go through `sharedText(key, english)`: the
-  Mac's `tr` key, the phone's string catalog. The iPhone builds its screens from them in `MessageViews.swift`; change a
-  shared part once and both apps follow. Never copy one of them into an app.
+- **Shared with the iPhone.** Nook Companion on the iPhone is the same design, not a copy of it. It compiles
+  `NotchUI/Theme/NookTheme.swift` (as `Theme` there) and everything in `apps/macos/NotchUI/Shared`, which the Mac compiles
+  with the rest of `NotchUI` (`apps/ios/project.yml`):
+  - the theme: every color, radius, spacing and animation is the Mac's exactly; the type scale is the Mac's a step
+    larger and on Dynamic Type (`NookTheme.textFont`, `phoneTextScale`), so both apps keep the same proportions;
+  - buttons (`ButtonParts.swift`: `NookPrimaryButton`, `NookGhostButton`, `NookIconButton`), a notification's actions
+    (`NookNoticeActions.swift`: `NookSplitButton`, `NookNoticeAction`, `NookMoreMenu`);
+  - list parts (`PanelParts.swift`: `NookCountBadge`, `NookSectionLabel`, `NookShelfHeader`, `NookFilterChip`,
+    `NookDivider`, `NookRowSeparator`, `.panelCard()`, `AdaptiveActionRow`, `WSEmptyState`, `StatusBadgeLabel`,
+    `RowBadgeBackground`), `ListEmptyNote` and `.cardBackground`;
+  - agents (`AgentLogo.swift`: `AgentLogo`, `AgentMark`, `AccountBadge`; `AgentRowParts.swift`: `AgentRowLayout`,
+    `AgentRowTitle`, `AgentRowBranch`, the three lines of a session's row);
+  - conversations (`ChatParts.swift`: `ChatListRowContent`, `ChatBubbleShape`, `ChatDayDivider`, `ChatQuote`,
+    `MessageTicks`, `MessageTicksMark`, `ChatTypingBubble`, `ChatPersonTint`, `ChatInitialsFace`;
+    `TranscriptParts.swift`: `TranscriptStyle`, `TranscriptUserBubble`, `.transcriptFolded`, `TranscriptTime`).
+
+  They take everything from `NookTheme` and differ per platform only through `SharedMetrics` (a finger-sized row and
+  button, the phone's narrower bubble inset) and `#if os(macOS)` where the platform asks for it (hover on the Mac). Texts
+  go through `sharedText(key, english)`: the Mac's `tr` key, the phone's string catalog (add the phone's translations to
+  `apps/ios/NookCompanion/Localizable.xcstrings`). The iPhone builds its screens from them; what is only the phone's
+  (`ThemeViews.swift`, `PanelComponents.swift`, `MessageViews.swift`) wraps a shared part and draws as its Mac
+  counterpart. Change a shared part once and both apps follow. Never copy one of them into an app; when the phone needs a
+  part the Mac has inline, move it to `Shared` and use it from both.
 
 ## Keeping it one design
 
@@ -175,7 +189,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 
 | Component | File | Use |
 | --- | --- | --- |
-| `NookPrimaryButton`, `SmallPrimaryButton`, `NookGhostButton`, `SmallGhostButton` | `NookButtons.swift` | Text buttons on cards, in chat, and in the panel's own forms (optional SF Symbol before the title). They dim by themselves when `.disabled`; do not add an `.opacity` for it. Inside the panel use these, not `.borderedProminent` |
+| `NookPrimaryButton`, `SmallPrimaryButton`, `NookGhostButton`, `SmallGhostButton` | `Shared/ButtonParts.swift` (`SmallPrimaryButton`, `SmallGhostButton`: `NookButtons.swift`) | Text buttons on cards, in chat, and in the panel's own forms (optional SF Symbol before the title). They dim by themselves when `.disabled`; do not add an `.opacity` for it. Inside the panel use these, not `.borderedProminent` |
 | `NookNotice`, `NookNoticeEnd`, `NoticeClock` | `NookNotice.swift` | The one shape of every short notice: the strips under the notch (result, suggestion, moment), `PanelNoticeBar` and the toast. Mark, message and line, its actions, and with `countdown` the OK with its ring. `NookNoticeEnd` is that end (actions + OK with ring) on its own, shared by `NookNotice`, the compact agent notice in the notch's row and a card with an OK; `NoticeClock` runs the same time out and holds while the pointer is on the notice |
 | `NoticeMark` | `NookNotice.swift` | The mark at the start of a notice: its state's symbol in the state color, or for a coding agent its `AgentLogo` with the state as a small badge on the corner. `NookNotice` draws it (pass `agent:`), and so does the compact agent notice in the notch's row; never draw a notice's mark by hand |
 | `TranscriptUserMessage`, `TranscriptReply`, `TranscriptMessageFooter`, `TranscriptTime`, `TranscriptStyle` | `TranscriptMessage.swift` | The messages of every conversation: yours as a bubble on the right (pictures above it, a long one folded, a steer mark, and with `onEdit` an "Edit from here" pencil in its hover footer), the answer as Markdown on the left with what came with it in `extras` (a chart, a mail, a turn's changed files) and its own `actions` in the hover footer. Used by `ChatMessageView` (Nook chat), `EventRow` (a session Nook runs) and `TranscriptConversation` (an agent's transcript); `TranscriptStyle`, `TranscriptUserBubble` and `TranscriptTime` are in `NotchUI/Shared/TranscriptParts.swift`, and the iPhone builds the same two views on them in `MessageViews.swift` |
@@ -183,7 +197,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `TranscriptWorkLine`, `TranscriptThought`, `TranscriptStepDetail`, `TranscriptWorkGroup`, `TranscriptFold`, `TranscriptFoldLine`, `TranscriptWorkingLine`, `TranscriptLiveLine`, `TranscriptStepText`, `TranscriptSymbols` | `TranscriptWork.swift` | The agent's work between the messages, the same in a session Nook runs (`EventRow`, `ToolRow`, `TimelineBlockView`) and in an agent's own transcript (`TranscriptConversation`): a step as a verb and what it was done to, a thought's headline, steps in a row behind one sentence, a finished turn folded under "Worked for …", "Working for …" under your message and the live line at the end. A `RunEvent` becomes a step with `AgentToolStep(event:)` |
 | `NookAcknowledgeButton`, `CountdownRing` | `NookButtons.swift` | The white "OK" that closes a notice at once, with a ring counting down until it closes by itself (card `acknowledge` + `countdown`, compact strip) |
 | `NookActionBar` | `NookButtons.swift` | A notice's own actions (`NookNoticeAction`) in one dark bar with thin dividers, next to its OK; drawn by `NookNoticeEnd`, never placed by hand |
-| `NookNoticeActions`, `NookNoticeAction` | `NookNoticeActions.swift` | The button row at the bottom of every notification (cards, approvals, questions, panel notices): main action and its "not now" in one pill (`NookSplitButton`), muted extras, rarer actions in a "…" menu (`NookMoreMenu`), optional mic. Use it for any new notification instead of loose buttons |
+| `NookNoticeActions`, `NookNoticeAction` | `Shared/NookNoticeActions.swift` | The button row at the bottom of every notification (cards, approvals, questions, panel notices): main action and its "not now" in one pill (`NookSplitButton`), muted extras, rarer actions in a "…" menu (`NookMoreMenu`), optional mic. Use it for any new notification instead of loose buttons |
 | `ToastCenter`, `NookToastView`, `.nookToastHost()` | `NookToast.swift` | The one toast for the result of something you did (saved, pushed, failed): `ToastCenter.shared.success(…)`, `.error(…)` (also takes an `Error`, under a title that says what failed), `.warning(…)`, `.info(…)`, with at most one `NookToastAction`. See *Toasts* above |
 | `NookSearchField` | `PanelBlocks.swift` | The one search field (panel lists, Settings rows, menus, the command palette): magnifying glass, text, a clear button, Escape clears and then calls `onEscape`. `panel`, `inline` (in a Settings form or a menu) and `large` (a palette). Never build a search field by hand |
 | `.focusOnAppear(_:)` | `PanelBlocks.swift` | Puts the keyboard in a palette's field as it opens (⌘K search, the command palette), also when it appears with a transition or the panel takes the keyboard later. Use it instead of `.onAppear { focused = true }` on a field that must take typing at once |
@@ -191,31 +205,31 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `NookSearchLauncher`, `NookKeyHint` | `PanelBlocks.swift` | A button drawn as a `NookSearchField` that opens a search (the Chats tab's rail of icons, ⌘K), and a shortcut as a small key cap |
 | `PanelSidebarTop`, `.panelSidebarColumn()` | `PanelSidebar.swift` | The head of the main window's sidebar (the title bar's row, Search, the tabs with their status) at the top of a tab's first column, and the inset that column keeps from the window's edge; nothing in the notch |
 | `PanelListHeader`, `PanelNewButton` | `PanelBlocks.swift` | The title row on top of every tab's list (Nook, Agents, Chats, Pull requests): name, `NookCountBadge`, the list's actions; `PanelNewButton` is the "new" in it, lit while the new one is open |
-| `NookCountBadge` | `PanelBlocks.swift` | How many wait for you: a small amber count, on a tab or a list title |
+| `NookCountBadge` | `Shared/PanelParts.swift` | How many wait for you: a small amber count, on a tab or a list title |
 | `PullRequestRow`, `PullRequestTag`, `PullRequestLineCounts` | `NotchUI/Pills/PullRequestRow.swift` | One pull request in a list: state mark, then the title (so titles line up), checks and review, lines changed; under it the repository and number, author, labels, stack position, age, with its quick actions. The Pull requests page and the side panel's picker both draw their rows with it; never build a second pull request row. `PullRequestLineCounts` is the "+120 −8" of a row, the pull request page's header and a changed file: grouped numbers and a real minus sign, never drawn by hand |
 | `PullRequestDetailView` and its tabs | `NotchUI/Pills/PullRequestDetailView*.swift`, `PullRequestDetailParts.swift` | The pull request page. The main file holds its state, the top (crumbs, title, branches), the tab bar and the page that scrolls; each tab is an extension in its own file (`+Summary`, `+Guide`, `+Timeline`, `+Code`), merging and the stack are in `+Merge`. The small pieces they share (`PullRequestSummarySection`, `PullRequestHoverRow`, `PullRequestTimelineRail`, the loading ghosts …) are in `PullRequestDetailParts.swift`. A new part of the page goes in the file of the tab it belongs to. Responsive: beside the list it takes the room it has, filling a wide window it is one centered column of `PullRequestDetailView.pageWidth` (960 pt, `.pullRequestPageColumn()`, inside the scroll view so the wheel works beside it); where a line does not fit a narrow panel (the tab bar with what the tab holds, a file's header, a comment's emoji) it moves its second half to a line of its own with `ViewThatFits` instead of cutting it off |
 | `PullRequestFilterStore` | `PullRequestFilter.swift` | The one search and Filters of every pull request list, kept across launches; the page and the side panel's picker bind to it, so a filter set in one applies in the other |
 | `PullRequestSearchBar` | `PullRequestFilterMenu.swift` | The search and Filters of a pull request list: search field (takes `label:bug`), an optional middle (Sort), and `PullRequestFilterMenu`. Open by default; the Filters show closed and merged. The Pull requests page and the side panel's picker both use it; never build a second pull request filter |
-| `NookFilterChip` | `PanelBlocks.swift` | One chip in a row of filters ("All", "Sessions 4"): a quiet capsule, filled with the accent when chosen, with an optional count and an optional `mark` (the state of what it stands for, shown only while it runs or when it failed, as on the Actions page's workflow chips). Search everything uses it for its kinds |
-| `NookSectionLabel` | `PanelBlocks.swift` | A group's name in a list or on a page ("Pinned", "For you"), lined up with the rows under it |
-| `NookDivider` | `PanelBlocks.swift` | The one line between rows or regions, horizontal (with an `inset`) or `vertical` |
-| `NookRowSeparator` | `PanelBlocks.swift` | The clearer line between the items of a list (the Chats tab), in `NookTheme.separator`; placed before every item but the first |
+| `NookFilterChip` | `Shared/PanelParts.swift` | One chip in a row of filters ("All", "Sessions 4"): a quiet capsule, filled with the accent when chosen, with an optional count and an optional `mark` (the state of what it stands for, shown only while it runs or when it failed, as on the Actions page's workflow chips). Search everything uses it for its kinds |
+| `NookSectionLabel` | `Shared/PanelParts.swift` | A group's name in a list or on a page ("Pinned", "For you"), lined up with the rows under it |
+| `NookDivider` | `Shared/PanelParts.swift` | The one line between rows or regions, horizontal (with an `inset`) or `vertical` |
+| `NookRowSeparator` | `Shared/PanelParts.swift` | The clearer line between the items of a list (the Chats tab), in `NookTheme.separator`; placed before every item but the first |
 | `PanelNoticeBar` | `PanelBlocks.swift` | A `NookNotice` in a tab, or with `floating` in the toast's bubble over the panel's bottom edge (a permission request, an agent's question, a short note): symbol, title, a line, and its `NookNoticeActions`; `tone` tints a risky one, `countdown` adds the OK for a note that closes by itself |
-| `AdaptiveActionRow` | `PanelBlocks.swift` | Text beside its buttons (a confirmation, a recovery card, a banner, a sheet's footer): the buttons on the right while the text keeps a readable width, on a line of their own under it in a narrow tab or split view. Use it for every such row instead of an `HStack` with a `Spacer` and buttons, which squeezes the text to a word per line |
+| `AdaptiveActionRow` | `Shared/PanelParts.swift` | Text beside its buttons (a confirmation, a recovery card, a banner, a sheet's footer): the buttons on the right while the text keeps a readable width, on a line of their own under it in a narrow tab or split view. Use it for every such row instead of an `HStack` with a `Spacer` and buttons, which squeezes the text to a word per line |
 | `ComposerUsageRing` | `ComposerRich.swift` | At the right end of the choices under a session's composer (`SessionComposer.trayTrailing`): a small ring filled to the window with the least room left, with its percentage. Its popover is the account's `UsageLimitRows` and "All limits", which opens `UsageModal`. Shown for every agent `QuotaService` has limits for |
 | `UsageLimitRows`, `UsageTone`, `LimitPaceIcon` | `UsageLimitViews.swift` | One account's limits in the usage modal's layout: a small card per window (name, percentage **used** with the pace icon, a bar with the even-pace line and the reset time inside it), the full reset and the pace in the card's tooltip, amber from 75 % used and coral from 90 %. The composer's popover and Settings › Usage & costs; never draw a limit bar by hand |
 | `UsageLimitsModal`, `UsageModal`, `UsageLimitPools` | `UsageLimitViews.swift` | The usage limits as a modal, never a page: per agent a card per window with what is left of the pool in large type and its pace, beside a bar with a segment per account (the pace line cut into it, what a reset gives back hatched, the account's details on click). One component for every way in: the footer's usage button bottom left, "All limits" under the composer's ring, the command palette and search open it over the panel (`UsageModal`, through `AppModel.usageModalOpen`); Settings › Usage & costs shows it as a sheet. Built on `LimitPool` |
 | `ResetCreditRow` | `ResetCreditRow.swift` | An account's banked reset credits and "Use a reset" (after a confirmation), in the usage limits sheet, Settings › Usage & costs and a limited session's banner. Shows nothing for an account without credits |
-| `.panelCard()` | `PanelBlocks.swift` | The quiet card that groups rows: field fill, panel corners, no stroke |
-| `NookIconButton` | `NookButtons.swift` | Round symbol button (mic, close, play) |
+| `.panelCard()` | `Shared/PanelParts.swift` | The quiet card that groups rows: field fill, panel corners, no stroke |
+| `NookIconButton` | `Shared/ButtonParts.swift` | Round symbol button (mic, close, play) |
 | `ToolbarIconButton` | `NookButtons.swift` | Small borderless symbol button in a panel header, a row, or under a message, with hover feedback; `width`/`height` for a tighter row, `enabled` for a dimmed one, and `selected` for a toggle that is on (a diff's display option). Never hand-roll a `.plain` button around a lone `Image` |
 | `CopyIconButton`, `CopyGhostButton`, `CopiedMoment` | `NookButtons.swift` | Every copy button: the symbol turns into a checkmark (or the word into "Copied") for 1.5 s, and a second click restarts the moment. Never hand-roll a `copied` flag with `asyncAfter`; a button of another shape holds a `@StateObject CopiedMoment` |
 | `.composerFocusOnAppear(_:enabled:)` | `PanelBlocks.swift` | Focuses a composer when it appears, again after the panel becomes key, without stealing focus from another text field. Use it on every composer |
 | `.rowActionsBackdrop(_:)` | `NookButtons.swift` | Puts a list row's hover buttons on the row's own fill, fading in from the left, so the title runs out softly underneath them instead of colliding with them |
 | `ConfirmedButton`, `.confirmDelete(_:question:detail:confirmTitle:action:)` | `ConfirmDestructive.swift` | Anything that cannot be undone (delete, remove a key, sign out, clear a history) asks first in the same dialog. `.confirmDelete` is for menu items, which cannot hold a dialog themselves |
 | `PatientSpinner` | `PatientSpinner.swift` | What a panel or pane shows while its content loads: invisible for the first 350 ms, then a small spinner that fades in |
-| `ListEmptyNote` | `ListEmptyNote.swift` | The one line a list shows when it is empty or has no matches; a whole empty panel is a `WSEmptyState` |
-| `.cardBackground(_:stroke:radius:style:)` | `CardBackground.swift` | Rounded fill with a 1 pt stroke: field cards and tinted notices |
+| `ListEmptyNote` | `Shared/ListEmptyNote.swift` | The one line a list shows when it is empty or has no matches; a whole empty panel is a `WSEmptyState` |
+| `.cardBackground(_:stroke:radius:style:)` | `Shared/CardBackground.swift` | Rounded fill with a 1 pt stroke: field cards and tinted notices |
 | `Pasteboard.copy(_:)` | `Pasteboard.swift` | Put text on the pasteboard |
 | `.chatColumn()` | `PanelResize.swift` | Keeps a conversation, its composer or an agent's question to one centered column of `PanelLayout.chatColumn` (736 pt) |
 | `.outside(_:spacing:)` | `PanelResize.swift` | Hangs a view just outside one edge of another without taking room from it: the scroll-to-end pill above a composer, the react and reply buttons beside a chat bubble. Use it instead of an `alignmentGuide`, which is ignored on conditional content |
@@ -243,7 +257,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `GitHubAvatar` | `PullRequestMarks.swift` | A GitHub account's picture by login, its initials (`ChatPersonBadge`) until it loads or for a bot. Pull request rows, reviewers, comments, the Author filter |
 | `ChipFlow` | `PullRequestMarks.swift` | A `Layout` that wraps chips onto as many rows as the width needs (a pull request's labels) |
 | `PullRequestFreshness` | `NotchUI/Pills/PullRequestsPanel.swift` | "Updated 20 s ago": how fresh a pull request list or page is, ticking along; next to its refresh button |
-| `AgentStatusBadge`, `RowBadgeBackground`, `SteppedPulseDot` | `StatusStyleView.swift` | Session state in rows |
+| `AgentStatusBadge`, `RowBadgeBackground`, `SteppedPulseDot` | `StatusStyleView.swift` (its layout `StatusBadgeLabel` and `RowBadgeBackground`: `Shared/PanelParts.swift`) | Session state in rows |
 | `HoverCard`, `.hoverCard(_:)` | `HoverCard.swift` | Detail popover on hover |
 | `.detailCard(onDetail:_:)`, `RowChangesCard`, `RowPullRequestCard` | `HoverCard.swift`, `RowDetailCards.swift` | A part of a row with its own hover card (a session row's changed files, its pull request badge); the row holds its own card back while the pointer is on that part. `RowPullRequestCard` takes a `SessionPullRequests`: it counts the requests when there is more than one and lists those of earlier branches and worktrees under their own heading |
 | `DropdownHeader`, `DropdownRow`, `DropdownDivider`, `ComposerDropdown` | `ComposerDropdown.swift` | Menus of the composer and pickers; `DropdownRow(favorite:)` adds a favorite star (the model menus) |
@@ -289,8 +303,8 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `ChatComposerModel`, `ChatAttachMenu`, `ChatEmojiButton`, `ChatMicButton`, `ChatRecordingBar`, `ChatComposerPanels` | `ChatComposer.swift` | What a chat sends besides text, plugged into `ChatReplyField.extras` (the Chats tab): "+" with photos and videos, files, GIFs, stickers, audio, a poll, a location and a contact (only what the chat's app can send, `ChatOutgoing.Kind`), the emoji browser, a voice message recorded in place of the field, the files waiting to go (each with what it goes as), and the poll, place, contact and sticker panels above the field. Never build a chat's attachments by hand |
 | `RemotePasswordField` | `RemotePasswordField.swift` | The password for a machine that logs in over SSH with one (Settings › Machines, the new-session composer, a session on that machine after Nook restarted): a secure field, Keep in Keychain and Unlock, checked with a real login before `RemotePasswords` keeps it (in memory for this run of Nook, or also in the Keychain vault when ticked). Never ask for an SSH password by hand |
 
-Workspace-only blocks (`InfoRow`, `WSEmptyState`, `WSSectionTitle`, `StatusBadge`) live in
-`NotchUI/Workspace/WorkspaceComponents.swift`.
+Workspace-only blocks (`InfoRow`, `WSSectionTitle`, `StatusBadge`) live in
+`NotchUI/Workspace/WorkspaceComponents.swift`; `WSEmptyState`, used by the iPhone too, is in `NotchUI/Shared/PanelParts.swift`.
 
 ## The panel — notch and main window
 

@@ -63,7 +63,7 @@ final class AntigravityUsage: ObservableObject {
         Task.detached(priority: .utility) { [weak self] in
             // A sign-in file counts as a login; a token borrowed from the Antigravity editor only when it still works.
             let hasLogin = AntigravityUsage.credentials(homes: directories, includeApp: false) != nil
-            let windows = AntigravityUsage.read(homes: directories)
+            let windows = await AntigravityUsage.read(homes: directories)
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.busy = false
@@ -172,7 +172,7 @@ final class AntigravityUsage: ObservableObject {
     private nonisolated(unsafe) static var tokenCache: [String: (token: String, until: Date)] = [:]
     private nonisolated static let tokenLock = NSLock()
 
-    private nonisolated static func read(homes: [URL]) -> [QuotaLimit]? {
+    private nonisolated static func read(homes: [URL]) async -> [QuotaLimit]? {
         guard let credentials = credentials(homes: homes) else { return nil }
         let project = credentials.project
         var access = credentials.access
@@ -185,7 +185,7 @@ final class AntigravityUsage: ObservableObject {
                 token.httpMethod = "POST"
                 token.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
                 token.httpBody = form(["client_id": clientID, "client_secret": secret, "refresh_token": refresh, "grant_type": "refresh_token"])
-                let answer = send(token) as? [String: Any]
+                let answer = await send(token) as? [String: Any]
                 access = answer?["access_token"] as? String
                 if let fresh = access, let seconds = (answer?["expires_in"] as? NSNumber)?.doubleValue, seconds > 60 {
                     tokenLock.withLock { tokenCache[key] = (fresh, Date().addingTimeInterval(seconds - 60)) }
@@ -203,27 +203,35 @@ final class AntigravityUsage: ObservableObject {
         let agent = "antigravity/hub/2.24.0 (aidev_client; os_type=darwin; arch=\(architecture); cl=1000335682)"
         let body = (try? JSONSerialization.data(withJSONObject: project.map { ["project": $0] } ?? [:])) ?? Data("{}".utf8)
 
-        func ask(_ operation: String) -> [[String: Any]] {
-            endpoints.compactMap { endpoint in
+        // Every endpoint at once, its answers in the endpoints' order.
+        func ask(_ operation: String) async -> [[String: Any]] {
+            let requests = endpoints.map { endpoint in
                 var request = URLRequest(url: URL(string: "\(endpoint)/v1internal:\(operation)")!)
                 request.httpMethod = "POST"
                 request.setValue("Bearer \(access)", forHTTPHeaderField: "Authorization")
                 request.setValue(agent, forHTTPHeaderField: "User-Agent")
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.httpBody = body
-                return send(request) as? [String: Any]
+                return request
             }
+            let answers = await withTaskGroup(of: (Int, Data?).self) { group in
+                for (index, request) in requests.enumerated() { group.addTask { (index, await sendData(request)) } }
+                var answers = [Data?](repeating: nil, count: requests.count)
+                for await (index, data) in group { answers[index] = data }
+                return answers
+            }
+            return answers.compactMap { $0.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } }
         }
 
         // The quota summary is what Antigravity's own Model Quota screen shows: per group of models a 5-hour and a weekly
         // window. Only Gemini models that Antigravity can use are kept (third-party Claude & GPT buckets are dropped):
         // every endpoint's windows count, the most used reading of a window wins.
         var summary: [Window] = []
-        for answer in ask("retrieveUserQuotaSummary") { merge(summaryWindows(answer), into: &summary) }
+        for answer in await ask("retrieveUserQuotaSummary") { merge(summaryWindows(answer), into: &summary) }
         if !summary.isEmpty { return summary.map(\.limit) }
         // Older accounts only have a quota per model, without a window length.
         var models: [Window] = []
-        for answer in ask("fetchAvailableModels") { merge(modelWindows(answer), into: &models) }
+        for answer in await ask("fetchAvailableModels") { merge(modelWindows(answer), into: &models) }
         // The model list reports every model untouched on any plan when it knows nothing; that is no reading.
         guard models.contains(where: { $0.limit.percent > 0 }) else { return nil }
         return models.map(\.limit)
@@ -236,20 +244,18 @@ final class AntigravityUsage: ObservableObject {
             .joined(separator: "&").utf8)
     }
 
-    /// One synchronous request (this runs off the main thread). Returns the JSON body of a 200 answer.
-    private nonisolated static func send(_ request: URLRequest) -> Any? {
+    /// One request, awaited without holding a thread. Returns the JSON body of a 200 answer.
+    private nonisolated static func send(_ request: URLRequest) async -> Any? {
+        await sendData(request).flatMap { try? JSONSerialization.jsonObject(with: $0) }
+    }
+
+    /// The body of a 200 answer; nil for any other answer or none within 10 seconds.
+    private nonisolated static func sendData(_ request: URLRequest) async -> Data? {
         var request = request
         request.timeoutInterval = 10
-        let semaphore = DispatchSemaphore(value: 0)
-        var payload: Data?
-        var status = 0
-        URLSession.shared.dataTask(with: request) { data, response, _ in
-            payload = data
-            status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            semaphore.signal()
-        }.resume()
-        guard semaphore.wait(timeout: .now() + 15) == .success, status == 200, let payload else { return nil }
-        return try? JSONSerialization.jsonObject(with: payload)
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return data
     }
 
     // MARK: Parsing

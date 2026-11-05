@@ -1614,8 +1614,6 @@ struct ChatsAvatar: View {
     let photo: NSImage?
     let size: CGFloat
 
-    private var tint: Color { ChatPersonBadge.tint(for: name) }
-
     var body: some View {
         face
             .frame(width: size, height: size)
@@ -1637,13 +1635,7 @@ struct ChatsAvatar: View {
                 .scaledToFill()
                 .clipShape(Circle())
         } else {
-            Circle()
-                .fill(tint.opacity(0.16))
-                .overlay(
-                    Text(WAJID.initials(name))
-                        .font(NookTheme.rounded(size * 0.36, .semibold))
-                        .foregroundStyle(tint)
-                )
+            ChatInitialsFace(name: name, initials: WAJID.initials(name), size: size)
         }
     }
 }

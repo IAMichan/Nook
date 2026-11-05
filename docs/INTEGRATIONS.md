@@ -184,6 +184,17 @@ Every bridge reads on its own turn, side by side (`ChatCaptureService.pollBridge
 a quick one. The chat helper reads a chat again when the chat list moved past the newest message it got
 (`ChatServiceData.isBehind`, up to three times), so a chat's row never shows an older message than the chat itself.
 
+Within one read, a bridge that asks its service per chat asks for the chats that moved side by side, six at a time
+(`ChatParallel`), and goes through the answers in the chats' own order, so what it remembers per chat is written as
+before. A read of fifteen chats then takes about as long as three. A chat's own failure leaves the others; a lost
+sign-in or a rate limit (`ChatParallel.Asked.refused`) stops asking for the rest of the round. This holds for the chat
+helper (Instagram, Signal, Messenger, X, LinkedIn…; the chats told to have changed, such as one you just opened, are
+asked first), Teams (Graph and the website, each with its pictures and read receipts) and Slack (the same requests as
+before, in a fraction of the time). Left out because their app does not ask per chat: Telegram (TDLib pushes each
+chat's history by itself), WhatsApp through the linked phone (the gateway pushes), Messages and WhatsApp on this Mac
+(one database query), Mail (one AppleScript per account; Mail answers scripts one at a time) and Snapchat (one hidden
+web page reads one chat at a time).
+
 A read that fails waits longer each time, the same for every bridge (`ChatBackoff`): a minute (or the bridge's own
 interval when that is longer), then twice as long after each failure in a row, up to a quarter of an hour. A bridge that
 reads a database on this Mac (`ChatBridge.readsLocally`: Messages, WhatsApp on this Mac) starts at five seconds after a

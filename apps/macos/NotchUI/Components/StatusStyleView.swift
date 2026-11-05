@@ -37,46 +37,19 @@ struct AgentStatusBadge: View {
 
     var body: some View {
         let tint = state.tone.color
-        HStack(spacing: NookTheme.Spacing.xs) {
+        StatusBadgeLabel(word: long ? state.longWord : state.word, detail: detail, tint: tint, markOnly: markOnly) {
             Group {
                 if AgentStatusStyle.pulses(state) {
                     SteppedPulseDot(color: tint, size: 6)
                 } else {
-                    Image(systemName: state.symbol).font(NookTheme.font(9.5, .semibold))
+                    Image(systemName: state.symbol)
                 }
             }
             .foregroundStyle(tint)
-            .frame(width: 10, height: 10)
-            if !markOnly {
-                Text(long ? state.longWord : state.word)
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(tint)
-                    .lineLimit(1)
-            }
-            if let detail, !markOnly {
-                Text(detail)
-                    .font(NookTheme.TextStyle.label.monospacedDigit())
-                    .foregroundStyle(tint)
-                    .lineLimit(1)
-            }
         }
-        .modifier(RowBadgeBackground())
         .help(markOnly ? [state.longWord, detail].compactMap { $0 }.joined(separator: " · ") : "")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([state.longWord, detail].compactMap { $0 }.joined(separator: " "))
-    }
-}
-
-/// The ground every small badge in a row stands on (status, pull request): no fill and no edge, so a row shows
-/// a status as a mark and a word only, 18pt high so it fits a 12pt text line without making the row taller.
-struct RowBadgeBackground: ViewModifier {
-    var horizontal: CGFloat = NookTheme.Spacing.xs
-
-    func body(content: Content) -> some View {
-        content
-            .padding(.horizontal, horizontal)
-            .frame(height: 18)
-            .fixedSize()
     }
 }
 
