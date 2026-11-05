@@ -41,7 +41,7 @@ struct SectionHeader: View {
 
     var body: some View {
         if let expanded {
-            NookShelfHeader(title: count.map { "\(title) (\($0))" } ?? title, open: expanded.wrappedValue) {
+            NookShelfHeader(title: title, count: count, open: expanded.wrappedValue) {
                 Haptics.tap()
                 withAnimation(Theme.reveal) { expanded.wrappedValue.toggle() }
             }
@@ -74,7 +74,7 @@ struct StatusPill: View {
 
     var body: some View {
         let color = Theme.color(attention)
-        StatusBadgeLabel(word: short ? Theme.shortWord(attention) : Theme.word(attention), needsYou: Theme.needsYou(attention)) {
+        StatusBadgeLabel(word: short ? Theme.shortWord(attention) : Theme.word(attention), tint: color) {
             Group {
                 if attention == "working" {
                     PulseDot(color: color, size: 6)

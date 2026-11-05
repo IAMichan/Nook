@@ -187,13 +187,13 @@ struct RowBadgeBackground: ViewModifier {
     }
 }
 
-/// A status as a mark and a word in a row's meta line (`AgentStatusBadge` on the Mac, `StatusPill` on the phone): only
-/// the mark carries the state's color; the word stays grey and turns paper-white when the state waits on you, so a list
-/// of statuses stays calm. `detail` ("3m", "until 9:00") follows a middle dot.
+/// A status as a mark and a word in a row's meta line (`AgentStatusBadge` on the Mac, `StatusPill` on the phone): the
+/// mark and the word both wear the state's color, without a fill, so a status reads at a glance and a list of them stays
+/// free of blocks. `detail` ("3m", "until 9:00") follows the word.
 struct StatusBadgeLabel<Mark: View>: View {
     let word: String
     var detail: String? = nil
-    var needsYou = false
+    let tint: Color
     /// Only the mark, for a row too narrow for the word.
     var markOnly = false
     @ViewBuilder var mark: () -> Mark
@@ -206,13 +206,13 @@ struct StatusBadgeLabel<Mark: View>: View {
             if !markOnly {
                 Text(word)
                     .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(needsYou ? NookTheme.paper : NookTheme.textSecondary)
+                    .foregroundStyle(tint)
                     .lineLimit(1)
             }
             if let detail, !markOnly {
-                Text("· \(detail)")
-                    .font(NookTheme.TextStyle.caption.monospacedDigit())
-                    .foregroundStyle(NookTheme.textTertiary)
+                Text(detail)
+                    .font(NookTheme.TextStyle.label.monospacedDigit())
+                    .foregroundStyle(tint)
                     .lineLimit(1)
             }
         }
@@ -220,13 +220,12 @@ struct StatusBadgeLabel<Mark: View>: View {
     }
 }
 
-/// The header of a shelf of rows that folds ("Working (3)", "Recent (12)"): its name, a line across the rest of the row
-/// and a chevron. `accessory` sits before the chevron (what a drop here would do, on the Mac).
+/// The header of a shelf of rows that folds: its name on the left, its count and a chevron on the right. `accessory`
+/// sits before the count (what a drop here would do, on the Mac).
 struct NookShelfHeader<Accessory: View>: View {
     let title: String
+    var count: Int? = nil
     let open: Bool
-    /// A shelf that holds something set aside on purpose (snoozed): its name a step brighter.
-    var emphasized = false
     let action: () -> Void
     @ViewBuilder var accessory: () -> Accessory
 
@@ -235,16 +234,22 @@ struct NookShelfHeader<Accessory: View>: View {
             HStack(spacing: NookTheme.Spacing.md) {
                 Text(title)
                     .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(emphasized ? NookTheme.textSecondary : NookTheme.textTertiary)
-                NookDivider()
+                    .foregroundStyle(NookTheme.textSecondary)
+                Spacer(minLength: 0)
                 accessory()
+                if let count {
+                    Text("\(count)")
+                        .font(NookTheme.TextStyle.detail.monospacedDigit())
+                        .foregroundStyle(NookTheme.textTertiary)
+                }
                 Image(systemName: "chevron.down")
-                    .font(NookTheme.textFont(8.5, .bold))
+                    .font(NookTheme.textFont(10, .semibold))
                     .rotationEffect(.degrees(open ? 0 : -90))
                     .foregroundStyle(NookTheme.textTertiary)
+                    .frame(width: 12)
             }
-            .padding(.horizontal, NookTheme.Spacing.lg)
-            .frame(minHeight: SharedMetrics.isPhone ? 36 : 28, maxHeight: SharedMetrics.isPhone ? nil : 28)
+            .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+            .frame(minHeight: SharedMetrics.isPhone ? 36 : 32, maxHeight: SharedMetrics.isPhone ? nil : 32)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -254,7 +259,7 @@ struct NookShelfHeader<Accessory: View>: View {
 }
 
 extension NookShelfHeader where Accessory == EmptyView {
-    init(title: String, open: Bool, emphasized: Bool = false, action: @escaping () -> Void) {
-        self.init(title: title, open: open, emphasized: emphasized, action: action) { EmptyView() }
+    init(title: String, count: Int? = nil, open: Bool, action: @escaping () -> Void) {
+        self.init(title: title, count: count, open: open, action: action) { EmptyView() }
     }
 }

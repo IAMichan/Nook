@@ -291,20 +291,20 @@ struct SelectableProse: NSViewRepresentable {
         if let hit = cache.object(forKey: key) { return hit }
         let result = NSMutableAttributedString()
         for (index, block) in blocks.enumerated() {
-            // The 12 points the answer's blocks keep between them, so paragraphs read as paragraphs.
-            let gap: CGFloat = index == 0 ? 0 : 12
+            // The room the answer's blocks keep between them, so paragraphs read as paragraphs.
+            let gap: CGFloat = index == 0 ? 0 : 10
             switch block {
             case .heading(let level, let text):
-                let headingSize = level <= 1 ? size + 5 : level == 2 ? size + 3 : size + 1
+                let headingSize = level <= 1 ? size + 6 : level == 2 ? size + 4 : level == 3 ? size + 2 : size
                 let line = inline(text, size: headingSize, weight: .semibold, color: NookTheme.paper, files: files)
                 // A heading takes more room above than below, so it clearly belongs to the text under it.
-                append(line, style: style(before: gap + (level <= 2 ? 8 : 4), lineSpacing: 1), to: result)
+                append(line, style: style(before: gap + 10, lineSpacing: 1), to: result)
             case .paragraph(let text):
                 // Running text a step softer than headings (answers at 80 % of the text color).
                 append(inline(text, size: size, weight: .regular, color: NookTheme.textStrong, files: files), style: style(before: gap), to: result)
             case .list(let items):
                 for (itemIndex, item) in items.enumerated() {
-                    appendItem(item, before: itemIndex == 0 ? gap : 6, size: size, files: files, to: result)
+                    appendItem(item, before: itemIndex == 0 ? gap : 4, size: size, files: files, to: result)
                 }
             default:
                 break
@@ -392,8 +392,8 @@ struct SelectableProse: NSViewRepresentable {
             var attributes: [NSAttributedString.Key: Any] = [:]
             var font: NSFont
             if intent.contains(.code) {
-                font = .monospacedSystemFont(ofSize: size - 1.5, weight: .regular)
-                attributes[.backgroundColor] = NSColor(NookTheme.field)
+                font = .monospacedSystemFont(ofSize: size * 0.85, weight: .regular)
+                attributes[.backgroundColor] = NSColor(NookTheme.graphite)
             } else {
                 // Semibold rather than bold: bold runs already take the full white, a heavier weight made answers loud.
                 font = .systemFont(ofSize: size, weight: intent.contains(.stronglyEmphasized) ? .semibold : weight)

@@ -129,7 +129,7 @@ struct InboxProjectGroup: Identifiable, Equatable, Sendable {
 }
 
 struct InboxSection: Equatable, Sendable {
-    enum Kind: String, CaseIterable, Sendable { case pinned, active, working, snoozed, settled }
+    enum Kind: String, CaseIterable, Sendable, Codable { case pinned, active, working, snoozed, settled }
     var kind: Kind
     var rows: [InboxEntry]
     /// Settled paging: how many more rows "Show 10 more" would reveal.

@@ -20,7 +20,7 @@ struct AgentRowLayout<Slot: View, Title: View, Logo: View, Meta: View>: View {
     @ViewBuilder var meta: () -> Meta
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: NookTheme.Spacing.xs) {
                 Image(systemName: "folder").font(NookTheme.textFont(9.5, .semibold))
                 Text(folder)
@@ -31,19 +31,22 @@ struct AgentRowLayout<Slot: View, Title: View, Logo: View, Meta: View>: View {
             }
             .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
-            .frame(minHeight: 18, maxHeight: SharedMetrics.isPhone ? nil : 18)
+            .frame(minHeight: 20, maxHeight: SharedMetrics.isPhone ? nil : 20)
 
             HStack(spacing: NookTheme.Spacing.sm) {
                 title()
                 Spacer(minLength: NookTheme.Spacing.xs)
                 if !hasMeta { logo() }
             }
+            .frame(minHeight: 20, maxHeight: SharedMetrics.isPhone ? nil : 20)
+            .padding(.top, NookTheme.Spacing.xs)
 
             if hasMeta {
                 HStack(spacing: NookTheme.Spacing.sm) {
                     meta()
                     logo()
                 }
+                .frame(minHeight: 16, maxHeight: SharedMetrics.isPhone ? nil : 16)
                 .padding(.top, NookTheme.Spacing.xxs)
             }
         }
@@ -66,17 +69,18 @@ struct AgentRowTitle: View {
     }
 }
 
-/// The branch on a session's third line, cut in the middle when it is long; a worktree's with its own mark.
+/// The branch on a session's third line, cut in the middle when it is long; only a worktree's has a mark.
 struct AgentRowBranch: View {
     let branch: String
     var worktree = false
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            Image(systemName: worktree ? "arrow.triangle.branch.square" : "arrow.triangle.branch")
-                .font(NookTheme.textFont(9.5, .semibold))
-                .help(worktree ? sharedText("agents.row.worktree", "Works in its own worktree")
-                               : sharedText("agents.row.branch", "Branch"))
+            if worktree {
+                Image(systemName: "arrow.triangle.branch.square")
+                    .font(NookTheme.textFont(9.5, .semibold))
+                    .help(sharedText("agents.row.worktree", "Works in its own worktree"))
+            }
             Text(branch)
                 .lineLimit(1)
                 .truncationMode(.middle)

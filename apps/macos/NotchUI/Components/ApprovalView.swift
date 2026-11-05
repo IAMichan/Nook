@@ -1,13 +1,16 @@
 import SwiftUI
 
 /// A permission request from an agent: what it wants (the whole command or the whole change), how risky that looks, and
-/// the buttons to decide. The notch, the Agents list and the session view all show it this way.
+/// the buttons to decide. The notch and the Agents list show it as a card; a conversation as a row of its timeline
+/// (`inline`), the request lined up with the work lines above it.
 struct ApprovalView: View {
     let approval: AgentApproval
     /// Other requests waiting behind this one.
     var more = 0
     /// Fixed palette for the dark notch and the window alike.
     var maxHeight: CGFloat? = nil
+    /// In a conversation: no card, the mark in the work lines' column and the words under it indented to theirs.
+    var inline = false
     let onDecide: (ApprovalDecision) -> Void
 
     private var prPreview: PullRequestApprovalPreview? {
@@ -26,7 +29,30 @@ struct ApprovalView: View {
         return 180
     }
 
+    @ViewBuilder
     var body: some View {
+        if inline { inlineBody } else { cardBody }
+    }
+
+    private var inlineBody: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            titleBlock
+            Group {
+                content
+                AdaptiveActionRow {
+                    Label(AgentDisplayState.approval.longWord, systemImage: "shield")
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(approval.danger ? NookTheme.coral : NookTheme.amber)
+                } actions: {
+                    actions
+                }
+            }
+            .padding(.leading, TranscriptStyle.workIndent)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var cardBody: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
@@ -48,7 +74,7 @@ struct ApprovalView: View {
     private var titleBlock: some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
             headerIcon
-                .frame(width: 18, height: 18)
+                .frame(width: inline ? TranscriptStyle.workIcon : 18, height: 18)
                 .padding(.top, 1)
 
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {

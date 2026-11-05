@@ -392,7 +392,7 @@ private struct FileCodeView: View, Equatable {
                 .frame(width: numberWidth, alignment: .trailing)
                 .padding(.top, 1)
             Text(styled(index))
-                .font(NookTheme.mono(11.5))
+                .font(NookTheme.mono(13))
                 .foregroundStyle(NookTheme.textStrong)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -455,7 +455,6 @@ struct SessionFilePanel: View {
         if let target = store.target {
             FileViewer(target: target, opened: store.opened, beside: true, directory: directory) { store.open($0) }
                 .id(target.path)
-                .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         } else {
             WSEmptyState(symbol: "doc.text", title: tr("agents.tool.file.emptyTitle"), message: tr("agents.tool.file.emptyMessage"),
                          action: (tr("file.viewer.open"), { if let picked = FilePicker.pick(in: directory) { store.open(picked) } }))

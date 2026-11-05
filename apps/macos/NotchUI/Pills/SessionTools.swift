@@ -845,15 +845,12 @@ private struct SessionToolPanel: View {
                     } else {
                         SidePanelPullRequestPicker(directory: directory) { openPullRequest($0) }
                     }
-                // The pages sit in rounded corners like the other panels, not edge to edge.
                 case .artifact:
                     SessionArtifactPanel()
-                        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
                 case .file:
                     SessionFilePanel(directory: directory)
                 default:
                     BrowserView()
-                        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -960,12 +957,11 @@ private struct SessionToolPanel: View {
     private var addMenu: some View {
         ComposerDropdown(width: 220) {
             Image(systemName: "plus")
-                .font(NookTheme.font(11, .semibold))
+                .font(NookTheme.font(13, .medium))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 24, height: 24)
                 .contentShape(Rectangle())
         } content: {
-            DropdownHeader(title: tr("agents.tool.add"))
             ForEach(SessionTool.launchable, id: \.self) { item in
                 DropdownRow(symbol: item.symbol, title: item.title, chosen: item == tool,
                             disabledReason: item.available(in: directory) ? nil : tr("agents.tool.needsFolder")) {

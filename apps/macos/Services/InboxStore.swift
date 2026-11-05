@@ -18,6 +18,8 @@ final class InboxStore: ObservableObject {
     @Published var groupByProject: Bool { didSet { save() } }
     /// The projects you folded in that view.
     @Published var collapsedProjects: Set<String> { didSet { save() } }
+    /// The shelves folded at the foot of the list.
+    @Published private(set) var collapsedShelves: Set<InboxSection.Kind>
 
     /// Undo of what only the workspace can reverse: a snooze, an archive. They get the ids that were recorded.
     var undoSnooze: (([String]) -> Void)?
@@ -34,6 +36,7 @@ final class InboxStore: ObservableObject {
         var autoSettle: AutoSettlePolicy.Settings?
         var groupByProject: Bool?
         var collapsedProjects: Set<String>?
+        var collapsedShelves: Set<InboxSection.Kind>?
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -44,12 +47,20 @@ final class InboxStore: ObservableObject {
         autoSettle = stored?.autoSettle ?? AutoSettlePolicy.Settings()
         groupByProject = stored?.groupByProject ?? true
         collapsedProjects = stored?.collapsedProjects ?? []
+        collapsedShelves = stored?.collapsedShelves ?? [.snoozed, .settled]
     }
 
     private func save() {
         let stored = Stored(state: state, showWorking: showWorking, autoSettle: autoSettle,
-                            groupByProject: groupByProject, collapsedProjects: collapsedProjects)
+                            groupByProject: groupByProject, collapsedProjects: collapsedProjects,
+                            collapsedShelves: collapsedShelves)
         if let data = try? JSONEncoder().encode(stored) { defaults.set(data, forKey: Self.key) }
+    }
+
+    /// Folds or opens a shelf of the list.
+    func setShelf(_ kind: InboxSection.Kind, collapsed: Bool) {
+        if collapsed { collapsedShelves.insert(kind) } else { collapsedShelves.remove(kind) }
+        save()
     }
 
     // MARK: Pins and order

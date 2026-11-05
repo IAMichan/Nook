@@ -64,7 +64,7 @@ struct RunQuestionPanel: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
 
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     ForEach(Array(item.options.enumerated()), id: \.offset) { number, option in
                         let picked = picks.contains(option.label)
                         QuestionOptionRow(
@@ -101,8 +101,7 @@ struct RunQuestionPanel: View {
                     }
                 }
             }
-            .padding(NookTheme.Spacing.lg)
-            .cardBackground(NookTheme.surface, stroke: NookTheme.amber.opacity(0.25), radius: NookTheme.Radius.panel, style: .continuous)
+            .conversationCard()
             // Keys 1–9 pick an option, except while a text is being edited (your own answer).
             .onWindowKeyDown { digitKey($0, item) }
             // A question with no options but room for your own answer: the keyboard is in that field.
@@ -328,18 +327,18 @@ private struct QuestionOptionRow: View {
                 // Trailing selection affordance
                 trailingIndicator
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.vertical, NookTheme.Spacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
                     .fill(backgroundColor)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
                     .stroke(borderColor, lineWidth: isHovered || isPicked ? 1.2 : 1)
             )
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -395,20 +394,14 @@ private struct QuestionOptionRow: View {
         if isPicked {
             return NookTheme.amber.opacity(0.12)
         } else if isHovered {
-            return NookTheme.smoke.opacity(0.85)
+            return NookTheme.rowHover
         } else {
-            return NookTheme.field
+            return .clear
         }
     }
 
     private var borderColor: Color {
-        if isPicked {
-            return NookTheme.amber.opacity(0.55)
-        } else if isHovered {
-            return NookTheme.amber.opacity(0.45)
-        } else {
-            return Color.white.opacity(0.04)
-        }
+        isPicked ? NookTheme.amber.opacity(0.55) : .clear
     }
 }
 

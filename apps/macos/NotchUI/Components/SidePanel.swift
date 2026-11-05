@@ -32,8 +32,10 @@ extension Edge {
 enum SidePanelMetrics {
     /// Every side panel's header (a title row or a tab row) is this tall, so what they show starts on one line.
     static let header: CGFloat = 32
-    /// The bar of what a tab shows, under the header (`SidePanelToolbar`).
-    static let toolbar: CGFloat = 34
+    /// The bar of what a tab shows, under the header (`SidePanelToolbar`): no line under it, the room under it parts it
+    /// from what the tab shows.
+    static let toolbar: CGFloat = 28
+    static let toolbarGap: CGFloat = NookTheme.Spacing.md
     /// Room between a panel and the drag line on the conversation's side.
     static let gap: CGFloat = NookTheme.Spacing.sm
     /// Room between a tab's list and the line beside it: with half the line's own room, the list sits as far from the
@@ -200,7 +202,7 @@ extension SidePanelHeader where Actions == EmptyView {
 /// The bar of what a tab shows, right under the panel's header or tabs: the same height and inset in every tab, with
 /// the line under it (`divider`), so switching tabs never moves the content up or down.
 struct SidePanelToolbar<Content: View>: View {
-    var divider = true
+    var divider = false
     @ViewBuilder var content: () -> Content
     @Environment(\.lineBleed) private var bleed
 
@@ -212,6 +214,7 @@ struct SidePanelToolbar<Content: View>: View {
                 .frame(height: SidePanelMetrics.toolbar)
             if divider { NookDivider().bleedsHorizontally(bleed) }
         }
+        .padding(.bottom, SidePanelMetrics.toolbarGap)
     }
 }
 
@@ -282,10 +285,10 @@ struct SidePanelToggle: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: edge.panelSymbol)
-                .font(NookTheme.TextStyle.label)
+                .font(NookTheme.font(13, .medium))
                 .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
-                .frame(width: 26, height: ToolbarGroup.itemHeight)
-                .background(RoundedRectangle(cornerRadius: ToolbarGroup.itemRadius, style: .continuous)
+                .frame(width: 28, height: 28)
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
                     .fill(open ? NookTheme.smoke : Color.clear))
                 .overlay(alignment: .topTrailing) {
                     if fresh {
