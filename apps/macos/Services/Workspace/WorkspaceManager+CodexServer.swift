@@ -58,7 +58,7 @@ extension WorkspaceManager {
         if prompt != nil { append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch")) }
 
         let instructions = [run.instructions.trimmingCharacters(in: .whitespacesAndNewlines),
-                            bridge(for: id) == nil ? "" : BridgeLaunch.instructions].filter { !$0.isEmpty }.joined(separator: "\n\n")
+                            bridge(for: id)?.note ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
         let thread = CodexRPC.threadParams(cwd: run.workingDirectory, model: run.model,
                                            mcpServers: bridge(for: id)?.codexMCPServers(runID: id),
                                            resumeID: run.providerSessionID, instructions: instructions.isEmpty ? nil : instructions)

@@ -1,8 +1,8 @@
 import Foundation
 
 /// Sessions on another machine (see RemoteMachines): the same agents and turns, started over SSH. Git runs there over
-/// ssh too: changes, diffs, commit and push, snapshots per turn, restoring them, and worktrees. Only the workspace bridge
-/// (Nook's terminal, browser and pull requests for the agent) needs this Mac and stays off.
+/// ssh too: changes, diffs, commit and push, snapshots per turn, restoring them, and worktrees. Of the workspace bridge
+/// the agent gets what cannot touch this Mac (see `RemoteBridge`).
 extension WorkspaceManager {
     /// The program that starts this session's agent: its path on this Mac, or on another machine just its name (the
     /// remote login shell finds it).
@@ -10,9 +10,42 @@ extension WorkspaceManager {
         run.remote != nil ? run.provider.kind.command : executable(run.provider)
     }
 
-    /// Nook's terminal, browser and pull requests for the agent: only for sessions on this Mac.
+    /// Nook's tools for the agent. On another machine they wait until the server is there (`prepareRemoteBridge`): a session
+    /// runs without them until then.
     func bridge(for id: UUID) -> BridgeLaunch? {
-        run(id)?.isRemote == true ? nil : bridgeLaunch()
+        guard let launch = bridgeLaunch(), let run = run(id) else { return nil }
+        guard let remote = run.remote else { return launch }
+        guard let home = remoteHomes[remote.machineID] else {
+            Task { await prepareRemoteBridge(remote) }
+            return nil
+        }
+        return BridgeLaunch(script: RemoteBridge.scriptPath(home: home),
+                            remote: .init(socket: RemoteBridge.socketPath(home: home, run: id), token: remoteBridgeToken(id)))
+    }
+
+    /// The token that proves the agent is this session's, for this run of Nook.
+    func remoteBridgeToken(_ id: UUID) -> String {
+        if let token = remoteBridgeTokens[id] { return token }
+        let token = UUID().uuidString + UUID().uuidString
+        remoteBridgeTokens[id] = token
+        return token
+    }
+
+    /// Whether `token` is the one made for the remote session `id`.
+    func acceptsRemoteBridge(_ id: UUID, token: String) -> Bool {
+        guard run(id)?.isRemote == true, let expected = remoteBridgeTokens[id] else { return false }
+        return Data(expected.utf8) == Data(token.utf8)
+    }
+
+    /// Puts Nook's MCP server on the machine, once per run of Nook.
+    func prepareRemoteBridge(_ remote: RemoteTarget) async {
+        guard bridgeLaunch() != nil, remoteHomes[remote.machineID] == nil, !remoteBridgeInstalling.contains(remote.machineID) else { return }
+        remoteBridgeInstalling.insert(remote.machineID)
+        let home = await Task.detached(priority: .userInitiated) {
+            RemoteShell.installBridge(remote, script: WorkspaceBridgeScript.contents)
+        }.value
+        remoteBridgeInstalling.remove(remote.machineID)
+        remoteHomes[remote.machineID] = home
     }
 
     /// Git for this session's folder: on this Mac, or for a session on another machine over ssh there.
@@ -26,12 +59,14 @@ extension WorkspaceManager {
     func placed(_ spec: LaunchSpec, for run: WorkspaceRun) -> LaunchSpec {
         guard let remote = run.remote else { return spec }
         let environment = run.provider == .acp ? (CustomAgents.agent(for: run.profileID)?.environment ?? [:]) : [:]
-        return RemoteLaunch.wrap(spec, target: remote, environment: environment)
+        let forward = bridge(for: run.id)?.remote.map { RemoteBridge.forward(socket: $0.socket, local: NookPaths.remoteBridgeSocketURL.path) } ?? []
+        return RemoteLaunch.wrap(spec, target: remote, environment: environment, forward: forward)
     }
 
     /// A new session on another machine: in the folder there, or in a new worktree there (~/.nook/worktrees), under that
     /// machine's own login of the agent. Git runs there over ssh, so snapshots and the diff work as for a local session.
     func startRemote(_ config: NewRunConfig, on remote: RemoteTarget) async throws -> UUID {
+        await prepareRemoteBridge(remote)
         let id = UUID()
         let git = GitService(executable: "git", remote: remote)
         let directory = remote.directory.trimmingCharacters(in: .whitespaces)

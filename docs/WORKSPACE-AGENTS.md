@@ -61,6 +61,14 @@ messaging sessions wait for your approval, and a session it starts asks you befo
 `nook call <tool> <json>` reach every other tool under the same rules. Only your own user can open the socket; there is no
 remote access to it.
 
+### Sessions on another machine
+
+A session over SSH gets Nook's browser, `render_page` and read access to your sessions (`RemoteBridge`). Nook copies `nook-mcp`
+to `~/.nook` there (it needs Perl with `JSON::PP`) and ssh forwards a socket in that folder to `bridge-remote.sock` on the Mac.
+That socket is separate from `bridge.sock`: a call on it needs a token made for that run, and every tool that acts on the Mac
+(terminals, pull requests, devices, delegation, connectors, secrets) is refused, because whoever controls that machine controls
+what comes through. `localhost` in the browser is the Mac. Without Perl the session simply runs without these tools.
+
 ## Available MCP Tools
 
 | Tool | Description | Policy |
@@ -129,6 +137,7 @@ Delegation rules are implemented in `Delegation.swift` (pure Foundation, tested 
 - The socket directory is `0700` and `bridge.sock` is `0600`, with peer UID verification on every connection (`UnixSocketServer`).
 - Approval cards display the **entire** command or pull request details (repository, head → base branch, title, body) along with `CommandRisk` warnings.
 - Agents cannot send arbitrary keystrokes to an existing interactive shell; they can only start tracked commands via `terminal_run` and read output from terminals in their own project directory.
+- A session on another machine reaches only the tools `RemoteBridge.allows` lists, on a socket of its own, with a token per run.
 - Agents can only reach secrets kept under the `agent-secret.` prefix, never Nook's own keys and tokens. The agent's own transcript (outside Nook) does contain a secret it was given.
 - A retried call with the same `client_request_id` gets the first answer; a retry while the first call still waits for you gets no second approval card.
 - The workspace browser uses an ephemeral data store (no persistent cookies or disk storage across app launches) and blocks `file://` and custom URL schemes. A project can opt in to keeping sign-ins (Settings › Workspace, per project, `BrowserProfiles`): it then gets a persistent store of its own that no other project reaches, and its agents can use those sign-ins. Turning it off deletes that store's data.

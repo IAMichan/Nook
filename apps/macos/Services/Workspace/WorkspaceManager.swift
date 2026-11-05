@@ -234,6 +234,10 @@ final class WorkspaceManager: ObservableObject {
     /// A queued message sent right away while a turn was active: sent as soon as that turn ends.
     var pendingSendNow: [UUID: String] = [:]
     /// A goal Codex takes with the turn that is starting, and a goal control that waits for the connection (`SessionGoals`).
+    /// $HOME per machine where Nook's MCP server is in place, and each remote session's proof (see `RemoteBridge`).
+    var remoteHomes: [String: String] = [:]
+    var remoteBridgeInstalling: Set<String> = []
+    var remoteBridgeTokens: [UUID: String] = [:]
     var codexGoalStarting: [UUID: SessionGoalCommand] = [:]
     var codexGoalWaiting: [UUID: SessionGoalCommand] = [:]
     /// When GitHub was last asked about a branch's pull request ("owner/repo branch"), so it is asked once a minute at most.
