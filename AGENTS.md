@@ -85,6 +85,16 @@ It keeps the build in `.build/xcode` inside the checkout, so it is removed toget
 default DerivedData from a worktree: each of those leaves a 1–5 GB build behind that nothing removes. Agent sessions on
 this Mac once left more than 400 GB that way.
 
+Test programs must leave the user's screen, focus, and input alone. This Mac is in use while agents work, and a throwaway
+harness that opens a window interrupts whatever the user is doing:
+
+- Prefer a unit test. When a behavior needs AppKit or SwiftUI, host the view in an offscreen window (`orderBack` or a frame
+  outside every screen, never `makeKeyAndOrderFront`).
+- Do not set `.floating` or a higher window level, call `activate`, or use the `.regular` activation policy in a harness.
+- Send events to the window directly (`NSWindow.sendEvent`, `hitTest`). Never post real input with `CGEvent` or
+  `osascript`: it moves the user's cursor and lands on whatever is under it.
+- If a check only works on the real screen, ask the user first and run it once, not in a loop.
+
 ## 5. Showing Files to the User
 
 When you make something the user should look at (an image, a rendered HTML page, a PDF, a drafted caption or post), make sure they can open it in the side panel of their agent app instead of only reading a path in chat:
