@@ -28,6 +28,33 @@ final class PullRequestStatusTests: XCTestCase {
         XCTAssertEqual(store.status(url), PullRequestStatus(glyph: .merged, checks: "pending"))
     }
 
+    func testKeptStatesShowBeforeTheFirstReadAndTheReadWins() {
+        let store = PullRequestStatusStore()
+        let url = URL(string: "https://github.com/a/b/pull/3")!
+        store.seed([(url.absoluteString, .merged)])
+        XCTAssertEqual(store.status(url)?.glyph, .merged, "a merged pull request is not open until its first read")
+        // A copy that kept an older state does not turn it back, in either order.
+        store.seed([(url.absoluteString, .open)])
+        XCTAssertEqual(store.status(url)?.glyph, .merged)
+        let other = URL(string: "https://github.com/a/b/pull/4")!
+        store.seed([(other.absoluteString, .open), (other.absoluteString, .merged)])
+        XCTAssertEqual(store.status(other)?.glyph, .merged)
+        // A real read says more than what was kept: a reopened request turns open again, and stays so.
+        store.record(key: PullRequestStatusStore.key(url), glyph: .open, checks: nil)
+        XCTAssertEqual(store.status(url)?.glyph, .open)
+        store.seed([(url.absoluteString, .merged)])
+        XCTAssertEqual(store.status(url)?.glyph, .open)
+    }
+
+    func testKeptStatesStillGetTheirFirstRead() async {
+        let store = PullRequestStatusStore()
+        let url = URL(string: "https://github.com/a/b/pull/5")!
+        store.seed([(url.absoluteString, .open)])
+        store.fetch = { _ in PullRequestSnapshot(state: "merged", checks: "success", failedChecks: [], reviews: [], comments: [], conflicted: false) }
+        await store.refresh(url)
+        XCTAssertEqual(store.status(url), PullRequestStatus(glyph: .merged, checks: "success"))
+    }
+
     func testBadgeLinksTakeTheNewestState() {
         let store = PullRequestStatusStore()
         let link = PullRequestLink(host: .github, repository: "a/b", number: 2, url: "https://github.com/a/b/pull/2")

@@ -98,6 +98,20 @@ final class PullRequestStatusStore: ObservableObject {
                checks: PullRequestStatus.checks(detail.checks), at: date)
     }
 
+    /// What Nook kept from before this launch, shown until the first read of each request: the store starts empty, and a
+    /// row with nothing to go on would call a merged pull request open. No read counts as done, so every shown one is still
+    /// read at once and that read wins. Where the kept copies disagree, a merged or closed one beats an older open one.
+    func seed(_ kept: [(url: String, glyph: PullRequestBadge.Glyph)]) {
+        var next = statuses
+        for (url, glyph) in kept where glyph != .stack {
+            guard let key = URL(string: url).flatMap(Self.key), readAt[key] == nil else { continue }
+            let settled = glyph == .merged || glyph == .closed
+            if let known = next[key]?.glyph, !settled || known == .merged || known == .closed { continue }
+            next[key] = PullRequestStatus(glyph: glyph, checks: nil)
+        }
+        if next != statuses { statuses = next }
+    }
+
     // MARK: Reading
 
     /// Reads the pull request when the last read is older than `maxAge`; one read at a time per request.
