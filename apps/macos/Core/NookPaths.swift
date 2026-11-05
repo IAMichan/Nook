@@ -30,6 +30,8 @@ enum NookPaths {
     }
     /// The workspace bridge: the socket agents' MCP server talks to, and the server script itself (see WorkspaceBridgeScript).
     static var bridgeSocketURL: URL { supportDirectory.appendingPathComponent("bridge.sock") }
+    /// What ssh forwards a session on another machine to (`RemoteBridge`): never `bridge.sock`.
+    static var remoteBridgeSocketURL: URL { supportDirectory.appendingPathComponent("bridge-remote.sock") }
     static var bridgeScriptURL: URL { supportDirectory.appendingPathComponent("nook-mcp") }
     /// Symlink to the bridge script without spaces (~/.nook/nook-mcp), for commands typed in a shell.
     static var spaceFreeBridgeURL: URL {

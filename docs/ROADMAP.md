@@ -15,5 +15,4 @@ Larger pieces, roughly by value. Each fits Nook's architecture; none is started.
   lines.
 - **Companion.** A real diff review on the phone, dictation in the composer, a share extension and Home Screen quick
   actions, and a notice when the phone app is older than the Mac's protocol.
-- **SSH password sign-in** through `SSH_ASKPASS` with the password in the Keychain.
 - **Model manifest:** see "Still open" in [`MODEL-MANIFEST.md`](MODEL-MANIFEST.md).

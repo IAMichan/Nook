@@ -477,6 +477,8 @@ struct BridgeCaller: Equatable, Sendable {
     /// Only for sessions Nook runs: the mode and rights you chose for it.
     var mode: ExecutionMode?
     var permission: PermissionPolicy?
+    /// A session on another machine: only `RemoteBridge.allows` applies to it.
+    var remote = false
 
     /// Identifies the caller for terminals it owns: the run, or the agent in its folder.
     var key: String {
@@ -652,6 +654,26 @@ enum TerminalText {
 struct BridgeLaunch: Equatable, Sendable {
     /// Path of the `nook-mcp` script.
     var script: String
+    /// Set for a session on another machine: the agent's way back to Nook (see `RemoteBridge`).
+    var remote: Remote? = nil
+
+    struct Remote: Equatable, Sendable {
+        var socket: String
+        var token: String
+    }
+
+    /// What the server needs in its environment.
+    func environment(runID: UUID) -> [String: String] {
+        var variables = ["NOOK_RUN_ID": runID.uuidString]
+        if let remote {
+            variables["NOOK_BRIDGE_SOCK"] = remote.socket
+            variables["NOOK_BRIDGE_TOKEN"] = remote.token
+        }
+        return variables
+    }
+
+    /// The note this agent gets.
+    var note: String { remote == nil ? Self.instructions : RemoteBridge.instructions }
 
     /// The note for the agent, after any instructions of your own.
     static let instructions = """
@@ -687,7 +709,7 @@ struct BridgeLaunch: Equatable, Sendable {
             "type": "stdio",
             "command": script,
             "args": ["--agent", "claude-code"],
-            "env": ["NOOK_RUN_ID": runID.uuidString]
+            "env": environment(runID: runID)
         ]
         let config: [String: Any] = ["mcpServers": [BridgeTool.serverName: server]]
         let data = (try? JSONSerialization.data(withJSONObject: config, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()
@@ -702,7 +724,8 @@ struct BridgeLaunch: Equatable, Sendable {
         return [
             "-c", "\(prefix).command=\(Self.toml(script))",
             "-c", "\(prefix).args=[\(Self.toml("--agent")), \(Self.toml("codex"))]",
-            "-c", "\(prefix).env={ NOOK_RUN_ID = \(Self.toml(runID.uuidString)) }",
+            "-c", "\(prefix).env={ " + environment(runID: runID).sorted { $0.key < $1.key }.map { $0.key + " = " + Self.toml($0.value) }
+                .joined(separator: ", ") + " }",
             "-c", "\(prefix).tool_timeout_sec=900"
         ]
     }
@@ -712,7 +735,7 @@ struct BridgeLaunch: Equatable, Sendable {
         [BridgeTool.serverName: [
             "command": script,
             "args": ["--agent", "codex"],
-            "env": ["NOOK_RUN_ID": runID.uuidString],
+            "env": environment(runID: runID),
             "tool_timeout_sec": 900
         ] as [String: Any]]
     }

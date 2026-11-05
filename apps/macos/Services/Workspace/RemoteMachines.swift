@@ -231,9 +231,10 @@ enum RemoteLaunch {
     /// `ssh -T … -- host 'exec "$SHELL" -lc "cd … && exec agent …"'`. The remote login shell finds the agent the way your
     /// terminal there would; without a password typed in Nook `BatchMode` makes a missing key fail at once instead of
     /// waiting for a prompt nobody sees. Only `environment` goes along (a local account folder means nothing over there).
-    static func wrap(_ spec: LaunchSpec, target: RemoteTarget, environment: [String: String] = [:]) -> LaunchSpec {
+    static func wrap(_ spec: LaunchSpec, target: RemoteTarget, environment: [String: String] = [:],
+                     forward: [String] = []) -> LaunchSpec {
         let secret = password(target)
-        var arguments = ["-T"] + authentication(password: secret) + ["-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=4"]
+        var arguments = ["-T"] + authentication(password: secret) + ["-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=4"] + forward
         arguments += destination(port: target.port, identityFile: target.identityFile)
         arguments += ["--", target.host, command(executable: spec.executable, arguments: spec.arguments,
                                                    directory: target.directory, environment: environment)]
@@ -333,6 +334,15 @@ enum RemoteShell {
     static func home(_ target: RemoteTarget) -> String? {
         guard let output = try? ProcessRunner.run(RemoteLaunch.ssh, RemoteLaunch.run("printenv", ["HOME"], target: target, directory: nil),
                                                   environment: RemoteLaunch.environment(for: target), timeout: 20),
+              output.status == 0 else { return nil }
+        let home = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        return home.hasPrefix("/") ? home : nil
+    }
+
+    /// Puts Nook's MCP server on the machine (`RemoteBridge`); $HOME there, or nil when it cannot run there.
+    static func installBridge(_ target: RemoteTarget, script: String) -> String? {
+        guard let output = try? ProcessRunner.run(RemoteLaunch.ssh, RemoteLaunch.run("sh", ["-c", RemoteBridge.setupCommand(script: script)], target: target, directory: nil),
+                                                  environment: RemoteLaunch.environment(for: target), timeout: 25),
               output.status == 0 else { return nil }
         let home = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         return home.hasPrefix("/") ? home : nil

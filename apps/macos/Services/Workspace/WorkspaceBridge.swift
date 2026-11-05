@@ -38,6 +38,8 @@ final class WorkspaceBridge: ObservableObject {
     var onApprovalGone: ((String) -> Void)?
 
     private let server = UnixSocketServer(path: NookPaths.bridgeSocketURL.path)
+    /// What ssh forwards sessions on other machines to: everything on it counts as coming from there (`RemoteBridge`).
+    private let remoteServer = UnixSocketServer(path: NookPaths.remoteBridgeSocketURL.path)
     private var waiters: [String: CheckedContinuation<Bool, Never>] = [:]
     /// Simulators each session opened with device_open, most recent last.
     private var openDevices: [String: [String]] = [:]
@@ -62,11 +64,17 @@ final class WorkspaceBridge: ObservableObject {
         _ = try? NookCommandLine.install()
         server.onMessage = { [weak self] data, connection in
             Task { @MainActor in
-                if let self { self.handle(data, connection) } else { connection.reply(nil) }
+                if let self { self.handle(data, connection, remote: false) } else { connection.reply(nil) }
+            }
+        }
+        remoteServer.onMessage = { [weak self] data, connection in
+            Task { @MainActor in
+                if let self { self.handle(data, connection, remote: true) } else { connection.reply(nil) }
             }
         }
         do {
             try server.start()
+            try remoteServer.start()
         } catch {
             Log.agents.error("Workspace bridge socket: \(error.localizedDescription, privacy: .public)")
         }
@@ -137,16 +145,18 @@ final class WorkspaceBridge: ObservableObject {
         let cwd: String
         let env: [String: Any]
         let connection: String
+        /// It came through a session on another machine: nothing it says about itself counts without that session's token.
+        var remote = false
     }
 
-    private func handle(_ data: Data, _ connection: HookConnection) {
+    private func handle(_ data: Data, _ connection: HookConnection, remote: Bool) {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let message = object["message"] as? [String: Any] else {
             connection.reply(nil)
             return
         }
         let context = Context(agentID: (object["agent"] as? String) ?? "agent", cwd: (object["cwd"] as? String) ?? "",
-                              env: (object["env"] as? [String: Any]) ?? [:], connection: UUID().uuidString)
+                              env: (object["env"] as? [String: Any]) ?? [:], connection: UUID().uuidString, remote: remote)
         connection.onPeerClosed { [weak self] in
             Task { @MainActor in self?.connectionClosed(context.connection) }
         }
@@ -167,6 +177,14 @@ final class WorkspaceBridge: ObservableObject {
     /// or an agent you started in a terminal that linked the bridge itself.
     private func caller(_ context: Context) -> BridgeCaller? {
         guard let app else { return nil }
+        if context.remote {
+            guard let raw = context.env["NOOK_RUN_ID"] as? String, let id = UUID(uuidString: raw),
+                  app.workspace.acceptsRemoteBridge(id, token: (context.env["NOOK_BRIDGE_TOKEN"] as? String) ?? ""),
+                  let run = app.workspace.run(id) else { return nil }
+            var caller = caller(run)
+            caller.remote = true
+            return caller
+        }
         if let raw = context.env["NOOK_RUN_ID"] as? String, let id = UUID(uuidString: raw), let run = app.workspace.run(id) {
             return caller(run)
         }
@@ -203,6 +221,7 @@ final class WorkspaceBridge: ObservableObject {
         guard let caller = self.caller(context) else {
             return .error("Nook could not tell which session this is. Start the agent from a project folder.")
         }
+        if caller.remote, !RemoteBridge.allows(tool) { return .error(RemoteBridge.refusal) }
         do {
             switch tool {
             case .workspaceInfo: return try await workspaceInfo(caller)

@@ -395,6 +395,7 @@ targets:
       - path: Services/Workspace/SessionGoal.swift
       - path: Services/Workspace/WebhookRelay.swift
       - path: Services/Workspace/NookTriage.swift
+      - path: Services/Workspace/RemoteBridge.swift
       - path: Services/Workspace/NookCommandLine.swift
       - path: Services/Workspace/SyntaxTokenizer.swift
       - path: Services/Workspace/Keybindings.swift

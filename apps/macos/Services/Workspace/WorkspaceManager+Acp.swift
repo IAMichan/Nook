@@ -81,7 +81,7 @@ extension WorkspaceManager {
         if prompt != nil { append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch")) }
 
         let bridge = self.bridge(for: id).map { launch in
-            (command: launch.script, args: ["--agent", run.provider.rawValue], env: ["NOOK_RUN_ID": id.uuidString])
+            (command: launch.script, args: ["--agent", run.provider.rawValue], env: launch.environment(runID: id))
         }
         let provider = run.provider
         let profileID = run.profileID
@@ -301,7 +301,7 @@ extension WorkspaceManager {
         // Your instructions, and how to use Nook's tools when the bridge is attached (as Claude Code and Codex get them), go
         // with the first prompt of a newly created session; the plan line with every prompt in Plan mode.
         let instructions = [run.instructions.trimmingCharacters(in: .whitespacesAndNewlines),
-                            bridge(for: id) == nil ? "" : BridgeLaunch.instructions].filter { !$0.isEmpty }.joined(separator: "\n\n")
+                            bridge(for: id)?.note ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
         if client.freshSession, !instructions.isEmpty { text = instructions + "\n\n" + text }
         client.freshSession = false
         if run.mode == .plan { text = "Create a plan only; do not make any changes.\n\n" + text }
