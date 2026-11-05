@@ -320,12 +320,10 @@ private struct SubagentCard: View {
             }
             SubagentTranscript(agent: agent)
         }
-        .padding(NookTheme.Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
+        .conversationCard(padding: NookTheme.Spacing.lg)
         .overlay {
             if agent.isRunning {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                RoundedRectangle(cornerRadius: NookTheme.Radius.conversationCard, style: .continuous)
                     .strokeBorder(NookTheme.iris.opacity(0.35), lineWidth: 1)
             }
         }

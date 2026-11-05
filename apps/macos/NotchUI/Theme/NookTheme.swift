@@ -179,6 +179,8 @@ enum NookTheme {
         static let chatBubble: CGFloat = 10
         /// Where two bubbles of one run meet, on the writer's side: a small rounding, so the run stacks as one column.
         static let chatJoin: CGFloat = 4
+        /// A card in a conversation: a plan, a question, a task list, a subagent.
+        static let conversationCard: CGFloat = 16
         /// Pills and the notch's own corners.
         static let pill: CGFloat = 20
         /// The composer box, and the tray that runs on from it. With the 32 pt send button 8 pt from the edge, its corner

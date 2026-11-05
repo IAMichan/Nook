@@ -353,8 +353,8 @@ struct SubagentRow: View {
     }
 }
 
-/// A problem in a conversation's timeline, on `surface`: an error (the coral symbol and its words in soft coral) or a usage
-/// limit (an amber symbol, the words in the text ramp, and what the agent said under them). The same card in a session
+/// A problem in a conversation's timeline, as a row lined up with the work lines: an error (the coral symbol and its words in soft coral) or a usage
+/// limit (an amber symbol, the words in the text ramp, and what the agent said under them). The same row in a session
 /// Nook runs and in an agent's own transcript.
 struct TimelineProblemCard: View {
     var symbol = "exclamationmark.octagon.fill"
@@ -365,8 +365,11 @@ struct TimelineProblemCard: View {
     private var isError: Bool { tint == NookTheme.coral }
 
     var body: some View {
-        HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-            Image(systemName: symbol).foregroundStyle(tint)
+        HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
+            Image(systemName: symbol)
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(tint)
+                .frame(width: TranscriptStyle.workIcon)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 Text(text)
                     .font(NookTheme.TextStyle.body)
@@ -380,9 +383,8 @@ struct TimelineProblemCard: View {
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(NookTheme.Spacing.lg)
+        .padding(.vertical, NookTheme.Spacing.xs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.surface))
     }
 }
 

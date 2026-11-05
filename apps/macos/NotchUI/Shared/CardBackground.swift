@@ -9,4 +9,12 @@ extension View {
         let shape = style.map { RoundedRectangle(cornerRadius: radius, style: $0) } ?? RoundedRectangle(cornerRadius: radius)
         return background(shape.fill(fill)).overlay(shape.stroke(stroke, lineWidth: 1))
     }
+
+    /// A card in a conversation (a plan, a question, a task list, a subagent): the field fill and a hairline, whatever it
+    /// holds, so the conversation stays one calm column. State shows in the card's marks, not in a tinted edge.
+    func conversationCard(padding: CGFloat = NookTheme.Spacing.xl) -> some View {
+        self.padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cardBackground(NookTheme.field, stroke: NookTheme.border, radius: NookTheme.Radius.conversationCard, style: .continuous)
+    }
 }
