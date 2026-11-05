@@ -454,24 +454,30 @@ enum SessionBranches {
 
     /// One row per branch, oldest first and the current one last, each with its newest pull request; a pull request of an
     /// earlier branch whose name is not known gets a row of its own. Empty while the session has had one branch only:
-    /// its pull request then shows as before.
-    static func rows(earlier: [String], earlierLinks: [PullRequestLink], current: String?, currentPullRequest: URL?) -> [Row] {
+    /// its pull request then shows as before. `currentPullRequest` is the one the tray would show on its own, which can
+    /// be a watched request of an earlier branch; `currentLinks` are what the forge says the current branch has, so such
+    /// a watch never hides the current branch's own pull request.
+    static func rows(earlier: [String], earlierLinks: [PullRequestLink], current: String?, currentPullRequest: URL?,
+                     currentLinks: [PullRequestLink] = []) -> [Row] {
         func newest(_ branch: String) -> URL? {
             earlierLinks.filter { $0.headBranch == branch }
                 .max { ($0.updatedAt ?? .distantPast, $0.number) < ($1.updatedAt ?? .distantPast, $1.number) }
                 .flatMap { URL(string: $0.url) }
         }
+        let own = currentLinks.filter { $0.headBranch.map { $0 == current } ?? true }
+        let picked = currentPullRequest.flatMap { url in own.contains { $0.url == url.absoluteString } ? url : nil }
+            ?? PullRequestLink.shown(in: own) ?? currentPullRequest
         let names = earlier.filter { $0 != current }
         var rows = names.map { Row(branch: $0, pullRequest: newest($0), isCurrent: false) }
         for link in earlierLinks where link.headBranch.map({ !names.contains($0) && $0 != current }) ?? true {
-            guard !link.url.isEmpty, let url = URL(string: link.url), url != currentPullRequest,
+            guard !link.url.isEmpty, let url = URL(string: link.url), url != picked,
                   !rows.contains(where: { $0.pullRequest == url }) else { continue }
             rows.append(Row(branch: link.headBranch, pullRequest: url, isCurrent: false))
         }
         guard !rows.isEmpty else { return [] }
         // A pull request an earlier row already shows (one still watched after the switch) is not the current one.
         let taken = Set(rows.compactMap(\.pullRequest))
-        let mine = [currentPullRequest, current.flatMap(newest)].compactMap { $0 }.first { !taken.contains($0) }
+        let mine = [picked, current.flatMap(newest)].compactMap { $0 }.first { !taken.contains($0) }
         rows.append(Row(branch: current, pullRequest: mine, isCurrent: true))
         return rows
     }
