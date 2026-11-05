@@ -85,6 +85,8 @@ struct PullRequestDetailView: View {
 
     /// The stack this pull request is part of, bottom first (empty when it stands alone), and how to open another one of it.
     let stack: [PullRequestItem]
+    /// The same stack with the ones of it that merged, as its menu lists it; what merges is still `stack`.
+    let stackHistory: [PullRequestItem]
     let onOpenPullRequest: ((PullRequestItem) -> Void)?
     /// Merging the stack up to here waits for its second click, then runs.
     @State var confirmStackMerge = false
@@ -94,7 +96,7 @@ struct PullRequestDetailView: View {
     /// holds it shows the same mark as the page.
     let onUpdate: ((PullRequestItem) -> Void)?
 
-    init(accountID: String, item: PullRequestItem, inline: Bool = false, stack: [PullRequestItem] = [],
+    init(accountID: String, item: PullRequestItem, inline: Bool = false, stack: [PullRequestItem] = [], stackHistory: [PullRequestItem] = [],
          onOpenPullRequest: ((PullRequestItem) -> Void)? = nil, onUpdate: ((PullRequestItem) -> Void)? = nil,
          onBack: (() -> Void)? = nil, onMaximize: (() -> Void)? = nil, maximized: Bool = false,
          waitsForPanel: Bool = false) {
@@ -102,6 +104,7 @@ struct PullRequestDetailView: View {
         self.item = item
         self.inline = inline
         self.stack = stack
+        self.stackHistory = stackHistory
         self.onOpenPullRequest = onOpenPullRequest
         self.onUpdate = onUpdate
         self.onBack = onBack
@@ -222,7 +225,7 @@ struct PullRequestDetailView: View {
             }
             crumbs
             Spacer(minLength: NookTheme.Spacing.sm)
-            if stack.count > 1 { stackMenu }
+            if stackHistory.count > 1 { stackMenu }
             if let detail {
                 primaryAction(detail)
                 // Refreshing is in the ⋯ menu, which spins while GitHub is asked. It alone

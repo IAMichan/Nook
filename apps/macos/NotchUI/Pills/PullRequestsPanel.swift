@@ -129,6 +129,7 @@ struct PullRequestsPanel: View {
             }
             PullRequestDetailView(accountID: opened.account, item: opened.item, inline: split,
                                   stack: PullRequestStack.stack(of: opened.item, in: items(of: opened.account)) ?? [],
+                                  stackHistory: PullRequestStack.history(of: opened.item, in: items(of: opened.account)) ?? [],
                                   onOpenPullRequest: { open(opened.account, $0) },
                                   onUpdate: { updated in
                                       if let index = tabs.firstIndex(where: { $0.id == opened.id }) { tabs[index].item = updated }
@@ -403,7 +404,7 @@ struct PullRequestsPanel: View {
     /// are siblings in the list's lazy stack, so a long group is built only as far as you scroll.
     @ViewBuilder
     private func rowGroup(key: String, symbol: String, title: String, rows: [PullRequestRepoGroup.Row], account: String,
-                          showRepo: Bool, waiting: Int = 0, stacks: [String: (index: Int, count: Int)],
+                          showRepo: Bool, waiting: Int = 0, stacks: [String: (index: Int, count: Int, merged: Int)],
                           selected: String?, now: Date) -> some View {
         let open = !collapsedRepos.split(separator: "\n").contains(Substring(key))
         Button {

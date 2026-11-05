@@ -238,6 +238,10 @@ final class NotchViewModel: ObservableObject {
     /// What the Chats tab shows next ("@chat Anna"): it takes this once and clears it.
     @Published var chatsFocus: ChatsFocus?
 
+    /// The change the selected session's Changes tab opens on next (a file clicked in a row's card): it takes this once
+    /// and clears it.
+    @Published var sessionDiffToOpen: TurnDiffSelection?
+
     /// The Pull request tabs of the side panel: each shows one pull request, or (no request) the list to pick one. A pull
     /// request opened from a link or from the list takes the list tab in view, else a tab of its own, so the ones you
     /// have open stay. Not kept across launches.

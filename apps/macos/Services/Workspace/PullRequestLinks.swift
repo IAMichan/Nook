@@ -245,7 +245,8 @@ struct PullRequestBadge: Equatable, Sendable {
     enum Label: Equatable, Sendable {
         case number(Int)
         case numberPlus(Int, extra: Int)
-        case stack(Int)
+        /// How many pull requests the stack has, and how many of them merged.
+        case stack(Int, merged: Int)
     }
     var glyph: Glyph
     var label: Label
@@ -261,7 +262,12 @@ struct PullRequestBadge: Equatable, Sendable {
 
     static func text(links: [PullRequestLink]) -> PullRequestBadge? {
         guard !links.isEmpty else { return nil }
-        if links.count > 1, PullRequestStack.isStack(links: links) { return PullRequestBadge(glyph: .stack, label: .stack(links.count)) }
+        if links.count > 1, PullRequestStack.isStack(links: links) {
+            // A stack wears its own mark while work is left in it, then the state it ended in.
+            let merged = links.filter { $0.state == .merged }.count
+            let glyph: Glyph = links.contains { $0.state.isOpen } ? .stack : merged > 0 ? .merged : .closed
+            return PullRequestBadge(glyph: glyph, label: .stack(links.count, merged: merged))
+        }
         let primary = primaryLink(links)
         let glyph: Glyph = primary.hasConflict ? .conflict : Glyph(rawValue: primary.state.rawValue) ?? .open
         return PullRequestBadge(glyph: glyph, label: links.count == 1 ? .number(primary.number) : .numberPlus(primary.number, extra: links.count - 1))

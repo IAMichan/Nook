@@ -145,8 +145,18 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(many, PullRequestBadge(glyph: .open, label: .numberPlus(12, extra: 2)))
         XCTAssertEqual(many?.text, "#12 +2")
         let stack = PullRequestBadge.text(links: [link(1, base: "main", head: "a"), link(2, base: "a", head: "b"), link(3, base: "b", head: "c")])
-        XCTAssertEqual(stack, PullRequestBadge(glyph: .stack, label: .stack(3)))
+        XCTAssertEqual(stack, PullRequestBadge(glyph: .stack, label: .stack(3, merged: 0)))
         XCTAssertNil(stack?.text)
+    }
+
+    func testAStackBadgeSaysHowFarItMerged() {
+        let part = PullRequestBadge.text(links: [link(1, base: "main", head: "a", state: .merged), link(2, base: "a", head: "b"),
+                                                 link(3, base: "b", head: "c")])
+        XCTAssertEqual(part, PullRequestBadge(glyph: .stack, label: .stack(3, merged: 1)))
+        let all = PullRequestBadge.text(links: [link(1, base: "main", head: "a", state: .merged), link(2, base: "a", head: "b", state: .merged)])
+        XCTAssertEqual(all, PullRequestBadge(glyph: .merged, label: .stack(2, merged: 2)))
+        let dropped = PullRequestBadge.text(links: [link(1, base: "main", head: "a", state: .closed), link(2, base: "a", head: "b", state: .closed)])
+        XCTAssertEqual(dropped, PullRequestBadge(glyph: .closed, label: .stack(2, merged: 0)))
     }
 
     func testBadgePrefersUnresolvedThenMergedOverClosed() {

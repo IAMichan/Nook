@@ -93,8 +93,8 @@ struct PullRequestPill: View {
     var body: some View {
         HStack(spacing: 3) {
             PullRequestStateIcon(glyph: badge.glyph)
-            if !compact {
-                Text(label).font(NookTheme.font(11, .medium).monospacedDigit())
+            if let shown = compact ? progress : label {
+                Text(shown).font(NookTheme.font(11, .medium).monospacedDigit())
                     .foregroundStyle(NookTheme.textSecondary)
                     .lineLimit(1)
             }
@@ -105,8 +105,16 @@ struct PullRequestPill: View {
     }
 
     private var label: String {
-        if case .stack(let count) = badge.label { return tr("inbox.pr.stack", count) }
+        if case .stack(let count, let merged) = badge.label {
+            return merged > 0 ? tr("inbox.pr.stack.merged", merged, count) : tr("inbox.pr.stack", count)
+        }
         return badge.text ?? ""
+    }
+
+    /// "1/3": how far a stack has merged, which even a compact pill says. The mark alone cannot.
+    private var progress: String? {
+        guard case .stack(let count, let merged) = badge.label, merged > 0 else { return nil }
+        return "\(merged)/\(count)"
     }
 }
 
