@@ -14,7 +14,7 @@ struct PullRequestRow: View, Equatable {
     /// The pull request open beside the list.
     var selected = false
     /// Where it stands in a stack of pull requests built on each other, if it is in one.
-    var stack: (index: Int, count: Int)? = nil
+    var stack: (index: Int, count: Int, merged: Int)? = nil
     /// The clock the row's time is counted against (the list's tick), so the time moves on while the list is open.
     var now = Date()
     let onOpen: () -> Void
@@ -24,6 +24,7 @@ struct PullRequestRow: View, Equatable {
     static func == (lhs: PullRequestRow, rhs: PullRequestRow) -> Bool {
         lhs.item == rhs.item && lhs.role == rhs.role && lhs.showRepo == rhs.showRepo && lhs.accountID == rhs.accountID
             && lhs.selected == rhs.selected && lhs.stack?.index == rhs.stack?.index && lhs.stack?.count == rhs.stack?.count
+            && lhs.stack?.merged == rhs.stack?.merged
             && lhs.now == rhs.now
     }
 
@@ -110,9 +111,14 @@ struct PullRequestRow: View, Equatable {
                         HStack(spacing: NookTheme.Spacing.xxs) {
                             PullRequestStateIcon(glyph: .stack, tinted: false)
                             Text("\(stack.index)/\(stack.count)").monospacedDigit()
+                            if stack.merged > 0 {
+                                PullRequestStateIcon(glyph: .merged, tinted: false)
+                                    .foregroundStyle(PullRequestIcon.tint(.merged))
+                            }
                         }
                         .fixedSize()
-                        .help(tr("agents.pulls.stack.position", stack.index, stack.count))
+                        .help(stack.merged > 0 ? tr("agents.pulls.stack.positionMerged", stack.index, stack.count, stack.merged)
+                            : tr("agents.pulls.stack.position", stack.index, stack.count))
                     }
                     if let updated = item.updated {
                         Text(AgentFormat.short(now.timeIntervalSince(updated)))

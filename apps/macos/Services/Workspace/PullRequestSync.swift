@@ -12,7 +12,8 @@ final class PullRequestSync: ObservableObject {
     /// Keyed by `folderKey(path:branch:)`.
     @Published private(set) var folderLinks: [String: [PullRequestLink]] = [:]
     /// The pull requests of the branches a session worked on before its current one, for the list above its composer.
-    /// Their state is followed there (`PullRequestStatusStore`), so they are not asked about here again.
+    /// The ones still open are read again every `earlierInterval`, also while no composer shows them: a stack spread
+    /// over a chat's branches would otherwise stay open on its row after it merged.
     @Published private(set) var earlier: [UUID: [PullRequestLink]] = [:]
     private var checked: [UUID: Date] = [:]
     private var folderChecked: [String: Date] = [:]
@@ -130,9 +131,12 @@ final class PullRequestSync: ObservableObject {
         /// A branch the session left before Nook saw its pull request (the agent opened it and moved on within a round):
         /// asked until one turns up, so the list above the composer shows every pull request the chat made.
         case earlier(UUID, branch: String)
+        /// An open pull request of a branch the session left: read again to see whether it landed.
+        case earlierLink(UUID, PullRequestLink)
     }
 
-    /// How often a branch the session left is asked about while no pull request of it is known.
+    /// How often a branch the session left is asked about while no pull request of it is known, and how often an open
+    /// pull request of such a branch is read again.
     private static let earlierInterval: TimeInterval = 300
 
     /// At most this many branches per round, so one round stays short and never holds up the next.
@@ -178,6 +182,11 @@ final class PullRequestSync: ObservableObject {
                 let key = Self.folderKey(path: run.id.uuidString, branch: branch)
                 guard PullRequestSettlement.needsSync(lastChecked: earlierChecked[key], now: now, interval: Self.earlierInterval) else { continue }
                 due.append((job: .earlier(run.id, branch: branch), open: false, last: earlierChecked[key] ?? .distantPast))
+            }
+            for link in earlier[run.id] ?? [] where link.state.isOpen {
+                let key = Self.folderKey(path: run.id.uuidString, branch: link.id)
+                guard PullRequestSettlement.needsSync(lastChecked: earlierChecked[key], now: now, interval: Self.earlierInterval) else { continue }
+                due.append((job: .earlierLink(run.id, link), open: false, last: earlierChecked[key] ?? .distantPast))
             }
         }
         var seen = Set<String>()
@@ -232,6 +241,12 @@ final class PullRequestSync: ObservableObject {
                         return link
                     }
                     if retire(id, mine) { changed = true }
+                case .earlierLink(let id, let link):
+                    earlierChecked[Self.folderKey(path: id.uuidString, branch: link.id)] = now
+                    guard let url = URL(string: link.url) else { continue }
+                    await PullRequestStatusStore.shared.refresh(url)
+                    // Replaces the kept link by its url, so the state survives a restart; the status store does not.
+                    if retire(id, PullRequestStatusStore.shared.current([link])) { changed = true }
                 case .folder(let key, let path, let branch):
                     folderChecked[key] = now
                     guard let repo = await remote(path, read: { await Self.repository(path: path) }),

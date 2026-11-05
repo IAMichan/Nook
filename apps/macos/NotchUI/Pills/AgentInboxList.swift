@@ -546,7 +546,16 @@ struct AgentInboxList: View {
                     onWake: isRun && snoozeActive ? { withAnimation(NookTheme.reveal) { wake(item) } } : nil),
                 pullRequests: sessionPullRequests(item),
                 jumpHint: jumpNumber(item.id),
-                keyFocused: listFocused && keyRow == item.id
+                keyFocused: listFocused && keyRow == item.id,
+                openPullRequest: { url in
+                    select(item.id)
+                    // Another forge, or GitHub not connected: its web page.
+                    if !app.openPullRequestLink(url, beside: true) { BrowserStore.show(url) }
+                },
+                openChange: { file in
+                    select(item.id)
+                    app.viewModel.sessionDiffToOpen = TurnDiffSelection(turn: TurnDiffSelection.branch, file: file)
+                }
             ) {
                 click(item, entry, shown: shownOrder)
             }

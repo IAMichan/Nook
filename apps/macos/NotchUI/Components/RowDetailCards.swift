@@ -11,11 +11,16 @@ struct RowChangesCard: View {
     /// straight onto the default branch, or the folder is gone), and the card then says so instead of "no changes".
     let countedAdded: Int
     let countedRemoved: Int
+    let directory: String
+    /// Shows a file's change; gets its path relative to `directory`.
+    let onOpen: (String) -> Void
 
-    init(directory: String, countedAdded: Int = 0, countedRemoved: Int = 0) {
+    init(directory: String, countedAdded: Int = 0, countedRemoved: Int = 0, onOpen: @escaping (String) -> Void) {
         _model = StateObject(wrappedValue: FolderGitModel.make(directory: directory))
+        self.directory = directory
         self.countedAdded = countedAdded
         self.countedRemoved = countedRemoved
+        self.onOpen = onOpen
     }
 
     var body: some View {
@@ -33,7 +38,14 @@ struct RowChangesCard: View {
                     PullRequestLineCounts(additions: model.added, deletions: model.removed)
                 }
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(files.prefix(Self.limit)) { FileChangeRow(file: $0) }
+                    ForEach(files.prefix(Self.limit)) { file in
+                        // Git names a file from the repository's root, the session's changes from its folder.
+                        HoverCardButton(help: tr("agents.row.changes.open"), action: {
+                            onOpen(TurnDiff.relative((model.root ?? directory) + "/" + file.path, to: directory))
+                        }) {
+                            FileChangeRow(file: file)
+                        }
+                    }
                 }
                 if files.count > Self.limit {
                     Text(tr("agents.row.changes.more", files.count - Self.limit))
@@ -56,19 +68,34 @@ struct RowChangesCard: View {
 /// before sit under their own heading, so the state of a request the chat moved on from stays in view.
 struct RowPullRequestCard: View {
     let pullRequests: SessionPullRequests
+    /// Opens one of them.
+    let onOpen: (URL) -> Void
     /// More than this and the rest is counted under the list.
     static let limit = 4
 
     private var shownCurrent: [PullRequestLink] { Array(pullRequests.current.prefix(Self.limit)) }
     private var shownEarlier: [PullRequestLink] { Array(pullRequests.earlier.prefix(max(0, Self.limit - shownCurrent.count))) }
     private var hidden: Int { pullRequests.all.count - shownCurrent.count - shownEarlier.count }
+    /// Counted over all of them, also the ones past the limit: this is what says how far a stack has landed.
+    private var merged: Int { pullRequests.all.filter { $0.state == .merged }.count }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             if pullRequests.all.count > 1 {
-                Text(tr("agents.row.pr.count", pullRequests.all.count))
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(NookTheme.paper)
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    Text(tr("agents.row.pr.count", pullRequests.all.count))
+                        .font(NookTheme.TextStyle.strong)
+                        .foregroundStyle(NookTheme.paper)
+                    Spacer(minLength: 0)
+                    if merged > 0 {
+                        HStack(spacing: NookTheme.Spacing.xxs) {
+                            PullRequestStateIcon(glyph: .merged, tinted: false)
+                            Text(tr("agents.row.pr.merged", merged)).lineLimit(1)
+                        }
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(PullRequestIcon.tint(.merged))
+                    }
+                }
             }
             // Headings only when the chat has requests of an earlier branch: one branch's list needs none.
             let sections = !pullRequests.earlier.isEmpty
@@ -95,7 +122,13 @@ struct RowPullRequestCard: View {
             if let title { NookSectionLabel(title, inset: 0) }
             ForEach(Array(links.enumerated()), id: \.element.id) { index, link in
                 if index > 0 { NookDivider() }
-                RowPullRequestSummary(link: link)
+                if let url = URL(string: link.url) {
+                    HoverCardButton(help: tr("agents.row.pr.open"), action: { onOpen(url) }) {
+                        RowPullRequestSummary(link: link)
+                    }
+                } else {
+                    RowPullRequestSummary(link: link)
+                }
             }
         }
     }
