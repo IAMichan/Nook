@@ -154,6 +154,9 @@ final class CompanionClient: ObservableObject {
             Task { @MainActor in self?.networkChanged(signature: signature, online: online) }
         }
         pathMonitor.start(queue: DispatchQueue(label: "nook.companion.path"))
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-NookDemo") { loadDemo() }
+        #endif
     }
 
     // MARK: Pairing
@@ -1619,3 +1622,61 @@ struct RejectedMessage: Identifiable, Equatable {
         }
     }
 }
+
+#if DEBUG
+// MARK: Demo
+
+extension CompanionClient {
+    /// Sample sessions, chats and a conversation, without a Mac (launch argument `-NookDemo`, Debug builds only): to look
+    /// at the screens in the Simulator and compare them with the Mac's.
+    func loadDemo() {
+        let now = Date().timeIntervalSince1970
+        macName = "MacBook Pro"
+        features = [CompanionFeature.start, CompanionFeature.timeline, CompanionFeature.chat, CompanionFeature.inbox,
+                    CompanionFeature.manage, CompanionFeature.steer]
+        sessions = [
+            SessionDigest(id: "s1", title: "Add the usage page to Settings", agent: "Claude Code", attention: "approval",
+                          folder: "nook", branch: "feature/usage", updated: now - 60, excerpt: "",
+                          items: [.init(id: "i1", kind: .approval, title: "Run swift test", detail: "swift test --filter UsageTests",
+                                        canAllow: true, options: [])]),
+            SessionDigest(id: "s2", title: "Fix the flaky relay reconnect", agent: "Codex", attention: "working",
+                          folder: "nook", branch: "fix/relay", updated: now - 180, excerpt: "", items: []),
+            SessionDigest(id: "s3", title: "Translate the onboarding", agent: "Gemini CLI", attention: "ready",
+                          folder: "website", branch: nil, updated: now - 1500, excerpt: "", items: []),
+            SessionDigest(id: "s4", title: "Refactor the chat list", agent: "Cursor", attention: "idle",
+                          folder: "nook", branch: "main", updated: now - 7200, excerpt: "", items: []),
+            SessionDigest(id: "s5", title: "Write release notes", agent: "OpenCode", attention: "finished",
+                          folder: "docs", branch: nil, updated: now - 90000, excerpt: "", items: []),
+        ]
+        timelines["s2"] = [
+            TimelineEntry(id: "t1", kind: .user, text: "The relay drops after the Mac sleeps. Can you find out why?", date: now - 600, failed: false),
+            TimelineEntry(id: "t2", kind: .tool, text: "Read RelayClient.swift", date: now - 590, failed: false),
+            TimelineEntry(id: "t3", kind: .tool, text: "Searched for reconnect", date: now - 580, failed: false),
+            TimelineEntry(id: "t4", kind: .assistant, text: "The socket is closed on sleep, but **the backoff never resets**. I'll reset it when the network comes back.", date: now - 500, failed: false),
+            TimelineEntry(id: "t5", kind: .user, text: "Good, go ahead.", date: now - 300, failed: false),
+            TimelineEntry(id: "t6", kind: .tool, text: "Edited RelayClient.swift", date: now - 200, failed: false),
+        ]
+        conversations = [
+            ChatDigest(id: "c1", title: "Plan for tomorrow", updated: now - 3600, busy: false, waiting: false, preview: "You have three meetings…"),
+            ChatDigest(id: "c2", title: "Mail from Anna", updated: now - 86000, busy: false, waiting: true, preview: "Shall I answer her?"),
+        ]
+        inbox = [
+            InboxChatDigest(id: "w1", app: "whatsapp", appName: "WhatsApp", name: "Anna de Vries", preview: "Zie je morgen!",
+                            last: now - 120, unread: 2, canSend: true, ticks: nil, waitsInApp: false),
+            InboxChatDigest(id: "w2", app: "telegram", appName: "Telegram", name: "Team Nook", preview: "Jan: de build is groen",
+                            last: now - 3000, unread: 0, canSend: false, ticks: nil, waitsInApp: false),
+            InboxChatDigest(id: "w3", app: "messages", appName: "Messages", name: "Pieter", preview: "Top, dank je",
+                            last: now - 90000, unread: 0, canSend: false, ticks: "read", waitsInApp: false),
+        ]
+        inboxLines["w1"] = [
+            InboxLine(id: "l1", text: "Hoi! Ben je morgen op kantoor?", date: now - 900, sender: "Anna de Vries", fromMe: false,
+                      attachment: nil, ticks: nil, quoteSender: nil, quoteText: nil, reactions: []),
+            InboxLine(id: "l2", text: "Ja, vanaf negen uur", date: now - 600, sender: "", fromMe: true,
+                      attachment: nil, ticks: "read", quoteSender: nil, quoteText: nil, reactions: ["👍"]),
+            InboxLine(id: "l3", text: "Zie je morgen!", date: now - 120, sender: "Anna de Vries", fromMe: false,
+                      attachment: nil, ticks: nil, quoteSender: nil, quoteText: nil, reactions: []),
+        ]
+        phase = .connected
+    }
+}
+#endif

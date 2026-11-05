@@ -32,8 +32,8 @@ struct ChatListView: View {
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     ConnectionLine()
                     if !client.can(CompanionFeature.chat) {
-                        EmptyState(symbol: "arrow.down.circle", title: "Update Nook on your Mac",
-                                   message: "Update Nook on your Mac to chat with Nook from your phone.") {}
+                        WSEmptyState(symbol: "arrow.down.circle", title: String(localized: "Update Nook on your Mac"),
+                                   message: String(localized: "Update Nook on your Mac to chat with Nook from your phone."))
                     } else {
                         if !client.brainReady {
                             Banner(text: String(localized: "Nook has no brain set up on your Mac yet: choose one in Nook › Settings."), symbol: "brain")
@@ -50,7 +50,7 @@ struct ChatListView: View {
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
                 if !client.conversations.isEmpty {
-                    SectionHeader(title: "Recent")
+                    SectionHeader(title: String(localized: "Recent"))
                         .padding(.horizontal, Theme.Spacing.xl)
                         .padding(.bottom, Theme.Spacing.xs)
                     VStack(spacing: Theme.Spacing.xxs) {
@@ -107,7 +107,7 @@ struct ChatRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.md) {
-                Text(conversation.title).font(Theme.TextStyle.strong).foregroundStyle(Theme.text).lineLimit(1)
+                Text(conversation.title).font(Theme.TextStyle.strong).foregroundStyle(Theme.paper).lineLimit(1)
                 Spacer(minLength: Theme.Spacing.md)
                 if conversation.waiting {
                     StatusPill(attention: "input", short: true)
@@ -118,7 +118,7 @@ struct ChatRow: View {
             }
             if conversation.busy {
                 HStack(spacing: Theme.Spacing.sm) {
-                    PulseDot(color: Theme.accent, size: 6)
+                    PulseDot(color: Theme.blue, size: 6)
                     Text("Writing…")
                 }
                 .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
@@ -141,7 +141,7 @@ private struct AskNook: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 NookMark(size: 44).padding(.bottom, Theme.Spacing.md)
-                Text("Ask Nook anything").font(Theme.TextStyle.display).foregroundStyle(Theme.text)
+                Text("Ask Nook anything").font(Theme.TextStyle.display).foregroundStyle(Theme.paper)
                 Text("Your calendar, mail, notes, or the web. Plans and drafts wait for your approval on your Mac.")
                     .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary)
             }

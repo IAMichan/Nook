@@ -40,7 +40,7 @@ struct TranscriptUserMessage: View {
                 VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                     Text(verbatim: text)
                         .font(Theme.TextStyle.body)
-                        .foregroundStyle(Theme.text)
+                        .foregroundStyle(Theme.paper)
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
                         .transcriptFolded(long && !expanded)
@@ -150,16 +150,8 @@ enum ChatRuns {
         return !Calendar.current.isDate(Date(timeIntervalSince1970: line.date), inSameDayAs: Date(timeIntervalSince1970: previous.date))
     }
 
-    /// Each person in a group writes in a color of their own, the same every time (the Mac's `ChatPersonBadge.tint`).
-    static func tint(for name: String) -> Color {
-        let colors = [Theme.mint, Theme.blue, Theme.violet, Theme.music]
-        var hash: UInt32 = 2_166_136_261
-        for byte in name.lowercased().utf8 {
-            hash ^= UInt32(byte)
-            hash = hash &* 16_777_619
-        }
-        return colors[Int(hash % UInt32(colors.count))]
-    }
+    /// Each person in a group writes in a color of their own, the same every time and on the Mac (`ChatPersonTint`).
+    static func tint(for name: String) -> Color { ChatPersonTint.color(for: name) }
 }
 
 /// A message of a chat app, the Mac's `ChatBubbleView`: yours on `chatMine` on the right, theirs on `chatTheirs` on
@@ -230,7 +222,7 @@ struct ChatBubbleView: View {
                     if !line.text.isEmpty {
                         Text(verbatim: line.text)
                             .font(Theme.TextStyle.body)
-                            .foregroundStyle(Theme.text)
+                            .foregroundStyle(Theme.paper)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                     }

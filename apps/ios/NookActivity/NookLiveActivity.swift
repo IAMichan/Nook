@@ -19,14 +19,14 @@ struct NookLiveActivity: Widget {
             let look = ActivityLook(context.attributes, context.state, stale: context.isStale)
             LockScreenActivity(look: look)
                 .activityBackgroundTint(Theme.canvas.opacity(0.92))
-                .activitySystemActionForegroundColor(Theme.text)
+                .activitySystemActionForegroundColor(Theme.paper)
                 .widgetURL(ActivityLink.url(session: context.attributes.session))
         } dynamicIsland: { context in
             let look = ActivityLook(context.attributes, context.state, stale: context.isStale)
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     Label {
-                        Text(look.agent).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                        Text(look.agent).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.paper).lineLimit(1)
                     } icon: {
                         Image(systemName: look.symbol).foregroundStyle(look.color)
                     }
@@ -37,7 +37,7 @@ struct NookLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(look.title).font(.headline).foregroundStyle(Theme.text).lineLimit(1)
+                        Text(look.title).font(.headline).foregroundStyle(Theme.paper).lineLimit(1)
                         if !look.detail.isEmpty {
                             Text(look.detail).font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
                         }
@@ -129,7 +129,7 @@ private struct LockScreenActivity: View {
             .frame(width: 38, height: 38)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(look.title).font(.headline).foregroundStyle(Theme.text).lineLimit(1)
+                Text(look.title).font(.headline).foregroundStyle(Theme.paper).lineLimit(1)
                 Text([look.agent, look.detail].filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
             }
