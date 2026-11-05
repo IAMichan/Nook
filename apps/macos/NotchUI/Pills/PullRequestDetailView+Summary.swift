@@ -66,7 +66,11 @@ extension PullRequestDetailView {
                     if detail.body.isEmpty {
                         Text(tr("agents.pr.noDescription")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textTertiary)
                     } else {
-                        MarkdownView(text: detail.body, size: 14)
+                        PullRequestDescription(text: detail.body, editable: detail.canPush != false) { line, checked in
+                            guard let body = MarkdownTasks.setting(checked, line: line, in: detail.body) else { return }
+                            actions.close()
+                            actions.pending = .edit(title: detail.title, body: body)
+                        }
                     }
                 }
                 .padding(.horizontal, NookTheme.Spacing.xs)
@@ -222,6 +226,7 @@ extension PullRequestDetailView {
         case .changesRequested: tr("agents.pr.ready.showReviews")
         case .behind: tr("agents.pr.action.updateBranch")
         case .noReviews: tr("agents.pr.ready.askReview")
+        case .conflicts where sessionContext != nil: tr("session.context.resolve")
         default: nil
         }
     }
@@ -239,6 +244,9 @@ extension PullRequestDetailView {
             }
         case .noReviews where detail.isOpen:
             return { actions.open(.reviewers, detail: detail) }
+        case .conflicts:
+            guard let sessionContext else { return nil }
+            return { ComposerInbox.shared.add(SessionPrompts.resolveConflicts(detail.sessionRef), to: sessionContext) }
         default:
             return nil
         }
@@ -442,6 +450,16 @@ extension PullRequestDetailView {
                 Text(check.name).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
                 Spacer(minLength: 4)
                 CICheckStatusText(check: check)
+                if let runID = check.approvalRunID, detail.canPush != false {
+                    ToolbarIconButton("checkmark.shield", tr("agents.pr.action.approveWorkflow")) {
+                        actions.close()
+                        actions.pending = .approveWorkflow(runID: runID)
+                    }
+                } else if check.outcome == .failing, let sessionContext {
+                    SessionFixButton(help: tr("session.context.fixCheck")) {
+                        ComposerInbox.shared.add(SessionPrompts.fixChecks(detail.sessionRef, failing: [check.name]), to: sessionContext)
+                    }
+                }
                 if readsHere || check.url != nil {
                     Image(systemName: readsHere ? "chevron.right" : "arrow.up.right")
                         .font(NookTheme.font(9, .semibold))

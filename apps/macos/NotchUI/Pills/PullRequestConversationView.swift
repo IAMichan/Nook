@@ -161,6 +161,8 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
     var showsAvatar = true
     @ViewBuilder var accessory: () -> Accessory
     @State private var hovering = false
+    @Environment(\.sessionContextTarget) private var session
+    @Environment(\.sessionPullRequestRef) private var pullRequest
 
     init(event: PullRequestEvent, now: Date, showsAvatar: Bool = true, @ViewBuilder accessory: @escaping () -> Accessory) {
         self.event = event
@@ -188,6 +190,12 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
             verdict
             accessory()
             Spacer(minLength: NookTheme.Spacing.xs)
+            if let session, let pullRequest, let finding {
+                SessionFixButton(help: tr("session.context.fixComment")) {
+                    ComposerInbox.shared.add(SessionPrompts.fixComment(pullRequest, author: event.author, path: finding.path,
+                                                                       line: finding.line, text: event.body), to: session)
+                }
+            }
             if reactions, !event.reactions.isEmpty { PullRequestReactionBar(reactions: event.reactions) }
             if let date = event.date {
                 Text(AgentFormat.short(now.timeIntervalSince(date)))
@@ -205,6 +213,16 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
             }
+        }
+    }
+
+    /// What a fix can be about: a line comment or a review that asks for something, not a reply or an approval.
+    private var finding: (path: String?, line: Int?)? {
+        guard event.replyTo == nil, !event.body.isEmpty else { return nil }
+        switch event.kind {
+        case .lineComment(let path, let line): return (path, line)
+        case .review(let state) where state != "APPROVED": return (nil, nil)
+        default: return nil
         }
     }
 

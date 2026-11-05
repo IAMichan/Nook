@@ -256,6 +256,13 @@ struct PullRequestCheck: Identifiable, Equatable, Sendable {
     var reporter: String? = nil
 
     var id: String { name + "|" + (url?.absoluteString ?? "") }
+
+    /// The workflow run that waits for someone to approve it; nil for every other check.
+    var approvalRunID: Int? {
+        guard detail == "action_required", let path = url?.path,
+              let found = path.range(of: #"/actions/runs/\d+"#, options: .regularExpression) else { return nil }
+        return Int(path[found].split(separator: "/").last ?? "")
+    }
 }
 
 /// One entry in the timeline: a review, a comment, a comment on a line of the diff, a commit, or something that

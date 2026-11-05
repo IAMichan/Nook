@@ -121,6 +121,9 @@ struct SessionPanel: View {
     /// "Turn into project" with `git init`: asked first, since it writes a repository into the folder.
     @State private var askingGitInit = false
     @State private var registered = false
+    @ObservedObject private var pullRequestSync = PullRequestSync.shared
+    /// The rows you turned off, by name; right-click the panel to choose.
+    @AppStorage("agents.panel.hidden") private var hiddenRaw = ""
 
     init(model: FolderGitModel, runID: UUID?, agentWorking: Bool, showChanges: @escaping () -> Void,
          close: @escaping () -> Void, docked: Bool = false) {
@@ -148,17 +151,75 @@ struct SessionPanel: View {
     }
     private var run: WorkspaceRun? { runID.flatMap { workspace.run($0) } }
 
+    /// The rows that can be turned off, in the order they show.
+    private static let optionalRows = ["machine", "openIn", "scripts", "branch", "commit", "changes", "pullRequests"]
+
+    private var hiddenRows: Set<String> { Set(hiddenRaw.split(separator: ",").map(String.init)) }
+
+    private func toggle(row: String) {
+        var hidden = hiddenRows
+        if !hidden.insert(row).inserted { hidden.remove(row) }
+        hiddenRaw = hidden.sorted().joined(separator: ",")
+    }
+
+    /// The session's own pull requests: every one it linked, open ones first.
+    private var pullRequests: [PullRequestLink] {
+        // A session Nook runs has its own list; one it only sees has the list of its folder and branch.
+        let links = runID.flatMap { pullRequestSync.links[$0] }
+            ?? model.status?.branch.flatMap { pullRequestSync.folderLinks[PullRequestSync.folderKey(path: directory, branch: $0)] } ?? []
+        return links.filter(\.state.isOpen) + links.filter { !$0.state.isOpen }
+    }
+
+    @ViewBuilder
+    private var pullRequestRows: some View {
+        ForEach(pullRequests.prefix(5)) { link in
+            PanelRow(icon: AnyView(PullRequestStateIcon(glyph: glyph(link))),
+                     title: link.title ?? link.repository,
+                     trailing: AnyView(Text(verbatim: "#\(link.number)").font(NookTheme.mono(11))),
+                     help: link.url,
+                     action: { if let url = URL(string: link.url) { _ = app.openPullRequestLink(url, beside: true) } })
+        }
+    }
+
+    private func glyph(_ link: PullRequestLink) -> PullRequestBadge.Glyph {
+        if link.conflicted, link.state.isOpen { return .conflict }
+        switch link.state {
+        case .draft: return .draft
+        case .open: return .open
+        case .merged: return .merged
+        case .closed: return .closed
+        }
+    }
+
+    /// Everything the panel can show; `compact` drops what you need least when the column is short.
+    @ViewBuilder
+    private func rows(compact: Bool) -> some View {
+        let hidden = hiddenRows
+        if !compact {
+            if !hidden.contains("machine") { machineRow }
+            if !hidden.contains("openIn") { openInRow }
+        }
+        scratchRow
+        if !compact, !hidden.contains("scripts") { scriptRows }
+        if model.isRepository {
+            DropdownDivider()
+            if !hidden.contains("branch") { branchRow }
+            if !hidden.contains("commit") { commitRow }
+            if !hidden.contains("changes") { changesRow }
+            if !hidden.contains("pullRequests") { pullRequestRows }
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            machineRow
-            openInRow
-            scratchRow
-            scriptRows
-            if model.isRepository {
-                DropdownDivider()
-                branchRow
-                commitRow
-                changesRow
+            // Beside the conversation the column can be short: the panel then keeps to the session's own work.
+            if docked {
+                ViewThatFits(in: .vertical) {
+                    VStack(alignment: .leading, spacing: 0) { rows(compact: false) }
+                    VStack(alignment: .leading, spacing: 0) { rows(compact: true) }
+                }
+            } else {
+                rows(compact: false)
             }
             if let confirmDefault { defaultBranchConfirmation(confirmDefault) }
             // A failed action shows as a toast; this is only the script form's own problem.
@@ -176,6 +237,13 @@ struct SessionPanel: View {
         .frame(width: docked ? nil : 300, alignment: .leading)
         .frame(maxWidth: docked ? .infinity : nil, alignment: .leading)
         .background(docked ? Color.clear : DropdownStyle.panel)
+        .contextMenu {
+            ForEach(Self.optionalRows, id: \.self) { row in
+                Button { toggle(row: row) } label: {
+                    if hiddenRows.contains(row) { Text(tr("agents.panel.row." + row)) } else { Label(tr("agents.panel.row." + row), systemImage: "checkmark") }
+                }
+            }
+        }
         .task(id: directory) {
             let folder = directory
             // Git first: it decides most of the panel. The rest reads alongside it.

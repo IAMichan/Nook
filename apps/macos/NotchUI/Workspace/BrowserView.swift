@@ -129,6 +129,8 @@ final class BrowserStore: ObservableObject {
     func screenshot(maxWidth: Int = 1280) async throws -> Data { try await page.screenshot(maxWidth: maxWidth) }
     func pageText() async throws -> (title: String, url: String, text: String) { try await page.pageText() }
     func evaluate(_ script: String) async throws -> Any { try await page.evaluate(script) }
+    func pickElement() async throws -> PickedElement? { try await page.pickElement() }
+    func cancelPick() { page.cancelPick() }
     func openInDefaultBrowser() { page.openInDefaultBrowser() }
 
     /// No browser page and no popup shows the browser any more: every tab may be put away after a while.
@@ -405,6 +407,19 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
 
     // MARK: Tools
 
+    /// Waits for you to point at an element; nil when you cancel. Runs apart from the page's own scripts.
+    func pickElement() async throws -> PickedElement? {
+        await restoreParked()
+        guard let url = webView.url else { throw NookError(tr("workbench.browser.nothingOpen")) }
+        let result = try await webView.callAsyncJavaScript(BrowserPickScript.pick, contentWorld: .defaultClient)
+        guard let found = result as? [String: Any], let selector = found["selector"] as? String else { return nil }
+        return PickedElement(url: url.absoluteString, selector: selector, text: found["text"] as? String ?? "")
+    }
+
+    func cancelPick() {
+        webView.evaluateJavaScript(BrowserPickScript.cancel, in: nil, in: .defaultClient) { _ in }
+    }
+
     // MARK: WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { refresh(loading: true) }
@@ -607,7 +622,14 @@ struct BrowserView: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = BrowserStore.shared
     @ObservedObject private var bridge = WorkspaceBridge.shared
+    @Environment(\.sessionContextTarget) private var session
     @State private var asking = false
+    /// Pointing at an element, and the one you pointed at while you say what about it.
+    @State private var picking = false
+    @State private var picked: PickedElement?
+    @State private var pickNote = ""
+    /// Servers on this Mac, offered while the browser is empty.
+    @State private var servers: [LocalServer] = []
     /// The pointer is on the address field, which shows its fill only then.
     @State private var addressHovering = false
     /// Shown beside the chat: a button that puts the browser away again.
@@ -643,6 +665,10 @@ struct BrowserView: View {
                 ToolbarIconButton("arrow.up.forward.app", tr("browser.openExternal"), enabled: store.webView.url != nil) {
                     store.openInDefaultBrowser()
                 }
+                if session != nil {
+                    ToolbarIconButton(picking ? "xmark.circle" : "cursorarrow.rays", tr(picking ? "browser.annotate.cancel" : "browser.annotate"),
+                                      enabled: store.webView.url != nil) { annotate() }
+                }
                 ToolbarIconButton("plus.bubble", tr("workbench.browser.askHelp"), enabled: store.webView.url != nil && !asking) {
                     askAboutPage()
                 }
@@ -663,11 +689,13 @@ struct BrowserView: View {
                 .padding(.horizontal, NookTheme.Spacing.lg)
                 .padding(.bottom, NookTheme.Spacing.sm)
             }
+            if let picked { pickBar(picked) }
             // A line only above a page; the empty browser runs on into the background.
             NookDivider()
                 .opacity(store.webView.url == nil && !store.loading ? 0 : 1)
             if store.webView.url == nil && !store.loading {
                 WSEmptyState(symbol: "safari", title: tr("workbench.browser.emptyTitle"), message: tr("workbench.browser.emptyMessage"), action: nil)
+                if !servers.isEmpty { serverList }
             }
             // A container of its own for each tab: a container holds one web view.
             WebViewHost(webView: store.webView)
@@ -687,6 +715,74 @@ struct BrowserView: View {
             if store.shownInWorkbench == 0, SessionBrowserOwner.shared.shownInChat == 0 { store.outOfSight() }
         }
         .onChange(of: bridge.unseen) { _, _ in bridge.markBrowserSeen() }
+        // Asked once each time the browser is empty; nothing watches the ports.
+        .task(id: store.webView.url == nil) {
+            guard store.webView.url == nil else { return }
+            let found = await LocalServers.scan()
+            if found != servers { servers = found }
+        }
+    }
+
+    /// The servers running on this Mac: one click opens one.
+    private var serverList: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            Text(tr("browser.servers.title"))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+            ForEach(servers) { server in
+                Button { store.go(server.address) } label: {
+                    HStack(spacing: NookTheme.Spacing.sm) {
+                        Image(systemName: "server.rack").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+                        Text(verbatim: "localhost:\(server.port)").font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper)
+                        Spacer(minLength: NookTheme.Spacing.sm)
+                        Text(verbatim: server.process).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+                    }
+                    .frame(height: SidePanelMetrics.toolbar)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: 320)
+        .padding(.bottom, NookTheme.Spacing.xl)
+    }
+
+    /// Starts pointing, or stops when you already are.
+    private func annotate() {
+        guard !picking else { store.cancelPick(); return }
+        picked = nil
+        picking = true
+        Task {
+            defer { picking = false }
+            do {
+                picked = try await store.pickElement()
+                pickNote = ""
+            } catch {
+                ToastCenter.shared.error(error.localizedDescription)
+            }
+        }
+    }
+
+    /// What you want to say about the element, before it goes to the session's composer.
+    private func pickBar(_ element: PickedElement) -> some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            Image(systemName: "cursorarrow.rays").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+            TextField(tr("browser.annotate.note"), text: $pickNote)
+                .textFieldStyle(.plain)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.paper)
+                .onSubmit { sendPick(element) }
+            ToolbarIconButton("arrow.up.circle", tr("session.context.add")) { sendPick(element) }
+            SidePanelCloseButton(help: tr("button.cancel")) { picked = nil }
+        }
+        .padding(.horizontal, NookTheme.Spacing.lg)
+        .frame(height: SidePanelMetrics.toolbar)
+    }
+
+    private func sendPick(_ element: PickedElement) {
+        guard let session else { return }
+        ComposerInbox.shared.add(SessionPrompts.pageElement(url: element.url, selector: element.selector, text: element.text, note: pickNote), to: session)
+        picked = nil
     }
 
     /// Hands the open page to the chat as an attachment, like dropping a file.
