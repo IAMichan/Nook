@@ -220,9 +220,9 @@ enum ChatMediaImages {
         if let running = loading[key] { return await running.value }
         let task = Task.detached(priority: priority) { image(url, side: side) }
         loading[key] = task
-        let image = await task.value
+        let loaded = await task.value
         loading[key] = nil
-        return image
+        return loaded
     }
 
     private static let pixelSizes = NSCache<NSString, NSValue>()
