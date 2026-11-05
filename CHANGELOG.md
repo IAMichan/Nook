@@ -11,6 +11,11 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- A new session remembers your choices per folder: its agent, account, model, effort, mode, permissions and whether
+  it works in a worktree come back whenever you start in that folder, instead of the choices you last used elsewhere.
+  A folder you have not used yet starts with your last choices, and what a project sets in Settings still wins. Also
+  for sessions started from the iPhone or by an agent, and in the Tauri app.
+
 - Ask Nook about any text you select in Nook: a message in the Chats tab, an agent's answer, a page in Nook's
   browser, the terminal. A small bar above the selection answers, explains or translates it in a card right there,
   with room for a follow-up and a way to continue in the chat (Settings › Assistant › Ask about selected text).

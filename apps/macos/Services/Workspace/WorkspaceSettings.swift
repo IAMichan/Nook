@@ -174,6 +174,10 @@ final class WorkspaceSettings: ObservableObject {
     @Published var projectOverrides: ProjectOverrides {
         didSet { defaults.set(try? JSONEncoder().encode(projectOverrides), forKey: "ws.projectOverrides") }
     }
+    /// What you last chose in the composer per folder (see `FolderChoicesStore`).
+    @Published private(set) var folderChoices: FolderChoicesStore {
+        didSet { defaults.set(try? JSONEncoder().encode(folderChoices), forKey: "ws.folderChoices") }
+    }
 
     static var standardWorktreeRoot: String {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/worktrees", isDirectory: true).path
@@ -225,6 +229,8 @@ final class WorkspaceSettings: ObservableObject {
         recentProjects = defaults.stringArray(forKey: "ws.recentProjects") ?? []
         projectOverrides = defaults.data(forKey: "ws.projectOverrides")
             .flatMap { try? JSONDecoder().decode(ProjectOverrides.self, from: $0) } ?? ProjectOverrides()
+        folderChoices = defaults.data(forKey: "ws.folderChoices")
+            .flatMap { try? JSONDecoder().decode(FolderChoicesStore.self, from: $0) } ?? FolderChoicesStore()
     }
 
     func rememberProject(_ path: String) {
@@ -242,6 +248,7 @@ final class WorkspaceSettings: ObservableObject {
         favoriteProjects.removeAll { $0 == path || WorkspacePathPolicy.normalize($0) == normalized }
         defaults.set(favoriteProjects, forKey: "ws.favoriteProjects")
         if lastProject == path || WorkspacePathPolicy.normalize(lastProject) == normalized { lastProject = "" }
+        folderChoices.forget(path)
     }
 
     func isFavoriteProject(_ path: String) -> Bool {
@@ -334,6 +341,16 @@ final class WorkspaceSettings: ObservableObject {
     func sessionDefaults(for folder: String?) -> SessionDefaults {
         ProjectSettings.resolve(global: globalDefaults, overrides: projectOverrides, folder: folder)
     }
+
+    /// What a new session in this folder starts with in the composer, and in anything else that starts one for you.
+    func composerDefaults(for folder: String?) -> ComposerDefaults {
+        ProjectSettings.composerDefaults(global: globalDefaults, mode: defaultMode, profiles: defaultProfiles,
+                                         efforts: defaultEfforts, overrides: projectOverrides,
+                                         choices: folderChoices.choices(for: folder), folder: folder)
+    }
+
+    /// Keeps what the composer has chosen for its folder.
+    func rememberFolderChoices(_ config: NewRunConfig) { folderChoices.remember(config) }
 
     /// Does this folder (or the project it belongs to) set the value itself?
     func isOverridden(_ key: ProjectSettingKey, for folder: String) -> Bool {
