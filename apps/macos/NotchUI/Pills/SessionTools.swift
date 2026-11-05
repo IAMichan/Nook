@@ -326,22 +326,13 @@ struct SessionWorkbench<Conversation: View>: View {
                                                                      toggleConsole: toggleConsole))
                         .onPreferenceChange(SessionOutputsReport.self) { outputs = $0 }
                         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        // A page this session's agent opened: small in the chat's bottom right corner, above the composer,
-                        // and in no other chat.
+                        // Where the page this session's agent opened rests: the conversation above its composer. The card
+                        // itself floats over the whole row (below), so it can be moved over the panels on the right too.
                         .overlayPreferenceValue(SessionComposerBounds.self) { composer in
                             GeometryReader { proxy in
-                                let above = composer.map { max(0, proxy.size.height - proxy[$0].minY) } ?? 0
-                                SessionBrowserCorner(runID: runID, directory: directory, hidden: side == .browser || bottom == .browser,
-                                                    room: CGSize(width: max(0, proxy.size.width - SessionBrowserCard.size.width - NookTheme.Spacing.lg * 2),
-                                                                 height: max(0, proxy.size.height - above - SessionBrowserCard.size.height - NookTheme.Spacing.md)),
-                                                    below: above) {
-                                    withAnimation(NookTheme.reveal) { viewModel.sessionTool = .browser }
-                                }
-                                // In a narrow conversation the page covers part of it, not all of it.
-                                .frame(maxWidth: max(240, proxy.size.width * 0.7), alignment: .trailing)
-                                .padding(.trailing, NookTheme.Spacing.lg)
-                                .padding(.bottom, above + NookTheme.Spacing.md)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                                Color.clear
+                                    .anchorPreference(key: SessionBrowserRest.self, value: .bounds) { $0 }
+                                    .padding(.bottom, composer.map { max(0, proxy.size.height - proxy[$0].minY) } ?? 0)
                             }
                         }
                 }
@@ -393,6 +384,25 @@ struct SessionWorkbench<Conversation: View>: View {
                 }
             }
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // A page this session's agent opened: small in the chat's bottom right corner, above the composer, and in no
+            // other chat. It floats over this row, not the conversation alone, so no panel beside the chat stops or hides it.
+            .overlayPreferenceValue(SessionBrowserRest.self) { rest in
+                GeometryReader { proxy in
+                    let conversation = rest.map { proxy[$0] } ?? CGRect(origin: .zero, size: proxy.size)
+                    let above = max(0, proxy.size.height - conversation.maxY)
+                    SessionBrowserCorner(runID: runID, directory: directory, hidden: side == .browser || bottom == .browser,
+                                        room: CGSize(width: max(0, conversation.width - SessionBrowserCard.size.width - NookTheme.Spacing.lg * 2),
+                                                     height: max(0, conversation.height - SessionBrowserCard.size.height - NookTheme.Spacing.md)),
+                                        below: above, right: max(0, proxy.size.width - conversation.maxX)) {
+                        withAnimation(NookTheme.reveal) { viewModel.sessionTool = .browser }
+                    }
+                    // In a narrow conversation the page covers part of it, not all of it.
+                    .frame(maxWidth: max(240, conversation.width * 0.7), alignment: .trailing)
+                    .padding(.trailing, proxy.size.width - conversation.maxX + NookTheme.Spacing.lg)
+                    .padding(.bottom, above + NookTheme.Spacing.md)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                }
+            }
             .overlay {
                 if covering {
                     panel(.side, tool: side)
