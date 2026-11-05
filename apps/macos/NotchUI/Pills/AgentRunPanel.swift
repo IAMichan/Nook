@@ -1103,7 +1103,15 @@ struct AgentRunPanel: View {
             onChoose: answerable ? { workspace.send(runID, text: $0) } : nil,
             expanded: expanded.contains(event.id),
             toggle: { toggle(event.id) },
-            openFile: { path in app.viewModel.open(.changes(runID, file: path)) },
+            openFile: { path in
+                // In the session's Changes tab; a session on another machine has no git here, so its own review.
+                if headerAccessory != nil, let run = workspace.run(runID), !run.isRemote {
+                    sideLink.openDiff(TurnDiffSelection(turn: TurnDiffSelection.branch,
+                                                        file: TurnDiff.relative(path, to: run.workingDirectory)))
+                } else {
+                    app.viewModel.open(.changes(runID, file: path))
+                }
+            },
             decide: { decision in
                 if let request = event.callID { workspace.decide(runID, requestID: request, decision) }
             },

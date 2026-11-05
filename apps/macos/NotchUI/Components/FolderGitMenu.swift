@@ -334,8 +334,7 @@ struct FolderChangesSheet: View {
     @State private var showsTree = false
     @State private var loaded = false
 
-    /// `stacked` is kept for the side panel's call; the stacked list fits a narrow panel and a wide one alike.
-    init(directory: String, stacked: Bool = false) {
+    init(directory: String) {
         _model = StateObject(wrappedValue: FolderGitModel.make(directory: directory))
     }
 

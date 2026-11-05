@@ -309,8 +309,9 @@ struct SidePanelToggle: View {
 
 // MARK: One panel on the right
 
-/// From a session's workbench to the conversation inside it: opens a turn's diff or a file step in the side panel on
-/// the right (to the right of the docked session panel, taking turns with the tool panel), and reports which file is shown.
+/// From a session's workbench to the conversation inside it: opens a turn's diff in the Changes tab, or a file step in
+/// the side panel on the right (to the right of the docked session panel, taking turns with the tool panel), and reports
+/// which file is shown.
 /// A command the agent runs opens in the panel's Terminal tab (`toggleConsole`), with its output as it comes in.
 struct SessionSideLink {
     var shownFile: String? = nil

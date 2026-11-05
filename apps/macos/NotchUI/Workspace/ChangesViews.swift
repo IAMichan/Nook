@@ -10,8 +10,6 @@ struct ChangesSheet: View {
     let initialFile: GitFileChange?
     /// Set when shown inside the notch: closes it there (and the notch shows the title).
     var onClose: (() -> Void)? = nil
-    /// Kept for the side panel's call; the stacked list fits a narrow panel and a wide one alike.
-    var stacked = false
     private var embedded: Bool { onClose != nil }
     private func close() { if let onClose { onClose() } else { dismiss() } }
     @State private var expanded: Set<String> = []
@@ -84,7 +82,7 @@ struct ChangesSheet: View {
             if files.isEmpty {
                 StackedDiffNote(text: tr("ws.changes.noDiffDetail"))
             } else {
-                ChangesDiffList(workspace: workspace, runID: runID, files: files,
+                ChangesDiffList(workspace: workspace, runID: runID, scope: runID.uuidString, files: files,
                                 comments: workspace.reviewComments[runID] ?? [], expanded: $expanded, showsTree: showsTree,
                                 focus: initialFile?.path) { file, options in
                     guard let change = self.files.first(where: { $0.path == file.path }) else { return "" }
@@ -94,23 +92,7 @@ struct ChangesSheet: View {
                 // files, hundreds of them after a big change, only when they, the comments or the folding changed.
                 .equatable()
             }
-            // Comments on the diff go to the agent together.
-            if let comments = workspace.reviewComments[runID], !comments.isEmpty {
-                NookDivider()
-                HStack(spacing: NookTheme.Spacing.md) {
-                    Image(systemName: "text.bubble").foregroundStyle(NookTheme.amber)
-                    Text(tr("ws.review.count", comments.count))
-                        .font(NookTheme.TextStyle.body)
-                        .foregroundStyle(NookTheme.textSecondary)
-                    Spacer()
-                    SmallGhostButton(title: tr("ws.review.discard")) { workspace.reviewComments[runID] = nil }
-                    NookPrimaryButton(title: tr("ws.review.send")) {
-                        workspace.sendReviewComments(runID)
-                        close()
-                    }
-                }
-                .padding(10)
-            }
+            ReviewCommentsBar(workspace: workspace, runID: runID, sent: close)
         }
         .frame(minWidth: embedded ? nil : 820, idealWidth: embedded ? nil : 1040, maxWidth: embedded ? CGFloat.infinity : nil,
                minHeight: embedded ? nil : 520, idealHeight: embedded ? nil : 700, maxHeight: embedded ? CGFloat.infinity : nil)
@@ -122,12 +104,64 @@ struct ChangesSheet: View {
     }
 }
 
+/// The comments on a diff's lines, under it: they go to the agent together. Nothing without any.
+struct ReviewCommentsBar: View {
+    @ObservedObject var workspace: WorkspaceManager
+    let runID: UUID
+    var sent: () -> Void = {}
+
+    var body: some View {
+        if let comments = workspace.reviewComments[runID], !comments.isEmpty {
+            NookDivider()
+            HStack(spacing: NookTheme.Spacing.md) {
+                Image(systemName: "text.bubble").foregroundStyle(NookTheme.amber)
+                Text(tr("ws.review.count", comments.count))
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(NookTheme.textSecondary)
+                Spacer()
+                SmallGhostButton(title: tr("ws.review.discard")) { workspace.reviewComments[runID] = nil }
+                NookPrimaryButton(title: tr("ws.review.send")) {
+                    workspace.sendReviewComments(runID)
+                    sent()
+                }
+            }
+            .padding(10)
+        }
+    }
+}
+
+/// The diff of a session Nook runs in the Changes tab: the files with comments on their lines, and the bar that sends
+/// those comments. Apart from the panel, so only this part follows the workspace.
+struct RunDiffList: View {
+    @EnvironmentObject private var workspace: WorkspaceManager
+    let runID: UUID
+    let files: [StackedDiffFile]
+    let scope: String
+    @Binding var expanded: Set<String>
+    let showsTree: Bool
+    let focus: String?
+    let diff: (StackedDiffFile, DiffReadOptions) async throws -> String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ChangesDiffList(workspace: workspace, runID: runID, scope: scope, files: files,
+                            comments: workspace.reviewComments[runID] ?? [], expanded: $expanded, showsTree: showsTree,
+                            focus: focus, diff: diff)
+                .equatable()
+            ReviewCommentsBar(workspace: workspace, runID: runID)
+        }
+        .onAppear { workspace.markReviewed(runID) }
+    }
+}
+
 /// The stacked diff of a session's changes, with comments on its lines. Equatable on what it shows, so the sheet
 /// redrawing around it does not lay out every file's header again.
 private struct ChangesDiffList: View, Equatable {
     /// Passed, not observed: its every change would redraw the list.
     let workspace: WorkspaceManager
     let runID: UUID
+    /// Tells this diff apart in the cache of diffs already read (`StackedDiffList`).
+    let scope: String
     let files: [StackedDiffFile]
     let comments: [ReviewComment]
     @Binding var expanded: Set<String>
@@ -136,12 +170,12 @@ private struct ChangesDiffList: View, Equatable {
     let diff: (StackedDiffFile, DiffReadOptions) async throws -> String
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.runID == rhs.runID && lhs.files == rhs.files && lhs.comments == rhs.comments
+        lhs.runID == rhs.runID && lhs.scope == rhs.scope && lhs.files == rhs.files && lhs.comments == rhs.comments
             && lhs.expanded == rhs.expanded && lhs.showsTree == rhs.showsTree && lhs.focus == rhs.focus
     }
 
     var body: some View {
-        StackedDiffList(files: files, scope: runID.uuidString, expanded: $expanded, showsTree: showsTree,
+        StackedDiffList(files: files, scope: scope, expanded: $expanded, showsTree: showsTree,
                         focus: focus, diff: diff) { file, text in
             DiffText(text: text, comments: comments.filter { $0.path == file.path },
                      onComment: { line, code, comment in
