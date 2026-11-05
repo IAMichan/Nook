@@ -1142,7 +1142,9 @@ struct ChatInbox: Codable, Equatable, Sendable {
         }
         // You wrote in this chat, so what came before that is read, in every app, as WhatsApp itself has it. An app that
         // counts from an old read mark would otherwise make the whole chat unread as soon as your message moves it.
-        let answered = (thread.messages + messages).filter(\.isMine).map(\.date).max()
+        // A little before your message: a clock behind yours must not hide an answer that came right after it.
+        let answered = (thread.messages + messages).filter(\.isMine).map(\.date).max()?
+            .addingTimeInterval(-Self.sameMessageWindow)
         var ids = Set(thread.messages.map(\.id))
         // A chat its app knows by an id (`chatID`) gets every message under the app's own id, never also as a
         // notification: two messages with the same words in a row ("ok", "ok") are two. Elsewhere the same words from the

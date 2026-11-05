@@ -1305,7 +1305,10 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                 seen[chat.id] = chat.last ?? .distantPast
                 reportedUnread[chat.id] = chat.unread
                 covered.insert(chat.app)
-                chatIDs[chat.app + "|" + chat.title] = chat.id
+                // Two chats of one name in one row (Instagram keeps two threads with some people): answers go to the
+                // one that moved last, whichever was read last.
+                let shownAs = chat.app + "|" + chat.title
+                if ChatServiceData.isNewest(chat, than: chatIDs[shownAs].flatMap { chats[$0] }) { chatIDs[shownAs] = chat.id }
                 guard !messages.isEmpty || !deleted.isEmpty else { continue }
                 let picture = read.picture
                 if picture != nil { reportedPicture[chat.id] = chat.picture }
