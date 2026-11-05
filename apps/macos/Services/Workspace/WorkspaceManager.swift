@@ -2453,8 +2453,7 @@ final class WorkspaceManager: ObservableObject {
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard let self, !Task.isCancelled, self.runsLoaded else { return }
             let runsSnapshot = self.runs
-            self.savedRuns = runsSnapshot
-            self.store.saveRunsAsync(runsSnapshot)
+            self.writeRuns(runsSnapshot)
         }
     }
 
@@ -2482,8 +2481,18 @@ final class WorkspaceManager: ObservableObject {
             guard let self else { return }
             self.runsCatchUp = nil
             guard self.runsLoaded, self.savedRuns != self.runs else { return }
-            self.savedRuns = self.runs
-            self.store.saveRunsAsync(self.runs)
+            self.writeRuns(self.runs)
+        }
+    }
+
+    private func writeRuns(_ snapshot: [WorkspaceRun]) {
+        savedRuns = snapshot
+        // A write that failed tries again: without a change to the list nothing else would.
+        store.saveRunsAsync(snapshot) { [weak self] in
+            Task { @MainActor in
+                self?.savedRuns = nil
+                self?.scheduleRunsCatchUp()
+            }
         }
     }
 }

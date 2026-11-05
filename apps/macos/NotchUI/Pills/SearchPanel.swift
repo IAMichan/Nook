@@ -93,7 +93,10 @@ struct SearchPanel: View {
         )
         .padding(.horizontal, NookTheme.Spacing.lg)
         .focusOnAppear($focused)
-        .onAppear { center.reset() }
+        .onAppear {
+            center.panelOpened()
+            center.reset()
+        }
         // Gathering everything to search runs once the panel is in: in the same frames it held up the reveal.
         .task {
             try? await Task.sleep(for: NookTheme.tabSettle)

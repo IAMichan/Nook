@@ -128,8 +128,11 @@ final class NowPlayingService: ObservableObject {
         timer = Timer.scheduledCoalesced(withTimeInterval: 2.0) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
+                // A queue in Nook starts its next track from the position read here, and a seek in the player is not always
+                // announced: it keeps following while music plays, also with nobody at the Mac.
+                let queued = !self.playQueue.isEmpty && self.current?.isPlaying == true
                 let signals = EnergyMonitor.shared.signals
-                if self.viewers == 0, signals.displayAsleep || signals.away { return }
+                if self.viewers == 0, signals.displayAsleep || (signals.away && !queued) { return }
                 // Nothing playing: the players' notifications announce a start, so the safety net can be slow. Right after
                 // launch it keeps checking every other tick until a player answers: a player that was still starting (or a cold
                 // first AppleScript run) should not keep the Music tab away for ten seconds.
@@ -137,7 +140,7 @@ final class NowPlayingService: ObservableObject {
                 // On screen: every few seconds, for the volume (the position is estimated between polls, and each poll is a
                 // dozen Apple Events to the player, which wake it). Out of sight: the players' notifications announce every
                 // track and play/pause change and the position is estimated, so this is only the safety net.
-                let interval: TimeInterval = settling ? 4 : (self.viewers > 0 ? 5 : 60 * EnergyMonitor.shared.plan.slowdown)
+                let interval: TimeInterval = settling ? 4 : (self.viewers > 0 ? 5 : queued ? 15 : 60 * EnergyMonitor.shared.plan.slowdown)
                 if Date().timeIntervalSince(self.lastPoll) < interval - 0.5 { return }
                 self.poll()
             }

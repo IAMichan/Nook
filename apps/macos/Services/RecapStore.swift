@@ -142,6 +142,16 @@ final class RecapStore {
 
     private static let saves = DispatchQueue(label: "nook.recap.save", qos: .utility)
 
+    /// Writes what is waiting and holds on until it is on disk (Nook quits).
+    func flush() {
+        if let saveTask {
+            saveTask.cancel()
+            self.saveTask = nil
+            save()
+        }
+        Self.saves.sync {}
+    }
+
     // MARK: Summary
 
     /// The week (Monday through Sunday) containing `date`.
