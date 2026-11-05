@@ -1,6 +1,36 @@
 import XCTest
 
 final class ScrollModelTests: XCTestCase {
+    func testPinLeavesRoomForTheMessageToReachTheTop() {
+        let pin = TurnPin(messageTop: 1000)
+        let frame = ScrollFrame(offset: 0, content: 1060, container: 580, insetBottom: 120)
+        XCTAssertEqual(pin.room(in: frame, current: 0), 496)
+        XCTAssertEqual(pin.messageTop - pin.anchorOffset, frame.content + 496 - frame.container)
+    }
+
+    func testPinRoomShrinksAsTheReplyGrowsAndKeepsTheTotalHeight() {
+        let pin = TurnPin(messageTop: 1000)
+        let start = ScrollFrame(offset: 0, content: 1556, container: 580, insetBottom: 120)
+        let grown = ScrollFrame(offset: 0, content: 1756, container: 580, insetBottom: 120)
+        XCTAssertEqual(pin.room(in: start, current: 496), 496)
+        XCTAssertEqual(pin.room(in: grown, current: 496), 296)
+    }
+
+    func testPinRoomEndsOnceTheReplyFillsTheView() {
+        let pin = TurnPin(messageTop: 1000)
+        XCTAssertEqual(pin.room(in: ScrollFrame(offset: 0, content: 1900, container: 580, insetBottom: 120), current: 0), 0)
+    }
+
+    func testAwayFromEndWhileAMessageIsPinned() {
+        var m = ScrollModel()
+        XCTAssertFalse(m.awayFromEnd)
+        m.sent(messageID: UUID())
+        XCTAssertTrue(m.awayFromEnd)
+        XCTAssertFalse(m.shouldFollowEnd)
+        m.jumpedToEnd()
+        XCTAssertFalse(m.awayFromEnd)
+    }
+
     func testStartsFollowing() {
         let m = ScrollModel()
         XCTAssertTrue(m.shouldFollowEnd)

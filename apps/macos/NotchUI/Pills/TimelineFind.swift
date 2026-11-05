@@ -125,6 +125,68 @@ struct TimelineToEndPill: View {
     }
 }
 
+/// The room under a reply that lets the message you sent stand near the top of the view (`TurnPin`). It follows the
+/// scroll view's size on its own, so a streaming reply redraws this spacer and not the conversation around it.
+///
+/// The lazy rows above only learn their real height while scrolling, so where the message ends up cannot be worked out
+/// ahead: `hold` brings it into view on an estimate, then `settle` measures it (`pinProbe`) a few times and the view
+/// scrolls to that exact offset. Measuring never scrolls by itself: that fed back into itself without end.
+@MainActor
+final class TurnPinRoom: ObservableObject {
+    /// The name of the scroll view's coordinate space, where `pinProbe` measures.
+    static let space = "timeline"
+
+    @Published private(set) var height = 0.0
+    /// The row held, for `pinProbe`.
+    private(set) var row: String?
+    /// Where that row stands in the view; not published, nothing draws it.
+    var rowY: Double?
+    private var pin: TurnPin?
+
+    /// Starts holding `row`, which came in at the end of `frame`.
+    func hold(row: String, in frame: ScrollFrame) {
+        self.row = row
+        rowY = nil
+        pin = TurnPin(messageTop: frame.content - height)
+        update(frame)
+    }
+
+    func update(_ frame: ScrollFrame) {
+        guard let pin else { return }
+        let next = pin.room(in: frame, current: height).rounded()
+        if next != height { height = next }
+    }
+
+    /// Measures the row and makes room for it. The offset to scroll to; nil until it was laid out.
+    func settle(in frame: ScrollFrame) -> Double? {
+        guard let rowY else { return nil }
+        let measured = TurnPin(messageTop: frame.offset + rowY)
+        pin = measured
+        update(frame)
+        return measured.messageTop - measured.anchorOffset
+    }
+}
+
+extension View {
+    /// Reports where this row of a conversation stands while it is the one `room` holds near the top.
+    func pinProbe(_ id: String, room: TurnPinRoom) -> some View {
+        modifier(PinProbe(active: room.row == id, room: room))
+    }
+}
+
+private struct PinProbe: ViewModifier {
+    let active: Bool
+    let room: TurnPinRoom
+
+    func body(content: Content) -> some View {
+        if active {
+            content.onGeometryChange(for: Double.self) { $0.frame(in: .named(TurnPinRoom.space)).minY } action: { room.rowY = $0 }
+        } else {
+            content
+        }
+    }
+}
+
 extension View {
     /// The "scroll to end" pill just above this view (a composer over a conversation), without taking room from it.
     func toEndPill(_ shown: Bool, action: @escaping () -> Void) -> some View {
