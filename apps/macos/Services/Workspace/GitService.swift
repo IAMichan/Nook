@@ -355,6 +355,20 @@ struct GitService: Sendable {
         return (text?.isEmpty ?? true) ? nil : text
     }
 
+    /// Where the branch's own work starts, also once it is merged. A merge commit makes the branch's tip part of `base`,
+    /// so `mergeBase` is that tip and the work seems gone; then this is where the branch left `base` before that merge.
+    /// A branch with no work of its own (the tip is a plain commit of `base`) stays at its tip.
+    func branchPoint(_ directory: String, base: String) -> String? {
+        guard let fork = mergeBase(directory, base: base) else { return nil }
+        guard let head = (try? run(["rev-parse", "HEAD"], in: directory))?.trimmingCharacters(in: .whitespacesAndNewlines),
+              fork == head,
+              // The oldest commit on `base` itself that holds the tip: the merge when the branch was merged.
+              let merge = (try? run(["rev-list", "--first-parent", "--ancestry-path", "HEAD.." + base], in: directory))?
+                  .split(whereSeparator: \.isNewline).last
+        else { return fork }
+        return mergeBase(directory, base: merge + "^1") ?? fork
+    }
+
     /// Everything that differs from `ref` (a commit the branch grew from): committed or not, plus untracked files from
     /// `status`. So work the agent already committed still shows up as a change of the branch.
     func changes(_ directory: String, since ref: String, status: GitStatus) throws -> [GitFileChange] {
