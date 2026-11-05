@@ -321,6 +321,14 @@ struct SessionComposerBounds: PreferenceKey {
     static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = nextValue() ?? value }
 }
 
+extension View {
+    /// What takes the composer's place (an approval, a question) tells the workbench the same, so a page the agent opened
+    /// floats above its buttons.
+    func sessionComposerBounds() -> some View {
+        anchorPreference(key: SessionComposerBounds.self, value: .bounds) { $0 }
+    }
+}
+
 /// The room a side panel of `width` takes with its drag line and gap.
 enum SidePanelRoom {
     static func of(_ width: Double) -> Double { width + PanelSplit.handle + Double(SidePanelMetrics.gap) }

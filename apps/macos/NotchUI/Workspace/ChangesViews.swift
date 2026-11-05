@@ -92,7 +92,7 @@ struct ChangesSheet: View {
                 // files, hundreds of them after a big change, only when they, the comments or the folding changed.
                 .equatable()
             }
-            ReviewCommentsBar(workspace: workspace, runID: runID, sent: close)
+            ReviewCommentsBar(runID: runID, sent: close)
         }
         .frame(minWidth: embedded ? nil : 820, idealWidth: embedded ? nil : 1040, maxWidth: embedded ? CGFloat.infinity : nil,
                minHeight: embedded ? nil : 520, idealHeight: embedded ? nil : 700, maxHeight: embedded ? CGFloat.infinity : nil)
@@ -106,7 +106,7 @@ struct ChangesSheet: View {
 
 /// The comments on a diff's lines, under it: they go to the agent together. Nothing without any.
 struct ReviewCommentsBar: View {
-    @ObservedObject var workspace: WorkspaceManager
+    @EnvironmentObject private var workspace: WorkspaceManager
     let runID: UUID
     var sent: () -> Void = {}
 
@@ -130,8 +130,8 @@ struct ReviewCommentsBar: View {
     }
 }
 
-/// The diff of a session Nook runs in the Changes tab: the files with comments on their lines, and the bar that sends
-/// those comments. Apart from the panel, so only this part follows the workspace.
+/// The diff of a session Nook runs in the Changes tab: the files with comments on their lines. Apart from the panel, so
+/// only this part follows the workspace.
 struct RunDiffList: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     let runID: UUID
@@ -143,14 +143,11 @@ struct RunDiffList: View {
     let diff: (StackedDiffFile, DiffReadOptions) async throws -> String
 
     var body: some View {
-        VStack(spacing: 0) {
-            ChangesDiffList(workspace: workspace, runID: runID, scope: scope, files: files,
-                            comments: workspace.reviewComments[runID] ?? [], expanded: $expanded, showsTree: showsTree,
-                            focus: focus, diff: diff)
-                .equatable()
-            ReviewCommentsBar(workspace: workspace, runID: runID)
-        }
-        .onAppear { workspace.markReviewed(runID) }
+        ChangesDiffList(workspace: workspace, runID: runID, scope: scope, files: files,
+                        comments: workspace.reviewComments[runID] ?? [], expanded: $expanded, showsTree: showsTree,
+                        focus: focus, diff: diff)
+            .equatable()
+            .onAppear { workspace.markReviewed(runID) }
     }
 }
 

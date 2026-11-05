@@ -203,7 +203,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `.focusOnAppear(_:)` | `PanelBlocks.swift` | Puts the keyboard in a palette's field as it opens (⌘K search, the command palette), also when it appears with a transition or the panel takes the keyboard later. Use it instead of `.onAppear { focused = true }` on a field that must take typing at once |
 | `QRCodeView`, `QRCode` | `QRCode.swift` | The one QR code for a phone to scan (linking a chat app, WhatsApp, pairing the companion): crisp pixels on a light card, with a label for VoiceOver. Never draw a QR image by hand |
 | `NookSearchLauncher`, `NookKeyHint` | `PanelBlocks.swift` | A button drawn as a `NookSearchField` that opens a search (the Chats tab's rail of icons, ⌘K), and a shortcut as a small key cap |
-| `PanelSidebarTop`, `.panelSidebarColumn()` | `PanelSidebar.swift` | The head of the main window's sidebar (the title bar's row, Search, the tabs with their status) at the top of a tab's first column, and the inset that column keeps from the window's edge; nothing in the notch |
+| `PanelSidebarTop`, `.panelSidebarColumn()`, `PanelSidebarToggle` | `PanelSidebar.swift` | The head of the main window's sidebar (the title bar's row, Search, the tabs with their status) at the top of a tab's first column, the inset that column keeps from the window's edge, and the toggle that puts the Agents list away, in one spot right of the traffic lights; nothing in the notch |
 | `PanelListHeader`, `PanelNewButton` | `PanelBlocks.swift` | The title row on top of every tab's list (Nook, Agents, Chats, Pull requests): name, `NookCountBadge`, the list's actions; `PanelNewButton` is the "new" in it, lit while the new one is open |
 | `NookCountBadge` | `Shared/PanelParts.swift` | How many wait for you: a small amber count, on a tab or a list title |
 | `PullRequestRow`, `PullRequestTag`, `PullRequestLineCounts` | `NotchUI/Pills/PullRequestRow.swift` | One pull request in a list: state mark, then the title (so titles line up), checks and review, lines changed; under it the repository and number, author, labels, stack position, age, with its quick actions. The Pull requests page and the side panel's picker both draw their rows with it; never build a second pull request row. `PullRequestLineCounts` is the "+120 −8" of a row, the pull request page's header and a changed file: grouped numbers and a real minus sign, never drawn by hand |
@@ -329,7 +329,9 @@ follows under it, with its `PanelListHeader` as a quiet section label (`sidebarT
 and its buttons on one row, and back and forward beside the traffic lights), and
 the `PanelFooter` at the bottom. A tab without a list (Music) gets the column from `PanelView`. While a tab draws the
 head (`PanelSidebarShown`), the panel leaves out its floating capsule and the window its left margin and its own Nook;
-when no column shows it (the list put away, one column at a time, a task over the tab), the capsule comes back. A new
+when no column shows it (one column at a time, a task over the tab), the capsule comes back. Agents' list goes away
+altogether: `PanelSidebarToggle` floats in one spot right of the traffic lights, with the list out or away, and a
+conversation's header starts past it (`sessionHeaderInset`). A new
 tab with a list starts its first column the same way; the notch never gets the context and keeps the capsule.
 
 The header has no notice list. What Nook told you since he started is kept in the notice history (`NoticeHistory`),
