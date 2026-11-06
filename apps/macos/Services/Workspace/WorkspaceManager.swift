@@ -156,6 +156,9 @@ final class WorkspaceManager: ObservableObject {
     var acpWakeFinish: [UUID: Task<Void, Never>] = [:]
     /// Sessions with work still running in the background: they stay open longer between turns (see BackgroundWork).
     var backgroundWork: Set<UUID> = []
+    /// Sessions whose turn ended while their subagents still work in the background: the list keeps showing them as
+    /// working. Published, unlike the timelines it comes from: a list row has to change when the last subagent ends.
+    @Published var subagentsWorking: Set<UUID> = []
     /// The subagent whose end the next wake of a parked Claude Code is for, so its line can name it.
     var wakeSubagent: [UUID: String] = [:]
     /// What MCP apps want the agent to know on its next turn, per session and app (see McpApp).
@@ -1088,6 +1091,7 @@ final class WorkspaceManager: ObservableObject {
         displayPrompt[id] = nil
         stopCoordinators[id] = nil
         settleOpenWork(id, reason: run.status == .completed ? .completed : (run.status == .stopped ? .stopped : .failed))
+        noteSubagentsWorking(id)
         if run.status == .failed || run.status == .stopped { holdQueue(id) }
         if run.status == .completed {
             clearContinuations(id)
@@ -1776,6 +1780,7 @@ final class WorkspaceManager: ObservableObject {
             claudeIdle[id] = nil
             // Subagents it ran in the background ended with it.
             settleOpenWork(id, reason: .processExited)
+            noteSubagentsWorking(id)
             return
         }
         if let process, let current = processes[id], current !== process { return }
@@ -1788,6 +1793,7 @@ final class WorkspaceManager: ObservableObject {
         expireApprovals(id)
         // Whatever was still running is settled: nothing may stay open after the process is gone.
         settleOpenWork(id, reason: state?.stopping == true ? .stopped : .processExited)
+        noteSubagentsWorking(id)
         guard let state, !state.finished else {
             scheduleGitRefresh(id, delay: 0.2)
             sendQueued(id)
@@ -2028,6 +2034,7 @@ final class WorkspaceManager: ObservableObject {
         codexLimitSnapshots[id] = nil
         limitedTurns[id] = nil
         backgroundWork.remove(id)
+        subagentsWorking.remove(id)
         wakeSubagent[id] = nil
         mcpAppContexts[id] = nil
         let appFolder = Self.mcpAppFolder(id)

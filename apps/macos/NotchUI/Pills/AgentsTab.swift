@@ -501,7 +501,8 @@ struct AgentsTab: View {
             agent: run.provider.displayName,
             account: account(app.profile(for: run)),
             status: status,
-            started: run.status.isActive ? (run.turnStartedAt ?? run.createdAt) : run.updatedAt,
+            // Working also covers subagents that outlive their turn: the badge counts on from the turn that started them.
+            started: attention == .working ? (run.turnStartedAt ?? run.createdAt) : run.updatedAt,
             path: run.workingDirectory,
             finishKey: FinishedSessions.key(run: run),
             unseen: attention == .ready,

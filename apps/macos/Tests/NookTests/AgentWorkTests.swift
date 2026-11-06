@@ -786,6 +786,19 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertTrue(Simulators.parse(Data("nope".utf8)).isEmpty)
     }
 
+    func testBackgroundRunningOnlyCountsSubagentsStillAtWork() {
+        let detail = #"{"description":"Audit","run_in_background":true}"#
+        let working = RunEvent(kind: .tool, text: "Agent · Audit", tool: "Agent", detail: detail, state: .running)
+        XCTAssertTrue(Subagents.backgroundRunning([RunEvent(kind: .user, text: "go"), working]))
+        var finished = working
+        finished.state = .done
+        XCTAssertFalse(Subagents.backgroundRunning([finished]))
+        let foreground = RunEvent(kind: .tool, text: "Agent · Audit", tool: "Agent", detail: #"{"description":"Audit"}"#, state: .running)
+        XCTAssertFalse(Subagents.backgroundRunning([foreground]))
+        let command = RunEvent(kind: .tool, text: "Bash · dev", tool: "Bash", detail: #"{"run_in_background":true}"#, state: .running)
+        XCTAssertFalse(Subagents.backgroundRunning([command]), "A command in the background is not a subagent")
+    }
+
     func testBackgroundWorkPendingAndMessage() {
         let user = RunEvent(kind: .user, text: "run the server")
         let background = RunEvent(kind: .tool, text: "Bash · npm run dev", tool: "Bash",
