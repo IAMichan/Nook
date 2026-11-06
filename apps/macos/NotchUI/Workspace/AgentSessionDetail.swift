@@ -118,7 +118,6 @@ struct AgentSessionDetail: View {
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1)
             Spacer(minLength: 8)
-            if !app.demoMode, let headerAccessory { headerAccessory }
             if !app.demoMode, !directory.isEmpty {
                 FolderGitButton(directory: directory, agentWorking: agentWorking) {
                     // Next to the conversation when it has the side panel, otherwise as a task of its own.
@@ -130,6 +129,7 @@ struct AgentSessionDetail: View {
                 }
                 .id(directory)
             }
+            if !app.demoMode, let headerAccessory { headerAccessory }
         }
         .font(NookTheme.TextStyle.body)
         .frame(height: 30)
