@@ -26,24 +26,16 @@ private struct MusicTabContent: View {
 
     /// Nook may not ask the player what plays: why, and the one button that fixes it.
     private var denied: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            Text(tr("music.deniedTitle"))
-                .font(NookTheme.TextStyle.heading)
-                .foregroundStyle(NookTheme.paper)
-            Text(tr("music.deniedDetail"))
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            SmallPrimaryButton(title: tr("button.openAutomation")) {
+        WSEmptyState(
+            symbol: "lock.shield",
+            title: tr("music.deniedTitle"),
+            message: tr("music.deniedDetail"),
+            action: (tr("button.openAutomation"), {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
                     NSWorkspace.shared.open(url)
                 }
-            }
-            .padding(.top, NookTheme.Spacing.sm)
-        }
-        .frame(maxWidth: 420, alignment: .leading)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, NookTheme.Spacing.xs)
+            })
+        )
     }
 }
 
@@ -92,6 +84,7 @@ private struct MusicPageView: View {
     @AppStorage(MusicSection.storageKey) private var storedSection = MusicSection.home.rawValue
     /// The player is unfolded over the stage. Remembered, like the section.
     @AppStorage(MusicSection.expandedKey) private var expanded = false
+    @AppStorage("musicStatsPeriod") private var storedPeriod = MusicStatsPeriod.week.rawValue
     /// In the main window the sections are in the sidebar (`MusicSidebar`), so the page has no tabs of its own.
     @Environment(\.panelSidebar) private var sidebar
 
@@ -100,14 +93,13 @@ private struct MusicPageView: View {
         let stored = MusicSection(rawValue: storedSection) ?? .home
         return sections.contains(stored) ? stored : .home
     }
+    private var period: MusicStatsPeriod { MusicStatsPeriod(rawValue: storedPeriod) ?? .week }
     private var showsFullPlayer: Bool { expanded && info != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            if sidebar == nil || showsLyricsNote {
-                sectionBar
-                    .zIndex(1)
-            }
+            sectionBar
+                .conversationHeaderBackground()
             ZStack(alignment: .bottom) {
                 if !showsFullPlayer {
                     stage
@@ -131,7 +123,8 @@ private struct MusicPageView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .pageColumn()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(MusicSection.fold, value: info == nil)
         .background {
             // Esc folds the full player back into the bar.
@@ -199,11 +192,8 @@ private struct MusicPageView: View {
 
     // MARK: Section bar
 
-    /// Where the lyrics come from: all the bar still has to say beside the sidebar.
-    private var showsLyricsNote: Bool { section == .lyrics && !showsFullPlayer }
-
-    /// The same tabs as everywhere else in the panel. While the player is unfolded no section is selected: the player is
-    /// what shows.
+    /// In the main window (`sidebar != nil`), the 30pt header sits in the title bar band like `PanelListHeader` on
+    /// every other page; in the notch or split view, it holds the section tabs.
     private var sectionBar: some View {
         HStack(spacing: NookTheme.Spacing.md) {
             if sidebar == nil {
@@ -211,24 +201,54 @@ private struct MusicPageView: View {
                            selected: showsFullPlayer ? nil : section) { picked in
                     if let picked { select(picked) }
                 }
+            } else {
+                Text(showsFullPlayer ? tr("tab.music") : section.title)
+                    .font(NookTheme.TextStyle.title)
+                    .foregroundStyle(NookTheme.paper)
+                    .lineLimit(1)
             }
             Spacer(minLength: NookTheme.Spacing.md)
-            if !showsFullPlayer, section == .lyrics, let info, let source = MusicLyricsView.source(of: lyrics, for: info) {
-                Text(source)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .lineLimit(1)
-                    .transition(.opacity)
-            }
-            if info?.app == "Spotify", !showsFullPlayer, section == .lyrics {
-                Image(systemName: "info.circle")
-                    .font(NookTheme.font(12))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .help(tr("music.spotifyNote", tr("settings.section.connections")))
-                    .accessibilityLabel(tr("music.spotifyNote", tr("settings.section.connections")))
+            sectionTrailing
+        }
+        .frame(height: 30)
+        .padding(.horizontal, NookTheme.Spacing.xs)
+        .animation(NookTheme.reveal, value: showsFullPlayer)
+    }
+
+    @ViewBuilder
+    private var sectionTrailing: some View {
+        if !showsFullPlayer {
+            switch section {
+            case .lyrics:
+                if let info, let source = MusicLyricsView.source(of: lyrics, for: info) {
+                    Text(source)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
+                        .transition(.opacity)
+                }
+                if info?.app == "Spotify" {
+                    Image(systemName: "info.circle")
+                        .font(NookTheme.font(12))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .help(tr("music.spotifyNote", tr("settings.section.connections")))
+                        .accessibilityLabel(tr("music.spotifyNote", tr("settings.section.connections")))
+                }
+            case .playlists:
+                if sidebar != nil, service.playlistDetail == nil, !service.playlists.isEmpty {
+                    SmallGhostButton(title: "+ " + tr("music.playlists.new")) {
+                        service.playlistPrompt = .create(adding: nil)
+                    }
+                    .help(tr("music.playlists.new"))
+                }
+            case .stats:
+                if sidebar != nil {
+                    NookTabBar(items: MusicStatsPeriod.allCases.map { .init(value: $0, title: MusicStatsView.title(of: $0)) },
+                               selected: period, onSelect: { storedPeriod = $0.rawValue }, segmented: true)
+                }
+            case .home, .search, .upNext:
+                EmptyView()
             }
         }
-        .padding(.trailing, NookTheme.Spacing.xs)
-        .animation(NookTheme.reveal, value: showsFullPlayer)
     }
 }

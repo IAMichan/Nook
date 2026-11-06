@@ -26,9 +26,11 @@ struct MusicDock: View {
         .frame(maxWidth: .infinity, maxHeight: expanded ? .infinity : Self.barHeight)
         .frame(height: expanded ? nil : Self.barHeight)
         .background {
-            // A soft fill, no edge: the bar sits in the panel like every other card.
-            RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous)
-                .fill(NookTheme.graphite)
+            // One quiet surface with a hairline outline, matching the composer bar on other tabs.
+            let shape = RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous)
+            shape
+                .fill(NookTheme.surface)
+                .overlay(shape.strokeBorder(NookTheme.fieldStroke, lineWidth: 1))
                 .opacity(expanded ? 0 : 1)
         }
         // The position and volume shown here need the player polled every couple of seconds; nothing else does.
