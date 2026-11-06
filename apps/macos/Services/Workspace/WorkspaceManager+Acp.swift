@@ -300,8 +300,7 @@ extension WorkspaceManager {
         var text = prompt
         // Your instructions, and how to use Nook's tools when the bridge is attached (as Claude Code and Codex get them), go
         // with the first prompt of a newly created session; the plan line with every prompt in Plan mode.
-        let instructions = [run.instructions.trimmingCharacters(in: .whitespacesAndNewlines),
-                            bridge(for: id)?.note ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        let instructions = AgentCredits.launchInstructions(run.instructions, bridgeNote: bridge(for: id)?.note)
         if client.freshSession, !instructions.isEmpty { text = instructions + "\n\n" + text }
         client.freshSession = false
         if run.mode == .plan { text = "Create a plan only; do not make any changes.\n\n" + text }
