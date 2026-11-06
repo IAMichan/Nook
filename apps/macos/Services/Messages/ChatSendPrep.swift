@@ -188,6 +188,29 @@ enum ChatSendPrep {
         }.value
     }
 
+    /// The picture of `file` with `edit` done to it, as a new file; the original stays as it is. A PNG stays one (it may
+    /// hold transparency), anything else goes as a JPEG. Off the main thread.
+    static func edited(_ file: ChatAttachment, edit: ChatImageEdit) async throws -> ChatAttachment {
+        try await Task.detached(priority: .userInitiated) {
+            let png = file.mimeType == "image/png"
+            let name = ((file.name as NSString).deletingPathExtension as NSString).appendingPathExtension(png ? "png" : "jpg") ?? file.name
+            let target = try destination(name: name)
+            guard let picture = ChatImageRender.picture(file.url), let made = ChatImageRender.render(picture, edit: edit),
+                  let writer = CGImageDestinationCreateWithURL(target as CFURL, (png ? UTType.png : .jpeg).identifier as CFString, 1, nil)
+            else { throw NookError(tr("chat.review.notEdited", file.name)) }
+            CGImageDestinationAddImage(writer, made, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
+            guard CGImageDestinationFinalize(writer) else { throw NookError(tr("chat.review.notEdited", file.name)) }
+            let bytes = (try? FileManager.default.attributesOfItem(atPath: target.path)[.size] as? NSNumber)?.intValue ?? 0
+            guard bytes <= ChatAttachment.maxBytes else { throw NookError(tr("chat.compose.tooLarge", file.name)) }
+            var edited = file
+            edited.path = target.path
+            edited.name = target.lastPathComponent
+            edited.mimeType = ChatAttachment.mimeType(forExtension: target.pathExtension)
+            edited.bytes = bytes
+            return edited
+        }.value
+    }
+
     /// The picture only read while it is encoded, never changed, so handing it to another thread is safe.
     private struct Picture: @unchecked Sendable {
         let image: NSImage

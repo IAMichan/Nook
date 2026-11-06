@@ -1880,27 +1880,39 @@ private struct ChatsDetail: View, Equatable {
             // The messages and the field take the whole width, as a chat app's do: theirs on the left edge, yours on the
             // right. Each bubble stays narrow enough to read (`ChatBubbleView.maxWidth`), however wide the window is.
             VStack(spacing: 0) {
-                if bubbles.isEmpty { emptyChat }
-                if MailChatData.apps.contains(entry.app) {
-                    mailThread
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        // As the chat transcript: the messages stay under the header, not over it.
-                        .clipped()
-                } else {
-                    ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
-                                   onOpen: { open($0) }, onZoom: { zoom($0) },
-                                   onReply: abilities.reply ? quote : nil,
-                                   onReact: abilities.react ? react : nil,
-                                   onEdit: abilities.edit ? edit : nil,
-                                   onDelete: { deleting = $0 },
-                                   onForward: startForward,
-                                   onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil,
-                                   typing: typing.line(entry.id), newFrom: newFrom)
-                        .equatable()
-                        .environment(\.chatFetchFile) { [entry] in await app.fetchChatFile($0, in: entry) }
-                        .padding(.horizontal, NookTheme.Spacing.xs)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 0) {
+                    if bubbles.isEmpty { emptyChat }
+                    if MailChatData.apps.contains(entry.app) {
+                        mailThread
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            // As the chat transcript: the messages stay under the header, not over it.
+                            .clipped()
+                    } else {
+                        ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
+                                       onOpen: { open($0) }, onZoom: { zoom($0) },
+                                       onReply: abilities.reply ? quote : nil,
+                                       onReact: abilities.react ? react : nil,
+                                       onEdit: abilities.edit ? edit : nil,
+                                       onDelete: { deleting = $0 },
+                                       onForward: startForward,
+                                       onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil,
+                                       typing: typing.line(entry.id), newFrom: newFrom)
+                            .equatable()
+                            .environment(\.chatFetchFile) { [entry] in await app.fetchChatFile($0, in: entry) }
+                            .padding(.horizontal, NookTheme.Spacing.xs)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
+                // What waits to go shows big, over the chat; the field below stays, for the words that go with it.
+                .overlay {
+                    if composer.hasFiles {
+                        ChatAttachmentReview(model: composer, edits: composer.edits, sends: app.chatSends(route)) {
+                            replyFocused = true
+                        }
+                        .transition(.opacity)
+                    }
+                }
+                .animation(NookTheme.reveal, value: composer.hasFiles)
                 footer
                     .padding(.top, NookTheme.Spacing.sm)
             }
@@ -1979,8 +1991,9 @@ private struct ChatsDetail: View, Equatable {
         .onEscapeKey(perform: escape)
     }
 
-    /// Escape first shrinks an enlarged photo back, closes a poll, place, contact or sticker panel, and lets go of a
-    /// message being changed or quoted; only then does it close the chat.
+    /// Escape first shrinks an enlarged photo back, closes a poll, place, contact or sticker panel, leaves the tool in
+    /// use on a waiting picture and then the preview of what waits, and lets go of a message being changed or quoted;
+    /// only then does it close the chat.
     private func escape() {
         if let mediaStage, mediaStage.isShowing {
             mediaStage.close()
@@ -1988,6 +2001,10 @@ private struct ChatsDetail: View, Equatable {
             withAnimation(NookTheme.reveal) { forwarding = nil }
         } else if composer.panel != nil {
             composer.closePanel()
+        } else if composer.edits.tool != nil {
+            composer.edits.tool = nil
+        } else if composer.hasFiles {
+            withAnimation(NookTheme.reveal) { composer.discardFiles() }
         } else if editing != nil {
             withAnimation(NookTheme.reveal) { editing = nil }
             reply = ""
@@ -2338,10 +2355,13 @@ private struct ChatsDetail: View, Equatable {
     /// text is back in the field, the files that did not go wait again, and the quote stays. Text alone is in the chat
     /// the moment you send it (`ChatOutbox`), with a clock until its app took it.
     private func send(via route: ChatRoute) {
-        // A pasted picture still being written goes with this message: sending now would leave it for the next one.
-        guard composer.pendingPictures == 0 else {
+        // A pasted picture still being written goes with this message: sending now would leave it for the next one. So
+        // does what you did to a picture; when that cannot be made, nothing goes and the composer says why.
+        guard composer.pendingPictures == 0, !composer.hasEdits else {
+            let generation = composer.pictureGeneration
             Task { @MainActor in
                 await composer.picturesSaved()
+                guard await composer.applyEdits(), composer.pictureGeneration == generation else { return }
                 send(via: route)
             }
             return
