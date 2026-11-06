@@ -217,7 +217,8 @@ extension CompanionServer {
             guard manager.fileExists(atPath: path, isDirectory: &isFolder) else { return nil }
             if isFolder.boolValue {
                 let names = (try? manager.contentsOfDirectory(atPath: path)) ?? []
-                let entries = names.map { name -> FolderDigest.Entry in
+                // A folder of a million files must not cost a million lookups.
+                let entries = names.sorted().prefix(CompanionWorkspace.maxEntries * 2).map { name -> FolderDigest.Entry in
                     var folder: ObjCBool = false
                     manager.fileExists(atPath: path + "/" + name, isDirectory: &folder)
                     let size = (try? manager.attributesOfItem(atPath: path + "/" + name))?[.size] as? Int
@@ -225,7 +226,9 @@ extension CompanionServer {
                 }
                 return CompanionWorkspace.listing(path: relative, entries: entries)
             }
-            guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+            // Opening a named pipe or a device would wait forever.
+            guard (try? manager.attributesOfItem(atPath: path))?[.type] as? FileAttributeType == .typeRegular,
+                  let handle = FileHandle(forReadingAtPath: path) else { return nil }
             defer { try? handle.close() }
             let data = (try? handle.read(upToCount: CompanionWorkspace.maxTextBytes + 1)) ?? Data()
             return CompanionWorkspace.digest(path: relative, data: data)

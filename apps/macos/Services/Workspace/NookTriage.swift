@@ -9,7 +9,7 @@ enum NookTriage {
         """
         Help me find out why something goes wrong in Nook, the Mac app (version \(version)). Source and issues: \(repository).
 
-        1. Look at Nook's recent log lines: `/usr/bin/log show --last 30m --style compact --predicate 'process == "Nook"'`.
+        1. Look at Nook's recent log lines: `/usr/bin/log show --last 30m --info --style compact --predicate 'process == "Nook"' | tail -n 400`.
         2. Find the code for this version in the repository, and search its open and closed issues for this problem.
         3. Say what you think the cause is, how sure you are, and what you checked.
 

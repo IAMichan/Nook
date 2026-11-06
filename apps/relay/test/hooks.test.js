@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HookLogic, MAX_BODY, MAX_WAITING, isHook, mayListen, roomOf } from "../worker/hooks.js";
+import { HookLogic, MAX_BODY, MAX_WAITING, isHook, mayListen, readLimited, roomOf } from "../worker/hooks.js";
 
 class Sockets {
   constructor() {
@@ -95,4 +95,14 @@ test("a new socket replaces the old one; bad answers are ignored", () => {
   assert.equal(first.closed, 4000);
   logic.message("not json");
   logic.message(JSON.stringify({ id: "nobody", status: 200 }));
+});
+
+test("a body is read only up to the limit", async () => {
+  const post = (body, headers) => new Request("https://x/", { method: "POST", body, headers, duplex: "half" });
+  assert.equal(new Uint8Array(await readLimited(post("hello"))).length, 5);
+  assert.equal(await readLimited(post("x", { "content-length": String(MAX_BODY + 1) })), null);
+  let pulled = 0;
+  const endless = new ReadableStream({ pull(controller) { pulled += 1; controller.enqueue(new Uint8Array(1024)); } });
+  assert.equal(await readLimited(post(endless), 4096), null);
+  assert.ok(pulled < 10, "stopped reading");
 });

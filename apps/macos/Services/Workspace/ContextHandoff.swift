@@ -38,6 +38,8 @@ enum ContextHandoff {
     static let messageLimit = 6_000
     /// What one tool call or file change may say.
     static let lineLimit = 160
+    /// How many events `session_read` reads back in one go (`before_event`).
+    static let pageEvents = 300
 
     struct Rendered: Equatable, Sendable {
         var text: String
@@ -76,7 +78,7 @@ enum ContextHandoff {
         let omitted = lines.count - included
         var parts = [header]
         if omitted > 0 {
-            let more = session.map { " Read them with session_read, session \($0.uuidString), if you need them" } ?? ""
+            let more = session.map { " Read them with session_read, session \($0.uuidString), before_event \(max(0, events.count)), if you need them" } ?? ""
             parts.append("(\(omitted) earlier item\(omitted == 1 ? "" : "s") left out.\(more))")
         }
         // In their own order, with a mark where something went.

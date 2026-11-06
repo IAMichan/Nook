@@ -86,6 +86,10 @@ enum AndroidDevices {
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
         guard (try? process.run()) != nil else { return nil }
+        // A device that hangs must not hold the page or the agent: ending adb ends the read below.
+        let watchdog = DispatchWorkItem { if process.isRunning { process.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 10, execute: watchdog)
+        defer { watchdog.cancel() }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         return process.terminationStatus == 0 && !data.isEmpty ? data : nil

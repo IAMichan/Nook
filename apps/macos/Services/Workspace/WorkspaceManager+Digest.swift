@@ -16,7 +16,7 @@ extension WorkspaceManager {
 
     /// A summary of one session: what was asked, answered, run and changed, bounded, never the raw conversation (the same
     /// summary a handoff uses). Nil when there is no such session.
-    func sessionSummary(_ id: UUID) -> String? {
+    func sessionSummary(_ id: UUID, beforeEvent: Int? = nil) -> String? {
         guard let run = run(id) else { return nil }
         loadTimeline(id)
         var lines = ["# Session: \(run.title)", "Id: \(run.id.uuidString)",
@@ -24,8 +24,13 @@ extension WorkspaceManager {
                      "Folder: \(run.workingDirectory)"]
         if let branch = run.branch { lines.append("Branch: \(branch)") }
         lines.append("")
-        if let summary = ContextHandoff.render(events: timeline(id), source: run.provider.displayName) {
+        let all = timeline(id)
+        // Paging back: one window of older events, for what a handoff left out.
+        let end = min(beforeEvent ?? all.count, all.count)
+        let start = beforeEvent == nil ? 0 : max(0, end - ContextHandoff.pageEvents)
+        if let summary = ContextHandoff.render(events: Array(all[start..<max(start, end)]), source: run.provider.displayName) {
             lines.append(summary.text)
+            if beforeEvent != nil, start > 0 { lines.append("Older events: session_read with before_event \(start).") }
         } else {
             lines.append("Nothing has happened in this session yet.")
         }
