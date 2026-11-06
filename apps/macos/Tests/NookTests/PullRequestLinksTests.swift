@@ -390,6 +390,46 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertTrue(SessionBranches.rows(earlier: [], earlierLinks: [], current: "feat-b", currentPullRequest: current).isEmpty)
     }
 
+    func testABranchWithTwoPullRequestsListsBoth() {
+        // One merged, then the chat opened a new one from the same branch: both show, the open one last.
+        var merged = link(1, head: "feat", state: .merged); merged.url = "https://github.com/a/b/pull/1"
+        var open = link(2, head: "feat"); open.url = "https://github.com/a/b/pull/2"
+        let rows = SessionBranches.rows(earlier: [], earlierLinks: [], current: "feat", currentPullRequest: URL(string: open.url),
+                                        currentLinks: [open, merged])
+        XCTAssertEqual(rows.map(\.pullRequest), [URL(string: merged.url), URL(string: open.url)])
+        XCTAssertEqual(rows.map(\.branch), ["feat", "feat"])
+    }
+
+    func testAFinishedWatchDoesNotHideANewerOpenPullRequest() {
+        var merged = link(1, head: "feat", state: .merged); merged.url = "https://github.com/a/b/pull/1"
+        var open = link(2, head: "feat"); open.url = "https://github.com/a/b/pull/2"
+        let openURL = URL(string: open.url)!
+        var watch = PullRequestWatch(url: merged.url)
+        // The forge already says it merged while the watch has not looked yet.
+        XCTAssertEqual(SessionBranches.trayPullRequest(watch: watch, open: openURL, links: [open, merged]), openURL)
+        watch.state = "merged"
+        XCTAssertEqual(SessionBranches.trayPullRequest(watch: watch, open: openURL, links: [open, merged]), openURL)
+        // Nothing open: the merged one stays in view.
+        XCTAssertEqual(SessionBranches.trayPullRequest(watch: watch, open: nil, links: [merged]), URL(string: merged.url))
+        // A watch that can still change keeps its place.
+        let live = PullRequestWatch(url: open.url)
+        XCTAssertEqual(SessionBranches.trayPullRequest(watch: live, open: URL(string: merged.url), links: [open, merged]), openURL)
+    }
+
+    func testAFinishedWatchMovesToTheNewerOpenPullRequestOfItsBranch() {
+        var merged = link(1, head: "feat", state: .merged); merged.url = "https://github.com/a/b/pull/1"
+        var open = link(2, head: "feat"); open.url = "https://github.com/a/b/pull/2"
+        var other = link(3, head: "other"); other.url = "https://github.com/a/b/pull/3"
+        var watch = PullRequestWatch(url: merged.url); watch.wakeAgent = false
+        let carry = PullRequestWatch.carried([watch], links: [open, merged, other])
+        XCTAssertEqual(carry?.from, watch)
+        XCTAssertEqual(carry?.to, URL(string: open.url))
+        // Still open, already watched, or nothing newer: the watch stays.
+        XCTAssertNil(PullRequestWatch.carried([PullRequestWatch(url: open.url)], links: [open, merged]))
+        XCTAssertNil(PullRequestWatch.carried([watch, PullRequestWatch(url: open.url)], links: [open, merged]))
+        XCTAssertNil(PullRequestWatch.carried([watch], links: [merged, other]))
+    }
+
     func testOnlyABranchWithoutWorkCountsAsEmpty() {
         // A question answered without changes, then the agent branched off for the change: the first branch is empty.
         XCTAssertTrue(SessionBranches.isEmpty(aheadOfBase: 0, pushed: false))
