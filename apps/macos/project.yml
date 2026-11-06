@@ -205,6 +205,7 @@ targets:
       - path: Core/I18n+Takeover.swift
       - path: Core/I18n+Harness.swift
       - path: Core/I18n+DiffReview.swift
+      - path: Core/I18n+Goals.swift
       - path: Core/I18n+ChatMedia.swift
       - path: Core/I18n+ChatRead.swift
       - path: Core/I18n+BeeperImport.swift
@@ -238,6 +239,7 @@ targets:
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
+      - path: Brain/MailIndex.swift
       - path: Brain/MailActions.swift
       - path: Brain/AppMenu.swift
       - path: Brain/AppNames.swift
@@ -380,6 +382,7 @@ targets:
       - path: ../../packages/protocol/Sources/CompanionCompatibility.swift
       - path: ../../packages/protocol/Sources/CompanionDiagnosis.swift
       - path: ../../packages/protocol/Sources/CompanionScopes.swift
+      - path: ../../packages/protocol/Sources/CompanionWorkspace.swift
       - path: ../../packages/protocol/Sources/CompanionPairings.swift
       - path: ../../packages/protocol/Sources/CompanionDiagnosticsLog.swift
       - path: ../../packages/protocol/Sources/CompanionResilience.swift
@@ -400,6 +403,12 @@ targets:
       - path: Services/Workspace/AgentReadiness.swift
       - path: Services/Workspace/AgentSignInFailure.swift
       - path: Services/Workspace/ModelComparison.swift
+      - path: Services/Workspace/SessionGoal.swift
+      - path: Services/Workspace/WebhookRelay.swift
+      - path: Services/Workspace/NookTriage.swift
+      - path: Services/Workspace/AndroidDevices.swift
+      - path: Services/Workspace/RemoteBridge.swift
+      - path: Services/Workspace/NookCommandLine.swift
       - path: Services/Workspace/SyntaxTokenizer.swift
       - path: Services/Workspace/Keybindings.swift
       - path: Services/Workspace/PanelReopening.swift

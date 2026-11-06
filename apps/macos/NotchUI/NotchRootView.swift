@@ -173,7 +173,9 @@ struct NotchRootView: View {
             }
         case .panel(let tab):
             expanded(nh: nh, mood: .rest, tab: tab, ring: true) {
-                PanelView(viewModel: viewModel, tab: tab, headerInset: Self.panelHeaderInset)
+                NotchPanelStage {
+                    PanelView(viewModel: viewModel, tab: tab, headerInset: Self.panelHeaderInset)
+                }
             }
         }
     }

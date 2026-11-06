@@ -13,6 +13,8 @@ protocol CompletionEngine: AnyObject, Sendable {
     var candidateLimit: Int { get }
     /// Makes the running request stop at its next token.
     func cancel()
+    /// Takes along what was typed while a request runs (see `CompletionFollowing`).
+    var following: CompletionFollowing { get }
     /// Continues the text of `prompt`; nil when superseded, not sure enough, busy, or failed. `partial` gets the text so far
     /// each time another word is finished, so the suggestion can show before the model is done. A chat model reads the prompt
     /// as a request with its answer already begun (`CompletionChat`), a base model as a document.

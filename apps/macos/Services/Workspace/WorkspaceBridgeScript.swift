@@ -5,11 +5,11 @@ import Foundation
 /// back to the agent. When Nook is not running it stays a valid, empty MCP server, so the agent starts and works as usual.
 enum WorkspaceBridgeScript {
     /// Incremented when the script changes; Nook rewrites it on launch when needed.
-    static let version = 1
+    static let version = 2
 
     static let contents = #"""
     #!/usr/bin/perl
-    # Nook workspace bridge (version 1): an MCP server (stdio) that gives a coding agent Nook's terminal, browser and
+    # Nook workspace bridge (version 2): an MCP server (stdio) that gives a coding agent Nook's terminal, browser and
     # pull requests. Every request goes to Nook over a local Unix socket that only your user can open; Nook decides what
     # may run directly and asks you in the notch for the rest. Without Nook the tools are simply not there.
     #   --agent <name>   who is asking (claude-code, codex, …)
@@ -20,7 +20,7 @@ enum WorkspaceBridgeScript {
     use JSON::PP;
     use Cwd qw(getcwd);
 
-    my $sock_path = "$ENV{HOME}/Library/Application Support/Nook/bridge.sock";
+    my $sock_path = $ENV{NOOK_BRIDGE_SOCK} // "$ENV{HOME}/Library/Application Support/Nook/bridge.sock";
     my $agent = 'agent';
     while (@ARGV) {
         my $arg = shift @ARGV;
@@ -36,7 +36,7 @@ enum WorkspaceBridgeScript {
     my $cwd = getcwd();
     $cwd = (defined $ENV{PWD} ? $ENV{PWD} : '') unless defined $cwd;
     my %env = map { ($_ => (defined $ENV{$_} ? $ENV{$_} : '')) }
-        qw(NOOK_RUN_ID CLAUDE_CONFIG_DIR CODEX_HOME CLAUDE_CODE_ENTRYPOINT);
+        qw(NOOK_RUN_ID NOOK_BRIDGE_TOKEN CLAUDE_CONFIG_DIR CODEX_HOME CLAUDE_CODE_ENTRYPOINT);
 
     while (my $line = <STDIN>) {
         chomp $line;

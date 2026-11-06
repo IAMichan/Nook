@@ -20,6 +20,7 @@ extension WorkspaceManager {
         let changed = claudeChangedDuringTurn.remove(id) != nil
         guard !stopping, process.isRunning, let run = run(id) else {
             process.closeInput()
+            noteSubagentsWorking(id)
             return
         }
         closeClaudeProcess(id)
@@ -114,6 +115,7 @@ extension WorkspaceManager {
     /// names it.
     func noteBackgroundSubagent(_ id: UUID, _ update: BackgroundTaskUpdate) {
         guard let event = Subagents.event(for: update, in: timeline(id)) else { return }
+        defer { noteSubagentsWorking(id) }
         let title = Subagents.list([event]).first?.title ?? event.text
         guard let status = update.status else {
             if event.state != .running { mutateEvent(id, event.id) { $0.state = .running } }
@@ -132,6 +134,15 @@ extension WorkspaceManager {
             wakeSubagent[id] = title
         }
         if !BackgroundWork.pending(after: timeline(id), before: false) { backgroundWork.remove(id) }
+    }
+
+    /// Works out whether the session still has subagents at work in the background. Only while its process lives: the
+    /// subagents end with it, and their rows may keep saying they run (after Nook restarted, say).
+    func noteSubagentsWorking(_ id: UUID) {
+        let process = processes[id] ?? claudeIdle[id]?.process
+        let working = process?.isRunning == true && Subagents.backgroundRunning(events[id] ?? [])
+        guard working != subagentsWorking.contains(id) else { return }
+        if working { subagentsWorking.insert(id) } else { subagentsWorking.remove(id) }
     }
 
     /// How long a waiting session stays open: ten minutes (each one is a process of a few hundred MB), or four hours while it has background work running
@@ -157,6 +168,7 @@ extension WorkspaceManager {
         guard let idle = claudeIdle.removeValue(forKey: id) else { return }
         idle.process.closeInput()
         idle.process.stop(grace: 2)
+        noteSubagentsWorking(id)
     }
 
     /// Asks this Claude Code once whether it knows `--thinking-display`; until the answer is in, sessions start without it.

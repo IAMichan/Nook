@@ -83,7 +83,7 @@ enum AgentCommand {
             var instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
             if let bridge = input.bridge {
                 arguments += bridge.claudeArguments(runID: input.runID)
-                instructions = [instructions, BridgeLaunch.instructions].filter { !$0.isEmpty }.joined(separator: "\n\n")
+                instructions = [instructions, bridge.note].filter { !$0.isEmpty }.joined(separator: "\n\n")
             }
             if !instructions.isEmpty { arguments += ["--append-system-prompt", instructions] }
             return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
@@ -100,8 +100,8 @@ enum AgentCommand {
             if let bridge = input.bridge { arguments += bridge.codexArguments(runID: input.runID) }
             var prompt = input.prompt
             var instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
-            if input.bridge != nil {
-                instructions = [instructions, BridgeLaunch.instructions].filter { !$0.isEmpty }.joined(separator: "\n\n")
+            if let bridge = input.bridge {
+                instructions = [instructions, bridge.note].filter { !$0.isEmpty }.joined(separator: "\n\n")
             }
             // Codex exec has no separate system prompt: instructions prepend the first prompt.
             if !instructions.isEmpty, input.resumeSessionID == nil { prompt = instructions + "\n\n" + prompt }

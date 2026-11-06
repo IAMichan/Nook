@@ -221,16 +221,23 @@ final class PullRequestSync: ObservableObject {
     func follow(workspace: WorkspaceManager, folders: [(path: String, branch: String)], now: Date = Date()) {
         self.workspace = workspace
         self.folders = folders
-        refresh(now: now)
+        if !nobodyHere { refresh(now: now) }
         guard loop == nil else { return }
         loop = Task { [weak self] in
             while !Task.isCancelled {
                 // Away from the Mac or saving power, every git process and GitHub request can come less often.
                 try? await Task.sleep(for: Self.tick * EnergyMonitor.shared.plan.slowdown)
                 guard let self else { return }
+                if self.nobodyHere { continue }
                 self.refresh(now: Date())
             }
         }
+    }
+
+    /// Nobody at the Mac or its displays asleep: the first tick back catches up (as `PullRequestBackgroundRefresh`).
+    private var nobodyHere: Bool {
+        let signals = EnergyMonitor.shared.signals
+        return signals.away || signals.displayAsleep
     }
 
     /// Asks for the branches that are due, open requests first and then the longest unasked. Sequential, so a long

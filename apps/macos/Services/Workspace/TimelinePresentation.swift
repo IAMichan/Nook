@@ -440,6 +440,11 @@ enum Subagents {
         return (input(event)["run_in_background"] as? Bool) == true
     }
 
+    /// A subagent started in the background still runs, from any turn.
+    static func backgroundRunning(_ events: [RunEvent]) -> Bool {
+        events.contains { $0.state == .running && isBackground($0) }
+    }
+
     /// The output of a call that only started a subagent in the background ("Async agent launched successfully…").
     static func isLaunchNote(_ output: String) -> Bool {
         output.hasPrefix("Async agent launched")
@@ -536,7 +541,7 @@ enum BackgroundWork {
     /// to run in the background. It ends with a turn the agent woke up for by itself. `before` is what was known.
     static func pending(after events: [RunEvent], before: Bool) -> Bool {
         // A subagent still working in the background, from this turn or an earlier one.
-        if events.contains(where: { $0.state == .running && Subagents.isBackground($0) }) { return true }
+        if Subagents.backgroundRunning(events) { return true }
         guard let turn = TimelinePresentation.split(events).last else { return before }
         let started = turn.contains { event in
             guard event.kind == .tool else { return false }

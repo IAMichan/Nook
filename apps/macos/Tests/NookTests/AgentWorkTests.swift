@@ -161,7 +161,7 @@ final class AgentWorkTests: XCTestCase {
         let new = PullRequestSnapshot(state: "open", checks: "failure", failedChecks: ["build"],
                                       reviews: [PullRequestSnapshot.Note(author: "bob", verdict: "COMMENTED", text: ""), review],
                                       comments: [PullRequestSnapshot.Note(author: "cy", verdict: "", text: "App.swift: typo")])
-        XCTAssertEqual(PullRequestNews.lines(old: old, new: new),
+        XCTAssertEqual(PullRequestNews.lines(old: old, new: new).map(\.text),
                        ["CI failed: build.", "Review from @ann (changes requested): Rename this", "Comment from @cy: App.swift: typo"])
         XCTAssertTrue(PullRequestNews.needsAgent(old: old, new: new))
         XCTAssertTrue(PullRequestNews.message(url: old.url, lines: ["CI failed."]).contains("- CI failed."))
@@ -171,38 +171,75 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertEqual(PullRequestNews.plain("<!-- cut off before its end"), "")
         XCTAssertEqual(PullRequestNews.plain(String(repeating: "a ", count: 400)).count, 301, "one line, at most 300 characters")
         let seen = PullRequestNews.updated(old, with: new, at: Date())
-        XCTAssertEqual(PullRequestNews.lines(old: seen, new: new), [])
+        XCTAssertEqual(PullRequestNews.lines(old: seen, new: new).map(\.text), [])
         var merged = new
         merged.state = "merged"
-        XCTAssertEqual(PullRequestNews.lines(old: seen, new: merged), ["The pull request was merged."])
+        XCTAssertEqual(PullRequestNews.lines(old: seen, new: merged).map(\.text), ["The pull request was merged."])
         XCTAssertFalse(PullRequestNews.needsAgent(old: seen, new: merged))
+    }
+
+    func testWaitingNewsGoesOnceItIsSolved() {
+        let url = "https://github.com/o/r/pull/1"
+        let failed = PullRequestNews.Line(text: "CI failed: build.", subject: .failedChecks)
+        let conflict = PullRequestNews.Line(text: "The pull request has merge conflicts with its base branch.", subject: .conflict)
+        let comment = PullRequestNews.Line(text: "Comment from @cy: typo", subject: .note)
+        let passed = PullRequestNews.Line(text: "CI passed.", subject: .status)
+        func snapshot(state: String = "open", checks: String) -> PullRequestSnapshot {
+            PullRequestSnapshot(state: state, checks: checks, failedChecks: [], reviews: [], comments: [])
+        }
+        func notice(_ lines: PullRequestNews.Line...) -> PullRequestNotice { PullRequestNotice(url: url, lines: lines) }
+
+        XCTAssertEqual(PullRequestNews.stillNeeded(notice(failed), new: snapshot(checks: "failure")), notice(failed))
+        for checks in ["success", "pending", ""] {
+            XCTAssertNil(PullRequestNews.stillNeeded(notice(failed), new: snapshot(checks: checks)), "checks: \(checks)")
+        }
+        var unknown = snapshot(checks: "")
+        unknown.checksKnown = false
+        XCTAssertEqual(PullRequestNews.stillNeeded(notice(failed), new: unknown), notice(failed),
+                       "no answer about the checks says nothing about the failure")
+
+        var conflicted = snapshot(checks: "success")
+        conflicted.conflicted = true
+        XCTAssertEqual(PullRequestNews.stillNeeded(notice(conflict), new: conflicted), notice(conflict))
+        XCTAssertNil(PullRequestNews.stillNeeded(notice(conflict), new: snapshot(checks: "success")))
+        var computing = snapshot(checks: "success")
+        computing.mergeabilityKnown = false
+        XCTAssertEqual(PullRequestNews.stillNeeded(notice(conflict), new: computing), notice(conflict),
+                       "GitHub is still working it out after a push")
+
+        XCTAssertEqual(PullRequestNews.stillNeeded(notice(failed, comment), new: snapshot(checks: "success")), notice(comment),
+                       "a comment stays to be read")
+        XCTAssertNil(PullRequestNews.stillNeeded(notice(failed, passed), new: snapshot(checks: "success")),
+                     "only a status line left is nothing to do")
+        XCTAssertNil(PullRequestNews.stillNeeded(notice(comment), new: snapshot(state: "merged", checks: "success")))
+        XCTAssertNil(PullRequestNews.stillNeeded(notice(comment), new: snapshot(state: "closed", checks: "failure")))
     }
 
     func testPullRequestConflictNews() {
         var watch = PullRequestWatch(url: "https://github.com/o/r/pull/1", checkedAt: Date())
         watch.conflicted = false
         var conflicted = PullRequestSnapshot(state: "open", checks: "", failedChecks: [], reviews: [], comments: [], conflicted: true)
-        XCTAssertEqual(PullRequestNews.lines(old: watch, new: conflicted), ["The pull request has merge conflicts with its base branch."])
+        XCTAssertEqual(PullRequestNews.lines(old: watch, new: conflicted).map(\.text), ["The pull request has merge conflicts with its base branch."])
         XCTAssertTrue(PullRequestNews.needsAgent(old: watch, new: conflicted), "a conflict is for the agent to fix")
-        XCTAssertEqual(PullRequestNews.firstLook(conflicted), ["The pull request has merge conflicts with its base branch."],
+        XCTAssertEqual(PullRequestNews.firstLook(conflicted).map(\.text), ["The pull request has merge conflicts with its base branch."],
                        "a conflict that is already there counts on the first look")
 
         let seen = PullRequestNews.updated(watch, with: conflicted, at: Date())
         XCTAssertEqual(seen.conflicted, true)
-        XCTAssertEqual(PullRequestNews.lines(old: seen, new: conflicted), [])
+        XCTAssertEqual(PullRequestNews.lines(old: seen, new: conflicted).map(\.text), [])
         XCTAssertFalse(PullRequestNews.needsAgent(old: seen, new: conflicted))
 
         // After a push GitHub works out mergeability again: no answer yet is no news, and the conflict stays remembered.
         var computing = conflicted
         computing.conflicted = false
         computing.mergeabilityKnown = false
-        XCTAssertEqual(PullRequestNews.lines(old: seen, new: computing), [])
+        XCTAssertEqual(PullRequestNews.lines(old: seen, new: computing).map(\.text), [])
         XCTAssertEqual(PullRequestNews.updated(seen, with: computing, at: Date()).conflicted, true)
 
         conflicted.conflicted = false
-        XCTAssertEqual(PullRequestNews.lines(old: seen, new: conflicted), ["The merge conflicts are resolved."])
+        XCTAssertEqual(PullRequestNews.lines(old: seen, new: conflicted).map(\.text), ["The merge conflicts are resolved."])
         XCTAssertFalse(PullRequestNews.needsAgent(old: seen, new: conflicted))
-        XCTAssertEqual(PullRequestNews.firstLook(conflicted), [])
+        XCTAssertEqual(PullRequestNews.firstLook(conflicted).map(\.text), [])
 
         XCTAssertTrue(PullRequestMergeability.githubKnown(["mergeable": false]))
         XCTAssertFalse(PullRequestMergeability.githubKnown(["mergeable": NSNull(), "mergeable_state": "unknown"]))
@@ -747,6 +784,19 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertEqual(devices.last?.runtime, "iOS 18.2")
         XCTAssertEqual(Simulators.runtimeName("com.apple.CoreSimulator.SimRuntime.xrOS-2-0"), "xrOS 2.0")
         XCTAssertTrue(Simulators.parse(Data("nope".utf8)).isEmpty)
+    }
+
+    func testBackgroundRunningOnlyCountsSubagentsStillAtWork() {
+        let detail = #"{"description":"Audit","run_in_background":true}"#
+        let working = RunEvent(kind: .tool, text: "Agent · Audit", tool: "Agent", detail: detail, state: .running)
+        XCTAssertTrue(Subagents.backgroundRunning([RunEvent(kind: .user, text: "go"), working]))
+        var finished = working
+        finished.state = .done
+        XCTAssertFalse(Subagents.backgroundRunning([finished]))
+        let foreground = RunEvent(kind: .tool, text: "Agent · Audit", tool: "Agent", detail: #"{"description":"Audit"}"#, state: .running)
+        XCTAssertFalse(Subagents.backgroundRunning([foreground]))
+        let command = RunEvent(kind: .tool, text: "Bash · dev", tool: "Bash", detail: #"{"run_in_background":true}"#, state: .running)
+        XCTAssertFalse(Subagents.backgroundRunning([command]), "A command in the background is not a subagent")
     }
 
     func testBackgroundWorkPendingAndMessage() {

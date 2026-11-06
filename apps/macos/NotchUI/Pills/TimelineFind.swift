@@ -157,6 +157,13 @@ final class TurnPinRoom: ObservableObject {
         if next != height { height = next }
     }
 
+    /// The message is no longer held: the room goes, so the conversation ends at its last row again. `row` stays until
+    /// the next `hold`, as dropping the probe would rebuild that row.
+    func release() {
+        pin = nil
+        if height != 0 { height = 0 }
+    }
+
     /// Measures the row and makes room for it. The offset to scroll to; nil until it was laid out.
     func settle(in frame: ScrollFrame) -> Double? {
         guard let rowY else { return nil }

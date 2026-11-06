@@ -226,4 +226,10 @@ final class ActionStatesTests: XCTestCase {
         XCTAssertTrue(ActionStepState.verified("x").isFinished)
         XCTAssertEqual(ActionStepState.verified("x").result, "x")
     }
+
+    func testANameBecomesItsAddressAndAnAddressStays() async {
+        let lookup: (String) async -> String? = { $0 == "Lisa" ? "lisa@x.nl" : nil }
+        let filled = await ActionGate.addressed("Lisa, tom@x.nl; Onbekend", lookup: lookup)
+        XCTAssertEqual(filled, "lisa@x.nl, tom@x.nl, Onbekend")
+    }
 }

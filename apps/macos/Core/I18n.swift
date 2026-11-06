@@ -61,7 +61,7 @@ public final class I18n: ObservableObject, @unchecked Sendable {
 
     /// Every table of texts, newest first: a later table never hides an earlier key, but wins over the base table.
     static var tables: [[AppLanguage: [String: String]]] {
-        [sessionContextTranslations, worktreeCleanupTranslations, settingsPagesTranslations, agentToolsTranslations, diffReviewTranslations, polishListsTranslations, polishComposersTranslations, polishNotchTranslations, polishRenderingTranslations, polishSettingsTranslations, autoModelTranslations, limitsTranslations, selectionAskTranslations, mailChatTranslations, actionsTranslations, settingsHubTranslations, whatsAppAccountTranslations, fileViewerTranslations, mailSendTranslations, snapchatTranslations, providerTrafficTranslations, chatTimelineTranslations, releaseTranslations, relayPushTranslations, bridgeTranslations, agentLifecycleTranslations, workspaceFeatureTranslations, companionTranslations, beeperImportTranslations, chatReadTranslations, keybindingTranslations, harnessTranslations, searchTranslations, pullRequestTranslations, takeoverTranslations, chatMediaTranslations, chatComposeTranslations, doubleTapTranslations, noticesTranslations, splitTranslations, privacyTranslations, toastTranslations, confirmTranslations, energyTranslations, updateTranslations, quietTranslations, buddyTranslations, controlTranslations, settingsLayoutTranslations, lookTranslations, selectionTranslations, homeTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
+        [goalTranslations, sessionContextTranslations, worktreeCleanupTranslations, settingsPagesTranslations, agentToolsTranslations, diffReviewTranslations, polishListsTranslations, polishComposersTranslations, polishNotchTranslations, polishRenderingTranslations, polishSettingsTranslations, autoModelTranslations, limitsTranslations, selectionAskTranslations, mailChatTranslations, actionsTranslations, settingsHubTranslations, whatsAppAccountTranslations, fileViewerTranslations, mailSendTranslations, snapchatTranslations, providerTrafficTranslations, chatTimelineTranslations, releaseTranslations, relayPushTranslations, bridgeTranslations, agentLifecycleTranslations, workspaceFeatureTranslations, companionTranslations, beeperImportTranslations, chatReadTranslations, keybindingTranslations, harnessTranslations, searchTranslations, pullRequestTranslations, takeoverTranslations, chatMediaTranslations, chatComposeTranslations, doubleTapTranslations, noticesTranslations, splitTranslations, privacyTranslations, toastTranslations, confirmTranslations, energyTranslations, updateTranslations, quietTranslations, buddyTranslations, controlTranslations, settingsLayoutTranslations, lookTranslations, selectionTranslations, homeTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
     }
 
     /// Per language, every key with the text `lookup` finds for it: the tables merged in their order of precedence, with
@@ -850,6 +850,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "chat.sources.results": "%ld resultaten",
         "chat.sources.resultsOne": "1 resultaat",
         "chat.sources.interrupted": "Het zoeken werd onderbroken voordat het klaar was.",
+        "chat.stopped": "Gestopt.",
         "chat.sources.unknownError": "Er ging iets mis bij het lezen.",
         "chat.sources.timeout": "Geen antwoord binnen %ld seconden.",
         "chat.sources.nothing": "niets gevonden",
@@ -1632,6 +1633,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "chat.sources.results": "%ld results",
         "chat.sources.resultsOne": "1 result",
         "chat.sources.interrupted": "The search was interrupted before it finished.",
+        "chat.stopped": "Stopped.",
         "chat.sources.unknownError": "Something went wrong while reading.",
         "chat.sources.timeout": "No response within %ld seconds.",
         "chat.sources.nothing": "nothing found",
@@ -2409,6 +2411,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "chat.sources.results": "%ld Treffer",
         "chat.sources.resultsOne": "1 Treffer",
         "chat.sources.interrupted": "Die Suche wurde unterbrochen, bevor sie fertig war.",
+        "chat.stopped": "Gestoppt.",
         "chat.sources.unknownError": "Beim Lesen ist etwas schiefgelaufen.",
         "chat.sources.timeout": "Keine Antwort innerhalb von %ld Sekunden.",
         "chat.sources.nothing": "nichts gefunden",

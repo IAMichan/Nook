@@ -90,4 +90,69 @@ enum ScreenBrain {
         guard !chosen.isLocal, screenPrivate else { return nil }
         return parse(stored)
     }
+
+    // MARK: Which questions are screen work
+
+    /// Words that may point at something on screen. "Daarna", "daarom", "hierna" and "hiervoor" only look like them.
+    private static let cue = try? NSRegularExpression(
+        pattern: #"\b(hier(?!na|voor|door|mee|bij|naast|om)\w*|dit|deze|daar(?!na|om|door|voor|mee|naast|entegen|bij)\w*|erbij|ervoor|ervan|erover|scherm|kijk mee|lees mee)\b|\ber\b.{0,25}\b(afspraak|herinnering|taak|mail|punt|agenda)\b"#,
+        options: [.caseInsensitive]
+    )
+    /// Words that can only mean the screen, whatever was said before: in a conversation "dit" and "ervan" usually point
+    /// at the conversation itself.
+    private static let plainCue = try? NSRegularExpression(
+        pattern: #"\b(hier|hierin|hierop|scherm\w*|kijk mee|lees mee|deze (mail|pagina|tekst|tabel|code|site|website|foto|afbeelding))\b"#,
+        options: [.caseInsensitive]
+    )
+    /// "Deze week" or "dit jaar" names a period, not something on screen.
+    private static let period = try? NSRegularExpression(
+        pattern: #"\b(dit|deze)\s+(week|weekend|maand|jaar|kwartaal|ochtend|middag|avond|nacht|keer)\b"#,
+        options: [.caseInsensitive]
+    )
+    /// A word that leans on what was just said: "en de tweede?", "vertaal het", "wat staat er verder?".
+    private static let leaning = try? NSRegularExpression(
+        pattern: #"^(en|maar|ook|and|but|also|und|aber)\b|\b(het|die|dat|ze|hij|zij|hem|haar|er|verder|meer|nog|it|that|those|them|he|she|more|else|es|das|sie|er|mehr)\b"#,
+        options: [.caseInsensitive]
+    )
+
+    private static func matches(_ pattern: NSRegularExpression?, _ text: String) -> Bool {
+        pattern?.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+    }
+
+    private static func withoutPeriods(_ text: String) -> String {
+        period?.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: " ") ?? text
+    }
+
+    /// The question may point at what is on screen.
+    static func refersToScreen(_ text: String) -> Bool {
+        matches(cue, withoutPeriods(text))
+    }
+
+    /// A follow-up on an answer that read the screen: it leans on that answer and asks for nothing of its own. "Wat is
+    /// mijn IP-adres?" or "zet in de agenda dat ik om 11 uur bel" start something new, even right after such an answer.
+    static func followsUp(_ text: String) -> Bool {
+        let kinds = ChatIntent.detect(text).kinds.filter { $0 != .screen }
+        return kinds.isEmpty && text.split(whereSeparator: \.isWhitespace).count <= 8 && matches(leaning, text)
+    }
+
+    /// The question needs the screen and something the chosen brain can look up ("klopt wat hier staat met de mail van
+    /// Henk?"). The chosen brain then does its part first without the screen, and the screen brain finishes the answer on
+    /// this Mac. A request to act stays with the screen brain: only the text on screen can fill it in.
+    static func needsBoth(_ text: String) -> Bool {
+        let intent = ChatIntent.detect(text)
+        guard intent.primaryAction == nil else { return false }
+        return !Set(intent.kinds).isDisjoint(with: [.mailRead, .chats, .github, .notion, .web, .files, .todo])
+    }
+
+    /// What the chosen brain is told when it does its part without the screen.
+    static let outsideInstruction = "Part of this question is about the user's screen or another source kept on their Mac, which you cannot see and must not ask about: a model on the Mac handles that part. Do only the rest: look up what is needed and write the facts you found, briefly, with names, dates and amounts. Do not ask anything back and do not say what you cannot see."
+
+    /// Whether this chat question is screen work. The screen brain is usually far smaller than the chosen brain, so a
+    /// question goes there only when it needs the screen. Anything else stays with the chosen brain.
+    /// `conversation`: earlier turns exist, so "dit" and "ervan" can point at those. `afterScreen`: the last answer read the screen.
+    static func handles(_ text: String, conversation: Bool, afterScreen: Bool) -> Bool {
+        if matches(plainCue, withoutPeriods(text)) { return true }
+        if !conversation, refersToScreen(text) { return true }
+        return afterScreen && followsUp(text)
+    }
 }

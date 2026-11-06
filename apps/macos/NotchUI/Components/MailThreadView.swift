@@ -151,6 +151,7 @@ struct MailMessageCard: View {
     var onRetry: () -> Void = {}
     let onAction: (MailThreadAction) -> Void
 
+    @Environment(\.chatMediaStage) private var mediaStage
     @State private var hovering = false
     @State private var showsQuoted = false
 
@@ -350,7 +351,7 @@ struct MailMessageCard: View {
             ForEach(Array(saved.enumerated()), id: \.offset) { _, item in
                 if let file = item.file {
                     if ChatMedia(kind: .file, name: item.name).shownKind == .photo {
-                        ChatPhotoLoader(url: file, name: item.name, onZoom: { open(file, item.name) }, onOpen: { open(file, item.name) })
+                        ChatPhotoLoader(url: file, name: item.name, onZoom: { zoom(file, item.name) }, onOpen: { open(file, item.name) })
                     } else {
                         AttachmentButton(name: item.name, file: file) { open(file, item.name) }
                     }
@@ -371,6 +372,12 @@ struct MailMessageCard: View {
                 }
             }
         }
+    }
+
+    /// A picture enlarges as in every chat (`ImageModal`); one that cannot be read opens as any attachment does.
+    private func zoom(_ file: URL, _ name: String) {
+        guard let mediaStage, let image = ChatMediaImages.image(file) else { return open(file, name) }
+        mediaStage.show(photo: file, preview: image, name: name, open: { open(file, name) })
     }
 
     /// A saved attachment in Quick Look, else in the app the Mac uses for it.

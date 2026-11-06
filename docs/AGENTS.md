@@ -138,3 +138,9 @@ echo '{"hook_event_name":"UserPromptSubmit","session_id":"t1","prompt":"hello","
 ```
 
 You will immediately see **Demo** in the notch with the prompt `"hello"`.
+
+## Investigating Nook itself
+
+**Investigate a problem with Nook** in the command palette fills a new session's composer with a draft (`NookTriage`): the
+agent reads Nook's recent log lines, the source and the issues, and reports a likely cause. It stays away from Nook's
+databases, chats, mail and keys, and asks before it changes or posts anything. Nothing runs until you send the draft.
