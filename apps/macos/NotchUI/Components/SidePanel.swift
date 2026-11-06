@@ -13,9 +13,11 @@ import SwiftUI
 // - What a tab shows starts with one bar of the same height under that header (`SidePanelToolbar`): the browser's
 //   address, the terminal's folder, the changes' counts, a file's name. A tab with nothing to show says so with a
 //   `WSEmptyState`, never an empty pane.
-// - A session's header has one toggle per side (`SidePanelToggle`): the bottom panel and the side panel on the right,
-//   each with the mark of its side (`Edge.panelSymbol`), lit while it is open. The list on the left has its toggle in
-//   one spot beside the traffic lights (`PanelSidebarToggle`); only the notch keeps it in the header.
+// - A session's header ends in one toggle per panel (`SidePanelToggle`), in the order of the panels on screen: the bottom
+//   panel, the session panel and the side panel on the right, each with its own mark (`Edge.panelSymbol`), lit while it
+//   is open. They stay put when the session panel opens or closes: above it, or at the end of the conversation's header.
+//   The list on the left has its toggle in one spot beside the traffic lights (`PanelSidebarToggle`); only the notch
+//   keeps it in the header.
 // - A turn's diff opens in the tool panel's Changes tab and a file in its File tab (`SessionSideLink`), so a session has
 //   one panel on the right, at one width.
 

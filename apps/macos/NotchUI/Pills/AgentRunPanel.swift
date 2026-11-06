@@ -294,7 +294,6 @@ struct AgentRunPanel: View {
                 .buttonStyle(.plain)
                 .help(tr("ws.remote.terminal", remote.host))
             } else {
-                if let headerAccessory { headerAccessory }
                 FolderGitButton(directory: run.workingDirectory, runID: runID, agentWorking: run.status.isActive, showChanges: {
                     workspace.markReviewed(runID)
                     // Next to the conversation when it has the side panel, otherwise as a task of its own.
@@ -307,6 +306,7 @@ struct AgentRunPanel: View {
                     workspace.refreshGit(runID)
                 })
                 .id(run.workingDirectory)
+                if let headerAccessory { headerAccessory }
             }
         }
         .font(NookTheme.TextStyle.body)

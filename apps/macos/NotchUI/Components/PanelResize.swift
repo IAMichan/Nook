@@ -214,8 +214,7 @@ extension View {
 
     /// Keeps a conversation (or its composer) to one centered column of `PanelLayout.chatColumn` at most.
     func chatColumn() -> some View {
-        frame(maxWidth: PanelLayout.chatColumn, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .center)
+        modifier(ChatColumn())
     }
 
     /// A page of blocks (Agents › Usage) as one centered column of `PanelLayout.pageColumn` at most, so its bars and rows
@@ -252,5 +251,22 @@ extension View {
                     content().fixedSize().padding(gap, spacing)
                 }
         }
+    }
+}
+
+extension EnvironmentValues {
+    /// How far a conversation's column sits from its place: it glides there when a panel beside it takes or gives room,
+    /// without laying its text out again. That width stays the same as long as the column fits.
+    @Entry var chatColumnSlide: CGFloat = 0
+}
+
+private struct ChatColumn: ViewModifier {
+    @Environment(\.chatColumnSlide) private var slide
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: PanelLayout.chatColumn, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .offset(x: slide)
     }
 }
