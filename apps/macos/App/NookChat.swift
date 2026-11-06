@@ -921,4 +921,6 @@ enum ReplyContext {
     /// The question brings its own material (words selected in Nook, `SelectionAsk`): no screen and no dropped file go
     /// with it unless it asks about the screen itself.
     @TaskLocal static var selfContained = false
+    /// What the chosen brain found for a question both brains work on (`ScreenBrain.needsBoth`).
+    @TaskLocal static var outside = ""
 }

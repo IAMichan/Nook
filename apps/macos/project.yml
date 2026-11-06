@@ -238,6 +238,7 @@ targets:
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
+      - path: Brain/MailIndex.swift
       - path: Brain/MailActions.swift
       - path: Brain/AppMenu.swift
       - path: Brain/AppNames.swift

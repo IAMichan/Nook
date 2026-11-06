@@ -1,5 +1,30 @@
 import Foundation
 
+/// Which addresses this Mac has right now: "wat is mijn IP-adres?". The readings come from `MacStatus`.
+struct NetworkReport: Equatable {
+    struct Address: Equatable {
+        /// en0, utun3…
+        var interface: String
+        var address: String
+    }
+
+    var addresses: [Address] = []
+    var publicAddress: String?
+
+    /// Cloudflare's trace (`ip=…` on a line of its own) → the address the internet sees.
+    static func parsePublicAddress(_ trace: String) -> String? {
+        trace.split(whereSeparator: \.isNewline).first { $0.hasPrefix("ip=") }.map { String($0.dropFirst(3)) }.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    var text: String {
+        var lines: [String] = []
+        lines.append(publicAddress.map { "Public IP address (what the internet sees): \($0)." } ?? "Public IP address: could not be read, the Mac may be offline.")
+        if addresses.isEmpty { lines.append("No local network address: the Mac is not on a network.") }
+        for item in addresses { lines.append("Local IP address on \(item.interface): \(item.address).") }
+        return lines.joined(separator: "\n")
+    }
+}
+
 /// How the Mac is doing, in words the brain can use: "waarom is mijn Mac traag?", "hoe vol is mijn schijf?", "wat slurpt
 /// mijn batterij?". The numbers come from MacStatus (on the Mac); this part reads `ps` and writes the text (tested in
 /// MacReportTests). Nook answers questions with the readings.

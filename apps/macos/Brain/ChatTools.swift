@@ -7,7 +7,7 @@ enum ChatTools {
     /// The plan Nook keeps while it works through a request of several steps, shown as a checklist with its answer.
     static let planTool = "update_plan"
 
-    static func specs(onChart: @escaping (ChatChart) -> Void, onMail: @escaping (MailDraft) -> Void,
+    static func specs(onChart: @escaping (ChatChart) -> Void, onMail: @escaping (MailDraft) -> Void, mailAddress: @escaping (String) async -> String? = { _ in nil },
                       onPlan: @escaping ([RunTaskStep]) -> Void) -> [ToolSpec] {
         let point: [String: Any] = [
             "type": "object",
@@ -57,7 +57,7 @@ enum ChatTools {
                 schema: [
                     "type": "object",
                     "properties": [
-                        "to": ["type": "string", "description": "Recipient email address(es), comma-separated. Empty if unknown."],
+                        "to": ["type": "string", "description": "Recipient email address(es), comma-separated, or the person's name: Nook fills in the address from Contacts on this Mac. Empty if unknown."],
                         "cc": ["type": "string", "description": "CC email address(es), optional."],
                         "from": ["type": "string", "description": "The user's own address to send from, only when they name one (\"vanuit mijn gmail\", \"from work@x.nl\"). Empty: the default account."],
                         "subject": ["type": "string", "description": "Subject line. For replies: \"Re: \" followed by original subject."],
@@ -72,9 +72,10 @@ enum ChatTools {
                     let subject = ((input["subject"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     let body = ((input["body"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !body.isEmpty else { throw NookError("The email body is missing.") }
+                    // A name becomes its address here on the Mac; the brain never hears it, so Contacts can stay on this Mac.
                     let draft = MailDraft(
-                        to: ((input["to"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
-                        cc: ((input["cc"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+                        to: await ActionGate.addressed((input["to"] as? String) ?? "", lookup: mailAddress),
+                        cc: await ActionGate.addressed((input["cc"] as? String) ?? "", lookup: mailAddress),
                         subject: subject,
                         body: body,
                         from: ((input["from"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)

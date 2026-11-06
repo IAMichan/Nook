@@ -180,16 +180,64 @@ final class RetrievalLedger {
     }
 
     static func withTimeout(_ seconds: Double, _ operation: @escaping @MainActor () async throws -> String) async throws -> String {
-        try await withThrowingTaskGroup(of: String.self) { group in
-            group.addTask { try await operation() }
-            group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                throw RetrievalTimeout(seconds: seconds)
+        // Not a task group: a group waits for all its tasks, so a lookup that ignores cancellation (a script waiting for
+        // Mail) would hold the answer up long after its limit.
+        let race = TimeoutRace()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                race.begin(continuation)
+                let work = Task { @MainActor in
+                    do { race.finish(.success(try await operation())) } catch { race.finish(.failure(error)) }
+                }
+                let clock = Task {
+                    try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                    work.cancel()
+                    race.finish(.failure(RetrievalTimeout(seconds: seconds)))
+                }
+                race.whenOver {
+                    work.cancel()
+                    clock.cancel()
+                }
             }
-            defer { group.cancelAll() }
-            guard let first = try await group.next() else { throw RetrievalTimeout(seconds: seconds) }
-            return first
+        } onCancel: {
+            race.finish(.failure(CancellationError()))
         }
+    }
+}
+
+/// The first of a lookup, its time limit and a cancelled question ends the wait; the rest is ignored.
+private final class TimeoutRace: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<String, Error>?
+    private var result: Result<String, Error>?
+    private var cleanUp: (() -> Void)?
+
+    /// Stops what still runs. Comes after the tasks exist, so a race that is already over stops them at once.
+    func whenOver(_ stop: @escaping () -> Void) {
+        lock.lock()
+        let over = result != nil
+        if !over { cleanUp = stop }
+        lock.unlock()
+        if over { stop() }
+    }
+
+    func begin(_ continuation: CheckedContinuation<String, Error>) {
+        lock.lock()
+        defer { lock.unlock() }
+        if let result { continuation.resume(with: result) } else { self.continuation = continuation }
+    }
+
+    func finish(_ outcome: Result<String, Error>) {
+        lock.lock()
+        guard result == nil else { lock.unlock(); return }
+        result = outcome
+        let waiting = continuation
+        continuation = nil
+        let stop = cleanUp
+        cleanUp = nil
+        lock.unlock()
+        waiting?.resume(with: outcome)
+        stop?()
     }
 }
 

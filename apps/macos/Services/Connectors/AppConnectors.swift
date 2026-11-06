@@ -184,6 +184,20 @@ enum ContactDirectory {
         (await loadIfNeeded()).names
     }
 
+    /// The mail address of the one contact with this name; nil when nobody or several people match, or that contact has
+    /// several addresses: then the user chooses, Nook does not guess who a mail goes to.
+    static func mailAddress(for name: String) async -> String? {
+        let words = name.split(whereSeparator: \.isWhitespace).map { Research.fold(String($0)) }
+        guard !words.isEmpty else { return nil }
+        let found = await entries().filter { entry in
+            let folded = Research.fold(entry.name)
+            return words.allSatisfy { folded.contains($0) }
+        }
+        guard found.count == 1 else { return nil }
+        let addresses = found[0].handles.filter { ActionGate.isMailAddress($0) }
+        return addresses.count == 1 ? addresses[0] : nil
+    }
+
     /// Handle keys of contacts whose name contains one of the words (at most 20).
     static func handles(matching words: [String]) async -> [String] {
         let folded = words.filter { $0.count >= 3 }.map(Research.fold)
