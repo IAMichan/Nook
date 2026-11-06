@@ -67,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let working = model.workspace.activeRuns.count
         let defaults = UserDefaults.standard
         let systemQuit = NSAppleEventManager.shared().currentAppleEvent?.attributeDescriptor(forKeyword: AEKeyword(kAEQuitReason)) != nil
-        guard working > 0, !systemQuit, !AppUpdater.shared.restarting,
+        guard working > 0, !systemQuit, !AppUpdater.shared.restarting, !model.workspace.settings.keepSessionsRunning,
               defaults.object(forKey: Self.confirmQuitKey) as? Bool ?? true else { return .terminateNow }
         let alert = NSAlert()
         alert.messageText = working == 1 ? tr("quit.working.one") : tr("quit.working.many", working)

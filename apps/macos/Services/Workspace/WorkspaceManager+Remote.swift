@@ -58,6 +58,10 @@ extension WorkspaceManager {
     /// The launch as this session needs it: unchanged here, through ssh for a session on another machine. An ACP agent
     /// you added takes its own variables along; local account folders stay here.
     func placed(_ spec: LaunchSpec, for run: WorkspaceRun) -> LaunchSpec {
+        keptWhenAsked(onMachine(spec, for: run), run)
+    }
+
+    private func onMachine(_ spec: LaunchSpec, for run: WorkspaceRun) -> LaunchSpec {
         guard let remote = run.remote else { return spec }
         let environment = run.provider == .acp ? (CustomAgents.agent(for: run.profileID)?.environment ?? [:]) : [:]
         let forward = bridge(for: run.id)?.remote.map { RemoteBridge.forward(socket: $0.socket, local: NookPaths.remoteBridgeSocketURL.path) } ?? []

@@ -790,6 +790,8 @@ struct WorkspaceSettingsSection: View {
         Section(tr("ws.section.restart")) {
             Toggle(tr("settings.ws.autoResumeLimited"), isOn: $ws.autoResumeLimited)
             Toggle(tr("settings.ws.continueAfterRelaunch"), isOn: $ws.continueAfterRelaunch)
+            Toggle(tr("settings.ws.keepRunning"), isOn: $ws.keepSessionsRunning)
+                .help(tr("settings.ws.keepRunning.help"))
             Toggle(tr("settings.ws.confirmQuit"), isOn: $confirmQuit)
         }
     }

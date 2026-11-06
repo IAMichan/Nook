@@ -6,6 +6,9 @@ import Foundation
 let goalTranslations: [AppLanguage: [String: String]] = [
     .en: [
         "sched.error.webhookRights": "A webhook only reaches a session that asks before it acts.",
+        "settings.ws.keepRunning": "Keep sessions running when Nook closes",
+        "settings.ws.keepRunning.help": "Agents that are working go on while Nook is closed or updates, and Nook picks them up when it comes back. A session waiting for your approval stops as before. Applies to turns started from now on.",
+        "ws.event.kept": "Worked on while Nook was closed.",
         "sim.android.title": "Android devices",
         "sim.android.show": "Show",
         "sim.android.start": "Start",
@@ -35,6 +38,9 @@ let goalTranslations: [AppLanguage: [String: String]] = [
     ],
     .nl: [
         "sched.error.webhookRights": "Een webhook bereikt alleen een sessie die eerst vraagt voordat die iets doet.",
+        "settings.ws.keepRunning": "Sessies laten doorlopen als Nook sluit",
+        "settings.ws.keepRunning.help": "Agents die bezig zijn gaan door terwijl Nook gesloten is of bijwerkt, en Nook pakt ze op zodra het terug is. Een sessie die op je goedkeuring wacht, stopt zoals altijd. Geldt voor beurten die vanaf nu starten.",
+        "ws.event.kept": "Ging door terwijl Nook gesloten was.",
         "sim.android.title": "Android-toestellen",
         "sim.android.show": "Toon",
         "sim.android.start": "Start",
@@ -64,6 +70,9 @@ let goalTranslations: [AppLanguage: [String: String]] = [
     ],
     .de: [
         "sched.error.webhookRights": "Ein Webhook erreicht nur eine Sitzung, die vor dem Handeln fragt.",
+        "settings.ws.keepRunning": "Sitzungen weiterlaufen lassen, wenn Nook schließt",
+        "settings.ws.keepRunning.help": "Arbeitende Agenten machen weiter, während Nook geschlossen ist oder aktualisiert wird, und Nook übernimmt sie bei der Rückkehr. Eine Sitzung, die auf deine Freigabe wartet, stoppt wie bisher. Gilt für ab jetzt gestartete Durchläufe.",
+        "ws.event.kept": "Lief weiter, während Nook geschlossen war.",
         "sim.android.title": "Android-Geräte",
         "sim.android.show": "Anzeigen",
         "sim.android.start": "Starten",
@@ -93,6 +102,9 @@ let goalTranslations: [AppLanguage: [String: String]] = [
     ],
     .fr: [
         "sched.error.webhookRights": "Un webhook n’atteint qu’une session qui demande avant d’agir.",
+        "settings.ws.keepRunning": "Garder les sessions actives à la fermeture de Nook",
+        "settings.ws.keepRunning.help": "Les agents au travail continuent pendant que Nook est fermé ou se met à jour, et Nook les reprend à son retour. Une session qui attend votre accord s’arrête comme avant. S’applique aux tours lancés à partir de maintenant.",
+        "ws.event.kept": "A continué pendant que Nook était fermé.",
         "sim.android.title": "Appareils Android",
         "sim.android.show": "Afficher",
         "sim.android.start": "Démarrer",
@@ -122,6 +134,9 @@ let goalTranslations: [AppLanguage: [String: String]] = [
     ],
     .es: [
         "sched.error.webhookRights": "Un webhook solo llega a una sesión que pregunta antes de actuar.",
+        "settings.ws.keepRunning": "Mantener las sesiones activas al cerrar Nook",
+        "settings.ws.keepRunning.help": "Los agentes que trabajan continúan mientras Nook está cerrado o se actualiza, y Nook los retoma al volver. Una sesión que espera tu aprobación se detiene como antes. Se aplica a los turnos iniciados a partir de ahora.",
+        "ws.event.kept": "Siguió trabajando mientras Nook estaba cerrado.",
         "sim.android.title": "Dispositivos Android",
         "sim.android.show": "Mostrar",
         "sim.android.start": "Iniciar",
