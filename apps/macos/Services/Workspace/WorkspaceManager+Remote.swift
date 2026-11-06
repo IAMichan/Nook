@@ -33,7 +33,8 @@ extension WorkspaceManager {
 
     /// Whether `token` is the one made for the remote session `id`.
     func acceptsRemoteBridge(_ id: UUID, token: String) -> Bool {
-        guard run(id)?.isRemote == true, let expected = remoteBridgeTokens[id] else { return false }
+        // Only while its agent works: a stopped session's token opens nothing.
+        guard let run = run(id), run.isRemote, run.status.isActive, let expected = remoteBridgeTokens[id] else { return false }
         return Data(expected.utf8) == Data(token.utf8)
     }
 

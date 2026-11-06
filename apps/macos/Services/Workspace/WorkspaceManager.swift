@@ -1048,9 +1048,13 @@ final class WorkspaceManager: ObservableObject {
         loadTimeline(id)
         // Codex takes a goal through calls of its own, not as the words of a turn.
         if !shown, let turn = codexGoalTurn(id, message: clean, executable: executable) {
-            guard let prompt = turn else { return true }
+            guard let prompt = turn else {
+                // No turn came of it: what waited behind it goes on.
+                sendQueued(id)
+                return true
+            }
             displayPrompt[id] = clean
-            launchTurn(id, prompt: prompt, executable: executable, showPrompt: true)
+            launchTurn(id, prompt: ContextHandoff.compose(handoff: run.pendingHandoff, message: prompt), executable: executable, showPrompt: true)
             return true
         }
         // After a fork or a switch of agent the first turn starts with the summary; it stays until a turn ends well.

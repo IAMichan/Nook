@@ -73,6 +73,19 @@ test("limits hold", async () => {
   await Promise.all(waiting);
 });
 
+test("a closing socket is passed over", async () => {
+  const sockets = new Sockets();
+  const logic = new HookLogic(sockets, { newID: () => "a" });
+  const closing = Object.assign(socket(), { readyState: 2 });
+  const open = Object.assign(socket(), { readyState: 1 });
+  sockets.open.push(closing, open);
+  const answer = logic.deliver(request());
+  assert.equal(closing.sent.length, 0);
+  assert.equal(open.sent.length, 1);
+  logic.message(JSON.stringify({ id: "a", status: 202, message: "ok" }));
+  assert.equal((await answer).status, 202);
+});
+
 test("a new socket replaces the old one; bad answers are ignored", () => {
   const sockets = new Sockets();
   const logic = new HookLogic(sockets);

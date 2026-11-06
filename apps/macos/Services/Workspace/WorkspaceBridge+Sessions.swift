@@ -47,6 +47,11 @@ extension WorkspaceBridge {
             config.isolation = defaults.isolation
         }
         config.projectPath = folder
+        if config.isolation == .worktree {
+            config.branchName = WorktreeNaming.branchName(task: task, id: UUID())
+            let git = workspace.gitService
+            config.baseBranch = await Task.detached(priority: .userInitiated) { git?.currentBranch(folder) ?? "" }.value
+        }
         do {
             let id = try await workspace.start(config)
             audit(.sessionStart, caller, "\(provider.displayName) · \(task)", id.uuidString.lowercased())

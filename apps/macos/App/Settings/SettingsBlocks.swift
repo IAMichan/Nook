@@ -641,7 +641,10 @@ struct WorkspaceSettingsSection: View {
         return HStack(spacing: NookTheme.Spacing.md) {
             control()
             if own {
-                ToolbarIconButton("arrow.uturn.backward", tr("settings.scope.reset")) { ws.resetOverride(key, for: path) }
+                ToolbarIconButton("arrow.uturn.backward", tr("settings.scope.reset")) {
+                    ws.resetOverride(key, for: path)
+                    if key == .browserSignIns { BrowserProfiles.forget(project: path) }
+                }
             } else {
                 Text(tr("settings.scope.inherited"))
                     .font(NookTheme.TextStyle.label)

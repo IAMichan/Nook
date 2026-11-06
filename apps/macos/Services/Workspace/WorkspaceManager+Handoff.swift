@@ -169,6 +169,8 @@ extension WorkspaceManager {
         copy.snoozedAt = nil
         copy.snoozedUntil = nil
         copy.delegation = nil
+        // A goal lives in the agent's own conversation; only a native fork takes that along.
+        if !forkNext.contains(newID) { copy.goal = nil }
         copy.isolation = .folder
         copy.worktreePath = nil
         copy.baseBranch = nil

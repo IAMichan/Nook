@@ -460,8 +460,8 @@ enum CodexStreamEvent: Equatable, Sendable {
     case plan(String)
     /// The agent's task list (`turn/plan/updated`).
     case tasks([RunTaskStep])
-    /// Codex's goal changed (`thread/goal/updated`, `thread/goal/cleared`).
-    case goal(SessionGoalUpdate)
+    /// Codex's goal changed (`thread/goal/updated`, `thread/goal/cleared`). A subagent's thread has goals of its own.
+    case goal(SessionGoalUpdate, thread: String?)
     /// Codex started subagents (`collabAgentToolCall` with `spawnAgent`): the call, its task and the threads they run on.
     case subagentSpawned(id: String, prompt: String, model: String?, threads: [String], failed: Bool)
     /// How Codex's subagents are doing, per thread (from any `collabAgentToolCall`, `wait` above all).

@@ -414,8 +414,8 @@ extension WorkspaceManager {
             append(id, RunEvent(kind: .assistant, text: text, tool: "plan", state: .done))
         case .tasks(let steps):
             setTasks(id, steps)
-        case .goal(let update):
-            noteGoal(id, update)
+        case .goal(let update, let thread):
+            if thread == nil || thread == codexServers[id]?.threadID { noteGoal(id, update) }
         case .subagentSpawned(let callID, let prompt, let model, let threads, let failed):
             // The same shape as Claude Code's Agent call, so the subagent bar shows Codex's subagents too.
             guard turns[id]?.timeline.eventID(forCall: callID) == nil else { return }

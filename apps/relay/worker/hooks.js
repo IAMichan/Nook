@@ -62,7 +62,8 @@ export class HookLogic {
   /** What to answer a POST: `{status, message}`. */
   async deliver({ hook, headers, body }) {
     if (body.byteLength > MAX_BODY) return { status: 413, message: "too large" };
-    const mac = this.sockets.getWebSockets("hooks")[0];
+    // A replaced socket can still be listed while it closes.
+    const mac = this.sockets.getWebSockets("hooks").find((socket) => socket.readyState === undefined || socket.readyState === 1);
     if (!mac) return { status: 503, message: "the Mac is not reachable" };
     if (this.waiting.size >= MAX_WAITING) return { status: 429, message: "too many requests" };
     const id = this.newID();

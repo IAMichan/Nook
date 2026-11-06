@@ -12,6 +12,14 @@ final class RemoteBridgeTests: XCTestCase {
         XCTAssertTrue(RemoteBridge.allows(.sessionRead))
     }
 
+    func testAnotherMachineReachesOnlyItsOwnSession() {
+        XCTAssertFalse(RemoteBridge.allows(.sessionList))
+        XCTAssertFalse(RemoteBridge.allows(.sessionSearch))
+        XCTAssertTrue(RemoteBridge.mayRead(id.uuidString.lowercased(), caller: id))
+        XCTAssertFalse(RemoteBridge.mayRead(UUID().uuidString, caller: id))
+        XCTAssertFalse(RemoteBridge.mayRead(nil, caller: id))
+    }
+
     func testPaths() {
         XCTAssertEqual(RemoteBridge.socketPath(home: "/home/a", run: id), "/home/a/.nook/b-abcdef12.sock")
         XCTAssertEqual(RemoteBridge.forward(socket: "/s", local: "/l b").suffix(2), ["-R", "/s:/l b"])

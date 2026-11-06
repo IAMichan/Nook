@@ -5,6 +5,7 @@ import Foundation
 
 let goalTranslations: [AppLanguage: [String: String]] = [
     .en: [
+        "sched.error.webhookRights": "A webhook only reaches a session that asks before it acts.",
         "sim.android.title": "Android devices",
         "sim.android.show": "Show",
         "sim.android.start": "Start",
@@ -33,6 +34,7 @@ let goalTranslations: [AppLanguage: [String: String]] = [
         "ws.goal.failed": "The goal could not be changed: %@",
     ],
     .nl: [
+        "sched.error.webhookRights": "Een webhook bereikt alleen een sessie die eerst vraagt voordat die iets doet.",
         "sim.android.title": "Android-toestellen",
         "sim.android.show": "Toon",
         "sim.android.start": "Start",
@@ -61,6 +63,7 @@ let goalTranslations: [AppLanguage: [String: String]] = [
         "ws.goal.failed": "Het doel kon niet worden gewijzigd: %@",
     ],
     .de: [
+        "sched.error.webhookRights": "Ein Webhook erreicht nur eine Sitzung, die vor dem Handeln fragt.",
         "sim.android.title": "Android-Geräte",
         "sim.android.show": "Anzeigen",
         "sim.android.start": "Starten",
@@ -89,6 +92,7 @@ let goalTranslations: [AppLanguage: [String: String]] = [
         "ws.goal.failed": "Das Ziel konnte nicht geändert werden: %@",
     ],
     .fr: [
+        "sched.error.webhookRights": "Un webhook n’atteint qu’une session qui demande avant d’agir.",
         "sim.android.title": "Appareils Android",
         "sim.android.show": "Afficher",
         "sim.android.start": "Démarrer",
@@ -117,6 +121,7 @@ let goalTranslations: [AppLanguage: [String: String]] = [
         "ws.goal.failed": "L’objectif n’a pas pu être modifié : %@",
     ],
     .es: [
+        "sched.error.webhookRights": "Un webhook solo llega a una sesión que pregunta antes de actuar.",
         "sim.android.title": "Dispositivos Android",
         "sim.android.show": "Mostrar",
         "sim.android.start": "Iniciar",

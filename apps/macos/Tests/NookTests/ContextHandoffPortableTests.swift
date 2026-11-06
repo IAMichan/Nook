@@ -31,6 +31,14 @@ final class ContextHandoffPortableTests: XCTestCase {
         XCTAssertGreaterThan(rendered?.omitted ?? 0, 0)
     }
 
+    func testTheFirstRequestKeepsItsPlaceBehindEarlierActivity() {
+        var ran = RunEvent(kind: .tool, text: "setup")
+        ran.state = .done
+        let rendered = ContextHandoff.render(events: [ran, user("alpha"), agent("omega")], source: "Codex")?.text ?? ""
+        XCTAssertLessThan(rendered.range(of: "setup")!.lowerBound, rendered.range(of: "alpha")!.lowerBound)
+        XCTAssertLessThan(rendered.range(of: "alpha")!.lowerBound, rendered.range(of: "omega")!.lowerBound)
+    }
+
     func testWithoutNooksToolsNoPointer() {
         let events = [user("a")] + (0..<200).map { agent("answer \($0) " + String(repeating: "x", count: 500)) }
         XCTAssertFalse(ContextHandoff.render(events: events, source: "Codex", budget: 2_000)?.text.contains("session_read") == true)

@@ -290,9 +290,9 @@ enum CodexAppServerMapper {
         case "turn/plan/updated":
             return RunTasks.codex(params).map { [.tasks($0)] } ?? []
         case "thread/goal/updated":
-            return SessionGoals.codex(params["goal"] as? [String: Any]).map { [.goal($0)] } ?? []
+            return SessionGoals.codex(params["goal"] as? [String: Any]).map { [.goal($0, thread: params["threadId"] as? String)] } ?? []
         case "thread/goal/cleared":
-            return [.goal(.cleared)]
+            return [.goal(.cleared, thread: params["threadId"] as? String)]
         case "account/rateLimits/updated":
             return [.rateLimits(JSONBox(params))]
         default:

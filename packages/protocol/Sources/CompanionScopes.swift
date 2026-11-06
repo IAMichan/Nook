@@ -85,7 +85,11 @@ enum CompanionScopes {
             response.home = nil
             response.usage = nil
         }
-        if !granted.contains(.operate) { response.launch = nil }
+        if !granted.contains(.operate) {
+            response.launch = nil
+            response.terminals = nil
+            response.folder = nil
+        }
         if !granted.contains(.chats) {
             response.inbox = nil
             response.inboxLines = nil

@@ -193,12 +193,13 @@ extension CompanionServer {
         guard let session = request.session, let folder = sessionFolder(session, app: app), !folder.isEmpty else {
             return .failure(request.id, .unknownSession)
         }
+        if let id = UUID(uuidString: session), app.workspace.run(id)?.isRemote == true { return .failure(request.id, .notAllowedFromPhone) }
         let path = WorkspacePathPolicy.normalize(folder)
         let list = TerminalStore.shared.sessions.filter { WorkspacePathPolicy.normalize($0.directory) == path }.map {
             TerminalDigest(id: $0.shortID, title: $0.title, running: $0.running, output: $0.output(lines: CompanionWorkspace.maxTerminalLines))
         }
         var response = CompanionResponse(id: request.id, ok: true)
-        response.terminals = list
+        response.terminals = CompanionWorkspace.fitting(list)
         return response
     }
 
