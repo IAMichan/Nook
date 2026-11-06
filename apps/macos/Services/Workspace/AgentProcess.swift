@@ -53,6 +53,8 @@ enum AgentCommand {
         var effort: String? = nil
         /// An ACP agent you added: its command, run by `executable` (your login shell).
         var customAgent: CustomAgent? = nil
+        /// Settings › Agents: no agent credits in commits and pull requests (`AgentCredits.commitsKey`).
+        var omitAgentCredits = AgentCredits.omitsFromCommits
     }
 
     static func spec(_ input: Input) -> LaunchSpec {
@@ -69,8 +71,9 @@ enum AgentCommand {
                 // Permission prompts arrive as control_request on stdout; Nook replies via stdin.
                 "--permission-prompt-tool", "stdio",
                 "--permission-mode", claudePermissionMode(mode: input.mode, permission: input.permission),
-                // Newer models leave their thinking empty unless summaries are asked for.
-                "--settings", #"{"showThinkingSummaries":true}"#
+                // Newer models leave their thinking empty unless summaries are asked for; with Settings › Agents also no
+                // Co-Authored-By trailer or "Generated with" line in commits and pull requests.
+                "--settings", AgentCredits.claudeSettings(omit: input.omitAgentCredits)
             ]
             if input.thinkingDisplay { arguments += ["--thinking-display", "summarized"] }
             if !input.model.isEmpty { arguments += ["--model", input.model] }
@@ -80,11 +83,9 @@ enum AgentCommand {
                 if input.forkSession { arguments.append("--fork-session") }
                 if let at = input.resumeAt, !at.isEmpty { arguments += ["--resume-session-at", at] }
             }
-            var instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let bridge = input.bridge {
-                arguments += bridge.claudeArguments(runID: input.runID)
-                instructions = [instructions, bridge.note].filter { !$0.isEmpty }.joined(separator: "\n\n")
-            }
+            if let bridge = input.bridge { arguments += bridge.claudeArguments(runID: input.runID) }
+            let instructions = AgentCredits.launchInstructions(input.instructions, bridgeNote: input.bridge?.note,
+                                                               omit: input.omitAgentCredits)
             if !instructions.isEmpty { arguments += ["--append-system-prompt", instructions] }
             return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
                               workingDirectory: input.workingDirectory,
@@ -99,10 +100,8 @@ enum AgentCommand {
             arguments += ["-c", "model_reasoning_summary=\"detailed\""]
             if let bridge = input.bridge { arguments += bridge.codexArguments(runID: input.runID) }
             var prompt = input.prompt
-            var instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let bridge = input.bridge {
-                instructions = [instructions, bridge.note].filter { !$0.isEmpty }.joined(separator: "\n\n")
-            }
+            let instructions = AgentCredits.launchInstructions(input.instructions, bridgeNote: input.bridge?.note,
+                                                               omit: input.omitAgentCredits)
             // Codex exec has no separate system prompt: instructions prepend the first prompt.
             if !instructions.isEmpty, input.resumeSessionID == nil { prompt = instructions + "\n\n" + prompt }
             if input.mode == .plan, input.resumeSessionID == nil {
@@ -120,7 +119,7 @@ enum AgentCommand {
             if !input.model.isEmpty { arguments += ["--model", input.model] }
             if let resume = input.resumeSessionID, !resume.isEmpty { arguments += ["--resume", resume] }
             var prompt = input.prompt
-            let instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+            let instructions = AgentCredits.launchInstructions(input.instructions, bridgeNote: nil, omit: input.omitAgentCredits)
             // No separate system prompt in headless mode: instructions go before the first prompt, like Codex.
             if !instructions.isEmpty, input.resumeSessionID == nil { prompt = instructions + "\n\n" + prompt }
             // One argument with "=", so a prompt starting with a dash is never parsed as a flag.
