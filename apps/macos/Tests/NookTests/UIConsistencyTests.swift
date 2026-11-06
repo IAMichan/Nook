@@ -182,4 +182,14 @@ final class UIConsistencyTests: XCTestCase {
             XCTAssertTrue(theme.contains(name), "NookTheme lost \(name)")
         }
     }
+
+    /// `SelectableProse` is an `NSViewRepresentable` with `sizeThatFits`, which SwiftUI otherwise gives a 0 baseline:
+    /// `ProseSegment` must pass `SelectableProse.firstBaseline` to `.alignmentGuide(.firstTextBaseline)` so controls
+    /// beside a `MarkdownView` (such as task boxes in `PullRequestDescription`) line up with the first line of text.
+    func testProseExposesFirstTextBaseline() throws {
+        let markdown = try XCTUnwrap(Self.sources.first { $0.path == "NotchUI/Chat/MarkdownView.swift" }?.text)
+        let prose = try XCTUnwrap(Self.sources.first { $0.path == "NotchUI/Chat/SelectableProse.swift" }?.text)
+        XCTAssertTrue(markdown.contains(".alignmentGuide(.firstTextBaseline) { _ in SelectableProse.firstBaseline(blocks, size: size) }"))
+        XCTAssertTrue(prose.contains("static func firstBaseline(_ blocks: [MarkdownBlock], size: CGFloat) -> CGFloat"))
+    }
 }
