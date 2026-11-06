@@ -278,6 +278,8 @@ targets:
       - path: Services/Messages/ChatHiddenMessages.swift
       - path: Services/Messages/ChatPoll.swift
       - path: Services/Messages/ChatOutgoing.swift
+      - path: Services/Messages/ChatImageEdit.swift
+      - path: Services/Messages/ChatImageRender.swift
       - path: Services/Messages/ChatForward.swift
       - path: Services/Messages/ChatContract.swift
       - path: Services/Messages/ChatNoticeRules.swift
