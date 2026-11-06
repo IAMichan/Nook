@@ -138,14 +138,15 @@ enum WhatsAppSettings {
 
 /// WhatsApp, live: Nook talks to the local gateway the user runs (GOWA, which Nook can install and start, or OpenWA),
 /// receives new messages on a webhook bound to 127.0.0.1 (polling when none comes, and once a minute besides for a
-/// message the webhook dropped), and keeps the conversations in memory only: nothing of a message is written to disk
-/// or to a log, and everything is forgotten when Nook quits or WhatsApp is turned off. Only the votes on polls are kept on disk (`WAPollStore`: who chose which option, by poll id),
+/// message the webhook dropped), and keeps the conversations in memory only: no message's text is written to disk or
+/// to a log, and all of it is forgotten when Nook quits or WhatsApp is turned off. The files a chat showed stay in
+/// Nook's caches, as every chat app's do, so they show at once next time; they go when WhatsApp is turned off. Only the votes on polls are kept on disk (`WAPollStore`: who chose which option, by poll id),
 /// since no gateway keeps them; they go when WhatsApp is turned off. Sending goes only to chats that are on the phone, a few a minute at most, and only after the
 /// user typed the answer or approved Nook's plan.
 ///
 /// The lifecycle after open-source code (MIT, © 2026 Louis Raillé; see THIRD-PARTY-NOTICES.md).
-/// A message's file as the notch card and the chat show it: saved in Nook's own temporary folder (emptied when Nook
-/// starts and quits). Its picture is made by the bubble that shows it (`ChatMediaImages`, `ChatVideoStills`), once.
+/// A message's file as the notch card and the chat show it: kept in Nook's caches under its message
+/// (`WhatsAppLink.fileKey`). Its picture is made by the bubble that shows it (`ChatMediaImages`, `ChatVideoStills`), once.
 struct WAPreview {
     let file: URL
 }
@@ -355,6 +356,9 @@ final class WhatsAppLink: ObservableObject {
     private var previewsLoading: Set<String> = []
     /// When a preview last failed: it is tried again after `previewRetry`, not at every redraw.
     private var previewFailed: [String: Date] = [:]
+    /// How many more files may be fetched right now, and the fetches waiting for their turn (`previewParallel`).
+    private var previewSlots = WhatsAppLink.previewParallel
+    private var previewWaiting: [CheckedContinuation<Void, Never>] = []
     private var failures = 0
     /// Bumped at each start and stop: an answer from before a restart is dropped.
     private var generation = 0
@@ -376,19 +380,21 @@ final class WhatsAppLink: ObservableObject {
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)
             .sink { [weak self] _ in DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self?.wake() } }
             .store(in: &bag)
-        // The gateway and the opened files are everyone's: the first account lets go of them.
+        // The gateway is everyone's: the first account lets go of it.
         guard account.isEmpty else { return }
         NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
-            .sink { _ in MainActor.assumeIsolated {
-                WhatsAppGOWAProcess.shared.stopNow()
-                WhatsAppLink.clearOpenedFiles()
-            } }
+            .sink { _ in MainActor.assumeIsolated { WhatsAppGOWAProcess.shared.stopNow() } }
             .store(in: &bag)
     }
 
     /// Called once at launch.
     func start() {
-        if account.isEmpty { Self.clearOpenedFiles() }
+        if account.isEmpty {
+            Self.clearOpenedFiles()
+            Task.detached(priority: .utility) {
+                ChatMedia.trimKept(prefix: Self.filePrefix, limit: Self.filesLimit)
+            }
+        }
         update()
     }
 
@@ -471,6 +477,8 @@ final class WhatsAppLink: ObservableObject {
         failures = 0
         if !WhatsAppSettings.enabled { WhatsAppGOWAProcess.shared.stopNow() }
         if forget {
+            let files = Self.fileKey(account: account, message: "")
+            Task.detached(priority: .utility) { ChatMedia.removeKept(prefix: files) }
             carriedUnread = [:]
             inbox.clear()
             knownChats = []
@@ -1070,21 +1078,34 @@ final class WhatsAppLink: ObservableObject {
 
     // MARK: Files
 
-    /// Where opened files wait for the app that shows them: a folder of Nook's own in the temporary folder,
-    /// emptied when Nook starts and quits.
-    nonisolated static var openedFilesFolder: URL {
+    /// How much the files of all accounts may take in Nook's caches, trimmed once per launch.
+    nonisolated static let filesLimit = 2 * 1024 * 1024 * 1024
+    /// What every account's files are kept under.
+    nonisolated static let filePrefix = "wa-"
+
+    /// What a message's file is kept under (`ChatMedia.destination`): a place per account and message, so it is fetched
+    /// from the gateway once and is there again after a restart, and its bubble's picture is found on disk
+    /// (`ChatPictureDisk` goes by the file's path) rather than decoded anew.
+    nonisolated static func fileKey(account: String, message: String) -> String {
+        filePrefix + account + "-" + message
+    }
+
+    /// The folder earlier versions kept these files in, emptied at launch for whoever still has one.
+    nonisolated private static var openedFilesFolder: URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("Nook WhatsApp", isDirectory: true)
     }
 
-    nonisolated static func clearOpenedFiles() {
+    nonisolated private static func clearOpenedFiles() {
         try? FileManager.default.removeItem(at: openedFilesFolder)
     }
 
     /// A message's file on this Mac, fetched from the gateway only when the card shows it or you open it.
     func download(message id: String, chat: String) async throws -> URL {
         if let saved = previews[id]?.file, FileManager.default.fileExists(atPath: saved.path) { return saved }
+        let key = Self.fileKey(account: account, message: id)
+        if let kept = await Task.detached(priority: .userInitiated, operation: { ChatMedia.kept(key: key) }).value { return kept }
         let (message, file) = try await fetchFile(message: id, chat: chat)
-        let url = try Self.save(file, media: message.media)
+        let url = try await Self.save(file, media: message.media, key: key)
         Log.connectors.info("WhatsApp: opened a file")
         return url
     }
@@ -1112,32 +1133,48 @@ final class WhatsAppLink: ObservableObject {
         return (message, file)
     }
 
-    /// Saves a fetched file in its own folder under Nook's temporary one, under a name the Mac recognizes. Off the main
-    /// thread where it can be: a video is megabytes.
-    nonisolated private static func save(_ file: WAFile, media: WAMedia) throws -> URL {
+    /// Saves a fetched file under `key`, with a name the Mac recognizes, off the main thread: a video is megabytes.
+    nonisolated private static func save(_ file: WAFile, media: WAMedia, key: String) async throws -> URL {
         let name = media.safeFileName(given: file.name, mimeType: file.mimeType)
-        let folder = openedFilesFolder.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let url = folder.appendingPathComponent(name)
-        try file.data.write(to: url, options: .atomic)
+        let url = ChatMedia.destination(key: key, name: name)
+        let saved = await Task.detached(priority: .userInitiated) { ChatMedia.save(file.data, to: url) }.value
+        guard saved else { throw NookError(tr("whatsapp.file.failed")) }
         return url
     }
 
-    /// How many fetched files stay at most; the oldest go first, from memory and from disk.
-    static let previewLimit = 48
+    /// How many fetched files are remembered here at most, the oldest going first; their files stay on disk (`filesLimit`)
+    /// and are found again without the gateway when a chat asks for them.
+    static let previewLimit = 1_000
     /// How long a preview that failed waits before it is tried again.
     static let previewRetry: TimeInterval = 10
 
     /// A file already fetched for the notch card.
     func preview(_ id: String) -> WAPreview? { previews[id] }
 
-    /// How many files are fetched from the gateway at the same time: a chat with several photos shows them together
-    /// instead of one after another.
-    static let previewParallel = 4
+    /// How many files are fetched from the gateway at the same time, whoever asks: a chat with several photos shows them
+    /// together instead of one after another.
+    static let previewParallel = 6
 
-    /// Fetches these messages' files for the card and the chat (a photo, a video, a document), `previewParallel` at a
-    /// time. One that failed is tried again after `previewRetry`. True when at least one new file came in while the
-    /// link stayed the same.
+    /// Waits for a turn to fetch. The fetch asked for last goes first: those are the bubbles you just scrolled to.
+    private func previewTurn() async {
+        if previewSlots > 0 {
+            previewSlots -= 1
+        } else {
+            await withCheckedContinuation { previewWaiting.append($0) }
+        }
+    }
+
+    private func previewTurnDone() {
+        if let next = previewWaiting.popLast() {
+            next.resume()
+        } else {
+            previewSlots += 1
+        }
+    }
+
+    /// Fetches these messages' files for the card and the chat (a photo, a video, a document), the last one first and
+    /// `previewParallel` at a time across all that is asked of this link. One that failed is tried again after
+    /// `previewRetry`. True when at least one new file came in while the link stayed the same.
     func loadPreviews(_ ids: [String], chat: String) async -> Bool {
         let gen = generation
         let wanted = ids.filter { id in
@@ -1149,13 +1186,15 @@ final class WhatsAppLink: ObservableObject {
         var loaded = false
         var stale = false
         await withTaskGroup(of: (String, URL?).self) { group in
-            var next = wanted.makeIterator()
-            for _ in 0..<Self.previewParallel {
-                guard let id = next.next() else { break }
-                group.addTask { (id, await self.fetchPreview(id, chat: chat)) }
+            for id in wanted.reversed() {
+                group.addTask {
+                    await self.previewTurn()
+                    let url = await self.fetchPreview(id, chat: chat)
+                    await self.previewTurnDone()
+                    return (id, url)
+                }
             }
             while let (id, url) = await group.next() {
-                if let more = next.next() { group.addTask { (more, await self.fetchPreview(more, chat: chat)) } }
                 previewsLoading.remove(id)
                 guard gen == generation else {
                     stale = true
@@ -1173,20 +1212,20 @@ final class WhatsAppLink: ObservableObject {
             }
         }
         guard !stale else { return false }
-        while previewOrder.count > Self.previewLimit {
-            let old = previewOrder.removeFirst()
-            if let file = previews.removeValue(forKey: old)?.file {
-                try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
-            }
+        if previewOrder.count > Self.previewLimit {
+            for old in previewOrder.prefix(previewOrder.count - Self.previewLimit) { previews[old] = nil }
+            previewOrder.removeFirst(previewOrder.count - Self.previewLimit)
         }
         return loaded
     }
 
-    /// One message's file from the gateway, saved on this Mac; nil when it could not be fetched.
+    /// One message's file: from this Mac when it was fetched before, else from the gateway and then kept here; nil when
+    /// it could not be fetched.
     private func fetchPreview(_ id: String, chat: String) async -> URL? {
+        let key = Self.fileKey(account: account, message: id)
+        if let kept = await Task.detached(priority: .userInitiated, operation: { ChatMedia.kept(key: key) }).value { return kept }
         guard let (message, file) = try? await fetchFile(message: id, chat: chat) else { return nil }
-        let media = message.media
-        return await Task.detached(priority: .userInitiated) { try? Self.save(file, media: media) }.value
+        return try? await Self.save(file, media: message.media, key: key)
     }
 
     /// The photo at most `side` pixels on its longest side, decoded straight to that size so a large photo costs little.
@@ -1516,18 +1555,18 @@ final class WhatsAppLink: ObservableObject {
         }
     }
 
-    /// The file you sent shows in its bubble straight away, from a copy in Nook's temporary folder (the one a card's
-    /// previews are kept in, and cleared with them), so it never has to come back from the gateway.
+    /// The file you sent shows in its bubble straight away, from a copy kept where a card's files are, so it never has
+    /// to come back from the gateway.
     private func showSent(_ file: ChatAttachment, as id: String, media: WAMedia) async {
         guard FileManager.default.isReadableFile(atPath: file.url.path) else { return }
-        let folder = Self.openedFilesFolder.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let copy = folder.appendingPathComponent(file.name)
+        let copy = ChatMedia.destination(key: Self.fileKey(account: account, message: id), name: file.name)
         do {
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
             try FileManager.default.copyItem(at: file.url, to: copy)
         } catch {
             return
         }
+        ChatMedia.markWhole(copy.path)
         previews[id] = WAPreview(file: copy)
         previewOrder.append(id)
     }

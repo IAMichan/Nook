@@ -561,14 +561,14 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
             guard let media = message.media, let source = media.source, let url = URL(string: source),
                   TeamsWebData.isMedia(url) else { return nil }
             let target = ChatMedia.destination(key: message.id, name: media.name ?? "image.jpg")
-            if FileManager.default.fileExists(atPath: target.path) { return target.path }
+            if FileManager.default.fileExists(atPath: target.path) {
+                ChatMedia.markWhole(target.path)
+                return target.path
+            }
             guard let answer = try? await ConnectorHTTP.session.data(for: Self.mediaRequest(url, token: token)),
                   let response = answer.1 as? HTTPURLResponse, response.statusCode == 200,
                   answer.0.count <= ChatMedia.maxBytes, !(response.mimeType ?? "").contains("html") else { return nil }
-            let saved = await Task.detached(priority: .utility) { () -> Bool in
-                try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-                return (try? answer.0.write(to: target, options: .atomic)) != nil
-            }.value
+            let saved = await Task.detached(priority: .userInitiated) { ChatMedia.save(answer.0, to: target) }.value
             return saved ? target.path : nil
         }
     }

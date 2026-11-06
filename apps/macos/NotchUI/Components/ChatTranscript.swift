@@ -1711,8 +1711,9 @@ struct ChatPhotoLoader: View {
         _image = State(initialValue: ChatMediaImages.cached(url))
     }
 
-    /// The waits between tries while its app may still be writing it: about a minute and a half in all.
-    private static let waits: [Double] = [0, 0.5, 1, 2, 3, 5, 8, 13, 20, 30]
+    /// The waits between tries while its app may still be writing it: about a minute and a half in all, and often at
+    /// first, so a photo that just settled (`ChatMedia.isSettled`) shows then and not at the next long wait.
+    private static let waits: [Double] = [0, 0.2, 0.3, 0.5, 0.5, 0.5, 1, 2, 3, 5, 8, 13, 20, 30]
 
     var body: some View {
         Group {
