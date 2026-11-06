@@ -122,29 +122,21 @@ extension NowPlayingService {
         queueStartedAt = Date()
         queueAdvanceTask?.cancel()
         queueAdvanceTask = nil
-        let verb: String
         if app == "Spotify" {
-            verb = "play track \(MusicScriptOutput.quoted(track.id))"
+            playInBackground(app: app, spotify: .tracks([track.id]),
+                             script: Self.playerScript("play track \(MusicScriptOutput.quoted(track.id))", app: app), shown: track)
         } else {
             // From the playlist that plays when the track is in it, so Music carries on there afterwards; from the
             // library otherwise.
             let id = MusicScriptOutput.quoted(track.id)
-            verb = """
+            let verb = """
             try
                 play (first track of current playlist whose persistent ID is \(id))
             on error
                 play (first track of library playlist 1 whose persistent ID is \(id))
             end try
             """
-        }
-        queue.async { [weak self] in
-            _ = NowPlayingService.runPlayerScript("with timeout of 4 seconds\ntell application \"\(app)\"\n\(verb)\nend tell\nend timeout")
-            Thread.sleep(forTimeInterval: 0.4)
-            Task { @MainActor in
-                guard let self else { return }
-                self.poll()
-                self.refreshUpNext()
-            }
+            playInBackground(app: app, spotify: nil, script: Self.playerScript(verb, app: app), shown: track)
         }
     }
 
