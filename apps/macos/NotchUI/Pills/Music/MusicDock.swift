@@ -239,7 +239,7 @@ private struct MusicUpcomingStrip: View {
         let queued = service.playQueue.entries.map { Chip(track: $0.track, entry: $0.id) }
         if let upNext = service.upNext { return queued + upNext.tracks.map { Chip(track: $0) } }
         if info.app == "Music" || !queued.isEmpty { return queued }
-        return service.recent.tracks.map { Chip(track: $0) }
+        return service.recent.tracks.filter { $0.id != info.trackID }.map { Chip(track: $0) }
     }
 
     var body: some View {
@@ -269,7 +269,7 @@ private struct MusicUpcomingStrip: View {
                 }
                 Spacer(minLength: NookTheme.Spacing.md)
                 if !chipsToShow.isEmpty {
-                    MusicShowAllButton { onShowAll(showsQueue ? .upNext : .recent) }
+                    MusicShowAllButton { onShowAll(showsQueue ? .upNext : .home) }
                 }
             }
             .padding(.horizontal, NookTheme.Spacing.xs)
@@ -400,7 +400,7 @@ private struct MusicUpcomingChip: View {
     }
 }
 
-private struct MusicShowAllButton: View {
+struct MusicShowAllButton: View {
     let action: () -> Void
     @State private var hovering = false
 

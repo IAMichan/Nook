@@ -436,6 +436,17 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
   AppleScript (`search library playlist 1`, so only tracks in the library, not the Apple Music catalogue), Spotify
   through its Web API search (needs Spotify connected in Settings › Services, not Premium). A found track plays on
   click and goes in the queue like any other track in the tab.
+- **Music players: starting a track.** Everything the Music tab and the brain start goes through
+  `NowPlayingService.playInBackground`: Spotify through its Web API (`PUT /me/player/play`, Premium and an awake device),
+  with the AppleScript `play track` as the fallback; Music through AppleScript. A player that does not run is started
+  hidden, and one that takes the front anyway is put back (`MusicPlayerFocus`). Spotify's own "open" button in the bar
+  still opens it. A track plays in the player it came from, and the other player pauses.
+- **Music players: listening history and statistics.** Nook measures what it hears from both players in the same way
+  (`MusicListening`, `MusicHistory`, `MusicStats`, in `music-history.json` on this Mac; Settings › Connections turns it
+  off or clears it). Only Spotify adds plays from elsewhere (`/me/player/recently-played`, last 50). The player's own top
+  lists differ: Spotify's top of the last six months (`/me/top`, no counts), Music's all-time `played count`, read only
+  while Music runs. Music has no per-play dates, so it cannot fill in plays Nook did not see. Spotify's history and top
+  lists need two newer scopes; a connection made before them asks to connect again, the rest keeps working.
 - **Music players: playlists.** The Music tab's Playlists section shows and keeps the user's playlists in both players:
   Music through AppleScript (`MusicScriptOutput`: list, tracks, add with `duplicate`, remove, make, rename, delete;
   smart playlists are read only), Spotify through its Web API (`SpotifyWebAPI`: `/me/playlists`, a playlist's

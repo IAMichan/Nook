@@ -11,11 +11,12 @@ enum SpotifyWebAPI {
     /// Nook's one OAuth redirect: add it to the Spotify app in the dashboard.
     static let redirectURI = MCPOAuth.redirectURI
     /// Playback for the queue; the playlist scopes for the Music tab's playlists. A sign-in made before Nook asked for
-    /// the playlist scopes gets `Failure.missingScope` and must connect again.
+    /// the playlist scopes gets `Failure.missingScope` and must connect again; so does one made before the listening
+    /// history scopes, for what it asks of those. Playing works with the scopes Nook always asked for.
     static let scopes = [
         "user-read-playback-state", "user-modify-playback-state",
         "playlist-read-private", "playlist-read-collaborative", "playlist-modify-private", "playlist-modify-public",
-        "user-library-modify",
+        "user-library-modify", "user-read-recently-played", "user-top-read",
     ].joined(separator: " ")
     private static let base = "https://api.spotify.com/v1"
     static let dashboardURL = URL(string: "https://developer.spotify.com/dashboard")!
@@ -70,6 +71,29 @@ enum SpotifyWebAPI {
             return request
         }
         return SpotifyResponses.queueTracks(from: data)
+    }
+
+    /// Starts playback without bringing Spotify forward. Fails with `noActiveDevice` when Spotify is not awake anywhere,
+    /// and with `premiumRequired` on a free account; `NowPlayingService` then asks the app itself.
+    static func play(_ target: SpotifyResponses.PlayTarget) async throws {
+        _ = try await authorized { token in SpotifyResponses.playRequest(target, token: token) }
+    }
+
+    static func setShuffle(_ on: Bool) async throws {
+        _ = try await send("\(base)/me/player/shuffle?state=\(on)", method: "PUT", json: nil)
+    }
+
+    /// The last 50 plays, on every device, oldest first.
+    static func recentPlays() async throws -> [MusicPlay] {
+        SpotifyResponses.recentPlays(from: try await get("\(base)/me/player/recently-played?limit=50"))
+    }
+
+    /// What the user played most in the last six months or so.
+    static func top() async throws -> MusicPlayerStats {
+        async let tracks = get("\(base)/me/top/tracks?limit=10&time_range=medium_term")
+        async let artists = get("\(base)/me/top/artists?limit=10&time_range=medium_term")
+        return MusicPlayerStats(app: "Spotify", tracks: SpotifyResponses.topTracks(from: try await tracks),
+                                artists: SpotifyResponses.topArtists(from: try await artists), state: .done)
     }
 
     /// Tracks on Spotify matching `query`, best match first: `pages` pages, fetched side by side.

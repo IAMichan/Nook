@@ -406,6 +406,10 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(webSearch, forKey: "webSearch") }
     }
     /// Music tab: look up lyrics on lrclib.net (sends the title, artist, album and length of the playing track).
+    /// Nook keeps what the user listens to on this Mac, for Recent and the Music tab's statistics.
+    @Published var musicHistory: Bool {
+        didSet { UserDefaults.standard.set(musicHistory, forKey: "musicHistory") }
+    }
     @Published var onlineLyrics: Bool {
         didSet { UserDefaults.standard.set(onlineLyrics, forKey: "onlineLyrics") }
     }
@@ -690,6 +694,7 @@ final class AppSettings: ObservableObject {
         providerModels = (defaults.dictionary(forKey: "providerModels") as? [String: String]) ?? [:]
         webSearch = defaults.object(forKey: "webSearch") as? Bool ?? true
         onlineLyrics = defaults.object(forKey: "onlineLyrics") as? Bool ?? true
+        musicHistory = defaults.object(forKey: "musicHistory") as? Bool ?? true
         liveScreen = defaults.object(forKey: "liveScreen") as? Bool ?? true
         screenWithEveryQuestion = defaults.object(forKey: "screenWithEveryQuestion") as? Bool ?? true
         selectionAsk = defaults.object(forKey: "selectionAsk") as? Bool ?? true
