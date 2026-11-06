@@ -51,6 +51,10 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
     private var shown: Set<Int64> = []
     /// Files asked of TDLib to show in a chat (a photo, a sticker, a voice message…), by their id: which message has it.
     private var downloads: [Int64: (chat: Int64, message: String)] = [:]
+    /// Those of `downloads` moved to the front of TDLib's queue, because you look at their chat.
+    private var hurried: Set<Int64> = []
+    /// TDLib's highest download priority.
+    private static let shownPriority = 32
     /// Chat pictures asked of TDLib, by their file id: whose picture it is.
     private var pictures: [Int64: Int64] = [:]
     /// Your own user id, to leave you out of a group's people.
@@ -761,6 +765,16 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         ToastCenter.shared.error(tr("chat.compose.notSent"), detail: Self.explain(pending?.error ?? reason))
     }
 
+    /// The chat's files that still wait go to the front of TDLib's queue, once each: every chat's files start at the
+    /// lowest priority, so the chat you look at no longer waits behind all the others. The answer comes as `updateFile`.
+    func hurryFiles(name: String) {
+        guard let id = chatID(name) else { return }
+        for (file, owner) in downloads where owner.chat == id && hurried.insert(file).inserted {
+            send(["@type": "downloadFile", "file_id": file, "priority": Self.shownPriority, "offset": 0, "limit": 0,
+                  "synchronous": false])
+        }
+    }
+
     /// A chat's picture, downloaded once when TDLib does not have it yet.
     private func fetchPicture(of chat: Int64) {
         guard let file = chats[chat]?.photo, chats[chat]?.avatar == nil, pictures[file] == nil else { return }
@@ -775,6 +789,9 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
             changed.insert(chat)
             return
         }
+        hurried.remove(file)
+        // TDLib says it finished, so its file is whole.
+        ChatMedia.markWhole(path)
         guard let owner = downloads.removeValue(forKey: file),
               let index = messages[owner.chat]?.firstIndex(where: { $0.id == owner.message }) else { return }
         messages[owner.chat]?[index].media?.path = path

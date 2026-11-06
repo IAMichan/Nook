@@ -615,6 +615,12 @@ final class ChatCaptureService: ObservableObject {
         Task { await pollBridges() }
     }
 
+    /// You are looking at this chat: the files it waits for go first, in an app that keeps a queue of its own.
+    func hurryFiles(_ id: String) {
+        guard enabled, let thread = inbox.threads[id], thread.bridged == true else { return }
+        bridge(for: thread.app)?.hurryFiles(name: thread.name)
+    }
+
     /// Tells about the chats someone wrote in since `before`, in the apps that are on.
     private func announce(since before: ChatInbox) {
         announce(ChatInbox.fresh(before: before, after: inbox, since: Date().addingTimeInterval(-Self.newsWindow)))
