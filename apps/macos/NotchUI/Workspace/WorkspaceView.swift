@@ -70,7 +70,7 @@ struct WorkspaceView: View {
 
     /// The notch's tabs: Music only while a player is open (or while you are on it).
     private var tabs: [PanelTab] {
-        PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || viewModel.windowTab == .music)
+        PanelTab.visible(musicAvailable: app.nowPlaying.hasMusic || viewModel.windowTab == .music)
     }
 
     private func select(_ tab: PanelTab) {
