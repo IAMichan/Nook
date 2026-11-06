@@ -38,7 +38,8 @@ final class AutocompleteController: ObservableObject {
     /// What Nook's memory knows about the user that matters for what is on screen and being written (set by AppModel).
     var facts: (_ context: String) -> [String] = { _ in [] }
     /// The text Nook already read in the front window of this app (set by AppModel).
-    var screenText: (_ bundleID: String) -> String? = { _ in nil }
+    /// Whether autocomplete may look at the window (Nook's screen reading is on); otherwise it reads it through Accessibility.
+    var readsScreen: () -> Bool = { false }
 
     private struct Completion {
         var suggestion: CompletionSuggestion
@@ -123,9 +124,15 @@ final class AutocompleteController: ObservableObject {
     private lazy var fieldObserver = AutocompleteFieldObserver { [weak self] change in self?.fieldChanged(change) }
     /// The context around the typed text, per field (see `prompt(for:in:)`).
     private var fieldContext: (key: String, made: Date, context: CompletionContext)?
-    /// The text of the window being written in, read by autocomplete itself (Accessibility), per field (same key as
-    /// `fieldContext`). Only for when Nook's own screen reading (OCR) has nothing for this app.
-    private var windowText: (key: String, text: String?)?
+    /// The text around the field being written in (see `readWindow`), per field (same key as `fieldContext`). `stale`: the
+    /// window may show something else by now; the text stays in the prompt until the new read is done.
+    private var windowText: (key: String, text: String?, read: Date, stale: Bool, picture: Bool)?
+    /// A read of the window is under way, and whether something happened since that asks for another.
+    private var windowReading = false
+    private var windowReadAgain = false
+    /// The field the context was last made for: to read its window again after a click, without a read of the field.
+    private var contextField: (key: String, app: NSRunningApplication, snapshot: AutocompleteFieldSnapshot)?
+    private var windowWork: DispatchWorkItem?
     /// How long the field's text was at the last prompt (same key as `fieldContext`): much shorter means a message was sent.
     private var fieldLength: (key: String, length: Int)?
     /// The clipboard's change count and when Nook first saw it: only something copied in the last minutes says anything
@@ -137,6 +144,8 @@ final class AutocompleteController: ObservableObject {
     private var warmWork: DispatchWorkItem?
     private var selectionWork: DispatchWorkItem?
     private var pendingSample: (app: String, text: String)?
+    /// A suggestion was taken in the field `pendingSample` comes from: as in Cotypist, only such a field is learned from.
+    private var sampleTaken = false
     /// The phrases the user writes again and again, from their writing samples (see `applyPersonalization`).
     private var phrases = CompletionPhrases()
     /// The most frequent of them, for the prompt.
@@ -191,6 +200,11 @@ final class AutocompleteController: ObservableObject {
     private let unexpectedAttempts = 4
     /// The context around a field is gathered again after this long (and after a message is sent).
     private static let contextSeconds: TimeInterval = 180
+    /// A window read from the picture is looked at again this long after the last time, for messages that came in. It costs
+    /// one recognition, and the model reads nothing new when the text is the same.
+    private static let pictureSeconds: TimeInterval = 30
+    /// How long after a click or a new focus the window is read: a chat app has drawn the conversation by then.
+    private static let clickReadDelay: TimeInterval = 0.4
     /// The clipboard goes into the prompt only this long after it was copied.
     private static let clipboardSeconds: TimeInterval = 5 * 60
     /// The model leaves memory after this long without a suggestion: a model of several GB held for a quarter of an hour
@@ -387,6 +401,8 @@ final class AutocompleteController: ObservableObject {
         if lastSite != nil { lastSite = nil }
         fieldContext = nil
         windowText = nil
+        contextField = nil
+        windowWork?.cancel()
         upcoming = nil
         lastRead = nil
         memo.forget()
@@ -532,6 +548,8 @@ final class AutocompleteController: ObservableObject {
             scheduleSelectionCheck()
             // Perhaps another field: read its context into the model before the first key.
             scheduleWarm(after: 0.3)
+            // Perhaps another conversation in the same window: nothing about the field says so.
+            scheduleWindowRead(after: Self.clickReadDelay)
             // A click in Nook may have moved the focus to or from one of its text views.
             if ownAppInFront { DispatchQueue.main.async { MainActor.assumeIsolated { self.publishTapState() } } }
         }
@@ -681,7 +699,10 @@ final class AutocompleteController: ObservableObject {
         scheduleRefresh(after: key, in: app)
         if key.flags.contains(.maskShift) { scheduleSelectionCheck() }
         // Perhaps a message was sent: once new messages are on screen, read the new context before the next one is typed.
-        if key.code == kVK_Return { scheduleWarm(after: 0.8) }
+        if key.code == kVK_Return {
+            scheduleWarm(after: 0.8)
+            scheduleWindowRead(after: 0.8)
+        }
         return false
     }
 
@@ -698,6 +719,7 @@ final class AutocompleteController: ObservableObject {
         // The field changes without a key the tap sees: known again at the next read.
         lastRead = nil
         typeText(text, behind: rest.anchor)
+        sampleTaken = true
         store.recordAccepted(text, first: rest.fresh, app: frontApp?.bundleIdentifier)
         if rest.suggestion.isEmpty {
             let anchor = rest.anchor + text
@@ -780,8 +802,6 @@ final class AutocompleteController: ObservableObject {
         readToken += 1
         refreshWork?.cancel()
         warmWork?.cancel()
-        completer?.cancel()
-        upcoming = nil
         expected = nil
         if let key, let app, let last = lastRead, last.pid == app.processIdentifier, !last.snapshot.hasSelection,
            let next = CompletionTyping.predicted(before: last.snapshot.before, characters: key.characters,
@@ -792,6 +812,12 @@ final class AutocompleteController: ObservableObject {
             // Nook typed something, or the key did something else: the field's text is unknown until it is read again.
             lastRead = nil
         }
+        // A key that goes along with what the model is writing leaves that work running.
+        let following = follows(expected)
+        if !following {
+            completer?.cancel()
+            upcoming = nil
+        }
         let power = self.power
         // Only when asked for (see `CompletionPreferences.suggestNow`).
         if power.onDemand { return }
@@ -800,7 +826,15 @@ final class AutocompleteController: ObservableObject {
         // With the text predicted, the read checks the app took in the key (see `refreshProposal`): no need to wait first.
         let delay = max(expected == nil ? max(prefs.delayMilliseconds, 30) : prefs.delayMilliseconds, power.minimumDelay)
         DispatchQueue.main.asyncAfter(deadline: .now() + Double(delay) / 1000, execute: work)
-        if power.speculates, let expected, let app, let last = lastRead { speculate(on: last.snapshot, before: expected.new, in: app) }
+        if !following, power.speculates, let expected, let app, let last = lastRead { speculate(on: last.snapshot, before: expected.new, in: app) }
+    }
+
+    /// Whether the model's request under way can go on with the text the key made: it continues an earlier point of that text
+    /// and tells the engine what was typed since (see `CompletionFollowing`).
+    private func follows(_ expected: (old: String, new: String)?) -> Bool {
+        guard power.speculates, let expected, let flight = upcoming, !flight.done, flight.app == frontApp?.bundleIdentifier,
+              expected.new.count > flight.before.count, expected.new.hasPrefix(flight.before), let completer else { return false }
+        return completer.following.follow(String(expected.new.dropFirst(flight.before.count)))
     }
 
     /// Reads the field on the reading queue; `done` runs on the main queue unless the user did something else meanwhile.
@@ -937,6 +971,8 @@ final class AutocompleteController: ObservableObject {
             lastRead = nil
             forcedApp = nil
             scheduleWarm(after: 0.05)
+            // Moved here with the keyboard, perhaps from another conversation in the same window.
+            scheduleWindowRead(after: Self.clickReadDelay)
         }
     }
 
@@ -976,10 +1012,17 @@ final class AutocompleteController: ObservableObject {
               learnedPhrase(before: before, app: bundleID, maxWords: prefs.maxWords) == nil else { return }
         let options = completionOptions(before: before, continuing: false)
         let prompt = self.prompt(for: next, in: app)
-        let branches = power.branches ? rememberBranches(before: before, field: fieldKey(for: next, in: app)) : nil
+        let field = fieldKey(for: next, in: app)
+        let branches = power.branches ? rememberBranches(before: before, field: field) : nil
         let task = Task { () -> CompletionResult? in
             guard let completer = await loadedCompleter(for: model) else { return nil }
-            return await completer.complete(prompt: prompt, options: options, partial: nil, branches: branches)
+            let result = await completer.complete(prompt: prompt, options: options, partial: nil, branches: branches)
+            if let result { memo.remember(result, before: before, field: field) }
+            if upcoming?.before == before {
+                upcoming?.done = true
+                upcoming?.result = result
+            }
+            return result
         }
         upcoming = Upcoming(app: bundleID, before: before, task: task)
     }
@@ -1121,8 +1164,11 @@ final class AutocompleteController: ObservableObject {
         let prompt = self.prompt(for: snapshot, in: app)
         // Written ahead while the last suggestion was on screen, or started on the key just typed (see `speculate`): no need
         // to ask the model again.
-        let ahead = upcoming.flatMap { $0.app == bundleID && $0.before == snapshot.before ? $0.task : nil }
-        upcoming = nil
+        // What it wrote may start at an earlier point of the text (see `follows`).
+        let flight = upcoming.flatMap { $0.app == bundleID && snapshot.before.hasPrefix($0.before) ? $0 : nil }
+        let ahead = flight?.task
+        // Still running: the next key can go along with it too.
+        if flight == nil || flight?.done == true { upcoming = nil }
         asking = (token, false, continuing)
         // Where each suggestion came from and how long it took, to see where the time goes (Console: subsystem nl.imdigital.nook,
         // category autocomplete, "served from"). Cold: the model was not in memory yet.
@@ -1134,12 +1180,14 @@ final class AutocompleteController: ObservableObject {
                 let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - started) / 1e6
                 Log.autocomplete.info("suggestion served from: \(path, privacy: .public) in \(milliseconds, format: .fixed(precision: 1)) ms")
             }
-            if let ahead, let result = await ahead.value {
-                memo.remember(result, before: snapshot.before, field: field)
+            if let ahead, let base = flight?.before, let result = await ahead.value {
+                memo.remember(result, before: base, field: field)
                 guard token == readToken else { return }
-                present(result.text, truncated: result.truncated, unfinished: result.unfinished, token: token, snapshot: snapshot,
-                        after: after, maxWords: maxWords, app: app)
-                return
+                if let rest = memo.recall(before: snapshot.before, field: field) {
+                    present(rest.text, truncated: rest.truncated, unfinished: rest.unfinished, token: token, snapshot: snapshot,
+                            after: after, maxWords: maxWords, app: app)
+                    return
+                }
             }
             guard let completer = await loadedCompleter(for: model), token == readToken else { return }
             // The whole suggestion at once, never word by word as the model writes it.
@@ -1239,13 +1287,20 @@ final class AutocompleteController: ObservableObject {
         let length = snapshot.before.count + snapshot.after.count
         let sent = fieldLength.map { $0.key == key && $0.length >= 8 && length < $0.length / 2 } ?? false
         fieldLength = (key, length)
+        contextField = (key, app, snapshot)
         if let saved = fieldContext, saved.key == key, sent || Date().timeIntervalSince(saved.made) > Self.contextSeconds {
             fieldContext = nil
-            if windowText?.key == key { windowText = nil }
+            if windowText?.key == key { windowText?.stale = true }
+        }
+        // New messages may have come in while typing. The context stays as it is unless the window turns out to say otherwise.
+        if let read = windowText, read.key == key, read.picture, !windowReading, usesPicture(of: app),
+           Date().timeIntervalSince(read.read) > Self.pictureSeconds {
+            readWindow(key: key, app: app, snapshot: snapshot)
         }
         if let saved = fieldContext, saved.key == key {
             var input = saved.context
             input.before = snapshot.before
+            input.after = snapshot.after
             return builder.build(input)
         }
         var input = CompletionContext(before: "")
@@ -1257,23 +1312,9 @@ final class AutocompleteController: ObservableObject {
             input.site = snapshot.site
         }
         // Nook never reads its own windows (see `ScreenReader.excludedBundles`).
-        if prefs.screenContext, let bundleID, app.processIdentifier != ProcessInfo.processInfo.processIdentifier {
-            // Leave out the field's own text: it is already the body of the prompt.
-            let own = snapshot.before + snapshot.after
-            // The pane around the field first (the conversation, the mail being answered): it is what the text replies to.
-            // Nook's own screen reading of the whole window fills in until that is read.
-            // Like Cotypist: the screen's text comes from the picture Nook already has (one capture and recognition, shared with
-            // everything else), not from asking the app about every element. Walking its accessibility tree is the fallback for
-            // an app the picture has nothing for, and runs once per field.
-            let seen = screenText(bundleID).flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
-            if let seen {
-                Log.autocomplete.info("window context from screen text (no accessibility read), \(seen.count) characters")
-                input.screenText = CompletionScreenText.prose(CompletionPrivacy.sanitize(own.isEmpty ? seen : seen.replacingOccurrences(of: own, with: "")))
-            } else if let read = windowText, read.key == key, let text = read.text, !text.isEmpty {
-                input.screenText = text
-            } else if windowText?.key != key {
-                readWindow(key: key, app: app, own: own)
-            }
+        if prefs.screenContext, bundleID != nil, app.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            if let read = windowText, read.key == key, let text = read.text, !text.isEmpty { input.screenText = text }
+            if windowText?.key != key || windowText?.stale == true { readWindow(key: key, app: app, snapshot: snapshot) }
         }
         if prefs.clipboardContext {
             let board = NSPasteboard.general
@@ -1296,42 +1337,88 @@ final class AutocompleteController: ObservableObject {
         }
         fieldContext = (key, Date(), input)
         input.before = snapshot.before
+        input.after = snapshot.after
         return builder.build(input)
     }
 
-    /// Reads the text around the field being written in (the pane it sits in, see `AppTextReader.textAroundFocus`), off the
-    /// main thread, once per field context. The prompt takes it from the next key on; until then suggestions go on without
-    /// it, so a slow app never holds up the first one.
-    private func readWindow(key: String, app: NSRunningApplication, own: String) {
-        guard windowText?.key != key else { return }
-        windowText = (key, nil)
+    /// Whether the text around a field comes from a picture of the window (see `CompletionScreenCapture`).
+    private func usesPicture(of app: NSRunningApplication) -> Bool {
+        guard readsScreen(), ScreenAccess.isUsable else { return false }
+        return !ScreenReader.excludedBundles.contains(app.bundleIdentifier ?? "")
+    }
+
+    /// Reads the window again a moment from now, when the app has drawn what the click or Return did to it.
+    private func scheduleWindowRead(after seconds: TimeInterval) {
+        windowWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                // On battery a click alone is often just a click (see `warmFocusedField`).
+                guard let self, self.power.warms, let field = self.contextField, field.app == self.frontApp,
+                      self.windowText?.picture == true, self.windowText?.key == field.key,
+                      self.prefs.screenContext, self.usesPicture(of: field.app) else { return }
+                self.windowText?.stale = true
+                self.readWindow(key: field.key, app: field.app, snapshot: field.snapshot)
+            }
+        }
+        windowWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+    }
+
+    /// Gets the text around the field being written in, off the main thread, and takes it into the prompt when it says
+    /// something new. As in Cotypist it comes from a picture of the window: recognition reads what any app draws, and only the
+    /// field's column is kept (see `CompletionScreenColumn`). Without Screen Recording, or with no text in the picture, it
+    /// is read through Accessibility (`AppTextReader.textAroundFocus`), which asks the app about every element and so only
+    /// happens once per field context. Until a read is done suggestions go on without it, so a slow app never holds up the
+    /// first one.
+    private func readWindow(key: String, app: NSRunningApplication, snapshot: AutocompleteFieldSnapshot) {
+        guard !windowReading else {
+            windowReadAgain = true
+            return
+        }
+        windowReading = true
+        if windowText?.key != key { windowText = (key, nil, Date(), false, false) }
         let pid = app.processIdentifier
         let limit = builder.maxContextLength * 3
-        windowQueue.async {
-            // Measured so a change to the reading can be judged: wall time and the CPU this thread used (Console, subsystem
-            // nl.imdigital.nook, category autocomplete, "window read").
-            let started = (wall: DispatchTime.now().uptimeNanoseconds, cpu: clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID))
-            defer {
-                let wall = Double(DispatchTime.now().uptimeNanoseconds - started.wall) / 1e6
-                let cpu = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - started.cpu) / 1e6
-                Log.autocomplete.info("window read (accessibility): wall \(wall, format: .fixed(precision: 1)) ms, cpu \(cpu, format: .fixed(precision: 1)) ms")
-            }
-            let text = AppTextReader.textAroundFocus(pid: pid, limit: limit).map { text in
-                CompletionScreenText.prose(CompletionPrivacy.sanitize(own.isEmpty ? text : text.replacingOccurrences(of: own, with: "")))
-            }
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard self.windowText?.key == key, let text else { return }
-                    self.windowText = (key, text)
-                    // Build the field's context again with the window in it, and read it into the model now rather than on
-                    // the next key.
-                    if self.fieldContext?.key == key {
-                        self.fieldContext = nil
-                        self.scheduleWarm(after: 0)
+        let own = snapshot.before + snapshot.after
+        let field = snapshot.fieldFrame
+        let picture = usesPicture(of: app)
+        Task {
+            let started = DispatchTime.now().uptimeNanoseconds
+            var text = picture ? await CompletionScreenCapture.text(pid: pid, field: field, own: own) : nil
+            let path = text == nil ? "accessibility" : "picture"
+            if text == nil {
+                text = await withCheckedContinuation { continuation in
+                    windowQueue.async {
+                        continuation.resume(returning: AppTextReader.textAroundFocus(pid: pid, limit: limit).map { text in
+                            CompletionScreenText.prose(own.isEmpty ? text : text.replacingOccurrences(of: own, with: ""))
+                        })
                     }
                 }
             }
+            let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - started) / 1e6
+            Log.autocomplete.info("window read (\(path, privacy: .public)): \(milliseconds, format: .fixed(precision: 1)) ms, \(text?.count ?? 0) characters")
+            windowFinished(key: key, text: text.map { CompletionPrivacy.sanitize($0) }, picture: path == "picture")
         }
+    }
+
+    private func windowFinished(key: String, text: String?, picture: Bool) {
+        windowReading = false
+        defer {
+            if windowReadAgain {
+                windowReadAgain = false
+                if let field = contextField { readWindow(key: field.key, app: field.app, snapshot: field.snapshot) }
+            }
+        }
+        guard windowText?.key == key else { return }
+        let changed = (text ?? "") != (windowText?.text ?? "")
+        windowText = (key, text, Date(), false, picture)
+        guard changed, fieldContext?.key == key else { return }
+        // Build the field's context again with the window in it, and read it into the model now rather than on the next key.
+        // What was suggested was meant for the old window.
+        fieldContext = nil
+        memo.forget()
+        lastWarm = nil
+        scheduleWarm(after: 0)
     }
 
     /// After typing or taking part of a suggestion: waits until the app's text is what the rest continues, then moves the
@@ -1529,8 +1616,11 @@ final class AutocompleteController: ObservableObject {
     }
 
     private func commitSample() {
+        let taken = sampleTaken
+        sampleTaken = false
         guard let sample = pendingSample else { return }
         pendingSample = nil
+        guard taken else { return }
         if store.addSample(sample.text, app: sample.app) { applyPersonalization() }
     }
 
