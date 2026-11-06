@@ -180,6 +180,8 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertFalse(ChatDraft.wantsLookup("", smallBrain: false), "@nook alone: the chat says enough")
         XCTAssertFalse(ChatDraft.wantsLookup(ChatDraft.refinement(of: "Check the mail", change: "shorter"), smallBrain: false),
                        "a rewrite of a draft looks nothing up")
+        XCTAssertTrue(ChatDraft.wantsLookup(ChatDraft.refinement(of: "Hi Arjan", change: "add what Gijs said in the mail"),
+                                            smallBrain: false), "a change that points elsewhere is looked up")
     }
 
     func testALookupSaysWhatItLookedFor() {

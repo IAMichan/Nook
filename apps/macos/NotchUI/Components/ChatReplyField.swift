@@ -148,6 +148,12 @@ struct ChatReplyField: View {
     /// "@nook …" at the start of the field: Nook writes the message instead of sending what is typed.
     private var asksNook: Bool { ChatDraft.instruction(in: text) != nil }
 
+    /// "@nook …" typed over Nook's draft: Nook changes that draft as asked, instead of writing a new message.
+    private var steering: Bool { asksNook && !versions.isEmpty }
+
+    /// The draft "@nook …" changes: the version of Nook's that was last in the field.
+    private var steered: String? { versions.indices.contains(version) ? versions[version] : nil }
+
     /// The panel above the field: Nook writing, or its draft in the field.
     private var showsDraft: Bool { drafting || drafted != nil }
 
@@ -158,7 +164,8 @@ struct ChatReplyField: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             if outgoing == nil, showsDraft {
                 DraftPanel(writing: drafting, rewriting: drafting && beforeWriting != nil,
-                           edited: drafted.map { $0 != text } ?? false, readyNotice: readyNotice,
+                           edited: !asksNook && (drafted.map { $0 != text } ?? false), readyNotice: readyNotice,
+                           steering: steering && !drafting ? steered : nil,
                            request: request.flatMap { ChatDraft.instruction(in: $0) }, lookups: lookups,
                            version: version, versions: versions.count, showVersion: showVersion,
                            steer: $steer, steerFocused: $steerFocused,
@@ -285,9 +292,9 @@ struct ChatReplyField: View {
                 }
                 .onChange(of: text) { _, new in
                     updateMenu(new)
-                    // Emptied (sent) or a new "@nook …": the draft is gone.
-                    if !drafting, drafted != nil,
-                       new.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || ChatDraft.instruction(in: new) != nil {
+                    // Emptied (sent): the draft is gone. A new "@nook …" keeps it, as that steers the draft (see
+                    // `steering`).
+                    if !drafting, drafted != nil, new.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         drafted = nil
                         versions = []
                         version = 0
@@ -331,7 +338,10 @@ struct ChatReplyField: View {
     /// The side of the round buttons in and beside the field.
     static let buttonSide: CGFloat = 32
 
-    private var buttonLabel: String { asksNook ? tr("chats.draft.button") : sendLabel }
+    private var buttonLabel: String {
+        if steering { return tr("chats.draft.steer.button") }
+        return asksNook ? tr("chats.draft.button") : sendLabel
+    }
 
     /// The menu for what is typed: "@" offers "@nook" and the ready-made requests, in the user's language, and the
     /// chat's people whose name fits what follows the "@".
@@ -421,7 +431,11 @@ struct ChatReplyField: View {
     private func submit() {
         guard !busy, !drafting else { return }
         if let instruction = ChatDraft.instruction(in: text) {
-            write(instruction)
+            if steering, let steered {
+                steerDraft(steered, with: instruction)
+            } else {
+                write(instruction)
+            }
         } else if !empty {
             notice = nil
             drafted = nil
@@ -437,6 +451,13 @@ struct ChatReplyField: View {
         version = 0
         lookups = []
         run(instruction)
+    }
+
+    /// "@nook …" over Nook's draft: that draft is rewritten as asked and comes in as its next version; Stop puts the draft
+    /// back, not your "@nook …".
+    private func steerDraft(_ draft: String, with change: String) {
+        beforeWriting = draft
+        run(ChatDraft.refinement(of: draft, change: change))
     }
 
     /// Back or forward to another of Nook's versions of this message.
@@ -479,6 +500,8 @@ struct ChatReplyField: View {
         menu.close()
         drafting = true
         notice = tr(beforeWriting == nil ? "chats.draft.writing" : "chats.draft.rewriting")
+        // A rewrite keeps the lookups of the draft before it; its own are numbered after them.
+        let offset = lookups.map(\.id).max() ?? 0
         writing = Task { @MainActor in
             // A stopped run was already cleared by Stop, and a newer run may be under way.
             defer {
@@ -488,9 +511,11 @@ struct ChatReplyField: View {
                 }
             }
             do {
-                let message = try await draft(instruction) { step in
+                let message = try await draft(instruction) { found in
                     // A lookup of a run that was stopped or replaced is not this draft's.
                     guard !Task.isCancelled else { return }
+                    var step = ChatDraft.Lookup(id: offset + found.id, source: found.source, query: found.query)
+                    step.done = found.done
                     if let index = lookups.firstIndex(where: { $0.id == step.id }) {
                         lookups[index] = step
                     } else {
@@ -559,6 +584,8 @@ private struct DraftPanel: View {
     let edited: Bool
     /// What sending the draft does ("Read it…; ↩ copies it and opens Telegram"): the panel's tooltip.
     let readyNotice: String
+    /// "@nook …" typed over the draft: the draft it will change, shown here as it is no longer in the field.
+    let steering: String?
     /// What you asked after "@nook" ("" for a fitting answer); nil when not known.
     let request: String?
     /// What Nook looked up for this draft, in order.
@@ -579,6 +606,7 @@ private struct DraftPanel: View {
                 header
                 if let request { requestLine(request) }
                 if !lookups.isEmpty { lookedIn }
+                if let steering { steeredDraft(steering) }
             }
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.top, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
@@ -600,6 +628,7 @@ private struct DraftPanel: View {
         .help(writing ? "" : readyNotice)
         .animation(NookTheme.reveal, value: lookups)
         .animation(NookTheme.reveal, value: writing)
+        .animation(NookTheme.reveal, value: steering)
         .accessibilityElement(children: .contain)
     }
 
@@ -680,6 +709,26 @@ private struct DraftPanel: View {
         .padding(.leading, NookTheme.Spacing.xxs)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(tr("chats.draft.request") + ": " + shown)
+    }
+
+    /// The draft "@nook …" in the field will change, with what Return does, so it is clear Nook changes this message
+    /// and does not write a new one.
+    private func steeredDraft(_ draft: String) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+            Text(draft)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textStrong)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+            Label(tr("chats.draft.steering"), systemImage: "return")
+                .font(NookTheme.TextStyle.caption)
+                .foregroundStyle(NookTheme.iris)
+                .lineLimit(1)
+        }
+        .padding(NookTheme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control, style: .continuous)
+        .transition(.opacity)
     }
 
     /// Where Nook looked for this draft: one chip per lookup, searching while it runs and checked once done.
