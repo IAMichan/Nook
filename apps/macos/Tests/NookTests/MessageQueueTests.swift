@@ -36,6 +36,40 @@ final class MessageQueueTests: XCTestCase {
         XCTAssertEqual(q.messages.map(\.text), ["b"])
     }
 
+    func testSettleNewsDropsWhatIsSolvedAndKeepsTheRest() throws {
+        let url = "https://github.com/o/r/pull/1"
+        let failed = PullRequestNews.Line(text: "CI failed: build.", subject: .failedChecks)
+        let comment = PullRequestNews.Line(text: "Comment from @cy: typo", subject: .note)
+        func enqueue(_ q: inout MessageQueue, _ lines: [PullRequestNews.Line], url: String) -> QueuedMessage? {
+            q.enqueue(PullRequestNews.message(url: url, lines: lines.map(\.text)), pullRequest: PullRequestNotice(url: url, lines: lines))
+        }
+        let green = PullRequestSnapshot(state: "open", checks: "success", failedChecks: [], reviews: [], comments: [])
+
+        var q = queue("mine")
+        let solved = enqueue(&q, [failed], url: url)
+        let mixed = enqueue(&q, [failed, comment], url: url)
+        let other = enqueue(&q, [failed], url: "https://github.com/o/r/pull/2")
+        let edited = try XCTUnwrap(enqueue(&q, [failed], url: url))
+        q.edit(edited.id, text: "Fix the build, but keep the flag")
+        let editing = try XCTUnwrap(enqueue(&q, [failed], url: url))
+        _ = q.beginEdit(editing.id, currentDraft: "")
+
+        q.settleNews(url: url, with: green)
+
+        XCTAssertEqual(q.messages.map(\.id), [q.messages[0].id, mixed?.id, other?.id, edited.id, editing.id].compactMap { $0 })
+        XCTAssertFalse(q.messages.contains { $0.id == solved?.id })
+        XCTAssertEqual(q.messages[0].text, "mine")
+        XCTAssertEqual(q.messages[1].text, PullRequestNews.message(url: url, lines: [comment.text]))
+        XCTAssertEqual(q.messages[1].pullRequest?.lines, [comment])
+        XCTAssertFalse(q.messages[1].edited)
+        XCTAssertEqual(q.messages[2].pullRequest?.lines, [failed], "another pull request is not touched")
+        XCTAssertEqual(q.messages[3].text, "Fix the build, but keep the flag", "a message you edited is yours")
+        XCTAssertEqual(q.messages[4].pullRequest?.lines, [failed], "and so is one you are editing")
+
+        let saved = try JSONDecoder().decode(MessageQueue.self, from: JSONEncoder().encode(q))
+        XCTAssertEqual(saved.messages.map(\.pullRequest), q.messages.map(\.pullRequest), "kept across a restart")
+    }
+
     func testRequeueFirstGoesInFrontEvenWhenFull() {
         var q = queue("a")
         q.requeueFirst(" back ")

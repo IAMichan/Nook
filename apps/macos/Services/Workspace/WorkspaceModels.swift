@@ -525,20 +525,48 @@ struct PullRequestSnapshot: Equatable, Sendable {
     var conflicted = false
     /// Whether `conflicted` is the forge's answer: GitHub works it out lazily after a push, and says nothing until then.
     var mergeabilityKnown = true
+    /// Whether `checks` is the forge's answer. Empty `checks` then means there are none on this commit (yet, right after a
+    /// push); without an answer they may as well still be failing.
+    var checksKnown = true
+}
+
+/// News about a pull request that waits in the queue for the agent, line by line, so that what is no longer true can go
+/// before it is sent (see `PullRequestNews.stillNeeded`).
+struct PullRequestNotice: Codable, Equatable, Sendable {
+    var url: String
+    var lines: [PullRequestNews.Line]
 }
 
 /// What changed on a watched pull request since the last look: lines for the timeline, and the message for the agent.
 enum PullRequestNews {
-    static func lines(old: PullRequestWatch, new: PullRequestSnapshot) -> [String] {
-        var lines: [String] = []
+    /// One line of news, and what it is about: that decides whether it can go out of date.
+    struct Line: Codable, Equatable, Sendable {
+        enum Subject: String, Codable, Sendable {
+            /// Failed checks: over once they stop failing.
+            case failedChecks
+            /// A merge conflict: over once it is gone.
+            case conflict
+            /// A review or comment: it stays to be read, whatever happens to the pull request's status.
+            case note
+            /// Something the agent has nothing to do for, such as passed checks.
+            case status
+        }
+
+        var text: String
+        var subject: Subject
+    }
+
+    static func lines(old: PullRequestWatch, new: PullRequestSnapshot) -> [Line] {
+        var lines: [Line] = []
         if new.state != old.state {
-            lines.append(new.state == "merged" ? "The pull request was merged." : new.state == "closed" ? "The pull request was closed." : "The pull request was reopened.")
+            let text = new.state == "merged" ? "The pull request was merged." : new.state == "closed" ? "The pull request was closed." : "The pull request was reopened."
+            lines.append(Line(text: text, subject: .status))
         }
         if new.checks != old.checks {
             switch new.checks {
             case "failure":
-                lines.append("CI failed" + (new.failedChecks.isEmpty ? "." : ": " + new.failedChecks.prefix(8).joined(separator: ", ") + "."))
-            case "success" where !old.checks.isEmpty: lines.append("CI passed.")
+                lines.append(Line(text: "CI failed" + (new.failedChecks.isEmpty ? "." : ": " + new.failedChecks.prefix(8).joined(separator: ", ") + "."), subject: .failedChecks))
+            case "success" where !old.checks.isEmpty: lines.append(Line(text: "CI passed.", subject: .status))
             default: break
             }
         }
@@ -546,23 +574,40 @@ enum PullRequestNews {
         for review in new.reviews.dropFirst(min(old.reviewCount, new.reviews.count)) {
             let body = plain(review.text)
             let text = body.isEmpty ? "" : ": " + body
-            lines.append("Review from @\(review.author) (\(review.verdict.lowercased().replacingOccurrences(of: "_", with: " ")))" + text)
+            lines.append(Line(text: "Review from @\(review.author) (\(review.verdict.lowercased().replacingOccurrences(of: "_", with: " ")))" + text, subject: .note))
         }
         for comment in new.comments.dropFirst(min(old.commentCount, new.comments.count)) {
             let body = plain(comment.text)
-            lines.append("Comment from @\(comment.author)" + (body.isEmpty ? "" : ": " + body))
+            lines.append(Line(text: "Comment from @\(comment.author)" + (body.isEmpty ? "" : ": " + body), subject: .note))
         }
         return lines
     }
 
     /// The first look at a watch reports nothing that happened before, except a conflict: that is still there to fix.
-    static func firstLook(_ new: PullRequestSnapshot) -> [String] {
+    static func firstLook(_ new: PullRequestSnapshot) -> [Line] {
         conflictLine(old: false, new: new).map { [$0] } ?? []
     }
 
-    private static func conflictLine(old: Bool?, new: PullRequestSnapshot) -> String? {
+    private static func conflictLine(old: Bool?, new: PullRequestSnapshot) -> Line? {
         guard new.state == "open", new.mergeabilityKnown, let old, new.conflicted != old else { return nil }
-        return new.conflicted ? "The pull request has merge conflicts with its base branch." : "The merge conflicts are resolved."
+        return new.conflicted ? Line(text: "The pull request has merge conflicts with its base branch.", subject: .conflict)
+            : Line(text: "The merge conflicts are resolved.", subject: .status)
+    }
+
+    /// What is left of a waiting notice now that the pull request looks like this: a merged or closed one needs nothing,
+    /// and checks or a conflict that were fixed in the meantime are gone. A check that fails again is new news, so checks
+    /// that are running count as over. Nil when nothing is left for the agent to do.
+    static func stillNeeded(_ notice: PullRequestNotice, new: PullRequestSnapshot) -> PullRequestNotice? {
+        guard new.state == "open" else { return nil }
+        var kept = notice
+        kept.lines = notice.lines.filter { line in
+            switch line.subject {
+            case .failedChecks: return new.checks == "failure" || !new.checksKnown
+            case .conflict: return new.conflicted || !new.mergeabilityKnown
+            case .note, .status: return true
+            }
+        }
+        return kept.lines.contains { $0.subject != .status } ? kept : nil
     }
 
     /// A review or comment as one readable line: a bot's HTML comments, tags, badges and images left out, links as their
