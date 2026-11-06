@@ -7,6 +7,19 @@ final class AgentAttentionTests: XCTestCase {
                              limitedAt: limited, unseen: unseen, settled: settled)
     }
 
+    // MARK: Subagents
+
+    func testSubagentsKeepAFinishedTurnWorking() {
+        var working = input(.completed, unseen: true)
+        working.subagentsWorking = true
+        XCTAssertEqual(AgentAttention.resolve(working), .working)
+        working.pendingApprovals = 1
+        XCTAssertEqual(AgentAttention.resolve(working), .approval, "What needs you still comes first")
+        var stopped = input(.stopped)
+        stopped.subagentsWorking = true
+        XCTAssertEqual(AgentAttention.resolve(stopped), .finished, "A stopped session stopped its subagents too")
+    }
+
     // MARK: Priority
 
     func testApprovalBeatsQuestionBeatsWorking() {

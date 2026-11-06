@@ -33,6 +33,8 @@ enum AgentAttention: Int, Comparable, Sendable {
         var unseen = false
         /// Marked finished by you, or snoozed.
         var settled = false
+        /// The turn ended, but subagents it started still work in the background.
+        var subagentsWorking = false
     }
 
     /// Approval beats question beats everything else. A pending request wins over `settled`: what waits for you is never
@@ -45,7 +47,7 @@ enum AgentAttention: Int, Comparable, Sendable {
         case .preparing, .running: return .working
         case .waitingApproval: return .approval
         case .failed: return input.limitedAt != nil ? .limited : .failed
-        case .completed: return input.unseen ? .ready : .idle
+        case .completed: return input.subagentsWorking ? .working : (input.unseen ? .ready : .idle)
         case .stopped: return .finished
         }
     }
