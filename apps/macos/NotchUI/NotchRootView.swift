@@ -534,7 +534,7 @@ private struct NotchCard: View {
             onAction: { viewModel.perform($0) },
             onVoice: { viewModel.startListening() },
             onReply: { app.handleCardReply($0, card: card) },
-            onDraft: { try await app.draftCardReply($0, card: card) },
+            onDraft: { try await app.draftCardReply($0, card: card, onLookup: $1) },
             onChoose: { viewModel.choose($0, $1) },
             onOpen: { app.openCardAttachment($0, card: card) },
             onReplyTo: { app.replyCardMessage($0, to: $1, card: card) },

@@ -248,6 +248,24 @@ final class BrainService {
         }
     }
 
+    /// "@nook …" in a chat that refers to something elsewhere ("what Gijs said in the mail"): the chosen brain looks it up
+    /// with these read tools, as Nook Chat does, and answers with the text it wrote. Action tools are never offered: the
+    /// message only goes into the field. Nil when nothing usable came back.
+    func writeWithLookups(system: String, prompt: String, request: String, tools: [ToolSpec]) async throws -> String? {
+        guard settings.brainReady else { return nil }
+        let profile = settings.brainProfile
+        let reads = tools.filter { $0.kind == .read }
+        let offered = Self.withCompanions(Self.prioritized(reads, for: request, limit: min(profile.maxTools, 24),
+                                                           preferred: ["search_mail", "read_mail", "chat_inbox", "list_events"]),
+                                          from: reads)
+        let runner = ToolRunner(tools: offered.map { Self.loopTool($0, compact: profile.compactDescriptions) },
+                                limits: .init(rounds: 6, calls: 12, repairs: 0))
+        let plan = try await execute(system: system, prompt: prompt, fittedHistory: "", history: [], webAllowed: false,
+                                     profile: profile, runner: runner, onText: nil)
+        Log.brain.info("chat draft: \(runner.callCount, privacy: .public) lookups")
+        return plan.text
+    }
+
     /// Taking over a task (`TakeoverPolicy`): the chosen brain works through it with these tools in many rounds; action
     /// tools run through `perform` (which stops at the point of no return for the user's yes) instead of becoming a plan.
     /// `images`: a picture of the screen for brains that can see. Returns the brain's last text.
