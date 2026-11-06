@@ -173,6 +173,8 @@ struct CompletionPolicy: Equatable {
 /// Everything that can shape a completion.
 struct CompletionContext {
     var before: String
+    /// The text after the cursor: what a suggestion in the middle of a text has to lead up to.
+    var after = ""
     /// The user's own instructions: general, for this app and for this website.
     var instructions: [String] = []
     /// What Nook knows about the user (Memory): name, work, people.
@@ -245,6 +247,7 @@ struct PromptBuilder {
     var windowStep = 500
     var maxContextLength = 1_600
     var maxSampleLength = 400
+    var maxAfterLength = 300
 
     func build(_ input: CompletionContext) -> CompletionPrompt {
         var sections: [String] = []
@@ -265,6 +268,7 @@ struct PromptBuilder {
             sections.append("On screen, around where the author writes (newest last):\n" + CompletionScreenText.recent(screen, limit: maxContextLength))
         }
         if let clipboard = cleaned(input.clipboard) { sections.append("Clipboard:\n" + clip(clipboard, to: maxContextLength / 2)) }
+        if let after = cleaned(input.after) { sections.append("The author's text goes on after the cursor with:\n" + clip(after, to: maxAfterLength)) }
         var place: [String] = []
         if let app = cleaned(input.appName) { place.append(app) }
         if let site = cleaned(input.site) { place.append(site) }
@@ -555,6 +559,43 @@ enum CompletionRanking {
     }
 }
 
+/// What the user typed while the model was still writing. As with Cotypist's decode in flight, a key that goes along with what the
+/// model is writing does not throw that work away: the request runs on, and stops at the next token once nothing it wrote
+/// fits. So the suggestion shows while the user types, exactly when the model guessed right. Shared by every engine.
+final class CompletionFollowing: @unchecked Sendable {
+    private let lock = NSLock()
+    private var request: Int?
+    private var typed = ""
+
+    func start(_ id: Int) { lock.withLock { request = id; typed = "" } }
+    func stop(_ id: Int) { lock.withLock { if request == id { request = nil } } }
+
+    /// `text`, what was typed since the request began, is taken along. False when no request is running.
+    func follow(_ text: String) -> Bool {
+        lock.withLock {
+            guard request != nil else { return false }
+            typed = text
+            return true
+        }
+    }
+
+    /// What was typed, once something was.
+    var text: String? { lock.withLock { typed.isEmpty ? nil : typed } }
+
+    /// The results that go with what was typed, the others nil, so ranking cannot pick one the user has typed past.
+    func keep(_ results: [CompletionResult?]) -> [CompletionResult?] {
+        guard let text else { return results }
+        return results.map { result in result.flatMap { Self.fits($0.text, typed: text) ? $0 : nil } }
+    }
+
+    /// Whether `written` and `typed` start the same way, whichever is longer. Where the space between the words stands differs
+    /// (it was typed, or the model wrote it), so spaces in front do not count.
+    static func fits(_ written: String, typed: String) -> Bool {
+        let written = written.drop(while: \.isWhitespace), typed = typed.drop(while: \.isWhitespace)
+        return written.hasPrefix(typed) || typed.hasPrefix(written)
+    }
+}
+
 /// The text before the cursor once the app has taken in a key, when the key alone says what it will be: a character typed, or
 /// Delete. The model can then start on the next suggestion while the field is still being read.
 enum CompletionTyping {
@@ -686,6 +727,65 @@ enum CompletionScreenText {
         }
         if kept.isEmpty { return "…" + String(text.suffix(limit)) }
         return "…\n" + kept.reversed().joined(separator: "\n")
+    }
+}
+
+/// From what recognition read in a window to what the field's text is about. Recognition answers column by column, so a chat's
+/// own messages land after the other person's and a sidebar runs through the conversation; here the lines are taken from the
+/// column the field sits in, without the field itself and in the order they are read on screen.
+enum CompletionScreenColumn {
+    /// A recognized line, with its box as a part of the window (0…1, y down from the top).
+    struct Line: Equatable, Sendable {
+        var text: String
+        var box: CGRect
+    }
+
+    /// How much of a line must stand above or below the field to belong to its column.
+    static let minimumOverlap: CGFloat = 0.5
+    /// Below this many lines the column says too little (a small search box): the whole window is read instead.
+    static let minimumLines = 2
+
+    /// The text around the field, top to bottom.
+    /// - Parameters:
+    ///   - field: the field in the same units; nil reads the whole window.
+    ///   - own: the field's text, for when the app does not say where the field is.
+    static func text(_ lines: [Line], field: CGRect?, own: String = "") -> String {
+        let outside = lines.filter { line in
+            guard let field else { return true }
+            let shared = line.box.intersection(field)
+            return shared.isNull || shared.height <= line.box.height / 2 || shared.width < line.box.width * minimumOverlap
+        }
+        var kept = outside
+        if let field {
+            let column = outside.filter { line in
+                let overlap = min(line.box.maxX, field.maxX) - max(line.box.minX, field.minX)
+                return line.box.width > 0 && overlap / line.box.width >= minimumOverlap
+            }
+            if column.count >= minimumLines { kept = column }
+        }
+        let typed = own.lowercased()
+        return reading(kept).compactMap { line -> String? in
+            guard let text = withoutTime(line.text), text.count >= 2, text.contains(where: \.isLetter) else { return nil }
+            if text.count >= 8, typed.contains(text.lowercased()) { return nil }
+            return text
+        }.joined(separator: "\n")
+    }
+
+    /// Top to bottom; lines on one row left to right.
+    private static func reading(_ lines: [Line]) -> [Line] {
+        lines.sorted { a, b in
+            let row = min(a.box.height, b.box.height) / 2
+            if abs(a.box.midY - b.box.midY) > row { return a.box.midY < b.box.midY }
+            return a.box.minX < b.box.minX
+        }
+    }
+
+    /// The line without a clock time at its end, as chat apps put next to a message; nil when the time is all there is.
+    static func withoutTime(_ line: String) -> String? {
+        let cleaned = line.replacingOccurrences(of: #"\s*\b\d{1,2}[:.]\d{2}(\s?[ap]\.?m\.?)?\s*$"#, with: "",
+                                                options: [.regularExpression, .caseInsensitive])
+        let text = cleaned.trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? nil : text
     }
 }
 

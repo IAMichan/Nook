@@ -25,6 +25,7 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
     /// Short lock: the request counter and the word bonus. Never held while the model runs.
     private let lock = NSLock()
     private var latest = 0
+    let following = CompletionFollowing()
     private var favored: [String: Double] = [:]
     private var strength: Float = 0
     private var biasVersion = 0
@@ -93,6 +94,8 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
     func complete(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?,
                   branches: (@Sendable ([CompletionResult]) -> Void)?) async -> CompletionResult? {
         let id = begin()
+        following.start(id)
+        defer { following.stop(id) }
         guard let container = try? await EmbeddedModel.shared.completionContainer(modelID) else {
             // The model left memory (or the chat is busy with it): the checkpoint belongs to a model that may be gone.
             lock.withLock { dropCheckpoint = true }
@@ -286,6 +289,7 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
                     candidate.end()
                     break
                 }
+                if let typed = following.text, !CompletionFollowing.fits(text, typed: typed) { return nil }
                 if text.completionWordCount > options.maxWords {
                     candidate.end()
                     break
@@ -397,8 +401,10 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
                     let (token, probability) = Self.pick(step, row: index, bias: biasArray)
                     take(token, probability, into: index)
                 }
+                // Typed past everything written so far: this request has nothing left to give.
+                if let typed = following.text, !sequences.contains(where: { CompletionFollowing.fits($0.text, typed: typed) }) { return (nil, []) }
             }
-            let results = sequences.map { $0.candidate.result(text: $0.text) }
+            let results = following.keep(sequences.map { $0.candidate.result(text: $0.text) })
             guard let pick = CompletionRanking.best(results, minFirstProbability: options.minFirstProbability) else {
                 return (nil, results.dropFirst().compactMap { $0 })
             }
