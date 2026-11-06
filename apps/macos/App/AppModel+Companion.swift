@@ -6,7 +6,7 @@ import Combine
 /// shared inbox), so a new message shows as the same chat card every app gets, answered the same way.
 extension AppModel {
     /// How many of a chat's newest photos, videos and documents an opened chat or card fetches to show.
-    static let whatsAppPreviewCount = 6
+    static let whatsAppPreviewCount = 12
 
     /// A file a chat shows by itself once fetched: a photo, a video, a document, a sticker or a voice message.
     static func whatsAppPreviews(_ media: WAMedia) -> Bool {

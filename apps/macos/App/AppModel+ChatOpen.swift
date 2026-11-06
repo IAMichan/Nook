@@ -13,14 +13,18 @@ extension AppModel {
     func openedChat(_ entry: ChatsEntry) async {
         ChatMediaWarmup.warm(ChatCaptureService.shared.inbox.threads[entry.id])
         guard case .whatsApp(let key) = chatRoute(for: entry) else {
+            ChatCaptureService.shared.hurryFiles(entry.id)
             ChatCaptureService.shared.refresh(entry.id)
             return
         }
-        // WhatsApp's gateway is asked for the chat's history and its group's people at once, then for its newest files:
-        // the link then changes, and the chat with it (`WhatsAppGatewayBridge`).
+        // WhatsApp's gateway is asked for the chat's history, its group's people and the files of the messages Nook
+        // has at once, then for the files the history brought: the link then changes, and the chat with it
+        // (`WhatsAppGatewayBridge`). The photos on screen never wait for the history.
         let (link, jid) = WhatsAppAccounts.shared.route(key)
         async let members = link.loadMembers(jid)
+        async let shown: Void = loadWhatsAppPreviews(link, jid: jid)
         _ = await link.loadHistory(jid)
+        await shown
         await loadWhatsAppPreviews(link, jid: jid)
         _ = await members
     }
@@ -40,7 +44,9 @@ extension AppModel {
         ChatMediaWarmup.warm(ChatCaptureService.shared.inbox.threads[entry.id])
         guard case .whatsApp(let key) = chatRoute(for: entry) else { return }
         let (link, jid) = WhatsAppAccounts.shared.route(key)
+        async let shown: Void = loadWhatsAppPreviews(link, jid: jid)
         _ = await link.loadHistory(jid)
+        await shown
         await loadWhatsAppPreviews(link, jid: jid)
         // The files that just came in are part of the chat now: their pictures are readied as well.
         ChatMediaWarmup.warm(ChatCaptureService.shared.inbox.threads[entry.id])
@@ -126,6 +132,7 @@ extension AppModel {
             _ = await link.loadPreviews([message], chat: jid)
             return
         }
+        ChatCaptureService.shared.hurryFiles(entry.id)
         if let last = Self.fileReads[entry.id], Date().timeIntervalSince(last) < Self.fileReadPause { return }
         Self.fileReads[entry.id] = Date()
         ChatCaptureService.shared.refresh(entry.id)

@@ -92,10 +92,7 @@ final class SnapchatBridge: ChatHistoryBridge {
         for (source, data) in read.pictures {
             guard let id = wanted[source] else { continue }
             let target = ChatMedia.destination(key: id, name: "photo.jpg")
-            let saved = await Task.detached(priority: .utility) { () -> Bool in
-                try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-                return (try? data.write(to: target, options: .atomic)) != nil
-            }.value
+            let saved = await Task.detached(priority: .userInitiated) { ChatMedia.save(data, to: target) }.value
             if saved { pictures[id] = target.path }
         }
     }
