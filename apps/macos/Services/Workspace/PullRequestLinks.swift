@@ -321,11 +321,20 @@ enum PullRequestSettlement {
         return latest.state == .closed || (latest.state == .merged && settleOnMerge)
     }
 
+    /// After this long a merged or closed request, or a session without any, has settled.
+    static let settledAfter: TimeInterval = 24 * 60 * 60
+
     /// How long a branch's answer stays fresh: an open request can be merged any moment, a branch without one may get
-    /// one soon, and a merged or closed one rarely changes again.
-    static func syncInterval(links: [PullRequestLink]) -> TimeInterval {
+    /// one soon, and a merged or closed one rarely changes again. Sessions stay in the list for months, so what has been
+    /// quiet for a day is asked far less often: a branch without a request (`quietSince`: when its session last did
+    /// anything) as often as a merged one, and a request closed long ago in a quiet session four times a day, for the odd
+    /// one reopened.
+    static func syncInterval(links: [PullRequestLink], quietSince: Date? = nil, now: Date = Date()) -> TimeInterval {
         if anyOpen(links: links) { return 30 }
-        return links.isEmpty ? 60 : 900
+        func settled(_ date: Date?) -> Bool { date.map { now.timeIntervalSince($0) >= settledAfter } ?? false }
+        if links.isEmpty { return settled(quietSince) ? 900 : 60 }
+        // Also a session at work: a merged branch that is used again can get a new request.
+        return settled((links.compactMap(\.updatedAt) + [quietSince].compactMap { $0 }).max()) ? 6 * 60 * 60 : 900
     }
 
     /// Asked at most once a minute; a clock that went backwards counts as due.
@@ -333,6 +342,27 @@ enum PullRequestSettlement {
         guard let lastChecked else { return true }
         let elapsed = now.timeIntervalSince(lastChecked)
         return elapsed < 0 || elapsed >= interval
+    }
+}
+
+/// Which branches one tick asks about. Each forge host is a lane of its own: requests to one host go one after the other,
+/// so a long list never floods it, but a slow or unreachable GitLab server keeps only its own branches waiting.
+enum PullRequestRound {
+    struct Due<Job> {
+        /// The forge host; empty while the folder's remote is not known yet.
+        var lane: String
+        var job: Job
+        var open: Bool
+        var last: Date
+    }
+
+    /// Per lane that is not `busy` its next jobs, open requests first and then the longest unasked. Lanes in name order.
+    static func plan<Job>(_ due: [Due<Job>], busy: Set<String>, perRound: Int) -> [(lane: String, jobs: [Job])] {
+        Dictionary(grouping: due.filter { !busy.contains($0.lane) }, by: \.lane)
+            .sorted { $0.key < $1.key }
+            .map { lane, jobs in
+                (lane, jobs.sorted { ($0.open ? 0 : 1, $0.last) < ($1.open ? 0 : 1, $1.last) }.prefix(perRound).map(\.job))
+            }
     }
 }
 

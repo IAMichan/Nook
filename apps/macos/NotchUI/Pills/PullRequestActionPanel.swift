@@ -410,13 +410,19 @@ struct PullRequestActionPanel: View {
         state.error = nil
         Task {
             do {
-                try await GitHubPullRequestDetail.perform(action, repo: repo, number: number, token: token)
+                let reply = try await GitHubPullRequestDetail.perform(action, repo: repo, number: number, token: token)
                 app.store.audit(tool: action.auditTool, args: args, result: "ok")
                 state.sending = false
                 state.close()
                 ToastCenter.shared.success(tr("agents.pr.action.done"))
+                // What GitHub answered shows at once; the page then reads only what the answer leaves out (the timeline).
+                if let reply { model.apply(reply) }
                 await model.refresh(activity: true)
-                await PullRequestStore.shared.refresh(force: true)
+                if action.needsListRead {
+                    await PullRequestStore.shared.refresh(force: true)
+                } else {
+                    PullRequestStore.shared.rereadAfterAction()
+                }
             } catch {
                 app.store.audit(tool: action.auditTool, args: args, result: "error: " + error.localizedDescription)
                 state.sending = false

@@ -10,7 +10,7 @@ struct PullRequestItem: Identifiable, Equatable, Codable, Sendable {
 
     let repo: String
     let number: Int
-    let title: String
+    var title: String
     let url: URL?
     /// Variable so a pull request marked ready for review on its page shows so in its tab at once.
     var draft: Bool

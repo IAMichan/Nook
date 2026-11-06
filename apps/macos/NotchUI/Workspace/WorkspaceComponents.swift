@@ -89,9 +89,8 @@ struct StatusBadge: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: status.symbol)
-                .font(NookTheme.font(compact ? 9 : 10, .bold))
-                .symbolEffect(.pulse, options: .repeating, isActive: status == .running)
+            LayerSymbol(name: status.symbol, size: compact ? 9 : 10, weight: .bold, color: status.color, motion: .pulse,
+                        active: status == .running)
             if !compact {
                 Text(status.label)
                     .font(NookTheme.TextStyle.label)

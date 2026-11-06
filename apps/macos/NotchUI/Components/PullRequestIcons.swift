@@ -181,10 +181,7 @@ struct CheckOutcomeGlyph: View {
 
     var body: some View {
         if running && outcome == .pending {
-            Image(systemName: "circle.dashed")
-                .font(NookTheme.font(size, .semibold))
-                .foregroundStyle(NookTheme.paper)
-                .symbolEffect(.rotate, options: .repeating)
+            LayerSymbol(name: "circle.dashed", size: size, weight: .semibold, color: NookTheme.paper, motion: .rotate)
         } else {
             Image(systemName: PullRequestIcon.symbol(outcome))
                 .font(NookTheme.font(size, .medium))

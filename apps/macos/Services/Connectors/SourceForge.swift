@@ -77,7 +77,7 @@ enum GitLabMergeRequests {
         guard let token = GitLabCredentials.token(host: repo.hostName), GitLabAPI.apiBase(repo) != nil,
               let url = GitLabAPI.listURL(repo: repo, sourceBranch: branch),
               let req = try? request(url, token: token),
-              let (data, response) = try? await ConnectorHTTP.session.data(for: req),
+              let (data, response) = try? await ConditionalFetch.data(for: req, session: ConnectorHTTP.session),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return GitLabAPI.parseList(data, repository: repo, sourceBranch: branch)
     }
@@ -89,7 +89,7 @@ enum GitLabMergeRequests {
               let token = GitLabCredentials.token(host: repo.hostName) else { return nil }
         func get(_ url: URL?) async -> Any? {
             guard let url, let req = try? request(url, token: token),
-                  let (data, response) = try? await ConnectorHTTP.session.data(for: req),
+                  let (data, response) = try? await ConditionalFetch.data(for: req, session: ConnectorHTTP.session),
                   (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
             return try? JSONSerialization.jsonObject(with: data)
         }

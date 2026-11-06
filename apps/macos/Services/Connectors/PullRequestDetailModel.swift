@@ -165,6 +165,14 @@ final class PullRequestDetailModel: ObservableObject {
         PullRequestSync.shared.markMerged(repository: shown.repo, number: shown.number)
     }
 
+    /// GitHub's answer to an action from this page: shows here, in the list and on the agent rows at once.
+    func apply(_ reply: PullRequestActionReply) {
+        guard var shown = detail else { return }
+        reply.apply(to: &shown)
+        show(shown)
+        if let state = reply.linkState { PullRequestSync.shared.mark(repository: shown.repo, number: shown.number, state: state) }
+    }
+
     private func show(_ fresh: PullRequestDetail) {
         var fresh = fresh
         if mergedHere, fresh.isOpen { fresh.state = .merged }
