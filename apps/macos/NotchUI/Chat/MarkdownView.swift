@@ -117,7 +117,10 @@ private struct ProseSegment: View, Equatable {
     let blocks: [MarkdownBlock]
     let size: CGFloat
 
-    var body: some View { SelectableProse(blocks: blocks, size: size) }
+    var body: some View {
+        SelectableProse(blocks: blocks, size: size)
+            .alignmentGuide(.firstTextBaseline) { _ in SelectableProse.firstBaseline(blocks, size: size) }
+    }
 }
 
 /// Renders an answer with headings, lists, tables, charts, code blocks, call-outs, and questions, in Nook's visual style.
@@ -271,7 +274,7 @@ struct MarkdownView: View, Equatable {
     private func view(for block: MarkdownBlock) -> some View {
         switch block {
         case .heading, .paragraph, .list:
-            SelectableProse(blocks: [block], size: size)
+            ProseSegment(blocks: [block], size: size)
         case .code(let language, let code):
             MarkdownCodeBlock(language: language, code: code, size: size)
         case .chart(let chart):
