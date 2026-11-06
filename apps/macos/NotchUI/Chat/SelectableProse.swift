@@ -39,6 +39,16 @@ struct SelectableProse: NSViewRepresentable {
         }
     }
 
+    /// Distance from the top of the view to its first line's baseline, so an `HStack(alignment: .firstTextBaseline)`
+    /// lines a control up with the first line (`NSViewRepresentable` with `sizeThatFits` otherwise reports 0).
+    static func firstBaseline(_ blocks: [MarkdownBlock], size: CGFloat) -> CGFloat {
+        if case .heading(let level, _) = blocks.first {
+            let headingSize = level <= 1 ? size + 6 : level == 2 ? size + 4 : level == 3 ? size + 2 : size
+            return 10 + ceil(NSFont.systemFont(ofSize: headingSize, weight: .semibold).ascender)
+        }
+        return ceil(NSFont.systemFont(ofSize: size).ascender)
+    }
+
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     /// The words selected in an answer's text view, trimmed; nil when nothing is selected.
