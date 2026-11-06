@@ -500,7 +500,8 @@ final class ScreenReader {
             ocrQueue.async(flags: .noQoS) {
                 let request = VNRecognizeTextRequest()
                 request.recognitionLevel = .accurate
-                request.recognitionLanguages = ["nl-NL", "en-US"]
+                // Whatever language the window is in, and the user may switch per message.
+                request.automaticallyDetectsLanguage = true
                 request.usesLanguageCorrection = true
                 let handler = VNImageRequestHandler(cgImage: image, options: [:])
                 do {
