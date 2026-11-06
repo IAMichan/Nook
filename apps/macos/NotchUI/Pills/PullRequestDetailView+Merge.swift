@@ -8,17 +8,21 @@ extension PullRequestDetailView {
 
     /// The pull requests to merge to land this one: from the bottom of the stack up to here.
     var stackToMerge: [PullRequestItem] {
-        guard let index = stack.firstIndex(where: { $0.id == item.id }) else { return [] }
-        return Array(stack[...index])
+        let open = nativeStack == nil ? stack : shownStack.filter { $0.state == .open }
+        guard let index = open.firstIndex(where: { $0.id == item.id }) else { return [] }
+        return Array(open[...index])
     }
+
+    /// The stack the menu lists: GitHub's own when it keeps one, else the one the branches make.
+    var shownStack: [PullRequestItem] { nativeStack?.items(repo: item.repo, like: item) ?? stackHistory }
 
     /// The stack this pull request stands in, bottom first, with the ones that merged: a click opens another one of it,
     /// and the last line merges the stack up to here.
     var stackMenu: some View {
-        let index = (stackHistory.firstIndex { $0.id == item.id } ?? 0) + 1
+        let index = (shownStack.firstIndex { $0.id == item.id } ?? 0) + 1
         return Menu {
-            Section(tr("agents.pulls.stack.title", stackHistory.count)) {
-                ForEach(Array(stackHistory.enumerated()), id: \.element.id) { position, member in
+            Section(tr("agents.pulls.stack.title", shownStack.count)) {
+                ForEach(Array(shownStack.enumerated()), id: \.element.id) { position, member in
                     Button {
                         if member.id != item.id { onOpenPullRequest?(member) }
                     } label: {
@@ -37,7 +41,7 @@ extension PullRequestDetailView {
         } label: {
             HStack(spacing: NookTheme.Spacing.xxs) {
                 PullRequestStateIcon(glyph: .stack, tinted: false)
-                Text("\(index)/\(stackHistory.count)").font(NookTheme.TextStyle.caption).monospacedDigit()
+                Text("\(index)/\(shownStack.count)").font(NookTheme.TextStyle.caption).monospacedDigit()
             }
             .foregroundStyle(NookTheme.textSecondary)
             .frame(height: 28)
@@ -46,7 +50,7 @@ extension PullRequestDetailView {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help(tr("agents.pulls.stack.position", index, stackHistory.count))
+        .help(tr("agents.pulls.stack.position", index, shownStack.count))
     }
 
     /// "Merge #1, #2 and #3 from the bottom up?" with its second click, or the progress while it runs.
@@ -85,7 +89,15 @@ extension PullRequestDetailView {
         Task {
             defer { model.paused = false }
             do {
-                let merged = try await PullRequestQuickRunner.mergeStack(targets, accountID: accountID, app: app)
+                let merged: Int
+                if let layer = nativeStack?.layers.first(where: { $0.number == item.number }), let token = GitHubPullRequestDetail.token(accountID: accountID) {
+                    // GitHub lands the layers below this one by itself.
+                    try await GitHubPullRequestDetail.mergeNativeStack(repo: item.repo, number: item.number, sha: layer.headSHA, method: method, token: token)
+                    app.store.audit(tool: "github_merge_pr", args: "\(item.id) stack · \(method.rawValue)", result: "merged")
+                    merged = targets.count
+                } else {
+                    merged = try await PullRequestQuickRunner.mergeStack(targets, accountID: accountID, app: app)
+                }
                 ToastCenter.shared.success(tr("agents.pulls.stack.merged", merged))
             } catch {
                 ToastCenter.shared.error(error, title: tr("agents.pulls.stack.failed"))
@@ -98,8 +110,8 @@ extension PullRequestDetailView {
 
     // MARK: Merging
 
-    /// The page's main action at the top right: merge an open pull request, mark a draft ready, or say
-    /// what it is (merged, closed, in conflict) when there is nothing to do.
+    /// The page's main action at the top right: merge an open pull request, mark a draft ready, hand a conflict to the
+    /// session beside it, or say what it is (merged, closed, in conflict) when there is nothing to do.
     @ViewBuilder
     func primaryAction(_ detail: PullRequestDetail) -> some View {
         switch detail.state {
@@ -117,9 +129,28 @@ extension PullRequestDetailView {
             }
         case .open:
             if detail.conflicted {
-                PullRequestStateBadge(glyph: .conflict).help(tr("agents.pr.note.conflict"))
+                if let sessionContext {
+                    SmallPrimaryButton(title: tr("session.context.resolve"), systemName: PullRequestIcon.symbol(.conflict)) {
+                        ComposerInbox.shared.add(SessionPrompts.resolveConflicts(detail.sessionRef), to: sessionContext)
+                    }
+                    .help(tr("agents.pr.note.conflict"))
+                } else {
+                    PullRequestStateBadge(glyph: .conflict).help(tr("agents.pr.note.conflict"))
+                }
+            } else if let auto = detail.autoMerge {
+                // GitHub merges by itself: the ⋯ menu turns it off.
+                PullRequestAutoMergeBadge(method: auto.method)
             } else if detail.canPush != false && !detail.methods.isEmpty {
-                mergeButton(detail)
+                // While the checks or reviews still hold it back, the main action is to let GitHub merge when they are done.
+                if detail.features.autoMerge, detail.autoMergeAllowed, detail.mergeable != nil, detail.checkSummary == .pending || detail.mergeState == "blocked", !detail.nodeID.isEmpty {
+                    SmallPrimaryButton(title: tr("agents.pr.action.enableAutoMerge"), systemName: "bolt") {
+                        actions.close()
+                        actions.pending = .enableAutoMerge(nodeID: detail.nodeID, method: method)
+                    }
+                    .disabled(actions.sending)
+                } else {
+                    mergeButton(detail)
+                }
             }
         }
     }
@@ -222,7 +253,8 @@ extension PullRequestDetailView {
     /// Only after the confirmation: merges the head that is shown, and writes the outcome to the action log.
     func merge() {
         guard let detail, detail.canMerge, !merging else { return }
-        guard let token = GitHubPullRequestDetail.token(accountID: accountID) else {
+        let forge = forge
+        guard let token = forge != nil ? "" : GitHubPullRequestDetail.token(accountID: accountID) else {
             ToastCenter.shared.error(tr("agents.pr.noToken"))
             return
         }
@@ -233,8 +265,13 @@ extension PullRequestDetailView {
         Task {
             defer { model.paused = false }
             do {
-                let sha = try await GitHubPullRequestDetail.merge(repo: detail.repo, number: detail.number, method: method,
+                let sha: String
+                if let forge {
+                    sha = try await forge.merge(number: detail.number, method: method, sha: detail.headSHA)
+                } else {
+                    sha = try await GitHubPullRequestDetail.merge(repo: detail.repo, number: detail.number, method: method,
                                                                   sha: detail.headSHA, token: token)
+                }
                 app.store.audit(tool: "github_merge_pr", args: args, result: "merged" + (sha.isEmpty ? "" : " " + String(sha.prefix(7))))
                 settle()
                 await model.refresh(activity: true)

@@ -191,17 +191,9 @@ enum PullRequestStack {
         var seen = Set<String>()
         for link in links where seen.insert(link.id).inserted { unique.append(link) }
 
-        func parent(of link: PullRequestLink) -> PullRequestLink? {
-            guard let base = link.baseBranch, !base.isEmpty else { return nil }
-            let candidates = unique.filter {
-                $0.id != link.id && $0.headBranch == base && $0.host == link.host && $0.repository.lowercased() == link.repository.lowercased()
-            }
-            // The same head can have an old closed PR and a live one: chain through the live one.
-            return candidates.max { ($0.state.isOpen ? 1 : 0, $0.number) < ($1.state.isOpen ? 1 : 0, $1.number) }
-        }
         func depth(_ link: PullRequestLink) -> Int {
             var current = link, visited: Set<String> = [link.id], result = 0
-            while let up = parent(of: current), visited.insert(up.id).inserted {
+            while let up = parent(of: current, in: unique), visited.insert(up.id).inserted {
                 result += 1
                 current = up
             }
@@ -212,6 +204,16 @@ enum PullRequestStack {
     }
 
     static func isStack(links: [PullRequestLink]) -> Bool { order(links: links).count > 1 }
+
+    /// The pull request this one is built on: the one of `links` whose head is its base.
+    static func parent(of link: PullRequestLink, in links: [PullRequestLink]) -> PullRequestLink? {
+        guard let base = link.baseBranch, !base.isEmpty else { return nil }
+        let candidates = links.filter {
+            $0.id != link.id && $0.headBranch == base && $0.host == link.host && $0.repository.lowercased() == link.repository.lowercased()
+        }
+        // The same head can have an old closed PR and a live one: chain through the live one.
+        return candidates.max { ($0.state.isOpen ? 1 : 0, $0.number) < ($1.state.isOpen ? 1 : 0, $1.number) }
+    }
 }
 
 /// Whether a forge's answer about one request means "merge conflict". GitHub computes `mergeable` lazily (null on the

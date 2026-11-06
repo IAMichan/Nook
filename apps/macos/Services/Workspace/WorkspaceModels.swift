@@ -378,6 +378,10 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var tasks: [RunTaskStep]? = nil
     /// The pull request this session watches: what it last saw, so only news wakes it.
     var prWatch: PullRequestWatch? = nil
+    /// The pull requests watched besides `prWatch`, which stays the one the composer's tray shows.
+    var extraPRWatches: [PullRequestWatch]? = nil
+    /// Every pull request this session watches.
+    var prWatches: [PullRequestWatch] { (prWatch.map { [$0] } ?? []) + (extraPRWatches ?? []) }
     /// Runs on another machine over SSH; `workingDirectory` is then a path on that machine.
     var remote: RemoteTarget? = nil
 
@@ -481,11 +485,13 @@ enum RunTasks {
 
 /// What a watched pull request last looked like. A change in it is news for the session.
 struct PullRequestWatch: Codable, Equatable, Sendable {
-    /// A GitHub pull request or a GitLab merge request: the two Nook can read.
+    /// A GitHub pull request, a GitLab merge request, or a pull request on a forge with a token.
     static func canWatch(_ url: URL) -> Bool {
         let parts = url.path.split(separator: "/")
         let github = url.host?.hasSuffix("github.com") == true && parts.count >= 4 && parts[2] == "pull" && Int(parts[3]) != nil
-        return github || url.absoluteString.contains("/-/merge_requests/")
+        if github || url.absoluteString.contains("/-/merge_requests/") { return true }
+        // Every other forge once it has a token.
+        return PullRequestRef.parse(url.absoluteString)?.forgeRepository.flatMap(PullRequestForges.client) != nil
     }
 
     var url: String

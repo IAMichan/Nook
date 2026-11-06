@@ -203,7 +203,7 @@ final class WorkspaceManager: ObservableObject {
     var pullRequestCreated: ((_ run: UUID?, _ url: URL) -> Void)?
     /// A watched pull request as it is now (GitHub, with your connected accounts).
     var pullRequestSnapshot: ((URL) async -> PullRequestSnapshot?)?
-    var watchesInFlight: Set<UUID> = []
+    var watchesInFlight: Set<String> = []
     /// Codex's subagents per session: the thread each runs on, and the timeline event that stands for it.
     var codexSubagents: [UUID: [String: UUID]] = [:]
     /// Comments on a session's diff, waiting to go to the agent together.
@@ -1894,9 +1894,34 @@ final class WorkspaceManager: ObservableObject {
 
     /// Watches this pull request for the session: CI, reviews, comments and the merge become news in the timeline, and
     /// what the agent can act on goes to it as a message.
+    /// A session watches any number of them; nil ends every watch of the session.
     func watchPullRequest(_ id: UUID, url: URL?, wakeAgent: Bool = true) {
-        update(id) { $0.prWatch = url.map { PullRequestWatch(url: $0.absoluteString, wakeAgent: wakeAgent) } }
-        if url != nil { checkPullRequestWatches(force: true) }
+        guard let url else {
+            update(id) {
+                $0.prWatch = nil
+                $0.extraPRWatches = nil
+            }
+            return
+        }
+        guard !isWatching(id, url: url) else { return }
+        update(id) { run in
+            let watch = PullRequestWatch(url: url.absoluteString, wakeAgent: wakeAgent)
+            if run.prWatch == nil { run.prWatch = watch } else { run.extraPRWatches = (run.extraPRWatches ?? []) + [watch] }
+        }
+        checkPullRequestWatches(force: true)
+    }
+
+    func isWatching(_ id: UUID, url: URL) -> Bool {
+        run(id)?.prWatches.contains { $0.url == url.absoluteString } ?? false
+    }
+
+    /// Ends the watch on one pull request; the next one takes the tray's place.
+    func stopWatchingPullRequest(_ id: UUID, url: URL) {
+        update(id) { run in
+            var rest = run.prWatches.filter { $0.url != url.absoluteString }
+            run.prWatch = rest.isEmpty ? nil : rest.removeFirst()
+            run.extraPRWatches = rest.isEmpty ? nil : rest
+        }
     }
 
     /// Looks at each watched pull request at most every two minutes.
@@ -1904,16 +1929,20 @@ final class WorkspaceManager: ObservableObject {
         guard let fetch = pullRequestSnapshot else { return }
         let now = Date()
         for run in runs {
-            guard let watch = run.prWatch, watch.state == "open", !run.archived, !watchesInFlight.contains(run.id),
-                  force || watch.checkedAt.map({ now.timeIntervalSince($0) >= 120 }) ?? true,
-                  let url = URL(string: watch.url) else { continue }
-            let id = run.id
-            watchesInFlight.insert(id)
-            Task { [weak self] in
-                let snapshot = await fetch(url)
-                self?.watchesInFlight.remove(id)
-                guard let self, let snapshot, let current = self.run(id)?.prWatch, current.url == watch.url else { return }
-                self.pullRequestChanged(id, old: current, new: snapshot)
+            guard !run.archived else { continue }
+            for watch in run.prWatches {
+                let key = run.id.uuidString + " " + watch.url
+                guard watch.state == "open", !watchesInFlight.contains(key),
+                      force || watch.checkedAt.map({ now.timeIntervalSince($0) >= 120 }) ?? true,
+                      let url = URL(string: watch.url) else { continue }
+                let id = run.id
+                watchesInFlight.insert(key)
+                Task { [weak self] in
+                    let snapshot = await fetch(url)
+                    self?.watchesInFlight.remove(key)
+                    guard let self, let snapshot, let current = self.run(id)?.prWatches.first(where: { $0.url == watch.url }) else { return }
+                    self.pullRequestChanged(id, old: current, new: snapshot)
+                }
             }
         }
     }
@@ -1925,7 +1954,14 @@ final class WorkspaceManager: ObservableObject {
         let first = old.checkedAt == nil
         let lines = first ? PullRequestNews.firstLook(new) : PullRequestNews.lines(old: old, new: new)
         let wake = old.wakeAgent && (first ? !lines.isEmpty : PullRequestNews.needsAgent(old: old, new: new))
-        update(id) { $0.prWatch = PullRequestNews.updated(old, with: new, at: now) }
+        update(id) { run in
+            let updated = PullRequestNews.updated(old, with: new, at: now)
+            if run.prWatch?.url == old.url {
+                run.prWatch = updated
+            } else {
+                run.extraPRWatches = run.extraPRWatches?.map { $0.url == old.url ? updated : $0 }
+            }
+        }
         guard !lines.isEmpty else { return }
         append(id, RunEvent(kind: .system, text: tr("ws.prwatch.news") + "\n" + lines.joined(separator: "\n"), tool: "prwatch"))
         guard wake, let run = run(id) else { return }

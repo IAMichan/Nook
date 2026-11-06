@@ -213,6 +213,7 @@ struct PullRequestsPanel: View {
                 // Filtered once per redraw: the empty check, the count and the rows below all read this.
                 let shown = self.shown
                 searchRow
+                PullRequestCloseSweepBar()
                 if !unreadable.isEmpty { unreadableNote }
                 if shown.allSatisfy({ $0.isEmpty && $0.error == nil }) {
                     if filter.isActive {

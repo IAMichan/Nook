@@ -1,10 +1,24 @@
 import SwiftUI
 import AppKit
 
-/// One pull request in a list, on the Pull requests page and in the side panel's picker alike: GitHub's state mark (with
-/// a small warning on it for a conflict), then two lines. On top the title (so titles line up in one column), the checks
-/// and the review decision, and the lines added and removed at the end; under it the repository and number, the author's
-/// picture and login, up to three labels in their own colors, its place in a stack, and when it last changed at the end.
+/// What a row says in a session's own list: how the pull request got there, and where it stands in its chain.
+struct PullRequestRowLink: Equatable {
+    /// Why it is in the list, on the number's tooltip.
+    var source: String
+    /// How far it is indented: one step for each pull request it is built on.
+    var depth: Int
+    /// How many pull requests its chain has, itself included.
+    var stackSize: Int
+    /// Nil where the session cannot watch this pull request.
+    var watching: Bool?
+    /// The words on the ⋯ menu's last line: unlink or dismiss.
+    var removeTitle: String
+}
+
+/// One pull request in a list, on the Pull requests page and in the side panel alike: GitHub's state mark (with a small
+/// warning on it for a conflict), then two lines. On top the number and title, the checks and the review decision, and
+/// the lines added and removed at the end; under it the author's picture and login, the repository, up to three labels
+/// in their own colors (in a session's own list the branches instead), its place in a stack, and when it last changed.
 struct PullRequestRow: View, Equatable {
     let item: PullRequestItem
     let role: PullRequestRepoGroup.Role
@@ -17,6 +31,12 @@ struct PullRequestRow: View, Equatable {
     var stack: (index: Int, count: Int, merged: Int)? = nil
     /// The clock the row's time is counted against (the list's tick), so the time moves on while the list is open.
     var now = Date()
+    /// In a session's own list: what the row adds there, and its ⋯ menu's actions.
+    var linked: PullRequestRowLink? = nil
+    var onWatch: (() -> Void)? = nil
+    var onRemove: (() -> Void)? = nil
+    /// False for a forge Nook cannot read: no quick actions, and nothing to read ahead.
+    var readable = true
     let onOpen: () -> Void
     @State private var hovering = false
 
@@ -25,7 +45,7 @@ struct PullRequestRow: View, Equatable {
         lhs.item == rhs.item && lhs.role == rhs.role && lhs.showRepo == rhs.showRepo && lhs.accountID == rhs.accountID
             && lhs.selected == rhs.selected && lhs.stack?.index == rhs.stack?.index && lhs.stack?.count == rhs.stack?.count
             && lhs.stack?.merged == rhs.stack?.merged
-            && lhs.now == rhs.now
+            && lhs.now == rhs.now && lhs.linked == rhs.linked && lhs.readable == rhs.readable
     }
 
     var body: some View {
@@ -33,7 +53,17 @@ struct PullRequestRow: View, Equatable {
             Button(action: onOpen) { content }
                 .buttonStyle(.plain)
             // Shift shows the quick actions; outside the row's own button, so their clicks stay theirs.
-            PullRequestQuickActionButtons(item: item, accountID: accountID)
+            if readable { PullRequestQuickActionButtons(item: item, accountID: accountID) }
+        }
+        // Over the time, which keeps its room. Always there, so the menu stays open once the pointer moves into it.
+        .overlay(alignment: .bottomTrailing) { if linked != nil { moreMenu } }
+        .padding(.leading, CGFloat(min(linked?.depth ?? 0, 3)) * NookTheme.Spacing.xl)
+        .overlay(alignment: .leading) {
+            if let depth = linked?.depth, depth > 0 {
+                NookDivider(vertical: true)
+                    .frame(height: 24)
+                    .padding(.leading, CGFloat(min(depth, 3)) * NookTheme.Spacing.xl + NookTheme.Spacing.xxs)
+            }
         }
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
             .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
@@ -42,19 +72,18 @@ struct PullRequestRow: View, Equatable {
         .animation(NookTheme.hover, value: hovering)
         // Resting on a row reads it ahead, so the click opens it at once.
         .task(id: hovering) {
-            guard hovering else { return }
+            guard hovering, readable else { return }
             try? await Task.sleep(nanoseconds: 250_000_000)
             if !Task.isCancelled { PullRequestDetailModel.prefetch(accountID: accountID, item: item) }
         }
         .help(tr("agents.pulls.view"))
         .accessibilityAddTraits(selected ? .isSelected : [])
+        // Into a composer, or anywhere else that takes a link.
+        .onDrag { NSItemProvider(object: (item.url?.absoluteString ?? "#\(item.number)") as NSString) }
         .contextMenu {
             if let url = item.url {
                 Button(tr("agents.pulls.open")) { NSWorkspace.shared.open(url) }
-                Button(tr("agents.pr.copyLink")) {
-                    Pasteboard.copy(url.absoluteString)
-                    ToastCenter.shared.success(tr("agents.pr.copiedLink"))
-                }
+                Button(tr("agents.pr.copyLink")) { copyLink(url) }
             }
             if !item.headBranch.isEmpty {
                 Button(tr("agents.pr.copyBranch")) {
@@ -62,21 +91,77 @@ struct PullRequestRow: View, Equatable {
                     ToastCenter.shared.success(tr("agents.pr.copiedBranch"))
                 }
             }
+            if let linked {
+                Divider()
+                if let watching = linked.watching, let onWatch, item.state == .open {
+                    Button(tr(watching ? "agents.pr.linked.stopWatching" : "agents.pr.linked.watch"), action: onWatch)
+                }
+                if let onRemove { Button(linked.removeTitle, action: onRemove) }
+            }
         }
+    }
+
+    private func copyLink(_ url: URL) {
+        Pasteboard.copy(url.absoluteString)
+        ToastCenter.shared.success(tr("agents.pr.copiedLink"))
+    }
+
+    /// The row's ⋯, under the pointer only: copy, open, watch, and take it off the list.
+    private var moreMenu: some View {
+        ComposerDropdown(width: 220) {
+            Image(systemName: "ellipsis")
+                .font(NookTheme.TextStyle.label)
+                .foregroundStyle(NookTheme.textSecondary)
+                .frame(width: 22, height: 18)
+                .contentShape(Rectangle())
+        } content: {
+            if let url = item.url {
+                DropdownRow(symbol: "link", title: tr("agents.pr.copyLink")) { copyLink(url) }
+                DropdownRow(symbol: "arrow.up.right", title: tr("agents.pulls.open")) { NSWorkspace.shared.open(url) }
+            }
+            if let linked {
+                if let watching = linked.watching, let onWatch, item.state == .open {
+                    DropdownRow(symbol: watching ? "eye.slash" : "eye",
+                                title: tr(watching ? "agents.pr.linked.stopWatching" : "agents.pr.linked.watch"), action: onWatch)
+                }
+                if let onRemove {
+                    DropdownDivider()
+                    DropdownRow(symbol: "link.badge.plus", title: linked.removeTitle, action: onRemove)
+                }
+            }
+        }
+        .help(tr("agents.pr.action.more"))
+        .accessibilityLabel(tr("agents.pr.action.more"))
+        .opacity(hovering ? 1 : 0)
+        .allowsHitTesting(hovering)
+        .padding(.trailing, NookTheme.Spacing.sm)
+        .padding(.bottom, NookTheme.Spacing.xs)
     }
 
     private var content: some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
             stateMark.padding(.top, 2)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                // The title leads, so the titles of a list line up in one column; what it is about follows it.
+                // The number and title lead; how it stands follows them.
                 HStack(spacing: NookTheme.Spacing.sm) {
+                    Text(verbatim: "#\(item.number)")
+                        .font(NookTheme.mono(11))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .monospacedDigit()
+                        .fixedSize()
+                        .help(linked?.source ?? "")
                     Text(item.title)
                         .font(NookTheme.TextStyle.body)
                         .foregroundStyle(item.state == .open ? NookTheme.paper : NookTheme.textSecondary)
                         .lineLimit(1)
                         .help(item.title)
                     HStack(spacing: NookTheme.Spacing.xs) {
+                        if linked?.watching == true, item.state == .open {
+                            Image(systemName: "eye")
+                                .font(NookTheme.font(10, .medium))
+                                .foregroundStyle(NookTheme.textTertiary)
+                                .help(tr("agents.pr.linked.watching"))
+                        }
                         ciMark
                         reviewMark
                     }
@@ -86,13 +171,17 @@ struct PullRequestRow: View, Equatable {
                         PullRequestLineCounts(additions: additions, deletions: deletions)
                     }
                 }
-                // Where and who: "acme/app #12", the author, what it waits on, its labels, and when it last changed.
+                // Who and where: its chain, the author, the repository, what it waits on, its labels or branches, and
+                // when it last changed.
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Text(showRepo ? "\(item.repo) #\(item.number)" : "#\(item.number)")
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        // Shortened in the middle, so the number at the end always shows.
-                        .truncationMode(.middle)
+                    if let linked, linked.stackSize > 1 {
+                        HStack(spacing: NookTheme.Spacing.xxs) {
+                            PullRequestStateIcon(glyph: .stack, tinted: false)
+                            Text(verbatim: "\(linked.stackSize)").monospacedDigit()
+                        }
+                        .fixedSize()
+                        .help(tr("agents.pr.linked.stack", linked.stackSize))
+                    }
                     if !item.author.isEmpty {
                         HStack(spacing: NookTheme.Spacing.xs) {
                             GitHubAvatar(login: item.author, size: 14)
@@ -100,14 +189,24 @@ struct PullRequestRow: View, Equatable {
                         }
                         .help("@" + item.author)
                     }
+                    if showRepo {
+                        Text(item.repo)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(item.repo)
+                    }
                     if item.draft, item.state == .open {
                         PullRequestTag(text: tr("agents.pulls.draft").localizedCapitalized, color: NookTheme.textSecondary)
                     }
                     // Grouped by repository, the row says it waits for your review; grouped by role, the heading does.
                     if role == .review, item.state == .open, !showRepo { PullRequestTag(text: tr("agents.pulls.scope.reviews"), color: NookTheme.amber) }
-                    labels.layoutPriority(-2)
+                    if linked != nil {
+                        branches.layoutPriority(-2)
+                    } else {
+                        labels.layoutPriority(-2)
+                    }
                     Spacer(minLength: NookTheme.Spacing.sm)
-                    if let stack {
+                    if let stack, linked == nil {
                         HStack(spacing: NookTheme.Spacing.xxs) {
                             PullRequestStateIcon(glyph: .stack, tinted: false)
                             Text("\(stack.index)/\(stack.count)").monospacedDigit()
@@ -125,6 +224,7 @@ struct PullRequestRow: View, Equatable {
                             .monospacedDigit()
                             .fixedSize()
                             .help(updated.formatted(date: .abbreviated, time: .shortened))
+                            .opacity(linked != nil && hovering ? 0 : 1)
                     }
                 }
                 .font(NookTheme.TextStyle.detail)
@@ -141,6 +241,20 @@ struct PullRequestRow: View, Equatable {
     private var stateMark: some View {
         PullRequestStateIcon(glyph: item.stateGlyph, size: .header)
             .help(tr(stateKey))
+    }
+
+    /// "feature → main" in mono, each cut in the middle.
+    @ViewBuilder
+    private var branches: some View {
+        if !item.headBranch.isEmpty, !item.baseBranch.isEmpty {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Text(item.headBranch).lineLimit(1).truncationMode(.middle)
+                Text(verbatim: "→").layoutPriority(1)
+                Text(item.baseBranch).lineLimit(1).truncationMode(.middle)
+            }
+            .font(NookTheme.mono(10.5))
+            .help(item.headBranch + " → " + item.baseBranch)
+        }
     }
 
     /// The first label, and the next two when there is room; "+2" for the ones left out.

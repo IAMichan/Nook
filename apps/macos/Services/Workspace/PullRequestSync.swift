@@ -15,6 +15,11 @@ final class PullRequestSync: ObservableObject {
     /// The ones still open are read again every `earlierInterval`, also while no composer shows them: a stack spread
     /// over a chat's branches would otherwise stay open on its row after it merged.
     @Published private(set) var earlier: [UUID: [PullRequestLink]] = [:]
+    /// The pull requests you linked to a session yourself, by `sessionKey`.
+    @Published private(set) var added: [String: [PullRequestLink]] = [:]
+    /// The ids of the pull requests you took off a session's list, by `sessionKey`. Its branch still finds them, so
+    /// the list has to remember they went.
+    @Published private(set) var dismissed: [String: Set<String>] = [:]
     private var checked: [UUID: Date] = [:]
     private var folderChecked: [String: Date] = [:]
     /// Keyed by `folderKey(path:branch:)` with the session's id as the path.
@@ -30,6 +35,8 @@ final class PullRequestSync: ObservableObject {
     private static let key = "agents.pullRequests.v1"
     private static let foldersKey = "agents.pullRequests.folders.v1"
     private static let earlierKey = "agents.pullRequests.earlier.v1"
+    private static let addedKey = "agents.pullRequests.added.v1"
+    private static let dismissedKey = "agents.pullRequests.dismissed.v1"
 
     init() {
         if let data = defaults.data(forKey: Self.key),
@@ -46,6 +53,57 @@ final class PullRequestSync: ObservableObject {
             earlier = Dictionary(stored.compactMap { key, value in UUID(uuidString: key).map { ($0, value) } },
                                  uniquingKeysWith: { first, _ in first })
         }
+        if let data = defaults.data(forKey: Self.addedKey),
+           let stored = try? JSONDecoder().decode([String: [PullRequestLink]].self, from: data) {
+            added = stored
+        }
+        if let data = defaults.data(forKey: Self.dismissedKey),
+           let stored = try? JSONDecoder().decode([String: Set<String>].self, from: data) {
+            dismissed = stored
+        }
+    }
+
+    // MARK: A session's own list
+
+    /// Where a session's own list is kept: a session Nook runs by its id, one it only sees by its folder.
+    nonisolated static func sessionKey(run: UUID?, directory: String) -> String { run?.uuidString ?? directory }
+
+    /// Everything linked to a session, with the newest status of each: what its branch found, what its earlier branches
+    /// found, and what you linked yourself.
+    func linked(run: UUID?, directory: String, branch: String?) -> [LinkedPullRequest] {
+        let key = Self.sessionKey(run: run, directory: directory)
+        let current = run.flatMap { links[$0] } ?? branch.flatMap { folderLinks[Self.folderKey(path: directory, branch: $0)] } ?? []
+        let store = PullRequestStatusStore.shared
+        return LinkedPullRequests.lines(branch: store.current(current), earlier: store.current(run.flatMap { earlier[$0] } ?? []),
+                                        yours: store.current(added[key] ?? []), dismissed: dismissed[key] ?? [])
+    }
+
+    /// When the list of a session was last compared with its forge.
+    func syncedAt(run: UUID?, directory: String, branch: String?) -> Date? {
+        if let run { return checked[run] }
+        return branch.flatMap { folderChecked[Self.folderKey(path: directory, branch: $0)] }
+    }
+
+    /// Links a pull request to a session by hand; one you took off before comes back.
+    func add(_ link: PullRequestLink, session key: String) {
+        dismissed[key]?.remove(link.id)
+        added[key] = (added[key] ?? []).filter { $0.id != link.id } + [link]
+        save()
+    }
+
+    /// Takes a pull request off a session's list: one you linked goes, one a branch found stays away.
+    func remove(_ link: PullRequestLink, session key: String) {
+        let yours = added[key] ?? []
+        if yours.contains(where: { $0.id == link.id }) {
+            added[key] = yours.filter { $0.id != link.id }
+        }
+        dismissed[key, default: []].insert(link.id)
+        save()
+    }
+
+    /// The forge repository of a session's folder, for a link given as "#12".
+    func repository(directory: String) async -> RemoteRepository? {
+        await remote(directory, read: { await Self.repository(path: directory) })
     }
 
     /// The badge with the newest status of each request (see `PullRequestStatusStore`): a look by a watch or the pull
@@ -143,6 +201,8 @@ final class PullRequestSync: ObservableObject {
         case earlier(UUID, branch: String)
         /// An open pull request of a branch the session left: read again to see whether it landed.
         case earlierLink(UUID, PullRequestLink)
+        /// An open pull request you linked: read again like one of an earlier branch.
+        case addedLink(String, PullRequestLink)
     }
 
     /// How often a branch the session left is asked about while no pull request of it is known, and how often an open
@@ -197,6 +257,13 @@ final class PullRequestSync: ObservableObject {
                 let key = Self.folderKey(path: run.id.uuidString, branch: link.id)
                 guard PullRequestSettlement.needsSync(lastChecked: earlierChecked[key], now: now, interval: Self.earlierInterval) else { continue }
                 due.append((job: .earlierLink(run.id, link), open: false, last: earlierChecked[key] ?? .distantPast))
+            }
+        }
+        for (session, list) in added {
+            for link in list where link.state.isOpen {
+                let key = Self.folderKey(path: session, branch: link.id)
+                guard PullRequestSettlement.needsSync(lastChecked: earlierChecked[key], now: now, interval: Self.earlierInterval) else { continue }
+                due.append((job: .addedLink(session, link), open: false, last: earlierChecked[key] ?? .distantPast))
             }
         }
         var seen = Set<String>()
@@ -257,6 +324,14 @@ final class PullRequestSync: ObservableObject {
                     await PullRequestStatusStore.shared.refresh(url)
                     // Replaces the kept link by its url, so the state survives a restart; the status store does not.
                     if retire(id, PullRequestStatusStore.shared.current([link])) { changed = true }
+                case .addedLink(let session, let link):
+                    earlierChecked[Self.folderKey(path: session, branch: link.id)] = now
+                    guard let url = URL(string: link.url) else { continue }
+                    await PullRequestStatusStore.shared.refresh(url)
+                    let read = PullRequestStatusStore.shared.current([link])
+                    guard let list = added[session], read != [link] else { continue }
+                    added[session] = list.map { $0.id == link.id ? read[0] : $0 }
+                    changed = true
                 case .folder(let key, let path, let branch):
                     folderChecked[key] = now
                     guard let repo = await remote(path, read: { await Self.repository(path: path) }),
@@ -309,5 +384,7 @@ final class PullRequestSync: ObservableObject {
         if let data = try? JSONEncoder().encode(folderLinks) { defaults.set(data, forKey: Self.foldersKey) }
         let kept = Dictionary(uniqueKeysWithValues: earlier.map { ($0.key.uuidString, $0.value) })
         if let data = try? JSONEncoder().encode(kept) { defaults.set(data, forKey: Self.earlierKey) }
+        if let data = try? JSONEncoder().encode(added) { defaults.set(data, forKey: Self.addedKey) }
+        if let data = try? JSONEncoder().encode(dismissed) { defaults.set(data, forKey: Self.dismissedKey) }
     }
 }
