@@ -24,6 +24,12 @@ extension NowPlayingService {
         current?.app ?? (SpotifySignIn.shared.isSignedIn ? "Spotify" : NowPlayingService.runningPlayerName())
     }
 
+    /// There is something to show on the Music tab, also with nothing playing: Home, search and the statistics work
+    /// without a player, for someone who uses Nook for music at all.
+    var hasMusic: Bool {
+        current != nil || !history.isEmpty || SpotifySignIn.shared.isSignedIn
+    }
+
     /// The player a search goes to, also with nothing playing: the playing one, Spotify once connected, the one that
     /// runs, else Music (started hidden when it is searched).
     var searchApp: String {

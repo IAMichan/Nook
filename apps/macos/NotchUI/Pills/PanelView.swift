@@ -220,13 +220,14 @@ struct PanelView: View {
         }
     }
 
-    /// The sidebar of a tab without a list (Music): the head, the tabs, and the footer at the bottom, as wide as the
-    /// Agents list.
+    /// The sidebar of Music, whose page has no list of its own: the head, the tabs, where to go in Music and the
+    /// playlists, and the footer at the bottom, as wide as the Agents list.
     private var sidebarColumn: some View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 PanelSidebarTop()
-                Spacer(minLength: 0)
+                MusicSidebar(service: app.nowPlaying)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() }, history: app.history)
             }
             .panelSidebarColumn()
@@ -299,7 +300,7 @@ struct PanelView: View {
     /// The tabs, with what waits for you on them: an amber count on Agents. In the window, the tooltip names the tab's
     /// shortcut (⌘1, ⌘2, …). The tab split view shows beside this one stays in the bar, even Music while nothing plays.
     private var tabItems: [NookTabBar<PanelTab>.Item] {
-        let tabs = PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || tab == .music || splitTab == .music)
+        let tabs = PanelTab.visible(musicAvailable: app.nowPlaying.hasMusic || tab == .music || splitTab == .music)
         let waiting = app.activeAgents.filter { $0.status == .waiting || $0.approvalID != nil }.count
         return tabs.enumerated().map { index, value in
             NookTabBar<PanelTab>.Item(value: value, title: value.title,

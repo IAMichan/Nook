@@ -5,8 +5,8 @@ enum PanelTab: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// Tabs in the notch: Nook (home and chat together), Agents, Chats (every chat app in one inbox), and Music only
-    /// while a player is open. Terminals, the browser and worktrees live with the agents that use them. Everything you
+    /// Tabs in the notch: Nook (home and chat together), Agents, Chats (every chat app in one inbox), and Music once
+    /// there is something to show (`NowPlayingService.hasMusic`). Terminals, the browser and worktrees live with the agents that use them. Everything you
     /// do happens here; configuration lives in Settings.
     @MainActor
     static func visible(musicAvailable: Bool) -> [PanelTab] {
