@@ -84,24 +84,26 @@ struct MusicHomeContent: View {
 
     /// Spotify's playlists, search and background playing need it connected: said once, where it helps.
     private var connectCard: some View {
-        HStack(spacing: NookTheme.Spacing.lg) {
-            Image(systemName: "link")
-                .font(NookTheme.font(13, .semibold))
-                .foregroundStyle(NookTheme.music)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(tr("music.home.connectTitle"))
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(NookTheme.paper)
-                Text(tr("music.home.connectDetail"))
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        AdaptiveActionRow(spacing: NookTheme.Spacing.lg) {
+            HStack(spacing: NookTheme.Spacing.lg) {
+                Image(systemName: "link")
+                    .font(NookTheme.font(13, .semibold))
+                    .foregroundStyle(NookTheme.music)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(tr("music.home.connectTitle"))
+                        .font(NookTheme.TextStyle.strong)
+                        .foregroundStyle(NookTheme.paper)
+                    Text(tr("music.home.connectDetail"))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        } actions: {
             SmallGhostButton(title: tr("music.playlists.openConnections")) { app.openSettings(section: .connections) }
         }
         .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.graphite))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.surface))
     }
 
     // MARK: Groups
@@ -110,7 +112,7 @@ struct MusicHomeContent: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             MusicGroupTitle(title: tr("music.recent.title"),
                             showAll: !allRecent && recent.count > Self.quickCount ? { allRecent = true } : nil)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: NookTheme.Spacing.sm)], spacing: NookTheme.Spacing.sm) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: NookTheme.Spacing.md)], spacing: NookTheme.Spacing.md) {
                 ForEach(Array(recent.prefix(allRecent ? recent.count : Self.quickCount).enumerated()), id: \.offset) { index, track in
                     MusicQuickTile(track: track, playing: track.id == currentID, service: service) {
                         service.play(track, fromQueue: false, following: Array(recent.dropFirst(index + 1).prefix(SpotifyResponses.playTrackLimit - 1)))
@@ -186,7 +188,7 @@ private struct MusicQuickTile: View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.md) {
                 MusicArtwork(url: track.artworkURL, seed: track.title, cornerRadius: NookTheme.Radius.chip)
-                    .frame(width: 42, height: 42)
+                    .frame(width: 40, height: 40)
                     .overlay {
                         if hovering || playing {
                             ZStack {
@@ -215,8 +217,8 @@ private struct MusicQuickTile: View {
                 Spacer(minLength: 0)
             }
             .padding(NookTheme.Spacing.sm)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(hovering ? NookTheme.smoke : NookTheme.graphite))
-            .contentShape(Rectangle())
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(hovering ? NookTheme.graphite : NookTheme.field))
+            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
