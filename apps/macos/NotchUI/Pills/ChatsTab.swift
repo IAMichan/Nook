@@ -2319,6 +2319,11 @@ private struct ChatsDetail: View, Equatable {
                 }
             })
             .editsLastMessage(abilities.edit && route != nil ? editLastMessage : nil)
+            .walksFiles { offset in
+                guard composer.files.count > 1 else { return false }
+                composer.edits.move(offset, in: composer.files)
+                return true
+            }
             .tags { app.chatTagPeople(route, name: entry.name) }
             .tray(entry.read.isUnread
                 ? AnyView(ChatReadLine(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
