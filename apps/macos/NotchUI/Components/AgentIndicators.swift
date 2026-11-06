@@ -118,36 +118,57 @@ struct PullRequestPill: View {
     }
 }
 
-/// A pull request's state as a tinted capsule: GitHub's mark and the word ("Open", "Merged"), optionally after its
-/// number. The pull request page and the watched pull request above the composer both wear it.
-struct PullRequestStateBadge: View {
-    let glyph: PullRequestBadge.Glyph
-    var number: Int? = nil
-
-    private var tint: Color { PullRequestIcon.tint(glyph) }
-
-    private var state: String {
-        switch glyph {
-        case .open, .draft, .merged, .closed: return tr("agents.pr.state." + glyph.rawValue)
-        case .conflict, .stack: return tr("inbox.pr.state." + glyph.rawValue)
-        }
-    }
-
-    private var label: String { number.map { "#\($0) · \(state)" } ?? state }
+/// Whether a pull request can be merged, as a mark and a word that both wear its color. The merge bar shows it bare;
+/// everywhere else it stands in a `PullRequestStateBadge`.
+struct PullRequestMergeStatusLabel: View {
+    let status: PullRequestMergeStatus
+    /// Only the mark, for a bar too narrow for the word.
+    var markOnly = false
 
     var body: some View {
-        HStack(spacing: 3) {
-            PullRequestStateIcon(glyph: glyph, tinted: false)
-            Text(label).lineLimit(1)
+        HStack(spacing: NookTheme.Spacing.xs) {
+            NookSymbol(PullRequestIcon.symbol(status: status))
+                .font(NookTheme.font(11, .semibold))
+                .frame(width: 12, height: 12)
+            if !markOnly { Text(status.word).lineLimit(1) }
         }
-        .font(NookTheme.TextStyle.label.monospacedDigit())
-        .foregroundStyle(tint)
-        .padding(.leading, 5)
-        .padding(.trailing, 7)
-        .padding(.vertical, NookTheme.Spacing.xxs)
-        .background(Capsule().fill(tint.opacity(0.14)))
+        .font(NookTheme.TextStyle.label)
+        .foregroundStyle(PullRequestIcon.tint(status: status))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
+        .accessibilityLabel(status.word)
+    }
+}
+
+/// A pull request's merge status as a quiet pill, optionally after its number in grey. The tray above the composer and
+/// the hover card both wear it.
+struct PullRequestStateBadge: View {
+    let status: PullRequestMergeStatus
+    var number: Int? = nil
+
+    init(status: PullRequestMergeStatus, number: Int? = nil) {
+        self.status = status
+        self.number = number
+    }
+
+    init(glyph: PullRequestBadge.Glyph, number: Int? = nil) {
+        self.init(status: PullRequestMergeStatus(glyph), number: number)
+    }
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            if let number {
+                Text(verbatim: "#\(number)")
+                    .font(NookTheme.TextStyle.label.monospacedDigit())
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
+            }
+            PullRequestMergeStatusLabel(status: status)
+                .padding(.leading, NookTheme.Spacing.sm - NookTheme.Spacing.xxs)
+                .padding(.trailing, NookTheme.Spacing.sm)
+                .frame(height: 22)
+                .background(Capsule().fill(NookTheme.smoke))
+        }
+        .fixedSize()
     }
 }
 
@@ -160,7 +181,7 @@ struct PullRequestLiveStateBadge: View {
     @ObservedObject private var statuses = PullRequestStatusStore.shared
 
     var body: some View {
-        PullRequestStateBadge(glyph: statuses.status(url)?.glyph ?? fallback, number: Int(url.lastPathComponent))
+        PullRequestStateBadge(status: statuses.status(url)?.mergeStatus ?? PullRequestMergeStatus(fallback), number: Int(url.lastPathComponent))
             .task(id: url) { await PullRequestStatusStore.follow(url) }
     }
 }

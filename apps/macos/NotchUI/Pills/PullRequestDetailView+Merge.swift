@@ -110,58 +110,59 @@ extension PullRequestDetailView {
 
     // MARK: Merging
 
-    /// The page's main action at the top right: merge an open pull request, mark a draft ready, hand a conflict to the
-    /// session beside it, or say what it is (merged, closed, in conflict) when there is nothing to do.
-    @ViewBuilder
+    /// The merge bar at the top right: whether it can be merged, and beside it what there is to do about that (merge,
+    /// let GitHub merge when the checks are done, mark a draft ready, hand a conflict to the session beside it).
     func primaryAction(_ detail: PullRequestDetail) -> some View {
+        let acts = hasMergeAction(detail)
+        return HStack(spacing: NookTheme.Spacing.sm) {
+            mergeStatus(detail)
+            if acts { mergeAction(detail) }
+        }
+        .padding(.leading, NookTheme.Spacing.md)
+        .padding(.trailing, acts ? NookTheme.Spacing.xxs : NookTheme.Spacing.md)
+        .frame(height: 34)
+        .background(Capsule().fill(NookTheme.graphite))
+        .layoutPriority(1)
+    }
+
+    private func hasMergeAction(_ detail: PullRequestDetail) -> Bool {
         switch detail.state {
-        case .merged, .closed:
-            PullRequestStateBadge(glyph: glyph)
-        case .draft:
-            if !detail.nodeID.isEmpty, detail.canPush != false {
-                SmallPrimaryButton(title: tr("agents.pr.action.ready"), systemName: PullRequestIcon.symbol(.open)) {
-                    actions.close()
-                    actions.pending = .markReady(nodeID: detail.nodeID)
-                }
-                .disabled(actions.sending)
-            } else {
-                PullRequestStateBadge(glyph: .draft)
-            }
+        case .merged, .closed: return false
+        case .draft: return !detail.nodeID.isEmpty && detail.canPush != false
         case .open:
-            if detail.conflicted {
-                if let sessionContext {
-                    SmallPrimaryButton(title: tr("session.context.resolve"), systemName: PullRequestIcon.symbol(.conflict)) {
-                        ComposerInbox.shared.add(SessionPrompts.resolveConflicts(detail.sessionRef), to: sessionContext)
-                    }
-                    .help(tr("agents.pr.note.conflict"))
-                } else {
-                    PullRequestStateBadge(glyph: .conflict).help(tr("agents.pr.note.conflict"))
-                }
-            } else if let auto = detail.autoMerge {
-                // GitHub merges by itself: the ⋯ menu turns it off.
-                PullRequestAutoMergeBadge(method: auto.method)
-            } else if detail.canPush != false && !detail.methods.isEmpty {
-                // While the checks or reviews still hold it back, the main action is to let GitHub merge when they are done.
-                if detail.features.autoMerge, detail.autoMergeAllowed, detail.mergeable != nil, detail.checkSummary == .pending || detail.mergeState == "blocked", !detail.nodeID.isEmpty {
-                    SmallPrimaryButton(title: tr("agents.pr.action.enableAutoMerge"), systemName: "bolt") {
-                        actions.close()
-                        actions.pending = .enableAutoMerge(nodeID: detail.nodeID, method: method)
-                    }
-                    .disabled(actions.sending)
-                } else {
-                    mergeButton(detail)
-                }
-            }
+            if detail.conflicted { return sessionContext != nil }
+            return detail.autoMerge == nil && detail.canPush != false && !detail.methods.isEmpty
         }
     }
 
-    /// Merge with its method beside it. The first click arms it, the second merges; beside it, what GitHub may still hold
-    /// it back on (branch protection, a branch that is behind, failing checks), named in a few words.
+    @ViewBuilder
+    private func mergeAction(_ detail: PullRequestDetail) -> some View {
+        if detail.state == .draft {
+            SmallPrimaryButton(title: tr("agents.pr.action.ready"), systemName: PullRequestIcon.symbol(.open)) {
+                actions.close()
+                actions.pending = .markReady(nodeID: detail.nodeID)
+            }
+            .disabled(actions.sending)
+        } else if detail.conflicted, let sessionContext {
+            SmallPrimaryButton(title: tr("session.context.resolve"), systemName: PullRequestIcon.symbol(.conflict)) {
+                ComposerInbox.shared.add(SessionPrompts.resolveConflicts(detail.sessionRef), to: sessionContext)
+            }
+            .help(tr("agents.pr.note.conflict"))
+        } else if detail.features.autoMerge, detail.autoMergeAllowed, detail.mergeable != nil, detail.checkSummary == .pending || detail.mergeState == "blocked", !detail.nodeID.isEmpty {
+            // While the checks or reviews still hold it back, the main action is to let GitHub merge when they are done.
+            SmallPrimaryButton(title: tr("agents.pr.action.enableAutoMerge"), systemName: "bolt") {
+                actions.close()
+                actions.pending = .enableAutoMerge(nodeID: detail.nodeID, method: method)
+            }
+            .disabled(actions.sending)
+        } else {
+            mergeButton(detail)
+        }
+    }
+
+    /// Merge with its method beside it. The first click arms it, the second merges.
     func mergeButton(_ detail: PullRequestDetail) -> some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            if let note = detail.mergeNote, detail.canMerge {
-                mergeBlocker(note, detail: detail)
-            }
             if merging { ProgressView().controlSize(.small) }
             SmallPrimaryButton(title: merging ? tr("agents.pr.merging") : armedMerge ? tr("agents.pr.confirmMerge") : tr("agents.pr.merge"),
                                systemName: armedMerge ? "checkmark" : PullRequestIcon.symbol(.merged)) {
@@ -193,37 +194,28 @@ extension PullRequestDetailView {
         }
     }
 
-    /// What may still hold the merge back, in its own mark and a few words ("Branch protection", "Behind main",
-    /// "Checks failing"); a click shows GitHub's whole reason.
-    func mergeBlocker(_ note: String, detail: PullRequestDetail) -> some View {
-        let reason = String(note.split(separator: ".").last ?? "")
-        let look: (symbol: String, color: Color, label: String) = switch reason {
-        case "blocked": (PullRequestIcon.blocked, PullRequestIcon.blockerTint, tr("agents.pr.blocker.blocked"))
-        case "behind": (PullRequestIcon.behind, PullRequestIcon.blockerTint, tr("agents.pr.blocker.behind", detail.baseBranch))
-        case "unstable": (PullRequestIcon.symbol(PullRequestCheck.Outcome.failing), PullRequestIcon.tint(PullRequestCheck.Outcome.failing),
-                          tr("agents.pr.blocker.unstable"))
-        case "checksRunning": (PullRequestIcon.symbol(PullRequestCheck.Outcome.pending), PullRequestIcon.tint(PullRequestCheck.Outcome.pending),
-                               tr("agents.pr.blocker.checksRunning"))
-        case "checking": (PullRequestIcon.symbol(PullRequestCheck.Outcome.pending), PullRequestIcon.tint(PullRequestCheck.Outcome.pending),
-                          tr("agents.pr.blocker.checking"))
-        default: ("info.circle", NookTheme.textTertiary, tr(note))
-        }
+    /// The merge status in its mark and a few words; a word that has a longer reason shows it on a click. In a bar too
+    /// narrow for the word, the mark stays.
+    func mergeStatus(_ detail: PullRequestDetail) -> some View {
+        let status = detail.mergeStatus
+        let note = detail.canPush == false && detail.isOpen ? "agents.pr.note.noAccess" : status.noteKey
+        let method = detail.autoMerge?.method.map { tr($0.titleKey) }
         return Button {
             showBlocker.toggle()
         } label: {
-            Image(systemName: look.symbol)
-                .font(NookTheme.font(12, .semibold))
-                .foregroundStyle(look.color)
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
+            ViewThatFits(in: .horizontal) {
+                PullRequestMergeStatusLabel(status: status)
+                PullRequestMergeStatusLabel(status: status, markOnly: true)
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(look.label + " · " + tr(note))
-        .accessibilityLabel(look.label)
+        .allowsHitTesting(note != nil)
+        .help(note.map { status.word + " · " + tr($0) } ?? method ?? "")
         .popover(isPresented: $showBlocker, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                Text(look.label).font(NookTheme.TextStyle.strong).foregroundStyle(look.color)
-                Text(tr(note))
+                Text(status.word).font(NookTheme.TextStyle.strong).foregroundStyle(PullRequestIcon.tint(status: status))
+                Text(tr(note ?? ""))
                     .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.paper)
                     .fixedSize(horizontal: false, vertical: true)
