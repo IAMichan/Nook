@@ -146,8 +146,9 @@ enum ConnectorHTTP {
         return configuration
     }
 
-    /// Fetches JSON. `headers` typically includes Authorization header.
-    static func json(_ url: URL, headers: [String: String] = [:], method: String = "GET", body: Data? = nil) async throws -> Any {
+    /// Fetches JSON. `headers` typically includes Authorization header. `conditional`: for a read that polls, sends the
+    /// `ETag` of the last answer (`ConditionalFetch`), so an unchanged one costs no body and no rate limit.
+    static func json(_ url: URL, headers: [String: String] = [:], method: String = "GET", body: Data? = nil, conditional: Bool = false) async throws -> Any {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.httpBody = body
@@ -155,7 +156,8 @@ enum ConnectorHTTP {
         if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         request.setValue("Nook", forHTTPHeaderField: "User-Agent")
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = conditional ? try await ConditionalFetch.data(for: request, session: session)
+            : try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             switch status {

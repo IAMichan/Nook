@@ -118,7 +118,7 @@ enum GitHubPullRequestDetail {
         let base = "https://api.github.com/repos/\(repo)"
         return { path in
             guard let url = URL(string: base + path) else { throw NookError("Invalid GitHub address.") }
-            return try await ConnectorRetry.run { try await ConnectorHTTP.json(url, headers: auth) }
+            return try await ConnectorRetry.run { try await ConnectorHTTP.json(url, headers: auth, conditional: true) }
         }
     }
 
@@ -271,10 +271,10 @@ enum GitHubPullRequestDetail {
     }
 
     /// Sends one action from the page (a review, a comment, close, reopen, …; see PullRequestAction), only after your
-    /// click. Throws GitHub's refusal in words.
-    /// Returns the link of what the action made, for a revert; nil otherwise.
+    /// click. Throws GitHub's refusal in words. Returns what the answer says the pull request is now, if it does, and the
+    /// link of what the action made, for a revert.
     @discardableResult
-    static func perform(_ action: PullRequestAction, repo: String, number: Int, token: String) async throws -> String? {
+    static func perform(_ action: PullRequestAction, repo: String, number: Int, token: String) async throws -> PullRequestActionReply? {
         guard let spec = action.request(repo: repo, number: number) else { throw NookError("Nothing to send.") }
         guard let url = URL(string: "https://api.github.com" + spec.path) else { throw NookError("Invalid GitHub address.") }
         var request = URLRequest(url: url)
@@ -293,7 +293,12 @@ enum GitHubPullRequestDetail {
         }
         // GraphQL answers a refusal with 200 and an `errors` list.
         if spec.path == "/graphql", let message = PullRequestAction.graphQLError(object) { throw NookError(message) }
-        return PullRequestAction.revertURL(object)
+        var reply = action.reply(object)
+        if let made = PullRequestAction.revertURL(object) {
+            reply = reply ?? PullRequestActionReply()
+            reply?.made = made
+        }
+        return reply
     }
 
     /// How many commits the branch is behind its base; nil when GitHub could not compare them.

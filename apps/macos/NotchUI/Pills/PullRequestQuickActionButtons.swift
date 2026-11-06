@@ -95,7 +95,8 @@ struct PullRequestQuickActionButtons: View {
             do {
                 try await PullRequestQuickRunner.run(action, item: item, accountID: accountID, app: app)
                 ToastCenter.shared.success(tr("agents.pulls.quick.done." + action.rawValue, "#\(item.number)"))
-                await PullRequestStore.shared.refresh(force: true)
+                // A merge changes other rows too (a stack, what conflicts): the rest was in GitHub's answer.
+                if action == .merge { await PullRequestStore.shared.refresh(force: true) }
             } catch {
                 ToastCenter.shared.error(error, title: tr("agents.pulls.quick.failed", "#\(item.number)"))
             }
@@ -126,8 +127,14 @@ enum PullRequestQuickRunner {
         guard let request = action.action(for: item) else { return }
         let args = request.auditArgs(repo: item.repo, number: item.number)
         do {
-            try await GitHubPullRequestDetail.perform(request, repo: item.repo, number: item.number, token: token)
+            let reply = try await GitHubPullRequestDetail.perform(request, repo: item.repo, number: item.number, token: token)
             app.store.audit(tool: request.auditTool, args: args, result: "ok")
+            if let reply {
+                PullRequestStore.shared.apply(reply, to: item.id)
+                if let state = reply.linkState { PullRequestSync.shared.mark(repository: item.repo, number: item.number, state: state) }
+            } else {
+                await PullRequestStore.shared.refresh(force: true)
+            }
         } catch {
             app.store.audit(tool: request.auditTool, args: args, result: "error: " + error.localizedDescription)
             throw error

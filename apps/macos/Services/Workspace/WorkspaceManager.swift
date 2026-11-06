@@ -306,10 +306,15 @@ final class WorkspaceManager: ObservableObject {
     /// disk when anything asks for them again (`evictedTimelines`).
     private var timelineUse: [UUID: Date] = [:]
     private var evictedTimelines: Set<UUID> = []
+    /// The timelines on screen, with how many views show each. `timelineUse` moves only on a redraw, so a session you sit
+    /// and read looks unused; it must not disappear under you.
+    private var shownTimelines: [UUID: Int] = [:]
     /// The last answer of each released timeline, so a summary (the phone's session list) can show it without reading
     /// the whole timeline back from disk and keeping it in memory again.
     private var evictedAnswers: [UUID: String] = [:]
     private static let timelineLimit = 16
+    /// What the timelines in memory may hold together: measured on 2026-11-06, a session was 2 MB and the longest 6.5 MB.
+    private static let timelineByteBudget = 64 * 1024 * 1024
     private static let timelineIdleSeconds: TimeInterval = 300
     /// Set while an evicted timeline is read back for a view that is drawing it: no news for anyone.
     private var quietEvents = false
@@ -412,6 +417,8 @@ final class WorkspaceManager: ObservableObject {
                 self.checkPullRequestWatches()
                 self.applyWorktreeCleanup()
                 self.sweepBuildLeftovers()
+                // Otherwise only opening another session frees one: sessions finish, and their timelines stay.
+                self.evictTimelines()
             }
         }
         Task.detached(priority: .utility) {
@@ -461,6 +468,15 @@ final class WorkspaceManager: ObservableObject {
         // it redraws once the timeline is here.
         if evictedTimelines.contains(id) { requestTimeline(id) }
         return []
+    }
+
+    /// A view shows this timeline from now on: it stays in memory until `timelineHidden`.
+    func timelineShown(_ id: UUID) { shownTimelines[id, default: 0] += 1 }
+
+    func timelineHidden(_ id: UUID) {
+        guard let count = shownTimelines[id] else { return }
+        shownTimelines[id] = count > 1 ? count - 1 : nil
+        timelineUse[id] = Date()
     }
 
     /// Whether the session's timeline is in memory; false while it is still being read from disk.
@@ -526,18 +542,18 @@ final class WorkspaceManager: ObservableObject {
         evictTimelines()
     }
 
-    /// Releases the longest unused timelines beyond `timelineLimit`, of sessions with nothing running or left to save.
+    /// Releases the longest unused timelines of idle sessions, beyond `timelineLimit` or `timelineByteBudget`.
     private func evictTimelines() {
-        guard events.count > Self.timelineLimit else { return }
         // Unused for minutes: a save scheduled for it has long been written, so reading it back gets everything.
         let unusedSince = Date().addingTimeInterval(-Self.timelineIdleSeconds)
-        let idle = events.keys.filter { id in
-            (timelineUse[id] ?? .distantPast) < unusedSince
+        let candidates = events.map { id, list in
+            let used = timelineUse[id] ?? .distantPast
+            let idle = used < unusedSince && shownTimelines[id] == nil
                 && eventSaves[id] == nil && processes[id] == nil && turns[id] == nil && codexServers[id] == nil
                 && claudeIdle[id] == nil && acpClients[id] == nil && !(run(id)?.status.isActive ?? false)
+            return TimelineEviction.Candidate(id: id, lastUsed: used, bytes: list.reduce(0) { $0 + $1.approximateBytes }, idle: idle)
         }
-        .sorted { (timelineUse[$0] ?? .distantPast) < (timelineUse[$1] ?? .distantPast) }
-        for id in idle.prefix(events.count - Self.timelineLimit) {
+        for id in TimelineEviction.pick(candidates, limit: Self.timelineLimit, budget: Self.timelineByteBudget) {
             // Only the start: a summary shows a short excerpt of it, and a long answer need not stay in memory whole.
             evictedAnswers[id] = events[id]?.last(where: { $0.kind == .assistant }).map { String($0.text.prefix(2_000)) }
             events[id] = nil

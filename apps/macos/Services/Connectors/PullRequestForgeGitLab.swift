@@ -31,7 +31,7 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
         var request = URLRequest(url: url)
         for (key, value) in http.headers { request.setValue(value, forHTTPHeaderField: key) }
         request.setValue("Nook", forHTTPHeaderField: "User-Agent")
-        guard let (data, response) = try? await ForgeEnvironment.session.data(for: request),
+        guard let (data, response) = try? await ConditionalFetch.data(for: request, session: ForgeEnvironment.session),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return GitLabAPI.parseList(data, repository: repo, sourceBranch: branch)
     }

@@ -11,6 +11,8 @@ final class RunStore: @unchecked Sendable {
     private let lock = NSLock()
     private let fileManager = FileManager.default
     private var log: RunEventLog?
+    /// A second connection, only for reading timelines: replaying one never waits for a save, a save never for it.
+    private var reader: RunEventLog?
     private var opened = false
     /// Per timeline, what the log holds: each event's fingerprint in timeline order. Saves compare against it.
     private var written: [UUID: WrittenTimeline] = [:]
@@ -85,6 +87,7 @@ final class RunStore: @unchecked Sendable {
         }
     }
 
+    /// Reads and decodes outside the lock, so a long timeline holds up neither saves nor the reading of another one.
     func loadEvents(_ id: UUID) -> [RunEvent] {
         Self.settled(readTimeline(id, remember: true))
     }
@@ -105,6 +108,7 @@ final class RunStore: @unchecked Sendable {
 
     /// Writes what changed in the timeline since it was last written. The whole timeline is kept, however long.
     func saveEvents(_ id: UUID, _ events: [RunEvent]) throws {
+        prepareWritten(id)
         lock.lock()
         guard !deleted.contains(id) else { lock.unlock(); return }
         guard let log = openLog() else { lock.unlock(); throw RunStoreError.unavailable }
@@ -160,6 +164,7 @@ final class RunStore: @unchecked Sendable {
     func appendEvent(_ id: UUID, _ event: RunEvent) {
         // Encoded before taking the lock, which reads of other timelines wait for.
         guard let payload = try? Self.encoder.encode(event) else { return }
+        prepareWritten(id)
         lock.lock()
         defer { lock.unlock() }
         guard !deleted.contains(id), let log = openLog() else { return }
@@ -206,6 +211,7 @@ final class RunStore: @unchecked Sendable {
         log = RunEventLog(url: databaseURL)
         if let log {
             importJSONTimelines(into: log)
+            reader = RunEventLog(url: databaseURL, readOnly: true)
         } else {
             SafeStorage.report("runs.sqlite could not be opened; timelines are not saved this launch")
         }
@@ -233,37 +239,66 @@ final class RunStore: @unchecked Sendable {
         if !done { SafeStorage.report("Importing the JSON timelines into runs.sqlite failed; trying again next launch") }
     }
 
+    /// A session's rows, from the read connection when there is one: no lock held. Nil when neither can read them.
+    private func readRows(_ id: UUID) -> [RunEventLog.Row]? {
+        lock.lock()
+        _ = openLog()
+        let reader = reader
+        lock.unlock()
+        if let rows = reader?.readRows(id) { return rows }
+        lock.lock()
+        defer { lock.unlock() }
+        return openLog()?.readRows(id)
+    }
+
     /// Replays the session's rows, compacting a log that grew much longer than its timeline.
     ///
-    /// Decoding a long timeline takes a while and happens outside the lock: the main thread takes it to write an event, and
-    /// must not wait for a session being read in the background.
+    /// Reads on its own connection and decodes outside the lock: the main thread takes the lock to write an event, and must
+    /// not wait for a session being read in the background. A save does not wait for it either.
     private func readTimeline(_ id: UUID, remember: Bool) -> [RunEvent] {
-        lock.lock()
-        let opened = openLog()
-        let rows = opened?.rows(id) ?? []
-        lock.unlock()
-        guard let log = opened else { return [] }
+        guard let rows = readRows(id) else {
+            guard remember else { return [] }
+            // Nothing to go on, and the list handed to the next save will be short: told what the log holds, that save
+            // would read as events removed and replace them all with a snapshot. New events are only added this way.
+            SafeStorage.report("A timeline could not be read from runs.sqlite")
+            lock.lock()
+            defer { lock.unlock() }
+            written[id] = WrittenTimeline()
+            return []
+        }
         let result = RunEventFold.fold(rows, decoder: Self.decoder)
         guard remember else { return result.events }
+        let timeline = WrittenTimeline(result.events)
+        // Unreadable rows (a newer version's) are left alone: compacting would drop them.
+        let compact = result.unreadableRows == 0 && rows.count >= Self.compactionMinimumRows && result.supersededRows >= result.events.count
+        let payload = compact ? try? Self.encoder.encode(result.events) : nil
         lock.lock()
         defer { lock.unlock() }
         guard !deleted.contains(id) else { return result.events }
         // Already known: a save got here first, and what it noted is newer than these rows.
-        if written[id] == nil { written[id] = WrittenTimeline(result.events) }
-        // Unreadable rows (a newer version's) are left alone: compacting would drop them. So are rows written since the
-        // read: the snapshot would replace them with a timeline that does not have them.
-        if result.unreadableRows == 0, rows.count >= Self.compactionMinimumRows, result.supersededRows >= result.events.count,
-           log.lastSequence(id) == rows.last?.seq {
-            try? writeSnapshot(id, result.events, log: log)
+        if written[id] == nil { written[id] = timeline }
+        // A snapshot replaces every earlier row: not when a row came in after this read, which it does not hold.
+        if let payload, let log = openLog(), log.lastSequence(id) == rows.last?.seq {
+            try? writeSnapshot(id, payload: payload, log: log)
         }
         return result.events
     }
 
-    /// One row with the whole timeline, replacing the session's earlier rows in the same transaction.
-    private func writeSnapshot(_ id: UUID, _ events: [RunEvent], log: RunEventLog) throws {
-        try writeSnapshot(id, payload: Self.encoder.encode(events), log: log)
+    /// Reads what the log holds for a timeline this launch has not seen yet, before a save takes the lock for it.
+    private func prepareWritten(_ id: UUID) {
+        lock.lock()
+        _ = openLog()
+        let known = written[id] != nil
+        let reader = reader
+        lock.unlock()
+        guard !known, let rows = reader?.readRows(id) else { return }
+        let timeline = WrittenTimeline(RunEventFold.fold(rows, decoder: Self.decoder).events)
+        lock.lock()
+        defer { lock.unlock() }
+        if written[id] == nil { written[id] = timeline }
     }
 
+    /// One row with the whole timeline, replacing the session's earlier rows in the same transaction.
     private func writeSnapshot(_ id: UUID, payload: Data, log: RunEventLog) throws {
         let saved = log.transaction {
             guard let seq = log.append(id, .snapshot, payload) else { return false }
@@ -293,6 +328,9 @@ final class RunStore: @unchecked Sendable {
         hasher.combine(event.detail)
         hasher.combine(event.output)
         hasher.combine(event.state)
+        hasher.combine(event.rolledBack)
+        hasher.combine(event.source)
+        hasher.combine(event.subagentSteps)
         return hasher.finalize()
     }
 
@@ -319,6 +357,40 @@ struct WrittenTimeline: Equatable {
 
     mutating func add(_ id: UUID, _ fingerprint: Int) {
         if fingerprints.updateValue(fingerprint, forKey: id) == nil { order.append(id) }
+    }
+}
+
+/// Which timelines to release from memory. They stay whole on disk and come back when asked for, so what counts is what
+/// the Mac gets back: a count alone keeps sixteen huge timelines as readily as sixteen small ones.
+enum TimelineEviction {
+    struct Candidate: Equatable {
+        var id: UUID
+        var lastUsed: Date
+        var bytes: Int
+        /// Nothing runs in it, nothing is left to save and nobody used it for a while.
+        var idle: Bool
+    }
+
+    /// The idle timelines to release, longest unused first: until at most `limit` are left and they hold at most `budget`
+    /// bytes. A timeline in use stays, whatever it holds, so the two can stay exceeded.
+    static func pick(_ all: [Candidate], limit: Int, budget: Int) -> [UUID] {
+        var count = all.count
+        var bytes = all.reduce(0) { $0 + $1.bytes }
+        var picked: [UUID] = []
+        for candidate in all.filter(\.idle).sorted(by: { $0.lastUsed < $1.lastUsed }) {
+            guard count > limit || bytes > budget else { break }
+            picked.append(candidate.id)
+            count -= 1
+            bytes -= candidate.bytes
+        }
+        return picked
+    }
+}
+
+extension RunEvent {
+    /// About what the event holds in memory: its texts, in bytes.
+    var approximateBytes: Int {
+        text.utf8.count + (detail?.utf8.count ?? 0) + (output?.utf8.count ?? 0) + 200
     }
 }
 

@@ -80,6 +80,9 @@ final class NookStore {
         }
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         exec("PRAGMA journal_mode = WAL;")
+        // With WAL, NORMAL stays consistent after a crash and does not wait for the disk on every commit; audit lines are
+        // written from the main actor. Only a power cut can lose the last commits.
+        exec("PRAGMA synchronous = NORMAL;")
         migrate()
         // A long log is a long delete: not while Nook starts. Every use of the connection holds `lock`, so this waits
         // for one on the main thread or makes it wait, and the store lives as long as the work it started. Started a

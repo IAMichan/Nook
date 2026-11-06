@@ -162,6 +162,179 @@ final class LoopLayerView: NSView {
     }
 }
 
+/// An SF Symbol that pulses or turns for as long as something runs, drawn by Core Animation.
+///
+/// `.symbolEffect(_, options: .repeating)` is a SwiftUI animation like any other: it lays out and updates the whole window
+/// it is in at the display's own rate (100 times a second measured, one rotating check in a sidebar was enough), for as
+/// long as the symbol is on screen. Here the render server turns the picture; the main thread does nothing per frame.
+/// Inactive, or when you asked for less motion, it is the plain symbol and lays out as one.
+struct LayerSymbol: View {
+    enum Motion: Equatable {
+        /// Fades to a third and back.
+        case pulse
+        /// One clockwise turn every period.
+        case rotate
+
+        var period: Double {
+            switch self {
+            case .pulse: return 1.6
+            case .rotate: return 2
+            }
+        }
+    }
+
+    let name: String
+    let size: CGFloat
+    var weight: Font.Weight = .regular
+    let color: Color
+    let motion: Motion
+    var active = true
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Published only when the plan changes: sets how often the render server draws it.
+    @ObservedObject private var energy = EnergyMonitor.shared
+    @Environment(\.nookAttended) private var attended
+    @State private var visible = false
+
+    var body: some View {
+        // The plain symbol keeps the size; the turning one lies over it, and the plain one is hidden meanwhile.
+        let turning = active && visible && !reduceMotion
+        Image(systemName: name)
+            .font(NookTheme.font(size, weight))
+            .foregroundStyle(color)
+            .opacity(turning ? 0 : 1)
+            .overlay {
+                if turning {
+                    LayerSymbolView(name: name, size: size, weight: weight, color: color, motion: motion,
+                                    fps: energy.plan.progressFrameRate(attended: attended))
+                        .allowsHitTesting(false)
+                }
+            }
+            .onAppear { visible = true }
+            .onDisappear { visible = false }
+    }
+}
+
+struct LayerSymbolView: NSViewRepresentable {
+    let name: String
+    let size: CGFloat
+    let weight: Font.Weight
+    let color: Color
+    let motion: LayerSymbol.Motion
+    let fps: Double
+
+    func makeNSView(context: Context) -> SymbolLayerView {
+        let view = SymbolLayerView()
+        view.configure(self)
+        return view
+    }
+
+    func updateNSView(_ view: SymbolLayerView, context: Context) {
+        view.configure(self)
+    }
+
+    /// Whether this draws the same as `other`, so an update of the window around it leaves the running loop alone.
+    func same(as other: LayerSymbolView?) -> Bool {
+        guard let other else { return false }
+        return name == other.name && size == other.size && weight == other.weight && color == other.color
+            && motion == other.motion && fps == other.fps
+    }
+}
+
+/// The view behind `LayerSymbol`: one layer with the symbol's picture, centered, with its loop. Takes no clicks or hover.
+final class SymbolLayerView: NSView {
+    private var spec: LayerSymbolView?
+    private var builtSize: CGSize = .zero
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .never
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric) }
+
+    func configure(_ spec: LayerSymbolView) {
+        guard !spec.same(as: self.spec) else { return }
+        self.spec = spec
+        rebuild()
+    }
+
+    override func layout() {
+        super.layout()
+        if bounds.size != builtSize { rebuild() }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        rebuild()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        rebuild()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // Back on screen: the animation starts again in step with the clock.
+        if window != nil { rebuild() }
+    }
+
+    private func rebuild() {
+        guard let layer, let spec else { return }
+        builtSize = bounds.size
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        layer.sublayers?.forEach { $0.removeFromSuperlayer() }
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        let scale = window?.backingScaleFactor ?? 2
+        let configuration = NSImage.SymbolConfiguration(pointSize: spec.size, weight: Self.weight(spec.weight))
+            .applying(NSImage.SymbolConfiguration(paletteColors: [NSColor(cgColor: LayerLoopTiming.resolve(spec.color, in: self)) ?? .white]))
+        guard let image = NSImage(systemSymbolName: spec.name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
+        else { return }
+        let picture = CALayer()
+        picture.contentsScale = image.recommendedLayerContentsScale(scale)
+        picture.contents = image.layerContents(forContentsScale: picture.contentsScale)
+        picture.contentsGravity = .center
+        picture.bounds = CGRect(origin: .zero, size: image.size)
+        picture.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        layer.addSublayer(picture)
+        let period = spec.motion.period
+        switch spec.motion {
+        case .pulse:
+            let fade = CAKeyframeAnimation(keyPath: "opacity")
+            fade.values = [1.0, 0.33, 1.0]
+            fade.keyTimes = [0, 0.5, 1]
+            fade.duration = period
+            LayerLoopTiming.add([fade], to: picture, period: period, timing: CAMediaTimingFunction(name: .easeInEaseOut), fps: spec.fps)
+        case .rotate:
+            // Clockwise: in a layer that is not flipped, that is a falling angle.
+            let turn = LayerLoopTiming.basic("transform.rotation.z", from: 0, to: -2 * .pi)
+            turn.duration = period
+            LayerLoopTiming.add([turn], to: picture, period: period, timing: nil, fps: spec.fps)
+        }
+    }
+
+    private static func weight(_ weight: Font.Weight) -> NSFont.Weight {
+        switch weight {
+        case .ultraLight: return .ultraLight
+        case .thin: return .thin
+        case .light: return .light
+        case .medium: return .medium
+        case .semibold: return .semibold
+        case .bold: return .bold
+        case .heavy: return .heavy
+        case .black: return .black
+        default: return .regular
+        }
+    }
+}
+
 /// The parts every looping layer shares: one clock, the frame rate cap, colors in the window's appearance.
 @MainActor
 enum LayerLoopTiming {

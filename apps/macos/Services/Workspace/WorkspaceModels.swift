@@ -731,7 +731,7 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
 }
 
 /// One step of a subagent's own work, kept on the event that started it: a thought, a message, or a tool it called.
-struct SubagentStep: Codable, Equatable, Sendable {
+struct SubagentStep: Codable, Hashable, Sendable {
     enum Kind: String, Codable, Sendable { case thinking, text, tool }
 
     var kind: Kind

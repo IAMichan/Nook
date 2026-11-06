@@ -558,10 +558,12 @@ struct PullRequestActionPanel: View {
         Task {
             do {
                 let made: String?
+                var reply: PullRequestActionReply?
                 if let forge {
                     made = try await forge.perform(action, number: number, detail: detail)
                 } else {
-                    made = try await GitHubPullRequestDetail.perform(action, repo: repo, number: number, token: token)
+                    reply = try await GitHubPullRequestDetail.perform(action, repo: repo, number: number, token: token)
+                    made = reply?.made
                 }
                 app.store.audit(tool: action.auditTool, args: args, result: "ok")
                 state.sending = false
@@ -574,8 +576,14 @@ struct PullRequestActionPanel: View {
                 // A revert is a new pull request of its own: it opens beside this one.
                 if let made, let url = URL(string: made), !app.openPullRequestLink(url, beside: session != nil) { NSWorkspace.shared.open(url) }
                 ToastCenter.shared.success(tr("agents.pr.action.done"))
+                // What GitHub answered shows at once; the page then reads only what the answer leaves out (the timeline).
+                if let reply { model.apply(reply) }
                 await model.refresh(activity: true)
-                await PullRequestStore.shared.refresh(force: true)
+                if action.needsListRead {
+                    await PullRequestStore.shared.refresh(force: true)
+                } else {
+                    PullRequestStore.shared.rereadAfterAction()
+                }
             } catch {
                 app.store.audit(tool: action.auditTool, args: args, result: "error: " + error.localizedDescription)
                 state.sending = false

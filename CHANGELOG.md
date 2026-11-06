@@ -92,6 +92,7 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Changed
 
+- Nook works less in the background. A running check or pulse no longer redraws the whole window at the display rate. Polling pull requests costs no GitHub limit when nothing changed, and a slow forge no longer holds up the others. Settled pull requests, idle folders and agent pages nobody looks at are read less often or put away. Opening a long session no longer waits for saves.
 - Much lighter with many agents at work: the working dots, halos, spinners, the shimmer on the running step, Nook's
   writing dots and the music bars now run in Core Animation instead of being drawn frame by frame on the main thread.
   Each of them used to make the whole window lay itself out again on every frame, over a hundred times a second with a
