@@ -142,19 +142,7 @@ struct SessionDetailView: View {
                 Button("Stop the session", role: .destructive) { Task { await client.stop(session) } }
             }
             .screen()
-            .toolbar {
-                if client.can(CompanionFeature.workspace) {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Menu {
-                            NavigationLink { SessionFilesView(sessionID: sessionID) } label: { Label("Files", systemImage: "folder") }
-                            NavigationLink { SessionTerminalsView(sessionID: sessionID) } label: { Label("Terminals", systemImage: "terminal") }
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
-                        }
-                        .accessibilityLabel("Files and terminals")
-                    }
-                }
-            }
+            .modifier(SessionWorkspaceMenu(sessionID: sessionID))
             .navigationDestination(isPresented: $reviewing) {
                 // A comment on a line goes into this session's message, under what you wrote.
                 SessionChangesView(sessionID: sessionID) { comment in
