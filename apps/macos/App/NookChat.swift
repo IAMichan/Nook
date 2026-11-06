@@ -243,6 +243,9 @@ struct Conversation: Identifiable, ConversationListItem {
 final class NookChat: ObservableObject {
     @Published private(set) var conversations: [Conversation] = []
     @Published private(set) var activeID: UUID?
+    /// Goes up each time you ask for a new conversation, also when the empty one on screen stays (`activeID` does not
+    /// change then): the chat gives its box the keyboard on it.
+    @Published private(set) var composerFocusRequests = 0
     private(set) var lastActivity = Date.distantPast
     private var saveTask: Task<Void, Never>?
     private static let saveQueue = DispatchQueue(label: "nl.imdigital.nook.chatsave", qos: .utility)
@@ -332,6 +335,11 @@ final class NookChat: ObservableObject {
         trim()
         scheduleSave()
         return conversation.id
+    }
+
+    /// Asks the chat on screen to put the keyboard in its box.
+    func requestComposerFocus() {
+        composerFocusRequests &+= 1
     }
 
     /// A new conversation that does not take over the one on screen: a question asked from the iPhone companion.

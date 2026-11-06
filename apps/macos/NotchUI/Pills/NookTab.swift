@@ -161,10 +161,8 @@ struct NookChatView: View {
         .onLayoutWidthChange { totalWidth = $0 }
         // Picking a Nook (or starting one) in the list shows it in place of the list, and the keyboard goes to the box:
         // a new conversation, ⌘N and switching all start by typing.
-        .onChange(of: chat.activeID) { _, _ in
-            listOnly = false
-            inputFocused = true
-        }
+        .onChange(of: chat.activeID) { _, _ in focusComposer() }
+        .onChange(of: chat.composerFocusRequests) { _, _ in focusComposer() }
         .overlay {
             if dropTargeted {
                 RoundedRectangle(cornerRadius: NookTheme.Radius.sheet)
@@ -185,6 +183,17 @@ struct NookChatView: View {
         }
         .composerFocusOnAppear($inputFocused)
         .onDisappear { NookTabDraft.images = images }
+    }
+
+    /// Shows the conversation and gives its box the keyboard, also when the list's search has it. An empty chat and a
+    /// thread each have their own box, so moving between them drops the old one and its focus goes to the search before
+    /// the new one is in the window: the request is made again on the next turn and a moment later.
+    private func focusComposer() {
+        listOnly = false
+        inputFocused = true
+        for delay in [0.0, 0.2] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { inputFocused = true }
+        }
     }
 
     /// The key of the question you were typing in `ComposerDraftStore`.
