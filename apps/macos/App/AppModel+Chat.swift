@@ -72,6 +72,7 @@ extension AppModel {
     /// Starts a new conversation. Any running background conversation continues.
     func newChat() {
         chat.startNew()
+        chat.requestComposerFocus()
         attachment = nil
         showChat()
     }
