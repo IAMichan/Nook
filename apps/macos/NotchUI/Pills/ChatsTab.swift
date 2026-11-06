@@ -1712,9 +1712,7 @@ private struct ChatsDetail: View, Equatable {
     /// the order you sent them while the field is free for the next one at once.
     @State private var sending: Task<Void, Never>?
     @FocusState private var replyFocused: Bool
-    /// A photo shown big over the chat in the notch, until it is clicked or Escape is pressed.
-    @State private var zoomed: ChatBubble?
-    /// In the main window a photo or video goes big over the whole window instead; nil in the notch.
+    /// Where a photo goes big (`ImageModal`), and a video in the main window.
     @Environment(\.chatMediaStage) private var mediaStage
     /// The message the field answers, quoted above it until it is sent or let go.
     @State private var replyingTo: ChatBubble?
@@ -1909,14 +1907,6 @@ private struct ChatsDetail: View, Equatable {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .overlay {
-            if let zoomed, case .photo(let url) = zoomed.media, let image = zoomed.image ?? ChatMediaImages.image(url) {
-                ChatPhotoZoom(url: url, preview: image, name: zoomed.attachment ?? "",
-                              onClose: { withAnimation(NookTheme.reveal) { self.zoomed = nil } },
-                              onOpen: { self.zoomed = nil; open(zoomed) })
-                    .transition(.opacity)
-            }
-        }
-        .overlay {
             if let forwarding {
                 ChatForwardPicker(quote: forwarding.bubble.quote(contact: entry.name), targets: forwarding.targets,
                                   onCancel: { withAnimation(NookTheme.reveal) { self.forwarding = nil } },
@@ -1973,7 +1963,7 @@ private struct ChatsDetail: View, Equatable {
         }
         // The panel can take the keyboard after the chat appeared: the field asks again.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
-            guard note.object is NotchPanel, !replyFocused, zoomed == nil, composer.panel == nil else { return }
+            guard note.object is NotchPanel, !replyFocused, mediaStage?.isShowing != true, composer.panel == nil else { return }
             replyFocused = true
         }
         // A message's text being changed is not an unsent answer.
@@ -1996,8 +1986,6 @@ private struct ChatsDetail: View, Equatable {
             mediaStage.close()
         } else if forwarding != nil {
             withAnimation(NookTheme.reveal) { forwarding = nil }
-        } else if zoomed != nil {
-            withAnimation(NookTheme.reveal) { zoomed = nil }
         } else if composer.panel != nil {
             composer.closePanel()
         } else if editing != nil {
@@ -2010,15 +1998,12 @@ private struct ChatsDetail: View, Equatable {
         }
     }
 
-    /// A photo enlarges inside Nook, over the whole main window or over the chat in the notch; a photo Nook does not
-    /// have yet opens as any file does.
+    /// A photo enlarges inside Nook (`ImageModal`), over the window or the notch's panel; a photo Nook does not have yet
+    /// opens as any file does.
     private func zoom(_ bubble: ChatBubble) {
-        guard case .photo(let url) = bubble.media, let image = bubble.image ?? ChatMediaImages.image(url) else { return open(bubble) }
-        if let mediaStage {
-            mediaStage.show(photo: url, preview: image, name: bubble.attachment ?? "", open: { open(bubble) })
-        } else {
-            withAnimation(NookTheme.reveal) { zoomed = bubble }
-        }
+        guard let mediaStage, case .photo(let url) = bubble.media,
+              let image = bubble.image ?? ChatMediaImages.image(url) else { return open(bubble) }
+        mediaStage.show(photo: url, preview: image, name: bubble.attachment ?? "", open: { open(bubble) })
     }
 
     /// Whether a poll in this chat can be voted on from here, as its app allows (`ChatAbilities.vote`).
