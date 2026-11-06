@@ -350,6 +350,55 @@ struct ChatPictureSizeBadge: View {
     }
 }
 
+/// A file, folder or picture dragged over a composer. `hovering` shows the empty place it would land in. Dropped, the
+/// pictures take a moment to encode, so `landing` keeps the row open until they are in; without it the box would shrink
+/// and grow again under the pointer.
+struct ComposerDrop: Equatable {
+    var hovering = false
+    var landing = false
+
+    /// The row above the text is open for what is coming.
+    var open: Bool { hovering || landing }
+
+    fileprivate static let landingTime = 0.4
+}
+
+extension View {
+    /// `onDrop` for a composer, keeping `drop` up to date for `ComposerDropSlot`. The area must hold the slot as well
+    /// as the field: when the row opens the field moves, and the pointer must not end up outside the drop area.
+    func composerDrop(of types: [UTType], _ drop: Binding<ComposerDrop>, perform: @escaping ([NSItemProvider]) -> Bool) -> some View {
+        onDrop(of: types, isTargeted: drop.hovering) { providers in
+            guard perform(providers) else { return false }
+            drop.wrappedValue.landing = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + ComposerDrop.landingTime) { drop.wrappedValue.landing = false }
+            return true
+        }
+    }
+}
+
+/// The empty place in a composer's row of attachments while something is dragged over it, the size of the tile it
+/// becomes, so the box is already as tall as it will be and nothing jumps on the drop.
+struct ComposerDropSlot: View {
+    var tint = NookTheme.iris
+    var side: CGFloat = 56
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+    }
+
+    var body: some View {
+        Image(systemName: "plus")
+            .font(NookTheme.font(16, .medium))
+            .foregroundStyle(tint)
+            .frame(width: side, height: side)
+            .background(shape.fill(tint.opacity(0.12)))
+            .overlay(shape.strokeBorder(tint, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .transition(.opacity.combined(with: .scale(scale: 0.85)))
+    }
+}
+
 /// The pictures and files above the text field, each with a small remove button; a click on a picture enlarges it
 /// (`ImageModalButton`). A file shows its first page (or its icon) with its type written across it, so you see what it
 /// is instead of its path.
@@ -358,24 +407,37 @@ struct ImageAttachmentStrip: View {
     var files: [ContextRefs.Found] = []
     /// The folder relative file references start from.
     var fileRoot: String? = nil
+    /// While something is dragged over the composer: the tint of the empty place after the tiles (`ComposerDropSlot`).
+    var dropSlot: Color? = nil
     let remove: (ImageAttachment) -> Void
     var removeFile: (Int) -> Void = { _ in }
 
+    private static let slotID = "drop-slot"
+
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(images) { image in
-                    ZStack(alignment: .topTrailing) {
-                        thumbnail(image)
-                        removeButton { remove(image) }
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(images) { image in
+                        ZStack(alignment: .topTrailing) {
+                            thumbnail(image)
+                            removeButton { remove(image) }
+                        }
+                    }
+                    ForEach(Array(files.enumerated()), id: \.offset) { index, file in
+                        ZStack(alignment: .topTrailing) {
+                            ComposerFileTile(file: file, url: url(of: file))
+                            removeButton { removeFile(index) }
+                        }
+                    }
+                    if let dropSlot {
+                        ComposerDropSlot(tint: dropSlot).id(Self.slotID)
                     }
                 }
-                ForEach(Array(files.enumerated()), id: \.offset) { index, file in
-                    ZStack(alignment: .topTrailing) {
-                        ComposerFileTile(file: file, url: url(of: file))
-                        removeButton { removeFile(index) }
-                    }
-                }
+            }
+            // With a full row the empty place would be out of sight.
+            .onChange(of: dropSlot != nil) { _, shown in
+                if shown { proxy.scrollTo(Self.slotID, anchor: .trailing) }
             }
         }
         .frame(height: 56)

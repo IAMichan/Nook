@@ -49,7 +49,7 @@ struct SessionComposer<Controls: View>: View {
     private var fileDropped: ((URL) -> Void)?
 
     @FocusState private var ownFocus: Bool
-    @State private var dropTargeted = false
+    @State private var drop = ComposerDrop()
     @State private var pasteMonitor = PasteMonitor()
     /// Pasted pictures still being encoded: sending waits for them, or the message would go without the picture and the
     /// picture land in the next one.
@@ -415,12 +415,14 @@ struct SessionComposer<Controls: View>: View {
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             let images = imagesBinding?.wrappedValue ?? []
             let files = ComposerAttachments.split(text).files
-            if !images.isEmpty || !files.isEmpty {
-                ImageAttachmentStrip(images: images, files: files, fileRoot: extras?.config.fileRoot) { gone in
+            if !images.isEmpty || !files.isEmpty || drop.open {
+                ImageAttachmentStrip(images: images, files: files, fileRoot: extras?.config.fileRoot,
+                                     dropSlot: drop.hovering ? tint : nil) { gone in
                     imagesBinding?.wrappedValue.removeAll { $0.id == gone.id }
                 } removeFile: { index in
                     text = ComposerAttachments.removing(at: index, from: text)
                 }
+                .transition(.opacity)
             }
             if choicesBelow {
                 // The text gets 4 pt of its own above and below, so lines that wrap keep 12 pt from the edges while the
@@ -453,14 +455,15 @@ struct SessionComposer<Controls: View>: View {
         .overlay(shape.strokeBorder(focused.wrappedValue ? tint.opacity(0.28) : NookTheme.fieldStroke, lineWidth: 1))
         .overlay(edgeLight)
         .overlay {
-            if dropTargeted {
+            if drop.hovering {
                 shape
-                    .strokeBorder(NookTheme.iris, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                    .strokeBorder(tint, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
                     .allowsHitTesting(false)
             }
         }
         .animation(NookTheme.reveal, value: focused.wrappedValue)
-        .onDrop(of: imagesBinding == nil ? [] : [UTType.fileURL, UTType.image], isTargeted: $dropTargeted) { providers in
+        .animation(NookTheme.reveal, value: drop)
+        .composerDrop(of: imagesBinding == nil ? [] : [UTType.fileURL, UTType.image], $drop) { providers in
             guard let imagesBinding else { return false }
             return ImageAttachment.receive(providers, images: { imagesBinding.wrappedValue += $0 }, file: { url in
                 dropFile(url)

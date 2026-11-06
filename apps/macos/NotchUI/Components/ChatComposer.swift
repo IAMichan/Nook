@@ -68,6 +68,9 @@ final class ChatComposerModel: ObservableObject {
         if !files.isEmpty, panel != .stickers { panel = nil }
     }
 
+    /// A file or picture dragged over the chat: the tray shows the place it lands in.
+    @Published var drop = ComposerDrop()
+
     /// Pictures still being written to disk: each waits for the one before, so they join `files` in the order they came.
     private var savingPictures: Task<Void, Never>?
     /// Moves on when the chat changes, so a picture still being written does not land in the next chat.
@@ -717,12 +720,13 @@ struct ChatComposerPanels: View {
             case .gifs: ChatGIFShelf(model: model, send: send)
             case nil: EmptyView()
             }
-            if model.hasFiles {
+            if model.hasFiles || model.drop.open {
                 ChatAttachmentTray(model: model, sends: sends)
             }
         }
         .animation(NookTheme.reveal, value: model.panel)
         .animation(NookTheme.reveal, value: model.files)
+        .animation(NookTheme.reveal, value: model.drop)
     }
 }
 
@@ -731,15 +735,29 @@ private struct ChatAttachmentTray: View {
     @ObservedObject var model: ChatComposerModel
     let sends: Set<ChatOutgoing.Kind>
 
+    private static let slotID = "drop-slot"
+    /// A chip's 40 pt preview and its padding.
+    private static let chipHeight: CGFloat = 48
+
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                ForEach(model.files) { file in
-                    ChatAttachmentChip(file: file, kinds: file.alternatives.filter { sends.contains(ChatOutgoing.Kind($0)) },
-                                       change: { model.change(file.id, to: $0) }, remove: { model.remove(file.id) })
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    ForEach(model.files) { file in
+                        ChatAttachmentChip(file: file, kinds: file.alternatives.filter { sends.contains(ChatOutgoing.Kind($0)) },
+                                           change: { model.change(file.id, to: $0) }, remove: { model.remove(file.id) })
+                    }
+                    if model.drop.hovering {
+                        ComposerDropSlot(side: Self.chipHeight).id(Self.slotID)
+                    }
                 }
+                .frame(minHeight: Self.chipHeight)
+                .padding(NookTheme.Spacing.xs)
             }
-            .padding(NookTheme.Spacing.xs)
+            // With a full row the empty place would be out of sight.
+            .onChange(of: model.drop.hovering) { _, shown in
+                if shown { proxy.scrollTo(Self.slotID, anchor: .trailing) }
+            }
         }
         .panelCard()
         .transition(.opacity.combined(with: .move(edge: .bottom)))
