@@ -227,6 +227,7 @@ struct CardView: View {
                        quote: replyingTo?.quote(contact: card.title),
                        cancelQuote: { withAnimation(NookTheme.reveal) { replyingTo = nil } },
                        draft: onDraft, send: submitReply)
+            .runsActions { await AppModel.shared.runDraftActions($0) }
             .tags { card.chatReply ? AppModel.shared.chatTagPeople(card: card) : [] }
     }
 
