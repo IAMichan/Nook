@@ -27,3 +27,16 @@ final class AndroidDevicesTests: XCTestCase {
         XCTAssertFalse(AndroidDevices.isAndroid("ABCD-1234"))
     }
 }
+
+/// Against a real device, when one runs here; skipped everywhere else.
+final class AndroidDeviceIntegrationTests: XCTestCase {
+    func testARunningDeviceIsFoundAndPhotographed() throws {
+        guard AndroidDevices.adb != nil else { throw XCTSkip("No Android SDK here.") }
+        let devices = AndroidDevices.all()
+        guard let device = devices.first(where: \.running), let serial = device.serial else { throw XCTSkip("No device runs.") }
+        XCTAssertTrue(AndroidDevices.isAndroid(device.id))
+        let picture = try XCTUnwrap(AndroidDevices.screenshot(serial: serial))
+        XCTAssertEqual(Array(picture.prefix(4)), [0x89, 0x50, 0x4E, 0x47], "a PNG")
+        XCTAssertGreaterThan(picture.count, 10_000)
+    }
+}
