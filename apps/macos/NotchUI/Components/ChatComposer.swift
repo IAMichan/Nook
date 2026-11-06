@@ -37,6 +37,8 @@ final class ChatComposerModel: ObservableObject {
     /// The GIF being fetched to send, to show it is on its way.
     @Published var fetchingGIF: String?
 
+    /// What was done to the pictures waiting (`ChatAttachmentReview`).
+    let edits = ChatAttachmentEdits()
     let recorder = ChatVoiceRecorder()
     private var choosing = false
     private var bag = Set<AnyCancellable>()
@@ -64,6 +66,7 @@ final class ChatComposerModel: ObservableObject {
             guard let file = ChatAttachment(url: url, as: kind) else { problem = tr("chat.compose.notAFile", url.lastPathComponent); continue }
             guard !file.tooLarge else { problem = tr("chat.compose.tooLarge", file.name); continue }
             files.append(file)
+            edits.select(file.id)
         }
         if !files.isEmpty, panel != .stickers { panel = nil }
     }
@@ -74,7 +77,7 @@ final class ChatComposerModel: ObservableObject {
     /// Pictures still being written to disk: each waits for the one before, so they join `files` in the order they came.
     private var savingPictures: Task<Void, Never>?
     /// Moves on when the chat changes, so a picture still being written does not land in the next chat.
-    private var pictureGeneration = 0
+    private(set) var pictureGeneration = 0
     /// How many pictures are still being written: a send waits for them (`picturesSaved`), or it would go without them.
     private(set) var pendingPictures = 0
 
@@ -107,6 +110,42 @@ final class ChatComposerModel: ObservableObject {
 
     func remove(_ id: String) {
         files.removeAll { $0.id == id }
+        edits.forget(id)
+    }
+
+    /// The preview's cross, and Escape: the files stay out of this message, with what was done to them.
+    func discardFiles() {
+        files = []
+        edits.reset()
+    }
+
+    /// Whether a waiting picture was edited and has yet to be made into the picture that goes.
+    var hasEdits: Bool { edits.hasChanges(in: files) }
+
+    private var applyingEdits: Task<Bool, Never>?
+
+    /// Makes the edited pictures, each in its file's place. False with the reason in `problem` when one fails: it keeps
+    /// its edit, and nothing goes, because the file itself may hold what you just cropped away.
+    func applyEdits() async -> Bool {
+        if let applyingEdits { return await applyingEdits.value }
+        let waiting = files.compactMap { file in edits.change(of: file).map { (file, $0) } }
+        let applying = Task { @MainActor [weak self] () -> Bool in
+            for (file, edit) in waiting {
+                do {
+                    let made = try await ChatSendPrep.edited(file, edit: edit)
+                    guard let self, let index = self.files.firstIndex(where: { $0.id == file.id }) else { continue }
+                    self.files[index] = made.sent(as: self.files[index].kind)
+                    self.edits.forget(file.id)
+                } catch {
+                    self?.problem = error.localizedDescription
+                    return false
+                }
+            }
+            return true
+        }
+        applyingEdits = applying
+        defer { applyingEdits = nil }
+        return await applying.value
     }
 
     /// One waiting file goes as another kind (a picture as a sticker, a video as a GIF, anything as a document).
@@ -130,7 +169,7 @@ final class ChatComposerModel: ObservableObject {
     /// After sending: the files and the form that went are gone; a poll's form starts empty again.
     func sent(_ outgoing: ChatOutgoing) {
         switch outgoing {
-        case .file(let file): files.removeAll { $0.id == file.id }
+        case .file(let file): remove(file.id)
         case .poll: poll = ChatPollDraft(); panel = nil
         case .location: placeQuery = ""; places = []; panel = nil
         case .contact: contactQuery = ""; panel = nil
@@ -145,7 +184,7 @@ final class ChatComposerModel: ObservableObject {
 
     /// The chat changed: nothing waiting for the old one goes to the new one.
     func reset() {
-        files = []
+        discardFiles()
         panel = nil
         problem = nil
         poll = ChatPollDraft()
@@ -720,8 +759,9 @@ struct ChatComposerPanels: View {
             case .gifs: ChatGIFShelf(model: model, send: send)
             case nil: EmptyView()
             }
-            if model.hasFiles || model.drop.open {
-                ChatAttachmentTray(model: model, sends: sends)
+            // One file shows all there is to it in the preview over the chat; more are picked here.
+            if model.files.count > 1 || model.drop.open {
+                ChatAttachmentTray(model: model, edits: model.edits, sends: sends)
             }
         }
         .animation(NookTheme.reveal, value: model.panel)
@@ -730,9 +770,11 @@ struct ChatComposerPanels: View {
     }
 }
 
-/// The files about to go, side by side: a picture of each, its name and size, what it goes as, and a cross.
+/// The files about to go, side by side: a picture of each, its name and size, what it goes as, and a cross. A click shows
+/// one in the preview over the chat (`ChatAttachmentReview`).
 private struct ChatAttachmentTray: View {
     @ObservedObject var model: ChatComposerModel
+    @ObservedObject var edits: ChatAttachmentEdits
     let sends: Set<ChatOutgoing.Kind>
 
     private static let slotID = "drop-slot"
@@ -745,6 +787,8 @@ private struct ChatAttachmentTray: View {
                 HStack(spacing: NookTheme.Spacing.sm) {
                     ForEach(model.files) { file in
                         ChatAttachmentChip(file: file, kinds: file.alternatives.filter { sends.contains(ChatOutgoing.Kind($0)) },
+                                           shown: edits.shown(in: model.files)?.id == file.id,
+                                           select: { edits.select(file.id) },
                                            change: { model.change(file.id, to: $0) }, remove: { model.remove(file.id) })
                     }
                     if model.drop.hovering {
@@ -767,15 +811,24 @@ private struct ChatAttachmentTray: View {
 private struct ChatAttachmentChip: View {
     let file: ChatAttachment
     let kinds: [ChatMedia.Kind]
+    /// This is the file the preview shows.
+    let shown: Bool
+    let select: () -> Void
     let change: (ChatMedia.Kind) -> Void
     let remove: () -> Void
     @State private var thumbnail: NSImage?
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            enlargeable
-                .frame(width: 40, height: 40)
-                .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous))
+            Button(action: select) {
+                preview
+                    .frame(width: 40, height: 40)
+                    .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(file.name)
+            .accessibilityLabel(file.name)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(file.name)
                     .font(NookTheme.TextStyle.label)
@@ -784,7 +837,7 @@ private struct ChatAttachmentChip: View {
                     .truncationMode(.middle)
                     .frame(maxWidth: 150, alignment: .leading)
                 HStack(spacing: NookTheme.Spacing.xs) {
-                    kindMenu
+                    ChatAttachmentKindMenu(file: file, kinds: kinds, change: change)
                     Text(ChatAttachment.size(file.bytes))
                         .font(NookTheme.TextStyle.caption)
                         .foregroundStyle(NookTheme.textTertiary)
@@ -794,16 +847,13 @@ private struct ChatAttachmentChip: View {
         }
         .padding(NookTheme.Spacing.xs)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.smoke))
-        .task(id: file.path) { thumbnail = await ChatAttachmentThumbnail.make(file) }
-    }
-
-    /// A picture about to go enlarges on a click, whatever it goes as; other files only show their preview.
-    @ViewBuilder private var enlargeable: some View {
-        if ImageAttachment.isPicture(file.url) {
-            ImageModalButton(name: file.name, preview: thumbnail, file: { file.url }) { preview }
-        } else {
-            preview
+        .overlay {
+            if shown {
+                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                    .strokeBorder(NookTheme.iris, lineWidth: 1.5)
+            }
         }
+        .task(id: file.path) { thumbnail = await ChatAttachmentThumbnail.make(file) }
     }
 
     @ViewBuilder private var preview: some View {
@@ -817,9 +867,15 @@ private struct ChatAttachmentChip: View {
                 .background(NookTheme.graphite)
         }
     }
+}
 
-    /// What it goes as: a click offers the other kinds this file can go as.
-    @ViewBuilder private var kindMenu: some View {
+/// What a file about to go goes as: a click offers the other kinds it can go as.
+struct ChatAttachmentKindMenu: View {
+    let file: ChatAttachment
+    let kinds: [ChatMedia.Kind]
+    let change: (ChatMedia.Kind) -> Void
+
+    var body: some View {
         if kinds.count > 1 {
             Menu {
                 ForEach(kinds, id: \.self) { kind in

@@ -488,7 +488,7 @@ private struct FileLineNumber: View {
 }
 
 /// A file Quick Look shows (a picture, a PDF, a document), inside the viewer.
-private struct QuickLookView: NSViewRepresentable {
+struct QuickLookView: NSViewRepresentable {
     let url: URL
 
     func makeNSView(context: Context) -> QLPreviewView {
