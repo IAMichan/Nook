@@ -336,7 +336,8 @@ enum BridgeTool: String, CaseIterable, Sendable {
                 "height": ["type": "integer", "description": "Its height in points (default 360, at least 80, at most 1200)."]
             ], required: ["html"])
         case .sessionRead:
-            return object(["session_id": ["type": "string", "description": "The session id from a <ref kind=\"session\" id=\"…\"/> record."]], required: ["session_id"])
+            return object(["session_id": ["type": "string", "description": "The session id from a <ref kind=\"session\" id=\"…\"/> record."],
+                           "before_event": ["type": "integer", "description": "Read back through older events instead: one window ending before this event. A handoff and each answer say which number to use."]], required: ["session_id"])
         case .deviceList:
             return object([:])
         case .deviceOpen, .deviceScreenshot:

@@ -115,6 +115,11 @@ extension WorkspaceManager {
         guard let run = run(id), let thread = client.threadID else { return }
         let planModel = run.model.isEmpty ? run.resolvedModel : run.model
         var text = prompt
+        // A goal as the very first message comes here without passing `send`.
+        if codexGoalStarting[id] == nil, case .set(let objective)? = SessionGoals.command(in: prompt) {
+            codexGoalStarting[id] = .set(objective)
+            text = SessionGoals.firstTurn(objective: objective)
+        }
         // Without a model name Codex's own plan mode is unavailable: the read-only sandbox and this line keep it to a plan.
         if run.mode == .plan, (planModel ?? "").isEmpty { text = "Create a plan only; do not make any changes.\n\n" + prompt }
         turns[id]?.codexBaseline = codexTotals[id]

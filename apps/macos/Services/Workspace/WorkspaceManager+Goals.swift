@@ -61,6 +61,9 @@ extension WorkspaceManager {
         guard let run = run(id) else { return }
         if let client = codexServers[id], client.threadID != nil {
             performCodexGoalControl(id, client, command)
+        } else if codexServers[id] != nil {
+            // Still connecting: it runs once the thread is open, on that same server.
+            codexGoalWaiting[id] = command
         } else if run.providerSessionID == nil {
             noteGoal(id, .cleared)
             if command == .show { append(id, RunEvent(kind: .system, text: tr("ws.goal.none"))) }

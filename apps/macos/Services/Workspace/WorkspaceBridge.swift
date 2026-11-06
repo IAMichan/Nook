@@ -917,7 +917,7 @@ final class WorkspaceBridge: ObservableObject {
     private func sessionRead(_ arguments: [String: Any]) -> BridgeRPC.ToolResult {
         guard let workspace = app?.workspace,
               let id = UUID(uuidString: ((arguments["session_id"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)),
-              let summary = workspace.sessionSummary(id) else {
+              let summary = workspace.sessionSummary(id, beforeEvent: arguments["before_event"] as? Int) else {
             return .error("No such session. Use the id from the reference the user gave you.")
         }
         if (arguments["status_only"] as? Bool) == true, let run = workspace.run(id) {

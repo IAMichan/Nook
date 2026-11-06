@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { isRoom } from "./mux.js";
-import { HookLogic, isHook, mayListen } from "./hooks.js";
+import { HookLogic, isHook, mayListen, readLimited } from "./hooks.js";
 import { admit, handlePush } from "./push.js";
 import { RoomLogic } from "./room.js";
 
@@ -44,7 +44,10 @@ export default {
       }
       if (request.method !== "POST") return new Response("POST only\n", { status: 405 });
       if (!isHook(hook[2])) return new Response("Not found\n", { status: 404 });
-      return room.fetch("https://hooks/deliver/" + hook[2], request);
+      // Bounded here, before anything reaches the room that holds the Mac's socket.
+      const body = await readLimited(request);
+      if (body === null) return new Response("too large\n", { status: 413 });
+      return room.fetch("https://hooks/deliver/" + hook[2], { method: "POST", headers: request.headers, body });
     }
     const match = url.pathname.match(/^\/v1\/rooms\/([^/]+)$/);
     if (!match || !isRoom(match[1])) return new Response("Not found\n", { status: 404 });

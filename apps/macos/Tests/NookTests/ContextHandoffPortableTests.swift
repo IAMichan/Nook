@@ -39,6 +39,15 @@ final class ContextHandoffPortableTests: XCTestCase {
         XCTAssertLessThan(rendered.range(of: "alpha")!.lowerBound, rendered.range(of: "omega")!.lowerBound)
     }
 
+    func testAGapIsMarkedWhereItIs() {
+        var ran = RunEvent(kind: .tool, text: "setup")
+        ran.state = .done
+        let long = (0..<60).map { agent("answer \($0) " + String(repeating: "x", count: 300)) }
+        let text = ContextHandoff.render(events: [ran, user("alpha")] + long, source: "Codex", budget: 600)?.text ?? ""
+        XCTAssertLessThan(text.range(of: "alpha")!.lowerBound, text.range(of: "(…)")!.lowerBound)
+        XCTAssertLessThan(text.range(of: "(…)")!.lowerBound, text.range(of: "answer 59")!.lowerBound)
+    }
+
     func testWithoutNooksToolsNoPointer() {
         let events = [user("a")] + (0..<200).map { agent("answer \($0) " + String(repeating: "x", count: 500)) }
         XCTAssertFalse(ContextHandoff.render(events: events, source: "Codex", budget: 2_000)?.text.contains("session_read") == true)
