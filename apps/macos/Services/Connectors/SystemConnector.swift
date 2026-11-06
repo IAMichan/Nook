@@ -30,6 +30,15 @@ final class SystemConnector: ContextSource {
                 summarize: { _ in "Status van deze Mac" },
                 tag: { _ in ("", .neutral) },
                 run: { _ in await MacStatus.report().text }
+            ),
+            ToolSpec(
+                name: "network_status",
+                description: "The IP addresses of this Mac right now: the public address the internet sees and the local address per network interface. Use for \"wat is mijn IP-adres\", \"what is my IP\". Reading the public address asks Cloudflare once.",
+                schema: ["type": "object", "properties": [:]],
+                kind: .read,
+                summarize: { _ in "IP-adressen van deze Mac" },
+                tag: { _ in ("", .neutral) },
+                run: { _ in await MacStatus.network().text }
             )
         ]
     }
@@ -66,6 +75,35 @@ enum MacStatus {
             }
             return report
         }.value
+    }
+
+    static func network() async -> NetworkReport {
+        var report = NetworkReport(addresses: localAddresses())
+        var request = URLRequest(url: URL(string: "https://one.one.one.one/cdn-cgi/trace")!)
+        request.timeoutInterval = 4
+        if let (data, _) = try? await URLSession.shared.data(for: request) {
+            report.publicAddress = NetworkReport.parsePublicAddress(String(decoding: data, as: UTF8.self))
+        }
+        return report
+    }
+
+    /// The IPv4 addresses of the interfaces that are up, without loopback.
+    private static func localAddresses() -> [NetworkReport.Address] {
+        var first: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&first) == 0 else { return [] }
+        defer { freeifaddrs(first) }
+        var result: [NetworkReport.Address] = []
+        var next = first
+        while let item = next {
+            next = item.pointee.ifa_next
+            let flags = Int32(item.pointee.ifa_flags)
+            guard flags & IFF_UP != 0, flags & IFF_LOOPBACK == 0, let socket = item.pointee.ifa_addr,
+                  socket.pointee.sa_family == UInt8(AF_INET) else { continue }
+            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            guard getnameinfo(socket, socklen_t(socket.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 else { continue }
+            result.append(.init(interface: String(cString: item.pointee.ifa_name), address: String(cString: host)))
+        }
+        return result
     }
 
     private static func cpuTicks() -> (busy: UInt64, total: UInt64)? {

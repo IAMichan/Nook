@@ -164,5 +164,25 @@ final class ToolLoopTests: XCTestCase {
         XCTAssertEqual(ran, ["list_events", "list_events"], "after an action the window is read again, not from the cache")
         XCTAssertEqual(plan.text, "All set.\nSTATUS: DONE")
     }
-}
 
+    func testAToolCallStaysOutOfTheStreamedText() {
+        XCTAssertEqual(ToolRunner.visibleWhileStreaming("Ik kijk even.\n{\"name\": \"list_events\""), "Ik kijk even.")
+        XCTAssertEqual(ToolRunner.visibleWhileStreaming("{\"name\""), "")
+        XCTAssertEqual(ToolRunner.visibleWhileStreaming("Eerst dit\n\nen dan dat"), "Eerst dit\n\nen dan dat")
+        XCTAssertEqual(ToolRunner.visibleWhileStreaming("Zo:\n```json\n{}"), "Zo:")
+        XCTAssertEqual(ToolRunner.visibleWhileStreaming("Een set {a, b} in de zin"), "Een set {a, b} in de zin")
+    }
+
+    func testClaudeStreamKeepsTheLastMessage() {
+        var stream = ClaudeStreamText()
+        func delta(_ text: String) -> String {
+            #"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"\#(text)"}}}"#
+        }
+        XCTAssertTrue(stream.feed(delta("Hal")))
+        XCTAssertTrue(stream.feed(delta("lo")))
+        XCTAssertEqual(stream.text, "Hallo")
+        XCTAssertFalse(stream.feed(#"{"type":"system"}"#))
+        XCTAssertTrue(stream.feed(#"{"type":"stream_event","event":{"type":"message_start"}}"#))
+        XCTAssertEqual(stream.text, "")
+    }
+}

@@ -11,6 +11,28 @@ final class RetrievalTests: XCTestCase {
         RetrievalLedger.clearCache()
     }
 
+    func testATimeLimitEndsTheWaitEvenWhenTheLookupIgnoresIt() async {
+        let started = Date()
+        do {
+            _ = try await RetrievalLedger.withTimeout(0.1) {
+                // Like a script waiting for Mail: cancellation does not reach it.
+                await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 2) { done.resume() }
+                }
+                return "late"
+            }
+            XCTFail("expected the time limit")
+        } catch {
+            XCTAssertTrue(error is RetrievalTimeout, "\(error)")
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1)
+    }
+
+    func testAnAnswerInTimeComesBack() async throws {
+        let answer = try await RetrievalLedger.withTimeout(5) { "found" }
+        XCTAssertEqual(answer, "found")
+    }
+
     func testRecordsSourceAndExplicitReferences() async throws {
         let ledger = RetrievalLedger()
         let output = try await ledger.run(tool: "search_mail", input: ["query": "offerte"]) { _ in
