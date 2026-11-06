@@ -150,6 +150,17 @@ final class RunEventLog {
         return step == SQLITE_DONE ? result : nil
     }
 
+    /// The sequence number of a session's newest row.
+    func lastSequence(_ runID: UUID) -> Int64? {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let sql = "SELECT MAX(seq) FROM run_events WHERE run_id = ?"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        sqlite3_bind_text(stmt, 1, runID.uuidString, -1, transient)
+        guard sqlite3_step(stmt) == SQLITE_ROW, sqlite3_column_type(stmt, 0) != SQLITE_NULL else { return nil }
+        return sqlite3_column_int64(stmt, 0)
+    }
+
     /// Removes a session's rows up to and including `seq` (all of them without it).
     func delete(_ runID: UUID, through seq: Int64 = .max) {
         var stmt: OpaquePointer?
@@ -158,16 +169,6 @@ final class RunEventLog {
         sqlite3_bind_text(stmt, 1, runID.uuidString, -1, transient)
         sqlite3_bind_int64(stmt, 2, seq)
         sqlite3_step(stmt)
-    }
-
-    /// The newest row of a session.
-    func lastSeq(_ runID: UUID) -> Int64? {
-        var stmt: OpaquePointer?
-        defer { sqlite3_finalize(stmt) }
-        guard sqlite3_prepare_v2(db, "SELECT MAX(seq) FROM run_events WHERE run_id = ?", -1, &stmt, nil) == SQLITE_OK else { return nil }
-        sqlite3_bind_text(stmt, 1, runID.uuidString, -1, transient)
-        guard sqlite3_step(stmt) == SQLITE_ROW, sqlite3_column_type(stmt, 0) != SQLITE_NULL else { return nil }
-        return sqlite3_column_int64(stmt, 0)
     }
 
     func hasRows(_ runID: UUID) -> Bool {

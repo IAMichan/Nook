@@ -52,7 +52,8 @@ extension WorkspaceManager {
             pendingQuestions: (questions[run.id] ?? []).count,
             limitedAt: run.limitedAt,
             unseen: unseen,
-            settled: settled
+            settled: settled,
+            subagentsWorking: subagentsWorking.contains(run.id)
         )
         let base = AgentAttention.resolve(input)
         guard includeSnooze else { return base }

@@ -5,8 +5,8 @@ import AVKit
 /// split with another app (or already full screen) it fills exactly that window's part of the screen, never the whole
 /// display. For a video, its full-screen button takes an ordinary window full screen, and closing the video brings it
 /// back. Every chat app's videos come here, the ones sent as files and the ones a link points at (`VideoTile`), and so
-/// do the photos the Chats tab enlarges (`ChatPhotoZoom`). In the notch there is no stage: a video opens big in a
-/// window of its own (`VideoWindow`), a photo over the card or chat it is in.
+/// does every picture that is enlarged (`ImageModal`). The notch's panel has a stage for pictures only
+/// (`NotchPanelStage`): a video opens big in a window of its own (`VideoWindow`), and a card shows a photo over itself.
 @MainActor
 final class ChatMediaStage: ObservableObject {
     struct Video: Identifiable {
@@ -27,6 +27,12 @@ final class ChatMediaStage: ObservableObject {
 
     @Published var video: Video?
     @Published var photo: Photo?
+    /// Whether videos play here too; where they do not, they open in `VideoWindow`.
+    let playsVideos: Bool
+
+    init(playsVideos: Bool = true) {
+        self.playsVideos = playsVideos
+    }
 
     /// Whether a video or photo is on the stage.
     var isShowing: Bool { video != nil || photo != nil }
@@ -54,7 +60,7 @@ final class ChatMediaStage: ObservableObject {
 }
 
 extension EnvironmentValues {
-    /// Where a chat's video or photo goes big: the main window's stage; nil in the notch.
+    /// Where a chat's video or a picture goes big: the stage of the window or the notch's panel; nil on a notch card.
     @Entry var chatMediaStage: ChatMediaStage?
 }
 
@@ -63,6 +69,18 @@ extension View {
     func chatMediaStage(_ stage: ChatMediaStage) -> some View {
         environment(\.chatMediaStage, stage)
             .overlay { ChatMediaStageOverlay(stage: stage) }
+    }
+}
+
+/// The notch's panel with a stage for pictures. It is closed with the panel, so a picture never waits for the next time.
+struct NotchPanelStage<Content: View>: View {
+    @StateObject private var stage = ChatMediaStage(playsVideos: false)
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+            .chatMediaStage(stage)
+            .onDisappear { stage.close() }
     }
 }
 
@@ -76,9 +94,9 @@ private struct ChatMediaStageOverlay: View {
                     .id(video.id)
                     .transition(.opacity)
             } else if let photo = stage.photo {
-                ChatPhotoZoom(url: photo.url, preview: photo.preview, name: photo.name, fills: true,
-                              onClose: stage.close,
-                              onOpen: { stage.close(); photo.open() })
+                ImageModal(url: photo.url, preview: photo.preview, name: photo.name, fills: true,
+                           onClose: stage.close,
+                           onOpen: { stage.close(); photo.open() })
                     .id(photo.id)
                     .transition(.opacity)
             }

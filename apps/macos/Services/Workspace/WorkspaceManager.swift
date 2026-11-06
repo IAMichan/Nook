@@ -156,6 +156,9 @@ final class WorkspaceManager: ObservableObject {
     var acpWakeFinish: [UUID: Task<Void, Never>] = [:]
     /// Sessions with work still running in the background: they stay open longer between turns (see BackgroundWork).
     var backgroundWork: Set<UUID> = []
+    /// Sessions whose turn ended while their subagents still work in the background: the list keeps showing them as
+    /// working. Published, unlike the timelines it comes from: a list row has to change when the last subagent ends.
+    @Published var subagentsWorking: Set<UUID> = []
     /// The subagent whose end the next wake of a parked Claude Code is for, so its line can name it.
     var wakeSubagent: [UUID: String] = [:]
     /// What MCP apps want the agent to know on its next turn, per session and app (see McpApp).
@@ -203,7 +206,9 @@ final class WorkspaceManager: ObservableObject {
     var pullRequestCreated: ((_ run: UUID?, _ url: URL) -> Void)?
     /// A watched pull request as it is now (GitHub, with your connected accounts).
     var pullRequestSnapshot: ((URL) async -> PullRequestSnapshot?)?
-    var watchesInFlight: Set<UUID> = []
+    var watchesInFlight: Set<String> = []
+    /// Sessions whose queue waits for a fresh look at a pull request before its next message goes out.
+    var queueLooks: Set<UUID> = []
     /// Codex's subagents per session: the thread each runs on, and the timeline event that stands for it.
     var codexSubagents: [UUID: [String: UUID]] = [:]
     /// Comments on a session's diff, waiting to go to the agent together.
@@ -235,6 +240,13 @@ final class WorkspaceManager: ObservableObject {
     var awaitingCheckpoint: [UUID: String] = [:]
     /// A queued message sent right away while a turn was active: sent as soon as that turn ends.
     var pendingSendNow: [UUID: String] = [:]
+    /// A goal Codex takes with the turn that is starting, and a goal control that waits for the connection (`SessionGoals`).
+    /// $HOME per machine where Nook's MCP server is in place, and each remote session's proof (see `RemoteBridge`).
+    var remoteHomes: [String: String] = [:]
+    var remoteBridgeInstalling: Set<String> = []
+    var remoteBridgeTokens: [UUID: String] = [:]
+    var codexGoalStarting: [UUID: SessionGoalCommand] = [:]
+    var codexGoalWaiting: [UUID: SessionGoalCommand] = [:]
     /// When GitHub was last asked about a branch's pull request ("owner/repo branch"), so it is asked once a minute at most.
     var pullRequestChecked: [String: Date] = [:]
     /// The pull request links Nook has seen in a conversation: the first sight of one is asked about at once.
@@ -475,7 +487,7 @@ final class WorkspaceManager: ObservableObject {
     func timelineForSearch(_ id: UUID) async -> [RunEvent] {
         if let loaded = events[id] { return loaded }
         let store = store
-        return await Task.detached(priority: .utility) { store.loadEvents(id) }.value
+        return await Task.detached(priority: .utility) { store.peekEvents(id) }.value
     }
 
     /// The text of the session's last answer, from memory only: a released timeline is not read back for it, and asking
@@ -1059,6 +1071,17 @@ final class WorkspaceManager: ObservableObject {
             return true
         }
         loadTimeline(id)
+        // Codex takes a goal through calls of its own, not as the words of a turn.
+        if !shown, let turn = codexGoalTurn(id, message: clean, executable: executable) {
+            guard let prompt = turn else {
+                // No turn came of it: what waited behind it goes on.
+                sendQueued(id)
+                return true
+            }
+            displayPrompt[id] = clean
+            launchTurn(id, prompt: ContextHandoff.compose(handoff: run.pendingHandoff, message: prompt), executable: executable, showPrompt: true)
+            return true
+        }
         // After a fork or a switch of agent the first turn starts with the summary; it stays until a turn ends well.
         // What the timeline shows: your words, without a handoff summary or the context envelope of references.
         let visible = ContextRefs.visible(clean)
@@ -1084,6 +1107,7 @@ final class WorkspaceManager: ObservableObject {
         displayPrompt[id] = nil
         stopCoordinators[id] = nil
         settleOpenWork(id, reason: run.status == .completed ? .completed : (run.status == .stopped ? .stopped : .failed))
+        noteSubagentsWorking(id)
         if run.status == .failed || run.status == .stopped { holdQueue(id) }
         if run.status == .completed {
             clearContinuations(id)
@@ -1165,10 +1189,10 @@ final class WorkspaceManager: ObservableObject {
     }
 
     /// Keeps a message for when the current turn is done: you keep typing while the agent works.
-    func enqueue(_ id: UUID, text: String) {
+    func enqueue(_ id: UUID, text: String, pullRequest: PullRequestNotice? = nil) {
         guard run(id) != nil else { return }
         var queue = queued[id] ?? MessageQueue()
-        queue.enqueue(text)
+        queue.enqueue(text, pullRequest: pullRequest)
         queued[id] = queue.isEmpty ? nil : queue
     }
 
@@ -1268,11 +1292,30 @@ final class WorkspaceManager: ObservableObject {
     }
 
     /// The turn ended well and the process is gone: send the next queued message. After a failure or a stop the queue
-    /// waits for you, so nothing goes out on top of a problem.
-    func sendQueued(_ id: UUID) {
+    /// waits for you, so nothing goes out on top of a problem. News about a pull request gets a fresh look first: the turn
+    /// that just ended may well have fixed it. `looked` says that look was just taken.
+    func sendQueued(_ id: UUID, looked: Bool = false) {
         // Not while the snapshot of the finished turn is still being made: the next turn's edits must not end up in it.
         guard processes[id] == nil, !checkpointing.contains(id), let run = run(id), run.status == .completed,
               var queue = queued[id], let next = queue.next() else { return }
+        if !looked, let notice = next.pullRequest, let fetch = pullRequestSnapshot, let url = URL(string: notice.url) {
+            guard queueLooks.insert(id).inserted else { return }
+            Task { [weak self] in
+                let snapshot = await fetch(url)
+                guard let self else { return }
+                self.queueLooks.remove(id)
+                if let snapshot {
+                    if let watch = self.run(id)?.prWatches.first(where: { $0.url == notice.url }) {
+                        // Through the watch, so that it remembers this look and a next failure still counts as news.
+                        self.pullRequestChanged(id, old: watch, new: snapshot)
+                    } else {
+                        self.settleQueuedNews(id, url: notice.url, with: snapshot)
+                    }
+                }
+                self.sendQueued(id, looked: true)
+            }
+            return
+        }
         store(queue, for: id)
         send(id, text: next.text)
     }
@@ -1586,6 +1629,8 @@ final class WorkspaceManager: ObservableObject {
             feed(id, .toolUpdated(id: callID, output: output, state: isError ? .failed : (background ? .running : .done)))
         case .backgroundTask(let update):
             noteBackgroundSubagent(id, update)
+        case .goal(let update):
+            noteGoal(id, update)
         case .subagentStep(let parent, let step):
             noteSubagentStep(id, parent: parent, step)
         case .usage(let messageID, let tokens, let model):
@@ -1751,6 +1796,7 @@ final class WorkspaceManager: ObservableObject {
             claudeIdle[id] = nil
             // Subagents it ran in the background ended with it.
             settleOpenWork(id, reason: .processExited)
+            noteSubagentsWorking(id)
             return
         }
         if let process, let current = processes[id], current !== process { return }
@@ -1763,6 +1809,7 @@ final class WorkspaceManager: ObservableObject {
         expireApprovals(id)
         // Whatever was still running is settled: nothing may stay open after the process is gone.
         settleOpenWork(id, reason: state?.stopping == true ? .stopped : .processExited)
+        noteSubagentsWorking(id)
         guard let state, !state.finished else {
             scheduleGitRefresh(id, delay: 0.2)
             sendQueued(id)
@@ -1914,9 +1961,34 @@ final class WorkspaceManager: ObservableObject {
 
     /// Watches this pull request for the session: CI, reviews, comments and the merge become news in the timeline, and
     /// what the agent can act on goes to it as a message.
+    /// A session watches any number of them; nil ends every watch of the session.
     func watchPullRequest(_ id: UUID, url: URL?, wakeAgent: Bool = true) {
-        update(id) { $0.prWatch = url.map { PullRequestWatch(url: $0.absoluteString, wakeAgent: wakeAgent) } }
-        if url != nil { checkPullRequestWatches(force: true) }
+        guard let url else {
+            update(id) {
+                $0.prWatch = nil
+                $0.extraPRWatches = nil
+            }
+            return
+        }
+        guard !isWatching(id, url: url) else { return }
+        update(id) { run in
+            let watch = PullRequestWatch(url: url.absoluteString, wakeAgent: wakeAgent)
+            if run.prWatch == nil { run.prWatch = watch } else { run.extraPRWatches = (run.extraPRWatches ?? []) + [watch] }
+        }
+        checkPullRequestWatches(force: true)
+    }
+
+    func isWatching(_ id: UUID, url: URL) -> Bool {
+        run(id)?.prWatches.contains { $0.url == url.absoluteString } ?? false
+    }
+
+    /// Ends the watch on one pull request; the next one takes the tray's place.
+    func stopWatchingPullRequest(_ id: UUID, url: URL) {
+        update(id) { run in
+            var rest = run.prWatches.filter { $0.url != url.absoluteString }
+            run.prWatch = rest.isEmpty ? nil : rest.removeFirst()
+            run.extraPRWatches = rest.isEmpty ? nil : rest
+        }
     }
 
     /// Looks at each watched pull request at most every two minutes.
@@ -1924,16 +1996,20 @@ final class WorkspaceManager: ObservableObject {
         guard let fetch = pullRequestSnapshot else { return }
         let now = Date()
         for run in runs {
-            guard let watch = run.prWatch, watch.state == "open", !run.archived, !watchesInFlight.contains(run.id),
-                  force || watch.checkedAt.map({ now.timeIntervalSince($0) >= 120 }) ?? true,
-                  let url = URL(string: watch.url) else { continue }
-            let id = run.id
-            watchesInFlight.insert(id)
-            Task { [weak self] in
-                let snapshot = await fetch(url)
-                self?.watchesInFlight.remove(id)
-                guard let self, let snapshot, let current = self.run(id)?.prWatch, current.url == watch.url else { return }
-                self.pullRequestChanged(id, old: current, new: snapshot)
+            guard !run.archived else { continue }
+            for watch in run.prWatches {
+                let key = run.id.uuidString + " " + watch.url
+                guard watch.state == "open", !watchesInFlight.contains(key),
+                      force || watch.checkedAt.map({ now.timeIntervalSince($0) >= 120 }) ?? true,
+                      let url = URL(string: watch.url) else { continue }
+                let id = run.id
+                watchesInFlight.insert(key)
+                Task { [weak self] in
+                    let snapshot = await fetch(url)
+                    self?.watchesInFlight.remove(key)
+                    guard let self, let snapshot, let current = self.run(id)?.prWatches.first(where: { $0.url == watch.url }) else { return }
+                    self.pullRequestChanged(id, old: current, new: snapshot)
+                }
             }
         }
     }
@@ -1943,15 +2019,35 @@ final class WorkspaceManager: ObservableObject {
         if let url = URL(string: old.url) { PullRequestStatusStore.shared.record(url: url, snapshot: new, at: now) }
         // The first look only sets what counts as seen, but for a conflict that is already there.
         let first = old.checkedAt == nil
-        let lines = first ? PullRequestNews.firstLook(new) : PullRequestNews.lines(old: old, new: new)
+        let news = first ? PullRequestNews.firstLook(new) : PullRequestNews.lines(old: old, new: new)
+        let lines = news.map(\.text)
         let wake = old.wakeAgent && (first ? !lines.isEmpty : PullRequestNews.needsAgent(old: old, new: new))
-        update(id) { $0.prWatch = PullRequestNews.updated(old, with: new, at: now) }
+        update(id) { run in
+            let updated = PullRequestNews.updated(old, with: new, at: now)
+            if run.prWatch?.url == old.url {
+                run.prWatch = updated
+            } else {
+                run.extraPRWatches = run.extraPRWatches?.map { $0.url == old.url ? updated : $0 }
+            }
+        }
+        settleQueuedNews(id, url: old.url, with: new)
         guard !lines.isEmpty else { return }
         append(id, RunEvent(kind: .system, text: tr("ws.prwatch.news") + "\n" + lines.joined(separator: "\n"), tool: "prwatch"))
         guard wake, let run = run(id) else { return }
         let message = PullRequestNews.message(url: old.url, lines: lines)
         // The news line above already shows it: the agent gets it without a bubble of yours.
-        if run.canContinue && processes[id] == nil { sendHidden(id, text: message) } else { enqueue(id, text: message) }
+        if run.canContinue && processes[id] == nil {
+            sendHidden(id, text: message)
+        } else {
+            enqueue(id, text: message, pullRequest: PullRequestNotice(url: old.url, lines: news))
+        }
+    }
+
+    /// Waiting news about this pull request that is out of date leaves the queue.
+    private func settleQueuedNews(_ id: UUID, url: String, with snapshot: PullRequestSnapshot) {
+        guard var queue = queued[id] else { return }
+        queue.settleNews(url: url, with: snapshot)
+        if queue != queued[id] { store(queue, for: id) }
     }
 
     /// Removes a session from Nook. The directory or worktree is preserved (removed separately); never allows deleting an active session.
@@ -1990,6 +2086,7 @@ final class WorkspaceManager: ObservableObject {
         codexLimitSnapshots[id] = nil
         limitedTurns[id] = nil
         backgroundWork.remove(id)
+        subagentsWorking.remove(id)
         wakeSubagent[id] = nil
         mcpAppContexts[id] = nil
         let appFolder = Self.mcpAppFolder(id)

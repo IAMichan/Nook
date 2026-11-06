@@ -170,6 +170,8 @@ final class ChatCaptureService: ObservableObject {
     /// How often the database is looked at. Only a database that changed is read, so looking is cheap; looking often
     /// matters because Slack and Teams take a notification back as soon as you read the message elsewhere.
     private static let interval: TimeInterval = 1
+    /// With the displays asleep nobody reads a notification that was taken back.
+    private static let asleepInterval: TimeInterval = 15
     /// A first start shows what came in this long ago: macOS keeps the notifications it showed for a while, so the
     /// chats of the last weeks are there at once instead of only the ones that write after switching on.
     private static let firstLook: TimeInterval = 14 * 86_400
@@ -178,6 +180,7 @@ final class ChatCaptureService: ObservableObject {
 
     private nonisolated static var file: URL { NookPaths.supportDirectory.appendingPathComponent("chat-inbox.json") }
     private var timer: Timer?
+    private var planWatch: AnyCancellable?
     private var polling = false
     private var lastChange: Date?
     /// After a failed read (no Full Disk Access yet) the next try waits a little, instead of a read every second.
@@ -276,14 +279,27 @@ final class ChatCaptureService: ObservableObject {
         bridgeNudges = [:]
         // A Telegram session from an earlier login starts by itself; a new login starts from Settings › Connections.
         if sources.isOn(telegramBridge.app) { telegramBridge.resume() }
-        timer = Timer.scheduledCoalesced(withTimeInterval: Self.interval) { [weak self] _ in
-            Task { @MainActor in
-                await self?.pollTick()
-            }
-        }
+        timer = nil
+        armTimer()
+        planWatch = EnergyMonitor.shared.$plan.removeDuplicates().receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.armTimer() }
         Task {
             await poll()
             await pollBridges()
+        }
+    }
+
+    /// Follows the energy plan: `pollTick` skips ticks the plan does not want, and a tick that does nothing still wakes
+    /// the Mac, every second, all night. Back at full speed it follows at once, since the plan is announced.
+    private func armTimer() {
+        let plan = EnergyMonitor.shared.plan
+        let interval = plan.reasons.contains(.displayAsleep) ? Self.asleepInterval : Self.interval * plan.slowdown
+        guard timer?.timeInterval != interval else { return }
+        timer?.invalidate()
+        timer = Timer.scheduledCoalesced(withTimeInterval: interval) { [weak self] _ in
+            Task { @MainActor in
+                await self?.pollTick()
+            }
         }
     }
 
@@ -293,7 +309,7 @@ final class ChatCaptureService: ObservableObject {
     private func pollTick() async {
         let plan = EnergyMonitor.shared.plan
         if plan.reasons.contains(.displayAsleep) {
-            guard Date().timeIntervalSince(lastPollTime) >= 15 else { return }
+            guard Date().timeIntervalSince(lastPollTime) >= Self.asleepInterval - 0.25 else { return }
         } else {
             let interval = Self.interval * plan.slowdown
             guard Date().timeIntervalSince(lastPollTime) >= interval - 0.25 else { return }
@@ -305,6 +321,7 @@ final class ChatCaptureService: ObservableObject {
 
     func stop() {
         startWhenLoaded = false
+        planWatch = nil
         timer?.invalidate()
         timer = nil
         generation += 1
@@ -724,7 +741,7 @@ final class ChatCaptureService: ObservableObject {
 
     /// Until when the chat counts as read in Nook now: what "Mark as read in <app>" tells the app, taken before it goes.
     func readMark(_ id: String) -> Date? {
-        inbox.threads[id]?.readInNook
+        inbox.readMark(id)
     }
 
     /// When the chat was marked unread by hand, while it still is.

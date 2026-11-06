@@ -262,24 +262,30 @@ extension WorkspaceBridge {
         }
         if case .refuse(let reason) = verdict(.watchPullRequest, caller) { return .error(Self.refusal(reason)) }
         if BridgeArgs.bool(arguments["stop"]) == true {
-            guard let watch = run.prWatch else { return BridgeRPC.ToolResult(text: "This session was not watching a pull request.") }
+            guard !run.prWatches.isEmpty else { return BridgeRPC.ToolResult(text: "This session was not watching a pull request.") }
+            // A named pull request ends that watch; without one, all of them end.
+            if case .success(.ref) = BridgePullRequestTarget.parse(arguments), let url = try? await pullRequestURL(arguments, caller) {
+                app.workspace.stopWatchingPullRequest(id, url: url)
+                audit(.watchPullRequest, caller, url.absoluteString, "gestopt")
+                return BridgeRPC.ToolResult(text: "Stopped watching \(url.absoluteString).")
+            }
+            let urls = run.prWatches.map(\.url).joined(separator: ", ")
             app.workspace.watchPullRequest(id, url: nil)
-            audit(.watchPullRequest, caller, watch.url, "gestopt")
-            return BridgeRPC.ToolResult(text: "Stopped watching \(watch.url).")
+            audit(.watchPullRequest, caller, urls, "gestopt")
+            return BridgeRPC.ToolResult(text: "Stopped watching \(urls).")
         }
         let url = try await pullRequestURL(arguments, caller)
         guard PullRequestWatch.canWatch(url) else {
             return .error("Nook watches GitHub pull requests and GitLab merge requests; \(url.absoluteString) is neither. get_pull_request_status may still read it.")
         }
-        if let watch = app.workspace.run(id)?.prWatch, watch.url == url.absoluteString, watch.state == "open" {
+        if let watch = app.workspace.run(id)?.prWatches.first(where: { $0.url == url.absoluteString }), watch.state == "open" {
             return BridgeRPC.ToolResult(text: "Already watching \(url.absoluteString). End your turn; Nook tells you when something needs you.")
         }
-        let replaced = app.workspace.run(id)?.prWatch?.url
+        // A finished watch of this same pull request makes way for the new one.
+        app.workspace.stopWatchingPullRequest(id, url: url)
         app.workspace.watchPullRequest(id, url: url, wakeAgent: true)
         audit(.watchPullRequest, caller, url.absoluteString, "volgt")
-        var text = "Watching \(url.absoluteString). Nook tells you when CI fails, a merge conflict appears, or a review or comment arrives; the merge and passing CI show in your timeline. End your turn now."
-        if let replaced, replaced != url.absoluteString { text += " (This replaces the watch on \(replaced): a session watches one pull request.)" }
-        return BridgeRPC.ToolResult(text: text)
+        return BridgeRPC.ToolResult(text: "Watching \(url.absoluteString). Nook tells you when CI fails, a merge conflict appears, or a review or comment arrives; the merge and passing CI show in your timeline. End your turn now.")
     }
 
     func pullRequestStatus(_ arguments: [String: Any], _ caller: BridgeCaller) async throws -> BridgeRPC.ToolResult {

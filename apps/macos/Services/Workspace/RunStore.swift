@@ -89,7 +89,16 @@ final class RunStore: @unchecked Sendable {
 
     /// Reads and decodes outside the lock, so a long timeline holds up neither saves nor the reading of another one.
     func loadEvents(_ id: UUID) -> [RunEvent] {
-        var events = readTimeline(id)
+        Self.settled(readTimeline(id, remember: true))
+    }
+
+    /// The timeline for a one-time read (a search over every session): keeps nothing of it, and never compacts.
+    func peekEvents(_ id: UUID) -> [RunEvent] {
+        Self.settled(readTimeline(id, remember: false))
+    }
+
+    private static func settled(_ timeline: [RunEvent]) -> [RunEvent] {
+        var events = timeline
         // A tool or approval still running when Nook stopped is no longer running.
         for index in events.indices where events[index].state == .running || events[index].state == .pending {
             events[index].state = events[index].kind == .approval ? .expired : .failed
@@ -243,9 +252,12 @@ final class RunStore: @unchecked Sendable {
     }
 
     /// Replays the session's rows, compacting a log that grew much longer than its timeline.
-    private func readTimeline(_ id: UUID) -> [RunEvent] {
-        let rows = readRows(id)
-        guard let rows else {
+    ///
+    /// Reads on its own connection and decodes outside the lock: the main thread takes the lock to write an event, and must
+    /// not wait for a session being read in the background. A save does not wait for it either.
+    private func readTimeline(_ id: UUID, remember: Bool) -> [RunEvent] {
+        guard let rows = readRows(id) else {
+            guard remember else { return [] }
             // Nothing to go on, and the list handed to the next save will be short: told what the log holds, that save
             // would read as events removed and replace them all with a snapshot. New events are only added this way.
             SafeStorage.report("A timeline could not be read from runs.sqlite")
@@ -255,16 +267,18 @@ final class RunStore: @unchecked Sendable {
             return []
         }
         let result = RunEventFold.fold(rows, decoder: Self.decoder)
+        guard remember else { return result.events }
         let timeline = WrittenTimeline(result.events)
         // Unreadable rows (a newer version's) are left alone: compacting would drop them.
         let compact = result.unreadableRows == 0 && rows.count >= Self.compactionMinimumRows && result.supersededRows >= result.events.count
         let payload = compact ? try? Self.encoder.encode(result.events) : nil
         lock.lock()
         defer { lock.unlock() }
-        // A save that ran during this read knows better what the log holds.
+        guard !deleted.contains(id) else { return result.events }
+        // Already known: a save got here first, and what it noted is newer than these rows.
         if written[id] == nil { written[id] = timeline }
         // A snapshot replaces every earlier row: not when a row came in after this read, which it does not hold.
-        if let payload, let log = openLog(), let last = rows.last?.seq, log.lastSeq(id) == last {
+        if let payload, let log = openLog(), log.lastSequence(id) == rows.last?.seq {
             try? writeSnapshot(id, payload: payload, log: log)
         }
         return result.events

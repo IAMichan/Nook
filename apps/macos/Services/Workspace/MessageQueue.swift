@@ -6,12 +6,15 @@ struct QueuedMessage: Codable, Identifiable, Equatable, Sendable {
     var text: String
     var createdAt: Date
     var edited: Bool
+    /// Set on news about a pull request: the lines `text` was made from. Nil for a message of yours.
+    var pullRequest: PullRequestNotice?
 
-    init(id: UUID = UUID(), text: String, createdAt: Date = Date(), edited: Bool = false) {
+    init(id: UUID = UUID(), text: String, createdAt: Date = Date(), edited: Bool = false, pullRequest: PullRequestNotice? = nil) {
         self.id = id
         self.text = text
         self.createdAt = createdAt
         self.edited = edited
+        self.pullRequest = pullRequest
     }
 
     init(from decoder: Decoder) throws {
@@ -20,6 +23,7 @@ struct QueuedMessage: Codable, Identifiable, Equatable, Sendable {
         text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
         createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date(timeIntervalSince1970: 0)
         edited = try c.decodeIfPresent(Bool.self, forKey: .edited) ?? false
+        pullRequest = try c.decodeIfPresent(PullRequestNotice.self, forKey: .pullRequest)
     }
 }
 
@@ -58,10 +62,10 @@ struct MessageQueue: Codable, Equatable, Sendable {
 
     /// Returns the new message, or nil when the text is empty or the queue is full.
     @discardableResult
-    mutating func enqueue(_ text: String, now: Date = Date(), id: UUID = UUID()) -> QueuedMessage? {
+    mutating func enqueue(_ text: String, now: Date = Date(), id: UUID = UUID(), pullRequest: PullRequestNotice? = nil) -> QueuedMessage? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, messages.count < Self.limit else { return nil }
-        let message = QueuedMessage(id: id, text: trimmed, createdAt: now)
+        let message = QueuedMessage(id: id, text: trimmed, createdAt: now, pullRequest: pullRequest)
         messages.append(message)
         return message
     }
@@ -108,6 +112,21 @@ struct MessageQueue: Codable, Equatable, Sendable {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         messages.insert(QueuedMessage(text: trimmed, createdAt: now), at: 0)
+    }
+
+    /// Brings the news waiting about this pull request up to date: what was solved meanwhile leaves the message, and a
+    /// message with nothing left leaves the queue. A message you edited or are editing is yours, and stays as it is.
+    mutating func settleNews(url: String, with snapshot: PullRequestSnapshot) {
+        for message in messages where message.pullRequest?.url == url && !message.edited && editSession?.messageID != message.id {
+            guard let notice = message.pullRequest, let index = messages.firstIndex(where: { $0.id == message.id }) else { continue }
+            guard let left = PullRequestNews.stillNeeded(notice, new: snapshot) else {
+                messages.remove(at: index)
+                continue
+            }
+            guard left != notice else { continue }
+            messages[index].pullRequest = left
+            messages[index].text = PullRequestNews.message(url: url, lines: left.lines.map(\.text))
+        }
     }
 
     mutating func clear() {

@@ -540,6 +540,12 @@ struct GitService: Sendable {
         }
     }
 
+    /// Brings a pull request's head into its local branch. Never forced: a local branch with commits of its own refuses.
+    func fetchPullRequest(_ plan: PullRequestCheckoutPlan, in repo: String) throws {
+        _ = try run(["fetch", "origin", "\(plan.ref):refs/heads/\(plan.branch)"], in: repo, timeout: 180)
+        if plan.tracksOrigin { _ = try? run(["branch", "--set-upstream-to=origin/\(plan.branch)", plan.branch], in: repo) }
+    }
+
     /// Forgets worktrees whose folder is gone, so their path can be used again.
     func pruneWorktrees(_ repo: String) {
         _ = try? run(["worktree", "prune"], in: repo)

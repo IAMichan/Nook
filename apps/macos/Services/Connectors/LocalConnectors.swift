@@ -258,6 +258,45 @@ final class MailConnector: ContextSource {
     /// In the background Nook only looks when Mail is already open; when asked about mail, the tool opens Mail itself (hidden).
     var canLookUp: Bool { ConnectorToggle.isOn(id) }
 
+    /// Message files by message id, for what the index found: `read_mail` opens them without Mail.
+    static var indexedFiles: [String: URL] = [:]
+
+    nonisolated static func readFile(_ file: URL) async -> MailIndex.Message? {
+        await Task.detached(priority: .userInitiated) { () -> MailIndex.Message? in
+            (try? Data(contentsOf: file)).flatMap(MailIndex.message(emlx:))
+        }.value
+    }
+
+    /// Searches Mail's index and reads the newest hits from their files, as `search_mail`'s script chunks ("subject|||sender
+    /// |||recipients|||date|||id", then the text). Nil when the index cannot be read (no Full Disk Access).
+    static func searchIndex(words: [String], sent: Bool) async -> [String]? {
+        let library = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library", isDirectory: true)
+        guard let root = MailIndex.root(library: library) else { return nil }
+        let sql = MailIndex.searchSQL(words: words, sent: sent, limit: 60)
+        guard let raw = try? await AppDatabase.query(MailIndex.databasePath(root: root), sql, app: "Mail") else { return nil }
+        let rows = Array(MailIndex.rows(raw).prefix(30))
+        let format = DateFormatter()
+        format.locale = Locale(identifier: "en_US_POSIX")
+        format.dateFormat = "yyyy-MM-dd HH:mm"
+        var chunks: [String] = []
+        for row in rows {
+            let clean: (String) -> String = { $0.replacingOccurrences(of: "|||", with: " ").replacingOccurrences(of: "\n", with: " ") }
+            let file = MailIndex.messageFile(root: root, row: row)
+            var message: MailIndex.Message?
+            if let file { message = await readFile(file) }
+            let id = message?.id ?? ""
+            let date = format.string(from: row.date)
+            let body = (message?.text).flatMap { $0.isEmpty ? nil : $0 } ?? row.summary
+            if !id.isEmpty {
+                messageCache[id] = CachedMail(subject: row.subject, sender: row.sender, recipients: row.recipients, date: date, body: body, cachedAt: Date())
+                indexedFiles[id] = file
+            }
+            let short = body.count > 700 ? String(body.prefix(700)) : body
+            chunks.append([clean(row.subject), clean(row.sender), clean(row.recipients), date, id].joined(separator: "|||") + "\n" + short + "\n")
+        }
+        return chunks
+    }
+
     /// Starts Mail in the background if it is closed, and waits until it responds.
     static func ensureRunning() async throws {
         guard !ScriptText.isRunning("com.apple.mail") else { return }
@@ -503,12 +542,20 @@ final class MailConnector: ContextSource {
                 summarize: { _ in "Search mail" },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self] input in
-                    try await MailConnector.ensureRunning()
                     let query = ((input["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !query.isEmpty else { throw NookError("Search query is missing.") }
                     let sent = (input["mailbox"] as? String)?.lowercased() == "sent"
                     // Every word on its own ("lisa offerte" finds Lisa's mail about the offerte), ranked by how many match.
                     let words = Research.words(of: query).isEmpty ? [query] : Research.words(of: query)
+                    // Mail's own index answers at once, for every mailbox, with Mail closed. Without Full Disk Access Nook
+                    // asks the Mail app, as below.
+                    if let chunks = await MailConnector.searchIndex(words: words, sent: sent) {
+                        guard !chunks.isEmpty else { return "No mail found for \"\(query)\"" + (sent ? " in sent." : ".") }
+                        let ranked = Research.best(chunks, terms: Research.Terms(words: words), keep: 8,
+                                                   title: { chunk in String(chunk.prefix { $0 != "\n" }) }, text: { $0 })
+                        return MailConnector.format(ranked.map { "<<<MSG>>>" + $0 }.joined(), sent: sent)
+                    }
+                    try await MailConnector.ensureRunning()
                     let scriptWords = Array(words.sorted { $0.count > $1.count }.prefix(4))
                     let filter = scriptWords.map { word -> String in
                         let q = ScriptText.quote(word)
@@ -573,6 +620,13 @@ final class MailConnector: ContextSource {
                     let id = ((input["id"] as? String) ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "<> \n"))
                     guard !id.isEmpty else { throw NookError("The message id is missing.") }
 
+                    // A message the index found is read from its file again, whatever its age and mailbox.
+                    if var known = MailConnector.messageCache[id], Date().timeIntervalSince(known.cachedAt) >= 120,
+                       let file = MailConnector.indexedFiles[id], let message = await MailConnector.readFile(file) {
+                        known.body = message.text
+                        known.cachedAt = Date()
+                        MailConnector.messageCache[id] = known
+                    }
                     // Fast path: 0ms in-memory hit if already fetched during search_mail (<120s old).
                     if let cached = MailConnector.messageCache[id], Date().timeIntervalSince(cached.cachedAt) < 120 {
                         var body = cached.body
@@ -790,6 +844,20 @@ final class BrowserConnector: ContextSource {
     let accent = Color(hex: 0x5AC8FA)
     private(set) var status = ConnectorStatus()
     private var tabs: [Tab] = []
+    /// A browser came to the front since the last read (or there was no read yet).
+    private var browserUsed = true
+    private var activationWatch: NSObjectProtocol?
+
+    private func watchBrowsers() {
+        guard activationWatch == nil else { return }
+        activationWatch = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard let id = app?.bundleIdentifier, Self.browsers.contains(where: { $0.bundle == id }) else { return }
+            Task { @MainActor in self?.browserUsed = true }
+        }
+    }
 
     private static let browsers: [(name: String, bundle: String, safari: Bool)] = [
         ("Safari", "com.apple.Safari", true),
@@ -804,11 +872,20 @@ final class BrowserConnector: ContextSource {
     var refreshInterval: TimeInterval { 180 }
 
     func refresh() async {
+        watchBrowsers()
         let runningBrowsers = Self.browsers.filter { ScriptText.isRunning($0.bundle) }
         guard !runningBrowsers.isEmpty else {
             tabs = []
             return
         }
+        // Tabs only change while you use a browser: until then the last read still holds, and scripting it would only hold
+        // it up. A browser that quit takes its tabs along.
+        let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        guard browserUsed || runningBrowsers.contains(where: { $0.bundle == frontmost }) else {
+            tabs.removeAll { tab in !runningBrowsers.contains { $0.name == tab.browser } }
+            return
+        }
+        browserUsed = false
 
         let results = await withTaskGroup(of: (Int, [Tab], Bool).self) { group in
             for (index, browser) in runningBrowsers.enumerated() {
@@ -1032,6 +1109,14 @@ enum FileText {
             throw NookError("I cannot read text from \(url.lastPathComponent). Plain text, PDF, Word, and RTF work.")
         }
         return text
+    }
+
+    /// A folder as text: where it is and the files in it (not what they say), without build output and hidden folders.
+    static func folder(_ url: URL, limit: Int = 500) throws -> String {
+        let files = FileSearch.list(root: url.path, scanLimit: limit + 1)
+        guard !files.isEmpty else { throw NookError("I found no files in \(url.lastPathComponent).") }
+        let more = files.count > limit ? "\n…" : ""
+        return "Folder \(url.path)\n\n" + files.prefix(limit).joined(separator: "\n") + more
     }
 
     /// Only files in your own home folder, not in hidden folders or Library (keys, passwords, settings).

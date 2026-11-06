@@ -175,16 +175,7 @@ struct ImageAttachment: Identifiable, Equatable {
                         DispatchQueue.main.async { loadImage(from: provider, into: images) }
                         return
                     }
-                    guard isImageFile(url) else {
-                        DispatchQueue.main.async { file(url) }
-                        return
-                    }
-                    encoder.async {
-                        let image = ImageAttachment(url: url)
-                        DispatchQueue.main.async {
-                            if let image { images([image]) } else { file(url) }
-                        }
-                    }
+                    DispatchQueue.main.async { take(url, images: images, file: file) }
                 }
             } else if provider.canLoadObject(ofClass: NSImage.self) {
                 handled = true
@@ -192,6 +183,17 @@ struct ImageAttachment: Identifiable, Equatable {
             }
         }
         return handled
+    }
+
+    /// One file on this Mac: a picture goes to `images` once encoded, anything else (a folder too) to `file`.
+    static func take(_ url: URL, images: @escaping ([ImageAttachment]) -> Void, file: @escaping (URL) -> Void) {
+        guard isImageFile(url) else { return file(url) }
+        encoder.async {
+            let image = ImageAttachment(url: url)
+            DispatchQueue.main.async {
+                if let image { images([image]) } else { file(url) }
+            }
+        }
     }
 
     private static func loadImage(from provider: NSItemProvider, into images: @escaping ([ImageAttachment]) -> Void) {
@@ -240,6 +242,9 @@ struct ImageAttachment: Identifiable, Equatable {
 
     static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff", "bmp"]
 
+    /// Whether this file reads as a picture by its name, without opening it.
+    static func isPicture(_ url: URL) -> Bool { imageExtensions.contains(url.pathExtension.lowercased()) }
+
     /// The reverse of `appendingPaths`: the picture paths at the end of a sent message, split off its text, so the chat
     /// shows the pictures instead of their paths.
     static func splittingPaths(from text: String) -> (text: String, images: [URL]) {
@@ -248,7 +253,7 @@ struct ImageAttachment: Identifiable, Equatable {
         while let last = lines.last {
             let line = last.trimmingCharacters(in: .whitespaces)
             let path = line.count > 1 && line.hasPrefix("\"") && line.hasSuffix("\"") ? String(line.dropFirst().dropLast()) : line
-            guard path.hasPrefix("/"), imageExtensions.contains(URL(fileURLWithPath: path).pathExtension.lowercased()) else { break }
+            guard path.hasPrefix("/"), isPicture(URL(fileURLWithPath: path)) else { break }
             images.insert(URL(fileURLWithPath: path), at: 0)
             lines.removeLast()
         }
@@ -288,16 +293,13 @@ private struct MessagePicture: View {
 }
 
 /// A picture in a message to an agent or to Nook: whole, in its own shape, a little smaller than its own size. A click
-/// opens it big, as a chat's photo does: over the whole window where Nook has one (`ChatMediaStage`), else in Quick Look
-/// in a window of its own (`FilePreviewWindow`).
+/// opens it big, as a chat's photo does (`ImageModalButton`).
 struct ChatMessagePicture: View {
     let image: NSImage?
     var missing = false
     let name: String
     /// The picture as a file on this Mac, asked for when it opens.
     let file: () -> URL?
-    @Environment(\.chatMediaStage) private var mediaStage
-    @State private var hovering = false
 
     static let maxWidth: CGFloat = 280
     static let maxHeight: CGFloat = 240
@@ -312,7 +314,7 @@ struct ChatMessagePicture: View {
     }
 
     var body: some View {
-        Button(action: show) {
+        ImageModalButton(name: name, preview: image, file: file) {
             Group {
                 if let image {
                     Image(nsImage: image)
@@ -328,38 +330,7 @@ struct ChatMessagePicture: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
-            .opacity(hovering && image != nil ? 0.85 : 1)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .disabled(image == nil)
-        .onHover { hovering = $0 }
-        .contextMenu {
-            if image != nil {
-                Button { show() } label: {
-                    Label(tr("card.video.enlarge"), systemImage: "arrow.up.left.and.arrow.down.right")
-                }
-                Button { openInQuickLook() } label: {
-                    Label(tr("card.attachment.open"), systemImage: "arrow.up.forward.app")
-                }
-            }
-        }
-        .help(image == nil ? name : tr("card.video.enlarge"))
-        .accessibilityLabel(image == nil ? name : "\(tr("card.video.enlarge")): \(name)")
-    }
-
-    private func show() {
-        guard let image, let url = file() else { return }
-        if let mediaStage {
-            mediaStage.show(photo: url, preview: image, name: name, open: openInQuickLook)
-        } else {
-            openInQuickLook()
-        }
-    }
-
-    private func openInQuickLook() {
-        guard let url = file() else { return }
-        if !FilePreviewWindow.shared.show(url, title: name) { NSWorkspace.shared.open(url) }
     }
 }
 
@@ -379,8 +350,9 @@ struct ChatPictureSizeBadge: View {
     }
 }
 
-/// The pictures and files above the text field, each with a small remove button. A file shows its first page (or its
-/// icon) with its type written across it, so you see what it is instead of its path.
+/// The pictures and files above the text field, each with a small remove button; a click on a picture enlarges it
+/// (`ImageModalButton`). A file shows its first page (or its icon) with its type written across it, so you see what it
+/// is instead of its path.
 struct ImageAttachmentStrip: View {
     let images: [ImageAttachment]
     var files: [ContextRefs.Found] = []
@@ -430,34 +402,45 @@ struct ImageAttachmentStrip: View {
     }
 
     private func thumbnail(_ image: ImageAttachment) -> some View {
-        Group {
-            if let thumbnail = image.thumbnail {
-                Image(nsImage: thumbnail).resizable().scaledToFill()
-            } else {
-                Image(systemName: "photo").foregroundStyle(NookTheme.textTertiary)
+        ImageModalButton(name: image.name, preview: image.thumbnail, file: { image.storedURL() }) {
+            Group {
+                if let thumbnail = image.thumbnail {
+                    Image(nsImage: thumbnail).resizable().scaledToFill()
+                } else {
+                    Image(systemName: "photo").foregroundStyle(NookTheme.textTertiary)
+                }
             }
+            .frame(width: 56, height: 56)
+            .background(NookTheme.smoke)
+            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
         }
-        .frame(width: 56, height: 56)
-        .background(NookTheme.smoke)
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
-        .help(image.name)
     }
 }
 
-/// A file going out with a message: its preview (a picture, a document's first page, else the Finder icon), dimmed, with
-/// its type ("PDF", "JPG", "TXT") across it like a watermark.
+/// A file or folder going out with a message: its preview (a picture, a document's first page, else the Finder icon),
+/// dimmed, with its type ("PDF", "JPG", "FOLDER") across it like a watermark.
 private struct ComposerFileTile: View {
     let file: ContextRefs.Found
     let url: URL?
     @State private var preview: NSImage?
+    @State private var isFolder = false
 
     private var type: String {
+        if isFolder { return tr("compose.folder.type") }
         let ext = URL(fileURLWithPath: file.label).pathExtension
         if file.kind == .paste || ext.isEmpty { return file.kind == .paste ? "TXT" : tr("compose.file.type") }
         return String(ext.uppercased().prefix(5))
     }
 
     var body: some View {
+        if let url, ImageAttachment.isPicture(url) {
+            ImageModalButton(name: file.label, preview: preview, file: { url }) { tile }
+        } else {
+            tile
+        }
+    }
+
+    private var tile: some View {
         ZStack {
             if let preview {
                 Image(nsImage: preview).resizable().scaledToFill()
@@ -482,7 +465,11 @@ private struct ComposerFileTile: View {
         .accessibilityLabel(file.label)
         .task(id: url) {
             guard let url else { return }
-            if let image = await ChatFileThumbnails.shared.image(url, kind: .file) {
+            let kind = try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+            isFolder = kind?.isDirectory == true && kind?.isPackage != true
+            if isFolder {
+                preview = NSWorkspace.shared.icon(forFile: url.path)
+            } else if let image = await ChatFileThumbnails.shared.image(url, kind: .file) {
                 preview = image
             } else if FileManager.default.fileExists(atPath: url.path) {
                 preview = NSWorkspace.shared.icon(forFile: url.path)

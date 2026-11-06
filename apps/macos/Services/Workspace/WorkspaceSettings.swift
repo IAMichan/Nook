@@ -160,6 +160,10 @@ final class WorkspaceSettings: ObservableObject {
         didSet { defaults.set(scheduledTasksEnabled, forKey: "ws.scheduledTasksEnabled") }
     }
     /// Local port for webhook-triggered tasks (127.0.0.1 only); 0 = no listener.
+    /// Webhooks also reach this Mac from the internet, through the relay (`WebhookRelay`). Off by default.
+    @Published var scheduledWebhooksPublic: Bool {
+        didSet { defaults.set(scheduledWebhooksPublic, forKey: "ws.scheduledWebhooksPublic") }
+    }
     @Published var scheduledWebhookPort: Int {
         didSet { defaults.set(scheduledWebhookPort, forKey: "ws.scheduledWebhookPort") }
     }
@@ -223,6 +227,7 @@ final class WorkspaceSettings: ObservableObject {
         continueAfterRelaunch = defaults.object(forKey: "ws.continueAfterRelaunch") as? Bool ?? false
         steerByDefault = defaults.object(forKey: "ws.steerByDefault") as? Bool ?? false
         scheduledTasksEnabled = defaults.object(forKey: "ws.scheduledTasksEnabled") as? Bool ?? false
+        scheduledWebhooksPublic = defaults.bool(forKey: "ws.scheduledWebhooksPublic")
         scheduledWebhookPort = defaults.object(forKey: "ws.scheduledWebhookPort") as? Int ?? 0
         lastProject = defaults.string(forKey: "ws.lastProject") ?? ""
         favoriteProjects = defaults.stringArray(forKey: "ws.favoriteProjects") ?? []

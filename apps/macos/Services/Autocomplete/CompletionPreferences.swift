@@ -127,14 +127,14 @@ struct CompletionPreferences: Codable, Equatable {
 
     // Context
     var windowContext = true
-    /// The text in the window being written in (Nook's screen reading, or read here through Accessibility).
+    /// The text around the field in the window being written in (see `CompletionScreenCapture`, or Accessibility without it).
     var screenContext = true
     var clipboardContext = false
     var memoryContext = true
 
     // Personal
     var instructions = ""
-    var learn = false
+    var learn = true
     var personalStrength = 0.3
 
     // Per app and site

@@ -91,8 +91,13 @@ struct TurnPin: Equatable, Sendable {
     /// The room under the reply that brings the message to `anchorOffset`, in `frame`, which holds `current` of it now.
     /// The container has already given up the composer's height (a safe area inset), so that does not count again;
     /// checked on a real scroll view, where counting it left the message that much lower.
+    ///
+    /// A long conversation's height is an estimate that drops as rows are measured, so `messageTop` can end up past the
+    /// end. That says nothing about how much room is needed: taken at face value it left a blank end many screens tall,
+    /// and "Scroll to end" landed in it.
     func room(in frame: ScrollFrame, current: Double) -> Double {
         let below = frame.content - current - messageTop
+        guard below >= 0 else { return 0 }
         return max(0, frame.container - anchorOffset - below)
     }
 }

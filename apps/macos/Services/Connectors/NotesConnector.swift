@@ -48,7 +48,9 @@ final class NotesConnector: ContextSource {
 
     var isActive: Bool { ConnectorToggle.isOn(id) && (ScriptText.isRunning("com.apple.Notes") || !recentNotes.isEmpty) }
     var canLookUp: Bool { ConnectorToggle.isOn(id) }
-    var refreshInterval: TimeInterval { 120 }
+    /// Each read is an AppleScript over twenty notes, and notes change rarely. What only goes along as context can be a few
+    /// minutes old: the tools read again when this is no longer fresh.
+    var refreshInterval: TimeInterval { 600 }
     var isFresh: Bool { loadedAt.map { Date().timeIntervalSince($0) < 90 } ?? false }
 
     /// Zorgt dat Notities draait indien nodig voor een zoekactie.

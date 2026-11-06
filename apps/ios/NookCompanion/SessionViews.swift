@@ -142,6 +142,7 @@ struct SessionDetailView: View {
                 Button("Stop the session", role: .destructive) { Task { await client.stop(session) } }
             }
             .screen()
+            .modifier(SessionWorkspaceMenu(sessionID: sessionID))
             .navigationDestination(isPresented: $reviewing) {
                 // A comment on a line goes into this session's message, under what you wrote.
                 SessionChangesView(sessionID: sessionID) { comment in

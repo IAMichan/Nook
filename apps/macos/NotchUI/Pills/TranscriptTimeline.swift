@@ -187,6 +187,7 @@ struct TranscriptConversation: View {
                 .onChange(of: derived.marks.last?.row) { old, row in
                     if old != nil, let row, scroll.shouldFollowEnd { pinSent(row, proxy) }
                 }
+                .onChange(of: scroll.anchorMessageID) { _, id in if id == nil { pinRoom.release() } }
                 // Always the end once it has loaded, with what is new since your last visit under its line.
                 .onChange(of: freshRead) { _, read in if read { land(proxy) } }
                 .onAppear {

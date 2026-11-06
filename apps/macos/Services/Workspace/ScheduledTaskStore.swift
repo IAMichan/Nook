@@ -151,6 +151,18 @@ final class ScheduledTaskStore: ObservableObject {
                 DispatchQueue.main.async { self?.apply(enabled: enabled, port: port) }
             }
             .store(in: &cancellables)
+        WebhookListener.shared.attach(self)
+        $tasks.map { $0.contains { $0.enabled && $0.rule.isWebhook } }
+            .combineLatest(settings.$scheduledTasksEnabled, settings.$scheduledWebhooksPublic)
+            .map { $0 && $1 && $2 }
+            .removeDuplicates()
+            .combineLatest(CompanionRelayClient.shared.$mode.map { _ in () }.prepend(()),
+                           CompanionRelayClient.shared.$address.removeDuplicates())
+            .sink { wanted, _, _ in
+                // Also when the relay itself changes; published before it lands, so one turn later.
+                DispatchQueue.main.async { WebhookRelayClient.shared.set(wanted: wanted) }
+            }
+            .store(in: &cancellables)
     }
 
     private func apply(enabled: Bool, port: Int) {
@@ -376,6 +388,10 @@ final class ScheduledTaskStore: ObservableObject {
             guard let run = app.workspace.run(sessionID) else { return finish(task.id, status: .failed, error: "sched.error.noSession") }
             // Never interrupts a session that is working: that is the overlap rule for sessions.
             guard run.canContinue else { return finish(task.id, status: .skipped, error: "sched.skip.overlap") }
+            // What comes from outside must not work with rights you gave that session for yourself.
+            guard trigger != .webhook || run.permission == .ask else {
+                return finish(task.id, status: .failed, error: "sched.error.webhookRights")
+            }
             app.workspace.send(sessionID, text: prompt)
             finish(task.id, status: .succeeded, error: nil)
         }

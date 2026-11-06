@@ -81,3 +81,49 @@ extension PullRequestStack {
         return Array(stack[...index])
     }
 }
+
+
+/// A stack GitHub keeps itself (`/repos/{repo}/stacks`): the layers from the bottom up. Merging a layer lands the ones
+/// below it, in one go.
+struct PullRequestNativeStack: Equatable, Sendable {
+    struct Layer: Equatable, Sendable {
+        let number: Int
+        let title: String
+        let headBranch: String
+        let headSHA: String
+        let state: PullRequestItem.State
+        let draft: Bool
+    }
+
+    let number: Int
+    let base: String
+    let layers: [Layer]
+
+    /// The first stack in GitHub's answer that holds pull requests.
+    static func parse(_ answer: Any?) -> PullRequestNativeStack? {
+        let stacks = answer as? [[String: Any]] ?? (answer as? [String: Any]).map { [$0] } ?? []
+        guard let stack = stacks.first, let number = stack["number"] as? Int else { return nil }
+        let base = (stack["base"] as? String) ?? ((stack["base"] as? [String: Any])?["ref"] as? String) ?? ""
+        let layers = ((stack["pull_requests"] as? [[String: Any]]) ?? []).compactMap { pull -> Layer? in
+            guard let number = pull["number"] as? Int else { return nil }
+            let head = pull["head"] as? [String: Any] ?? [:]
+            let merged = pull["merged_at"] is String
+            let state: PullRequestItem.State = merged ? .merged : (pull["state"] as? String) == "closed" ? .closed : .open
+            return Layer(number: number, title: (pull["title"] as? String) ?? "", headBranch: (head["ref"] as? String) ?? "",
+                         headSHA: (head["sha"] as? String) ?? "", state: state, draft: (pull["draft"] as? Bool) == true)
+        }
+        return layers.isEmpty ? nil : PullRequestNativeStack(number: number, base: base, layers: layers)
+    }
+
+    /// The layers as the rows the stack menu lists.
+    func items(repo: String, like item: PullRequestItem) -> [PullRequestItem] {
+        layers.enumerated().map { index, layer in
+            var row = PullRequestItem(repo: repo, number: layer.number, title: layer.title,
+                                      url: URL(string: "https://github.com/\(repo)/pull/\(layer.number)"), draft: layer.draft, updated: nil, author: "")
+            row.state = layer.state
+            row.headBranch = layer.headBranch
+            row.baseBranch = index == 0 ? base : layers[index - 1].headBranch
+            return layer.number == item.number ? item : row
+        }
+    }
+}

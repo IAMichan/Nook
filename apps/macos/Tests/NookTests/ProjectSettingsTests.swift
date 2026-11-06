@@ -27,6 +27,14 @@ final class ProjectSettingsTests: XCTestCase {
         XCTAssertEqual(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/other"), global)
     }
 
+    func testBrowserSignInsStayOffUntilAProjectAsks() {
+        var overrides = ProjectOverrides()
+        XCTAssertFalse(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/repo").browserSignIns)
+        overrides.set(.browserSignIns, .string("on"), for: "/repo")
+        XCTAssertTrue(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/repo").browserSignIns)
+        XCTAssertFalse(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/other").browserSignIns)
+    }
+
     func testAProjectCanSwitchWorktreeCleanupOff() {
         var overrides = ProjectOverrides()
         XCTAssertTrue(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/repo").worktreeCleanup, "inherited")

@@ -38,6 +38,8 @@ struct TokenCounts: Equatable, Sendable {
 /// What Nook extracts from one line of Claude Code's `--output-format stream-json`.
 enum ClaudeStreamEvent: Equatable, Sendable {
     case initialized(sessionID: String, model: String?)
+    /// Claude Code said something about its `/goal`.
+    case goal(SessionGoalUpdate)
     /// A text chunk while the response is streaming (`--include-partial-messages`).
     case textDelta(String)
     /// A complete text block from the assistant.
@@ -191,7 +193,12 @@ enum ClaudeStreamParser {
                     guard let text = block["text"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { break }
                     // A subagent's message is its own, not the answer: it goes with the call that started it.
                     if let parent { events.append(.subagentStep(parent: parent, SubagentStep(kind: .text, text: text))) }
-                    else if !nested { events.append(.text(text)) }
+                    else if !nested {
+                        events.append(.text(text))
+                        if (message["model"] as? String) == "<synthetic>", let goal = SessionGoals.claude(synthetic: text) {
+                            events.append(.goal(goal))
+                        }
+                    }
                 case "thinking":
                     // Also when empty: it matches the streamed block, which keeps its text then.
                     if !nested { events.append(.thinking((block["thinking"] as? String) ?? "")) }
@@ -220,16 +227,21 @@ enum ClaudeStreamParser {
         case "user":
             let entry: [ClaudeStreamEvent] = !nested ? ((object["uuid"] as? String).flatMap { $0.isEmpty ? nil : [.chainEntry($0)] } ?? []) : []
             guard let message = object["message"] as? [String: Any] else { return entry }
+            let synthetic = !nested && (object["isSynthetic"] as? Bool) == true
             // The note Claude Code hands the model when background work ended.
             if !nested, let text = message["content"] as? String {
-                return (BackgroundTaskUpdate.notification(text).map { [.backgroundTask($0)] } ?? []) + entry
+                let goal: [ClaudeStreamEvent] = synthetic ? (SessionGoals.claude(hookFeedback: text).map { [.goal($0)] } ?? []) : []
+                return goal + (BackgroundTaskUpdate.notification(text).map { [.backgroundTask($0)] } ?? []) + entry
             }
             guard let content = message["content"] as? [[String: Any]] else { return entry }
+            let goal: [ClaudeStreamEvent] = !synthetic ? [] : content.compactMap { block in
+                (block["type"] as? String) == "text" ? (block["text"] as? String).flatMap(SessionGoals.claude(hookFeedback:)).map { .goal($0) } : nil
+            }
             let notices: [ClaudeStreamEvent] = nested ? [] : content.compactMap { block in
                 guard (block["type"] as? String) == "text", let text = block["text"] as? String else { return nil }
                 return BackgroundTaskUpdate.notification(text).map { .backgroundTask($0) }
             }
-            return notices + content.compactMap { block in
+            return goal + notices + content.compactMap { block in
                 guard (block["type"] as? String) == "tool_result", let id = block["tool_use_id"] as? String else { return nil }
                 return .toolResult(id: id, output: resultText(block["content"]), isError: (block["is_error"] as? Bool) ?? false)
             } + entry
@@ -448,6 +460,8 @@ enum CodexStreamEvent: Equatable, Sendable {
     case plan(String)
     /// The agent's task list (`turn/plan/updated`).
     case tasks([RunTaskStep])
+    /// Codex's goal changed (`thread/goal/updated`, `thread/goal/cleared`). A subagent's thread has goals of its own.
+    case goal(SessionGoalUpdate, thread: String?)
     /// Codex started subagents (`collabAgentToolCall` with `spawnAgent`): the call, its task and the threads they run on.
     case subagentSpawned(id: String, prompt: String, model: String?, threads: [String], failed: Bool)
     /// How Codex's subagents are doing, per thread (from any `collabAgentToolCall`, `wait` above all).

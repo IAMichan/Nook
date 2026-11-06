@@ -27,6 +27,7 @@ struct PullRequestQuickActionButtons: View {
     let item: PullRequestItem
     let accountID: String
     @ObservedObject private var shift = ShiftKeyMonitor.shared
+    @ObservedObject private var sweep = PullRequestCloseSweep.shared
     @State private var armed: PullRequestQuickAction?
     @State private var running: PullRequestQuickAction?
 
@@ -40,6 +41,10 @@ struct PullRequestQuickActionButtons: View {
             }
             .padding(.trailing, NookTheme.Spacing.sm)
             .transition(.opacity)
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                sweep.rows[item.id] = PullRequestCloseSweep.Row(frame: frame, item: item, account: accountID)
+            }
+            .onDisappear { sweep.rows[item.id] = nil }
             .task(id: armed) {
                 // An armed action waits a few seconds for its second click, then lets go.
                 guard armed != nil else { return }
@@ -50,7 +55,7 @@ struct PullRequestQuickActionButtons: View {
     }
 
     private func button(_ action: PullRequestQuickAction) -> some View {
-        let confirming = armed == action
+        let confirming = armed == action || (action == .close && sweep.swept.contains(item.id))
         let tint = confirming ? (action == .close ? NookTheme.coral : NookTheme.amber) : NookTheme.textSecondary
         return Button {
             if confirming {
@@ -77,7 +82,11 @@ struct PullRequestQuickActionButtons: View {
         }
         .buttonStyle(.plain)
         .disabled(running != nil)
-        .help(tr("agents.pulls.quick.help"))
+        .help(tr(action == .close ? "agents.pulls.quick.sweepHelp" : "agents.pulls.quick.help"))
+        // Close, dragged over other rows, takes those along.
+        .simultaneousGesture(action == .close ? DragGesture(minimumDistance: 6, coordinateSpace: .global)
+            .onChanged { value in sweep.drag(from: item.id, at: value.location) }
+            .onEnded { _ in sweep.finish() } : nil)
     }
 
     private func run(_ action: PullRequestQuickAction) {
@@ -196,5 +205,90 @@ enum PullRequestQuickRunner {
             }
         }
         return merged
+    }
+}
+
+/// Closing several pull requests in one drag: Close on one row, dragged over the others. The rows swept over light up,
+/// and a bar over the list asks before anything goes to GitHub.
+@MainActor
+final class PullRequestCloseSweep: ObservableObject {
+    static let shared = PullRequestCloseSweep()
+
+    struct Row {
+        let frame: CGRect
+        let item: PullRequestItem
+        let account: String
+    }
+
+    /// The rows showing their quick actions now, by id: only those can be swept over. Not published: every scroll sets it.
+    var rows: [String: Row] = [:]
+    @Published private(set) var swept: [String] = []
+    @Published private(set) var confirming: [Row] = []
+    @Published private(set) var closing = false
+
+    func drag(from origin: String, at point: CGPoint) {
+        var next = swept
+        if next.isEmpty { next = [origin] }
+        if let row = rows.first(where: { point.y >= $0.value.frame.minY - 12 && point.y <= $0.value.frame.maxY + 12 })?.key,
+           !next.contains(row) {
+            next.append(row)
+        }
+        if next != swept { swept = next }
+    }
+
+    func finish() {
+        // One row is the button's own click.
+        confirming = swept.count > 1 ? swept.compactMap { rows[$0] } : []
+        if confirming.isEmpty { swept = [] }
+    }
+
+    func cancel() {
+        confirming = []
+        swept = []
+    }
+
+    func close(app: AppModel) {
+        let rows = confirming
+        closing = true
+        Task {
+            var failed = 0
+            for row in rows {
+                do {
+                    try await PullRequestQuickRunner.run(.close, item: row.item, accountID: row.account, app: app)
+                } catch {
+                    failed += 1
+                }
+            }
+            closing = false
+            cancel()
+            if failed > 0 {
+                ToastCenter.shared.error(NookError(tr("agents.pulls.sweep.failed", failed)))
+            } else {
+                ToastCenter.shared.success(tr("agents.pulls.sweep.done", rows.count))
+            }
+            await PullRequestStore.shared.refresh(force: true)
+        }
+    }
+}
+
+/// "Close 4 pull requests?" over a list, after a sweep.
+struct PullRequestCloseSweepBar: View {
+    @EnvironmentObject private var app: AppModel
+    @ObservedObject private var sweep = PullRequestCloseSweep.shared
+
+    var body: some View {
+        if !sweep.confirming.isEmpty {
+            AdaptiveActionRow {
+                Text(tr("agents.pulls.sweep.confirm", sweep.confirming.count))
+                    .font(NookTheme.TextStyle.strong)
+                    .foregroundStyle(NookTheme.paper)
+            } actions: {
+                if sweep.closing { ProgressView().controlSize(.small) }
+                SmallGhostButton(title: tr("button.cancel")) { sweep.cancel() }
+                SmallPrimaryButton(title: tr("agents.pr.action.confirm")) { sweep.close(app: app) }
+            }
+            .padding(NookTheme.Spacing.md)
+            .panelCard()
+        }
     }
 }

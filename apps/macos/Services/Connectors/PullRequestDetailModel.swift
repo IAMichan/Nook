@@ -44,6 +44,8 @@ final class PullRequestDetailModel: ObservableObject {
     private var activityAt = Date.distantPast
 
     private var key: String { Self.key(accountID, item.id) }
+    /// The forge when it is not GitHub.
+    private var forge: PullRequestForgeClient? { PullRequestForges.client(account: accountID, path: item.repo) }
 
     init(accountID: String, item: PullRequestItem) {
         self.accountID = accountID
@@ -97,7 +99,9 @@ final class PullRequestDetailModel: ObservableObject {
             againActivity = againActivity || activity
             return
         }
-        guard let token = GitHubPullRequestDetail.token(accountID: accountID) else {
+        let forge = forge
+        let token = forge == nil ? GitHubPullRequestDetail.token(accountID: accountID) : ""
+        guard let token else {
             if detail == nil { error = tr("agents.pr.noToken") }
             return
         }
@@ -117,16 +121,19 @@ final class PullRequestDetailModel: ObservableObject {
             // Started next to the summary when it is needed anyway, so a first open costs one round less.
             var activityTask: Task<PullRequestActivity, Never>? = nil
             if forceActivity || detail?.activityLoaded != true || Date().timeIntervalSince(activityAt) > 120 {
-                activityTask = Self.readActivity(repo: repo, number: number, token: token, counts: counts)
+                activityTask = Self.readActivity(repo: repo, number: number, token: token, counts: counts, forge: forge)
             }
             do {
                 // Not tied to the page: leaving the pull request halfway must not end the read as a failed one.
-                let fresh = try await Task { try await GitHubPullRequestDetail.summary(repo: repo, number: number, token: token) }.value
+                let fresh = try await Task {
+                    if let forge { return try await forge.summary(number: number) }
+                    return try await GitHubPullRequestDetail.summary(repo: repo, number: number, token: token)
+                }.value
                 show(fresh.keepingActivity(of: detail).keepingConflict(of: detail ?? Self.cache[key]?.detail))
                 error = nil
                 let changed = Self.activityKey(fresh) != activityKey
                 if activityTask == nil, changed {
-                    activityTask = Self.readActivity(repo: repo, number: number, token: token, counts: fresh)
+                    activityTask = Self.readActivity(repo: repo, number: number, token: token, counts: fresh, forge: forge)
                 }
                 if let activityTask {
                     let activity = await activityTask.value
@@ -217,9 +224,11 @@ final class PullRequestDetailModel: ObservableObject {
         "\(detail.updated?.timeIntervalSince1970 ?? 0)|\(detail.headSHA)|\(detail.state.rawValue)"
     }
 
-    private static func readActivity(repo: String, number: Int, token: String, counts: PullRequestDetail?) -> Task<PullRequestActivity, Never> {
+    private static func readActivity(repo: String, number: Int, token: String, counts: PullRequestDetail?,
+                                      forge: PullRequestForgeClient?) -> Task<PullRequestActivity, Never> {
         Task.detached(priority: .userInitiated) {
-            await GitHubPullRequestDetail.loadActivity(repo: repo, number: number, token: token, counts: counts)
+            if let forge { return await forge.activity(number: number) }
+            return await GitHubPullRequestDetail.loadActivity(repo: repo, number: number, token: token, counts: counts)
         }
     }
 
@@ -236,15 +245,18 @@ final class PullRequestDetailModel: ObservableObject {
         let entry = Self.key(accountID, item.id)
         if prefetching[entry] != nil { return }
         if let cached = cache[entry], Date().timeIntervalSince(cached.at) < 60 { return }
-        guard let token = GitHubPullRequestDetail.token(accountID: accountID) else { return }
+        let forge = PullRequestForges.client(account: accountID, path: item.repo)
+        guard let token = forge == nil ? GitHubPullRequestDetail.token(accountID: accountID) : "" else { return }
         let repo = item.repo, number = item.number, started = Date()
         // Both at once, as on a page; the summary is kept the moment it lands, so a click meanwhile shows it.
         let activity = Task.detached(priority: priority) {
-            await GitHubPullRequestDetail.loadActivity(repo: repo, number: number, token: token, counts: nil)
+            if let forge { return await forge.activity(number: number) }
+            return await GitHubPullRequestDetail.loadActivity(repo: repo, number: number, token: token, counts: nil)
         }
         let summary = Task { () -> (detail: PullRequestDetail, at: Date)? in
             let read = await Task.detached(priority: priority) {
-                try? await GitHubPullRequestDetail.summary(repo: repo, number: number, token: token)
+                if let forge { return try? await forge.summary(number: number) }
+                return try? await GitHubPullRequestDetail.summary(repo: repo, number: number, token: token)
             }.value
             // An open page may have read it meanwhile; its read is newer.
             guard let read, (cache[entry]?.at ?? .distantPast) < started else { return nil }

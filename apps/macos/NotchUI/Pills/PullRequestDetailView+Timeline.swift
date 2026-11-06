@@ -80,7 +80,7 @@ extension PullRequestDetailView {
         .padding(.vertical, NookTheme.Spacing.sm)
     }
 
-    /// A commit: its message in bold, its short hash and when under it; a click opens it on GitHub.
+    /// A commit: its message in bold, its short hash and when under it; a click shows it on the Code tab.
     @ViewBuilder
     func commitEntry(_ event: PullRequestEvent, detail: PullRequestDetail, now: Date) -> some View {
         if case .commit(let sha) = event.kind {
@@ -92,7 +92,8 @@ extension PullRequestDetailView {
     }
 
     func openCommit(_ sha: String, detail: PullRequestDetail) {
-        if let url = detail.url?.appendingPathComponent("commits/" + sha) { NSWorkspace.shared.open(url) }
+        codeCommit = sha
+        switchTo(.code)
     }
 
     func timeLabel(_ date: Date, now: Date) -> some View {

@@ -755,7 +755,7 @@ private struct ChatAttachmentChip: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            preview
+            enlargeable
                 .frame(width: 40, height: 40)
                 .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous))
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -777,6 +777,15 @@ private struct ChatAttachmentChip: View {
         .padding(NookTheme.Spacing.xs)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.smoke))
         .task(id: file.path) { thumbnail = await ChatAttachmentThumbnail.make(file) }
+    }
+
+    /// A picture about to go enlarges on a click, whatever it goes as; other files only show their preview.
+    @ViewBuilder private var enlargeable: some View {
+        if ImageAttachment.isPicture(file.url) {
+            ImageModalButton(name: file.name, preview: thumbnail, file: { file.url }) { preview }
+        } else {
+            preview
+        }
     }
 
     @ViewBuilder private var preview: some View {
