@@ -50,7 +50,7 @@ enum PanelSidebarMetrics {
     static let tabBar: CGFloat = 34
     /// A tab on that bar: the bar's height without its padding.
     static let tabBarItem: CGFloat = tabBar - NookTheme.Spacing.xxs * 2
-    /// The narrowest a tab on the bar gets: a tab without its name, its mark with room for the status on its corner.
+    /// The narrowest a tab on the bar gets: a tab without its name, only its mark.
     static let tabBarItemMinimum: CGFloat = 28
     /// The column a row's mark stands in.
     static let mark: CGFloat = 18
@@ -134,7 +134,7 @@ struct PanelSidebarTop: View {
 
     private func tabs(_ context: PanelSidebarContext) -> some View {
         ForEach(Array(context.tabs.enumerated()), id: \.element.id) { index, item in
-            PanelSidebarTabButton(tab: item.value, title: item.title, count: item.count,
+            PanelSidebarTabButton(tab: item.value, title: item.title,
                                   shortcut: "⌘\(index + 1)", selected: item.value == context.selected,
                                   beside: item.value == context.beside, compact: compact) {
                 context.select(item.value)
@@ -207,14 +207,12 @@ struct SessionHistoryButtons: View {
     }
 }
 
-/// A tab in the sidebar. On the bar, the tab you are on shows its mark, name and what goes on there
-/// (`PanelSidebarTabStatus`) on `rowSelected`, and the others only their mark with that status as a dot on its corner;
-/// the name and shortcut of those are in the tooltip. In the rail every tab is its mark with the dot. The tab split view
+/// A tab in the sidebar. On the bar, the tab you are on shows its mark and name on `rowSelected`, and the others only
+/// their mark; the name and shortcut of those are in the tooltip. In the rail every tab is its mark. The tab split view
 /// shows beside this one is outlined.
 private struct PanelSidebarTabButton: View {
     let tab: PanelTab
     let title: String
-    var count = 0
     let shortcut: String
     var selected = false
     var beside = false
@@ -232,18 +230,11 @@ private struct PanelSidebarTabButton: View {
                     .font(NookTheme.font(13, .medium))
                     .foregroundStyle(selected ? NookTheme.paper : hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
                     .frame(width: PanelSidebarMetrics.mark)
-                    .overlay(alignment: .topTrailing) {
-                        if !named {
-                            PanelSidebarTabStatus(tab: tab, waiting: count, asDot: true)
-                                .offset(x: 3, y: -2)
-                        }
-                    }
                 if named {
                     Text(title)
                         .font(NookTheme.font(13, .medium))
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
-                    PanelSidebarTabStatus(tab: tab, waiting: count)
                 }
             }
             .padding(.horizontal, named ? NookTheme.Spacing.md : 0)
@@ -268,95 +259,11 @@ private struct PanelSidebarTabButton: View {
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help("\(title) (\(shortcut))")
-        .accessibilityLabel(count > 0 ? "\(title), \(count)" : title)
+        .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityValue(beside ? tr("split.beside") : "")
         // The name stays whole; the tabs without one share what is left of the bar.
         .fixedSize(horizontal: named, vertical: false)
-    }
-}
-
-/// What goes on in a tab: on Agents the sessions waiting for you (amber) or a pulse while one works, on Chats the unread
-/// messages, on Music the bars while something plays. Beside a tab's name it shows those; `asDot` on the corner of a mark
-/// it shrinks to a dot, amber for what waits for you and blue for what is busy. Each observes only what it shows, so
-/// the rest of the sidebar does not redraw with it.
-private struct PanelSidebarTabStatus: View {
-    let tab: PanelTab
-    let waiting: Int
-    var asDot = false
-
-    private static let dotSize: CGFloat = 6
-
-    var body: some View {
-        switch tab {
-        case .agents:
-            if waiting > 0 {
-                if asDot { Dot(color: NookTheme.amber) } else { NookCountBadge(count: waiting) }
-            } else {
-                AgentsWorking(asDot: asDot)
-            }
-        case .inbox: ChatsUnread(capture: ChatCaptureService.shared, asDot: asDot)
-        case .music: MusicPlaying(asDot: asDot)
-        case .nook, .chat, .connect, .shelf: EmptyView()
-        }
-    }
-
-    private struct Dot: View {
-        let color: Color
-
-        var body: some View {
-            Circle().fill(color).frame(width: PanelSidebarTabStatus.dotSize, height: PanelSidebarTabStatus.dotSize)
-        }
-    }
-
-    private struct AgentsWorking: View {
-        let asDot: Bool
-        @EnvironmentObject private var app: AppModel
-
-        var body: some View {
-            if !app.workspace.activeRuns.isEmpty || app.activeAgents.contains(where: { $0.status == .running }) {
-                SteppedPulseDot(color: AgentDisplayState.working.tone.color, size: PanelSidebarTabStatus.dotSize)
-                    .frame(width: asDot ? PanelSidebarTabStatus.dotSize : 16, height: asDot ? PanelSidebarTabStatus.dotSize : 16)
-                    .help(AgentDisplayState.working.longWord)
-            }
-        }
-    }
-
-    private struct ChatsUnread: View {
-        @ObservedObject var capture: ChatCaptureService
-        let asDot: Bool
-
-        var body: some View {
-            let unread = capture.visibleUnread
-            if unread > 0 {
-                if asDot { Dot(color: NookTheme.amber) } else { NookCountBadge(count: unread) }
-            }
-        }
-    }
-
-    private struct MusicPlaying: View {
-        let asDot: Bool
-        @EnvironmentObject private var app: AppModel
-
-        var body: some View {
-            Playing(nowPlaying: app.nowPlaying, asDot: asDot)
-        }
-
-        private struct Playing: View {
-            @ObservedObject var nowPlaying: NowPlayingService
-            let asDot: Bool
-
-            var body: some View {
-                if nowPlaying.current?.isPlaying == true {
-                    if asDot {
-                        Dot(color: NookTheme.blue)
-                    } else {
-                        EqualizerBars(color: NookTheme.textSecondary, height: 10)
-                            .frame(height: 16)
-                    }
-                }
-            }
-        }
     }
 }
 

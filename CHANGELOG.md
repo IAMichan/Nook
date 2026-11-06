@@ -92,6 +92,7 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Changed
 
+- The tabs at the top left of the main window no longer carry counts, dots or other status marks. The notch's tabs keep their amber count of agents that wait for you.
 - Nook works less in the background. A running check or pulse no longer redraws the whole window at the display rate. Polling pull requests costs no GitHub limit when nothing changed, and a slow forge no longer holds up the others. Settled pull requests, idle folders and agent pages nobody looks at are read less often or put away. Opening a long session no longer waits for saves.
 - Much lighter with many agents at work: the working dots, halos, spinners, the shimmer on the running step, Nook's
   writing dots and the music bars now run in Core Animation instead of being drawn frame by frame on the main thread.
