@@ -8,7 +8,7 @@ struct CardView: View {
     let onVoice: () -> Void
     var onReply: (String) -> Void = { _ in }
     /// "@nook …" in a chat card's field: the message Nook writes for what was asked, put in the field to read first.
-    var onDraft: (String) async throws -> String = { _ in throw NookError(tr("chats.draft.failed")) }
+    var onDraft: ChatReplyField.Writer = { _, _ in throw NookError(tr("chats.draft.failed")) }
     var onChoose: (String, [String]) -> Void = { _, _ in }
     /// A chat bubble's attachment was clicked: the card stays open while the file opens.
     var onOpen: (ChatBubble) -> Void = { _ in }
