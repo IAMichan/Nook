@@ -170,6 +170,10 @@ extension AppModel {
     /// A github.com pull request link as Nook opens it: with the account that lists it (else the first GitHub account)
     /// and what the list knows of it. Nil when Nook cannot read it (another forge, GitHub not connected).
     func pullRequestRequest(for url: URL) -> PullRequestOpenRequest? {
+        if !demoMode, let ref = PullRequestRef.parse(url.absoluteString), let repo = ref.forgeRepository, PullRequestForges.client(repo) != nil {
+            let item = PullRequestItem(repo: repo.path, number: ref.number, title: "", url: url, draft: false, updated: nil, author: "")
+            return PullRequestOpenRequest(account: repo.forgeAccount, item: item)
+        }
         guard !demoMode, GitHubPullRequestList.isAvailable, let link = PullRequestRef.gitHubItem(url) else { return nil }
         let key = link.id.lowercased()
         let listed = PullRequestStore.shared.accounts.lazy.compactMap { account in

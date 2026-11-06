@@ -1,69 +1,233 @@
 import AppKit
 import SwiftUI
 
-/// The Code tab: the changed files in reading order, each opening its diff.
-extension PullRequestDetailView {
-    // MARK: Files
+/// A line comment written on the Code tab, waiting for the review it will go out with. Kept per pull request while Nook
+/// runs, so leaving the page does not lose it.
+struct PullRequestPendingComment: Identifiable, Equatable, Sendable {
+    let review: ReviewComment
+    /// GitHub's line and side: the new file's line, or the old file's for a removed line.
+    let line: Int
+    let side: String
+    /// The first line and its side, for a comment on several lines.
+    var startLine: Int? = nil
+    var startSide: String? = nil
 
-    func files(_ detail: PullRequestDetail) -> some View {
-        let key = PullRequestViewedFiles.key(repo: detail.repo, number: detail.number)
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            if detail.files.isEmpty {
-                ListEmptyNote(tr("agents.pr.files.none"))
-            } else {
-                // How many are viewed shows in the tab bar. Lazy: a pull request can touch hundreds of files.
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(orderedFiles(detail).enumerated()), id: \.element.id) { index, file in
-                        if index > 0 { NookDivider(inset: NookTheme.Spacing.lg + 14 + NookTheme.Spacing.md) }
-                        let status = viewed.status(file, in: key)
-                        let seen = status == .viewed
-                        HStack(spacing: 0) {
-                            viewedButton(file, key: key, seen: seen)
-                                .padding(.leading, NookTheme.Spacing.sm)
-                            PullRequestHoverRow(action: { openFile = file.path }) {
-                                HStack(spacing: NookTheme.Spacing.md) {
-                                    fileGlyph(file.status)
-                                    filePath(file.path)
-                                    if status == .changed {
-                                        Text(tr("agents.pr.files.changedSince"))
-                                            .font(NookTheme.TextStyle.caption)
-                                            .foregroundStyle(NookTheme.amber)
-                                    } else if PullRequestFileOrder.kind(file.path) == .generated {
-                                        Text(tr("agents.pr.files.generated"))
-                                            .font(NookTheme.TextStyle.caption)
-                                            .foregroundStyle(NookTheme.textTertiary)
-                                    }
-                                    Spacer(minLength: NookTheme.Spacing.sm)
-                                    PullRequestLineCounts(additions: file.additions, deletions: file.deletions)
-                                    PullRequestDiffStatBar(additions: file.additions, deletions: file.deletions)
-                                }
-                                .font(NookTheme.TextStyle.detail.monospacedDigit())
-                            }
-                            .opacity(seen ? 0.55 : 1)
-                        }
-                    }
-                }
-                .panelCard()
-            }
-        }
+    var id: UUID { review.id }
+    var action: PullRequestAction.LineComment {
+        PullRequestAction.LineComment(path: review.path, line: line, side: side, body: review.text, startLine: startLine, startSide: startSide)
     }
 
-    /// The files in reading order: each source file with its tests, then documentation, then generated files.
-    func orderedFiles(_ detail: PullRequestDetail) -> [PullRequestFile] {
+    /// From the rows of a diff: GitHub places a comment on the new file's line, or the old file's for a removed line.
+    static func make(_ row: UnifiedDiff.Row, from first: UnifiedDiff.Row?, text: String, path: String, scope: String) -> PullRequestPendingComment? {
+        guard let line = row.new ?? row.old else { return nil }
+        let review = ReviewComment(path: path, line: row.new, code: row.raw, text: text, scope: scope)
+        return PullRequestPendingComment(review: review, line: line, side: row.new == nil ? "LEFT" : "RIGHT", startLine: first.flatMap { $0.new ?? $0.old },
+                                         startSide: first.map { $0.new == nil ? "LEFT" : "RIGHT" })
+    }
+}
+
+/// The Code tab: every changed file in one scroll in reading order, or the files of one commit picked from the menu. Line
+/// comments are written here and go out together with the review, so the whole change is what they are on. The
+/// conversations already on a line stand under it; the ones on a line a push moved stand under the file. A file you mark
+/// viewed folds, and its mark lapses when a push changes it.
+struct PullRequestCodeTab: View {
+    let detail: PullRequestDetail
+    let accountID: String
+    @ObservedObject var actions: PullRequestActionState
+    @Binding var viewed: PullRequestViewedFiles
+    /// The sha of the commit shown; nil for the whole change.
+    @Binding var commit: String?
+    /// A file to unfold and scroll to, from the Guide.
+    let focus: String?
+    let now: Date
+    let onScroll: (PullRequestPageScroll) -> Void
+    @State private var expanded: Set<String> = []
+    @State private var showsTree = true
+    @State private var commitFiles: [String: [PullRequestFile]] = [:]
+    @State private var commitError: String?
+    /// Opened once per head: later polls leave what you folded alone.
+    @State private var openedFor: String?
+
+    private var key: String { PullRequestViewedFiles.key(repo: detail.repo, number: detail.number) }
+    private var files: [PullRequestFile] {
+        if let commit { return commitFiles[commit] ?? [] }
         let byPath = Dictionary(detail.files.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
         return PullRequestFileOrder.ordered(detail.files.map(\.path)).compactMap { byPath[$0] }
     }
 
-    /// Ticks a file as viewed (or not), as on GitHub. The mark holds the file's revision, so a push that changes the file
-    /// clears it again.
-    func viewedButton(_ file: PullRequestFile, key: String, seen: Bool) -> some View {
-        ToolbarIconButton(seen ? "checkmark.circle.fill" : "circle", tr(seen ? "agents.pr.files.unmarkViewed" : "agents.pr.files.markViewed")) {
-            viewed.setViewed(!seen, file: file, in: key)
-            viewed.save()
+    var body: some View {
+        let files = files
+        let stacked = files.map(Self.stacked)
+        VStack(spacing: 0) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    scopeMenu
+                    pendingBar
+                    Spacer(minLength: NookTheme.Spacing.sm)
+                    StackedDiffToolbar(files: stacked, expanded: $expanded, showsTree: $showsTree, hidesWhitespace: false)
+                }
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                    HStack(spacing: NookTheme.Spacing.sm) {
+                        scopeMenu
+                        Spacer(minLength: NookTheme.Spacing.sm)
+                        pendingBar
+                    }
+                    StackedDiffToolbar(files: stacked, expanded: $expanded, showsTree: $showsTree, hidesWhitespace: false)
+                }
+            }
+            .padding(.vertical, NookTheme.Spacing.xs)
+            .pullRequestPageColumn()
+            NookDivider()
+            if let commitError, commit != nil {
+                StackedDiffNote(text: commitError)
+            } else if commit != nil, commit.flatMap({ commitFiles[$0] }) == nil {
+                PatientSpinner()
+            } else if files.isEmpty {
+                ListEmptyNote(tr("agents.pr.files.none"))
+            } else {
+                StackedDiffList(files: stacked, scope: "pull \(detail.id) \(commit ?? detail.headSHA)", expanded: $expanded, showsTree: showsTree,
+                                focus: focus, headerAccessory: viewedMark, onScroll: onScroll, diff: { file, _ in
+                    files.first { $0.path == file.path }?.patch ?? ""
+                }) { file, text in
+                    body(of: file, text: text)
+                }
+            }
         }
-        .help(tr(seen ? "agents.pr.files.unmarkViewed" : "agents.pr.files.markViewed"))
+        .task(id: commit) { await readCommit() }
+        .onChange(of: detail.headSHA, initial: true) { _, head in unfold(head) }
     }
 
+    /// The diff with what is said about it: pending comments and conversations under their line, the rest under the file.
+    @ViewBuilder
+    private func body(of file: StackedDiffFile, text: String) -> some View {
+        let lines = UnifiedDiff.rows(text).compactMap(\.new)
+        let threads = commit == nil ? PullRequestConversation.items(detail.events).filter { $0.root.isOn(path: file.path) } : []
+        let onLine = threads.filter { item in Self.line(item).map(lines.contains) ?? false }
+        let moved = threads.filter { item in !onLine.contains(item) }
+        VStack(alignment: .leading, spacing: 0) {
+            DiffText(text: text, comments: commit == nil ? actions.lineComments.filter { $0.review.path == file.path }.map(\.review) : [],
+                     onRemoveComment: commit == nil ? { id in actions.lineComments.removeAll { $0.id == id } } : nil,
+                     stacked: true, path: file.path, scope: "pull \(detail.id)",
+                     onRowComment: commit == nil && detail.isOpen && detail.features.lineComments ? { row, first, comment in
+                         if let pending = PullRequestPendingComment.make(row, from: first, text: comment, path: file.path, scope: "pull \(detail.id)") {
+                             actions.lineComments.append(pending)
+                         }
+                     } : nil,
+                     annotationLines: Set(onLine.compactMap(Self.line)),
+                     annotationVersion: onLine.map { "\($0.id) \($0.events.count) \($0.root.resolved)" }.joined(separator: ","),
+                     annotation: { line in
+                         AnyView(ForEach(onLine.filter { Self.line($0) == line }) { item in
+                             PullRequestConversationRow(item: item, now: now).padding(NookTheme.Spacing.sm)
+                         })
+                     })
+            ForEach(moved) { item in
+                PullRequestConversationRow(item: item, now: now).padding(NookTheme.Spacing.sm)
+            }
+        }
+    }
+
+    private static func line(_ item: PullRequestConversationItem) -> Int? {
+        if case .lineComment(_, let line) = item.root.kind, !item.root.outdated { return line }
+        return nil
+    }
+
+    private static func stacked(_ file: PullRequestFile) -> StackedDiffFile {
+        let kind: ChangedFilesTree.FileStat.Kind
+        switch file.status {
+        case "added": kind = .added
+        case "removed": kind = .deleted
+        case "renamed", "copied": kind = .renamed(from: file.previousPath ?? "")
+        default: kind = .modified
+        }
+        return StackedDiffFile(path: file.path, previousPath: file.previousPath, kind: kind, additions: file.additions, deletions: file.deletions)
+    }
+
+    /// The whole change or one commit, newest commit first.
+    private var scopeMenu: some View {
+        Menu {
+            Button(tr("agents.pr.code.allCommits")) { commit = nil }
+            if !detail.commits.isEmpty, detail.features.commitView {
+                Divider()
+                ForEach(detail.commits.reversed()) { item in
+                    Button(item.shortSHA + "  " + item.subject) { commit = item.sha }
+                }
+            }
+        } label: {
+            Text(commit.flatMap { sha in detail.commits.first { $0.sha == sha }?.subject } ?? tr("agents.pr.code.allCommits"))
+                .font(NookTheme.TextStyle.label)
+                .lineLimit(1)
+        }
+        .menuStyle(.borderlessButton)
+        .frame(maxWidth: 220, alignment: .leading)
+        .fixedSize(horizontal: commit == nil, vertical: false)
+        .help(commit == nil ? tr("agents.pr.code.scope") : tr("agents.pr.code.wholeChangeOnly"))
+        .accessibilityLabel(tr("agents.pr.code.scope"))
+    }
+
+    /// "2 comments · Finish review", while comments wait for their review.
+    @ViewBuilder
+    private var pendingBar: some View {
+        if !actions.lineComments.isEmpty {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Text(tr("agents.pr.code.pending", actions.lineComments.count))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.amber)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                SmallGhostButton(title: tr("agents.pr.code.finishReview")) {
+                    actions.open(.write, detail: detail)
+                    actions.asReview = true
+                }
+            }
+            .fixedSize()
+        }
+    }
+
+    private func viewedMark(_ file: StackedDiffFile) -> AnyView {
+        guard commit == nil, let found = detail.files.first(where: { $0.path == file.path }) else { return AnyView(EmptyView()) }
+        let status = viewed.status(found, in: key)
+        let seen = status == .viewed
+        return AnyView(HStack(spacing: NookTheme.Spacing.xs) {
+            if status == .changed {
+                Text(tr("agents.pr.files.changedSince")).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.amber)
+            } else if PullRequestFileOrder.kind(file.path) == .generated {
+                Text(tr("agents.pr.files.generated")).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary)
+            }
+            ToolbarIconButton(seen ? "checkmark.circle.fill" : "circle", tr(seen ? "agents.pr.files.unmarkViewed" : "agents.pr.files.markViewed"),
+                              height: 20, width: 20) {
+                viewed.setViewed(!seen, file: found, in: key)
+                viewed.save()
+                if !seen { expanded.remove(file.id) }
+            }
+        })
+    }
+
+    /// Everything you still have to read open, the files you viewed and generated ones folded.
+    private func unfold(_ head: String) {
+        guard openedFor != head, detail.activityLoaded else { return }
+        openedFor = head
+        expanded = Set(detail.files.filter { viewed.status($0, in: key) != .viewed && PullRequestFileOrder.kind($0.path) != .generated }.map(\.path))
+    }
+
+    private func readCommit() async {
+        commitError = nil
+        guard let commit, commitFiles[commit] == nil else { return }
+        let forge = PullRequestForges.client(account: accountID, path: detail.repo)
+        guard let token = forge != nil ? "" : GitHubPullRequestDetail.token(accountID: accountID) else {
+            commitError = tr("agents.pr.noToken")
+            return
+        }
+        do {
+            let read = forge != nil ? try await forge!.commitFiles(sha: commit) : try await GitHubPullRequestDetail.commitFiles(repo: detail.repo, sha: commit, token: token)
+            commitFiles[commit] = read
+            expanded.formUnion(read.map(\.path))
+        } catch {
+            commitError = error.localizedDescription
+        }
+    }
+}
+
+extension PullRequestDetailView {
     /// The file's name in full brightness, the folder it is in dimmed before it.
     func filePath(_ path: String) -> some View {
         let name = (path as NSString).lastPathComponent
@@ -73,90 +237,5 @@ extension PullRequestDetailView {
             .lineLimit(1)
             .truncationMode(.head)
             .help(path)
-    }
-
-    func fileGlyph(_ status: String) -> some View {
-        let letter: String
-        let color: Color
-        switch status {
-        case "added": letter = "A"; color = NookTheme.mint
-        case "removed": letter = "D"; color = NookTheme.coral
-        case "renamed", "copied": letter = "R"; color = NookTheme.violet
-        default: letter = "M"; color = NookTheme.amber
-        }
-        return Text(letter).font(NookTheme.mono(11, .semibold)).foregroundStyle(color).frame(width: 14)
-    }
-
-    /// One file's diff under its header. The header is one line where it fits; beside the list (a narrow panel) the
-    /// path keeps its own line and the counts and the buttons go under it, so the path is never squeezed to nothing.
-    func fileDiff(_ file: PullRequestFile, detail: PullRequestDetail) -> some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: NookTheme.Spacing.md) {
-                    fileTitle(file)
-                    Spacer(minLength: NookTheme.Spacing.sm)
-                    fileControls(file, detail: detail)
-                }
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                    fileTitle(file)
-                    HStack(spacing: NookTheme.Spacing.md) {
-                        Spacer(minLength: 0)
-                        fileControls(file, detail: detail)
-                    }
-                }
-            }
-            if let patch = file.patch, !patch.isEmpty {
-                // Equatable: the page redraws on each poll and with the minute's tick, and every line of a long diff
-                // is a row of its own.
-                DiffText(text: patch, path: file.path)
-                    .equatable()
-                    .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
-                    .id(file.path)
-            } else {
-                WSEmptyState(symbol: "doc.text.magnifyingglass", title: tr("agents.pr.files.noDiff"), message: tr("agents.pr.files.noDiffDetail"))
-            }
-        }
-        .frame(maxHeight: .infinity)
-    }
-
-    /// Back to the list, the file's kind and its path (and the one it had before a rename).
-    func fileTitle(_ file: PullRequestFile) -> some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            NookIconButton(systemName: "chevron.left", label: tr("agents.pr.back"), size: 24) { openFile = nil }
-            fileGlyph(file.status)
-            VStack(alignment: .leading, spacing: 1) {
-                filePath(file.path)
-                if let previous = file.previousPath {
-                    Text(previous + " →").font(NookTheme.mono(11)).foregroundStyle(NookTheme.textTertiary).lineLimit(1).truncationMode(.head)
-                }
-            }
-        }
-    }
-
-    /// The file's lines added and removed, its viewed mark, and where it is among the files with the buttons to the
-    /// one before and after.
-    func fileControls(_ file: PullRequestFile, detail: PullRequestDetail) -> some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            PullRequestLineCounts(additions: file.additions, deletions: file.deletions)
-            let key = PullRequestViewedFiles.key(repo: detail.repo, number: detail.number)
-            viewedButton(file, key: key, seen: viewed.isViewed(file, in: key))
-            let ordered = orderedFiles(detail)
-            if let index = ordered.firstIndex(of: file) {
-                Text("\(index + 1)/\(ordered.count)")
-                    .font(NookTheme.TextStyle.detail.monospacedDigit())
-                    .foregroundStyle(NookTheme.textTertiary)
-                NookIconButton(systemName: "chevron.up", label: tr("agents.pr.files.previous"), size: 24) {
-                    openFile = ordered[index - 1].path
-                }
-                .disabled(index == 0)
-                .opacity(index == 0 ? 0.35 : 1)
-                NookIconButton(systemName: "chevron.down", label: tr("agents.pr.files.next"), size: 24) {
-                    openFile = ordered[index + 1].path
-                }
-                .disabled(index + 1 >= ordered.count)
-                .opacity(index + 1 >= ordered.count ? 0.35 : 1)
-            }
-        }
-        .fixedSize()
     }
 }

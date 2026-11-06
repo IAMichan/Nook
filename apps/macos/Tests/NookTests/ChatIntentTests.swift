@@ -303,4 +303,23 @@ final class ChatIntentTests: XCTestCase {
         let pr = [ChatTurn(fromUser: true, text: "Why is CI failing on this PR?")]
         XCTAssertNotEqual(ChatIntent.detect("Fix it", history: pr).primaryAction, "take_over", "the PR is fixed on GitHub, not by hand")
     }
+
+    func testSayingItDoesItIsNotAnAction() {
+        XCTAssertTrue(ChatIntent.announces("Ik zet een evenement in de agenda voor morgen. De evenementtitel is \"Bellen met opa\"."))
+        XCTAssertTrue(ChatIntent.announces("I'll add it to your calendar."))
+        XCTAssertFalse(ChatIntent.announces("Ik zoek de Infaris CLI in je monorepo."))
+        XCTAssertFalse(ChatIntent.announces("Henk zet de tekst op de site."))
+    }
+
+    func testDoeDatGoesAheadWithWhatNookAnnounced() {
+        let history = [ChatTurn(fromUser: true, text: "Zet in de agenda voor morgen dat ik om 11:00 bellen met opa"),
+                       ChatTurn(fromUser: false, text: "Ik zet een evenement in de agenda voor morgen.")]
+        XCTAssertEqual(ChatIntent.detect("doe dat, en in mijn prive agenda", history: history).primaryAction, "create_event")
+    }
+
+    func testAskingForTheIPAddressFindsTheNetworkTool() {
+        XCTAssertEqual(ChatIntent.detect("Wat is mijn IP adres op dit moment?").tools.first { $0 == "network_status" }, "network_status")
+        XCTAssertEqual(ChatIntent.detect("what is my ip").tools.first, "network_status")
+        XCTAssertFalse(ChatIntent.detect("Wat kost een ipad").tools.contains("network_status"))
+    }
 }

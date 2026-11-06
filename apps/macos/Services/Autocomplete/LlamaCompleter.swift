@@ -21,6 +21,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     private let queue = DispatchQueue(label: "nl.imdigital.nook.autocomplete", qos: .userInteractive)
     private let lock = NSLock()
     private var latest = 0
+    let following = CompletionFollowing()
 
     private let model: OpaquePointer
     private let context: OpaquePointer
@@ -101,6 +102,9 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     /// The cache the slots share: about two full prompts, or more shorter ones.
     static let cacheLength: UInt32 = 8_192
     static let fieldSlots: UInt32 = 4
+    /// A slot starting with this many of the prompt's tokens is taken for it: more than the model's turn markers and the
+    /// instructions every field shares would be worth little, but it saves reading those again too.
+    private static let minimumSharedContext = 64
     /// Other ways the text could go on, written alongside each suggestion (see `generateRanked`), in sequences after the field
     /// slots.
     static let branchCount: UInt32 = 2
@@ -223,6 +227,8 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     func complete(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?,
                   branches: (@Sendable ([CompletionResult]) -> Void)?) async -> CompletionResult? {
         let id = begin()
+        following.start(id)
+        defer { following.stop(id) }
         return await withCheckedContinuation { continuation in
             queue.async {
                 let isCancelled = { self.superseded(id) }
@@ -304,14 +310,19 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         return (frame + text, frame.count)
     }
 
-    /// Makes the slot for the field whose context is `key` the active one: the slot it had, else an empty one, else the one
-    /// used longest ago. A model whose cache cannot be cut back keeps one slot (see `checkpoint`).
-    private func select(_ key: String) {
+    /// Makes the slot for the field whose context is `key` the active one: the slot it had, else the one whose prompt starts
+    /// the same way, else an empty one, else the one used longest ago. A model whose cache cannot be cut back keeps one slot (see `checkpoint`).
+    private func select(_ key: String, tokens: [llama_token]) {
         clock += 1
+        func shared(_ index: Int) -> Int { zip(slots[index].tokens, tokens).prefix { $0 == $1 }.count }
         if needsCheckpoints {
             active = 0
         } else if let index = slots.firstIndex(where: { $0.key == key }) {
             active = index
+        } else if let similar = slots.indices.max(by: { shared($0) < shared($1) }), shared(similar) >= Self.minimumSharedContext {
+            // The same field with a newer message in its context: most of what the slot holds still fits.
+            active = similar
+            slots[active].skipped = []
         } else {
             active = slots.firstIndex { $0.tokens.isEmpty } ?? slots.indices.min { slots[$0].used < slots[$1].used } ?? 0
             slots[active].skipped = []
@@ -370,7 +381,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         let laidOut = self.tokens(for: prompt, limit: Int(Self.contextLength) - reserve - 1)
         var tokens = laidOut.tokens
         guard !tokens.isEmpty else { return nil }
-        select(prompt.context)
+        select(prompt.context, tokens: tokens)
         let frame = laidOut.frame
         let skipped = slots[active].skipped
         if !skipped.isEmpty, tokens.count > frame + skipped.count, tokens[frame ..< frame + skipped.count].elementsEqual(skipped) {
@@ -387,7 +398,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
             llama_memory_clear(memory, true)
             slots = Array(repeating: Slot(), count: slots.count)
             needsCheckpoints = true
-            select(prompt.context)
+            select(prompt.context, tokens: tokens)
             shared = 0
             if let saved = checkpoint, saved.tokens.count < tokens.count, tokens.starts(with: saved.tokens),
                saved.data.withUnsafeBufferPointer({ llama_state_seq_set_data(context, $0.baseAddress, $0.count, seq) }) > 0 {
@@ -459,6 +470,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
             }
             bytes += piece
             let text = String(decoding: bytes, as: UTF8.self)
+            if let typed = following.text, !CompletionFollowing.fits(text, typed: typed) { return nil }
             if text.completionWordCount > options.maxWords {
                 candidate.end()
                 break
@@ -562,8 +574,12 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
                 let (token, probability) = mostLikely(logits)
                 take(token, probability, into: index)
             }
+            // Typed past everything written so far: this request has nothing left to give.
+            if let typed = following.text,
+               !sequences.contains(where: { CompletionFollowing.fits(String(decoding: $0.bytes, as: UTF8.self), typed: typed) }) { return (nil, []) }
         }
-        let results = sequences.map { $0.candidate.result(text: String(decoding: $0.bytes, as: UTF8.self)) }
+        let written = sequences.map { $0.candidate.result(text: String(decoding: $0.bytes, as: UTF8.self)) }
+        let results = following.keep(written)
         guard let pick = CompletionRanking.best(results, minFirstProbability: options.minFirstProbability) else {
             return (nil, results.dropFirst().compactMap { $0 })
         }

@@ -88,7 +88,7 @@ struct PullRequestConversationFilter: View {
 }
 
 /// One conversation: a comment card, or a thread's first comment with its replies under it. A finished one folds.
-private struct PullRequestConversationRow: View {
+struct PullRequestConversationRow: View {
     let item: PullRequestConversationItem
     let now: Date
 
@@ -99,8 +99,88 @@ private struct PullRequestConversationRow: View {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 PullRequestCommentCard(event: item.root, now: now)
                 if !item.replies.isEmpty { PullRequestReplies(replies: item.replies, now: now) }
+                if item.isThread { PullRequestThreadControls(item: item) }
             }
         }
+    }
+}
+
+/// What a comment card can do on the page it is on. Nil where nothing may be written (a page without an account).
+struct PullRequestCommentActions {
+    let viewer: String
+    /// False on a locked conversation.
+    let canWrite: Bool
+    let features: PullRequestForgeFeatures
+    let state: PullRequestActionState
+    let react: (PullRequestEvent, String) -> Void
+    let resolve: (_ threadID: String, _ resolved: Bool) -> Void
+}
+
+extension EnvironmentValues {
+    @Entry var pullRequestCommentActions: PullRequestCommentActions?
+}
+
+/// Under a thread on a line: answer it, and mark it resolved or open it again.
+private struct PullRequestThreadControls: View {
+    let item: PullRequestConversationItem
+    @Environment(\.pullRequestCommentActions) private var actions
+    @State private var replying = false
+
+    var body: some View {
+        if let actions, actions.canWrite, actions.features.threads {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                if replying, let id = item.root.restComment?.id {
+                    PullRequestInlineEditor(initial: "", placeholder: tr("agents.pr.thread.replyPlaceholder"), state: actions.state,
+                                            close: { replying = false }) { text in
+                        actions.state.pending = .reply(to: id, body: text)
+                    }
+                } else {
+                    HStack(spacing: NookTheme.Spacing.sm) {
+                        SmallGhostButton(title: tr("agents.pr.thread.reply")) { replying = true }
+                        if let thread = item.root.threadID {
+                            SmallGhostButton(title: tr(item.root.resolved ? "agents.pr.thread.unresolve" : "agents.pr.thread.resolve")) {
+                                actions.resolve(thread, !item.root.resolved)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.leading, NookTheme.Spacing.lg)
+        }
+    }
+}
+
+/// A small field in a comment card: its text is sent with the page's confirmation, and it closes once that went through.
+struct PullRequestInlineEditor: View {
+    let initial: String
+    let placeholder: String
+    @ObservedObject var state: PullRequestActionState
+    let close: () -> Void
+    let send: (String) -> Void
+    @State private var text = ""
+    @State private var waiting = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(NookTheme.textTertiary), axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(NookTheme.TextStyle.body)
+                .lineLimit(2...12)
+                .padding(NookTheme.Spacing.sm)
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.smoke))
+                .onExitCommand(perform: close)
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Spacer(minLength: 0)
+                SmallGhostButton(title: tr("button.cancel"), action: close)
+                SmallPrimaryButton(title: tr("agents.pr.write.send")) {
+                    waiting = true
+                    send(text)
+                }
+                .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .onAppear { text = initial }
+        .onChange(of: state.finished) { _, _ in if waiting { close() } }
     }
 }
 
@@ -124,15 +204,18 @@ private struct PullRequestReplies: View {
 
 /// A comment or review as a card: who, when and the verdict in a header strip, then where on the diff it is, then the
 /// text. A reply leaves out the place, its thread already says it. On the timeline the picture sits on the rail instead.
+/// Your own comment has a pencil under the pointer.
 struct PullRequestCommentCard: View {
     let event: PullRequestEvent
     let now: Date
     var reply = false
     var showsAvatar = true
+    @Environment(\.pullRequestCommentActions) private var actions
+    @State private var editing = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PullRequestCommentHeader(event: event, now: now, showsAvatar: showsAvatar)
+            PullRequestCommentHeader(event: event, now: now, showsAvatar: showsAvatar, onEdit: { editing = true })
                 .padding(.horizontal, NookTheme.Spacing.lg)
                 .padding(.vertical, NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
                 .background(NookTheme.rowHover)
@@ -141,7 +224,13 @@ struct PullRequestCommentCard: View {
                     .padding(.horizontal, NookTheme.Spacing.lg)
                     .padding(.top, NookTheme.Spacing.md)
             }
-            if !event.body.isEmpty {
+            if editing, let actions, let comment = event.restComment {
+                PullRequestInlineEditor(initial: event.rawBody ?? event.body, placeholder: "", state: actions.state,
+                                        close: { editing = false }) { text in
+                    actions.state.pending = .editComment(id: comment.id, lineComment: comment.lineComment, body: text)
+                }
+                .padding(NookTheme.Spacing.lg)
+            } else if !event.body.isEmpty {
                 MarkdownView(text: event.body, size: 14)
                     .padding(NookTheme.Spacing.lg)
             } else if !reply, case .lineComment = event.kind {
@@ -159,16 +248,26 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
     let event: PullRequestEvent
     let now: Date
     var showsAvatar = true
+    var onEdit: (() -> Void)? = nil
     @ViewBuilder var accessory: () -> Accessory
     @State private var hovering = false
     @Environment(\.sessionContextTarget) private var session
     @Environment(\.sessionPullRequestRef) private var pullRequest
+    @Environment(\.pullRequestCommentActions) private var actions
 
-    init(event: PullRequestEvent, now: Date, showsAvatar: Bool = true, @ViewBuilder accessory: @escaping () -> Accessory) {
+    init(event: PullRequestEvent, now: Date, showsAvatar: Bool = true, onEdit: (() -> Void)? = nil, @ViewBuilder accessory: @escaping () -> Accessory) {
         self.event = event
         self.now = now
         self.showsAvatar = showsAvatar
+        self.onEdit = onEdit
         self.accessory = accessory
+    }
+
+    /// Emoji can be added to comments; GitHub offers no address for a review's.
+    private var reactable: Bool { actions?.features.reactions == true && event.reactionPath != nil }
+    private var editable: Bool {
+        guard let actions, onEdit != nil, event.restComment != nil else { return false }
+        return actions.canWrite && actions.features.editComments && !actions.viewer.isEmpty && actions.viewer.lowercased() == event.author.lowercased()
     }
 
     var body: some View {
@@ -177,7 +276,7 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
             row(reactions: true)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 row(reactions: false)
-                if !event.reactions.isEmpty { PullRequestReactionBar(reactions: event.reactions) }
+                if !event.reactions.isEmpty { PullRequestReactionBar(event: event) }
             }
         }
         .onHover { hovering = $0 }
@@ -196,7 +295,24 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
                                                                        line: finding.line, text: event.body), to: session)
                 }
             }
-            if reactions, !event.reactions.isEmpty { PullRequestReactionBar(reactions: event.reactions) }
+            if let session, let pullRequest, event.replyTo == nil, !event.body.isEmpty {
+                // As the link below: under the pointer only, keeping its room.
+                ToolbarIconButton("plus.bubble", tr("session.context.addComment"), height: 20, width: 20) {
+                    ComposerInbox.shared.add(SessionPrompts.comment(pullRequest, author: event.author, path: place.path, line: place.line,
+                                                                    text: event.body), to: session)
+                }
+                .opacity(hovering ? 1 : 0)
+                .allowsHitTesting(hovering)
+            }
+            if editable, let onEdit {
+                ToolbarIconButton("pencil", tr("agents.pr.comment.edit"), height: 20, width: 20, onEdit)
+                    .opacity(hovering ? 1 : 0)
+                    .allowsHitTesting(hovering)
+            }
+            if reactable {
+                PullRequestReactionPicker(event: event).opacity(hovering ? 1 : 0).allowsHitTesting(hovering)
+            }
+            if reactions, !event.reactions.isEmpty { PullRequestReactionBar(event: event) }
             if let date = event.date {
                 Text(AgentFormat.short(now.timeIntervalSince(date)))
                     .font(NookTheme.TextStyle.detail)
@@ -214,6 +330,12 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
                 .allowsHitTesting(hovering)
             }
         }
+    }
+
+    /// Where on the diff the comment is, if anywhere.
+    private var place: (path: String?, line: Int?) {
+        if case .lineComment(let path, let line) = event.kind { return (path, line) }
+        return (nil, nil)
     }
 
     /// What a fix can be about: a line comment or a review that asks for something, not a reply or an approval.
@@ -254,8 +376,8 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
 }
 
 extension PullRequestCommentHeader where Accessory == EmptyView {
-    init(event: PullRequestEvent, now: Date, showsAvatar: Bool = true) {
-        self.init(event: event, now: now, showsAvatar: showsAvatar) { EmptyView() }
+    init(event: PullRequestEvent, now: Date, showsAvatar: Bool = true, onEdit: (() -> Void)? = nil) {
+        self.init(event: event, now: now, showsAvatar: showsAvatar, onEdit: onEdit) { EmptyView() }
     }
 }
 
@@ -325,6 +447,7 @@ private struct FoldedConversation: View {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                     if !item.root.body.isEmpty { MarkdownView(text: item.root.body, size: 14) }
                     if !item.replies.isEmpty { PullRequestReplies(replies: item.replies, now: now) }
+                    if item.isThread { PullRequestThreadControls(item: item) }
                 }
                 .padding(NookTheme.Spacing.lg)
                 .transition(.opacity)
@@ -356,23 +479,72 @@ private struct FoldedConversation: View {
 }
 
 /// The emoji on a comment, each with how many chose it, as quiet pills.
-private struct PullRequestReactionBar: View {
-    let reactions: [PullRequestReaction]
+struct PullRequestReactionBar: View {
+    let event: PullRequestEvent
+    @Environment(\.pullRequestCommentActions) private var actions
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            ForEach(reactions) { reaction in
-                HStack(spacing: NookTheme.Spacing.xxs) {
-                    Text(reaction.emoji).font(NookTheme.font(11))
-                    Text("\(reaction.count)").font(NookTheme.TextStyle.caption).monospacedDigit()
+            ForEach(event.reactions) { reaction in
+                Button {
+                    actions?.react(event, reaction.content)
+                } label: {
+                    HStack(spacing: NookTheme.Spacing.xxs) {
+                        Text(reaction.emoji).font(NookTheme.font(11))
+                        Text("\(reaction.count)").font(NookTheme.TextStyle.caption).monospacedDigit()
+                    }
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .padding(.horizontal, NookTheme.Spacing.sm)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(NookTheme.line2))
+                    .contentShape(Capsule())
                 }
-                .foregroundStyle(NookTheme.textSecondary)
-                .padding(.horizontal, NookTheme.Spacing.sm)
-                .padding(.vertical, 1)
-                .background(Capsule().fill(NookTheme.line2))
+                .buttonStyle(.plain)
+                .disabled(actions == nil || event.reactionPath == nil)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(tr("agents.pr.reaction", reaction.emoji, reaction.count))
             }
         }
+    }
+}
+
+/// Adds an emoji to a comment; a second click on the same one takes yours off again.
+struct PullRequestReactionPicker: View {
+    let event: PullRequestEvent
+    @Environment(\.pullRequestCommentActions) private var actions
+
+    var body: some View {
+        ComposerDropdown(width: 196) {
+            Image(systemName: "face.smiling")
+                .font(NookTheme.font(11, .medium))
+                .foregroundStyle(NookTheme.textSecondary)
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        } content: {
+            ChipFlow(spacing: NookTheme.Spacing.xxs) {
+                ForEach(PullRequestReaction.order, id: \.self) { content in
+                    DropdownEmoji(emoji: PullRequestReaction(content: content, count: 0).emoji) { actions?.react(event, content) }
+                }
+            }
+        }
+        .help(tr("agents.pr.comment.react"))
+        .accessibilityLabel(tr("agents.pr.comment.react"))
+    }
+}
+
+/// One emoji in a dropdown; a click closes it.
+private struct DropdownEmoji: View {
+    let emoji: String
+    let action: () -> Void
+    @Environment(\.closeDropdown) private var close
+
+    var body: some View {
+        Button {
+            close()
+            action()
+        } label: {
+            Text(emoji).font(NookTheme.font(16)).frame(width: 28, height: 28).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

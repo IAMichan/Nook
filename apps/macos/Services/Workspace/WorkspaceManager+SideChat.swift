@@ -33,6 +33,7 @@ extension WorkspaceManager {
         // The parent's pull request watch and task list stay the parent's.
         side.prWatch = nil
         side.tasks = nil
+        side.goal = nil
         // A side chat asks before it changes anything, whatever the parent may do; you can raise it afterwards.
         let offered = parent.provider.capabilities.policies
         side.permission = offered.contains(.ask) ? .ask : (offered.first ?? .ask)

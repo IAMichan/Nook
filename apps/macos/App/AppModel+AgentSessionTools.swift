@@ -268,7 +268,7 @@ extension AppModel {
     }
 
     /// The user's remembered account, model, effort and rights for the agent in this folder, as the composer would use them.
-    private func sessionConfig(task: String, provider: RunProvider, folder: String?, plan wantsPlan: Bool) -> NewRunConfig {
+    func sessionConfig(task: String, provider: RunProvider, folder: String?, plan wantsPlan: Bool) -> NewRunConfig {
         let defaults = workspace.settings.composerDefaults(for: folder)
         let plan = wantsPlan && provider.capabilities.planMode
         var config = NewRunConfig()

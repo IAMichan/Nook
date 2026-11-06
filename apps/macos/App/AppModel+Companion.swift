@@ -77,17 +77,14 @@ extension AppModel {
         PermissionMonitor.shared.refresh()
     }
 
-    /// Autocomplete anywhere, with what only Nook knows: your memory and the text it already reads on screen.
+    /// Autocomplete anywhere, with what only Nook knows: your memory, and the screen when you let it read that.
     func startAutocomplete() {
         let autocomplete = AutocompleteController.shared
         autocomplete.facts = { [weak self] context in
             guard let self, self.settings.useMemory else { return [] }
             return self.memory.book.forCompletion(context).map(\.text)
         }
-        autocomplete.screenText = { [weak self] bundleID in
-            let windows = self?.screenContext.windows.filter { $0.bundleID == bundleID } ?? []
-            return (windows.first { $0.isFront } ?? windows.first)?.text
-        }
+        autocomplete.readsScreen = { [weak self] in self?.settings.liveScreen ?? false }
         autocomplete.refresh()
     }
 

@@ -392,6 +392,18 @@ enum SubscriptionBrain {
     /// Runs the agent off the main thread in its own empty folder, capped at 2 minutes.
     private nonisolated static func execute(_ path: String, _ arguments: [String], environment: [String: String],
                                             directory: URL, stdin: Data?) async throws -> ProcessOutput {
+        let canceller = ProcessCanceller()
+        let output: ProcessOutput = try await withTaskCancellationHandler {
+            try await run(path, arguments, environment: environment, directory: directory, stdin: stdin, canceller: canceller)
+        } onCancel: {
+            canceller.cancel()
+        }
+        try Task.checkCancellation()
+        return output
+    }
+
+    private nonisolated static func run(_ path: String, _ arguments: [String], environment: [String: String],
+                                        directory: URL, stdin: Data?, canceller: ProcessCanceller) async throws -> ProcessOutput {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
@@ -411,6 +423,7 @@ enum SubscriptionBrain {
                     continuation.resume(throwing: NookError(error.localizedDescription))
                     return
                 }
+                canceller.adopt(process)
                 if let input, let stdin {
                     input.fileHandleForWriting.write(stdin)
                     try? input.fileHandleForWriting.close()
@@ -434,6 +447,27 @@ enum SubscriptionBrain {
                                                              stderr: String(decoding: errorData.data, as: UTF8.self)))
             }
         }
+    }
+}
+
+/// Ends a brain's program when its answer is stopped or runs out of time, so it does not think on for minutes.
+final class ProcessCanceller: @unchecked Sendable {
+    private let lock = NSLock()
+    private var process: Process?
+    private var cancelled = false
+
+    func adopt(_ process: Process) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.process = process
+        if cancelled, process.isRunning { process.terminate() }
+    }
+
+    func cancel() {
+        lock.lock()
+        defer { lock.unlock() }
+        cancelled = true
+        if let process, process.isRunning { process.terminate() }
     }
 }
 

@@ -145,7 +145,7 @@ enum SourceForge {
         switch repo.host {
         case .github: return repo.hostName == "github.com" ? await GitHubPullRequests.pullRequests(repo: repo.displayName, branch: branch) : nil
         case .gitlab: return await GitLabMergeRequests.list(repo: repo, branch: branch)
-        default: return nil
+        default: return await PullRequestForges.client(repo)?.requests(branch: branch)
         }
     }
 

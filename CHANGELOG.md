@@ -63,6 +63,8 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 - Chats list rows now follow their chat: a chat that moved to another group no longer keeps its old line and time, and
   shows as selected.
 - Writing in an old chat no longer marks all its messages unread, in every chat app.
+- Sending a message no longer brings back the unread bar above the answer field for a chat you read on your phone, in
+  every chat app.
 - Two different chats of one name in Teams, Slack, Telegram or a chat helper network are now two rows with a short mark,
   and an answer reaches the right chat. Answers in a row with two threads to one person go to the newest.
 - A Teams message with several files says how many there are.

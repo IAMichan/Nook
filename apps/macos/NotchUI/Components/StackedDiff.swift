@@ -53,6 +53,8 @@ struct StackedDiffToolbar: View {
     let files: [StackedDiffFile]
     @Binding var expanded: Set<String>
     @Binding var showsTree: Bool
+    /// Off where the diff comes as it is and cannot leave out whitespace (a forge's patch).
+    var hidesWhitespace = true
     @AppStorage(DiffDisplayKeys.wrap) private var wrap = true
     @AppStorage(DiffDisplayKeys.split) private var split = false
     @AppStorage(DiffDisplayKeys.ignoreWhitespace) private var ignoreWhitespace = false
@@ -65,8 +67,10 @@ struct StackedDiffToolbar: View {
             EditLinesLabel(lines: EditLines(added: files.reduce(0) { $0 + ($1.additions ?? 0) },
                                             removed: files.reduce(0) { $0 + ($1.deletions ?? 0) }), size: 11)
                 .padding(.trailing, NookTheme.Spacing.xs)
-            ToolbarIconButton("text.word.spacing", tr(ignoreWhitespace ? "agents.diff.showWhitespace" : "agents.diff.hideWhitespace"),
-                              height: 28, width: 28, selected: ignoreWhitespace, symbolSize: 13) { ignoreWhitespace.toggle() }
+            if hidesWhitespace {
+                ToolbarIconButton("text.word.spacing", tr(ignoreWhitespace ? "agents.diff.showWhitespace" : "agents.diff.hideWhitespace"),
+                                  height: 28, width: 28, selected: ignoreWhitespace, symbolSize: 13) { ignoreWhitespace.toggle() }
+            }
             ToolbarIconButton("testtube.2", tr(hideTests ? "agents.diff.showTests" : "agents.diff.hideTests"),
                               height: 28, width: 28, selected: hideTests, symbolSize: 13) { hideTests.toggle() }
             ToolbarIconButton("arrow.turn.down.left", tr(wrap ? "agents.diff.noWrap" : "agents.diff.wrap"),
@@ -100,6 +104,10 @@ struct StackedDiffList<Content: View>: View {
     var showsTree = false
     /// A file to unfold and scroll to (a file picked elsewhere, such as in a turn's changed-files card).
     var focus: String? = nil
+    /// Drawn in a file's header, before its lines.
+    var headerAccessory: ((StackedDiffFile) -> AnyView)? = nil
+    /// How far the list is scrolled, for a page that folds its top.
+    var onScroll: ((PullRequestPageScroll) -> Void)? = nil
     let diff: (StackedDiffFile, DiffReadOptions) async throws -> String
     @ViewBuilder var content: (StackedDiffFile, String) -> Content
     @State private var reveal: String?
@@ -137,7 +145,7 @@ struct StackedDiffList<Content: View>: View {
                                         .padding(.bottom, NookTheme.Spacing.md)
                                 }
                             } header: {
-                                StackedDiffHeader(file: file, open: expanded.contains(file.id)) { toggle(file) }
+                                StackedDiffHeader(file: file, open: expanded.contains(file.id), accessory: headerAccessory?(file)) { toggle(file) }
                             }
                             .id(file.id)
                         }
@@ -151,6 +159,12 @@ struct StackedDiffList<Content: View>: View {
                     }
                 }
                 .environment(\.diffDisplay, display)
+                .onScrollGeometryChange(for: PullRequestPageScroll.self) { geometry in
+                    PullRequestPageScroll(offset: geometry.contentOffset.y + geometry.contentInsets.top,
+                                          overflow: geometry.contentSize.height - geometry.containerSize.height)
+                } action: { _, scroll in
+                    onScroll?(scroll)
+                }
                 .overlay(alignment: .top) {
                     if finding {
                         TimelineFindBar(query: $query, state: found.state, count: found.matches.count, current: found.current,
@@ -316,6 +330,7 @@ struct StackedDiffNote: View {
 private struct StackedDiffHeader: View {
     let file: StackedDiffFile
     let open: Bool
+    var accessory: AnyView? = nil
     let toggle: () -> Void
     @State private var hovering = false
     @State private var copied = false
@@ -343,6 +358,7 @@ private struct StackedDiffHeader: View {
             CopyIconButton(tr("agents.diff.copyPath"), height: 20, width: 20, showing: $copied) { file.path }
                 .opacity(hovering || copied ? 1 : 0)
             Spacer(minLength: NookTheme.Spacing.sm)
+            if let accessory { accessory }
             if file.additions != nil || file.deletions != nil {
                 EditLinesLabel(lines: EditLines(added: file.additions ?? 0, removed: file.deletions ?? 0), size: 11)
             }

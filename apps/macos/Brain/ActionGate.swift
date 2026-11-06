@@ -172,6 +172,16 @@ enum ActionGate {
         return problems
     }
 
+    /// The recipients with each name replaced by the address `lookup` finds for it; an address, and a name without one
+    /// (which the user then fills in in the draft), stay as they are.
+    static func addressed(_ text: String, lookup: (String) async -> String?) async -> String {
+        var result: [String] = []
+        for part in text.split(whereSeparator: { $0 == "," || $0 == ";" }).map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) }) where !part.isEmpty {
+            if isMailAddress(part) { result.append(part) } else { result.append(await lookup(part) ?? part) }
+        }
+        return result.joined(separator: ", ")
+    }
+
     /// owner/name without "." or ".." components: prevents traversal to unrelated API paths.
     static func isRepository(_ text: String) -> Bool {
         guard text.range(of: #"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"#, options: .regularExpression) != nil else { return false }

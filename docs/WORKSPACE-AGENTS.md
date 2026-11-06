@@ -44,6 +44,38 @@ claude mcp add --scope user nook -- ~/.nook/nook-mcp --agent claude-code
 codex mcp add nook -- ~/.nook/nook-mcp --agent codex
 ```
 
+### Android devices
+
+The device tools also take Android devices when the Android SDK is installed (`ANDROID_HOME`, or Android Studio's folder):
+`device_list` shows what `adb` sees and the virtual devices that can start, under ids that begin with `android`.
+`device_screenshot` takes a picture through `adb`, and the agent drives the device with `adb` in its own shell. The Simulator
+page shows them below the simulators, as a picture refreshed about once a second: touching the screen from Nook is iOS only.
+
+### Scripts: the `nook` command line
+
+Nook installs `~/.nook/nook`, a Perl script that makes the same calls over the same socket. Add `~/.nook` to your `PATH` to
+type `nook`.
+
+```sh
+id=$(nook start . "Find why the tests are slow")   # waits for your approval in Nook
+nook send "$id" "Now fix it" --wait                # exit 0 done, 1 failed, 2 waits for you, 3 Nook is not running
+nook read "$id"
+nook list
+```
+
+A script is always an outside caller: it never takes the rights of a session that works in the same folder, so starting and
+messaging sessions wait for your approval, and a session it starts asks you before it acts. `nook tools` and
+`nook call <tool> <json>` reach every other tool under the same rules. Only your own user can open the socket; there is no
+remote access to it.
+
+### Sessions on another machine
+
+A session over SSH gets Nook's browser, `render_page` and read access to its own session (`RemoteBridge`). Nook copies `nook-mcp`
+to `~/.nook` there (it needs Perl with `JSON::PP`) and ssh forwards a socket in that folder to `bridge-remote.sock` on the Mac.
+That socket is separate from `bridge.sock`: a call on it needs a token made for that run, works only while that session is at work, and every tool that acts on the Mac
+(terminals, pull requests, devices, delegation, connectors, secrets) and every other session is refused, because whoever controls that machine controls
+what comes through. `localhost` in the browser is the Mac. Without Perl the session simply runs without these tools.
+
 ## Available MCP Tools
 
 | Tool | Description | Policy |
@@ -57,6 +89,7 @@ codex mcp add nook -- ~/.nook/nook-mcp --agent codex
 | `browser_read` | Returns page title, URL, visible text, and console errors/warnings since page load. | Immediate |
 | `browser_screenshot` | Captures a JPEG screenshot of the page for layout verification. | Immediate |
 | `pull_request_create` | Pushes the branch and opens a pull request via your connected GitHub account (or opens the GitHub compare URL). | Requires approval, unless the session runs with **Allow everything** |
+| `session_start` | Starts a new session in a folder, with rights that ask you. Used by `nook start`. | Requires approval, unless the session runs with full rights |
 | `orchestrator_capabilities` | Lists which agents Nook can spawn for delegated subtasks, available models, and current session permissions. | Immediate |
 | `delegate_task` | Delegates a focused subtask (`research`, `review`, `design`, `test`, `implementation`) to a child agent session visible beside the parent. | Requires approval (unless session has full access); disabled in Plan mode |
 | `task_status` | Returns status (`queued`, `running`, `waiting`, `completed`, `failed`, `cancelled`) and latest output of a delegated task. | Immediate |
@@ -75,7 +108,7 @@ codex mcp add nook -- ~/.nook/nook-mcp --agent codex
 | `schedule_task` | Proposes a scheduled task: every N minutes or at a time on chosen weekdays, in a new session in a folder or as a message to this session. Rights are `ask` or `acceptEdits`, never `bypass` and never more than the caller. Deduplicated by `client_request_id`. | Always requires approval; disabled in Plan mode |
 | `update_scheduled_task` | Proposes a change to a task's title, prompt, schedule, rights or on/off state; the card shows the task after the change and before it. | Always requires approval; disabled in Plan mode |
 | `run_scheduled_task_now` | Runs a task once with its own prompt; returns `started`, `busy` or `not available`. Deduplicated by `client_request_id`. | Always requires approval; disabled in Plan mode |
-| `watch_pull_request` | Turns on the session's existing pull request watch (GitHub / GitLab, see `WorkspaceManager.watchPullRequest`): news goes to the timeline, and failed CI, a merge conflict with the base branch (also one already there when the watch starts), reviews and comments wake the agent with a message. Kept with the session across restarts; `stop: true` ends it. Sessions Nook started only. | Immediate (disabled in Plan mode) |
+| `watch_pull_request` | Turns on the session's existing pull request watch (GitHub / GitLab, see `WorkspaceManager.watchPullRequest`): news goes to the timeline, and failed CI, a merge conflict with the base branch (also one already there when the watch starts), reviews and comments wake the agent with a message. While the agent works that message waits in the queue; failed checks or a conflict solved in the meantime, or a merge or close, take it out again (`PullRequestNews.stillNeeded`), also in a last look just before it goes out. Kept with the session across restarts; `stop: true` ends it. Sessions Nook started only. | Immediate (disabled in Plan mode) |
 | `get_pull_request_status` | Reads state, CI with failed checks, each reviewer's verdict, the comment count and whether an open one has merge conflicts, via the same snapshot as the watch. Review and comment texts are left out. | Immediate |
 | `request_secret` | Asks for a named secret. The card shows the name and the agent's reason; on **Allow** Nook returns the value kept under `agent-secret.<name>` in its keychain (`SecretStore`), or asks you to paste one (optionally keeping it). The value goes only to the calling session, between `<nook-secret>` markers that Nook's timeline replaces before storing or showing tool output; the audit entry records the name only. | Always requires approval; disabled in Plan mode |
 | `nook_tools` | Lists Nook's own tools, the same set Nook Chat uses: messages in every chat app (`chat_inbox`, `chat_send`, `whatsapp_send`…), music (`search_music`, `play_music`, `media_control`), calendar, reminders, notes, mail drafts, contacts, connectors and the user's agent sessions. One line per tool grouped by source; `tool` gives its full description and argument schema, `query` filters. Sources the user keeps on this Mac (Settings › Privacy) are left out. | Immediate |
@@ -111,6 +144,7 @@ Delegation rules are implemented in `Delegation.swift` (pure Foundation, tested 
 - The socket directory is `0700` and `bridge.sock` is `0600`, with peer UID verification on every connection (`UnixSocketServer`).
 - Approval cards display the **entire** command or pull request details (repository, head → base branch, title, body) along with `CommandRisk` warnings.
 - Agents cannot send arbitrary keystrokes to an existing interactive shell; they can only start tracked commands via `terminal_run` and read output from terminals in their own project directory.
+- A session on another machine reaches only the tools `RemoteBridge.allows` lists, on a socket of its own, with a token per run.
 - Agents can only reach secrets kept under the `agent-secret.` prefix, never Nook's own keys and tokens. The agent's own transcript (outside Nook) does contain a secret it was given.
 - A retried call with the same `client_request_id` gets the first answer; a retry while the first call still waits for you gets no second approval card.
-- The workspace browser uses an ephemeral data store (no persistent cookies or disk storage across app launches) and blocks `file://` and custom URL schemes.
+- The workspace browser uses an ephemeral data store (no persistent cookies or disk storage across app launches) and blocks `file://` and custom URL schemes. A project can opt in to keeping sign-ins (Settings › Workspace, per project, `BrowserProfiles`): it then gets a persistent store of its own that no other project reaches, and its agents can use those sign-ins. Turning it off deletes that store's data.

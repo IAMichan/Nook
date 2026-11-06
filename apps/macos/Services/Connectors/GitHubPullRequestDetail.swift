@@ -81,11 +81,13 @@ enum GitHubPullRequestDetail {
         async let timeline = all("/issues/\(number)/timeline", count: nil, limit: 5)
         async let threads = reviewThreads(repo: repo, number: number, token: token)
         async let issues = linkedIssues(repo: repo, number: number, token: token)
+        async let issue = (try? await get("/issues/\(number)")) as? [String: Any]
         let commits = PullRequestDetailParser.commits(await commitList)
         let events = PullRequestDetailParser.events(reviews: await reviews, comments: await comments, lineComments: await lineComments,
                                                     timeline: await timeline, commits: commits)
         return PullRequestActivity(events: PullRequestDetailParser.applying(await threads, to: events), commits: commits,
                                    files: PullRequestDetailParser.files(await fileList), issues: await issues)
+            .withReactions(PullRequestDetailParser.reactions((await issue)?["reactions"]))
     }
 
     /// Which threads on lines are resolved or outdated, from GraphQL. Best effort: without it every thread shows open.
@@ -269,7 +271,8 @@ enum GitHubPullRequestDetail {
     }
 
     /// Sends one action from the page (a review, a comment, close, reopen, …; see PullRequestAction), only after your
-    /// click. Throws GitHub's refusal in words. Returns what the answer says the pull request is now, if it does.
+    /// click. Throws GitHub's refusal in words. Returns what the answer says the pull request is now, if it does, and the
+    /// link of what the action made, for a revert.
     @discardableResult
     static func perform(_ action: PullRequestAction, repo: String, number: Int, token: String) async throws -> PullRequestActionReply? {
         guard let spec = action.request(repo: repo, number: number) else { throw NookError("Nothing to send.") }
@@ -290,6 +293,97 @@ enum GitHubPullRequestDetail {
         }
         // GraphQL answers a refusal with 200 and an `errors` list.
         if spec.path == "/graphql", let message = PullRequestAction.graphQLError(object) { throw NookError(message) }
-        return action.reply(object)
+        var reply = action.reply(object)
+        if let made = PullRequestAction.revertURL(object) {
+            reply = reply ?? PullRequestActionReply()
+            reply?.made = made
+        }
+        return reply
+    }
+
+    /// How many commits the branch is behind its base; nil when GitHub could not compare them.
+    static func behindBy(_ detail: PullRequestDetail, token: String) async -> Int? {
+        let head = (detail.headOwner.map { $0 + ":" } ?? "") + detail.headBranch
+        guard let base = detail.baseBranch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let tip = head.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return nil }
+        let answer = (try? await getter(repo: detail.repo, token: token)("/compare/\(base)...\(tip)")) as? [String: Any]
+        return answer?["behind_by"] as? Int
+    }
+
+    /// The stack GitHub keeps this pull request in; nil when there is none, or GitHub offers no stacks here (404).
+    static func nativeStack(repo: String, number: Int, token: String) async -> PullRequestNativeStack? {
+        let get = getter(repo: repo, token: token)
+        guard let found = PullRequestNativeStack.parse(try? await get("/stacks?pull_request=\(number)")) else { return nil }
+        return PullRequestNativeStack.parse(try? await get("/stacks/\(found.number)")) ?? found
+    }
+
+    /// Merges a layer of GitHub's stack, and the ones under it, at the head that was shown. GitHub works on it in the
+    /// background, so this asks until it says how it went, for at most five minutes.
+    static func mergeNativeStack(repo: String, number: Int, sha: String, method: PullRequestMergeMethod, token: String) async throws {
+        guard let url = URL(string: "https://api.github.com/repos/\(repo)/pulls/\(number)/merge-async") else { throw NookError("Invalid GitHub address.") }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["merge_method": method.rawValue, "merge_action": "default", "sha": sha])
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        for (key, value) in headers(token) { request.setValue(value, forHTTPHeaderField: key) }
+        request.setValue("Nook", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await ConnectorHTTP.patientSession.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        var answer = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        guard (200..<300).contains(status) else { throw NookError(PullRequestAction.error(status: status, object: answer)) }
+        let deadline = Date().addingTimeInterval(300)
+        var attempt = 0.0
+        while (answer["status"] as? String) == "pending", Date() < deadline {
+            guard let uuid = (answer["details"] as? [String: Any])?["uuid"] as? String else { break }
+            try await Task.sleep(nanoseconds: UInt64(min(pow(2, attempt), 10) * 1_000_000_000))
+            attempt += 1
+            answer = (try await getter(repo: repo, token: token)("/pulls/\(number)/merge-async/\(uuid)") as? [String: Any]) ?? [:]
+        }
+        if (answer["status"] as? String) == "failed" { throw NookError(tr("agents.pr.stack.mergeRejected")) }
+        if (answer["status"] as? String) == "pending" { throw NookError(tr("agents.pr.stack.mergePending")) }
+    }
+
+    /// The files one commit changed, for the Code tab's view of a single commit.
+    static func commitFiles(repo: String, sha: String, token: String) async throws -> [PullRequestFile] {
+        let answer = try await getter(repo: repo, token: token)("/commits/\(sha)") as? [String: Any]
+        return PullRequestDetailParser.files((answer?["files"] as? [[String: Any]]) ?? [])
+    }
+
+    /// The labels of the repository with their colors, to pick from.
+    static func repositoryLabels(repo: String, token: String) async -> [(name: String, color: String)] {
+        let answer = ((try? await getter(repo: repo, token: token)("/labels?per_page=100")) as? [[String: Any]]) ?? []
+        return answer.compactMap { label in (label["name"] as? String).map { ($0, (label["color"] as? String) ?? "") } }
+    }
+
+    /// Adds your emoji to a comment, or takes it off when it is there already. REST has no toggle, so it looks first.
+    static func toggleReaction(_ content: String, on event: PullRequestEvent, repo: String, login: String, token: String) async throws {
+        guard let path = event.reactionPath, let list = URL(string: "https://api.github.com/repos/\(repo)/" + path) else { return }
+        let existing = (try? await ConnectorHTTP.json(URL(string: list.absoluteString + "?per_page=100")!, headers: headers(token))) as? [[String: Any]] ?? []
+        let mine = existing.first { ($0["content"] as? String) == content && (($0["user"] as? [String: Any])?["login"] as? String)?.lowercased() == login.lowercased() }
+        var request = URLRequest(url: list)
+        if let id = mine?["id"] as? Int {
+            request = URLRequest(url: list.appendingPathComponent(String(id)))
+            request.httpMethod = "DELETE"
+        } else {
+            request.httpMethod = "POST"
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["content": content])
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        for (key, value) in headers(token) { request.setValue(value, forHTTPHeaderField: key) }
+        request.setValue("Nook", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await ConnectorHTTP.patientSession.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+            throw NookError(PullRequestAction.error(status: status, object: object))
+        }
+    }
+}
+
+extension PullRequestActivity {
+    func withReactions(_ reactions: [PullRequestReaction]) -> PullRequestActivity {
+        var activity = self
+        activity.reactions = reactions
+        return activity
     }
 }

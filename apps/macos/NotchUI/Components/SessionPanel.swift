@@ -178,11 +178,9 @@ struct SessionPanel: View {
     private var pullRequestRows: some View {
         let links = pullRequests
         ForEach(allPullRequests ? links[...] : links.prefix(Self.shownPullRequests)) { link in
-            PanelRow(icon: AnyView(PullRequestStateIcon(glyph: glyph(link))),
-                     title: link.title ?? link.repository,
-                     trailing: AnyView(Text(verbatim: "#\(link.number)").font(NookTheme.mono(11))),
-                     help: link.url,
-                     action: { if let url = URL(string: link.url) { _ = app.openPullRequestLink(url, beside: true) } })
+            SessionPullRequestRow(link: link, glyph: glyph(link), runID: runID, directory: directory) {
+                if let url = URL(string: link.url) { _ = app.openPullRequestLink(url, beside: true) }
+            }
         }
         if links.count > Self.shownPullRequests {
             PanelRow(icon: symbol(allPullRequests ? "chevron.up" : "chevron.down"),

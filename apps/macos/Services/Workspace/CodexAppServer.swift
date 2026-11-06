@@ -195,6 +195,14 @@ enum CodexRPC {
     }
 
     /// `thread/rollback`: drops the thread's last `numTurns` turns from its history (not the files; Nook restores those).
+    /// `thread/goal/set`: a new objective, a new status, or both.
+    static func goalParams(threadID: String, objective: String? = nil, status: SessionGoal.Status? = nil) -> [String: Any] {
+        var params: [String: Any] = ["threadId": threadID]
+        if let objective { params["objective"] = objective }
+        if let status { params["status"] = status.rawValue }
+        return params
+    }
+
     static func rollbackParams(threadID: String, numTurns: Int) -> [String: Any] {
         ["threadId": threadID, "numTurns": numTurns]
     }
@@ -281,6 +289,10 @@ enum CodexAppServerMapper {
             return [.notice("compact")]
         case "turn/plan/updated":
             return RunTasks.codex(params).map { [.tasks($0)] } ?? []
+        case "thread/goal/updated":
+            return SessionGoals.codex(params["goal"] as? [String: Any]).map { [.goal($0, thread: params["threadId"] as? String)] } ?? []
+        case "thread/goal/cleared":
+            return [.goal(.cleared, thread: params["threadId"] as? String)]
         case "account/rateLimits/updated":
             return [.rateLimits(JSONBox(params))]
         default:

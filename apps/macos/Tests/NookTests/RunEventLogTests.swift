@@ -311,10 +311,10 @@ final class RunEventLogTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: folder) }
         let log = try XCTUnwrap(RunEventLog(url: folder.appendingPathComponent("runs.sqlite")))
         let id = UUID()
-        XCTAssertNil(log.lastSeq(id))
+        XCTAssertNil(log.lastSequence(id))
         _ = log.append(UUID(), .event, Data("{}".utf8))
         let seq = log.append(id, .event, Data("{}".utf8))
-        XCTAssertEqual(log.lastSeq(id), seq)
+        XCTAssertEqual(log.lastSequence(id), seq)
     }
 
     func testEvictionKeepsWhatIsInUseAndGoesByCountAndSize() {

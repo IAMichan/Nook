@@ -282,9 +282,11 @@ extension AppModel {
         workspace.openBuiltInTerminal = { [weak self] folder in self?.openTerminal(in: folder) }
         // The git button finds and opens pull requests through the GitHub connector, when it is set up.
         // GitHub, or a GitLab merge request (with its token from Settings).
+        ForgeEnvironment.install()
         workspace.pullRequestSnapshot = { url in
             if GitHubPullRequests.parse(url) != nil { return await GitHubPullRequests.snapshot(url: url) }
-            return await GitLabMergeRequests.snapshot(url: url)
+            if url.absoluteString.contains("/-/merge_requests/") { return await GitLabMergeRequests.snapshot(url: url) }
+            return await PullRequestForges.snapshot(url: url)
         }
         // The tray above the composer reads its pull request with the same accounts, into the one shared status.
         PullRequestStatusStore.shared.fetch = workspace.pullRequestSnapshot
@@ -304,6 +306,27 @@ extension AppModel {
         // Project scripts run in a terminal that belongs to the session's folder, without taking you away from where you are.
         workspace.runScript = { folder, command, title in _ = TerminalStore.shared.open(in: folder, command: command, title: title) }
         workspace.openTerminalFolders = { TerminalStore.shared.sessions.map(\.directory) }
+        BrowserProfiles.project = { [weak self] key in
+            guard let self else { return nil }
+            let settings = self.workspace.settings
+            let run: WorkspaceRun?
+            let path: String
+            switch key {
+            case .run(let id):
+                run = self.workspace.run(id)
+                path = run?.projectPath ?? ""
+            case .folder(let folder):
+                run = self.workspace.runs.first { WorkspacePathPolicy.normalize($0.workingDirectory) == folder }
+                path = run?.projectPath ?? folder
+            }
+            // A path on another machine is not this Mac's project, whatever its name; the owner of the setting is the identity.
+            guard run?.isRemote != true, !path.isEmpty else { return nil }
+            return settings.projectOverrides.project(containing: path) ?? path
+        }
+        BrowserProfiles.keepsSignIns = { [weak self] project in
+            self?.workspace.settings.sessionDefaults(for: project).browserSignIns ?? false
+        }
+        BrowserProfiles.sweep()
         startWorkspaceBridge()
         // Sessions a restart cut off go on, once the agents' executables are known (history loads in the background).
         Task { @MainActor [weak self] in

@@ -56,11 +56,11 @@ extension AppModel {
         ask(question)
     }
 
-    /// Select a file to attach to context (analogous to dropping onto Shelf).
+    /// Select a file or folder to attach to context (analogous to dropping onto Shelf).
     func attachFile() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
-        panel.canChooseDirectories = false
+        panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
         NSApp.activate(ignoringOtherApps: true)
@@ -121,11 +121,6 @@ extension AppModel {
     }
 
     /// Keywords and phrases indicating a query refers to on-screen content.
-    static let screenCue = try? NSRegularExpression(
-        pattern: #"\b(hier\w*|dit|deze|daar\w*|erbij|ervoor|ervan|erover|scherm|kijk mee|lees mee)\b|\ber\b.{0,25}\b(afspraak|herinnering|taak|mail|punt|agenda)\b"#,
-        options: [.caseInsensitive]
-    )
-
     private static let commonApps: [String: String] = [
         "notities": "Notes", "notes": "Notes",
         "slack": "Slack", "whatsapp": "WhatsApp",
@@ -240,18 +235,7 @@ extension AppModel {
         return false
     }
 
-    /// "deze week" or "dit jaar" names a period, not something on screen.
-    private static let periodCue = try? NSRegularExpression(
-        pattern: #"\b(dit|deze)\s+(week|weekend|maand|jaar|kwartaal|ochtend|middag|avond|nacht|keer)\b"#,
-        options: [.caseInsensitive]
-    )
-
-    static func refersToScreen(_ text: String) -> Bool {
-        guard let screenCue else { return false }
-        let range = NSRange(text.startIndex..., in: text)
-        let rest = periodCue?.stringByReplacingMatches(in: text, range: range, withTemplate: " ") ?? text
-        return screenCue.firstMatch(in: rest, range: NSRange(rest.startIndex..., in: rest)) != nil
-    }
+    static func refersToScreen(_ text: String) -> Bool { ScreenBrain.refersToScreen(text) }
 
     /// Everything the brain needs for one question. Chat answers and notch cards (looking at the screen, thinking along)
     /// are built the same way: the same source choice, the same scoped tools recorded in a ledger, the same up-front

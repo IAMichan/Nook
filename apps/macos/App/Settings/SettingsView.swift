@@ -223,7 +223,9 @@ struct SettingsView: View {
         case .sessions: WorkspaceSettingsSection(part: .sessions(tab), scope: $sessionScope)
         case .machines: RemoteMachinesSection()
         case .automation: WorkspaceSettingsSection(part: .automation, scope: $sessionScope)
-        case .pullRequests: WatchedPullRequestsSection()
+        case .pullRequests:
+            WatchedPullRequestsSection()
+            Section { ForgeHostsSection() }
         case .usage: usageSettingsSection
         case .privacy: privacySection(tab: tab)
         }

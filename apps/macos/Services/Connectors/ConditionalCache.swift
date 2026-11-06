@@ -30,14 +30,15 @@ final class ConditionalCache: @unchecked Sendable {
         self.bodyLimit = bodyLimit
     }
 
-    /// The key of a request: its address and who asks in which form, since an answer differs per account. The credential
-    /// itself stays out of it; the keys live as long as Nook runs.
+    /// The key of a request: its address and all its headers, since an answer differs per account and each forge signs in
+    /// with a header of its own. The credential itself stays out of it; the keys live as long as Nook runs.
     static func key(_ request: URLRequest) -> String? {
         guard let url = request.url?.absoluteString else { return nil }
         var who = Hasher()
-        who.combine(request.value(forHTTPHeaderField: "Authorization"))
-        who.combine(request.value(forHTTPHeaderField: "PRIVATE-TOKEN"))
-        who.combine(request.value(forHTTPHeaderField: "Accept"))
+        for (name, value) in (request.allHTTPHeaderFields ?? [:]).sorted(by: { $0.key < $1.key }) {
+            who.combine(name.lowercased())
+            who.combine(value)
+        }
         return "\(who.finalize())|\(url)"
     }
 

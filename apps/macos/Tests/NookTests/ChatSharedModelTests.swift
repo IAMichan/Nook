@@ -357,6 +357,42 @@ final class ChatSharedModelTests: XCTestCase {
         XCTAssertEqual(inbox.threads[key]?.readState, .unread(1))
     }
 
+    /// You wrote in a chat that held nothing new but whose last read in Nook is old (the rest was read on the phone):
+    /// passing that read on must not turn what you already read into news above your answer field.
+    func testAnsweringAChatReadElsewhereKeepsItRead() {
+        var inbox = ChatInbox()
+        var first = chat("Anna", id: "a", app: "telegram", [message("1", at: 100)])
+        first.unread = 1
+        inbox.merge(first)
+        let key = ChatInbox.key(app: "telegram", id: "a")
+        inbox.markRead(key, at: Date(timeIntervalSince1970: 1_100))
+        // Read on the phone: more came in, and the app counts nothing new. Nook's read mark stays where it was.
+        var onThePhone = chat("Anna", id: "a", app: "telegram", [message("1", at: 100), message("2", at: 2_000)])
+        onThePhone.unread = 0
+        inbox.merge(onThePhone)
+        XCTAssertEqual(inbox.threads[key]?.unread, 0)
+
+        // `ChatCaptureService.markRead` leaves a chat with nothing new alone, so this is the mark the app is told.
+        let through = inbox.readMark(key)
+        inbox.markReadInApp(key, at: Date(timeIntervalSince1970: 3_000), through: through)
+        XCTAssertEqual(inbox.threads[key]?.unread, 0, "nothing was new, so nothing is new now")
+        XCTAssertEqual(inbox.threads[key]?.readState, .read)
+    }
+
+    func testReadMarkOfAChatWithSomethingNewStaysAtTheRead() {
+        var inbox = ChatInbox()
+        var first = chat("Anna", id: "a", app: "telegram", [message("1", at: 100)])
+        first.unread = 1
+        inbox.merge(first)
+        let key = ChatInbox.key(app: "telegram", id: "a")
+        inbox.markRead(key, at: Date(timeIntervalSince1970: 1_100))
+        var next = chat("Anna", id: "a", app: "telegram", [message("1", at: 100), message("2", at: 2_000)])
+        next.unread = 1
+        inbox.merge(next)
+        XCTAssertEqual(inbox.threads[key]?.unread, 1)
+        XCTAssertEqual(inbox.readMark(key), Date(timeIntervalSince1970: 1_100), "what is new was not read yet")
+    }
+
     func testTwinsAreTheThreadsWithTheSameNewestMessage() {
         var inbox = ChatInbox()
         inbox.merge(chat("Jan", app: "teams", [message("x")]))
