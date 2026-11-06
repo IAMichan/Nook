@@ -298,3 +298,16 @@ struct ChatContactCard: Equatable, Sendable {
         return ["BEGIN:VCARD", "VERSION:3.0", "FN:" + safe, "TEL;TYPE=CELL:" + cleanPhone, "END:VCARD"].joined(separator: "\n")
     }
 }
+
+extension Array where Element == ChatAttachment {
+    /// The file `offset` places from this one; nil past either end.
+    func id(_ offset: Int, from id: String) -> String? {
+        guard let index = firstIndex(where: { $0.id == id }), indices.contains(index + offset) else { return nil }
+        return self[index + offset].id
+    }
+
+    /// What shows once this file is gone: the one that takes its place, else the one before it.
+    func heir(of id: String) -> String? {
+        self.id(1, from: id) ?? self.id(-1, from: id)
+    }
+}

@@ -65,6 +65,8 @@ struct ChatReplyField: View {
     private var hasExtra = false
     private var pasted: (() -> Bool)?
     private var editLast: (() -> Bool)?
+    /// Left or right in an empty field: the host may take it to walk what waits to go.
+    private var walk: ((Int) -> Bool)?
     private var tagPeople: () -> [ChatTagPerson] = { [] }
 
     init(text: Binding<String>, notice: Binding<String?>, focus: FocusState<Bool>.Binding, placeholder: String,
@@ -125,6 +127,13 @@ struct ChatReplyField: View {
     func editsLastMessage(_ edit: (() -> Bool)?) -> Self {
         var copy = self
         copy.editLast = edit
+        return copy
+    }
+
+    /// ← and → in the empty field walk what waits to go: `walk` gets the direction (false when it has nothing to walk).
+    func walksFiles(_ walk: @escaping (Int) -> Bool) -> Self {
+        var copy = self
+        copy.walk = walk
         return copy
     }
 
@@ -250,6 +259,8 @@ struct ChatReplyField: View {
                     return moveInMenu(-1)
                 }
                 .onKeyPress(.downArrow) { () -> KeyPress.Result in moveInMenu(1) }
+                .onKeyPress(.leftArrow) { () -> KeyPress.Result in walkFiles(-1) }
+                .onKeyPress(.rightArrow) { () -> KeyPress.Result in walkFiles(1) }
                 .onKeyPress(.tab) { () -> KeyPress.Result in
                     guard menu.isOpen else { return .ignored }
                     chooseSelected()
@@ -382,6 +393,12 @@ struct ChatReplyField: View {
                 return true
             },
         ]
+    }
+
+    /// With words in the field these keys move the caret.
+    private func walkFiles(_ offset: Int) -> KeyPress.Result {
+        guard text.isEmpty, walk?(offset) == true else { return .ignored }
+        return .handled
     }
 
     private func moveInMenu(_ delta: Int) -> KeyPress.Result {

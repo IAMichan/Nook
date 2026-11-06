@@ -109,6 +109,7 @@ final class ChatComposerModel: ObservableObject {
     }
 
     func remove(_ id: String) {
+        edits.removing(id, from: files)
         files.removeAll { $0.id == id }
         edits.forget(id)
     }
@@ -759,7 +760,7 @@ struct ChatComposerPanels: View {
             case .gifs: ChatGIFShelf(model: model, send: send)
             case nil: EmptyView()
             }
-            // One file shows all there is to it in the preview over the chat; more are picked here.
+            // One file shows all there is to it in the preview over the chat; more are picked and removed here.
             if model.files.count > 1 || model.drop.open {
                 ChatAttachmentTray(model: model, edits: model.edits, sends: sends)
             }
@@ -770,95 +771,115 @@ struct ChatComposerPanels: View {
     }
 }
 
-/// The files about to go, side by side: a picture of each, its name and size, what it goes as, and a cross. A click shows
-/// one in the preview over the chat (`ChatAttachmentReview`).
+/// The files about to go, as a row of thumbnails: a click shows one in the preview over the chat (`ChatAttachmentReview`),
+/// whose header says what it is and what it goes as. The arrow keys in an empty field walk the row, too.
 private struct ChatAttachmentTray: View {
     @ObservedObject var model: ChatComposerModel
     @ObservedObject var edits: ChatAttachmentEdits
     let sends: Set<ChatOutgoing.Kind>
 
     private static let slotID = "drop-slot"
-    /// A chip's 40 pt preview and its padding.
-    private static let chipHeight: CGFloat = 48
+    private static let side: CGFloat = 48
 
     var body: some View {
+        let shown = edits.shown(in: model.files)?.id
         ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    ForEach(model.files) { file in
-                        ChatAttachmentChip(file: file, kinds: file.alternatives.filter { sends.contains(ChatOutgoing.Kind($0)) },
-                                           shown: edits.shown(in: model.files)?.id == file.id,
-                                           select: { edits.select(file.id) },
-                                           change: { model.change(file.id, to: $0) }, remove: { model.remove(file.id) })
+            GeometryReader { room in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: NookTheme.Spacing.sm) {
+                        ForEach(model.files) { file in
+                            ChatAttachmentThumb(file: file, side: Self.side, shown: shown == file.id,
+                                                select: { edits.select(file.id) }, remove: { model.remove(file.id) })
+                                .id(file.id)
+                        }
+                        if model.drop.hovering {
+                            ComposerDropSlot(side: Self.side).id(Self.slotID)
+                        }
                     }
-                    if model.drop.hovering {
-                        ComposerDropSlot(side: Self.chipHeight).id(Self.slotID)
-                    }
+                    .padding(.horizontal, NookTheme.Spacing.xs)
+                    .frame(minWidth: room.size.width, minHeight: Self.side)
                 }
-                .frame(minHeight: Self.chipHeight)
-                .padding(NookTheme.Spacing.xs)
             }
-            // With a full row the empty place would be out of sight.
+            .frame(height: Self.side)
+            // With a full row the empty place, or the file the arrow keys went to, would be out of sight.
             .onChange(of: model.drop.hovering) { _, shown in
                 if shown { proxy.scrollTo(Self.slotID, anchor: .trailing) }
             }
+            .onChange(of: shown) { _, shown in
+                if let shown { withAnimation(NookTheme.reveal) { proxy.scrollTo(shown) } }
+            }
         }
-        .panelCard()
         .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 }
 
-private struct ChatAttachmentChip: View {
+/// One file in the row. On the file already shown the pointer brings up a bin; the same spot picks any other file. A file that
+/// just came to show keeps its bin back for a moment, so the second click of a double click, or a click too many after a
+/// removal, does not throw it away.
+private struct ChatAttachmentThumb: View {
     let file: ChatAttachment
-    let kinds: [ChatMedia.Kind]
+    let side: CGFloat
     /// This is the file the preview shows.
     let shown: Bool
     let select: () -> Void
-    let change: (ChatMedia.Kind) -> Void
     let remove: () -> Void
     @State private var thumbnail: NSImage?
+    @State private var hovering = false
+    @State private var binReady = false
+
+    private var bin: Bool { shown && hovering && binReady }
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous) }
 
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
-            Button(action: select) {
-                preview
-                    .frame(width: 40, height: 40)
-                    .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous))
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(file.name)
-            .accessibilityLabel(file.name)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(file.name)
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(NookTheme.paper)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: 150, alignment: .leading)
-                HStack(spacing: NookTheme.Spacing.xs) {
-                    ChatAttachmentKindMenu(file: file, kinds: kinds, change: change)
-                    Text(ChatAttachment.size(file.bytes))
-                        .font(NookTheme.TextStyle.caption)
-                        .foregroundStyle(NookTheme.textTertiary)
+        Button(action: bin ? remove : select) {
+            preview
+                .frame(width: side, height: side)
+                .overlay {
+                    if bin {
+                        ZStack {
+                            NookTheme.ink.opacity(0.6)
+                            Image(systemName: "trash")
+                                .font(NookTheme.font(16, .medium))
+                                .foregroundStyle(NookTheme.paper)
+                        }
+                        .transition(.opacity)
+                    }
                 }
-            }
-            ToolbarIconButton("xmark", tr("chat.compose.remove"), height: 22, width: 22, remove)
+                .clipShape(shape)
+                .overlay { shape.strokeBorder(shown ? NookTheme.iris : .clear, lineWidth: 1.5) }
+                .contentShape(shape)
         }
-        .padding(NookTheme.Spacing.xs)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.smoke))
-        .overlay {
-            if shown {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                    .strokeBorder(NookTheme.iris, lineWidth: 1.5)
-            }
-        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: bin)
+        .help(bin ? tr("chat.compose.remove") : file.name)
+        .contextMenu { Button(tr("chat.compose.remove"), role: .destructive, action: remove) }
+        .accessibilityLabel(file.name)
+        .accessibilityAddTraits(shown ? .isSelected : [])
+        .accessibilityAction(named: tr("chat.compose.remove"), remove)
         .task(id: file.path) { thumbnail = await ChatAttachmentThumbnail.make(file) }
+        .task(id: shown) {
+            binReady = false
+            guard shown else { return }
+            try? await Task.sleep(for: .seconds(NSEvent.doubleClickInterval))
+            if !Task.isCancelled { binReady = true }
+        }
     }
 
     @ViewBuilder private var preview: some View {
         if let thumbnail {
             Image(nsImage: thumbnail).resizable().interpolation(.high).scaledToFill()
+                .overlay(alignment: .bottomLeading) {
+                    // A still of a video looks like a photo without this.
+                    if file.kind == .video || file.kind == .gif {
+                        Image(systemName: ChatAttachmentThumbnail.symbol(file.kind))
+                            .font(NookTheme.font(10, .semibold))
+                            .foregroundStyle(NookTheme.paper)
+                            .padding(NookTheme.Spacing.xxs)
+                            .background(NookTheme.ink.opacity(0.6), in: shape)
+                            .padding(NookTheme.Spacing.xxs)
+                    }
+                }
         } else {
             Image(systemName: ChatAttachmentThumbnail.symbol(file.kind))
                 .font(NookTheme.font(16, .medium))
