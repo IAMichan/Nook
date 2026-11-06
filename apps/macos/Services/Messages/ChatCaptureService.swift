@@ -741,7 +741,7 @@ final class ChatCaptureService: ObservableObject {
 
     /// Until when the chat counts as read in Nook now: what "Mark as read in <app>" tells the app, taken before it goes.
     func readMark(_ id: String) -> Date? {
-        inbox.threads[id]?.readInNook
+        inbox.readMark(id)
     }
 
     /// When the chat was marked unread by hand, while it still is.
