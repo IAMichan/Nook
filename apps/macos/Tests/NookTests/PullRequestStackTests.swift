@@ -151,3 +151,42 @@ final class PullRequestStackTests: XCTestCase {
         XCTAssertEqual(TerminalLinks.extract("it's fine, isn't it").map(\.text), [])
     }
 }
+
+final class PullRequestActionReplyTests: XCTestCase {
+    func testAPatchAnswerSaysWhatThePullRequestIsNow() {
+        let answer: [String: Any] = ["state": "closed", "merged": false, "draft": false, "title": "New", "body": "Text",
+                                     "base": ["ref": "develop"]]
+        XCTAssertEqual(PullRequestAction.close.reply(answer),
+                       PullRequestActionReply(state: .closed, title: "New", body: "Text", baseBranch: "develop"))
+        XCTAssertEqual(PullRequestAction.reopen.reply(["state": "open", "draft": true])?.state, .draft)
+        XCTAssertEqual(PullRequestAction.reopen.reply(["state": "open"])?.state, .open)
+        XCTAssertEqual(PullRequestAction.changeBase("x").reply(["state": "closed", "merged_at": "2026-11-06T10:00:00Z"])?.state, .merged)
+    }
+
+    func testAnAnswerWithoutTheStateSaysNothing() {
+        XCTAssertNil(PullRequestAction.close.reply(["message": "?"]))
+    }
+
+    func testActionsWithoutAPullRequestInTheirAnswerAreReadInstead() {
+        XCTAssertNil(PullRequestAction.comment("x").reply(["state": "open"]))
+        XCTAssertNil(PullRequestAction.review(.approve, body: "").reply(["state": "APPROVED"]))
+        XCTAssertNil(PullRequestAction.addLabels(["a"]).reply([:]))
+    }
+
+    func testDraftTogglesKnowTheirOutcome() {
+        XCTAssertEqual(PullRequestAction.markReady(nodeID: "n").reply([:])?.state, .open)
+        XCTAssertEqual(PullRequestAction.markDraft(nodeID: "n").reply([:])?.state, .draft)
+    }
+
+    func testOnlyAReviewNeedsTheListAgain() {
+        XCTAssertTrue(PullRequestAction.review(.approve, body: "").needsListRead)
+        XCTAssertFalse(PullRequestAction.close.needsListRead)
+        XCTAssertFalse(PullRequestAction.comment("x").needsListRead)
+    }
+
+    func testLinksKnowEveryState() {
+        XCTAssertEqual(PullRequestActionReply(state: .draft).linkState, .draft)
+        XCTAssertEqual(PullRequestActionReply(state: .closed).linkState, .closed)
+        XCTAssertNil(PullRequestActionReply(title: "x").linkState)
+    }
+}

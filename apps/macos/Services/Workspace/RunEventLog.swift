@@ -50,10 +50,17 @@ final class RunEventLog {
     ]
 
     /// Opens (or creates) the log. Nil when the file cannot be opened as a database.
-    init?(url: URL) {
-        guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else {
+    /// - Parameter readOnly: a second connection to a log that exists, only for reading. With WAL it sees the last commit
+    ///   and never waits for a write, nor a write for it.
+    init?(url: URL, readOnly: Bool = false) {
+        let flags = (readOnly ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE) | SQLITE_OPEN_FULLMUTEX
+        guard sqlite3_open_v2(url.path, &db, flags, nil) == SQLITE_OK else {
             sqlite3_close(db)
             return nil
+        }
+        if readOnly {
+            sqlite3_busy_timeout(db, 2_000)
+            return
         }
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         sqlite3_busy_timeout(db, 2_000)
@@ -120,14 +127,19 @@ final class RunEventLog {
     }
 
     /// A session's rows, oldest first.
-    func rows(_ runID: UUID) -> [Row] {
+    func rows(_ runID: UUID) -> [Row] { readRows(runID) ?? [] }
+
+    /// A session's rows, oldest first; nil when the read failed halfway, which is not the same as a short timeline.
+    func readRows(_ runID: UUID) -> [Row]? {
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         let sql = "SELECT seq, kind, payload_json, at FROM run_events WHERE run_id = ? ORDER BY seq ASC"
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
         sqlite3_bind_text(stmt, 1, runID.uuidString, -1, transient)
         var result: [Row] = []
-        while sqlite3_step(stmt) == SQLITE_ROW {
+        var step = sqlite3_step(stmt)
+        while step == SQLITE_ROW {
+            defer { step = sqlite3_step(stmt) }
             // A kind from a newer version is skipped, never guessed at.
             guard let kindText = sqlite3_column_text(stmt, 1), let kind = Kind(rawValue: String(cString: kindText)) else { continue }
             let length = Int(sqlite3_column_bytes(stmt, 2))
@@ -135,7 +147,7 @@ final class RunEventLog {
             result.append(Row(seq: sqlite3_column_int64(stmt, 0), runID: runID, kind: kind, payload: payload,
                               at: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 3))))
         }
-        return result
+        return step == SQLITE_DONE ? result : nil
     }
 
     /// The sequence number of a session's newest row.

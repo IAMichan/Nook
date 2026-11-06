@@ -171,4 +171,19 @@ final class UsageReportTests: XCTestCase {
         store.saveRunsAsync([TestData.run(status: .completed)]) { failed.fulfill() }
         wait(for: [failed], timeout: 5)
     }
+
+    func testAChangeToAnyPartOfAnEventIsSaved() throws {
+        let folder = URL(fileURLWithPath: try TestData.tempFolder(), isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = RunStore(directory: folder)
+        let id = UUID()
+        var event = RunEvent(kind: .user, text: "hello")
+        try store.saveEvents(id, [event])
+        event.rolledBack = true
+        event.source = "transcript-1"
+        try store.saveEvents(id, [event])
+        let read = RunStore(directory: folder).loadEvents(id).first
+        XCTAssertEqual(read?.rolledBack, true)
+        XCTAssertEqual(read?.source, "transcript-1")
+    }
 }

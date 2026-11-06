@@ -95,7 +95,7 @@ struct ForgeHTTP: Sendable {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        let (data, response) = try await ForgeEnvironment.session.data(for: request)
+        let (data, response) = try await ConditionalFetch.data(for: request, session: ForgeEnvironment.session)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else { throw PullRequestForgeError.refused(Self.refusal(name, status: status, data: data)) }
         return data

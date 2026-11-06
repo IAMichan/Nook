@@ -496,6 +496,43 @@ final class PullRequestStore: ObservableObject {
         if updated != accounts { accounts = updated }
     }
 
+    /// GitHub's answer to an action said what a pull request is now: its rows show it at once.
+    func apply(_ reply: PullRequestActionReply, to id: String) {
+        func applied(_ items: [PullRequestItem]) -> [PullRequestItem] {
+            items.map { item in
+                guard item.id == id else { return item }
+                var item = item
+                if let title = reply.title { item.title = title }
+                if let base = reply.baseBranch { item.baseBranch = base }
+                switch reply.state {
+                case .open: item.state = .open; item.draft = false
+                case .draft: item.state = .open; item.draft = true
+                case .merged: item.state = .merged
+                case .closed: item.state = .closed
+                case nil: break
+                }
+                return item
+            }
+        }
+        let updated = accounts.map { account -> AccountPullRequests in
+            var account = account
+            account.mine = applied(account.mine)
+            account.reviews = applied(account.reviews)
+            account.watched = applied(account.watched)
+            return account
+        }
+        if updated != accounts { accounts = updated }
+        rereadAfterAction()
+    }
+
+    /// An action went through: the next look refreshes, and a read that runs now began before it, so it goes again.
+    /// Otherwise it would put back the row as it was, and that row can then drop out of the list.
+    func rereadAfterAction() {
+        markStale()
+        if loading { again = true }
+        if background != nil { backgroundAgain = true }
+    }
+
     /// Something changed (a turn ended, a pull request opened): the next look refreshes.
     func markStale() { fetchedAt = .distantPast }
 

@@ -2325,7 +2325,7 @@ enum GitHubPullRequests {
             let base = "https://api.github.com/repos/\(repo)"
             func get(_ path: String) async -> Any? {
                 guard let url = URL(string: base + path) else { return nil }
-                return try? await ConnectorHTTP.json(url, headers: auth)
+                return try? await ConnectorHTTP.json(url, headers: auth, conditional: true)
             }
             guard let pull = await get("/pulls/\(number)") as? [String: Any] else { continue }
             let merged = (pull["merged"] as? Bool) ?? false
@@ -2441,7 +2441,7 @@ enum GitHubPullRequests {
             request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
             request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
             request.setValue("Nook", forHTTPHeaderField: "User-Agent")
-            guard let (data, response) = try? await ConnectorHTTP.session.data(for: request),
+            guard let (data, response) = try? await ConditionalFetch.data(for: request, session: ConnectorHTTP.session),
                   (response as? HTTPURLResponse)?.statusCode == 200,
                   let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { continue }
             return (list.first?["html_url"] as? String).flatMap(URL.init(string:))
@@ -2519,7 +2519,7 @@ enum GitHubPullRequests {
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         request.setValue("Nook", forHTTPHeaderField: "User-Agent")
-        guard let (data, response) = try? await ConnectorHTTP.session.data(for: request),
+        guard let (data, response) = try? await ConditionalFetch.data(for: request, session: ConnectorHTTP.session),
               (response as? HTTPURLResponse)?.statusCode == 200,
               let pull = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return false }
         return PullRequestMergeability.githubConflicted(pull)

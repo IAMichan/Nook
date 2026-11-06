@@ -8,6 +8,35 @@ import Foundation
 /// maintainers' edits, and turn auto-merge on or off. Each is one GitHub call (REST, or GraphQL for what only it offers),
 /// asked after your own click, and written to the action log. Foundation only, so
 /// the requests are tested on their own.
+/// What GitHub's answer to an action says the pull request is now. Applied at once, in every place that shows it, so no
+/// list has to be read again to learn what the answer already said. Nil fields are what this answer does not tell.
+struct PullRequestActionReply: Equatable, Sendable {
+    var state: PullRequestDetail.State?
+    var title: String?
+    var body: String?
+    var baseBranch: String?
+    /// The link of what the action made: the pull request a revert opened.
+    var made: String?
+
+    func apply(to detail: inout PullRequestDetail) {
+        if let state { detail.state = state }
+        if let title { detail.title = title }
+        if let body { detail.body = body }
+        if let baseBranch { detail.baseBranch = baseBranch }
+    }
+
+    /// As a session's link knows it.
+    var linkState: PullRequestState? {
+        switch state {
+        case .open: return .open
+        case .draft: return .draft
+        case .merged: return .merged
+        case .closed: return .closed
+        case nil: return nil
+        }
+    }
+}
+
 enum PullRequestAction: Equatable, Sendable {
     enum Verdict: String, CaseIterable, Sendable {
         case comment, approve, requestChanges
@@ -209,6 +238,36 @@ enum PullRequestAction: Equatable, Sendable {
     static func revertURL(_ object: [String: Any]) -> String? {
         let data = (object["data"] as? [String: Any])?["revertPullRequest"] as? [String: Any]
         return (data?["revertPullRequest"] as? [String: Any])?["url"] as? String
+    }
+
+    /// What GitHub's answer says the pull request is now. Nil for an action whose answer does not say (a comment, a review,
+    /// labels): the pull request is read for those.
+    func reply(_ object: [String: Any]) -> PullRequestActionReply? {
+        switch self {
+        case .close, .reopen, .edit, .changeBase:
+            // Each of these is a PATCH of the pull request, answered with all of it.
+            guard let state = object["state"] as? String else { return nil }
+            let merged = (object["merged"] as? Bool) == true || (object["merged_at"] as? String) != nil
+            return PullRequestActionReply(state: merged ? .merged : state != "open" ? .closed : (object["draft"] as? Bool) == true ? .draft : .open,
+                                          title: object["title"] as? String,
+                                          body: object["body"] as? String,
+                                          baseBranch: (object["base"] as? [String: Any])?["ref"] as? String)
+        case .markReady: return PullRequestActionReply(state: .open)
+        case .markDraft: return PullRequestActionReply(state: .draft)
+        case .review, .comment, .requestReviewers, .updateBranch, .addLabels, .removeLabel, .approveWorkflow,
+             .reviewWithComments, .reply, .setThreadResolved, .editComment, .rebaseBranch, .deleteBranch, .revert,
+             .setMaintainerEdits, .enableAutoMerge, .disableAutoMerge:
+            return nil
+        }
+    }
+
+    /// Whether the list has to be read again for this: a page shows the rest in its row (`PullRequestStore.update`), but
+    /// what the reviews decided comes only with the list.
+    var needsListRead: Bool {
+        switch self {
+        case .review, .reviewWithComments: return true
+        default: return false
+        }
     }
 
     /// The tool name in the action log, the same names as the brain's GitHub tools.

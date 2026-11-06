@@ -393,6 +393,10 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
   `ChatMedia.maxBytes`, not downloaded yet) stays a name to open in Mail, and the chat list does not show attachments.
   Scrolling back past the newest 60 inbox and 40 sent messages per account, and Outlook for Mac's or a web mailbox's own accounts (they
   come in by their notifications only; Nook answers them in a new mail through the Mail app) are not there yet.
+- **Conditional reads and forge lanes.** Reads of every forge go through `ConditionalFetch` (an `ETag`, so an unchanged answer
+  has no body) and one `PullRequestRound` lane per host; a forge that sends no `ETag` is simply read in full. An action's
+  answer updating every row at once (`PullRequestActionReply`) exists for GitHub only: the other forges' `perform` returns
+  no state, so their page is read again. `apps/tauri` has neither.
 - **CI logs of GitLab merge requests.** A GitHub check's steps and log open in Nook (`CICheckLogView` on the Mac,
   `CheckLog.svelte` in `apps/tauri`). A watched GitLab merge request still opens its pipelines page in the browser:
   Nook does not read GitLab job traces yet.

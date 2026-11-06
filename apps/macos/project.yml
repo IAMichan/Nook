@@ -321,6 +321,7 @@ targets:
       - path: Core/Accounts.swift
       - path: Services/Connectors/MCP/MCPClient.swift
       - path: Services/Connectors/GitHubRateLimit.swift
+      - path: Services/Connectors/ConditionalCache.swift
       - path: Services/Connectors/PullRequestGraphQL.swift
       - path: Services/Connectors/RedirectCredentials.swift
       - path: Services/Connectors/PullRequestDetail.swift

@@ -110,6 +110,18 @@ final class FolderGitModel: ObservableObject {
         refreshing = nil
     }
 
+    /// Keeps the folder current until the task that runs it ends. Nothing is read while nobody is at the Mac or its
+    /// displays sleep; the first tick back catches up.
+    func follow(agentWorking: Bool) async {
+        while !Task.isCancelled {
+            let monitor = EnergyMonitor.shared
+            if !monitor.signals.away, !monitor.signals.displayAsleep { await refresh() }
+            let seconds = FolderGitPace.interval(agentWorking: agentWorking, isRepository: isRepository,
+                                                 slowdown: monitor.plan.slowdown)
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        }
+    }
+
     private func read() async {
         if git == nil { git = await Task.detached(priority: .utility) { GitService.shared }.value }
         guard let git, !directory.isEmpty, FileManager.default.fileExists(atPath: directory) else {
@@ -254,11 +266,8 @@ struct FolderGitButton: View {
                 .toolbarGroup()
             }
         }
-        .task(id: "\(model.directory)|\(docked)") {
-            while !Task.isCancelled, !docked {
-                await model.refresh()
-                try? await Task.sleep(nanoseconds: 8_000_000_000)
-            }
+        .task(id: "\(model.directory)|\(docked)|\(agentWorking)") {
+            if !docked { await model.follow(agentWorking: agentWorking) }
         }
         .onChange(of: model.working) { _, working in
             if !working { onChange?() }
@@ -317,12 +326,7 @@ struct DockedSessionPanel: View {
                 .padding(.trailing, NookTheme.Spacing.sm)
         }
         .scrollIndicators(.never)
-        .task(id: model.directory) {
-            while !Task.isCancelled {
-                await model.refresh()
-                try? await Task.sleep(nanoseconds: 8_000_000_000)
-            }
-        }
+        .task(id: "\(model.directory)|\(agentWorking)") { await model.follow(agentWorking: agentWorking) }
         .onChange(of: model.working) { _, working in
             if !working, let runID { workspace.refreshGit(runID) }
         }

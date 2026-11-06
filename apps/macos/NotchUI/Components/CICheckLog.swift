@@ -197,10 +197,7 @@ struct CICheckLogView: View {
     private var liveFooter: some View {
         AdaptiveActionRow(spacing: NookTheme.Spacing.sm) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: "circle.fill")
-                    .font(NookTheme.font(6))
-                    .foregroundStyle(NookTheme.mint)
-                    .symbolEffect(.pulse, options: .repeating)
+                LayerSymbol(name: "circle.fill", size: 6, color: NookTheme.mint, motion: .pulse)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(tr("ws.ci.live")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textStrong)
                     Text(tr("ws.ci.running")).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary)

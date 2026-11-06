@@ -348,11 +348,19 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
 
     /// Before the page is read: back from where it was put away, loaded.
     private func restoreParked() async {
-        guard let parked else { return }
-        self.parked = nil
-        let by = openedBy
-        _ = await load(parked.url, by: by ?? "")
-        openedBy = by
+        if let parked {
+            self.parked = nil
+            let by = openedBy
+            _ = await load(parked.url, by: by ?? "")
+            openedBy = by
+        }
+        parkUnlessShown()
+    }
+
+    /// An agent can load and read a page nobody ever shows: it is put away a while after that last use, as a page that left
+    /// view is (`outOfSight`). Each use starts the wait again, so a page an agent is busy with stays as it is.
+    private func parkUnlessShown() {
+        if store?.isShowing(self) != true { outOfSight() }
     }
 
     /// Opens what the user typed: an address, or otherwise a search.
@@ -384,6 +392,7 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
             try? await Task.sleep(nanoseconds: 200_000_000)
             if loading { started = true } else if started || webView.url != nil && !webView.isLoading { break }
         }
+        parkUnlessShown()
         if loading { return "Still loading after \(Int(timeout)) seconds." }
         return lastError
     }

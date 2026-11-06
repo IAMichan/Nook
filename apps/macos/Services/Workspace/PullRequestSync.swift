@@ -24,7 +24,8 @@ final class PullRequestSync: ObservableObject {
     private var folderChecked: [String: Date] = [:]
     /// Keyed by `folderKey(path:branch:)` with the session's id as the path.
     private var earlierChecked: [String: Date] = [:]
-    private var running = false
+    /// The forge hosts with a round under way (`PullRequestRound`).
+    private var busyLanes: Set<String> = []
     /// Branches whose pull request is on its way outside Nook's own call (GitHub's page, the agent's own `gh`), by run id
     /// or `folderKey`: asked about every round until it turns up or the time runs out.
     private var expected: [String: Date] = [:]
@@ -150,20 +151,28 @@ final class PullRequestSync: ObservableObject {
 
     /// A GitHub pull request merged from Nook:the badges of its sessions turn merged at once, not at the next round.
     func markMerged(repository: String, number: Int) {
+        mark(repository: repository, number: number, state: .merged)
+    }
+
+    /// GitHub said what a pull request is now, in its answer to an action from Nook: the badges follow at once.
+    func mark(repository: String, number: Int, state: PullRequestState) {
         func settle(_ list: [PullRequestLink]) -> [PullRequestLink] {
             list.map { link in
-                guard link.host == .github, link.number == number, link.state.isOpen,
+                guard link.host == .github, link.number == number, link.state != .merged, link.state != state,
                       link.repository.lowercased() == repository.lowercased() else { return link }
                 var link = link
-                link.state = .merged
+                link.state = state
                 return link
             }
         }
-        links = links.mapValues(settle)
-        folderLinks = folderLinks.mapValues(settle)
-        earlier = earlier.mapValues(settle)
-        PullRequestStatusStore.shared.record(key: PullRequestStatusStore.key(repo: repository, number: number), glyph: .merged, checks: nil)
-        save()
+        let next = (links.mapValues(settle), folderLinks.mapValues(settle), earlier.mapValues(settle))
+        let changed = next.0 != links || next.1 != folderLinks || next.2 != earlier
+        if changed { (links, folderLinks, earlier) = next }
+        // An open pull request that conflicts still does: an edit's answer says nothing about that.
+        let key = PullRequestStatusStore.key(repo: repository, number: number)
+        let conflicted = state.isOpen && PullRequestStatusStore.shared.statuses[key]?.glyph == .conflict
+        PullRequestStatusStore.shared.record(key: key, glyph: PullRequestStatus.glyph(state: state, conflicted: conflicted), checks: nil)
+        if changed { save() }
     }
 
     /// A pull request for the session's branch is being made where Nook cannot see it (GitHub's page in the browser):
@@ -184,12 +193,12 @@ final class PullRequestSync: ObservableObject {
     }
 
     /// How long a branch's answer stays fresh: at once while a pull request is expected and none is known yet.
-    private func interval(_ key: String, _ known: [PullRequestLink], now: Date) -> TimeInterval {
+    private func interval(_ key: String, _ known: [PullRequestLink], now: Date, quietSince: Date? = nil) -> TimeInterval {
         if known.isEmpty, let until = expected[key] {
             if until > now { return 0 }
             expected[key] = nil
         }
-        return PullRequestSettlement.syncInterval(links: known)
+        return PullRequestSettlement.syncInterval(links: known, quietSince: quietSince, now: now)
     }
 
     /// One branch to ask about: a session Nook runs, or another agent's folder.
@@ -240,37 +249,44 @@ final class PullRequestSync: ObservableObject {
         return signals.away || signals.displayAsleep
     }
 
-    /// Asks for the branches that are due, open requests first and then the longest unasked. Sequential, so a long
-    /// list never floods GitHub.
+    /// The lane of a folder: the host of its remote, also when that was read a while ago (it hardly ever changes).
+    private func lane(_ directory: String) -> String { remotes[directory]?.repo?.hostName.lowercased() ?? "" }
+
+    /// Asks for the branches that are due, open requests first and then the longest unasked: one after the other per
+    /// forge host, so a long list never floods one and a slow one holds up only its own branches.
     private func refresh(now: Date) {
-        guard !running, let workspace else { return }
-        var due: [(job: Job, open: Bool, last: Date)] = []
+        guard let workspace else { return }
+        typealias Due = PullRequestRound.Due<Job>
+        var due: [Due] = []
         for run in workspace.runs where !run.archived {
             guard let branch = run.branch, !branch.isEmpty, !BranchPolicy.isDefaultBranch(branch, detectedDefault: run.baseBranch) else { continue }
             let known = links[run.id] ?? []
             guard PullRequestSettlement.needsSync(lastChecked: checked[run.id], now: now,
-                                                  interval: interval(run.id.uuidString, known, now: now)) else { continue }
-            due.append((job: .run(run.id, branch: branch), open: PullRequestSettlement.anyOpen(links: known),
-                        last: checked[run.id] ?? .distantPast))
+                                                  interval: interval(run.id.uuidString, known, now: now, quietSince: run.updatedAt)) else { continue }
+            due.append(Due(lane: lane(run.workingDirectory), job: .run(run.id, branch: branch),
+                           open: PullRequestSettlement.anyOpen(links: known), last: checked[run.id] ?? .distantPast))
         }
         for run in workspace.runs where !run.archived {
             let known = Set((earlier[run.id] ?? []).compactMap(\.headBranch))
             for branch in run.earlierBranches ?? [] where !known.contains(branch) && branch != run.branch {
                 let key = Self.folderKey(path: run.id.uuidString, branch: branch)
                 guard PullRequestSettlement.needsSync(lastChecked: earlierChecked[key], now: now, interval: Self.earlierInterval) else { continue }
-                due.append((job: .earlier(run.id, branch: branch), open: false, last: earlierChecked[key] ?? .distantPast))
+                due.append(Due(lane: lane(run.workingDirectory), job: .earlier(run.id, branch: branch), open: false,
+                               last: earlierChecked[key] ?? .distantPast))
             }
             for link in earlier[run.id] ?? [] where link.state.isOpen {
                 let key = Self.folderKey(path: run.id.uuidString, branch: link.id)
                 guard PullRequestSettlement.needsSync(lastChecked: earlierChecked[key], now: now, interval: Self.earlierInterval) else { continue }
-                due.append((job: .earlierLink(run.id, link), open: false, last: earlierChecked[key] ?? .distantPast))
+                due.append(Due(lane: URL(string: link.url)?.host?.lowercased() ?? "", job: .earlierLink(run.id, link), open: false,
+                               last: earlierChecked[key] ?? .distantPast))
             }
         }
         for (session, list) in added {
             for link in list where link.state.isOpen {
                 let key = Self.folderKey(path: session, branch: link.id)
                 guard PullRequestSettlement.needsSync(lastChecked: earlierChecked[key], now: now, interval: Self.earlierInterval) else { continue }
-                due.append((job: .addedLink(session, link), open: false, last: earlierChecked[key] ?? .distantPast))
+                due.append(Due(lane: URL(string: link.url)?.host?.lowercased() ?? "", job: .addedLink(session, link), open: false,
+                               last: earlierChecked[key] ?? .distantPast))
             }
         }
         var seen = Set<String>()
@@ -281,80 +297,87 @@ final class PullRequestSync: ObservableObject {
             let known = folderLinks[key] ?? []
             guard PullRequestSettlement.needsSync(lastChecked: folderChecked[key], now: now,
                                                   interval: interval(key, known, now: now)) else { continue }
-            due.append((job: .folder(key: key, path: folder.path, branch: folder.branch), open: PullRequestSettlement.anyOpen(links: known),
-                        last: folderChecked[key] ?? .distantPast))
+            due.append(Due(lane: lane(folder.path), job: .folder(key: key, path: folder.path, branch: folder.branch),
+                           open: PullRequestSettlement.anyOpen(links: known), last: folderChecked[key] ?? .distantPast))
         }
-        guard !due.isEmpty else { return }
-        let round = due.sorted { ($0.open ? 0 : 1, $0.last) < ($1.open ? 0 : 1, $1.last) }.prefix(Self.perRound).map(\.job)
-        running = true
-        Task {
-            defer { running = false }
-            // Most answers repeat what is shown: publish (and store) only the ones that changed, so the session list
-            // does not redraw after every round.
-            var changed = false
-            for job in round {
-                switch job {
-                case .run(let id, let branch):
-                    checked[id] = now
-                    let directory = workspace.run(id)?.workingDirectory ?? id.uuidString
-                    guard let repo = await remote(directory, read: { await workspace.remoteRepository(id) }),
-                          let found = await SourceForge.requests(repo: repo, branch: branch) else { continue }
-                    PullRequestStatusStore.shared.record(found, at: now)
-                    let next: [PullRequestLink]? = found.isEmpty ? nil : found
-                    // The requests of a branch the session has since left move to its earlier ones.
-                    let left = (links[id] ?? []).filter { $0.headBranch.map { $0 != branch } ?? false }
-                    if !left.isEmpty { retire(id, left); changed = true }
-                    if next != nil, expected.removeValue(forKey: id.uuidString) != nil,
-                       let url = PullRequestLink.shown(in: found) { self.found?(id, url) }
-                    if links[id] != next {
-                        links[id] = next
-                        changed = true
-                    }
-                case .earlier(let id, let branch):
-                    earlierChecked[Self.folderKey(path: id.uuidString, branch: branch)] = now
-                    // A branch with no work left (an empty or removed worktree) has no pull request to find: its row goes.
-                    if await workspace.dropEarlierBranchIfEmpty(id, branch: branch) { continue }
-                    let directory = workspace.run(id)?.workingDirectory ?? id.uuidString
-                    guard let repo = await remote(directory, read: { await workspace.remoteRepository(id) }),
-                          let found = await SourceForge.requests(repo: repo, branch: branch), !found.isEmpty else { continue }
-                    PullRequestStatusStore.shared.record(found, at: now)
-                    // The row finds them by branch name, so each carries the one it was asked for.
-                    let mine = found.map { link -> PullRequestLink in
-                        var link = link
-                        if link.headBranch == nil { link.headBranch = branch }
-                        return link
-                    }
-                    if retire(id, mine) { changed = true }
-                case .earlierLink(let id, let link):
-                    earlierChecked[Self.folderKey(path: id.uuidString, branch: link.id)] = now
-                    guard let url = URL(string: link.url) else { continue }
-                    await PullRequestStatusStore.shared.refresh(url)
-                    // Replaces the kept link by its url, so the state survives a restart; the status store does not.
-                    if retire(id, PullRequestStatusStore.shared.current([link])) { changed = true }
-                case .addedLink(let session, let link):
-                    earlierChecked[Self.folderKey(path: session, branch: link.id)] = now
-                    guard let url = URL(string: link.url) else { continue }
-                    await PullRequestStatusStore.shared.refresh(url)
-                    let read = PullRequestStatusStore.shared.current([link])
-                    guard let list = added[session], read != [link] else { continue }
-                    added[session] = list.map { $0.id == link.id ? read[0] : $0 }
-                    changed = true
-                case .folder(let key, let path, let branch):
-                    folderChecked[key] = now
-                    guard let repo = await remote(path, read: { await Self.repository(path: path) }),
-                          let found = await SourceForge.requests(repo: repo, branch: branch) else { continue }
-                    PullRequestStatusStore.shared.record(found, at: now)
-                    let next: [PullRequestLink]? = found.isEmpty ? nil : found
-                    if next != nil, expected.removeValue(forKey: key) != nil,
-                       let url = PullRequestLink.shown(in: found) { self.found?(nil, url) }
-                    if folderLinks[key] != next {
-                        folderLinks[key] = next
-                        changed = true
-                    }
+        for (lane, jobs) in PullRequestRound.plan(due, busy: busyLanes, perRound: Self.perRound) {
+            busyLanes.insert(lane)
+            Task {
+                defer { busyLanes.remove(lane) }
+                // Most answers repeat what is shown: publish (and store) only the ones that changed, so the session list
+                // does not redraw after every round.
+                var changed = false
+                for job in jobs {
+                    if await ask(job, now: now, workspace: workspace) { changed = true }
                 }
+                if changed { save() }
             }
-            if changed { save() }
         }
+    }
+
+    /// Asks about one branch; true when the answer changed what is shown.
+    private func ask(_ job: Job, now: Date, workspace: WorkspaceManager) async -> Bool {
+        var changed = false
+        switch job {
+        case .run(let id, let branch):
+            checked[id] = now
+            let directory = workspace.run(id)?.workingDirectory ?? id.uuidString
+            guard let repo = await remote(directory, read: { await workspace.remoteRepository(id) }),
+                  let found = await SourceForge.requests(repo: repo, branch: branch) else { return changed }
+            PullRequestStatusStore.shared.record(found, at: now)
+            let next: [PullRequestLink]? = found.isEmpty ? nil : found
+            // The requests of a branch the session has since left move to its earlier ones.
+            let left = (links[id] ?? []).filter { $0.headBranch.map { $0 != branch } ?? false }
+            if !left.isEmpty { retire(id, left); changed = true }
+            if next != nil, expected.removeValue(forKey: id.uuidString) != nil,
+               let url = PullRequestLink.shown(in: found) { self.found?(id, url) }
+            if links[id] != next {
+                links[id] = next
+                changed = true
+            }
+        case .earlier(let id, let branch):
+            earlierChecked[Self.folderKey(path: id.uuidString, branch: branch)] = now
+            // A branch with no work left (an empty or removed worktree) has no pull request to find: its row goes.
+            if await workspace.dropEarlierBranchIfEmpty(id, branch: branch) { return changed }
+            let directory = workspace.run(id)?.workingDirectory ?? id.uuidString
+            guard let repo = await remote(directory, read: { await workspace.remoteRepository(id) }),
+                  let found = await SourceForge.requests(repo: repo, branch: branch), !found.isEmpty else { return changed }
+            PullRequestStatusStore.shared.record(found, at: now)
+            // The row finds them by branch name, so each carries the one it was asked for.
+            let mine = found.map { link -> PullRequestLink in
+                var link = link
+                if link.headBranch == nil { link.headBranch = branch }
+                return link
+            }
+            if retire(id, mine) { changed = true }
+        case .earlierLink(let id, let link):
+            earlierChecked[Self.folderKey(path: id.uuidString, branch: link.id)] = now
+            guard let url = URL(string: link.url) else { return changed }
+            await PullRequestStatusStore.shared.refresh(url)
+            // Replaces the kept link by its url, so the state survives a restart; the status store does not.
+            if retire(id, PullRequestStatusStore.shared.current([link])) { changed = true }
+        case .addedLink(let session, let link):
+            earlierChecked[Self.folderKey(path: session, branch: link.id)] = now
+            guard let url = URL(string: link.url) else { return changed }
+            await PullRequestStatusStore.shared.refresh(url)
+            let read = PullRequestStatusStore.shared.current([link])
+            guard let list = added[session], read != [link] else { return changed }
+            added[session] = list.map { $0.id == link.id ? read[0] : $0 }
+            changed = true
+        case .folder(let key, let path, let branch):
+            folderChecked[key] = now
+            guard let repo = await remote(path, read: { await Self.repository(path: path) }),
+                  let found = await SourceForge.requests(repo: repo, branch: branch) else { return changed }
+            PullRequestStatusStore.shared.record(found, at: now)
+            let next: [PullRequestLink]? = found.isEmpty ? nil : found
+            if next != nil, expected.removeValue(forKey: key) != nil,
+               let url = PullRequestLink.shown(in: found) { self.found?(nil, url) }
+            if folderLinks[key] != next {
+                folderLinks[key] = next
+                changed = true
+            }
+        }
+        return changed
     }
 
     /// The forge repository of a folder on this Mac; nil when it is gone or has no remote.

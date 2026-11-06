@@ -17,6 +17,10 @@
 #      frame. A SwiftUI timeline draws every frame on the main thread, once for each running session in the list. A
 #      `.nookFrames` timeline that must stay one (it follows the pointer or live levels) says why on the line above:
 #      `// perf: <why>`.
+#   5. A symbol that pulses or turns for as long as something runs is a `LayerSymbol` (LayerLoops.swift). `.symbolEffect`
+#      is a SwiftUI animation: measured offscreen, a single repeating symbol lays out its window 100 times a second, as
+#      `.repeatForever` does, and that window can hold a long chat. A one-shot effect (`.bounce`, `value:`) says so on
+#      the line above: `// perf: <why>`.
 set -uo pipefail
 cd "$(dirname "$0")/../apps/macos"
 
@@ -61,6 +65,15 @@ report "TimelineView(.animation) passes paused: so it stops when its content doe
 report "looping animations are a LayerLoop; a .nookFrames timeline says why not (// perf: reason)" < <(sources | grep -E '^(NotchUI|App)/' | while read -r file; do
   awk -v file="$file" '
     /TimelineView\(\.nookFrames/ && $0 !~ /^[ \t]*\/\// {
+      if (prev !~ /\/\/ perf:/) printf "%s:%d:%s\n", file, NR, $0
+    }
+    { prev = $0 }
+  ' "$file"
+done)
+
+report "symbols that loop are a LayerSymbol; a .symbolEffect says why not (// perf: reason)" < <(sources | while read -r file; do
+  awk -v file="$file" '
+    /\.symbolEffect\(/ && $0 !~ /^[ \t]*\/\// {
       if (prev !~ /\/\/ perf:/) printf "%s:%d:%s\n", file, NR, $0
     }
     { prev = $0 }

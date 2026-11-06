@@ -566,10 +566,7 @@ private struct DraftPanel: View {
 
     private var header: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            Image(systemName: "sparkles")
-                .font(NookTheme.font(11, .semibold))
-                .foregroundStyle(NookTheme.iris)
-                .symbolEffect(.pulse, options: .repeating, isActive: writing)
+            LayerSymbol(name: "sparkles", size: 11, weight: .semibold, color: NookTheme.iris, motion: .pulse, active: writing)
                 .accessibilityHidden(true)
             if writing {
                 ShimmerText(text: tr(rewriting ? "chats.draft.rewriting" : "chats.draft.writing"))
