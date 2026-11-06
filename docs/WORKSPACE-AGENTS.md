@@ -44,6 +44,16 @@ claude mcp add --scope user nook -- ~/.nook/nook-mcp --agent claude-code
 codex mcp add nook -- ~/.nook/nook-mcp --agent codex
 ```
 
+### Sessions that outlive Nook
+
+With **Keep sessions running when Nook closes** on (off by default), every agent runs through `nook-keeper` (`SessionKeeper`),
+one small Perl process per agent in a session of its own. It writes the agent's stdout to a spool in `~/.nook/keep/<id>` (a
+folder only you can enter) and takes stdin and signals over a socket there. Quitting or updating lets go of the agents at work;
+the next launch attaches from the last line Nook handled (`reattachKeptRuns`). After a crash that position is unknown, so Nook
+goes on from the current end: what happened in between stays out of the timeline. A session that waits for your approval or a
+question is not kept: what it asked went with Nook, and it stops as before. An agent that asks for approval while Nook is closed
+waits until Nook is back. A keeper whose agent ended waits a week for Nook, then cleans up.
+
 ### Android devices
 
 The device tools also take Android devices when the Android SDK is installed (`ANDROID_HOME`, or Android Studio's folder):

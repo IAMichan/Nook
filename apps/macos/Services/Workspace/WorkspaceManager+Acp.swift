@@ -63,7 +63,11 @@ extension WorkspaceManager {
             Task { @MainActor in self?.openAntigravitySignIn(id, url) }
         }
         client.onMessage = { [weak self] message, events in
-            Task { @MainActor in self?.handleAcp(id, client, message, events) }
+            let end = client.process.consumed
+            Task { @MainActor in
+                self?.handleAcp(id, client, message, events)
+                client.process.markHandled(end)
+            }
         }
         client.onExit = { [weak self] status, stderr in
             Task { @MainActor in
@@ -329,6 +333,13 @@ extension WorkspaceManager {
         }
     }
 
+    /// The answer to a prompt an earlier Nook sent (`SessionKeeper`): only that one says why the turn stopped.
+    func acpKeptTurnEnded(_ id: UUID, _ answer: JSONBox) {
+        guard answer.dictionary["stopReason"] != nil, turns[id] != nil else { return }
+        let stop = AcpRPC.stop(answer.dictionary)
+        finishAcpTurn(id, reason: stop.reason, usage: stop.usage)
+    }
+
     /// Antigravity sometimes writes its whole answer as thinking and ends the turn with no message. Asking it to carry
     /// on only repeats that, so the thought becomes the reply.
     private func showThoughtAsReply(_ id: UUID, _ client: AcpClient) {
@@ -409,7 +420,7 @@ extension WorkspaceManager {
 
     // MARK: Updates
 
-    private func handleAcp(_ id: UUID, _ client: AcpClient, _ message: CodexRPCMessage, _ events: [AcpEvent]) {
+    func handleAcp(_ id: UUID, _ client: AcpClient, _ message: CodexRPCMessage, _ events: [AcpEvent]) {
         guard acpClients[id] === client, !events.isEmpty else { return }
         // The conversation a loaded session replays into an empty timeline (see openAcpSession).
         if acpReplays[id] != nil, client.replaying {
@@ -620,7 +631,7 @@ extension WorkspaceManager {
         failAcpTurn(id, WorkspaceManager.cleanError(raw, status: 1) + login)
     }
 
-    private func acpExited(_ id: UUID, _ client: AcpClient, status: Int32, stderr: String, prompt: String, executable: String) {
+    func acpExited(_ id: UUID, _ client: AcpClient, status: Int32, stderr: String, prompt: String, executable: String) {
         guard acpClients[id] === client else { return }
         acpClients[id] = nil
         acpIdleClose[id]?.cancel()

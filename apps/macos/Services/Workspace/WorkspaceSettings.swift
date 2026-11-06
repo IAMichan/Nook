@@ -147,6 +147,10 @@ final class WorkspaceSettings: ObservableObject {
         didSet { defaults.set(autoResumeLimited, forKey: "ws.autoResumeLimited") }
     }
     /// A session that a restart of Nook cut off gets "Continue where you left off." once.
+    /// Agents go on while Nook is closed (`SessionKeeper`). Off by default.
+    @Published var keepSessionsRunning: Bool {
+        didSet { defaults.set(keepSessionsRunning, forKey: "ws.keepSessionsRunning") }
+    }
     @Published var continueAfterRelaunch: Bool {
         didSet { defaults.set(continueAfterRelaunch, forKey: "ws.continueAfterRelaunch") }
     }
@@ -224,6 +228,7 @@ final class WorkspaceSettings: ObservableObject {
         commitStyle = CommitStyle(rawValue: defaults.string(forKey: CommitStyle.defaultsKey) ?? "") ?? .standard
         commitInstructions = defaults.string(forKey: CommitStyle.instructionsKey) ?? ""
         autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? false
+        keepSessionsRunning = defaults.bool(forKey: "ws.keepSessionsRunning")
         continueAfterRelaunch = defaults.object(forKey: "ws.continueAfterRelaunch") as? Bool ?? false
         steerByDefault = defaults.object(forKey: "ws.steerByDefault") as? Bool ?? false
         scheduledTasksEnabled = defaults.object(forKey: "ws.scheduledTasksEnabled") as? Bool ?? false
