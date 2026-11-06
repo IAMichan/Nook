@@ -11,6 +11,22 @@ final class ChatComposeTests: XCTestCase {
 
     // MARK: Files
 
+    func testTheRowOfFilesWalksWithoutGoingRound() {
+        let files = [file("a.png", .photo), file("b.png", .photo), file("c.png", .photo)]
+        XCTAssertEqual(files.id(1, from: files[0].id), files[1].id)
+        XCTAssertEqual(files.id(-1, from: files[2].id), files[1].id)
+        XCTAssertNil(files.id(-1, from: files[0].id))
+        XCTAssertNil(files.id(1, from: files[2].id))
+        XCTAssertNil(files.id(1, from: "gone"))
+    }
+
+    func testAFileRemovedLeavesItsNeighbourInView() {
+        let files = [file("a.png", .photo), file("b.png", .photo), file("c.png", .photo)]
+        XCTAssertEqual(files.heir(of: files[1].id), files[2].id, "the next one takes its place")
+        XCTAssertEqual(files.heir(of: files[2].id), files[1].id, "the last one has only one before it")
+        XCTAssertNil([files[0]].heir(of: files[0].id))
+    }
+
     func testAFileGoesAsWhatItLooksLike() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

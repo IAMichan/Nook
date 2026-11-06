@@ -32,6 +32,19 @@ final class ChatAttachmentEdits: ObservableObject {
         tool = nil
     }
 
+    /// The file next to the one shown, one way or the other; false when there is none.
+    @discardableResult func move(_ offset: Int, in files: [ChatAttachment]) -> Bool {
+        guard let shown = shown(in: files), let next = files.id(offset, from: shown.id) else { return false }
+        select(next)
+        return true
+    }
+
+    /// The file shown is about to go: its neighbour stays in view, not the last one added.
+    func removing(_ id: String, from files: [ChatAttachment]) {
+        guard shown(in: files)?.id == id, let heir = files.heir(of: id) else { return }
+        select(heir)
+    }
+
     func edit(of id: String) -> ChatImageEdit {
         edits[id] ?? ChatImageEdit()
     }
@@ -115,7 +128,8 @@ struct ChatAttachmentReview: View {
 
     private func header(_ file: ChatAttachment, editable: Bool) -> some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            ToolbarIconButton("xmark", tr("chat.review.close"), height: Self.toolSize, width: Self.toolSize, symbolSize: 13) {
+            // Several files go at once with this cross; one goes with the bin on its thumbnail.
+            ToolbarIconButton("xmark", tr(model.files.count > 1 ? "chat.review.closeAll" : "chat.review.close"), height: Self.toolSize, width: Self.toolSize, symbolSize: 13) {
                 withAnimation(NookTheme.reveal) { model.discardFiles() }
                 onDone()
             }
