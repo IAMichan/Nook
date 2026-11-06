@@ -143,6 +143,32 @@ final class GitServiceIntegrationTests: XCTestCase {
         XCTAssertEqual(changes.map(\.path), ["werk.txt"], "the branch's own work, not what main did around it")
     }
 
+    func testAMergeInProgressDoesNotCountWhatComesInAsTheBranchsWork() throws {
+        let branch = root + "/worktrees/repo/midden"
+        try git.addWorktree(repo: repo, path: branch, branch: "nook/midden", base: "main")
+        try "branch\n".write(toFile: branch + "/README.md", atomically: true, encoding: .utf8)
+        try git.run(["add", "README.md"], in: branch)
+        try git.run(["-c", "commit.gpgsign=false", "commit", "-m", "readme"], in: branch)
+        try commit("werk.txt", in: branch)
+        try "main\n".write(toFile: repo + "/README.md", atomically: true, encoding: .utf8)
+        try git.run(["add", "README.md"], in: repo)
+        try git.run(["-c", "commit.gpgsign=false", "commit", "-m", "readme"], in: repo)
+        try commit("van-main.txt", in: repo)
+        let mainTip = try git.run(["rev-parse", "main"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertEqual(git.headCommits(branch).count, 1)
+
+        XCTAssertThrowsError(try git.run(["-c", "commit.gpgsign=false", "merge", "main"], in: branch), "the README conflicts")
+        XCTAssertEqual(git.headCommits(branch).count, 2, "what is being merged counts too")
+        XCTAssertEqual(git.branchPoint(branch, base: "main"), mainTip, "as if the merge were committed")
+        let changes = try git.changes(branch, since: try XCTUnwrap(git.branchPoint(branch, base: "main")), status: try git.status(branch))
+        XCTAssertEqual(changes.map(\.path).sorted(), ["README.md", "werk.txt"], "not van-main.txt, and each file once")
+
+        try "beide\n".write(toFile: branch + "/README.md", atomically: true, encoding: .utf8)
+        try git.run(["add", "README.md"], in: branch)
+        try git.run(["-c", "commit.gpgsign=false", "commit", "-m", "merge"], in: branch)
+        XCTAssertEqual(git.branchPoint(branch, base: "main"), mainTip, "the same point once committed")
+    }
+
     func testABranchWithoutWorkHasNoChangesWhileItsBaseMovesOn() throws {
         let branch = root + "/worktrees/repo/leeg"
         try git.addWorktree(repo: repo, path: branch, branch: "nook/leeg", base: "main")
