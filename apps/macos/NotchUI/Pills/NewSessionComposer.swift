@@ -611,7 +611,9 @@ struct NewSessionComposer: View {
     private func applyPromptLink() {
         guard let link = promptLinks.pending else { return }
         promptLinks.pending = nil
-        config.task = link.text
+        // What you were writing stays, under the link's text.
+        let draft = config.task.trimmingCharacters(in: .whitespacesAndNewlines)
+        config.task = draft.isEmpty || draft == link.text ? link.text : link.text + "\n\n" + draft
         if let path = link.project, FileManager.default.fileExists(atPath: path) { select(path) }
         if let name = link.agent?.lowercased(),
            let provider = RunProvider.allCases.first(where: { $0.rawValue == name || $0.displayName.lowercased() == name }) {

@@ -214,6 +214,12 @@ struct AgentCommandPalette: View {
             Entry(id: "x:usage", group: .settings, symbol: "chart.bar", title: tr("agents.footer.usage")) {
                 app.usageModalOpen = true; return false
             },
+            Entry(id: "x:triage", group: .settings, symbol: "stethoscope", title: tr("palette.triage")) {
+                let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+                PromptLinkInbox.shared.pending = PromptLink(text: NookTriage.prompt(version: version, supportFolder: NookPaths.supportDirectory.path))
+                viewModel.selectedAgentID = "new"
+                return false
+            },
         ]
     }
 

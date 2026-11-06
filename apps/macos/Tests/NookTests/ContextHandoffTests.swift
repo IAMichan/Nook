@@ -60,7 +60,8 @@ final class ContextHandoffTests: XCTestCase {
         XCTAssertGreaterThan(rendered.omitted, 0)
         XCTAssertEqual(rendered.included + rendered.omitted, 200)
         XCTAssertTrue(rendered.text.contains("message number 199"), "the newest is kept")
-        XCTAssertFalse(rendered.text.contains("message number 0 "), "the oldest goes first")
+        XCTAssertTrue(rendered.text.contains("message number 0 "), "the request that started it stays")
+        XCTAssertFalse(rendered.text.contains("message number 1 "), "after it the oldest goes first")
         XCTAssertTrue(rendered.text.contains("earlier item"))
         XCTAssertLessThanOrEqual(ContextHandoff.approxTokens(rendered.text), 600 + 120)
     }

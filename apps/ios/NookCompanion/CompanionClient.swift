@@ -907,6 +907,18 @@ final class CompanionClient: ObservableObject {
     /// Whether the open session follows live right now, so its screen need not ask.
     var timelineIsLive: Bool { can(CompanionFeature.liveTimeline) && phase == .connected && channel != nil }
 
+    /// One folder or file of a session (`CompanionOp.files`).
+    func loadFiles(_ sessionID: String, path: String) async -> FolderDigest? {
+        guard await supports(CompanionFeature.workspace) else { return nil }
+        return await perform(CompanionRequest(op: .files, session: sessionID, item: path), quiet: true)?.folder
+    }
+
+    /// The terminals of a session (`CompanionOp.terminals`).
+    func loadTerminals(_ sessionID: String) async -> [TerminalDigest]? {
+        guard await supports(CompanionFeature.workspace) else { return nil }
+        return await perform(CompanionRequest(op: .terminals, session: sessionID), quiet: true)?.terminals
+    }
+
     /// What a session changed in its folder (`CompanionOp.diff`).
     func loadDiff(_ sessionID: String) async {
         guard await supports(CompanionFeature.diff) else { return }

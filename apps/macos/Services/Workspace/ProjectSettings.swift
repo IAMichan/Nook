@@ -16,6 +16,8 @@ enum ProjectSettingKey: Hashable, Sendable {
     case titleInstructions
     /// Whether Nook's worktree cleanup rules apply to the project ("on") or not ("off").
     case worktreeCleanup
+    /// Whether the project's browsers keep their sign-ins between launches ("on"), in a store of the project's own.
+    case browserSignIns
 
     var raw: String {
         switch self {
@@ -26,6 +28,7 @@ enum ProjectSettingKey: Hashable, Sendable {
         case .branchPrefix: return "branchPrefix"
         case .titleInstructions: return "titleInstructions"
         case .worktreeCleanup: return "worktreeCleanup"
+        case .browserSignIns: return "browserSignIns"
         }
     }
 }
@@ -42,6 +45,8 @@ struct SessionDefaults: Equatable, Sendable {
     var titleInstructions: String = ""
     /// The cleanup rules from Settings › Workspace apply to this project's worktrees; off: they stay until you remove them.
     var worktreeCleanup = true
+    /// The project's browsers remember sign-ins; off (the default): nothing of a browser stays after Nook quits.
+    var browserSignIns = false
 
     func model(for provider: RunProvider) -> String { models[provider.rawValue] ?? "" }
 
@@ -238,6 +243,7 @@ enum ProjectSettings {
         result.branchPrefix = string(.branchPrefix).map(WorktreeNaming.normalizedBranchPrefix) ?? global.branchPrefix
         result.titleInstructions = string(.titleInstructions) ?? global.titleInstructions
         result.worktreeCleanup = string(.worktreeCleanup).map { $0 != "off" } ?? global.worktreeCleanup
+        result.browserSignIns = string(.browserSignIns).map { $0 == "on" } ?? global.browserSignIns
         return result
     }
 
