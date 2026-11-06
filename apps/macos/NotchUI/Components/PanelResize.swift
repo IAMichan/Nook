@@ -258,15 +258,39 @@ extension EnvironmentValues {
     /// How far a conversation's column sits from its place: it glides there when a panel beside it takes or gives room,
     /// without laying its text out again. That width stays the same as long as the column fits.
     @Entry var chatColumnSlide: CGFloat = 0
+    /// The width of the row a conversation shares with the panels on its right, so its column keeps its place when one
+    /// opens or closes (`PanelSplit.columnStart`); nil for a conversation without such panels.
+    @Entry var chatColumnRow: CGFloat?
 }
 
 private struct ChatColumn: ViewModifier {
     @Environment(\.chatColumnSlide) private var slide
+    @Environment(\.chatColumnRow) private var row
 
     func body(content: Content) -> some View {
-        content
-            .frame(maxWidth: PanelLayout.chatColumn, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .offset(x: slide)
+        ChatColumnPlacement(row: row) {
+            content.frame(maxWidth: PanelLayout.chatColumn, alignment: .leading)
+        }
+        .offset(x: slide)
+    }
+}
+
+/// Takes all the width it is offered and places the column in it (`PanelSplit.columnStart`). A layout, not a
+/// measured offset: the room it reads is the one of this very pass, so the column stays put during a panel's drag as well,
+/// without a redraw of the conversation, and clicks land where the column is drawn.
+private struct ChatColumnPlacement: Layout {
+    let row: CGFloat?
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        guard let column = subviews.first else { return .zero }
+        let size = column.sizeThatFits(proposal)
+        return CGSize(width: proposal.width ?? size.width, height: size.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
+        guard let column = subviews.first else { return }
+        let offered = ProposedViewSize(width: bounds.width, height: proposal.height)
+        let start = PanelSplit.columnStart(column: column.sizeThatFits(offered).width, room: bounds.width, row: row)
+        column.place(at: CGPoint(x: bounds.minX + start, y: bounds.midY), anchor: .leading, proposal: offered)
     }
 }
