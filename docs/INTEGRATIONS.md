@@ -417,6 +417,15 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
   keeping the people GitHub would credit. A rebase merge keeps every commit as it is, and a merge commit keeps the
   branch's commits, so their trailers stay in history. GitLab merge requests have no merge action in Nook yet.
 
+- **Agent credits in an agent's own commits.** With Settings › Agents › "No agent credits in commits" on, every coding
+  agent Nook starts is told to write no `Co-authored-by:` trailer and no "Generated with …" line for itself or any other
+  AI (`AgentCredits.commitsNote`, through `AgentCredits.launchInstructions` for Claude Code, Codex in both its modes,
+  Gemini CLI, and the ACP agents: Cursor, OpenCode, Grok, Antigravity and the ones you add). Claude Code also gets
+  `includeCoAuthoredBy: false` and an empty `attribution` in its `--settings`, so it never adds them by itself; the
+  others have no such switch, so they rely on the instruction. A pull request an agent opens through Nook's
+  `pull_request_create` has the credits stripped from its description. Agents running in your own terminal, remote
+  sessions, and `apps/tauri` are not launched by this Mac's Nook, so the setting does not reach them.
+
 - **The GitHub dashboard in Chats (Tauri).** Pull requests and reviews sorted by what needs you, issues assigned to you,
   approving, commenting and asking for changes, and the merge rights check exist for GitHub only. GitLab merge requests
   are still only watched and opened in the browser; Nook has no GitLab review or merge actions yet.

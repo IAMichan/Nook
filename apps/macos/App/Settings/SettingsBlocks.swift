@@ -431,6 +431,7 @@ struct WorkspaceSettingsSection: View {
     @ObservedObject private var relay = WebhookRelayClient.shared
     @AppStorage(AppDelegate.confirmQuitKey) private var confirmQuit = true
     @AppStorage(AgentCredits.settingKey) private var stripAgentCredits = false
+    @AppStorage(AgentCredits.commitsKey) private var noAgentCredits = false
     @State private var showScheduled = false
     /// Which defaults the "New session" section edits: "" for all projects, else a project folder (see `ProjectSettings`).
     /// Kept by Settings, so it stays while you switch between the Sessions tabs (each tab is drawn anew).
@@ -763,6 +764,9 @@ struct WorkspaceSettingsSection: View {
                           prompt: Text(tr("settings.ws.commitInstructions.placeholder")), axis: .vertical)
                     .lineLimit(2...5)
             }
+            // Every coding agent Nook starts: its own commits and pull requests, from the next message on.
+            SettingToggle(tr("settings.ws.noAgentCredits"), detail: tr("settings.ws.noAgentCredits.detail"),
+                          isOn: $noAgentCredits)
             // Only the merge commit Nook asks GitHub for: the branch's commits and your own authorship stay as they are.
             SettingToggle(tr("settings.ws.stripAgentCredits"), detail: tr("settings.ws.stripAgentCredits.detail"),
                           isOn: $stripAgentCredits)

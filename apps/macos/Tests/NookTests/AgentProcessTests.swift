@@ -27,6 +27,35 @@ final class AgentCommandTests: XCTestCase {
         XCTAssertEqual(spec.extraEnvironment["CLAUDE_CONFIG_DIR"], "/Users/x/.claude-werk")
     }
 
+    /// Settings › Agents › "No agent credits in commits": every agent is told so, and Claude Code's own attribution is off.
+    func testNoAgentCreditsReachesEveryAgent() {
+        for provider in [RunProvider.claude, .codex, .gemini] {
+            var on = input(provider, instructions: "Gebruik tabs")
+            on.omitAgentCredits = true
+            var off = on
+            off.omitAgentCredits = false
+            let joinedOn = AgentCommand.spec(on).arguments.joined(separator: "\n")
+            let joinedOff = AgentCommand.spec(off).arguments.joined(separator: "\n")
+            XCTAssertTrue(joinedOn.contains(AgentCredits.commitsNote), "\(provider) is told to leave its credits out")
+            XCTAssertTrue(joinedOn.contains("Gebruik tabs"), "\(provider) keeps your own instructions")
+            XCTAssertFalse(joinedOff.contains(AgentCredits.commitsNote), "\(provider): nothing changes without the setting")
+        }
+        var claude = input(.claude)
+        claude.omitAgentCredits = true
+        let settings = try? JSONSerialization.jsonObject(with: Data((value(after: "--settings", in: AgentCommand.spec(claude).arguments) ?? "").utf8)) as? [String: Any]
+        XCTAssertEqual(settings?["includeCoAuthoredBy"] as? Bool, false)
+        XCTAssertEqual(settings?["attribution"] as? [String: String], ["commit": "", "pr": ""])
+        XCTAssertEqual(settings?["showThinkingSummaries"] as? Bool, true)
+        claude.omitAgentCredits = false
+        XCTAssertEqual(value(after: "--settings", in: AgentCommand.spec(claude).arguments), #"{"showThinkingSummaries":true}"#)
+    }
+
+    func testLaunchInstructionsOrder() {
+        XCTAssertEqual(AgentCredits.launchInstructions(" mine ", bridgeNote: "bridge", omit: true),
+                       "mine\n\nbridge\n\n" + AgentCredits.commitsNote)
+        XCTAssertEqual(AgentCredits.launchInstructions("", bridgeNote: nil, omit: false), "")
+    }
+
     func testClaudeForkOnlyWithResume() {
         var forked = input(.claude, resume: "sess-1")
         forked.forkSession = true

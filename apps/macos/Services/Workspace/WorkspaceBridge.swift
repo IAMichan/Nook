@@ -639,7 +639,9 @@ final class WorkspaceBridge: ObservableObject {
     private func pullRequestCreate(_ arguments: [String: Any], _ caller: BridgeCaller, _ context: Context) async throws -> BridgeRPC.ToolResult {
         let title = ((arguments["title"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return .error("Give the pull request a title.") }
-        let body = (arguments["body"] as? String) ?? ""
+        // Settings › Agents: no agent credits in a pull request the agent opens, also when it wrote one anyway.
+        let written = (arguments["body"] as? String) ?? ""
+        let body = AgentCredits.omitsFromCommits ? AgentCredits.strip(written) : written
         let draft = (arguments["draft"] as? Bool) ?? false
         if case .refuse(let reason) = verdict(.pullRequestCreate, caller) { return .error(Self.refusal(reason)) }
         guard let git = GitService.shared else { throw NookError("Git is not available on this Mac.") }
