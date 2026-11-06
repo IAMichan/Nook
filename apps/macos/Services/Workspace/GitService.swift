@@ -56,6 +56,17 @@ enum ProcessRunner {
     }
 }
 
+/// How often the Git state of a shown folder is read. Each read starts three or four Git processes, about ten when the
+/// branch list is due, so a session left open all day should not keep asking at the rate a working agent needs.
+enum FolderGitPace {
+    /// Seconds to the next read: quick while an agent changes the folder, slower for what only you change, slowest for a
+    /// folder that is no repository. Stretched by the energy plan (`EnergyPlan.slowdown`).
+    static func interval(agentWorking: Bool, isRepository: Bool, slowdown: Double) -> TimeInterval {
+        let base: TimeInterval = !isRepository ? 60 : (agentWorking ? 8 : 20)
+        return base * max(1, slowdown)
+    }
+}
+
 struct GitError: LocalizedError, Equatable {
     let message: String
     init(_ message: String) { self.message = message }

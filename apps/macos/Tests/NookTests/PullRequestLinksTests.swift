@@ -203,7 +203,46 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(PullRequestMatch.filter(list, query: "page 7").map(\.number), [7])
     }
 
+    // MARK: Rounds
+
+    func testASlowHostHoldsUpOnlyItsOwnBranches() {
+        let old = Date(timeIntervalSince1970: 0), recent = Date(timeIntervalSince1970: 100)
+        let due: [PullRequestRound.Due<String>] = [
+            .init(lane: "github.com", job: "gh-closed-old", open: false, last: old),
+            .init(lane: "github.com", job: "gh-closed-recent", open: false, last: recent),
+            .init(lane: "github.com", job: "gh-open", open: true, last: recent),
+            .init(lane: "gitlab.slow", job: "gl", open: true, last: old),
+            .init(lane: "", job: "unknown", open: false, last: old)
+        ]
+        let all = PullRequestRound.plan(due, busy: [], perRound: 2)
+        XCTAssertEqual(all.map(\.lane), ["", "github.com", "gitlab.slow"])
+        XCTAssertEqual(all[1].jobs, ["gh-open", "gh-closed-old"], "open first, then the longest unasked, at most perRound")
+        let waiting = PullRequestRound.plan(due, busy: ["gitlab.slow"], perRound: 8)
+        XCTAssertEqual(waiting.map(\.lane), ["", "github.com"], "its jobs wait; the others go on")
+    }
+
     // MARK: Settlement
+
+    func testSyncSlowsDownForWhatHasBeenQuietForADay() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let recent = now.addingTimeInterval(-3_600)
+        let old = now.addingTimeInterval(-3 * 86_400)
+        func link(_ state: PullRequestState, updated: Date?) -> PullRequestLink {
+            PullRequestLink(host: .github, repository: "a/b", number: 1, state: state, updatedAt: updated)
+        }
+        // An open request is asked about at the same pace however old it is.
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(.open, updated: old)], now: now), 30)
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(.merged, updated: recent)], now: now), 900)
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(.merged, updated: old)], now: now), 21_600)
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(.closed, updated: old), link(.merged, updated: recent)], now: now), 900)
+        // A session at work on a branch that merged long ago can get a new request.
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(.merged, updated: old)], quietSince: recent, now: now), 900)
+        // No date to go on: stays at the merged pace.
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [link(.merged, updated: nil)], now: now), 900)
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [], quietSince: recent, now: now), 60)
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [], quietSince: old, now: now), 900)
+        XCTAssertEqual(PullRequestSettlement.syncInterval(links: [], now: now), 60)
+    }
 
     func testSettlementRules() {
         XCTAssertFalse(PullRequestSettlement.shouldSettle(links: []))

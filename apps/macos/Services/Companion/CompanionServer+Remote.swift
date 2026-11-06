@@ -145,8 +145,10 @@ extension CompanionServer {
         }
         let workspace = app.workspace
         guard let runID = UUID(uuidString: session), workspace.run(runID) != nil else { return nil }
-        workspace.loadTimeline(runID)
-        return CompanionPolicy.newestFitting(workspace.timeline(runID).suffix(160).compactMap(Self.entry))
+        // Off the main thread. The phone polls, so the next look finds it in memory; idle, it is released again.
+        let events = await workspace.timelineForSearch(runID)
+        workspace.prefetchTimeline(runID)
+        return CompanionPolicy.newestFitting(events.suffix(160).compactMap(Self.entry))
     }
 
     // MARK: What a session changed

@@ -263,4 +263,11 @@ final class GitServiceIntegrationTests: XCTestCase {
         // A local path is not a valid clone URL; preventing arbitrary local files as clone source.
         XCTAssertThrowsError(try git.clone(url: repo, into: root + "/clones"))
     }
+
+    func testFolderPaceFollowsTheAgentAndTheEnergyPlan() {
+        XCTAssertEqual(FolderGitPace.interval(agentWorking: true, isRepository: true, slowdown: 1), 8)
+        XCTAssertEqual(FolderGitPace.interval(agentWorking: false, isRepository: true, slowdown: 1), 20)
+        XCTAssertEqual(FolderGitPace.interval(agentWorking: false, isRepository: true, slowdown: 6), 120)
+        XCTAssertEqual(FolderGitPace.interval(agentWorking: true, isRepository: false, slowdown: 1), 60)
+    }
 }

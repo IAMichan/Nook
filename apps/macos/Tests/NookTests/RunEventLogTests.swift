@@ -249,4 +249,94 @@ final class RunEventLogTests: XCTestCase {
         XCTAssertThrowsError(try store.saveEvents(UUID(), [event("a")]))
         XCTAssertEqual(store.loadEvents(UUID()), [])
     }
+
+    func testAReadSeesOnlyWhatIsCommitted() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = RunStore(directory: folder)
+        let id = UUID()
+        let first = RunEvent(kind: .user, text: "committed")
+        try store.saveEvents(id, [first])
+        // A write that holds the database, as a long save would.
+        let writer = try XCTUnwrap(RunEventLog(url: store.databaseURL))
+        XCTAssertTrue(writer.exec("BEGIN IMMEDIATE;"))
+        let late = RunEvent(kind: .assistant, text: "not committed")
+        writer.append(id, .event, try JSONEncoder.iso.encode(late))
+        XCTAssertEqual(store.loadEvents(id).map(\.text), ["committed"])
+        XCTAssertTrue(writer.exec("ROLLBACK;"))
+    }
+
+    /// Reading compacts a long log. A row written while that read ran is not in its snapshot, and must survive it.
+    func testCompactingDuringWritesLosesNothing() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = RunStore(directory: folder)
+        let id = UUID()
+        var event = RunEvent(kind: .assistant, text: "")
+        // Enough superseded rows that every read wants to compact, and long enough that a read takes a moment.
+        for step in 0..<(RunStore.compactionMinimumRows + 8) {
+            event.text = String(repeating: "x", count: 4_000) + String(step)
+            try store.saveEvents(id, [event])
+        }
+        // As in Nook: one writer with the whole list, and reads of it next to that.
+        let done = DispatchSemaphore(value: 0)
+        let finished = NSLock()
+        var writing = true
+        func stillWriting() -> Bool { finished.lock(); defer { finished.unlock() }; return writing }
+        DispatchQueue.global().async {
+            while stillWriting() { _ = store.loadEvents(id) }
+            done.signal()
+        }
+        var list = [event]
+        for step in 0..<1_500 {
+            // Mostly superseded rows, so reads keep compacting, and now and then a new event.
+            list[0].text += "y"
+            try store.saveEvents(id, list)
+            if step % 10 == 0 {
+                let new = RunEvent(kind: .system, text: "added \(step)")
+                list.append(new)
+                store.appendEvent(id, new)
+            }
+        }
+        finished.lock(); writing = false; finished.unlock()
+        done.wait()
+        let read = RunStore(directory: folder).loadEvents(id)
+        XCTAssertEqual(read.map(\.id), list.map(\.id), "rows written during a compaction went missing")
+        XCTAssertEqual(read.first?.text, list.first?.text)
+    }
+
+    func testLastSeqIsTheNewestRow() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let log = try XCTUnwrap(RunEventLog(url: folder.appendingPathComponent("runs.sqlite")))
+        let id = UUID()
+        XCTAssertNil(log.lastSeq(id))
+        _ = log.append(UUID(), .event, Data("{}".utf8))
+        let seq = log.append(id, .event, Data("{}".utf8))
+        XCTAssertEqual(log.lastSeq(id), seq)
+    }
+
+    func testEvictionKeepsWhatIsInUseAndGoesByCountAndSize() {
+        let now = Date()
+        func candidate(_ minutes: Double, _ bytes: Int, idle: Bool = true) -> TimelineEviction.Candidate {
+            .init(id: UUID(), lastUsed: now.addingTimeInterval(-minutes * 60), bytes: bytes, idle: idle)
+        }
+        let oldest = candidate(30, 10), middle = candidate(20, 10), newest = candidate(10, 10), busy = candidate(60, 10, idle: false)
+        XCTAssertEqual(TimelineEviction.pick([oldest, middle, newest], limit: 3, budget: 100), [])
+        XCTAssertEqual(TimelineEviction.pick([newest, oldest, middle], limit: 2, budget: 100), [oldest.id])
+        // Under the count, over the size: the longest unused goes until it fits.
+        XCTAssertEqual(TimelineEviction.pick([oldest, middle, newest], limit: 16, budget: 15), [oldest.id, middle.id])
+        // A timeline in use stays, however old and however far over.
+        XCTAssertEqual(TimelineEviction.pick([busy], limit: 0, budget: 0), [])
+        XCTAssertEqual(TimelineEviction.pick([busy, newest], limit: 0, budget: 0), [newest.id])
+    }
+}
+
+private extension JSONEncoder {
+    static let iso: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }()
 }

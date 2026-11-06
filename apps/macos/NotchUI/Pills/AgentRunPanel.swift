@@ -168,6 +168,8 @@ struct AgentRunPanel: View {
                 loadComposerState(run)
             }
             .onDisappear { rememberVisit(runID) }
+            .onAppear { workspace.timelineShown(runID) }
+            .onDisappear { workspace.timelineHidden(runID) }
             // What the side panel hands to this session lands in the draft, to read before sending; also when it
             // arrived while this composer was not on screen.
             .onReceive(ComposerInbox.shared.$delivery.compactMap { $0 }) { _ in takeFromSidePanel() }
@@ -179,7 +181,9 @@ struct AgentRunPanel: View {
                 titleDraft = title
                 renaming = true
             }
-            .onChange(of: runID) { previous, _ in
+            .onChange(of: runID) { previous, current in
+                workspace.timelineHidden(previous)
+                workspace.timelineShown(current)
                 rememberVisit(previous)
                 workspace.requestTimeline(runID)
                 if workspace.run(runID)?.repoRoot != nil { workspace.refreshGit(runID, quiet: true) }
