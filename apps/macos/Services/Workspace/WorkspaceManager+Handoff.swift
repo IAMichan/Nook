@@ -39,8 +39,9 @@ extension WorkspaceManager {
         var handoff: ContextHandoff.Rendered?
         switch strategy {
         case .native: break
-        case .fullSummary: handoff = ContextHandoff.render(events: events, source: run.provider.displayName)
-        case .delta(let since): handoff = ContextHandoff.render(events: events, from: since, source: run.provider.displayName)
+        case .fullSummary: handoff = ContextHandoff.render(events: events, source: run.provider.displayName, session: bridge(for: id) == nil ? nil : id)
+        case .delta(let since):
+            handoff = ContextHandoff.render(events: events, from: since, source: run.provider.displayName, session: bridge(for: id) == nil ? nil : id)
         }
 
         closeCodexServer(id)
@@ -50,6 +51,8 @@ extension WorkspaceManager {
         let accountOnly = previous == provider
         update(id) {
             $0.provider = provider
+            // A goal lives in the agent's own conversation.
+            $0.goal = nil
             $0.profileID = profileID
             $0.model = model
             $0.resolvedModel = nil
@@ -86,7 +89,8 @@ extension WorkspaceManager {
         var events = timeline(id)
         // The message on its way is already in the timeline: it goes once, after the summary.
         if prompt != nil, let last = events.lastIndex(where: { $0.kind == .user }) { events = Array(events[..<last]) }
-        guard let handoff = ContextHandoff.render(events: events, source: run.provider.displayName) else { return prompt }
+        guard let handoff = ContextHandoff.render(events: events, source: run.provider.displayName,
+                                                  session: bridge(for: id) == nil ? nil : id) else { return prompt }
         appendHandoffNote(id, handoff)
         guard let prompt else {
             update(id) { $0.pendingHandoff = handoff.text }
@@ -127,7 +131,8 @@ extension WorkspaceManager {
             forkNext.insert(newID)
         case .fullSummary, .delta:
             copy.providerSessionID = nil
-            handoff = ContextHandoff.render(events: events, source: source.provider.displayName)
+            handoff = ContextHandoff.render(events: events, source: source.provider.displayName,
+                                            session: bridge(for: source.id) == nil ? nil : source.id)
             copy.pendingHandoff = handoff?.text
         }
         runs.insert(copy, at: 0)
@@ -164,6 +169,8 @@ extension WorkspaceManager {
         copy.snoozedAt = nil
         copy.snoozedUntil = nil
         copy.delegation = nil
+        // A goal lives in the agent's own conversation; only a native fork takes that along.
+        if !forkNext.contains(newID) { copy.goal = nil }
         copy.isolation = .folder
         copy.worktreePath = nil
         copy.baseBranch = nil

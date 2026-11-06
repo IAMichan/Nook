@@ -460,6 +460,16 @@ private struct ScheduledTaskEditor: View {
                 } else {
                     Text(tr("sched.webhook.noPort")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
                 }
+                if WorkspaceSettings.shared.scheduledWebhooksPublic, let url = WebhookRelayClient.shared.publicURL(for: existing.id) {
+                    field(tr("sched.public.url")) {
+                        HStack(spacing: NookTheme.Spacing.md) {
+                            Text(url).font(NookTheme.mono(11)).foregroundStyle(NookTheme.paper)
+                                .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading).modifier(FieldBox())
+                            SmallGhostButton(title: tr("sched.webhook.copy")) { Pasteboard.copy(url) }
+                        }
+                    }
+                }
                 HStack(spacing: NookTheme.Spacing.md) {
                     SmallGhostButton(title: secretCopied.copied ? tr("sched.webhook.copied") : tr("sched.webhook.copySecret")) {
                         if let secret = store.webhookSecret(for: existing.id, create: true) { secretCopied.copy(secret) }

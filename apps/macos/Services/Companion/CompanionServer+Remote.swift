@@ -188,6 +188,57 @@ extension CompanionServer {
     }
 
     /// The folder a session works in: a session Nook runs, or an agent in a terminal (its working directory).
+    /// The terminals of a session's folder on this Mac, with their last lines.
+    func terminals(_ request: CompanionRequest, app: AppModel) -> CompanionResponse {
+        guard let session = request.session, let folder = sessionFolder(session, app: app), !folder.isEmpty else {
+            return .failure(request.id, .unknownSession)
+        }
+        if let id = UUID(uuidString: session), app.workspace.run(id)?.isRemote == true { return .failure(request.id, .notAllowedFromPhone) }
+        let path = WorkspacePathPolicy.normalize(folder)
+        let list = TerminalStore.shared.sessions.filter { WorkspacePathPolicy.normalize($0.directory) == path }.map {
+            TerminalDigest(id: $0.shortID, title: $0.title, running: $0.running, output: $0.output(lines: CompanionWorkspace.maxTerminalLines))
+        }
+        var response = CompanionResponse(id: request.id, ok: true)
+        response.terminals = CompanionWorkspace.fitting(list)
+        return response
+    }
+
+    /// One folder or file of a session's folder on this Mac (`CompanionWorkspace` decides what may go).
+    func files(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
+        guard let session = request.session, let folder = sessionFolder(session, app: app), !folder.isEmpty else {
+            return .failure(request.id, .unknownSession)
+        }
+        if let id = UUID(uuidString: session), app.workspace.run(id)?.isRemote == true { return .failure(request.id, .notAllowedFromPhone) }
+        let relative = request.item ?? ""
+        let digest = await Task.detached(priority: .userInitiated) { () -> FolderDigest? in
+            guard let path = CompanionWorkspace.path(relative, in: folder) else { return nil }
+            let manager = FileManager.default
+            var isFolder: ObjCBool = false
+            guard manager.fileExists(atPath: path, isDirectory: &isFolder) else { return nil }
+            if isFolder.boolValue {
+                let names = (try? manager.contentsOfDirectory(atPath: path)) ?? []
+                // A folder of a million files must not cost a million lookups.
+                let entries = names.sorted().prefix(CompanionWorkspace.maxEntries * 2).map { name -> FolderDigest.Entry in
+                    var folder: ObjCBool = false
+                    manager.fileExists(atPath: path + "/" + name, isDirectory: &folder)
+                    let size = (try? manager.attributesOfItem(atPath: path + "/" + name))?[.size] as? Int
+                    return FolderDigest.Entry(name: name, isFolder: folder.boolValue, size: folder.boolValue ? nil : size)
+                }
+                return CompanionWorkspace.listing(path: relative, entries: entries)
+            }
+            // Opening a named pipe or a device would wait forever.
+            guard (try? manager.attributesOfItem(atPath: path))?[.type] as? FileAttributeType == .typeRegular,
+                  let handle = FileHandle(forReadingAtPath: path) else { return nil }
+            defer { try? handle.close() }
+            let data = (try? handle.read(upToCount: CompanionWorkspace.maxTextBytes + 1)) ?? Data()
+            return CompanionWorkspace.digest(path: relative, data: data)
+        }.value
+        guard let digest else { return .failure(request.id, .notAllowedFromPhone) }
+        var response = CompanionResponse(id: request.id, ok: true)
+        response.folder = digest
+        return response
+    }
+
     private func sessionFolder(_ session: String, app: AppModel) -> String? {
         if let runID = UUID(uuidString: session), let run = app.workspace.run(runID) { return run.workingDirectory }
         guard CompanionAgents.handles(session) else { return nil }

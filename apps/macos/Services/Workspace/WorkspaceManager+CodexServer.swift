@@ -58,7 +58,7 @@ extension WorkspaceManager {
         if prompt != nil { append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch")) }
 
         let instructions = [run.instructions.trimmingCharacters(in: .whitespacesAndNewlines),
-                            bridge(for: id) == nil ? "" : BridgeLaunch.instructions].filter { !$0.isEmpty }.joined(separator: "\n\n")
+                            bridge(for: id)?.note ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
         let thread = CodexRPC.threadParams(cwd: run.workingDirectory, model: run.model,
                                            mcpServers: bridge(for: id)?.codexMCPServers(runID: id),
                                            resumeID: run.providerSessionID, instructions: instructions.isEmpty ? nil : instructions)
@@ -98,6 +98,7 @@ extension WorkspaceManager {
                             }
                             if let threadID { self.noteConversationSession(id, threadID, keepsHistory: false) }
                             self.checkCodexConnectors(id, client)
+                            self.runWaitingGoalCommand(id, client)
                             if let next = prompt ?? self.warmPrompts.removeValue(forKey: id) {
                                 self.startCodexTurn(id, client, prompt: next)
                             } else {
@@ -114,6 +115,11 @@ extension WorkspaceManager {
         guard let run = run(id), let thread = client.threadID else { return }
         let planModel = run.model.isEmpty ? run.resolvedModel : run.model
         var text = prompt
+        // A goal as the very first message comes here without passing `send`.
+        if codexGoalStarting[id] == nil, case .set(let objective)? = SessionGoals.command(in: prompt) {
+            codexGoalStarting[id] = .set(objective)
+            text = SessionGoals.firstTurn(objective: objective)
+        }
         // Without a model name Codex's own plan mode is unavailable: the read-only sandbox and this line keep it to a plan.
         if run.mode == .plan, (planModel ?? "").isEmpty { text = "Create a plan only; do not make any changes.\n\n" + prompt }
         turns[id]?.codexBaseline = codexTotals[id]
@@ -133,16 +139,24 @@ extension WorkspaceManager {
                 self.failCodexTurn(id, tr("ws.revert.conversationFailed", failure))
                 return
             }
-            client.request("turn/start", startParams) { [weak self] result in
-                Task { @MainActor in
-                    guard let self else { return }
-                    switch result {
-                    case .failure(let error):
-                        self.failCodexTurn(id, error.localizedDescription)
-                    case .success(let response):
-                        if let turn = (response.dictionary["turn"] as? [String: Any])?["id"] as? String {
-                            client.turnID = turn
-                            self.noteConversationTurn(id, turnID: turn)
+            self.prepareCodexGoal(id, client, thread: thread) { [weak self] failure in
+                guard let self else { return }
+                if let failure {
+                    self.failCodexTurn(id, failure)
+                    return
+                }
+                client.request("turn/start", startParams) { [weak self] result in
+                    Task { @MainActor in
+                        guard let self else { return }
+                        switch result {
+                        case .failure(let error):
+                            self.failCodexTurn(id, error.localizedDescription)
+                        case .success(let response):
+                            if let turn = (response.dictionary["turn"] as? [String: Any])?["id"] as? String {
+                                client.turnID = turn
+                                self.noteConversationTurn(id, turnID: turn)
+                            }
+                            self.activateCodexGoal(id, client, thread: thread)
                         }
                     }
                 }
@@ -157,6 +171,11 @@ extension WorkspaceManager {
     func steer(_ id: UUID, text: String) -> Bool {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, canSteer(id) else { return false }
+        // Codex takes a goal outside its turns: it waits for this turn to end, as a turn of its own.
+        if takesGoalOutsideTurns(id), SessionGoals.command(in: clean) != nil {
+            enqueue(id, text: clean)
+            return true
+        }
         if steerRoute(id) == .interruptRestart { return steerByRestart(id, text: clean) }
         if let process = processes[id], run(id)?.provider == .claude {
             append(id, RunEvent(kind: .user, text: ContextRefs.visible(clean)))
@@ -400,6 +419,8 @@ extension WorkspaceManager {
             append(id, RunEvent(kind: .assistant, text: text, tool: "plan", state: .done))
         case .tasks(let steps):
             setTasks(id, steps)
+        case .goal(let update, let thread):
+            if thread == nil || thread == codexServers[id]?.threadID { noteGoal(id, update) }
         case .subagentSpawned(let callID, let prompt, let model, let threads, let failed):
             // The same shape as Claude Code's Agent call, so the subagent bar shows Codex's subagents too.
             guard turns[id]?.timeline.eventID(forCall: callID) == nil else { return }
@@ -537,6 +558,7 @@ extension WorkspaceManager {
     }
 
     private func failCodexTurn(_ id: UUID, _ message: String) {
+        codexGoalStarting[id] = nil
         pauseLive(id)
         turns[id] = nil
         update(id) { $0.move(to: .failed, detail: message) }
