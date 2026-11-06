@@ -86,6 +86,10 @@ struct ChatMessageView: View, Equatable {
             NoticeList(notices: message.visibleNotices)
         }
 
+        if !message.privateBrief.isEmpty {
+            PrivateBriefDisclosure(brief: message.privateBrief)
+        }
+
         // Where Nook looked, folded away after every answer until you want to see it; a failed source shows as a badge.
         SourcesDisclosure(message: message, onRetry: isLast ? { app.retryLast() } : nil)
 

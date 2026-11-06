@@ -403,6 +403,36 @@ extension ChatMessage {
     ]
 }
 
+/// One quiet line under an answer written from a filtered note: opens to show word for word what left this Mac.
+struct PrivateBriefDisclosure: View {
+    let brief: String
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            Button {
+                expanded.toggle()
+            } label: {
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    Text(tr("screenBrain.briefTitle"))
+                }
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
+            }
+            .buttonStyle(.plain)
+            if expanded {
+                Text(brief)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(.horizontal, NookTheme.Spacing.lg)
+    }
+}
+
 /// Warnings for an answer, such as a source that could not be read. A warning about a missing permission gets the button
 /// that grants it, so it can be fixed right from the chat.
 struct NoticeList: View {

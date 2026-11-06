@@ -147,6 +147,13 @@ enum ScreenBrain {
     /// What the chosen brain is told when it does its part without the screen.
     static let outsideInstruction = "Part of this question is about the user's screen or another source kept on their Mac, which you cannot see and must not ask about: a model on the Mac handles that part. Do only the rest: look up what is needed and write the facts you found, briefly, with names, dates and amounts. Do not ask anything back and do not say what you cannot see."
 
+    /// Whether the chosen brain can answer this from a filtered note (`PrivateBrief`). A question for a phone number or an
+    /// address asks for exactly what the note takes out: the model on this Mac answers that itself. The same for one that
+    /// came with pictures: only a brain that gets them can say what is on them, and `ScreenBrain.routed` already fixed a run.
+    static func relays(_ text: String, images: Bool) -> Bool {
+        routed == nil && !images && !ChatIntent.detect(text).kinds.contains(.contacts)
+    }
+
     /// Whether this chat question is screen work. The screen brain is usually far smaller than the chosen brain, so a
     /// question goes there only when it needs the screen. Anything else stays with the chosen brain.
     /// `conversation`: earlier turns exist, so "dit" and "ervan" can point at those. `afterScreen`: the last answer read the screen.

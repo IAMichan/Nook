@@ -143,8 +143,11 @@ extension AppModel {
         // A question about the screen, or a follow-up on an answer that read it, while the screen stays on this Mac: the
         // screen brain answers it (`ScreenBrain`), so the screen text never leaves the Mac. Everything else goes to the
         // chosen brain as always.
-        let screenBrain = ScreenBrain.routed ?? screenWorker(for: text, in: conversation)
-        let runs = screenBrain ?? settings.selection
+        // With a relaying screen brain it writes a filtered note instead, and the chosen brain answers from that.
+        let needed = ScreenBrain.routed ?? screenWorker(for: text, in: conversation)
+        let relay = needed != nil && ScreenBrain.relays(text, images: !images.isEmpty) ? settings.relayWorker : nil
+        let screenBrain = relay == nil ? needed : nil
+        let runs = screenBrain ?? relay ?? settings.selection
         var question = ChatMessage(role: .user, text: text)
         question.images = images
         chat.append(question, to: conversation)
@@ -173,6 +176,8 @@ extension AppModel {
         // Also the chosen brain's part: that one sees the conversation without what stays on this Mac.
         let together = screenBrain != nil && ScreenBrain.routed == nil && ScreenBrain.needsBoth(text) && images.isEmpty
         let outside = together ? chat.history(before: question.id, hiding: settings.privateSources) : nil
+        // The model on this Mac reads the whole conversation for its note, the chosen brain what it may see.
+        let local = relay.map { _ in chat.history(before: question.id) } ?? []
         let replyID = reply.id
         // The answer's task inherits the brain it runs on.
         chatTasks[conversation] = ScreenBrain.$routed.withValue(screenBrain) {
@@ -183,7 +188,11 @@ extension AppModel {
                             await ReplyContext.$messageID.withValue(replyID) {
                                 await ReplyContext.$note.withValue(note) {
                                     await ReplyContext.$selfContained.withValue(selfContained) {
-                                        await self?.answerTogether(text, outside: outside, history: history, replyID: replyID, conversation: conversation)
+                                        if let relay {
+                                            await self?.answerFromBrief(text, worker: relay, local: local, history: history, replyID: replyID, conversation: conversation)
+                                        } else {
+                                            await self?.answerTogether(text, outside: outside, history: history, replyID: replyID, conversation: conversation)
+                                        }
                                     }
                                 }
                             }
@@ -203,9 +212,67 @@ extension AppModel {
         if !withheldSources(asked: text, scope: wanted).isEmpty { return worker }
         if settings.privateSources.contains("contacts"), ChatIntent.detect(text).kinds.contains(.contacts) { return worker }
         let messages = chat.conversation(conversation)?.messages ?? []
-        let afterScreen = messages.last { $0.role == .nook }?.used(anyOf: [SourceCatalog.screen]) == true
+        let last = messages.last { $0.role == .nook }
+        let afterScreen = last?.used(anyOf: [SourceCatalog.screen]) == true || last?.privateBrief.isEmpty == false
         // The question itself was appended just before this: it is not a conversation of its own.
         return ScreenBrain.handles(text, conversation: messages.count > 1, afterScreen: afterScreen) ? worker : nil
+    }
+
+    /// The model on this Mac reads what stays here and writes a filtered note; the chosen brain answers from that note,
+    /// with its own tools. When no note comes, nothing left the Mac and the model on this Mac answers as it would have.
+    private func answerFromBrief(_ text: String, worker: BrainSelection, local: [ChatTurn], history: [ChatTurn], replyID id: UUID, conversation: UUID) async {
+        let chosen = settings.chosenSelection.provider.title.components(separatedBy: " (").first ?? settings.chosenSelection.provider.title
+        let workerName = AppSettings.screenBrainName(worker)
+        chat.update(id) { $0.status = tr("screenBrain.reading") }
+        let kept = settings.privateSources
+        let note = await writeBrief(text, worker: worker, kept: kept, history: local, conversation: conversation)
+        guard !Task.isCancelled else { return }
+        guard let note else {
+            chat.update(id) { $0.notices.append(tr("screenBrain.answered", workerName)) }
+            await ScreenBrain.$routed.withValue(worker) {
+                await answer(text, history: local, replyID: id, conversation: conversation)
+            }
+            return
+        }
+        chat.update(id) {
+            $0.privateBrief = note.text
+            $0.notices.append(tr("screenBrain.relayed", workerName, chosen))
+            $0.status = tr("app.status.thinking")
+        }
+        await ReplyContext.$brief.withValue(note.text) {
+            await ReplyContext.$briefAddresses.withValue(note.addresses) {
+                await answer(text, history: history, replyID: id, conversation: conversation)
+            }
+        }
+    }
+
+    /// Runs on the model on this Mac, without tools: it reads only the screen and the sources the chosen brain may not
+    /// (the chosen brain searches the others itself). Nil when there is nothing to read or the model gives no note.
+    private func writeBrief(_ text: String, worker: BrainSelection, kept: Set<String>, history: [ChatTurn],
+                            conversation: UUID) async -> (text: String, addresses: [String])? {
+        await ScreenBrain.$routed.withValue(worker) {
+            await ReplyContext.$images.withValue([]) {
+                await ReplyContext.$note.withValue("") {
+                    // Never a raw screen to anything but a model on this Mac.
+                    guard settings.selection.isLocal else { return nil }
+                    let wanted = (chat.conversation(conversation)?.scope ?? .automatic).merged(with: SourceScope.parse(text))
+                    let sources = kept.subtracting([SourceCatalog.screen]).filter { wanted.allows($0) }
+                    let readsScreen = kept.contains(SourceCatalog.screen) && wanted.allows(SourceCatalog.screen) && !ReplyContext.selfContained
+                        && (ScreenBrain.refersToScreen(text) || ScreenBrain.followsUp(text))
+                    let screen = readsScreen ? try? await screenSnapshot() : nil
+                    let prepared = await prepareRun(text: text, scope: SourceScope(mode: .only, included: sources), snapshotText: nil,
+                                                    ledger: RetrievalLedger(), prefetch: !sources.isEmpty, history: history)
+                    guard screen != nil || !prepared.fetched.isEmpty else { return nil }
+                    let profile = settings.brainProfile
+                    let prompt = PrivateBrief.prompt(request: text, history: BrainService.historyPrefix(history, limit: 6, length: 300),
+                                                     context: prepared.fetched.isEmpty ? "" : prepared.context, screen: screen?.text,
+                                                     budget: profile.promptCharacterBudget)
+                    let raw = await brain.rewrite(system: PrivateBrief.system, prompt: prompt, timeout: 60)
+                    guard let sealed = raw.flatMap(PrivateBrief.sealed) else { return nil }
+                    return (sealed, PrivateBrief.addresses(in: [screen?.text ?? "", prepared.context, raw ?? ""].joined(separator: "\n")))
+                }
+            }
+        }
     }
 
     /// A question for both brains: the chosen brain looks up what it can, then the model on this Mac answers with that and
@@ -339,8 +406,9 @@ extension AppModel {
         let tools = prepared.tools
         let relevant = prepared.relevant
         let fetched = prepared.fetched
-        let brainContext = outsideFound.isEmpty ? prepared.context
+        var brainContext = outsideFound.isEmpty ? prepared.context
             : "What Nook's main brain found for this question, without the screen:\n\(outsideFound.prefix(settings.brainProfile.isSmall ? 2_000 : 8_000))\n\n" + prepared.context
+        if !ReplyContext.brief.isEmpty { brainContext = PrivateBrief.context(ReplyContext.brief) + "\n\n" + brainContext }
 
         var request = text
         if let correction {
@@ -466,7 +534,7 @@ extension AppModel {
             let shown = references.filter { cited.contains($0.number) } + references.filter { !cited.contains($0.number) }
             // Sources that could not be read are shown, with their reason, in the sources card under the answer.
             var notices: [String] = []
-            if !withheld.isEmpty {
+            if !withheld.isEmpty, ReplyContext.brief.isEmpty {
                 notices.append(tr("chat.notice.private", withheld.map { SourceCatalog.title($0) }.sorted().joined(separator: ", ")))
             }
             // A mail draft or a chat message in the plan is already the step to approve: its Send button sends it.

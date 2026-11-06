@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Settings › Brain › Screen work: while an external brain answers, who may read the screen. The external brain itself, no
 /// one (screen work is off), or a model on this Mac (`ScreenBrain`), so Claude does the harder questions and the screen
-/// never leaves the Mac.
+/// never leaves the Mac. That model can answer itself, or pass the external brain a filtered note so it answers (`PrivateBrief`).
 struct ScreenBrainSection: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject var settings: AppSettings
@@ -25,6 +25,12 @@ struct ScreenBrainSection: View {
                     }
                 }
             }
+            if settings.screenWorker != nil {
+                Picker(tr("settings.screenBrain.relay.picker"), selection: $settings.screenBrainRelays) {
+                    Text(tr("settings.screenBrain.relay.answers")).tag(false)
+                    Text(tr("settings.screenBrain.relay.passes", providerName)).tag(true)
+                }
+            }
             note
         } header: {
             SettingsSectionTitle(tr("settings.screenBrain.title"), info: tr("settings.screenBrain.info"))
@@ -34,7 +40,9 @@ struct ScreenBrainSection: View {
 
     /// What the choice means right now, in one line.
     @ViewBuilder private var note: some View {
-        if let worker = settings.screenWorker {
+        if let worker = settings.relayWorker {
+            SettingNote(tr("settings.screenBrain.relayNote", AppSettings.screenBrainName(worker), providerName), tone: .success)
+        } else if let worker = settings.screenWorker {
             SettingNote(tr("settings.screenBrain.localNote", AppSettings.screenBrainName(worker), providerName), tone: .success)
         } else if choice.wrappedValue == Self.external {
             SettingNote(tr("settings.screenBrain.externalNote", providerName), tone: .warning)
