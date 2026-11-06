@@ -164,6 +164,13 @@ struct DiffText: View, Equatable {
     var comments: [ReviewComment] = []
     var onComment: ((_ line: Int?, _ code: String, _ text: String) -> Void)? = nil
     var onRemoveComment: ((UUID) -> Void)? = nil
+    /// Like `onComment` with the whole line, for what needs the old file's number of a removed line.
+    /// The first row is set for a comment on several lines: Shift on a second line's + picks the range.
+    var onRowComment: ((UnifiedDiff.Row, UnifiedDiff.Row?, String) -> Void)? = nil
+    /// New-file lines with something drawn under them, what is drawn, and what tells one drawing from the next.
+    var annotationLines: Set<Int> = []
+    var annotationVersion = ""
+    var annotation: ((Int) -> AnyView)? = nil
     /// One file of a `StackedDiffList`: no scroll view of its own and no file line, its header above says which file.
     var stacked = false
     private let rows: [UnifiedDiff.Row]
@@ -176,6 +183,8 @@ struct DiffText: View, Equatable {
     /// The syntax-colored lines, once worked out (`DiffSyntaxStyle`); until then the code is plain.
     @State private var colored: DiffSyntaxStyle.Lines?
     @State private var editing: Int?
+    /// The first line of a comment on several lines; `editing` is then the last.
+    @State private var rangeStart: Int?
     @State private var commentDraft = ""
     @Environment(\.diffDisplay) private var display
     /// The width the diff is given, so lines that scroll sideways (not wrapped) still fill it.
@@ -189,7 +198,13 @@ struct DiffText: View, Equatable {
 
     init(text: String, comments: [ReviewComment] = [],
          onComment: ((_ line: Int?, _ code: String, _ text: String) -> Void)? = nil,
-         onRemoveComment: ((UUID) -> Void)? = nil, stacked: Bool = false, path: String? = nil, scope: String? = nil) {
+         onRemoveComment: ((UUID) -> Void)? = nil, stacked: Bool = false, path: String? = nil, scope: String? = nil,
+         onRowComment: ((UnifiedDiff.Row, UnifiedDiff.Row?, String) -> Void)? = nil, annotationLines: Set<Int> = [], annotationVersion: String = "",
+         annotation: ((Int) -> AnyView)? = nil) {
+        self.onRowComment = onRowComment
+        self.annotationLines = annotationLines
+        self.annotationVersion = annotationVersion
+        self.annotation = annotation
         self.scope = scope
         self.stacked = stacked
         self.anchor = path
@@ -222,6 +237,7 @@ struct DiffText: View, Equatable {
         a.syntaxKey == b.syntaxKey && a.syntaxPath == b.syntaxPath && a.stacked == b.stacked && a.scope == b.scope
             && a.anchor == b.anchor && a.comments == b.comments
             && (a.onComment == nil) == (b.onComment == nil) && (a.onRemoveComment == nil) == (b.onRemoveComment == nil)
+            && (a.onRowComment == nil) == (b.onRowComment == nil) && a.annotationVersion == b.annotationVersion
     }
 
     /// The rows of the diffs shown lately: a diff is made again with each redraw of the view around it (a side panel
@@ -290,6 +306,7 @@ struct DiffText: View, Equatable {
                         if editing == index {
                             editor(line: row.new, code: row.raw)
                         }
+                        if let annotation, let line = row.new, annotationLines.contains(line) { annotation(line) }
                     }
                 }
         }
@@ -317,6 +334,9 @@ struct DiffText: View, Equatable {
                         commentRow(comment)
                     }
                 }
+                if let annotation, let right = line.right, let number = rows[right].new, annotationLines.contains(number) {
+                    annotation(number)
+                }
             }
         }
     }
@@ -333,10 +353,16 @@ struct DiffText: View, Equatable {
 
     private func lineRow(_ row: UnifiedDiff.Row, index: Int) -> some View {
         DiffLineRow(row: row, code: marked(colored?[index] ?? code(row), row: index), tint: accent(row.kind),
-                    numberWidth: numberWidth, commentable: onComment != nil, editing: editing == index,
+                    numberWidth: numberWidth, commentable: onComment != nil || onRowComment != nil, editing: editing == index,
                     wrap: display.wrap || !stacked) {
-            commentDraft = ""
-            editing = index
+            if onRowComment != nil, NSEvent.modifierFlags.contains(.shift), let current = editing, current != index {
+                rangeStart = min(current, index)
+                editing = max(current, index)
+            } else {
+                rangeStart = nil
+                commentDraft = ""
+                editing = index
+            }
         }
         .equatable()
     }
@@ -453,6 +479,9 @@ struct DiffText: View, Equatable {
 
     private func editor(line: Int?, code: String) -> some View {
         HStack(spacing: NookTheme.Spacing.md) {
+            if let rangeStart, let first = rows[rangeStart].new ?? rows[rangeStart].old, let last = line ?? editing.flatMap({ rows[$0].old }) {
+                Text(verbatim: "\(first)–\(last)").font(NookTheme.mono(11)).foregroundStyle(NookTheme.textTertiary).fixedSize()
+            }
             TextField("", text: $commentDraft, prompt: Text(tr("ws.review.placeholder")).foregroundStyle(NookTheme.textTertiary),
                       axis: .vertical)
                 .textFieldStyle(.plain)
@@ -476,8 +505,10 @@ struct DiffText: View, Equatable {
         let clean = commentDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
         onComment?(line, code, clean)
+        if let editing { onRowComment?(rows[editing], rangeStart.map { rows[$0] }, clean) }
         commentDraft = ""
         editing = nil
+        rangeStart = nil
     }
 }
 

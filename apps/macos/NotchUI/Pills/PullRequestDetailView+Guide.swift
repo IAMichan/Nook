@@ -74,6 +74,12 @@ extension PullRequestDetailView {
                 case .normal:
                     EmptyView()
                 }
+                if let sessionContext, let detail {
+                    ToolbarIconButton("plus.bubble", tr("session.context.askStop"), height: 20, width: 20) {
+                        ComposerInbox.shared.add(SessionPrompts.guideStop(detail.sessionRef, title: stop.title, summary: stop.summary,
+                                                                          files: stop.files.map(\.path)), to: sessionContext)
+                    }
+                }
             }
             if !stop.summary.isEmpty {
                 Text(stop.summary).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
@@ -83,16 +89,38 @@ extension PullRequestDetailView {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(stop.files, id: \.path) { file in
                     PullRequestHoverRow(action: {
-                        withAnimation(NookTheme.swap) { tab = .code }
-                        openFile = file.path
+                        withAnimation(NookTheme.reveal) {
+                            if guideFiles.contains(file.path) { guideFiles.remove(file.path) } else { guideFiles.insert(file.path) }
+                        }
                     }) {
                         HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
+                            Image(systemName: "chevron.right")
+                                .font(NookTheme.font(8.5, .bold))
+                                .foregroundStyle(NookTheme.textTertiary)
+                                .rotationEffect(.degrees(guideFiles.contains(file.path) ? 90 : 0))
                             filePath(file.path)
                             if !file.note.isEmpty {
                                 Text(file.note).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).lineLimit(2)
                             }
                             Spacer(minLength: 0)
+                            ToolbarIconButton("arrow.up.right", tr("agents.pr.guide.openCode"), height: 20, width: 20) {
+                                switchTo(.code)
+                                openFile = file.path
+                            }
                         }
+                    }
+                    if guideFiles.contains(file.path), let detail, let patch = detail.files.first(where: { $0.path == file.path })?.patch, !patch.isEmpty {
+                        // Written here, these wait for the review like the Code tab's.
+                        let scope = "pull \(detail.id)"
+                        DiffText(text: patch, comments: actions.lineComments.filter { $0.review.path == file.path }.map(\.review),
+                                 onRemoveComment: { id in actions.lineComments.removeAll { $0.id == id } }, stacked: true, path: file.path, scope: scope,
+                                 onRowComment: detail.isOpen ? { row, first, text in
+                                     if let pending = PullRequestPendingComment.make(row, from: first, text: text, path: file.path, scope: scope) {
+                                         actions.lineComments.append(pending)
+                                     }
+                                 } : nil)
+                            .equatable()
+                            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
                     }
                 }
             }

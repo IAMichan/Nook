@@ -7,8 +7,8 @@ import SwiftUI
 /// scroll past the title. Under it four tabs: Summary (reviewers and labels, then the description, the checks and
 /// the comments in sections that fold, the comments as threads; see
 /// PullRequestConversationList), Guide, Timeline (everything that happened, commits included) and Code (every
-/// changed file with its diff). The bar under the tabs says what the open tab holds: the comments, commits and approvals
-/// with the order on Timeline, the files viewed on Code (Summary leads with its readiness card instead). Merge asks for a second click and
+/// changed file with its diff). The bar under the tabs says what the open tab holds: how the checks went on Summary, the
+/// comments, commits and approvals with the order on Timeline, the files viewed on Code. Merge asks for a second click and
 /// uses the account it was listed under; the round button at the bottom right opens the composer.
 ///
 /// The page opens at once: the top shows what the list already knew while GitHub is asked, the overview follows with
@@ -40,7 +40,16 @@ struct PullRequestDetailView: View {
 
     @StateObject var model: PullRequestDetailModel
     @State var tab: Tab = .summary
+    /// A file for the Code tab to unfold and scroll to, from the Guide.
     @State var openFile: String?
+    /// Your name on a forge other than GitHub, once it answered.
+    @State var forgeViewer: String?
+    /// The files unfolded in the Guide's stops.
+    @State var guideFiles: Set<String> = []
+    /// The commit the Code tab shows; nil for the whole change.
+    @State var codeCommit: String?
+    /// How many commits the branch is behind its base; nil until GitHub compared them.
+    @State var behindBy: Int?
     /// The check whose steps and log the Summary shows in place of itself.
     @State var openCheck: PullRequestCheck?
     /// Files you marked as viewed; a mark lapses when a push changes the file.
@@ -64,10 +73,12 @@ struct PullRequestDetailView: View {
     }
     /// The popover that says in full what may still hold the merge back.
     @State var showBlocker = false
+    /// The popover on the base branch of a branch that is behind.
+    @State var showBehind = false
     /// The popover under the Summary's Status line: everything GitHub weighs before a merge, one line each.
     @State var showReadiness = false
     /// The composer, the ⋯ menu's actions and their confirmation.
-    @StateObject var actions = PullRequestActionState()
+    @StateObject var actions: PullRequestActionState
     /// The timeline newest first, when chosen.
     @AppStorage("agents.pr.timelineNewest") var newestFirst = false
     /// The Summary's sections that fold, open at first: the description and comments, the checks folded.
@@ -88,6 +99,8 @@ struct PullRequestDetailView: View {
     /// The same stack with the ones of it that merged, as its menu lists it; what merges is still `stack`.
     let stackHistory: [PullRequestItem]
     let onOpenPullRequest: ((PullRequestItem) -> Void)?
+    /// The stack GitHub itself keeps this pull request in, if any: it takes the place of the one worked out from branches.
+    @State var nativeStack: PullRequestNativeStack?
     /// Merging the stack up to here waits for its second click, then runs.
     @State var confirmStackMerge = false
     @State var mergingStack = false
@@ -112,6 +125,7 @@ struct PullRequestDetailView: View {
         self.maximized = maximized
         _settled = State(initialValue: !waitsForPanel)
         _model = StateObject(wrappedValue: PullRequestDetailModel(accountID: accountID, item: item))
+        _actions = StateObject(wrappedValue: PullRequestActionState(pullRequest: item.id))
     }
 
     var detail: PullRequestDetail? { model.detail }
@@ -123,7 +137,17 @@ struct PullRequestDetailView: View {
     }
 
     var body: some View {
-        pageBody.environment(\.sessionPullRequestRef, detail?.sessionRef)
+        pageBody
+            .environment(\.sessionPullRequestRef, detail?.sessionRef)
+            .environment(\.pullRequestCommentActions, commentActions)
+            // A new push, a moved base: compare again.
+            .task(id: detail.map { "\($0.headSHA) \($0.mergeState) \($0.updated?.timeIntervalSince1970 ?? 0)" }) {
+                await readBehind()
+                if let forge, forgeViewer == nil { forgeViewer = await forge.viewer() }
+                if forge == nil, let token = GitHubPullRequestDetail.token(accountID: accountID) {
+                    nativeStack = await GitHubPullRequestDetail.nativeStack(repo: item.repo, number: item.number, token: token)
+                }
+            }
     }
 
     private var pageBody: some View {
@@ -185,9 +209,6 @@ struct PullRequestDetailView: View {
             let updated = item.updated(from: detail)
             if updated != item { onUpdate(updated) }
         }
-        .onChange(of: detail?.files.map(\.path) ?? []) { _, paths in
-            if let path = openFile, detail?.activityLoaded == true, !paths.contains(path) { openFile = nil }
-        }
     }
 
     // MARK: Header
@@ -225,15 +246,18 @@ struct PullRequestDetailView: View {
             }
             crumbs
             Spacer(minLength: NookTheme.Spacing.sm)
-            if stackHistory.count > 1 { stackMenu }
+            if shownStack.count > 1 { stackMenu }
             if let detail {
                 primaryAction(detail)
                 // Refreshing is in the ⋯ menu, which spins while GitHub is asked. It alone
                 // watches the reads, so a poll draws the menu again and not the page.
                 Observing(model.status) {
-                    PullRequestMoreMenu(state: actions, detail: detail, loading: model.loading, fetchedAt: model.fetchedAt) {
+                    PullRequestMoreMenu(state: actions, detail: detail, loading: model.loading, fetchedAt: model.fetchedAt, onRefresh: {
                         Task { await model.refresh(activity: true) }
-                    }
+                    }, viewer: viewer, method: method, host: forgeRepository?.host ?? .github, onWriteGuide: {
+                        switchTo(.guide)
+                        writeGuide(detail, key: PullRequestViewedFiles.key(repo: detail.repo, number: detail.number))
+                    })
                 }
             } else {
                 Observing(model.status) {
@@ -262,7 +286,13 @@ struct PullRequestDetailView: View {
                     .truncationMode(.tail)
                     .help(detail?.title ?? item.title)
             } else {
-                Text(item.repo).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.tail)
+                Button {
+                    if let url = URL(string: (forgeRepository?.webOrigin ?? "https://github.com") + "/" + item.repo) { NSWorkspace.shared.open(url) }
+                } label: {
+                    Text(item.repo).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.tail)
+                }
+                .buttonStyle(.plain)
+                .help(tr("agents.pr.openRepository", item.repo))
                 numberLink
             }
         }
@@ -284,21 +314,34 @@ struct PullRequestDetailView: View {
         .fixedSize()
         .help(tr("agents.pulls.open"))
         .accessibilityLabel(tr("agents.pulls.open"))
+        .contextMenu {
+            if let url = detail?.url ?? item.url {
+                Button(tr("agents.pulls.open")) { NSWorkspace.shared.open(url) }
+                Button(tr("agents.pr.copyLink")) {
+                    Pasteboard.copy(url.absoluteString)
+                    ToastCenter.shared.success(tr("agents.pr.copiedLink"))
+                }
+            }
+        }
     }
 
     /// What the pull request is: shown from the list's row at once, and filled in when GitHub answers. The title (on two
-    /// lines at most), who opened it and when it last changed, then the branches with the size on the right. Copying the
-    /// checkout command is in the ⋯ menu, so the top keeps to what you read.
+    /// lines at most, a pencil beside it under the pointer), who opened it and when it last changed with the checkout
+    /// command to copy, then the branches with the size on the right.
     var header: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            Text(detail?.title ?? item.title)
-                .font(NookTheme.TextStyle.title)
-                .foregroundStyle(NookTheme.paper)
-                .lineLimit(2)
-                .truncationMode(.tail)
-                .fixedSize(horizontal: false, vertical: true)
-                .help(detail?.title ?? item.title)
-                .textSelection(.enabled)
+            PullRequestEditableLine(help: tr("agents.pr.editTitle"), enabled: canEdit) {
+                if let detail { actions.open(.edit, detail: detail) }
+            } content: {
+                Text(detail?.title ?? item.title)
+                    .font(NookTheme.TextStyle.title)
+                    .foregroundStyle(NookTheme.paper)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help(detail?.title ?? item.title)
+                    .textSelection(.enabled)
+            }
             let author = detail?.author ?? item.author
             HStack(spacing: NookTheme.Spacing.sm) {
                 if !author.isEmpty {
@@ -313,7 +356,8 @@ struct PullRequestDetailView: View {
                     Text(tr("agents.pr.updatedAgo", AgentFormat.short(Date().timeIntervalSince(updated))))
                         .monospacedDigit()
                 }
-                Spacer(minLength: 0)
+                Spacer(minLength: NookTheme.Spacing.sm)
+                if let detail { checkoutCommand(detail) }
             }
             .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
@@ -327,6 +371,69 @@ struct PullRequestDetailView: View {
         }
     }
 
+    /// The forge when it is not GitHub: its client, and where it lives.
+    var forge: PullRequestForgeClient? { PullRequestForges.client(account: accountID, path: item.repo) }
+    var forgeRepository: RemoteRepository? { PullRequestForges.repository(account: accountID, path: item.repo) }
+
+    /// Your login with the account this page reads with; empty until the list has been read.
+    var viewer: String { forgeViewer ?? PullRequestStore.shared.accounts.first { $0.id == accountID }?.login ?? "" }
+
+    /// What a comment card can do here. Answers and edits wait for the second click like everything else that writes;
+    /// an emoji or a resolved thread goes at once and is as easily undone.
+    var commentActions: PullRequestCommentActions? {
+        guard let detail else { return nil }
+        return PullRequestCommentActions(viewer: viewer, canWrite: !detail.locked, features: detail.features, state: actions, react: { event, content in
+            runDirect(args: "\(detail.id) reaction \(content)", tool: "github_react") { token in
+                try await GitHubPullRequestDetail.toggleReaction(content, on: event, repo: detail.repo, login: viewer, token: token)
+            }
+        }, resolve: { threadID, resolved in
+            let action = PullRequestAction.setThreadResolved(threadID: threadID, resolved: resolved)
+            let forge = forge
+            runDirect(args: action.auditArgs(repo: detail.repo, number: detail.number), tool: action.auditTool) { token in
+                if let forge {
+                    try await forge.perform(action, number: detail.number, detail: detail)
+                } else {
+                    try await GitHubPullRequestDetail.perform(action, repo: detail.repo, number: detail.number, token: token)
+                }
+            }
+        })
+    }
+
+    /// Sends something small without a second click, logs it, and reads the page again.
+    func runDirect(args: String, tool: String, _ send: @escaping (String) async throws -> Void) {
+        guard let token = forge != nil ? "" : GitHubPullRequestDetail.token(accountID: accountID) else {
+            actions.error = tr("agents.pr.noToken")
+            return
+        }
+        Task {
+            do {
+                try await send(token)
+                app.store.audit(tool: tool, args: args, result: "ok")
+                await model.refresh(activity: true)
+            } catch {
+                app.store.audit(tool: tool, args: args, result: "error: " + error.localizedDescription)
+                actions.error = error.localizedDescription
+            }
+        }
+    }
+
+    /// Whether the title and description can be edited here.
+    var canEdit: Bool { detail.map { $0.isOpen && $0.canPush != false } ?? false }
+
+    /// The command that checks the pull request out, a click copies it; the first to give way on a narrow page.
+    func checkoutCommand(_ detail: PullRequestDetail) -> some View {
+        let command = PullRequestMoreMenu.checkout(detail)
+        return Button {
+            Pasteboard.copy(command)
+            ToastCenter.shared.success(tr("agents.pr.action.copied"))
+        } label: {
+            Text(command).font(NookTheme.mono(10.5)).foregroundStyle(NookTheme.textMuted).lineLimit(1).truncationMode(.tail)
+        }
+        .buttonStyle(.plain)
+        .help(tr("agents.pr.action.copyCheckout"))
+        .layoutPriority(-1)
+    }
+
     /// The folded middle: the author and when, the branches, and the size, in one quiet line.
     var condensedLine: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
@@ -338,7 +445,7 @@ struct PullRequestDetailView: View {
             if let detail {
                 NookDivider(vertical: true).frame(height: 12)
                 HStack(spacing: NookTheme.Spacing.xs) {
-                    Text(detail.baseBranch).lineLimit(1)
+                    baseBranch(detail)
                     Image(systemName: "arrow.left").font(NookTheme.font(8.5, .semibold)).foregroundStyle(NookTheme.textMuted)
                     Text(detail.headBranch).lineLimit(1).truncationMode(.middle)
                 }
@@ -361,12 +468,74 @@ struct PullRequestDetailView: View {
         return PullRequestBadge.Glyph(detail.state, conflicted: detail.conflicted)
     }
 
-    /// "main ← feature" in mono (a click on the head copies it), and on the right how many files and lines changed. A
-    /// branch that is behind is updated from the Summary's Status line (or the ⋯ menu), not from here.
+    /// The branch it merges into, with the stack's mark when that is another pull request's branch and a warning when the
+    /// branch has fallen behind it; the warning opens what that means and the button that updates it.
+    @ViewBuilder
+    func baseBranch(_ detail: PullRequestDetail) -> some View {
+        let stacked = shownStack.contains { $0.headBranch == detail.baseBranch }
+        let name = HStack(spacing: NookTheme.Spacing.xs) {
+            if stacked { PullRequestStateIcon(glyph: .stack, tinted: false) }
+            Text(detail.baseBranch).lineLimit(1).truncationMode(.middle)
+        }
+        if detail.state == .open, detail.mergeable != false, detail.mergeState == "behind" || (behindBy ?? 0) > 0 {
+            Button {
+                showBehind.toggle()
+            } label: {
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    name
+                    Image(systemName: "exclamationmark.triangle").font(NookTheme.font(10, .medium))
+                }
+                .foregroundStyle(NookTheme.amber)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(behindText(detail))
+            .popover(isPresented: $showBehind, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    Text(behindText(detail))
+                        .font(NookTheme.TextStyle.body)
+                        .foregroundStyle(NookTheme.paper)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if detail.canPush != false {
+                        HStack(spacing: NookTheme.Spacing.sm) {
+                            SmallGhostButton(title: tr("agents.pr.action.updateBranch")) {
+                                showBehind = false
+                                actions.close()
+                                actions.pending = .updateBranch(headSHA: detail.headSHA)
+                            }
+                            if !detail.nodeID.isEmpty, forge == nil {
+                                SmallGhostButton(title: tr("agents.pr.action.rebaseBranch")) {
+                                    showBehind = false
+                                    actions.close()
+                                    actions.pending = .rebaseBranch(nodeID: detail.nodeID, headSHA: detail.headSHA)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(NookTheme.Spacing.md)
+                .frame(width: 280, alignment: .leading)
+            }
+        } else {
+            name.help(stacked ? tr("agents.pr.base.stacked", detail.baseBranch) : detail.baseBranch)
+        }
+    }
+
+    func behindText(_ detail: PullRequestDetail) -> String {
+        if let behindBy, behindBy > 0 { return tr("agents.pr.base.behindBy", detail.baseBranch, behindBy) }
+        return tr("agents.pr.base.behind", detail.baseBranch)
+    }
+
+    func readBehind() async {
+        guard let detail, detail.state == .open, forge == nil, let token = GitHubPullRequestDetail.token(accountID: accountID) else { return }
+        behindBy = await GitHubPullRequestDetail.behindBy(detail, token: token)
+    }
+
+    /// "main ← feature" in mono (a click on the head copies it), and on the right how many files and lines changed.
     func branchLine(_ detail: PullRequestDetail) -> some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Text(detail.baseBranch).lineLimit(1).truncationMode(.middle)
+                baseBranch(detail)
                 Image(systemName: "arrow.left").font(NookTheme.font(10, .medium)).foregroundStyle(NookTheme.textMuted.opacity(0.6))
                 Button {
                     Pasteboard.copy(detail.headBranch)
@@ -385,7 +554,13 @@ struct PullRequestDetailView: View {
         }
     }
 
-    /// How many files and the lines added and removed; folded, the number of files alone.
+    /// The lines by kind of file, once every file has been read: a list GitHub cut short would add up wrong.
+    func breakdown(_ detail: PullRequestDetail) -> PullRequestChangeBreakdown? {
+        guard detail.activityLoaded, !detail.files.isEmpty, detail.files.count >= detail.changedFiles else { return nil }
+        return PullRequestChangeBreakdown(files: detail.files.map { ($0.path, $0.additions, $0.deletions) })
+    }
+
+    /// How many files and the lines added and removed, split by kind of file on hover; folded, the number of files alone.
     func diffStat(_ detail: PullRequestDetail, compact: Bool = false) -> some View {
         let files = max(detail.changedFiles, detail.files.count)
         return HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
@@ -396,8 +571,14 @@ struct PullRequestDetailView: View {
             .foregroundStyle(NookTheme.textTertiary)
             .help(tr("agents.pr.filesCount", files))
             if detail.additions > 0 || detail.deletions > 0 {
+                let split = breakdown(detail)
                 PullRequestLineCounts(additions: detail.additions, deletions: detail.deletions,
                                       font: NookTheme.mono(compact ? 10.5 : 11.5, .medium))
+                    .hoverCard(arrowEdge: .bottom, suppressed: split == nil) {
+                        if let split {
+                            PullRequestBreakdownCard(breakdown: split, additions: detail.additions, deletions: detail.deletions)
+                        }
+                    }
             }
         }
         .font((compact ? NookTheme.font(10.5) : NookTheme.TextStyle.detail).monospacedDigit())
@@ -500,9 +681,17 @@ struct PullRequestDetailView: View {
     func tabAccessory(_ detail: PullRequestDetail) -> some View {
         switch tab {
         case .summary:
-            // Nothing here: the readiness card at the top of the page and the Checks heading already say how the checks
-            // went, and a third copy in the bar only crowded it.
-            EmptyView()
+            HStack(spacing: NookTheme.Spacing.sm) {
+                if detail.canPush != false, forge == nil, let runID = detail.checks.compactMap(\.approvalRunID).first {
+                    SmallGhostButton(title: tr("agents.pr.action.approveWorkflow")) {
+                        actions.close()
+                        actions.pending = .approveWorkflow(runID: runID)
+                    }
+                }
+                PullRequestChecksStatus(detail: detail) { check in
+                    withAnimation(NookTheme.swap) { openCheck = check }
+                }
+            }
         case .timeline:
             HStack(spacing: NookTheme.Spacing.md) {
                 if detail.activityLoaded {
@@ -581,10 +770,9 @@ struct PullRequestDetailView: View {
         case .code:
             if !detail.activityLoaded {
                 activityLoading
-            } else if let path = openFile, let file = detail.files.first(where: { $0.path == path }) {
-                fileDiff(file, detail: detail).padding(.top, NookTheme.Spacing.md).pullRequestPageColumn()
             } else {
-                page { files(detail) }
+                PullRequestCodeTab(detail: detail, accountID: accountID, actions: actions, viewed: $viewed, commit: $codeCommit,
+                                   focus: openFile, now: now) { handleScroll($0) }
             }
         }
     }
@@ -618,11 +806,15 @@ struct PullRequestDetailView: View {
             PullRequestPageScroll(offset: geometry.contentOffset.y + geometry.contentInsets.top,
                        overflow: geometry.contentSize.height - geometry.containerSize.height)
         } action: { _, scroll in
-            if condensed {
-                if scroll.offset < 4 { condensed = false }
-            } else if scroll.offset > 72 && scroll.overflow > 200 {
-                condensed = true
-            }
+            handleScroll(scroll)
+        }
+    }
+
+    func handleScroll(_ scroll: PullRequestPageScroll) {
+        if condensed {
+            if scroll.offset < 4 { condensed = false }
+        } else if scroll.offset > 72 && scroll.overflow > 200 {
+            condensed = true
         }
     }
 
@@ -647,7 +839,6 @@ struct PullRequestDetailView: View {
         var still = Transaction()
         still.disablesAnimations = true
         withTransaction(still) {
-            openFile = nil
             openCheck = nil
             condensed = false
         }

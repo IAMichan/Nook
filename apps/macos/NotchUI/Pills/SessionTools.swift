@@ -904,7 +904,7 @@ private struct SessionToolPanel: View {
                         }, onBack: showPullRequestList, waitsForPanel: opening)
                             .id(pullRequest.account + " " + pullRequest.item.id)
                     } else {
-                        SidePanelPullRequestPicker(directory: directory) { openPullRequest($0) }
+                        SidePanelPullRequestPicker(directory: directory, runID: runID) { openPullRequest($0) }
                     }
                 case .artifact:
                     SessionArtifactPanel()

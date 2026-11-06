@@ -5,6 +5,8 @@ import Foundation
 
 let sessionContextTranslations: [AppLanguage: [String: String]] = [
     .en: [
+        "session.context.addComment": "Add this comment to the composer",
+        "session.context.fixFindings": "Fix open findings in this session",
         "browser.addPage": "Add this page to the composer",
         "agents.panel.showMore": "Show %ld more",
         "agents.panel.showLess": "Show less",
@@ -34,6 +36,8 @@ let sessionContextTranslations: [AppLanguage: [String: String]] = [
         "agents.panel.row.pullRequests": "Pull requests",
     ],
     .nl: [
+        "session.context.addComment": "Aan de composer toevoegen met deze reactie",
+        "session.context.fixFindings": "Openstaande punten oplossen in deze sessie",
         "browser.addPage": "Deze pagina aan de composer toevoegen",
         "agents.panel.showMore": "Nog %ld tonen",
         "agents.panel.showLess": "Minder tonen",
@@ -63,6 +67,8 @@ let sessionContextTranslations: [AppLanguage: [String: String]] = [
         "agents.panel.row.pullRequests": "Pull requests",
     ],
     .de: [
+        "session.context.addComment": "Diesen Kommentar zum Composer hinzufügen",
+        "session.context.fixFindings": "Offene Punkte in dieser Sitzung beheben",
         "browser.addPage": "Diese Seite zum Composer hinzufügen",
         "agents.panel.showMore": "%ld weitere anzeigen",
         "agents.panel.showLess": "Weniger anzeigen",
@@ -92,6 +98,8 @@ let sessionContextTranslations: [AppLanguage: [String: String]] = [
         "agents.panel.row.pullRequests": "Pull Requests",
     ],
     .fr: [
+        "session.context.addComment": "Ajouter ce commentaire au composer",
+        "session.context.fixFindings": "Corriger les points ouverts dans cette session",
         "browser.addPage": "Ajouter cette page au champ de saisie",
         "agents.panel.showMore": "Afficher %ld de plus",
         "agents.panel.showLess": "Afficher moins",
@@ -121,6 +129,8 @@ let sessionContextTranslations: [AppLanguage: [String: String]] = [
         "agents.panel.row.pullRequests": "Pull requests",
     ],
     .es: [
+        "session.context.addComment": "Añadir este comentario al composer",
+        "session.context.fixFindings": "Arreglar los puntos abiertos en esta sesión",
         "browser.addPage": "Añadir esta página al cuadro de texto",
         "agents.panel.showMore": "Mostrar %ld más",
         "agents.panel.showLess": "Mostrar menos",
