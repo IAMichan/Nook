@@ -45,8 +45,34 @@ final class CompanionWorkspaceTests: XCTestCase {
         XCTAssertEqual(digest.entries?.map(\.name), ["src", "a.txt", "b.txt"])
     }
 
+    func testASecretFolderIsNoSessionRoot() {
+        XCTAssertNil(CompanionWorkspace.path("credentials", in: "/Users/a/.aws", resolve: same))
+        XCTAssertNil(CompanionWorkspace.path("", in: "/Users/a/.ssh", resolve: same))
+    }
+
+    func testAnswersFitAFrame() throws {
+        let tabs = String(repeating: "\t", count: CompanionWorkspace.maxTextBytes)
+        let digest = CompanionWorkspace.digest(path: "a", data: Data(tabs.utf8))
+        XCTAssertEqual(digest.truncated, true)
+        XCTAssertLessThanOrEqual(try JSONEncoder().encode(digest.text ?? "").count, CompanionWorkspace.maxEncodedBytes)
+        // A cut inside a four-byte character still reads as text.
+        let emoji = String(repeating: "😀", count: CompanionWorkspace.maxTextBytes / 4 + 2)
+        XCTAssertNotNil(CompanionWorkspace.digest(path: "a", data: Data(("a" + emoji).utf8)).text)
+        let many = (0..<5).map { TerminalDigest(id: "\($0)", title: "t", running: true, output: String(repeating: "x", count: 150_000)) }
+        XCTAssertLessThanOrEqual(try JSONEncoder().encode(CompanionWorkspace.fitting(many)).count, CompanionWorkspace.maxEncodedBytes + 64)
+    }
+
     func testBothNeedTheRightToOperate() {
         XCTAssertEqual(CompanionScopes.table[.files], .scope(.operate))
         XCTAssertEqual(CompanionScopes.table[.terminals], .scope(.operate))
+    }
+
+    func testTheyAreRedactedWithoutThatRight() {
+        var response = CompanionResponse(id: "a", ok: true)
+        response.terminals = []
+        response.folder = FolderDigest(path: "")
+        let redacted = CompanionScopes.redact(response, granted: [.read])
+        XCTAssertNil(redacted.terminals)
+        XCTAssertNil(redacted.folder)
     }
 }

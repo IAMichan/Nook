@@ -20,14 +20,16 @@ enum BrowserProfiles {
         return store(id(of: project))
     }
 
-    /// The project stopped keeping sign-ins: what it kept goes. Browsers open now keep their pages until they close.
+    /// The project stopped keeping sign-ins: what it kept goes. Its id stays known: a browser still open writes on until it
+    /// closes, and `sweep` clears that at the next launch.
     static func forget(project: String) {
-        let project = WorkspacePathPolicy.normalize(project)
-        var ids = savedIDs
-        guard let saved = ids[project], let id = UUID(uuidString: saved) else { return }
-        ids[project] = nil
-        UserDefaults.standard.set(ids, forKey: idsKey)
+        guard let saved = savedIDs[WorkspacePathPolicy.normalize(project)], let id = UUID(uuidString: saved) else { return }
         store(id).removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {}
+    }
+
+    /// At launch: what projects that no longer keep sign-ins still hold.
+    static func sweep() {
+        for project in savedIDs.keys where !keepsSignIns(project) { forget(project: project) }
     }
 
     private static var savedIDs: [String: String] {

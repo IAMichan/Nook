@@ -31,6 +31,8 @@ struct FolderDigest: Codable, Equatable, Sendable {
 
 enum CompanionWorkspace {
     static let maxTextBytes = 128 * 1024
+    /// What a file may take once it is JSON: tabs and quotes double, and a frame holds 256 KB when sealed.
+    static let maxEncodedBytes = 200 * 1024
     static let maxEntries = 500
     static let maxTerminalLines = 200
 
@@ -50,6 +52,8 @@ enum CompanionWorkspace {
         let parts = relative.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
         guard !parts.contains(".."), !parts.contains(where: isSecret), !relative.hasPrefix("/") else { return nil }
         let root = resolve(folder)
+        // A session in ~/.ssh or ~/.aws is all secret, whatever its files are called.
+        guard !root.split(separator: "/").map(String.init).contains(where: isSecret) else { return nil }
         let full = resolve(([folder] + parts).joined(separator: "/"))
         guard full == root || full.hasPrefix(root + "/") else { return nil }
         // A link inside the folder can hide a secret's real name.
@@ -59,11 +63,34 @@ enum CompanionWorkspace {
 
     /// A file's bytes as an answer.
     static func digest(path: String, data: Data) -> FolderDigest {
-        let head = data.prefix(maxTextBytes)
-        guard !head.contains(0), let text = String(data: head, encoding: .utf8) ?? String(data: head.dropLast(3), encoding: .utf8) else {
-            return FolderDigest(path: path, binary: true)
+        var head = data.prefix(maxTextBytes)
+        guard !head.contains(0) else { return FolderDigest(path: path, binary: true) }
+        // A cut can fall inside a character of up to four bytes.
+        var text = String(data: head, encoding: .utf8)
+        for drop in 1...3 where text == nil && data.count > maxTextBytes { text = String(data: head.dropLast(drop), encoding: .utf8) }
+        guard var text else { return FolderDigest(path: path, binary: true) }
+        var shortened = data.count > maxTextBytes
+        while (try? JSONEncoder().encode(text))?.count ?? 0 > maxEncodedBytes, !text.isEmpty {
+            text = String(text.prefix(text.count / 2))
+            shortened = true
         }
-        return FolderDigest(path: path, text: text, truncated: data.count > maxTextBytes ? true : nil)
+        head = Data()
+        return FolderDigest(path: path, text: text, truncated: shortened ? true : nil)
+    }
+
+    /// The terminals in one answer: as many as fit, each cut from its top when needed.
+    static func fitting(_ terminals: [TerminalDigest]) -> [TerminalDigest] {
+        var room = maxEncodedBytes
+        return terminals.compactMap { terminal in
+            var terminal = terminal
+            while (try? JSONEncoder().encode(terminal))?.count ?? 0 > room, !terminal.output.isEmpty {
+                terminal.output = String(terminal.output.suffix(terminal.output.count / 2))
+            }
+            let size = (try? JSONEncoder().encode(terminal))?.count ?? 0
+            guard size <= room else { return nil }
+            room -= size
+            return terminal
+        }
     }
 
     /// A folder's entries: folders first, without secrets, cut at `maxEntries`.

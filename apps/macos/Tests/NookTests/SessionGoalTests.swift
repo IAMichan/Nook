@@ -57,6 +57,6 @@ final class SessionGoalTests: XCTestCase {
 
     func testCodexNotifications() {
         let cleared = CodexAppServerMapper.events(.notification(method: "thread/goal/cleared", params: JSONBox([String: Any]())))
-        XCTAssertEqual(cleared, [.goal(.cleared)])
+        XCTAssertEqual(cleared, [.goal(.cleared, thread: nil)])
     }
 }

@@ -63,29 +63,27 @@ enum ContextHandoff {
         // The request that started it all stays, whatever else has to go.
         let original = slice.first { $0.kind == .user }.flatMap(line)
         let originalIndex = original.flatMap { lines.firstIndex(of: $0) }
-        var kept: [String] = []
+        var chosen: [Int] = originalIndex.map { [$0] } ?? []
         var used = approxTokens(header) + 40 + (original.map { approxTokens($0) + 1 } ?? 0)
-        var firstKept = lines.count
         for (index, line) in lines.enumerated().reversed() where index != originalIndex {
             let cost = approxTokens(line) + 1
-            if used + cost > budget, !kept.isEmpty || original != nil { break }
-            kept.append(line)
+            if used + cost > budget, !chosen.isEmpty { break }
+            chosen.append(index)
             used += cost
-            firstKept = index
         }
-        kept.reverse()
-        // A short conversation stays in order with its first request in place.
-        if let original, let originalIndex { kept.insert(original, at: originalIndex < firstKept ? 0 : kept.count) }
-        let included = kept.count
+        chosen.sort()
+        let included = chosen.count
         let omitted = lines.count - included
         var parts = [header]
         if omitted > 0 {
             let more = session.map { " Read them with session_read, session \($0.uuidString), if you need them" } ?? ""
             parts.append("(\(omitted) earlier item\(omitted == 1 ? "" : "s") left out.\(more))")
-            // The first request first, then what is left of the rest.
-            if original != nil { parts.append(kept.removeFirst()); parts.append("(…)") }
         }
-        parts += kept
+        // In their own order, with a mark where something went.
+        for (position, index) in chosen.enumerated() {
+            if position > 0, index != chosen[position - 1] + 1 { parts.append("(…)") }
+            parts.append(lines[index])
+        }
         parts.append(customFooter ?? "[End of handoff] Continue from here. Check the files yourself before relying on any of this.")
         return Rendered(text: parts.joined(separator: "\n"), included: included, omitted: omitted, coveredEvents: events.count)
     }

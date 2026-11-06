@@ -37,7 +37,12 @@ struct AndroidDevicesView: View {
                     (AndroidDevices.all(), serial.flatMap(AndroidDevices.screenshot))
                 }.value
                 if found.0 != devices { devices = found.0 }
-                if let data = found.1 { picture = NSImage(data: data) }
+                if let serial, !found.0.contains(where: { $0.serial == serial }) {
+                    chosen = nil
+                    picture = nil
+                } else if let data = found.1 {
+                    picture = NSImage(data: data)
+                }
                 try? await Task.sleep(nanoseconds: (chosen == nil ? 5 : 1) * 1_000_000_000)
             }
         }

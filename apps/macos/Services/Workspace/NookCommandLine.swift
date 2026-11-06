@@ -33,7 +33,11 @@ enum NookCommandLine {
         list   => sub { call('session_list', { limit => int($option{limit}) }) },
         read   => sub { call('session_read', { session_id => need(shift @words) }) },
         search => sub { call('session_search', { query => join(' ', @words) }) },
-        tools  => sub { call_method('tools/list', {}) },
+        tools  => sub {
+            my $list = call_method('tools/list', {});
+            return { content => [ { type => 'text', text => join("\n", map { $_->{name} } @{ $list->{tools} // [] }) } ],
+                     tools => $list->{tools} };
+        },
     );
     if ($command eq 'start') {
         my $folder = need(shift @words);

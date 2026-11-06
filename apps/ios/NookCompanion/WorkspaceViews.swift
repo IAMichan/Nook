@@ -48,6 +48,9 @@ struct SessionFilesView: View {
                             Text("Only the start of this file is shown.").font(Theme.TextStyle.label).foregroundStyle(Theme.textTertiary)
                         }
                     } else {
+                        if digest.truncated == true {
+                            Text("Only the first entries of this folder are shown.").font(Theme.TextStyle.label).foregroundStyle(Theme.textTertiary)
+                        }
                         ForEach(digest.entries ?? []) { entry in
                             NavigationLink {
                                 SessionFilesView(sessionID: sessionID, path: path.isEmpty ? entry.name : path + "/" + entry.name)
@@ -83,6 +86,7 @@ struct SessionTerminalsView: View {
     @EnvironmentObject private var client: CompanionClient
     let sessionID: String
     @State private var terminals: [TerminalDigest]?
+    @State private var failed = false
 
     var body: some View {
         ScrollView {
@@ -99,6 +103,9 @@ struct SessionTerminalsView: View {
                             Text(terminal.output).font(.system(.caption2, design: .monospaced)).foregroundStyle(Theme.textTertiary).textSelection(.enabled)
                         }
                     }
+                } else if failed {
+                    WSEmptyState(symbol: "lock", title: String(localized: "Not available"),
+                                 message: String(localized: "The Mac does not share this."))
                 } else {
                     ProgressView().controlSize(.large).frame(maxWidth: .infinity).padding(.top, Theme.Spacing.xxxl)
                 }
@@ -111,7 +118,8 @@ struct SessionTerminalsView: View {
         .task {
             while !Task.isCancelled {
                 let loaded = await client.loadTerminals(sessionID)
-                if loaded != terminals { terminals = loaded ?? [] }
+                failed = loaded == nil
+                if let loaded, loaded != terminals { terminals = loaded }
                 try? await Task.sleep(nanoseconds: 4_000_000_000)
             }
         }

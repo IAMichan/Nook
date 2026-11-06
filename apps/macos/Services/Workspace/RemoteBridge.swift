@@ -2,8 +2,8 @@ import Foundation
 
 // Nook's tools for a session on another machine. Its agent reaches them through a socket ssh forwards (`-R`) to a socket of
 // its own on this Mac, never to `bridge.sock`: what comes in there speaks for a run on another machine, proved by a token
-// made for that run, and gets the tools below only. A machine you run an agent on can use Nook's browser and read your
-// sessions, but it can never start anything on this Mac. Foundation only, tested on its own.
+// made for that run, and gets the tools below only. A machine you run an agent on can use Nook's browser and read its own
+// session, but it reaches no other session and can never start anything on this Mac. Foundation only, tested on its own.
 enum RemoteBridge {
     static func scriptPath(home: String) -> String { home + "/.nook/nook-mcp" }
 
@@ -29,9 +29,9 @@ enum RemoteBridge {
     static func allows(_ tool: BridgeTool) -> Bool {
         switch tool {
         case .browserOpen, .browserRead, .browserScreenshot, .browserSnapshot, .browserClick, .browserType, .browserWaitFor,
-             .renderPage, .sessionRead, .sessionList, .sessionSearch:
+             .renderPage, .sessionRead:
             return true
-        case .workspaceInfo, .terminalRun, .terminalRead, .terminalList, .terminalStop, .pullRequestCreate,
+        case .sessionList, .sessionSearch, .workspaceInfo, .terminalRun, .terminalRead, .terminalList, .terminalStop, .pullRequestCreate,
              .orchestratorCapabilities, .delegateTask, .taskStatus, .taskWait, .taskCancel, .sessionSend, .sessionStart,
              .sessionOrganize, .sessionQuestions, .deviceList, .deviceOpen, .deviceScreenshot, .deviceClose, .scheduleTask,
              .listScheduledTasks, .updateScheduledTask, .runScheduledTaskNow, .watchPullRequest, .getPullRequestStatus,
@@ -40,13 +40,18 @@ enum RemoteBridge {
         }
     }
 
+    /// `session_read` from another machine: its own session only, for what a handoff left out.
+    static func mayRead(_ session: String?, caller: UUID) -> Bool {
+        session.flatMap { UUID(uuidString: $0.trimmingCharacters(in: .whitespacesAndNewlines)) } == caller
+    }
+
     static let refusal = "This session runs on another machine: this Nook tool only works for sessions on the Mac. Run commands in your own shell there."
 
     static let instructions = """
     You are running on another machine over SSH, and the user watches you in Nook on their Mac. Through the `nook` MCP tools \
     you can open pages in Nook's browser on the Mac with browser_open and check them with browser_read, browser_snapshot or \
     browser_screenshot; localhost there is the Mac, not this machine. render_page shows the user a page in your session, and \
-    session_list, session_search and session_read reach their other sessions. Nook's other tools work only for sessions on \
-    the Mac: run commands, dev servers and git in your own shell here.
+    session_read reads your own session. Nook's other tools work only for sessions on the Mac: run commands, dev servers and \
+    git in your own shell here.
     """
 }
