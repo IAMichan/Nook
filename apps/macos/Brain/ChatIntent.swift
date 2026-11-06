@@ -8,7 +8,7 @@ import Foundation
 struct ChatIntent: Equatable {
     enum Kind: String, CaseIterable {
         case reminder, event, availability, note, todo, mailWrite, mailRead, contacts, music, volume, openApp, shortcut
-        case chart, screen, browser, files, github, notion, clipboard, web, chats, chatWrite, memory, control, takeover
+        case chart, screen, browser, files, github, notion, clipboard, web, chats, chatWrite, memory, control, takeover, network
     }
 
     /// Recognized kinds, strongest first.
@@ -159,6 +159,7 @@ struct ChatIntent: Equatable {
         if has(#"bestand|document|\bpdf|\bmap\b|\bfile|folder|\bdatei|\bordner"#) { kinds.append(.files) }
         if has(#"github|pull request|\bprs?\b|\bissues?\b|\brepo|\bmerge"#) { kinds.append(.github) }
         if has(#"notion|\bwiki\b"#) { kinds.append(.notion) }
+        if has(#"\bip[- ]?(adres\w*|address\w*)\b|\b(mijn|my|meine?) ip\b"#) { kinds.append(.network) }
         if has(#"klembord|clipboard|gekopieerd|\bcopied|zwischenablage|kopiert"#) { kinds.append(.clipboard) }
         if has(#"\bzoek (op|online|op internet)|google|\bweb\b|internet|nieuws|\bweer\b|weerbericht|temperatuur|uitslag|wie won|koers|prijs van|hoeveel kost|wikipedia|openingstijden|search the web|look up online|\bnews\b|weather|who won|price of|wetter|nachrichten"#) { kinds.append(.web) }
         // What the user asks to make wins over what it is about: "a chart of my meetings" is a chart, "mail Lisa about
@@ -198,7 +199,8 @@ struct ChatIntent: Equatable {
         let recent = Array(history.suffix(6).reversed())
         // "Ja" or "ok" only goes ahead with what Nook just asked ("Wil je het bericht nu verzenden?"), never after a
         // message that was already handled.
-        let goAhead = confirms(raw) && recent.first(where: { !$0.fromUser }).map { asks($0.text) } == true
+        // So does "doe dat" after Nook said what it would do ("Ik zet het in de agenda").
+        let goAhead = confirms(raw) && recent.first(where: { !$0.fromUser }).map { asks($0.text) || announces($0.text) } == true
         guard !intent.isSmallTalk || goAhead else { return intent }
         // "Opnieuw", "probeer het nog eens", "try again": the last thing the user asked Nook to do, once more.
         let retry = retries(raw) && !questions(raw)
@@ -332,7 +334,7 @@ struct ChatIntent: Equatable {
     static func confirms(_ raw: String) -> Bool {
         let text = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
         guard text.count <= 40 else { return false }
-        return text.range(of: #"^(ja|jawel|jep|yes|yep|yeah|ok(é|e|ay)?|oké|prima|goed|klopt|akkoord|top|graag|doe maar|doe het|go|do it|sure|please|bitte|genau|mach( es| das)?|verzend|verstuur|stuur|send|schick)\b[^?]*$"#, options: .regularExpression) != nil
+        return text.range(of: #"^(ja|jawel|jep|yes|yep|yeah|ok(é|e|ay)?|oké|prima|goed|klopt|akkoord|top|graag|doe maar|doe het|doe dat|go|do it|sure|please|bitte|genau|mach( es| das)?|verzend|verstuur|stuur|send|schick)\b[^?]*$"#, options: .regularExpression) != nil
     }
 
     /// A question about messages ("wat stuurt Lisa voor berichten?"), not a request to send one. A polite request
@@ -383,6 +385,13 @@ struct ChatIntent: Equatable {
         return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
+    /// The reply says Nook is doing it now: "Ik zet een evenement in de agenda", "I'll add it to your calendar". Only a
+    /// proposed action does anything, so without one this promises what never comes. "Ik zoek het op" only looks.
+    static func announces(_ text: String) -> Bool {
+        let pattern = #"\b(ik (zet|maak|plan|voeg|stuur|verstuur|schrijf|noteer|boek|verplaats)|i('ll| will|'m going to| am going to) (add|put|create|schedule|send|make|write|book|move)|i'm (adding|creating|scheduling|sending)|ich (trage|erstelle|sende|schicke|plane|füge|schreibe))\b"#
+        return sentences(text).contains { $0.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil }
+    }
+
     /// The sentences of a reply, split at . ? ! and line ends.
     static func sentences(_ text: String) -> [String] {
         text.split(whereSeparator: { ".?!\n".contains($0) }).map(String.init)
@@ -413,6 +422,7 @@ struct ChatIntent: Equatable {
         .github: ["github_overview", "github_search", "github_pr_details", "github_issue_details", "github_create_issue", "github_comment_issue"],
         .notion: ["notion_search", "notion_read_page"],
         .clipboard: ["read_clipboard"],
+        .network: ["network_status"],
         .memory: ["remember", "forget", "recall_memory"],
         .web: ["get_weather", "search_web", "read_webpage"],
         .chatWrite: ["whatsapp_send", "chat_send", "whatsapp_live", "chat_inbox", "send_to_source", "search_contacts"],
@@ -422,7 +432,7 @@ struct ChatIntent: Equatable {
     /// Order of kinds when several match: the thing to make first, then what it is about.
     static let priority: [Kind] = [
         .takeover, .memory, .chart, .mailWrite, .chatWrite, .reminder, .note, .todo, .event, .availability, .volume, .music, .control, .openApp, .shortcut,
-        .contacts, .chats, .mailRead, .github, .notion, .files, .browser, .clipboard, .web, .screen
+        .contacts, .chats, .mailRead, .github, .notion, .files, .browser, .clipboard, .network, .web, .screen
     ]
 
     /// The action to fill in when a request of this kind clearly asks Nook to act.

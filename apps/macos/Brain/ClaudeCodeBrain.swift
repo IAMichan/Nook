@@ -44,8 +44,9 @@ enum ClaudeCodeBrain {
 
     /// A conversation for the shared tool loop. Nook's tools go through a text protocol (JSON on its own line), which the
     /// loop picks up; the Claude Code session is resumed between rounds.
-    static func conversation(model: String, system: String, prompt: String, allowWebSearch: Bool) -> ModelConversation {
-        ClaudeCodeConversation(model: model, system: system, prompt: prompt, allowWebSearch: allowWebSearch)
+    /// `once`: a single question that is never resumed (Nook's own small steps), so it leaves no session on disk.
+    static func conversation(model: String, system: String, prompt: String, allowWebSearch: Bool, once: Bool = false) -> ModelConversation {
+        ClaudeCodeConversation(model: model, system: system, prompt: prompt, allowWebSearch: allowWebSearch, once: once)
     }
 
     @MainActor
@@ -53,12 +54,14 @@ enum ClaudeCodeBrain {
         let model: String
         let system: String
         let allowWebSearch: Bool
+        let once: Bool
         var message: String
         var sessionID: String?
         /// Pictures for the first message; a resumed session already has them.
         var images: [PromptImage] = []
 
-        init(model: String, system: String, prompt: String, allowWebSearch: Bool) {
+        init(model: String, system: String, prompt: String, allowWebSearch: Bool, once: Bool) {
+            self.once = once
             self.model = model
             self.system = system
             self.message = prompt
@@ -71,10 +74,14 @@ enum ClaudeCodeBrain {
             }
             let fullSystem = system + "\n\n" + ClaudeCodeBrain.protocolText(tools, allowWebSearch: allowWebSearch)
             let result = try await ClaudeCodeBrain.call(path: path, model: model, system: fullSystem, message: message,
-                                                        resume: sessionID, allowWebSearch: allowWebSearch, images: images)
+                                                        resume: sessionID, allowWebSearch: allowWebSearch, once: once, images: images) { partial in
+                let visible = ToolRunner.visibleWhileStreaming(partial)
+                if !visible.isEmpty { onText?(visible) }
+            }
             images = []
             sessionID = result.session ?? sessionID
-            if !result.text.isEmpty { onText?(result.text) }
+            let visible = ToolRunner.visibleWhileStreaming(result.text)
+            if !visible.isEmpty { onText?(visible) }
             // Tool calls are written as JSON in the text: the shared loop extracts them.
             return ModelTurn(text: result.text, calls: [])
         }
@@ -127,15 +134,19 @@ enum ClaudeCodeBrain {
         "ToolSearch", "Agent"
     ]
 
+    /// Nook's instructions are the whole system prompt and only web search can be switched on, so the coding assistant's
+    /// own prompt and tool list (some 24,000 tokens every round) are not sent. `--disallowedTools` stays as a second lock.
     nonisolated static func arguments(message: String, model: String, system: String, resume: String?, allowWebSearch: Bool,
-                                      withImages: Bool = false) -> [String] {
+                                      withImages: Bool = false, once: Bool = false) -> [String] {
         // With pictures the message goes in over stdin as a stream-json user message (that is where images fit), so the
         // Read tool stays blocked and Claude Code never gets to open a file of its own.
         var arguments = (withImages ? ["-p", "--input-format", "stream-json"] : ["-p", message]) + [
-            "--output-format", "json",
+            "--output-format", "stream-json", "--verbose", "--include-partial-messages",
             "--model", model.isEmpty ? "haiku" : model,
-            "--append-system-prompt", system
+            "--system-prompt", system,
+            "--tools", allowWebSearch ? "WebSearch" : ""
         ]
+        if once { arguments.append("--no-session-persistence") }
         if allowWebSearch { arguments += ["--allowedTools", "WebSearch"] }
         arguments += ["--disallowedTools"] + blockedTools + (allowWebSearch ? [] : ["WebSearch"])
         arguments += [
@@ -158,13 +169,29 @@ enum ClaudeCodeBrain {
         return ((try? JSONSerialization.data(withJSONObject: line)) ?? Data()) + Data("\n".utf8)
     }
 
+    /// Holds the stream between the reading thread and the main actor.
+    private final class StreamBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stream = ClaudeStreamText()
+
+        func feed(_ line: String) -> String? {
+            lock.lock()
+            defer { lock.unlock() }
+            return stream.feed(line) ? stream.text : nil
+        }
+    }
+
     fileprivate static func call(path: String, model: String, system: String, message: String, resume: String?, allowWebSearch: Bool,
-                                 images: [PromptImage] = []) async throws -> CallResult {
+                                 once: Bool = false, images: [PromptImage] = [], onPartial: @escaping (String) -> Void) async throws -> CallResult {
         let arguments = Self.arguments(message: message, model: model, system: system, resume: resume, allowWebSearch: allowWebSearch,
-                                       withImages: !images.isEmpty)
-        let output = try await execute(path, arguments, stdin: images.isEmpty ? nil : streamInput(message: message, images: images))
+                                       withImages: !images.isEmpty, once: once)
+        let box = StreamBox()
+        let output = try await execute(path, arguments, stdin: images.isEmpty ? nil : streamInput(message: message, images: images)) { line in
+            guard let text = box.feed(line) else { return }
+            Task { @MainActor in onPartial(text) }
+        }
         // Never retry without the isolation flags: that would load the user's own hooks and permission rules.
-        if output.status != 0, output.text.contains("setting-sources") || output.text.contains("strict-mcp-config") {
+        if output.status != 0, ["setting-sources", "strict-mcp-config", "unknown option", "include-partial-messages"].contains(where: output.text.contains) {
             throw NookError("This version of Claude Code is too old to run safely as Nook's brain. Update it (`claude update`) and try again.")
         }
         let object = output.text.split(separator: "\n").reversed().lazy.compactMap { line -> [String: Any]? in
@@ -194,7 +221,20 @@ enum ClaudeCodeBrain {
     }
 
     /// Runs `claude` off the main thread with a PATH containing node, capped at 2 minutes.
-    private nonisolated static func execute(_ path: String, _ arguments: [String], stdin: Data? = nil) async throws -> ProcessOutput {
+    private nonisolated static func execute(_ path: String, _ arguments: [String], stdin: Data? = nil,
+                                            onLine: @escaping @Sendable (String) -> Void) async throws -> ProcessOutput {
+        let canceller = ProcessCanceller()
+        let output: ProcessOutput = try await withTaskCancellationHandler {
+            try await run(path, arguments, stdin: stdin, canceller: canceller, onLine: onLine)
+        } onCancel: {
+            canceller.cancel()
+        }
+        try Task.checkCancellation()
+        return output
+    }
+
+    private nonisolated static func run(_ path: String, _ arguments: [String], stdin: Data?, canceller: ProcessCanceller,
+                                        onLine: @escaping @Sendable (String) -> Void) async throws -> ProcessOutput {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
@@ -226,13 +266,26 @@ enum ClaudeCodeBrain {
                     continuation.resume(throwing: NookError("Failed to start Claude Code: \(error.localizedDescription)"))
                     return
                 }
+                canceller.adopt(process)
                 if let input, let stdin {
                     input.fileHandleForWriting.write(stdin)
                     try? input.fileHandleForWriting.close()
                 }
                 let deadline = DispatchWorkItem { if process.isRunning { process.terminate() } }
                 DispatchQueue.global().asyncAfter(deadline: .now() + 120, execute: deadline)
-                let data = out.fileHandleForReading.readDataToEndOfFile()
+                // Line by line as it arrives, so the answer shows while it is written.
+                var data = Data()
+                var pending = Data()
+                while true {
+                    let chunk = out.fileHandleForReading.availableData
+                    if chunk.isEmpty { break }
+                    data.append(chunk)
+                    pending.append(chunk)
+                    while let end = pending.firstIndex(of: 10) {
+                        onLine(String(decoding: pending[pending.startIndex..<end], as: UTF8.self))
+                        pending = Data(pending[pending.index(after: end)...])
+                    }
+                }
                 process.waitUntilExit()
                 deadline.cancel()
                 let text = String(data: data, encoding: .utf8) ?? ""

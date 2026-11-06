@@ -7,6 +7,9 @@ import Combine
 /// every coding agent's own transcript files: the sessions Nook follows and every earlier (settled) one. The index holds the
 /// newest messages of each chat; after each query every chat app's whole history is searched too (`ChatSearchBridge`,
 /// the same for every app), and what it finds joins the hits as it comes in.
+///
+/// All of this is built when search opens and let go a while after it closes, never at launch: it reads every session and
+/// transcript on disk and holds their text, which is a lot to spend on a panel that may stay closed all day.
 @MainActor
 final class SearchCenter: ObservableObject {
     static let shared = SearchCenter()
@@ -25,6 +28,9 @@ final class SearchCenter: ObservableObject {
     private var text = ""
     private var searchTask: Task<Void, Never>?
     private var indexTask: Task<Void, Never>?
+    private var releaseTask: Task<Void, Never>?
+    /// Search panels on screen: the notch and the main window each have their own, and share this index.
+    private var openPanels = 0
     private var loadedAt: Date?
     /// The index's own hits for the text in the field, before what the chat apps' history found is added.
     private var indexHits: [SearchHit] = []
@@ -41,7 +47,9 @@ final class SearchCenter: ObservableObject {
     /// Passages of the agents' own transcript files, by path, with the file's modification date they were read at.
     private static var agentTranscripts: [String: (modified: Date, passages: [SearchPassage])] = [:]
     /// How many transcript files are read before the index is built again with them: results fill in as they are read.
-    private static let transcriptBatch = 40
+    private static let transcriptBatch = 150
+    /// How long the index stays after the panel closed, for opening search again at once.
+    private static let keepFor: UInt64 = 600_000_000_000
     private static let recentKey = "nook.search.recent"
     private static let recentLimit = 8
     /// Most hits shown; the kind filter picks from these.
@@ -49,20 +57,23 @@ final class SearchCenter: ObservableObject {
 
     /// Collects every document and indexes them; the sessions' transcripts on disk follow in a second pass.
     func load(_ app: AppModel, force: Bool = false) {
+        releaseTask?.cancel()
         if let loadedAt, !force, !index.isEmpty, Date().timeIntervalSince(loadedAt) < 30 {
             return
         }
+        // The list of earlier sessions refreshes every few minutes while nobody looks: search is someone looking. What it
+        // finds is in the next load.
+        app.history.refresh(showsProgress: false)
         indexTask?.cancel()
         if index.isEmpty {
             indexing = true
         }
-        let transcripts = Self.transcripts.mapValues { $0.passages }
-        let agentTranscripts = Self.agentTranscripts.mapValues { $0.passages }
         indexTask = Task { [weak self] in
-            let documents = app.searchDocuments(transcripts: transcripts, agentTranscripts: agentTranscripts)
+            guard let self else { return }
+            let documents = await self.documents(app, priority: .userInitiated)
             guard !Task.isCancelled else { return }
             let first = await Task.detached(priority: .userInitiated) { SearchIndex(documents) }.value
-            guard let self, !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return }
             self.index = first
             self.loadedAt = Date()
             if !self.text.isEmpty { self.rerun() }
@@ -97,10 +108,25 @@ final class SearchCenter: ObservableObject {
         }
     }
 
+    /// Everything to index. The sessions in memory go through the text of their whole timeline, and that happens off the
+    /// main thread; the rest is quick to gather.
+    private func documents(_ app: AppModel, priority: TaskPriority) async -> [SearchDocument] {
+        let runs = app.workspace.runs
+        let timelines = app.workspace.events
+        let live = await Task.detached(priority: priority) {
+            var passages: [UUID: [SearchPassage]] = [:]
+            for run in runs {
+                if let events = timelines[run.id] { passages[run.id] = AppModel.searchPassages(events, run: run) }
+            }
+            return passages
+        }.value
+        return app.searchDocuments(transcripts: Self.transcripts.mapValues { $0.passages }.merging(live) { _, new in new },
+                                   agentTranscripts: Self.agentTranscripts.mapValues { $0.passages })
+    }
+
     /// The index again with every transcript read so far; false when the load was cancelled meanwhile.
     private func rebuild(_ app: AppModel) async -> Bool {
-        let full = app.searchDocuments(transcripts: Self.transcripts.mapValues { $0.passages },
-                                       agentTranscripts: Self.agentTranscripts.mapValues { $0.passages })
+        let full = await documents(app, priority: .utility)
         guard !Task.isCancelled else { return false }
         let complete = await Task.detached(priority: .utility) { SearchIndex(full) }.value
         guard !Task.isCancelled else { return false }
@@ -133,9 +159,33 @@ final class SearchCenter: ObservableObject {
         forgetHistory()
     }
 
-    /// Cancels search typing debounce without interrupting indexing.
+    func panelOpened() {
+        openPanels += 1
+        releaseTask?.cancel()
+    }
+
+    /// A panel closed. Cancels search typing debounce without interrupting indexing; with no panel left, lets go of the
+    /// index after a while unless search opens again.
     func cancelSearch() {
         searchTask?.cancel()
+        openPanels = max(0, openPanels - 1)
+        guard openPanels == 0 else { return }
+        releaseTask?.cancel()
+        releaseTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.keepFor)
+            guard !Task.isCancelled else { return }
+            self?.release()
+        }
+    }
+
+    private func release() {
+        cancel()
+        reset()
+        index = SearchIndex([])
+        loadedAt = nil
+        indexing = false
+        Self.transcripts = [:]
+        Self.agentTranscripts = [:]
     }
 
     /// What the field holds now: scored after a short pause, so a burst of keystrokes is one search.

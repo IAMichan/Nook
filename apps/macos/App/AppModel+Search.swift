@@ -5,8 +5,8 @@ import Foundation
 /// notes, memories, notices, settings and actions) and where a hit takes you. Everything stays on this Mac; nothing here
 /// goes to a brain. The engine is `SearchIndex`; `SearchCenter` runs it for the panel.
 extension AppModel {
-    /// Everything search can find, as it is now. `transcripts` holds the passages of sessions whose timeline is not in
-    /// memory, and `agentTranscripts` those of every coding agent's own transcript files by path, both read from disk
+    /// Everything search can find, as it is now. `transcripts` holds the passages of sessions, read from disk or made off
+    /// the main thread from the timeline in memory, and `agentTranscripts` those of every coding agent's own transcript files by path, both read from disk
     /// earlier by `SearchCenter`.
     func searchDocuments(transcripts: [UUID: [SearchPassage]] = [:], agentTranscripts: [String: [SearchPassage]] = [:]) -> [SearchDocument] {
         var documents = searchActions() + searchSettings()
@@ -97,10 +97,10 @@ extension AppModel {
             var passages = [SearchPassage(text: run.task, author: "me", date: run.createdAt)]
             if !run.instructions.isEmpty { passages.append(SearchPassage(text: run.instructions, author: "me", date: run.createdAt)) }
             if let detail = run.statusDetail, !detail.isEmpty { passages.append(SearchPassage(text: detail, date: run.updatedAt)) }
-            if let loaded = workspace.events[run.id] {
-                passages += Self.searchPassages(loaded, run: run)
-            } else if let read = transcripts[run.id] {
+            if let read = transcripts[run.id] {
                 passages += read
+            } else if let loaded = workspace.events[run.id] {
+                passages += Self.searchPassages(loaded, run: run)
             }
             let subtitle = [run.provider.displayName, run.projectName, run.branch ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
             return SearchDocument(id: "run:" + run.id.uuidString, kind: .session, title: run.title, subtitle: subtitle,

@@ -53,9 +53,10 @@ extension AppModel {
         quietReading = true
         let events = upcoming, useCalendar = settings.quietUseCalendar, recording = NoteTaker.shared.isRecording
         let countScreenshots = !settings.showInScreenshots
+        let microphoneInterval = 10 * EnergyMonitor.shared.plan.slowdown
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let situation = QuietWatch.situation(events: events, useCalendar: useCalendar, recording: recording,
-                                                 countScreenshots: countScreenshots)
+                                                 countScreenshots: countScreenshots, microphoneInterval: microphoneInterval)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self else { return }

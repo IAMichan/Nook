@@ -31,6 +31,9 @@ final class WebhookListener: ObservableObject {
     private static let maxConnections = 16
     private let queue = DispatchQueue(label: "nook.webhook.listener")
 
+    /// The tasks requests are for: also without a local port, for what comes through the relay.
+    func attach(_ store: ScheduledTaskStore) { self.store = store }
+
     func start(port: UInt16, store: ScheduledTaskStore) {
         self.store = store
         if listener != nil, self.port == port { return }

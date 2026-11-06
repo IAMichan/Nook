@@ -40,6 +40,11 @@ lines added and removed and its patch (`CompanionOp.diff`, cut to fit one answer
 then *Comment*: the comment goes into the session's message as a `<review_comment>` with the lines quoted, the block the
 Mac's review sends.
 
+**Files and terminals.** With the right to operate, a session's menu opens its folder and its terminals, to read
+(`CompanionOp.files`, `.terminals`). `CompanionWorkspace` decides on the Mac what goes: only inside the session's folder with
+links followed, never `.git`, `.env` files or key files by their name, and at most 128 KB of a file. A name-based filter is
+no guarantee, so give this right only to a phone you trust. Not for sessions on another machine.
+
 **Pictures and model.** The composer of a session and of a new session take up to two pictures (JPEGs made small
 enough on the phone, `CompanionImage`); the Mac saves them where its composer keeps pictures and gives the agent their
 paths below the words. A new session can pick its model from the Mac's composer menu for that agent; anything else

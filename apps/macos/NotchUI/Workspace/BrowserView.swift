@@ -5,7 +5,7 @@ import Security
 
 /// A browser in Nook's window, with one or more tabs (`BrowserPage`). You browse as usual; Nook can read the open page
 /// when you ask (a read tool), and only navigates on its own after your approval (an action). It keeps no history beyond
-/// the session and stores no passwords. Everything that acts on "the page" (agents, the bridge, the chat) acts on the
+/// the session and stores no passwords; sign-ins stay only for a project that asks for it (`BrowserProfiles`). Everything that acts on "the page" (agents, the bridge, the chat) acts on the
 /// tab in view. `shared` is Nook's own browser (the chat, Agents › Browser); every agent session has one of its own
 /// (`SessionBrowsers`), so one agent opening a page leaves the page of another alone.
 @MainActor
@@ -42,12 +42,13 @@ final class BrowserStore: ObservableObject {
     /// The session this browser belongs to; nil for Nook's own browser.
     let session: BrowserSession.Key?
 
-    /// One website data store for every tab of every browser, so a sign-in holds everywhere. Nothing of it is written to disk.
-    private static let dataStore = WKWebsiteDataStore.nonPersistent()
+    /// One website data store for all tabs of this browser: see `BrowserProfiles`.
+    private let dataStore: WKWebsiteDataStore
 
     init(session: BrowserSession.Key? = nil) {
         self.session = session
-        let first = BrowserPage(dataStore: Self.dataStore)
+        dataStore = BrowserProfiles.dataStore(for: session)
+        let first = BrowserPage(dataStore: dataStore)
         pages = [first]
         page = first
         first.store = self
@@ -71,7 +72,7 @@ final class BrowserStore: ObservableObject {
     /// Opens an empty tab after the one in view and brings it into view.
     @discardableResult
     func newTab() -> BrowserPage {
-        let made = BrowserPage(dataStore: Self.dataStore)
+        let made = BrowserPage(dataStore: dataStore)
         made.store = self
         let index = pages.firstIndex { $0 === page }.map { $0 + 1 } ?? pages.count
         pages.insert(made, at: index)
@@ -307,7 +308,7 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
 
     init(dataStore: WKWebsiteDataStore) {
         let configuration = WKWebViewConfiguration()
-        // Nothing persists between launches: no cookies or storage on disk.
+        // What stays between launches is up to the store (see `BrowserProfiles`).
         configuration.websiteDataStore = dataStore
         configuration.userContentController.addUserScript(
             WKUserScript(source: Self.consoleCapture, injectionTime: .atDocumentStart, forMainFrameOnly: true))

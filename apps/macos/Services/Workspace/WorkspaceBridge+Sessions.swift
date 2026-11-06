@@ -8,6 +8,60 @@ extension WorkspaceBridge {
     /// How many sessions a search reads at most, most recent first: older ones are read from disk, off the main thread.
     static let searchScanLimit = 300
 
+    // MARK: Start
+
+    /// A new session, for a script (`nook start`) or an agent. It asks like any other session: you raise its rights yourself.
+    func sessionStart(_ arguments: [String: Any], _ caller: BridgeCaller, _ context: Context) async -> BridgeRPC.ToolResult {
+        guard let app else { return .error("Nook is not ready.") }
+        let workspace = app.workspace
+        let task = ((arguments["task"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !task.isEmpty else { return .error("Give the first message.") }
+        let folder = WorkspacePathPolicy.normalize((arguments["folder"] as? String) ?? "")
+        guard !folder.isEmpty, WorkspacePathPolicy.verdict(for: folder) == .ok else { return .error("That folder cannot be used: \(folder)") }
+        let defaults = workspace.settings.sessionDefaults(for: folder)
+        let name = ((arguments["agent"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let provider = name.isEmpty ? defaults.provider
+            : RunProvider.allCases.first { $0.rawValue == name || $0.displayName.lowercased() == name }
+        guard let provider else { return .error("Unknown agent \"\(name)\". Call orchestrator_capabilities for the list.") }
+        guard workspace.executable(provider) != nil else { return .error("\(provider.displayName) is not installed.") }
+        if case .refuse(let reason) = verdict(.sessionStart, caller) { return .error(Self.refusal(reason)) }
+        if case .ask = verdict(.sessionStart, caller) {
+            let allowed = await ask(caller, tool: .sessionStart, title: tr("bridge.approval.start", caller.agent, provider.displayName),
+                                    detail: AgentPathFormat.tilde(folder) + "\n\n" + task, note: tr("bridge.approval.delegateNote"),
+                                    danger: false, connection: context.connection)
+            guard allowed else {
+                audit(.sessionStart, caller, task, "niet toegestaan")
+                return .error(Self.refusal(.delegation))
+            }
+        }
+        var config = NewRunConfig()
+        config.task = task
+        config.provider = provider
+        config.profileID = (app.connectedProfiles(for: provider).first ?? app.profiles.preferredProfile(provider.kind)).id
+        let model = ((arguments["model"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        config.model = model.isEmpty ? defaults.model(for: provider) : model
+        config.permission = provider.capabilities.policies.contains(.ask) ? .ask : (provider.capabilities.policies.first ?? .ask)
+        if let worktree = arguments["worktree"] as? Bool {
+            config.isolation = worktree ? .worktree : .folder
+        } else {
+            config.isolation = defaults.isolation
+        }
+        config.projectPath = folder
+        if config.isolation == .worktree {
+            config.branchName = WorktreeNaming.branchName(task: task, id: UUID())
+            let git = workspace.gitService
+            config.baseBranch = await Task.detached(priority: .userInitiated) { git?.currentBranch(folder) ?? "" }.value
+        }
+        do {
+            let id = try await workspace.start(config)
+            audit(.sessionStart, caller, "\(provider.displayName) · \(task)", id.uuidString.lowercased())
+            return BridgeRPC.ToolResult(text: id.uuidString)
+        } catch {
+            audit(.sessionStart, caller, task, "mislukt: \(error.localizedDescription)")
+            return .error("Nook could not start the session: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: Search
 
     func sessionSearch(_ arguments: [String: Any]) async -> BridgeRPC.ToolResult {

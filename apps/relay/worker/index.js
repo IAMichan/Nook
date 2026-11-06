@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { isRoom } from "./mux.js";
+import { HookLogic, isHook, mayListen, readLimited } from "./hooks.js";
 import { admit, handlePush } from "./push.js";
 import { RoomLogic } from "./room.js";
 
@@ -10,6 +11,8 @@ import { RoomLogic } from "./room.js";
 //
 //   GET /v1/rooms/<32 hex>?role=mac|phone   (WebSocket)
 //   POST /v1/push                            (opt-in, push.js: needs the APNS_* secrets)
+//   GET /v1/hooks/<32 hex>/listen            (WebSocket, hooks.js: the Mac, with its token as bearer)
+//   POST /v1/hooks/<32 hex>/<task id>        (a webhook for a scheduled task; not sealed, see hooks.js)
 
 export default {
   async fetch(request, env) {
@@ -29,6 +32,23 @@ export default {
         now: () => Math.floor(Date.now() / 1000),
       });
     }
+    const hook = url.pathname.match(/^\/v1\/hooks\/([^/]+)\/([^/]+)$/);
+    if (hook) {
+      if (!isRoom(hook[1])) return new Response("Not found\n", { status: 404 });
+      const room = env.ROOMS.get(env.ROOMS.idFromName("hooks:" + hook[1]));
+      if (hook[2] === "listen") {
+        if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response("Expected a WebSocket\n", { status: 426 });
+        const token = request.headers.get("Authorization")?.replace(/^Bearer /, "");
+        if (!(await mayListen(token, hook[1]))) return new Response("Not allowed\n", { status: 403 });
+        return room.fetch("https://hooks/listen", request);
+      }
+      if (request.method !== "POST") return new Response("POST only\n", { status: 405 });
+      if (!isHook(hook[2])) return new Response("Not found\n", { status: 404 });
+      // Bounded here, before anything reaches the room that holds the Mac's socket.
+      const body = await readLimited(request);
+      if (body === null) return new Response("too large\n", { status: 413 });
+      return room.fetch("https://hooks/deliver/" + hook[2], { method: "POST", headers: request.headers, body });
+    }
     const match = url.pathname.match(/^\/v1\/rooms\/([^/]+)$/);
     if (!match || !isRoom(match[1])) return new Response("Not found\n", { status: 404 });
     const role = url.searchParams.get("role");
@@ -45,6 +65,7 @@ export class Room extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.logic = new RoomLogic(ctx);
+    this.hooks = new HookLogic(ctx);
     // Keep-alives are answered without waking the room, so an idle Mac connection costs nothing.
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
   }
@@ -58,6 +79,17 @@ export class Room extends DurableObject {
       await this.ctx.storage.put("push-limit", result.state);
       return new Response(null, { status: result.allowed ? 200 : 429 });
     }
+    if (url.hostname === "hooks") {
+      if (url.pathname === "/listen") {
+        const pair = new WebSocketPair();
+        const [client, server] = Object.values(pair);
+        this.hooks.listen(server);
+        return new Response(null, { status: 101, webSocket: client });
+      }
+      const body = await request.arrayBuffer();
+      const answer = await this.hooks.deliver({ hook: url.pathname.split("/").pop(), headers: request.headers, body });
+      return new Response(answer.message + "\n", { status: answer.status });
+    }
     const role = url.searchParams.get("role");
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
@@ -66,11 +98,12 @@ export class Room extends DurableObject {
   }
 
   async webSocketMessage(ws, message) {
+    if (this.ctx.getTags(ws).includes("hooks")) return this.hooks.message(message);
     this.logic.message(ws, message);
   }
 
   async webSocketClose(ws, code, reason) {
-    this.logic.closed(ws);
+    if (!this.ctx.getTags(ws).includes("hooks")) this.logic.closed(ws);
     try {
       ws.close(code === 1005 || code === 1006 ? 1000 : code, reason);
     } catch {
@@ -79,6 +112,6 @@ export class Room extends DurableObject {
   }
 
   async webSocketError(ws) {
-    this.logic.closed(ws);
+    if (!this.ctx.getTags(ws).includes("hooks")) this.logic.closed(ws);
   }
 }

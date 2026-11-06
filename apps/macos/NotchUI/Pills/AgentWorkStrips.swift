@@ -5,6 +5,46 @@ import AppKit
 // started, and the pull request the session watches.
 
 /// "Tasks  Running the tests  3/7" with a bar per step; opens into the whole list.
+/// The goal the agent works toward, with what the agent last reported about it.
+struct GoalStrip: View {
+    let goal: SessionGoal
+    let canPause: Bool
+    let control: (SessionGoalCommand) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+            HStack(spacing: NookTheme.Spacing.md) {
+                Image(systemName: "scope").font(NookTheme.font(11, .semibold))
+                Text(tr("ws.goal.title")).foregroundStyle(NookTheme.textTertiary)
+                Text(goal.objective)
+                    .foregroundStyle(NookTheme.paper.opacity(0.85))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(goal.objective)
+                Spacer(minLength: 6)
+                Text(statusLine).foregroundStyle(NookTheme.textSecondary)
+                if canPause, goal.status == .active {
+                    NookIconButton(systemName: "pause", label: tr("ws.goal.pause"), size: 18) { control(.pause) }
+                } else if canPause, goal.status == .paused {
+                    NookIconButton(systemName: "play", label: tr("ws.goal.resume"), size: 18) { control(.resume) }
+                }
+                NookIconButton(systemName: "xmark", label: tr("ws.goal.clear"), size: 18) { control(.clear) }
+            }
+            if let check = goal.lastCheck, !check.isEmpty {
+                Text(check).foregroundStyle(NookTheme.textTertiary).lineLimit(2)
+            }
+        }
+        .font(NookTheme.TextStyle.detail)
+        .foregroundStyle(NookTheme.textSecondary)
+    }
+
+    private var statusLine: String {
+        let status = tr("ws.goal.status." + goal.status.rawValue)
+        guard let checks = goal.checks, checks > 0 else { return status }
+        return status + " · " + tr("ws.goal.checks", checks)
+    }
+}
+
 struct TasksStrip: View {
     let steps: [RunTaskStep]
     @State private var open = false
