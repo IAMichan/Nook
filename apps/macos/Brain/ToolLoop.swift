@@ -221,6 +221,20 @@ final class ToolRunner {
 
     // MARK: Tool calls written as text
 
+    /// What to show of a brain's text while it streams: everything before a tool call written as text, which starts on a
+    /// line of its own. The loop reads the call once the round is done.
+    nonisolated static func visibleWhileStreaming(_ text: String) -> String {
+        var kept = 0
+        var offset = text.startIndex
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let trimmed = line.drop { $0 == " " || $0 == "\t" }
+            if trimmed.hasPrefix("{") || trimmed.hasPrefix("```json") { break }
+            offset = line.endIndex
+            kept = text.distance(from: text.startIndex, to: offset)
+        }
+        return String(text.prefix(kept)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Extracts tool calls formatted as JSON from response text, such as {"name": "list_events", "parameters": {"from": "…"}}.
     /// Returns extracted calls and the cleaned text. Also handles truncated JSON objects (missing closing brace).
     static func extractToolCalls(from text: String, knownTools: Set<String>) -> (text: String, calls: [(name: String, input: [String: Any])]) {
@@ -262,5 +276,30 @@ final class ToolRunner {
         // Code fences that held only the call are left empty: remove them.
         remaining = remaining.replacingOccurrences(of: "```(json)?\\s*```", with: "", options: .regularExpression)
         return (remaining.trimmingCharacters(in: .whitespacesAndNewlines), calls)
+    }
+}
+
+/// The text so far of a `stream-json` run, read line by line. A new message starts over: the answer is the last one.
+struct ClaudeStreamText {
+    private(set) var text = ""
+
+    /// True when the line changed the text.
+    mutating func feed(_ line: String) -> Bool {
+        guard line.contains("\"stream_event\""),
+              let object = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any],
+              let event = object["event"] as? [String: Any] else { return false }
+        switch event["type"] as? String {
+        case "message_start":
+            let had = !text.isEmpty
+            text = ""
+            return had
+        case "content_block_delta":
+            guard let delta = event["delta"] as? [String: Any], (delta["type"] as? String) == "text_delta",
+                  let piece = delta["text"] as? String else { return false }
+            text += piece
+            return true
+        default:
+            return false
+        }
     }
 }

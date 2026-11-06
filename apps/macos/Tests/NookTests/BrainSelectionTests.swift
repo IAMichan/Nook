@@ -75,4 +75,43 @@ final class ScreenBrainTests: XCTestCase {
         let local = BrainSelection(runtime: .mlx, provider: .claude, model: "m")
         XCTAssertNil(ScreenBrain.worker(chosen: local, screenPrivate: true, stored: stored))
     }
+
+    // MARK: Which questions go to the screen brain
+
+    func testWordsThatOnlyLookLikeAPointerAreNotTheScreen() {
+        XCTAssertFalse(ScreenBrain.refersToScreen("Wat moet ik daarna doen?"))
+        XCTAssertFalse(ScreenBrain.refersToScreen("Waarom is dat, en daarom vraag ik het"))
+        XCTAssertFalse(ScreenBrain.refersToScreen("Hoe druk is deze week?"))
+        XCTAssertTrue(ScreenBrain.refersToScreen("Wat staat hier?"))
+        XCTAssertTrue(ScreenBrain.refersToScreen("Vat dit samen"))
+    }
+
+    func testAFreshQuestionPointingAtSomethingIsScreenWork() {
+        XCTAssertTrue(ScreenBrain.handles("Vat dit samen", conversation: false, afterScreen: false))
+        XCTAssertFalse(ScreenBrain.handles("Wat is mijn IP adres?", conversation: false, afterScreen: false))
+    }
+
+    func testInAConversationDitPointsAtTheConversation() {
+        XCTAssertFalse(ScreenBrain.handles("Wat vind je van dit voorstel?", conversation: true, afterScreen: false))
+        XCTAssertTrue(ScreenBrain.handles("Wat staat er op mijn scherm?", conversation: true, afterScreen: false))
+    }
+
+    func testANewRequestLeavesTheScreenBrainAfterAScreenAnswer() {
+        XCTAssertFalse(ScreenBrain.handles("Wat is mijn IP adres?", conversation: true, afterScreen: true))
+        XCTAssertFalse(ScreenBrain.handles("Zet in de agenda voor morgen dat ik om 11:00 bel met opa", conversation: true, afterScreen: true))
+        XCTAssertFalse(ScreenBrain.handles("Haal de laatste mails van Henk op", conversation: true, afterScreen: true))
+    }
+
+    func testAFollowUpStaysWithTheScreenAnswer() {
+        XCTAssertTrue(ScreenBrain.handles("En de tweede?", conversation: true, afterScreen: true))
+        XCTAssertTrue(ScreenBrain.handles("Vertaal het naar het Engels", conversation: true, afterScreen: true))
+        XCTAssertTrue(ScreenBrain.handles("Wat staat er verder?", conversation: true, afterScreen: true))
+        XCTAssertFalse(ScreenBrain.handles("Vertaal het naar het Engels", conversation: true, afterScreen: false))
+    }
+
+    func testBothBrainsWorkOnAQuestionAboutTheScreenAndALookup() {
+        XCTAssertTrue(ScreenBrain.needsBoth("Klopt wat hier staat met de mail van Henk?"))
+        XCTAssertFalse(ScreenBrain.needsBoth("Wat staat hier?"))
+        XCTAssertFalse(ScreenBrain.needsBoth("Zet dit in mijn agenda"))
+    }
 }

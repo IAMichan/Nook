@@ -42,7 +42,7 @@ Keyword lists alone are poor at guessing intent: *"Do I have open chats in Whats
 - **sources**: where the answer actually lives, with explicitly mentioned sources first;
 - **queries**: one to three short search queries containing the terms expected to appear in the target item, including synonyms. Nook tries all of them.
 
-With Claude, Haiku performs this lightweight planning step (fast and inexpensive) while your selected model writes the final answer. Local models and other providers run the planner themselves. If no valid plan arrives within 8 s (12 s locally), Nook falls back to its built-in keyword research below. Claude Code skips this step because spawning a full CLI session just for query planning is too slow.
+With Claude, Haiku performs this lightweight planning step (fast and inexpensive) while your selected model writes the final answer. Local models and other providers run the planner themselves. If no valid plan arrives within 8 s (12 s locally), Nook falls back to its built-in keyword research below. Coding agents used as a brain plan too: a Claude Code round takes a few seconds (Haiku does this step there as well), and an agent that misses the limit is stopped, after which Nook uses the keyword research.
 
 When answering, the model follows a strict reasoning order: what does the user want, where does that information live, does the retrieved context actually answer the question (if not, search further), and only then formulate the answer. It never guesses yes or no about your personal data without evidence. When searching files, documents rank ahead of source code and build artifacts (`dist/`, `node_modules/`, `.build/`, etc.) are excluded.
 
@@ -59,6 +59,8 @@ The model receives these results at the top of its context (`"Looked up for this
 **Explicit source targeting.** If your question names a specific source (*"Do I have open chats in WhatsApp?"*), Nook never falls back to searching "everywhere" instead—even if that source is currently unreadable. If a source cannot be read (missing Full Disk Access, app not installed, integration disabled), the source is shown as `✗` above the answer with the exact reason, and Nook tells you how to enable it rather than guessing from unrelated notes or files.
 
 **Open chats.** For questions like *"Do I have open chats?"*, *"Who is waiting for my reply?"*, or *"Any unread messages?"*, `whatsapp_open_chats` and `messages_open_chats` return conversations from the last 14 days that have unread messages (including manually marked unread in WhatsApp) as well as 1-on-1 chats where the other person sent the last message, complete with the latest message preview and a chat ID for reading the thread.
+
+**Mail.** `search_mail` reads Mail's own index (`Brain/MailIndex.swift`) and message files: milliseconds for every mailbox, archives and Gmail's All Mail included, also in the first lines of a message, and with Mail closed. It needs Full Disk Access; without it Nook asks the Mail app by script as before.
 
 **Local database connectors.** Messages (iMessage & SMS), WhatsApp, Bear, and Things store their data in SQLite databases on your Mac. Nook queries them read-only via `sqlite3` (`Services/Connectors/AppConnectors.swift`, formatting in `Brain/AppData.swift`), allowing it to search your full history rather than only what is visible on screen: `search_messages` / `read_messages`, `search_whatsapp` / `read_whatsapp`, `search_bear` / `read_bear`, `search_things`. Contact names are resolved via Contacts (when authorized). Reading Messages and WhatsApp requires **Full Disk Access** for Nook in **System Settings › Privacy & Security**.
 
@@ -110,6 +112,14 @@ Every notice Nook gives by himself goes through one decision, so a notice from a
 - A permission request or question from an agent is urgent: it always reaches you, also with agents switched off or in a meeting, as a macOS notification when that is the choice for agents, else as a card.
 - Chat apps other than WhatsApp are off by default, since they show their own macOS notifications (which is where Nook reads them). Switched on, a new message gets a card with the same `ChatReplyField` as the Chats tab, so "@nook …" lets Nook write the answer; for apps Nook cannot write in, Cmd+Return copies it and opens the app.
 - **Settings › Notifications** shows all of it on one page; the chat can change each source's style too (`notices_agents`, `notices_chats`, `notices_nook`, `notices_suggestions` in `SettingsCatalog`). Earlier choices (agent notice size and place, WhatsApp's own switch, apps Think Along was muted in) carry over once (`NoticeRules.migrated`).
+
+### Screen Work and the Chosen Brain
+
+With the screen kept on this Mac, a screen brain (`ScreenBrain`, Settings › Brain › Screen work) reads it while the chosen brain answers the rest. A screen brain is usually much smaller, so `ScreenBrain.handles` sends it only what needs the screen: a question with a word that can only mean the screen, a first question that points at something (`dit`, `deze`), and a short follow-up on an answer that read the screen. A new request after such an answer goes back to the chosen brain.
+
+**Both brains on one question.** A question that needs the screen and something to look up (*"Klopt wat hier staat met de mail van Henk?"*, `ScreenBrain.needsBoth`) is split. The chosen brain goes first, with read tools only and without the screen, its pictures or any source kept on this Mac, and writes down the facts it found. The model on this Mac then answers with those facts and the screen. Text only moves toward the Mac: nothing from a private source goes to the chosen brain, also not as a summary. When the chosen brain fails, the model on this Mac answers alone.
+
+**Other sources kept on this Mac.** A question that names one goes to the same model on this Mac. Contacts stay private in a mail too: an external brain writes the person's name in `compose_mail`, and Nook fills in the address on the Mac (only when one contact with one address matches; otherwise the user chooses in the draft).
 
 ### Brain Selection
 
