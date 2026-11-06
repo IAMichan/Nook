@@ -29,8 +29,9 @@ struct ChatReplyField: View {
     var cancelQuote: () -> Void = {}
     /// Escape in the field with no menu or quote to let go of: the host closes what the field is in (the open chat).
     var onEscape: (() -> Void)? = nil
-    /// "@nook …": what was asked ("" for a fitting answer), returning the message Nook wrote. What Nook looks up on
-    /// the way (a mail, another chat) is reported through the second argument. Throws with a sentence you can act on.
+    /// "@nook …": what was asked ("" for a fitting answer), returning the message Nook wrote and what it proposes to do.
+    /// What Nook looks up on the way (a mail, another chat) is reported through the second argument. Throws with a
+    /// sentence you can act on.
     let draft: Writer
     /// Return, Cmd+Return or the button with ordinary text: the host sends it (the text is still in `text`).
     let send: () -> Void
@@ -52,6 +53,9 @@ struct ChatReplyField: View {
     @State private var versions: [String] = []
     /// What Nook looked up for this draft (a mail, another chat), in order: shown in its panel as it happens.
     @State private var lookups: [ChatDraft.Lookup] = []
+    /// What Nook proposes to do for this request (a reminder, an event), waiting for your click in its panel.
+    @State private var proposed: [ChatDraftAction] = []
+    @State private var actionRun = ChatDraftActionRun.waiting
     @State private var version = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The menu "@" opens above the field, as in Nook's own chat.
@@ -70,6 +74,8 @@ struct ChatReplyField: View {
     /// Left or right in an empty field: the host may take it to walk what waits to go.
     private var walk: ((Int) -> Bool)?
     private var tagPeople: () -> [ChatTagPerson] = { [] }
+    /// Runs what Nook proposed, after your click; nil leaves "@nook …" to messages only.
+    private var act: (([PlannedAction]) async -> (results: [String], failure: String?))?
 
     init(text: Binding<String>, notice: Binding<String?>, focus: FocusState<Bool>.Binding, placeholder: String,
          sendSymbol: String, sendLabel: String, readyNotice: String, outgoing: ChatSending? = nil, recipient: String? = nil,
@@ -124,6 +130,14 @@ struct ChatReplyField: View {
         return copy
     }
 
+    /// What Nook proposes under "@nook …" (a reminder, an event) runs through `run` once you click Do it, as a plan in
+    /// Nook Chat does.
+    func runsActions(_ run: @escaping ([PlannedAction]) async -> (results: [String], failure: String?)) -> Self {
+        var copy = self
+        copy.act = run
+        return copy
+    }
+
     /// ↑ in the empty field changes your last message, as in Slack and Telegram: `edit` puts it in the field (false
     /// when there is none to change).
     func editsLastMessage(_ edit: (() -> Bool)?) -> Self {
@@ -140,7 +154,7 @@ struct ChatReplyField: View {
     }
 
     /// Writes the message for what was asked after "@nook", reporting each lookup on the way.
-    typealias Writer = (_ instruction: String, _ onLookup: @escaping @MainActor (ChatDraft.Lookup) -> Void) async throws -> String
+    typealias Writer = (_ instruction: String, _ onLookup: @escaping @MainActor (ChatDraft.Lookup) -> Void) async throws -> ChatDraftResult
 
     /// Nothing to send: no text, nothing else waiting, and no "@nook …".
     private var empty: Bool { !asksNook && !hasExtra && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -155,7 +169,7 @@ struct ChatReplyField: View {
     private var steered: String? { versions.indices.contains(version) ? versions[version] : nil }
 
     /// The panel above the field: Nook writing, or its draft in the field.
-    private var showsDraft: Bool { drafting || drafted != nil }
+    private var showsDraft: Bool { drafting || drafted != nil || !proposed.isEmpty }
 
     /// A message is on its way: the field and its button wait until it is there or failed.
     private var busy: Bool { outgoing.map { !$0.sent } ?? false }
@@ -169,6 +183,9 @@ struct ChatReplyField: View {
                            request: request.flatMap { ChatDraft.instruction(in: $0) }, lookups: lookups,
                            version: version, versions: versions.count, showVersion: showVersion,
                            steer: $steer, steerFocused: $steerFocused,
+                           hasDraft: drafted != nil,
+                           actions: proposed, actionRun: actionRun, runActions: act == nil ? nil : runProposed,
+                           dismissActions: dismissProposed,
                            undo: backToRequest, tweak: { rewrite($0.request) },
                            rewrite: { rewrite(steer) })
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -450,6 +467,8 @@ struct ChatReplyField: View {
         versions = []
         version = 0
         lookups = []
+        proposed = []
+        actionRun = .waiting
         run(instruction)
     }
 
@@ -511,7 +530,7 @@ struct ChatReplyField: View {
                 }
             }
             do {
-                let message = try await draft(instruction) { found in
+                let result = try await draft(instruction) { found in
                     // A lookup of a run that was stopped or replaced is not this draft's.
                     guard !Task.isCancelled else { return }
                     var step = ChatDraft.Lookup(id: offset + found.id, source: found.source, query: found.query)
@@ -523,6 +542,20 @@ struct ChatReplyField: View {
                     }
                 }
                 guard !Task.isCancelled else { return }
+                if !result.actions.isEmpty {
+                    proposed = result.actions
+                    actionRun = .waiting
+                }
+                guard let message = result.message else {
+                    // Only something to do: the field gets back what it had (the draft a change was asked for), or is
+                    // empty for your own words; the request stays quoted in the panel.
+                    text = beforeWriting ?? ""
+                    steer = ""
+                    notice = nil
+                    beforeWriting = nil
+                    focus.wrappedValue = true
+                    return
+                }
                 await reveal(message)
                 guard !Task.isCancelled else { return }
                 text = message
@@ -567,8 +600,37 @@ struct ChatReplyField: View {
         versions = []
         version = 0
         lookups = []
+        proposed = []
+        actionRun = .waiting
         steer = ""
         request = nil
+    }
+
+    /// Do it: what Nook proposed runs, one step after another; the panel shows how it went.
+    private func runProposed() {
+        guard let act, !proposed.isEmpty, actionRun != .running else { return }
+        if case .done = actionRun { return }
+        actionRun = .running
+        let actions = proposed.map(\.action)
+        Task { @MainActor in
+            let outcome = await act(actions)
+            if let failure = outcome.failure {
+                actionRun = .failed(failure)
+            } else {
+                actionRun = .done(outcome.results.count == 1 ? outcome.results[0] : tr("chat.plan.allDone", outcome.results.count))
+            }
+        }
+    }
+
+    /// The cross on the proposal: it goes without running, or is put away once done.
+    private func dismissProposed() {
+        guard actionRun != .running else { return }
+        proposed = []
+        actionRun = .waiting
+        if drafted == nil, !drafting {
+            request = nil
+            lookups = []
+        }
     }
 }
 
@@ -596,6 +658,14 @@ private struct DraftPanel: View {
     let showVersion: (Int) -> Void
     @Binding var steer: String
     var steerFocused: FocusState<Bool>.Binding
+    /// A message of Nook's is in the field (else Nook only proposes something to do): only a message can be steered.
+    let hasDraft: Bool
+    /// What Nook proposes to do, and how running it went.
+    let actions: [ChatDraftAction]
+    let actionRun: ChatDraftActionRun
+    /// Do it; nil where this field cannot run actions.
+    let runActions: (() -> Void)?
+    let dismissActions: () -> Void
     let undo: () -> Void
     let tweak: (ChatDraft.Tweak) -> Void
     let rewrite: () -> Void
@@ -611,7 +681,15 @@ private struct DraftPanel: View {
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.top, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
             .padding(.bottom, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-            if !writing {
+            if !writing, !actions.isEmpty {
+                NookDivider(tint: NookTheme.iris.opacity(0.14))
+                    .accessibilityHidden(true)
+                DraftActions(actions: actions, run: actionRun, perform: runActions, dismiss: dismissActions)
+                    .padding(.horizontal, NookTheme.Spacing.md)
+                    .padding(.vertical, NookTheme.Spacing.md)
+                    .transition(.opacity)
+            }
+            if !writing, hasDraft {
                 NookDivider(tint: NookTheme.iris.opacity(0.14))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -629,6 +707,8 @@ private struct DraftPanel: View {
         .animation(NookTheme.reveal, value: lookups)
         .animation(NookTheme.reveal, value: writing)
         .animation(NookTheme.reveal, value: steering)
+        .animation(NookTheme.reveal, value: actions)
+        .animation(NookTheme.reveal, value: actionRun)
         .accessibilityElement(children: .contain)
     }
 
@@ -653,7 +733,7 @@ private struct DraftPanel: View {
                     .id(status)
                     .transition(.opacity)
             } else {
-                Text(tr("chats.draft.title"))
+                Text(tr(hasDraft ? "chats.draft.title" : "chats.draft.actionsTitle"))
                     .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
@@ -673,6 +753,7 @@ private struct DraftPanel: View {
             }
             if versions > 1 { versionStepper }
             ToolbarIconButton("arrow.uturn.backward", tr("chats.draft.undo"), undo)
+                .disabled(actionRun == .running)
         }
     }
 
@@ -786,6 +867,140 @@ private struct DraftPanel: View {
         guard !writing, !steer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         rewrite()
     }
+}
+
+/// What Nook proposes to do under "@nook …", as a short numbered list with one button: Do it runs the steps, then
+/// each line says it is done, or the failure shows under them. The cross lets the proposal go.
+private struct DraftActions: View {
+    let actions: [ChatDraftAction]
+    let run: ChatDraftActionRun
+    let perform: (() -> Void)?
+    let dismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Text(tr("chats.draft.actions"))
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(NookTheme.textSecondary)
+                Spacer(minLength: NookTheme.Spacing.sm)
+                if run != .running {
+                    ToolbarIconButton("xmark", tr(isDone ? "button.close" : "chats.draft.actions.dismiss"), dismiss)
+                }
+            }
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                ForEach(actions) { row($0) }
+            }
+            footer
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var isDone: Bool {
+        if case .done = run { return true }
+        return false
+    }
+
+    private func row(_ action: ChatDraftAction) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
+            Group {
+                if isDone {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
+                } else {
+                    Image(systemName: action.symbol).foregroundStyle(NookTheme.iris)
+                }
+            }
+            .font(NookTheme.font(11, .semibold))
+            .frame(width: 16)
+            .accessibilityHidden(true)
+            Text(action.step.text)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+            if !action.step.tag.isEmpty {
+                Text(action.step.tag)
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, NookTheme.Spacing.sm)
+        .padding(.vertical, NookTheme.Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control, style: .continuous)
+    }
+
+    @ViewBuilder private var footer: some View {
+        switch run {
+        case .waiting:
+            if let perform {
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    Text(tr("chats.draft.actions.hint"))
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(2)
+                    Spacer(minLength: NookTheme.Spacing.sm)
+                    NookPrimaryButton(title: tr("chats.draft.actions.run"), symbol: "checkmark", action: perform)
+                        .fixedSize()
+                }
+            }
+        case .running:
+            HStack(spacing: NookTheme.Spacing.sm) {
+                ProgressView().controlSize(.small)
+                ShimmerText(text: tr("chat.plan.running"))
+                    .font(NookTheme.TextStyle.label)
+            }
+        case .done(let summary):
+            Label(summary, systemImage: "checkmark")
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.mint)
+                .lineLimit(2)
+        case .failed(let failure):
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
+                Label(failure, systemImage: "exclamationmark.triangle")
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.coral)
+                    .lineLimit(3)
+                Spacer(minLength: NookTheme.Spacing.sm)
+            }
+        }
+    }
+}
+
+/// What "@nook …" in a chat came back with: the message for the field (nil when only something is to be done), and
+/// what Nook proposes to do.
+struct ChatDraftResult {
+    var message: String?
+    var actions: [ChatDraftAction]
+}
+
+/// One step Nook proposes under "@nook …": the action as the brain proposed it, and how it reads in a plan.
+struct ChatDraftAction: Identifiable, Equatable {
+    var id: UUID { action.id }
+    let action: PlannedAction
+    let step: PlanStep
+
+    /// A symbol for the kind of step: a bell for a reminder, a calendar for an event, an envelope for a mail.
+    var symbol: String {
+        let tool = action.tool
+        if tool.contains("reminder") { return "bell" }
+        if tool.contains("event") { return "calendar.badge.plus" }
+        if tool.contains("mail") { return "envelope" }
+        if tool.contains("note") { return "note.text" }
+        if tool.contains("send") || tool.contains("message") { return "paperplane" }
+        return "sparkles"
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id && lhs.step == rhs.step }
+}
+
+/// Where running Nook's proposal stands.
+enum ChatDraftActionRun: Equatable {
+    case waiting, running
+    case done(String)
+    case failed(String)
 }
 
 /// One place Nook looked in while it wrote: the source's symbol and name, what it looked for, and a small spinner that
