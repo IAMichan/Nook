@@ -339,7 +339,7 @@ view may draw past its top into that row, so a conversation's header stands on t
 (`.conversationHeaderBackground()`); every header of a conversation uses it. The tab's list
 follows under it, with its `PanelListHeader` as a quiet section label (`sidebarTitle`; Agents instead has a `ghost` `NookSearchField`
 and its buttons on one row, and back and forward beside the traffic lights), and
-the `PanelFooter` at the bottom. A tab without a list (Music) gets the column from `PanelView`. While a tab draws the
+the `PanelFooter` at the bottom. Music has no list of its own: `PanelView` draws its column, with `MusicSidebar` (the sections and the playlists) in place of a list. While a tab draws the
 head (`PanelSidebarShown`), the panel leaves out its floating capsule and the window its left margin and its own Nook;
 when no column shows it (one column at a time, a task over the tab), the capsule comes back. Agents' list goes away
 altogether: `PanelSidebarToggle` floats in one spot right of the traffic lights, with the list out or away, and a

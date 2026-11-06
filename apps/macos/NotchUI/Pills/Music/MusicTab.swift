@@ -52,6 +52,22 @@ enum MusicSection: String, CaseIterable, Identifiable {
     case home, search, playlists, lyrics, upNext, stats
     var id: String { rawValue }
 
+    /// Where the page and the sidebar keep what shows.
+    static let storageKey = "musicPage"
+    static let expandedKey = "musicPlayerExpanded"
+    static let fold = Animation.spring(duration: 0.45, bounce: 0.12)
+
+    var symbol: String {
+        switch self {
+        case .home: return "house"
+        case .search: return "magnifyingglass"
+        case .playlists: return "music.note.list"
+        case .lyrics: return "quote.bubble"
+        case .upNext: return "text.line.last.and.arrowtriangle.forward"
+        case .stats: return "chart.bar"
+        }
+    }
+
     var title: String {
         switch self {
         case .home: return tr("music.section.home")
@@ -73,9 +89,11 @@ private struct MusicPageView: View {
     let info: NowPlayingInfo?
     @ObservedObject var service: NowPlayingService
     @ObservedObject private var lyrics = LyricsService.shared
-    @AppStorage("musicPage") private var storedSection = MusicSection.home.rawValue
+    @AppStorage(MusicSection.storageKey) private var storedSection = MusicSection.home.rawValue
     /// The player is unfolded over the stage. Remembered, like the section.
-    @AppStorage("musicPlayerExpanded") private var expanded = false
+    @AppStorage(MusicSection.expandedKey) private var expanded = false
+    /// In the main window the sections are in the sidebar (`MusicSidebar`), so the page has no tabs of its own.
+    @Environment(\.panelSidebar) private var sidebar
 
     private var sections: [MusicSection] { MusicSection.available(playing: info != nil) }
     private var section: MusicSection {
@@ -84,12 +102,12 @@ private struct MusicPageView: View {
     }
     private var showsFullPlayer: Bool { expanded && info != nil }
 
-    private static let fold = Animation.spring(duration: 0.45, bounce: 0.12)
-
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            sectionBar
-                .zIndex(1)
+            if sidebar == nil || showsLyricsNote {
+                sectionBar
+                    .zIndex(1)
+            }
             ZStack(alignment: .bottom) {
                 if !showsFullPlayer {
                     stage
@@ -114,7 +132,7 @@ private struct MusicPageView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .animation(Self.fold, value: info == nil)
+        .animation(MusicSection.fold, value: info == nil)
         .background {
             // Esc folds the full player back into the bar.
             if showsFullPlayer {
@@ -149,7 +167,7 @@ private struct MusicPageView: View {
     }
 
     private func setExpanded(_ value: Bool) {
-        withAnimation(Self.fold) { expanded = value }
+        withAnimation(MusicSection.fold) { expanded = value }
     }
 
     /// Picking a section while the player is unfolded folds it, so the section shows. Picking Playlists again while
@@ -159,7 +177,7 @@ private struct MusicPageView: View {
             service.closePlaylist()
             return
         }
-        withAnimation(Self.fold) {
+        withAnimation(MusicSection.fold) {
             storedSection = item.rawValue
             expanded = false
         }
@@ -181,13 +199,18 @@ private struct MusicPageView: View {
 
     // MARK: Section bar
 
+    /// Where the lyrics come from: all the bar still has to say beside the sidebar.
+    private var showsLyricsNote: Bool { section == .lyrics && !showsFullPlayer }
+
     /// The same tabs as everywhere else in the panel. While the player is unfolded no section is selected: the player is
     /// what shows.
     private var sectionBar: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            NookTabBar(items: sections.map { NookTabBar<MusicSection?>.Item(value: $0, title: $0.title) },
-                       selected: showsFullPlayer ? nil : section) { picked in
-                if let picked { select(picked) }
+            if sidebar == nil {
+                NookTabBar(items: sections.map { NookTabBar<MusicSection?>.Item(value: $0, title: $0.title) },
+                           selected: showsFullPlayer ? nil : section) { picked in
+                    if let picked { select(picked) }
+                }
             }
             Spacer(minLength: NookTheme.Spacing.md)
             if !showsFullPlayer, section == .lyrics, let info, let source = MusicLyricsView.source(of: lyrics, for: info) {
