@@ -170,6 +170,27 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(Set(ChatDraft.Tweak.allCases.map(\.titleKey)).count, ChatDraft.Tweak.allCases.count)
     }
 
+    func testNookLooksThingsUpOnlyWhenTheRequestPointsElsewhere() {
+        let summary = "kijk terug naar wat Gijs zei in de mail en geef een samenvatting door aan Arjan"
+        XCTAssertTrue(ChatDraft.wantsLookup(summary, smallBrain: false))
+        XCTAssertTrue(ChatDraft.wantsLookup(summary, smallBrain: true), "a mail named: even a small brain looks it up")
+        XCTAssertTrue(ChatDraft.wantsLookup("summarize what Lisa wrote yesterday", smallBrain: true))
+        XCTAssertTrue(ChatDraft.wantsLookup("say yes", smallBrain: false), "a capable brain decides itself")
+        XCTAssertFalse(ChatDraft.wantsLookup("say yes", smallBrain: true), "a plain answer stays fast on this Mac")
+        XCTAssertFalse(ChatDraft.wantsLookup("", smallBrain: false), "@nook alone: the chat says enough")
+        XCTAssertFalse(ChatDraft.wantsLookup(ChatDraft.refinement(of: "Check the mail", change: "shorter"), smallBrain: false),
+                       "a rewrite of a draft looks nothing up")
+    }
+
+    func testALookupSaysWhatItLookedFor() {
+        XCTAssertEqual(ChatDraft.Lookup.query(in: ["query": "  Gijs  ", "limit": 5]), "Gijs")
+        XCTAssertEqual(ChatDraft.Lookup.query(in: ["chat": "Arjan"]), "Arjan")
+        XCTAssertEqual(ChatDraft.Lookup.query(in: ["limit": 5]), "")
+        XCTAssertEqual(ChatDraft.Lookup.query(in: ["query": String(repeating: "x", count: 90)]).count, 40)
+        XCTAssertEqual(ChatDraft.Lookup(id: 1, source: "mail", query: "").symbol, "envelope")
+        XCTAssertEqual(ChatDraft.Lookup(id: 2, source: nil, query: "").title, "")
+    }
+
     func testNookInstruction() {
         XCTAssertEqual(ChatDraft.instruction(in: "@nook say yes, short"), "say yes, short")
         XCTAssertEqual(ChatDraft.instruction(in: "  @Nook: zeg dat ik later ben"), "zeg dat ik later ben")

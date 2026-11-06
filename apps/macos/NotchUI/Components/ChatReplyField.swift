@@ -29,9 +29,9 @@ struct ChatReplyField: View {
     var cancelQuote: () -> Void = {}
     /// Escape in the field with no menu or quote to let go of: the host closes what the field is in (the open chat).
     var onEscape: (() -> Void)? = nil
-    /// "@nook …": what was asked ("" for a fitting answer), returning the message Nook wrote. Throws with a sentence
-    /// you can act on.
-    let draft: (String) async throws -> String
+    /// "@nook …": what was asked ("" for a fitting answer), returning the message Nook wrote. What Nook looks up on
+    /// the way (a mail, another chat) is reported through the second argument. Throws with a sentence you can act on.
+    let draft: Writer
     /// Return, Cmd+Return or the button with ordinary text: the host sends it (the text is still in `text`).
     let send: () -> Void
 
@@ -50,6 +50,8 @@ struct ChatReplyField: View {
     /// Every message Nook wrote for this request, oldest first (the first draft, then each rewrite), and the one in
     /// the field: you can go back to an earlier one when a rewrite came out worse.
     @State private var versions: [String] = []
+    /// What Nook looked up for this draft (a mail, another chat), in order: shown in its panel as it happens.
+    @State private var lookups: [ChatDraft.Lookup] = []
     @State private var version = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The menu "@" opens above the field, as in Nook's own chat.
@@ -72,7 +74,7 @@ struct ChatReplyField: View {
     init(text: Binding<String>, notice: Binding<String?>, focus: FocusState<Bool>.Binding, placeholder: String,
          sendSymbol: String, sendLabel: String, readyNotice: String, outgoing: ChatSending? = nil, recipient: String? = nil,
          quote: BubbleQuote? = nil, cancelQuote: @escaping () -> Void = {}, onEscape: (() -> Void)? = nil,
-         draft: @escaping (String) async throws -> String, send: @escaping () -> Void) {
+         draft: @escaping Writer, send: @escaping () -> Void) {
         _text = text
         _notice = notice
         self.focus = focus
@@ -137,6 +139,9 @@ struct ChatReplyField: View {
         return copy
     }
 
+    /// Writes the message for what was asked after "@nook", reporting each lookup on the way.
+    typealias Writer = (_ instruction: String, _ onLookup: @escaping @MainActor (ChatDraft.Lookup) -> Void) async throws -> String
+
     /// Nothing to send: no text, nothing else waiting, and no "@nook …".
     private var empty: Bool { !asksNook && !hasExtra && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -154,9 +159,8 @@ struct ChatReplyField: View {
             if outgoing == nil, showsDraft {
                 DraftPanel(writing: drafting, rewriting: drafting && beforeWriting != nil,
                            edited: drafted.map { $0 != text } ?? false, readyNotice: readyNotice,
-                           request: request.flatMap { ChatDraft.instruction(in: $0) },
+                           request: request.flatMap { ChatDraft.instruction(in: $0) }, lookups: lookups,
                            version: version, versions: versions.count, showVersion: showVersion,
-                           sendSymbol: sendSymbol, sendLabel: sendLabel, canSend: !empty && !busy, send: submit,
                            steer: $steer, steerFocused: $steerFocused,
                            undo: backToRequest, tweak: { rewrite($0.request) },
                            rewrite: { rewrite(steer) })
@@ -287,6 +291,7 @@ struct ChatReplyField: View {
                         drafted = nil
                         versions = []
                         version = 0
+                        lookups = []
                     }
                     NookPresence.shared.typed(count: new.count)
                 }
@@ -332,10 +337,14 @@ struct ChatReplyField: View {
     /// chat's people whose name fits what follows the "@".
     private func updateMenu(_ text: String) {
         let presets = ChatDraft.presetKeys.map { tr($0) }
+        // "@nook" leads with what it does; the ready-made requests under it read as plain lines ("Say yes"), without
+        // repeating "@nook" and the same explanation on every row.
         let nook = ChatDraft.choices(for: text, presets: presets).map { choice in
-            ComposerSuggestion(id: "nook:" + choice.insertion, title: choice.title,
-                               detail: tr(choice.isNook ? "chats.nook.detail" : "chats.nook.presetDetail"), symbol: "sparkles",
-                               payload: .command(ComposerCommand(name: choice.insertion, insertion: choice.insertion, action: .insert)))
+            let title = choice.isNook ? choice.title : String(choice.insertion.dropFirst("@nook ".count))
+            return ComposerSuggestion(id: "nook:" + choice.insertion, title: title,
+                                      detail: choice.isNook ? tr("chats.nook.detail") : nil,
+                                      symbol: choice.isNook ? "sparkles" : "text.bubble",
+                                      payload: .command(ComposerCommand(name: choice.insertion, insertion: choice.insertion, action: .insert)))
         }
         var people: [ComposerSuggestion] = []
         if ChatDraft.instruction(in: text) == nil, let query = ChatTags.typing(in: text) {
@@ -426,6 +435,7 @@ struct ChatReplyField: View {
         beforeWriting = nil
         versions = []
         version = 0
+        lookups = []
         run(instruction)
     }
 
@@ -478,7 +488,15 @@ struct ChatReplyField: View {
                 }
             }
             do {
-                let message = try await draft(instruction)
+                let message = try await draft(instruction) { step in
+                    // A lookup of a run that was stopped or replaced is not this draft's.
+                    guard !Task.isCancelled else { return }
+                    if let index = lookups.firstIndex(where: { $0.id == step.id }) {
+                        lookups[index] = step
+                    } else {
+                        lookups.append(step)
+                    }
+                }
                 guard !Task.isCancelled else { return }
                 await reveal(message)
                 guard !Task.isCancelled else { return }
@@ -523,30 +541,32 @@ struct ChatReplyField: View {
         drafted = nil
         versions = []
         version = 0
+        lookups = []
         steer = ""
         request = nil
     }
 }
 
-/// Above the field while Nook writes or its message is in the field: Nook's own panel. It says what you asked, what Nook
-/// is doing, lets you go back and forth between its versions, steer the draft (one click, or in your own words), and
-/// send it with one click once it reads right.
+/// Above the field while Nook writes or its message is in the field: Nook's own panel, in three calm parts. On top what
+/// it is (Nook's draft, or what Nook is doing now) with the versions and the way back to your request; under it what you
+/// asked, quoted, and the places Nook looked in for it (a mail, another chat), each a chip that turns from searching to
+/// done; at the foot, once the draft is in the field, the ways to steer it: one click, or a change in your own words.
+/// Sending stays the field's own button, so the panel never shows a second one.
 private struct DraftPanel: View {
     let writing: Bool
     let rewriting: Bool
     /// You changed Nook's message in the field.
     let edited: Bool
+    /// What sending the draft does ("Read it…; ↩ copies it and opens Telegram"): the panel's tooltip.
     let readyNotice: String
     /// What you asked after "@nook" ("" for a fitting answer); nil when not known.
     let request: String?
+    /// What Nook looked up for this draft, in order.
+    let lookups: [ChatDraft.Lookup]
     /// Which of Nook's versions of this message is in the field, of how many.
     let version: Int
     let versions: Int
     let showVersion: (Int) -> Void
-    let sendSymbol: String
-    let sendLabel: String
-    let canSend: Bool
-    let send: () -> Void
     @Binding var steer: String
     var steerFocused: FocusState<Bool>.Binding
     let undo: () -> Void
@@ -554,53 +574,74 @@ private struct DraftPanel: View {
     let rewrite: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            header
-            if let request {
-                requestLine(request)
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                header
+                if let request { requestLine(request) }
+                if !lookups.isEmpty { lookedIn }
             }
-            if writing {
-                WritingDots()
-                    .padding(.vertical, NookTheme.Spacing.xxs)
-            } else {
-                Text(readyNotice)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            tweaks
-            HStack(spacing: NookTheme.Spacing.sm) {
-                steerField
-                sendButton
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.top, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+            .padding(.bottom, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+            if !writing {
+                NookDivider(tint: NookTheme.iris.opacity(0.14))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    tweaks
+                    steerField
+                }
+                .padding(.horizontal, NookTheme.Spacing.md)
+                .padding(.vertical, NookTheme.Spacing.md)
+                .transition(.opacity)
             }
         }
-        .padding(NookTheme.Spacing.lg)
-        .cardBackground(NookTheme.iris.opacity(0.07), stroke: NookTheme.iris.opacity(0.22), radius: NookTheme.Radius.panel,
+        .cardBackground(NookTheme.iris.opacity(0.06), stroke: NookTheme.iris.opacity(0.2), radius: NookTheme.Radius.sheet,
                         style: .continuous)
+        .help(writing ? "" : readyNotice)
+        .animation(NookTheme.reveal, value: lookups)
+        .animation(NookTheme.reveal, value: writing)
         .accessibilityElement(children: .contain)
+    }
+
+    /// The lookup under way, if any: the header names it ("Nook is looking in Mail…").
+    private var current: ChatDraft.Lookup? { writing ? lookups.last { !$0.done } : nil }
+
+    private var status: String {
+        if let current, !current.title.isEmpty { return tr("chats.draft.looking", current.title) }
+        return tr(rewriting ? "chats.draft.rewriting" : "chats.draft.writing")
     }
 
     private var header: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             LayerSymbol(name: "sparkles", size: 11, weight: .semibold, color: NookTheme.iris, motion: .pulse, active: writing)
+                .frame(width: 22, height: 22)
+                .background(Circle().fill(NookTheme.iris.opacity(0.14)))
                 .accessibilityHidden(true)
             if writing {
-                ShimmerText(text: tr(rewriting ? "chats.draft.rewriting" : "chats.draft.writing"))
-                    .font(NookTheme.TextStyle.label)
+                ShimmerText(text: status)
+                    .font(NookTheme.TextStyle.strong)
                     .lineLimit(1)
+                    .id(status)
+                    .transition(.opacity)
             } else {
                 Text(tr("chats.draft.title"))
-                    .font(NookTheme.TextStyle.label)
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
+                    .lineLimit(1)
                 if edited {
-                    Text("· " + tr("chats.draft.edited"))
+                    Text(tr("chats.draft.edited"))
                         .font(NookTheme.TextStyle.caption)
                         .foregroundStyle(NookTheme.textTertiary)
+                        .padding(.horizontal, NookTheme.Spacing.sm)
+                        .padding(.vertical, NookTheme.Spacing.xxs)
+                        .background(Capsule().fill(NookTheme.graphite))
                         .lineLimit(1)
                 }
             }
             Spacer(minLength: NookTheme.Spacing.sm)
+            if writing, lookups.isEmpty {
+                WritingDots()
+            }
             if versions > 1 { versionStepper }
             ToolbarIconButton("arrow.uturn.backward", tr("chats.draft.undo"), undo)
         }
@@ -621,56 +662,50 @@ private struct DraftPanel: View {
         }
     }
 
-    /// What you asked Nook, quoted, so the draft can be read against it.
+    /// What you asked Nook, quoted under the title, so the draft can be read against it.
     private func requestLine(_ request: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
+        let shown = request.isEmpty ? tr("chats.draft.request.fitting") : request
+        return HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
             Capsule()
-                .fill(NookTheme.iris.opacity(0.5))
-                .frame(width: 3, height: 14)
+                .fill(NookTheme.iris.opacity(0.45))
+                .frame(width: 2)
                 .accessibilityHidden(true)
-            Text(request.isEmpty ? tr("chats.draft.request.fitting") : request)
+            Text(shown)
                 .font(NookTheme.TextStyle.detail)
-                .italic(!request.isEmpty)
                 .foregroundStyle(NookTheme.textSecondary)
                 .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .accessibilityLabel(tr("chats.draft.request") + ": " + (request.isEmpty ? tr("chats.draft.request.fitting") : request))
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.leading, NookTheme.Spacing.xxs)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(tr("chats.draft.request") + ": " + shown)
+    }
+
+    /// Where Nook looked for this draft: one chip per lookup, searching while it runs and checked once done.
+    private var lookedIn: some View {
+        ChipFlow(spacing: NookTheme.Spacing.xs) {
+            ForEach(lookups) { DraftLookupChip(lookup: $0) }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(tr("chats.draft.lookedIn") + ": " + lookups.map(\.title).joined(separator: ", "))
     }
 
     /// One click steers the draft; the ones that do not fit wrap to a second line.
     private var tweaks: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: NookTheme.Spacing.xs) { chips }
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-                HStack(spacing: NookTheme.Spacing.xs) { ForEach(ChatDraft.Tweak.allCases.prefix(2)) { chip($0) } }
-                HStack(spacing: NookTheme.Spacing.xs) { ForEach(ChatDraft.Tweak.allCases.dropFirst(2)) { chip($0) } }
+        ChipFlow(spacing: NookTheme.Spacing.xs) {
+            ForEach(ChatDraft.Tweak.allCases) { tweak in
+                DraftChip(title: tr(tweak.titleKey), symbol: tweak.symbol) { self.tweak(tweak) }
             }
         }
-        .disabled(writing)
-    }
-
-    @ViewBuilder private var chips: some View {
-        ForEach(ChatDraft.Tweak.allCases) { chip($0) }
-    }
-
-    private func chip(_ tweak: ChatDraft.Tweak) -> some View {
-        DraftChip(title: tr(tweak.titleKey), symbol: tweak.symbol) { self.tweak(tweak) }
-    }
-
-    /// The draft goes as it is in the field, as Return does: one click once it reads right.
-    private var sendButton: some View {
-        NookPrimaryButton(title: sendLabel, symbol: sendSymbol, action: send)
-            .disabled(writing || !canSend)
-            .fixedSize()
-            .help(sendLabel + " (↩)")
     }
 
     /// Any other change, in your own words: Return lets Nook rewrite the draft with it.
     private var steerField: some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
+        HStack(spacing: NookTheme.Spacing.sm) {
             Image(systemName: "wand.and.stars")
-                .font(NookTheme.font(10.5, .medium))
-                .foregroundStyle(NookTheme.textTertiary)
+                .font(NookTheme.font(11, .medium))
+                .foregroundStyle(NookTheme.iris)
                 .accessibilityHidden(true)
             TextField("", text: $steer, prompt: Text(tr("chats.draft.steer.prompt")).foregroundStyle(NookTheme.textTertiary))
                 .textFieldStyle(.plain)
@@ -689,17 +724,66 @@ private struct DraftPanel: View {
                     .transition(.opacity)
             }
         }
-        .padding(.leading, NookTheme.Spacing.sm)
+        .padding(.leading, NookTheme.Spacing.md)
         .padding(.trailing, NookTheme.Spacing.xxs)
-        .frame(minHeight: 28)
-        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control, style: .continuous)
-        .disabled(writing)
+        .frame(minHeight: 30)
+        .cardBackground(NookTheme.field, stroke: steerFocused.wrappedValue ? NookTheme.iris.opacity(0.4) : NookTheme.fieldStroke,
+                        radius: NookTheme.Radius.control, style: .continuous)
         .animation(NookTheme.hover, value: steer.isEmpty)
+        .animation(NookTheme.hover, value: steerFocused.wrappedValue)
     }
 
     private func submitSteer() {
         guard !writing, !steer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         rewrite()
+    }
+}
+
+/// One place Nook looked in while it wrote: the source's symbol and name, what it looked for, and a small spinner that
+/// becomes a check once it is read.
+private struct DraftLookupChip: View {
+    let lookup: ChatDraft.Lookup
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            Image(systemName: lookup.symbol)
+                .font(NookTheme.font(9.5, .semibold))
+                .foregroundStyle(NookTheme.iris)
+                .accessibilityHidden(true)
+            Text(lookup.title.isEmpty ? tr("chats.draft.lookedIn") : lookup.title)
+                .font(NookTheme.TextStyle.caption)
+                .foregroundStyle(NookTheme.textStrong)
+                .lineLimit(1)
+            if !lookup.query.isEmpty {
+                Text(tr("chats.draft.lookupQuery", lookup.query))
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 140, alignment: .leading)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            Group {
+                if lookup.done {
+                    Image(systemName: "checkmark")
+                        .font(NookTheme.font(8.5, .bold))
+                        .foregroundStyle(NookTheme.mint)
+                        .transition(.scale.combined(with: .opacity))
+                } else {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .scaleEffect(0.7)
+                        .transition(.opacity)
+                }
+            }
+            .frame(width: 10, height: 10)
+            .accessibilityHidden(true)
+        }
+        .padding(.horizontal, NookTheme.Spacing.sm)
+        .frame(height: 22)
+        .background(Capsule().fill(NookTheme.graphite))
+        .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
+        .animation(NookTheme.reveal, value: lookup.done)
     }
 }
 
