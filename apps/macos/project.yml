@@ -183,6 +183,7 @@ targets:
       - path: Core/I18n+Look.swift
       - path: Core/I18n+Memory.swift
       - path: Core/I18n+Music.swift
+      - path: Core/I18n+MusicPage.swift
       - path: Core/I18n+Permissions.swift
       - path: Core/I18n+Redesign.swift
       - path: Core/I18n+Selection.swift
@@ -524,6 +525,7 @@ targets:
       - path: Brain/SpokenText.swift
       - path: Core/Shortcuts.swift
       - path: Services/Music/MusicLibrary.swift
+      - path: Services/Music/MusicHistory.swift
       - path: Brain/Undo.swift
       - path: Brain/NookAccess.swift
       - path: Brain/SettingsCatalog.swift

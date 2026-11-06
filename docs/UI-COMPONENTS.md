@@ -370,6 +370,7 @@ never shows beside itself. Show a tab beside another through it; do not build a 
 | `InUseLabel` | `SettingsBlocks.swift` | The mint "In use" check on the chosen model, file or key |
 | `HoverActionsRow` | `SettingsBlocks.swift` | A row whose buttons show under the pointer; at rest a small symbol says its state (memory rows) |
 | `SettingsTile`, `HealthPill`, `SetupStep`, `IntroCard` | `SettingsStyle.swift` | Tiles, health pills, setup steps |
+| `NookStatTile` | `NookStatTile.swift` | One number with its label and a line under it, on a statistics page (autocomplete, music) |
 | `ServiceRowLayout`, `ServiceStatusLabel` | `ServiceRows.swift` | The one row shape of everything linked (chat apps, services, GitLab, your own servers, the iPhone, Spotify): icon, name with state, one line, then Fix when it needs you, a switch where it has one, and Manage |
 | `ServiceRowShape`, `AgentTile` | `ServiceRows.swift` | The same row with an icon of its own: the coding agents and their accounts under Settings › Agents use it with `AgentTile`, so an agent reads like any other linked thing. Never draw a status pill in a row; `HealthPill` is only for the status line of a sheet |
 | `ChatAccountRow` | `ServiceRows.swift` | One account of a chat app in its sheet (WhatsApp, Telegram, Teams, Slack, Messages, Snapchat, the chat service's apps): a `ServiceRowLayout` with the app's icon |

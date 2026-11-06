@@ -36,20 +36,31 @@ extension NowPlayingService {
         }
     }
 
-    /// Plays a track from Up Next (`fromQueue`), Recent or a search. `app`: the player it came from, when no player is
-    /// playing yet (a search the brain did); otherwise the player that is playing.
-    func play(_ track: MusicTrack, fromQueue: Bool, app preferred: String? = nil) {
-        guard let app = current?.app ?? NowPlayingService.runningPlayerName() ?? preferred else { return }
-        let verb: String
+    /// Plays a track from Up Next (`fromQueue`), Recent or a search, without the player coming up. `following`: what
+    /// should play after it (the rest of a list), where the player can be told. `app`: the player it came from, when
+    /// no player is playing yet; otherwise the player that is playing.
+    func play(_ track: MusicTrack, fromQueue: Bool, following: [MusicTrack] = [], app preferred: String? = nil) {
+        // A track plays in the player it came from: History and top lists can hold tracks of the other one.
+        let app = Self.player(of: track) ?? current?.app ?? preferred ?? searchApp
+        guard Self.canPlay(track, in: app) else { return }
         if app == "Spotify" {
-            guard Self.isSpotifyURI(track.id) else { return }
-            verb = "play track \(MusicScriptOutput.quoted(track.id))"
+            let uris = ([track] + following).map(\.id).filter(Self.isSpotifyURI)
+            playInBackground(app: app, spotify: .tracks(uris), script: Self.playerScript("play track \(MusicScriptOutput.quoted(track.id))", app: app), shown: track)
         } else {
-            guard Self.isPersistentID(track.id) else { return }
             let container = fromQueue ? "current playlist" : "library playlist 1"
-            verb = "play (first track of \(container) whose persistent ID is \(MusicScriptOutput.quoted(track.id)))"
+            let verb = "play (first track of \(container) whose persistent ID is \(MusicScriptOutput.quoted(track.id)))"
+            playInBackground(app: app, spotify: nil, script: Self.playerScript(verb, app: app), shown: track)
         }
-        playAndRefresh(verb, app: app)
+    }
+
+    /// The player that can play a track, by the shape of its id.
+    nonisolated static func player(of track: MusicTrack) -> String? {
+        ["Spotify", "Music"].first { canPlay(track, in: $0) }
+    }
+
+    /// `body` as one script to `app`.
+    nonisolated static func playerScript(_ body: String, app: String) -> String {
+        "with timeout of 6 seconds\ntell application \"\(app)\"\n\(body)\nend tell\nend timeout"
     }
 
     /// Lyrics stored with the current track in Music, or `nil`.
@@ -69,18 +80,6 @@ extension NowPlayingService {
         guard let text = runPlayerScript(script, cacheKey: "music.lyrics").text,
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text != "missing value" else { return nil }
         return text
-    }
-
-    func playAndRefresh(_ verb: String, app: String) {
-        queue.async { [weak self] in
-            _ = NowPlayingService.runPlayerScript("with timeout of 4 seconds\ntell application \"\(app)\" to \(verb)\nend timeout")
-            Thread.sleep(forTimeInterval: 0.4)
-            Task { @MainActor in
-                guard let self else { return }
-                self.poll()
-                self.refreshUpNext()
-            }
-        }
     }
 
     // MARK: Validation

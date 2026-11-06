@@ -15,7 +15,7 @@ extension NowPlayingService {
             return
         }
         guard query != searchResult.query || searchResult.state != .done else { return }
-        let app = current?.app ?? NowPlayingService.runningPlayerName()
+        let app = searchApp
         // The previous results stay while the next ones load, so the grid does not flash empty on every keystroke.
         searchResult = MusicSearchResult(query: query, state: .loading, tracks: searchResult.tracks)
         searchTask = Task { @MainActor [weak self] in
@@ -43,6 +43,8 @@ extension NowPlayingService {
                 return MusicSearchResult(query: query, state: .failed(error.localizedDescription))
             }
         default:
+            // A search must not bring Music up either.
+            if !isRunning(bundleID(of: "Music")) { await launchHidden(bundleID: bundleID(of: "Music")) }
             let tracks = await withCheckedContinuation { continuation in
                 libraryQueue.async {
                     let raw = runPlayerScript(MusicScriptOutput.librarySearchScript(query, limit: searchLimit)).text

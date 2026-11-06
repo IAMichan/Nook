@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Music tab: lyrics, Up Next, playlists, recently played tracks or a search over the full width, with the playing track in Spotify
-/// or Music as a transport bar along the bottom that unfolds into the full player.
+/// Music tab: Home, search, playlists, lyrics, Up Next and statistics over the full width, with the playing track in Spotify or
+/// Music as a transport bar along the bottom that unfolds into the full player.
 struct MusicTab: View {
     @EnvironmentObject private var app: AppModel
 
@@ -11,43 +11,17 @@ struct MusicTab: View {
     }
 }
 
-/// The player when something plays; otherwise why not, and the playlists to start something from.
+/// One page, with or without something playing: Home, search, playlists and statistics always work, and start music
+/// without the player coming up. Only when Nook may not talk to the player does it say so first.
 private struct MusicTabContent: View {
     @ObservedObject var service: NowPlayingService
 
     var body: some View {
-        if let info = service.current {
-            MusicPlayerView(info: info, service: service)
-        } else if service.permissionDenied {
+        if service.current == nil, service.permissionDenied {
             denied
-        } else if service.playlistSourceApp != nil {
-            idleWithPlaylists
         } else {
-            nothingPlaying
+            MusicPageView(info: service.current, service: service)
         }
-    }
-
-    /// Nothing plays, but a player runs or Spotify is connected: its playlists, one click from playing.
-    private var idleWithPlaylists: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            HStack(spacing: NookTheme.Spacing.md) {
-                Image(systemName: "music.note")
-                    .font(NookTheme.font(13, .semibold))
-                    .foregroundStyle(NookTheme.textTertiary)
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    Text(tr("music.nothingPlayingTitle"))
-                        .font(NookTheme.TextStyle.strong)
-                        .foregroundStyle(NookTheme.paper)
-                    Text(tr("music.idle.pickPlaylist"))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                }
-            }
-            .padding(.horizontal, NookTheme.Spacing.xs)
-            MusicPlaylistsView(service: service)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .task(id: service.playlistSourceApp) { service.refreshPlaylists() }
     }
 
     /// Nook may not ask the player what plays: why, and the one button that fixes it.
@@ -71,63 +45,44 @@ private struct MusicTabContent: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, NookTheme.Spacing.xs)
     }
-
-    private var nothingPlaying: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            Text(tr("music.nothingPlayingTitle"))
-                .font(NookTheme.TextStyle.heading)
-                .foregroundStyle(NookTheme.paper)
-            Text(tr("music.nothingPlayingDetail"))
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Text(tr("music.permissionNote"))
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, NookTheme.Spacing.xs)
-        }
-        .frame(maxWidth: 420, alignment: .leading)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, NookTheme.Spacing.xs)
-    }
 }
 
-/// What the stage above the player bar shows.
+/// What the page shows above the player bar.
 enum MusicSection: String, CaseIterable, Identifiable {
-    case lyrics, upNext, playlists, recent, search
+    case home, search, playlists, lyrics, upNext, stats
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .home: return tr("music.section.home")
+        case .search: return tr("music.section.search")
+        case .playlists: return tr("music.section.playlists")
         case .lyrics: return tr("music.section.lyrics")
         case .upNext: return tr("music.section.upNext")
-        case .playlists: return tr("music.section.playlists")
-        case .recent: return tr("music.section.recent")
-        case .search: return tr("music.section.search")
+        case .stats: return tr("music.section.stats")
         }
     }
 
-    /// Every section for both players: Spotify's queue, playlists and search come from its Web API once Spotify is
-    /// connected in Settings, and say so until then.
-    static func available(for app: String) -> [MusicSection] {
-        allCases
+    /// Lyrics and Up Next are about the playing track, so they are there while there is one.
+    static func available(playing: Bool) -> [MusicSection] {
+        playing ? allCases : [.home, .search, .playlists, .stats]
     }
 }
 
-private struct MusicPlayerView: View {
-    let info: NowPlayingInfo
+private struct MusicPageView: View {
+    let info: NowPlayingInfo?
     @ObservedObject var service: NowPlayingService
     @ObservedObject private var lyrics = LyricsService.shared
-    @AppStorage("musicSection") private var storedSection = MusicSection.lyrics.rawValue
+    @AppStorage("musicPage") private var storedSection = MusicSection.home.rawValue
     /// The player is unfolded over the stage. Remembered, like the section.
     @AppStorage("musicPlayerExpanded") private var expanded = false
 
-    private var sections: [MusicSection] { MusicSection.available(for: info.app) }
+    private var sections: [MusicSection] { MusicSection.available(playing: info != nil) }
     private var section: MusicSection {
-        let stored = MusicSection(rawValue: storedSection) ?? .lyrics
-        return sections.contains(stored) ? stored : .lyrics
+        let stored = MusicSection(rawValue: storedSection) ?? .home
+        return sections.contains(stored) ? stored : .home
     }
+    private var showsFullPlayer: Bool { expanded && info != nil }
 
     private static let fold = Animation.spring(duration: 0.45, bounce: 0.12)
 
@@ -136,29 +91,33 @@ private struct MusicPlayerView: View {
             sectionBar
                 .zIndex(1)
             ZStack(alignment: .bottom) {
-                if !expanded {
+                if !showsFullPlayer {
                     stage
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        .padding(.bottom, MusicDock.barHeight + NookTheme.Spacing.lg)
+                        .padding(.bottom, info == nil ? 0 : MusicDock.barHeight + NookTheme.Spacing.lg)
                         .clipped()
                         .contentShape(Rectangle())
                         .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
                 }
-                MusicDock(
-                    info: info,
-                    service: service,
-                    expanded: expanded,
-                    onExpand: { setExpanded(true) },
-                    onCollapse: { setExpanded(false) },
-                    onShowAll: { select($0) }
-                )
+                if let info {
+                    MusicDock(
+                        info: info,
+                        service: service,
+                        expanded: expanded,
+                        onExpand: { setExpanded(true) },
+                        onCollapse: { setExpanded(false) },
+                        onShowAll: { select($0) }
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .animation(Self.fold, value: info == nil)
         .background {
             // Esc folds the full player back into the bar.
-            if expanded {
+            if showsFullPlayer {
                 Button("") { setExpanded(false) }
                     .keyboardShortcut(.cancelAction)
                     .opacity(0)
@@ -166,25 +125,26 @@ private struct MusicPlayerView: View {
                     .accessibilityHidden(true)
             }
         }
-        .task(id: "\(info.trackKey)|\(section.rawValue)|\(expanded)") { load() }
-        // The playlists back "Add to playlist" everywhere in the tab, so they load with the player, not with their section.
-        .task(id: info.app) { service.refreshPlaylists() }
-        .onChange(of: info.shuffle) { if section == .upNext || (expanded && info.app == "Music") { service.refreshUpNext() } }
+        .task(id: "\(info?.trackKey ?? "")|\(section.rawValue)|\(showsFullPlayer)") { load() }
+        // The playlists back "Add to playlist" everywhere in the tab, so they load with the page, not with their section.
+        .task(id: service.playlistSourceApp) { service.refreshPlaylists() }
+        .onChange(of: info?.shuffle) { if section == .upNext || (showsFullPlayer && info?.app == "Music") { service.refreshUpNext() } }
     }
 
     private func load() {
-        if expanded {
+        if showsFullPlayer {
             // The full player shows the next few tracks; lyrics are only looked up while they are on screen.
             service.refreshUpNext()
             return
         }
         switch section {
-        case .lyrics: lyrics.load(for: info)
+        case .lyrics: if let info { lyrics.load(for: info) }
         case .upNext: service.refreshUpNext()
         case .playlists:
             service.refreshPlaylists()
             service.reloadPlaylistDetail()
-        case .recent, .search: break
+        case .home, .stats: service.refreshPlayerStats()
+        case .search: break
         }
     }
 
@@ -208,11 +168,14 @@ private struct MusicPlayerView: View {
     @ViewBuilder
     private var stage: some View {
         switch section {
-        case .lyrics: MusicLyricsView(info: info, lyrics: lyrics) { service.seek(to: $0) }
-        case .upNext: MusicUpNextView(info: info, service: service)
+        case .home: MusicHomeView(service: service, onOpen: { select($0) })
+        case .search: MusicSearchView(service: service)
         case .playlists: MusicPlaylistsView(service: service)
-        case .recent: MusicRecentView(info: info, service: service)
-        case .search: MusicSearchView(info: info, service: service)
+        case .stats: MusicStatsView(service: service)
+        case .lyrics:
+            if let info { MusicLyricsView(info: info, lyrics: lyrics) { service.seek(to: $0) } }
+        case .upNext:
+            if let info { MusicUpNextView(info: info, service: service) }
         }
     }
 
@@ -223,18 +186,18 @@ private struct MusicPlayerView: View {
     private var sectionBar: some View {
         HStack(spacing: NookTheme.Spacing.md) {
             NookTabBar(items: sections.map { NookTabBar<MusicSection?>.Item(value: $0, title: $0.title) },
-                       selected: expanded ? nil : section) { picked in
+                       selected: showsFullPlayer ? nil : section) { picked in
                 if let picked { select(picked) }
             }
             Spacer(minLength: NookTheme.Spacing.md)
-            if !expanded, section == .lyrics, let source = MusicLyricsView.source(of: lyrics, for: info) {
+            if !showsFullPlayer, section == .lyrics, let info, let source = MusicLyricsView.source(of: lyrics, for: info) {
                 Text(source)
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
                     .transition(.opacity)
             }
-            if info.app == "Spotify", !expanded, section == .lyrics {
+            if info?.app == "Spotify", !showsFullPlayer, section == .lyrics {
                 Image(systemName: "info.circle")
                     .font(NookTheme.font(12))
                     .foregroundStyle(NookTheme.textTertiary)
@@ -243,6 +206,6 @@ private struct MusicPlayerView: View {
             }
         }
         .padding(.trailing, NookTheme.Spacing.xs)
-        .animation(NookTheme.reveal, value: expanded)
+        .animation(NookTheme.reveal, value: showsFullPlayer)
     }
 }

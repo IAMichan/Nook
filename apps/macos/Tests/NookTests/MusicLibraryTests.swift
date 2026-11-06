@@ -348,3 +348,173 @@ final class MusicLibraryTests: XCTestCase {
         XCTAssertEqual(body["name"] as? String, "Road")
     }
 }
+
+final class MusicHistoryTests: XCTestCase {
+    private var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Europe/Amsterdam") ?? .current
+        return calendar
+    }
+
+    /// Friday 6 November 2026, 20:00.
+    private var now: Date { calendar.date(from: DateComponents(year: 2026, month: 11, day: 6, hour: 20)) ?? Date() }
+
+    private func play(_ id: String, artist: String = "A", listened: Int = 200, daysAgo: Int = 0, hour: Int? = nil) -> MusicPlay {
+        var date = calendar.date(byAdding: .day, value: -daysAgo, to: now) ?? now
+        if let hour { date = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: date) ?? date }
+        return MusicPlay(id: id, title: "T\(id)", artist: artist, app: "Spotify", duration: 200, listened: listened, playedAt: date)
+    }
+
+    func testListeningCountsTimeThatSoundedOnly() {
+        var listening = MusicListening()
+        let start = now
+        let song = play("1")
+        XCTAssertNil(listening.update(song, isPlaying: true, at: start))
+        XCTAssertNil(listening.update(song, isPlaying: false, at: start.addingTimeInterval(20)))
+        // Paused for an hour: that does not count.
+        XCTAssertNil(listening.update(song, isPlaying: true, at: start.addingTimeInterval(3600)))
+        let finished = listening.update(play("2"), isPlaying: true, at: start.addingTimeInterval(3620))
+        XCTAssertEqual(finished?.id, "1")
+        XCTAssertEqual(finished?.listened, 40)
+        XCTAssertEqual(finished?.playedAt, start.addingTimeInterval(3620))
+    }
+
+    func testASkippedTrackIsNoPlayAndAShortOneNeedsHalf() {
+        var listening = MusicListening()
+        _ = listening.update(play("1"), isPlaying: true, at: now)
+        XCTAssertNil(listening.update(play("2"), isPlaying: true, at: now.addingTimeInterval(10)))
+        XCTAssertTrue(MusicListening.counts(20, duration: 40))
+        XCTAssertFalse(MusicListening.counts(19, duration: 40))
+        XCTAssertFalse(MusicListening.counts(29, duration: 0))
+    }
+
+    func testListeningNeverExceedsTheTrack() {
+        var listening = MusicListening()
+        _ = listening.update(play("1"), isPlaying: true, at: now)
+        XCTAssertEqual(listening.finish(at: now.addingTimeInterval(9000))?.listened, 200)
+        XCTAssertNil(listening.finish(at: now.addingTimeInterval(9001)))
+    }
+
+    func testMergeSkipsPlaysNookMeasuredItself() {
+        var history = MusicHistory()
+        history.add(play("1"))
+        let same = play("1", listened: 180)
+        var moved = same
+        moved.playedAt = same.playedAt.addingTimeInterval(120)
+        XCTAssertFalse(history.merge(imported: [moved]))
+        XCTAssertTrue(history.merge(imported: [play("1", daysAgo: 1), play("2", daysAgo: 2)]))
+        XCTAssertFalse(history.merge(imported: [play("2", daysAgo: 2)]))
+        XCTAssertEqual(history.plays.map(\.id), ["2", "1", "1"])
+    }
+
+    func testSearchesKeepTheNewestOnce() {
+        var history = MusicHistory()
+        for index in 0..<12 { history.remember(search: "q\(index)") }
+        history.remember(search: " Q11 ")
+        XCTAssertEqual(history.searches.first, "Q11")
+        XCTAssertEqual(history.searches.count, MusicHistory.searchLimit)
+        history.forget(search: "Q11")
+        XCTAssertEqual(history.searches.first, "q10")
+    }
+
+    func testHistorySurvivesAFile() throws {
+        var history = MusicHistory()
+        history.add(play("1"))
+        history.recent.add(MusicTrack(id: "1", title: "One", artist: "A", duration: 1, artworkURL: URL(string: "https://i.scdn.co/1")))
+        history.remember(search: "daft")
+        let decoded = try JSONDecoder().decode(MusicHistory.self, from: JSONEncoder().encode(history))
+        XCTAssertEqual(decoded, history)
+    }
+
+    func testStatsSumAndRankThePeriodOnly() {
+        let plays = [
+            play("old", artist: "Z", daysAgo: 40), play("1", artist: "B", listened: 100, daysAgo: 8),
+            play("1", artist: "A", listened: 300, daysAgo: 2, hour: 22), play("1", artist: "A", listened: 300, daysAgo: 1, hour: 22),
+            play("2", artist: "C", listened: 60, daysAgo: 0, hour: 9),
+        ]
+        let stats = MusicStats(plays: plays, period: .week, now: now, calendar: calendar)
+        XCTAssertEqual(stats.plays, 3)
+        XCTAssertEqual(stats.seconds, 660)
+        XCTAssertEqual(stats.uniqueTracks, 2)
+        XCTAssertEqual(stats.uniqueArtists, 2)
+        XCTAssertEqual(stats.topTracks.first?.plays, 2)
+        XCTAssertEqual(stats.topArtists.first?.name, "A")
+        XCTAssertEqual(stats.previousSeconds, 100)
+        XCTAssertEqual(stats.change, 560)
+        XCTAssertEqual(stats.peakHour, 22)
+        XCTAssertEqual(stats.buckets.count, 7)
+        XCTAssertEqual(stats.buckets.reduce(0) { $0 + $1.seconds }, 660)
+        XCTAssertEqual(stats.buckets.last?.seconds, 60)
+        XCTAssertEqual(stats.streak, 3)
+    }
+
+    func testStreakToleratesAnUnplayedToday() {
+        let stats = MusicStats(plays: [play("1", daysAgo: 3), play("1", daysAgo: 2), play("1", daysAgo: 1)], period: .all, now: now, calendar: calendar)
+        XCTAssertEqual(stats.streak, 3)
+        XCTAssertEqual(MusicStats(plays: [play("1", daysAgo: 2)], period: .all, now: now, calendar: calendar).streak, 0)
+    }
+
+    func testYearHasTwelveMonthsAndAllAtLeastSix() {
+        XCTAssertEqual(MusicStats(plays: [], period: .year, now: now, calendar: calendar).buckets.count, 12)
+        XCTAssertEqual(MusicStats(plays: [], period: .month, now: now, calendar: calendar).buckets.count, 30)
+        XCTAssertEqual(MusicStats(plays: [play("1", daysAgo: 2)], period: .all, now: now, calendar: calendar).buckets.count, 6)
+        XCTAssertEqual(MusicStats(plays: [play("1", daysAgo: 1000)], period: .all, now: now, calendar: calendar).buckets.count, 24)
+    }
+
+    func testListenerTypeFollowsThePartOfTheDay() {
+        let plays = (0..<6).map { play("\($0)", daysAgo: $0, hour: 19 + $0 % 3) } + [play("x", listened: 500, daysAgo: 1, hour: 12)]
+        XCTAssertEqual(MusicStats(plays: plays, period: .week, now: now, calendar: calendar).listenerType, .evening)
+        XCTAssertNil(MusicStats(plays: [play("1")], period: .week, now: now, calendar: calendar).listenerType)
+    }
+
+    func testAPlayerUpFrontStaysAndAHiddenOneGoesBack() {
+        let spotify = "com.spotify.client"
+        let hidden = MusicPlayerFocus(frontmost: "com.apple.Safari", playerBundleID: spotify, wasOutOfSight: true)
+        XCTAssertTrue(hidden.stoleFront(now: spotify))
+        XCTAssertFalse(hidden.stoleFront(now: "com.apple.Safari"))
+        XCTAssertTrue(hidden.shouldHide)
+        let open = MusicPlayerFocus(frontmost: spotify, playerBundleID: spotify, wasOutOfSight: false)
+        XCTAssertFalse(open.stoleFront(now: spotify))
+        XCTAssertFalse(open.shouldHide)
+        XCTAssertFalse(MusicPlayerFocus(frontmost: "com.apple.Safari", playerBundleID: spotify, wasOutOfSight: false).shouldHide)
+    }
+
+    func testSpotifyPlayRequestsCarryTheTargetAsJSON() throws {
+        let tracks = try XCTUnwrap(SpotifyResponses.playRequest(.tracks(["spotify:track:a", "spotify:track:b"]), token: "t"))
+        XCTAssertEqual(tracks.httpMethod, "PUT")
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(tracks.httpBody)) as? [String: Any])
+        XCTAssertEqual(body["uris"] as? [String], ["spotify:track:a", "spotify:track:b"])
+        let context = try XCTUnwrap(SpotifyResponses.playRequest(.context("spotify:playlist:p", offset: "spotify:track:a"), token: "t"))
+        let contextBody = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(context.httpBody)) as? [String: Any])
+        XCTAssertEqual(contextBody["context_uri"] as? String, "spotify:playlist:p")
+        XCTAssertEqual((contextBody["offset"] as? [String: String])?["uri"], "spotify:track:a")
+    }
+
+    func testRecentlyPlayedReadsOldestFirstWithTheFirstArtist() {
+        let json = """
+        {"items":[
+          {"played_at":"2026-11-06T10:00:00.123Z","track":{"uri":"spotify:track:b","name":"B","duration_ms":200000,"artists":[{"name":"X"},{"name":"Y"}],"album":{"name":"Al","images":[]}}},
+          {"played_at":"2026-11-05T10:00:00Z","track":{"uri":"spotify:track:a","name":"A","duration_ms":100000,"artists":[{"name":"Z"}],"album":{"name":"Bl","images":[]}}},
+          {"played_at":"nonsense","track":{"uri":"spotify:track:c","name":"C"}}
+        ]}
+        """
+        let plays = SpotifyResponses.recentPlays(from: Data(json.utf8))
+        XCTAssertEqual(plays.map(\.title), ["A", "B"])
+        XCTAssertEqual(plays.last?.artist, "X")
+        XCTAssertEqual(plays.last?.listened, 200)
+    }
+
+    func testTopArtistsAndLibraryPlayCounts() {
+        let artists = SpotifyResponses.topArtists(from: Data(#"{"items":[{"name":"Daft Punk","images":[{"url":"https://i.scdn.co/1","width":320}]}]}"#.utf8))
+        XCTAssertEqual(artists.first?.name, "Daft Punk")
+        XCTAssertEqual(artists.first?.artworkURL?.absoluteString, "https://i.scdn.co/1")
+
+        let rs = "\u{1E}", fs = "\u{1F}"
+        let raw = ["AA\(fs)One\(fs)X\(fs)100\(fs)Al\(fs)3", "BB\(fs)Two\(fs)Y\(fs)100\(fs)Al\(fs)9", "CC\(fs)Three\(fs)X\(fs)100\(fs)Al\(fs)8"].joined(separator: rs)
+        let top = MusicScriptOutput.libraryTop(raw)
+        XCTAssertEqual(top.tracks.map(\.title), ["Two", "Three", "One"])
+        XCTAssertEqual(top.artists.first?.name, "X")
+        XCTAssertEqual(top.artists.first?.plays, 11)
+        XCTAssertEqual(top.plays["BB"], 9)
+    }
+}

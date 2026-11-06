@@ -4,10 +4,25 @@ import AppKit
 /// Settings › Connections › Music: one Spotify row in the shape of every linked service, with its steps in a sheet.
 struct MusicConnectionSection: View {
     @ObservedObject private var spotify = SpotifySignIn.shared
+    @ObservedObject private var settings = AppSettings.shared
+    @EnvironmentObject private var app: AppModel
     @State private var showing = false
 
     var body: some View {
         Section {
+            Toggle(isOn: $settings.musicHistory) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(tr("music.history.keep"))
+                    Text(tr("music.history.keepDetail"))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                }
+            }
+            HStack {
+                Text(tr("music.history.clearTitle"))
+                Spacer()
+                ConfirmedButton(tr("music.history.clear"), question: tr("music.history.clearQuestion")) { app.nowPlaying.clearHistory() }
+            }
             ServiceRowLayout(domain: "spotify.com", symbol: "music.note", tint: NookTheme.iris, title: "Spotify",
                              detail: tr("music.connect.rowDetail"), status: spotify.isSignedIn ? .connected : .notLinked) {
                 Button(spotify.isSignedIn ? tr("settings2.manage") : tr("hub.setUp")) { showing = true }

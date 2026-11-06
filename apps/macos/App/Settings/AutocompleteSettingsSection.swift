@@ -759,11 +759,11 @@ struct AutocompleteSettingsSection: View {
         return Group {
             Section {
                 HStack(spacing: NookTheme.Spacing.md) {
-                    StatTile(title: tr("autocomplete.stats.today"), value: tr("autocomplete.stats.timesShort", today.takes),
+                    NookStatTile(title: tr("autocomplete.stats.today"), value: tr("autocomplete.stats.timesShort", today.takes),
                              detail: tr("autocomplete.stats.words", today.words), symbol: "sun.max.fill")
-                    StatTile(title: tr("autocomplete.stats.week"), value: tr("autocomplete.stats.timesShort", week.takes),
+                    NookStatTile(title: tr("autocomplete.stats.week"), value: tr("autocomplete.stats.timesShort", week.takes),
                              detail: tr("autocomplete.stats.words", week.words), symbol: "calendar")
-                    StatTile(title: tr("autocomplete.stats.total"), value: tr("autocomplete.stats.timesShort", stats.totalTakes),
+                    NookStatTile(title: tr("autocomplete.stats.total"), value: tr("autocomplete.stats.timesShort", stats.totalTakes),
                              detail: tr("autocomplete.stats.words", stats.totalWords), symbol: "sum")
                 }
             }
@@ -836,25 +836,6 @@ struct AutocompleteSettingsSection: View {
     private func duration(_ minutes: Double) -> String {
         let total = Int(minutes.rounded())
         return total >= 60 ? tr("autocomplete.stats.hours", total / 60, total % 60) : tr("autocomplete.stats.minutes", total)
-    }
-}
-
-/// One number on the statistics tab.
-private struct StatTile: View {
-    let title: String
-    let value: String
-    let detail: String
-    let symbol: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-            Label(title, systemImage: symbol).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textSecondary)
-            Text(value).font(NookTheme.rounded(24, .semibold)).monospacedDigit().foregroundStyle(NookTheme.paper)
-            Text(detail).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.surface))
     }
 }
 
