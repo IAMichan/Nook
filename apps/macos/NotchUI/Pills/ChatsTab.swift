@@ -1972,7 +1972,7 @@ private struct ChatsDetail: View, Equatable {
             ComposerDraftStore.shared.save(sessionID: Self.draftKey(entry.id), text: text)
         }
         // A file or picture dropped on the chat waits above the field, as one chosen with "+".
-        .onDrop(of: [.fileURL, .image], isTargeted: nil) { providers in
+        .composerDrop(of: [.fileURL, .image], $composer.drop) { providers in
             !app.chatSends(route).isEmpty && composer.accept(providers)
         }
         // Escape, also when nothing in the chat has the keyboard (a row in the list was clicked last).
