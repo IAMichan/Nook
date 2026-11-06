@@ -24,8 +24,9 @@ final class FolderGitModel: ObservableObject {
     private var git: GitService?
 
     /// What only changes when refs move (the root, branches, remotes, the base and where the branch left it). Reused
-    /// between refreshes while the branch, its upstream and ahead/behind stay the same, for at most `refsMaxAge`: a
-    /// refresh then starts three git processes (status and the diffs) instead of about ten.
+    /// between refreshes while the branch, its upstream, its commits and ahead/behind stay the same, for at most
+    /// `refsMaxAge`: a refresh then starts four git processes (the commits, status and the diffs) instead of about ten.
+    /// The commits are in the key because a merge moves the split point without changing ahead/behind once it is pushed.
     private struct Refs: Sendable {
         var root: String
         var key: String
@@ -123,7 +124,8 @@ final class FolderGitModel: ObservableObject {
         let result = await Task.detached(priority: .utility) { () -> (root: String?, status: GitStatus?, branches: [String], remotes: [String], base: String?, changes: [GitFileChange], comparedTo: String?, refs: Refs?) in
             guard let root = cached?.root ?? git.repositoryRoot(for: directory) else { return (nil, nil, [], [], nil, [], nil, nil) }
             let status = try? git.status(root)
-            let key = status.map { "\($0.branch ?? "")|\($0.upstream ?? "")|\($0.ahead)|\($0.behind)|\($0.detached)" } ?? ""
+            let commits = git.headCommits(root).joined(separator: ",")
+            let key = status.map { "\($0.branch ?? "")|\($0.upstream ?? "")|\($0.ahead)|\($0.behind)|\($0.detached)|\(commits)" } ?? ""
             let refs: Refs
             if let cached, cached.root == root, cached.key == key, status != nil {
                 refs = cached

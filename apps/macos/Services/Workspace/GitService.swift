@@ -349,9 +349,21 @@ struct GitService: Sendable {
         return status
     }
 
-    /// Where the branch split off `base`; nil when they share no history or `base` does not exist.
+    /// The commits the working tree builds on: HEAD, plus what is being merged in while a merge is under way.
+    /// Empty before the first commit.
+    func headCommits(_ directory: String) -> [String] {
+        // `--revs-only` drops a `MERGE_HEAD` that does not exist instead of failing, so this stays one process.
+        let text = try? run(["rev-parse", "--revs-only", "HEAD", "MERGE_HEAD"], in: directory)
+        return text?.split(whereSeparator: \.isNewline).map(String.init) ?? []
+    }
+
+    /// Where the branch split off `base`; nil when they share no history or `base` does not exist. During a merge the
+    /// working tree already holds what comes in, so that counts as part of the branch, as it will once committed.
+    /// Otherwise everything `base` did since the old split point would read as the branch's own work.
     func mergeBase(_ directory: String, base: String) -> String? {
-        let text = (try? run(["merge-base", base, "HEAD"], in: directory))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let commits = headCommits(directory)
+        guard !commits.isEmpty else { return nil }
+        let text = (try? run(["merge-base", base] + commits, in: directory))?.trimmingCharacters(in: .whitespacesAndNewlines)
         return (text?.isEmpty ?? true) ? nil : text
     }
 
