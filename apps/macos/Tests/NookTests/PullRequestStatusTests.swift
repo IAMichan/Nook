@@ -61,4 +61,33 @@ final class PullRequestStatusTests: XCTestCase {
         store.record(key: PullRequestStatusStore.key(repo: "a/b", number: 2), glyph: .conflict, checks: nil)
         XCTAssertEqual(PullRequestBadge.text(links: store.current([link]))?.glyph, .conflict)
     }
+
+    func testMergeStatusAnswersWhetherItCanBeMerged() {
+        func status(_ state: String, checks: String? = "", glyph: PullRequestBadge.Glyph = .open, auto: Bool = false) -> PullRequestMergeStatus {
+            PullRequestMergeStatus(glyph: glyph, checks: checks, merge: PullRequestMergeFacts(state: state, autoMerge: auto, baseBranch: "main"))
+        }
+        XCTAssertEqual(status("clean"), .ready)
+        XCTAssertEqual(status("clean", checks: "success"), .ready)
+        XCTAssertEqual(status("behind"), .behind(base: "main"))
+        XCTAssertEqual(status("blocked"), .blocked)
+        XCTAssertEqual(status("blocked", checks: "failure"), .checksFailing, "the failing check is the reason worth naming")
+        XCTAssertEqual(status("blocked", checks: "pending"), .checksRunning)
+        XCTAssertEqual(status("unstable", checks: "pending"), .checksRunning)
+        XCTAssertEqual(status("unstable"), .checksFailing)
+        XCTAssertEqual(status("blocked", checks: "pending", auto: true), .autoMerge)
+        XCTAssertEqual(status("unknown"), .open, "nothing known is never called ready")
+        XCTAssertEqual(status("clean", glyph: .conflict), .conflict)
+        XCTAssertEqual(status("clean", glyph: .draft), .draft)
+        XCTAssertEqual(status("clean", checks: "failure", glyph: .merged), .merged)
+        XCTAssertEqual(PullRequestMergeStatus(glyph: .open, checks: "failure", merge: nil), .open)
+    }
+
+    func testAReadWithoutMergeFactsKeepsTheLastOnes() {
+        let store = PullRequestStatusStore()
+        let url = URL(string: "https://github.com/a/b/pull/3")!
+        let key = PullRequestStatusStore.key(url)
+        store.record(key: key, glyph: .open, checks: "success", merge: PullRequestMergeFacts(state: "clean"))
+        store.record(key: key, glyph: .open, checks: nil)
+        XCTAssertEqual(store.status(url)?.mergeStatus, .ready)
+    }
 }

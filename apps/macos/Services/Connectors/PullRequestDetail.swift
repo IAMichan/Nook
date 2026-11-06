@@ -160,6 +160,18 @@ struct PullRequestDetail: Equatable, Sendable {
         return .passing
     }
 
+    var mergeFacts: PullRequestMergeFacts {
+        PullRequestMergeFacts(state: mergeState, autoMerge: autoMerge != nil, baseBranch: baseBranch)
+    }
+
+    /// Whether it can be merged, in the words of the merge bar and the badges.
+    var mergeStatus: PullRequestMergeStatus {
+        let state = PullRequestState(rawValue: state.rawValue) ?? .open
+        let status = PullRequestMergeStatus(glyph: PullRequestStatus.glyph(state: state, conflicted: conflicted),
+                                            checks: PullRequestStatus.checks(checks), merge: mergeFacts)
+        return status == .open && mergeable == nil ? .checking : status
+    }
+
     /// Why the pull request cannot be merged right now, or what GitHub warns about: a key for `tr`, nil when all is well.
     var mergeNote: String? {
         switch state {
