@@ -20,12 +20,14 @@ struct AgentModelMenu {
     /// The model ids you typed for it, and your favorites.
     var custom: [String] = []
     var favorites: [String] = []
+    /// `choices` when they are already known for these inputs (`WorkspaceManager.modelMenu`).
+    var knownChoices: [ModelChoice]?
 
     // MARK: Models
 
     /// The models to offer (see `ModelChoice.list`).
     var choices: [ModelChoice] {
-        ModelChoice.list(manifest: manifest, provider: provider, offered: offered, installed: installed)
+        knownChoices ?? ModelChoice.list(manifest: manifest, provider: provider, offered: offered, installed: installed)
     }
 
     /// The menu entry `id` stands for, also under an alias ("opus").

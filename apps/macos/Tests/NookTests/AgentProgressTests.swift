@@ -25,6 +25,7 @@ final class AgentProgressTests: XCTestCase {
             ("cd apps/macos && xcodebuild -project Nook.xcodeproj -scheme Nook test", .tests), ("go test ./...", .tests),
             ("python -m pytest -q", .tests), ("pytest tests/", .tests), ("CI=1 cargo test", .tests),
             ("./scripts/core-tests.sh", .tests), ("bash scripts/run_tests.sh", .tests), ("./gradlew test", .tests),
+            ("/usr/bin/swift test", .tests), ("/opt/homebrew/bin/SwiftLint", .lint), ("node_modules/.bin/tsc/", .typecheck),
             ("npx tsc --noEmit", .typecheck), ("cargo check", .typecheck), ("mypy src", .typecheck),
             ("swiftlint", .lint), ("npm run lint", .lint), ("go vet ./...", .lint),
             ("swift build", .build), ("npm run build && npm test", .tests), ("xcodebuild -scheme Nook build", .build),
