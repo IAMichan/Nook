@@ -293,6 +293,7 @@ targets:
       - path: Brain/NookDates.swift
       - path: Brain/AppData.swift
       - path: Brain/BrainSelection.swift
+      - path: Brain/PrivateBrief.swift
       - path: Brain/AIProvider.swift
       - path: App/ConversationList.swift
       - path: Core/ListSelection.swift

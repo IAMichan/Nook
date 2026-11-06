@@ -68,6 +68,8 @@ struct ChatMessage: Identifiable {
     var scopeLabel = ""
     /// Notices for the user regarding this answer, e.g. unreadable sources.
     var notices: [String] = []
+    /// The filtered note this answer was written from (`PrivateBrief`): exactly what left the Mac of what stays on it.
+    var privateBrief = ""
     var charts: [ChatChart] = []
     var mails: [MailDraft] = []
     /// The step-by-step plan Nook keeps while it works through a request (`update_plan`), shown as a checklist.
@@ -746,6 +748,7 @@ private struct StoredMessage: Codable {
     var notices: [String]?
     var plan: StoredPlan?
     var tasks: [RunTaskStep]?
+    var privateBrief: String?
 
     @MainActor
     init?(_ message: ChatMessage) {
@@ -766,6 +769,7 @@ private struct StoredMessage: Codable {
         scopeLabel = message.scopeLabel.isEmpty ? nil : message.scopeLabel
         notices = message.notices.isEmpty ? nil : message.notices
         tasks = message.tasks.isEmpty ? nil : message.tasks
+        privateBrief = message.privateBrief.isEmpty ? nil : message.privateBrief
     }
 
     func restored() -> ChatMessage {
@@ -782,6 +786,7 @@ private struct StoredMessage: Codable {
         message.scopeLabel = scopeLabel ?? ""
         message.notices = notices ?? []
         message.tasks = tasks ?? []
+        message.privateBrief = privateBrief ?? ""
         if let plan {
             plan.restore(into: &message)
         } else if let legacy = StoredPlan.legacy(in: text) {
@@ -923,4 +928,8 @@ enum ReplyContext {
     @TaskLocal static var selfContained = false
     /// What the chosen brain found for a question both brains work on (`ScreenBrain.needsBoth`).
     @TaskLocal static var outside = ""
+    /// The note the model on this Mac wrote for the chosen brain (`PrivateBrief`), and the mail addresses it read: those
+    /// stay on this Mac and fill in a draft to a name.
+    @TaskLocal static var brief = ""
+    @TaskLocal static var briefAddresses: [String] = []
 }

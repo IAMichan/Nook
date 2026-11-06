@@ -436,6 +436,11 @@ final class AppSettings: ObservableObject {
     @Published var screenBrain: String {
         didSet { UserDefaults.standard.set(screenBrain, forKey: "screenBrain") }
     }
+    /// The screen brain does not answer itself: it writes the chosen brain a filtered note (`PrivateBrief`) and that brain
+    /// answers. See `relayWorker`.
+    @Published var screenBrainRelays: Bool {
+        didSet { UserDefaults.standard.set(screenBrainRelays, forKey: "screenBrainRelays") }
+    }
     /// Apps Nook never reads, on top of the password managers (`ScreenReader.builtInExcluded`): bundle identifiers.
     @Published var neverReadApps: [String] {
         didSet { UserDefaults.standard.set(neverReadApps, forKey: Self.neverReadAppsKey) }
@@ -495,6 +500,9 @@ final class AppSettings: ObservableObject {
         let screenPrivate = localOnlySources.union(privacyLevel.localOnlySources).contains(SourceCatalog.screen)
         return ScreenBrain.worker(chosen: chosenSelection, screenPrivate: screenPrivate, stored: screenBrain)
     }
+
+    /// The screen brain, when it hands a note to the chosen brain instead of answering itself.
+    var relayWorker: BrainSelection? { screenBrainRelays ? screenWorker : nil }
 
     /// Whether Nook may do screen work at all: the active brain may read the screen, or a screen brain does it on this Mac.
     var screenWorkAllowed: Bool {
@@ -688,6 +696,7 @@ final class AppSettings: ObservableObject {
         energyMode = EnergyMode(rawValue: defaults.string(forKey: "energyMode") ?? "") ?? .automatic
         localOnlySources = Set(defaults.stringArray(forKey: "localOnlySources") ?? [])
         screenBrain = defaults.string(forKey: "screenBrain") ?? ""
+        screenBrainRelays = defaults.bool(forKey: "screenBrainRelays")
         neverReadApps = defaults.stringArray(forKey: Self.neverReadAppsKey) ?? []
         privacyLevel = PrivacyLevel(rawValue: defaults.string(forKey: "privacyLevel") ?? "") ?? .balanced
         evidenceFirst = defaults.bool(forKey: "evidenceFirst")

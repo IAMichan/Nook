@@ -96,6 +96,12 @@ final class ScreenBrainTests: XCTestCase {
         XCTAssertTrue(ScreenBrain.handles("Wat staat er op mijn scherm?", conversation: true, afterScreen: false))
     }
 
+    func testTheChosenBrainAnswersFromANoteUnlessTheNoteWouldHoldTheAnswerBack() {
+        XCTAssertTrue(ScreenBrain.relays("Reageer op Gijs via de mail met de vraag of dit ook via Bit kan", images: false))
+        XCTAssertFalse(ScreenBrain.relays("Wat is het telefoonnummer van Lisa?", images: false))
+        XCTAssertFalse(ScreenBrain.relays("Wat staat op dit plaatje?", images: true))
+    }
+
     func testANewRequestLeavesTheScreenBrainAfterAScreenAnswer() {
         XCTAssertFalse(ScreenBrain.handles("Wat is mijn IP adres?", conversation: true, afterScreen: true))
         XCTAssertFalse(ScreenBrain.handles("Zet in de agenda voor morgen dat ik om 11:00 bel met opa", conversation: true, afterScreen: true))
