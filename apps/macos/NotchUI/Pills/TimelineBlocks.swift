@@ -222,26 +222,26 @@ struct QueuedMessagesStrip: View {
     }
 }
 
-/// A small picture in a queued message's row, read from disk off the main thread.
+/// A small picture in a queued message's row, read from disk off the main thread; a click enlarges it.
 private struct QueuedPictureThumbnail: View {
     let url: URL
     @State private var image: NSImage?
 
     var body: some View {
-        ZStack {
-            if let image {
-                Image(nsImage: image).resizable().scaledToFill()
-            } else {
-                Image(systemName: "photo")
-                    .font(NookTheme.font(10))
-                    .foregroundStyle(NookTheme.textTertiary)
+        ImageModalButton(name: url.lastPathComponent, preview: image, file: { url }) {
+            ZStack {
+                if let image {
+                    Image(nsImage: image).resizable().scaledToFill()
+                } else {
+                    Image(systemName: "photo")
+                        .font(NookTheme.font(10))
+                        .foregroundStyle(NookTheme.textTertiary)
+                }
             }
+            .frame(width: 22, height: 22)
+            .background(NookTheme.smoke)
+            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
         }
-        .frame(width: 22, height: 22)
-        .background(NookTheme.smoke)
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
-        .help(url.lastPathComponent)
-        .accessibilityLabel(url.lastPathComponent)
         .task(id: url) {
             let url = url
             image = await Task.detached(priority: .utility) {
