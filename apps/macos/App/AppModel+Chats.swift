@@ -371,35 +371,48 @@ extension AppModel {
 
     // MARK: Nook writes a message
 
-    /// "@nook …" in a chat's answer field: the message Nook writes from the chat and what you asked. When the request
-    /// points elsewhere ("summarize Gijs's mail for Arjan") Nook first looks it up with the same read tools and privacy
-    /// rules as Nook Chat; `onLookup` hears each lookup as it starts and ends. The message only goes into the field;
-    /// sending stays your own click. Throws with a sentence you can act on.
+    /// "@nook …" in a chat's answer field: the message Nook writes from the chat and what you asked, and what you asked
+    /// to be done. As in Nook Chat, Nook may look things up first ("summarize Gijs's mail for Arjan") with the same tools
+    /// and privacy rules, and propose actions ("make a reminder for this"); `onLookup` hears each lookup as it starts and
+    /// ends. Nothing is sent or done here: the message goes into the field and the actions wait for your click. Throws
+    /// with a sentence you can act on.
     func draftChatMessage(app appName: String, chat name: String, transcript: String, instruction: String,
-                          onLookup: @escaping @MainActor (ChatDraft.Lookup) -> Void = { _ in }) async throws -> String {
+                          onLookup: @escaping @MainActor (ChatDraft.Lookup) -> Void = { _ in }) async throws -> ChatDraftResult {
         guard settings.brainReady else { throw NookError(tr("chats.draft.noBrain")) }
         let prompt = ChatDraft.prompt(app: appName, chat: name, transcript: transcript, instruction: instruction)
-        let answer: String?
-        if ChatDraft.wantsLookup(instruction, smallBrain: settings.brainProfile.isSmall) {
-            let tools = draftLookupTools(onLookup)
-            answer = try await RetrievalLedger.withTimeout(150) { [brain] in
-                try await brain.writeWithLookups(system: ChatDraft.lookupSystem, prompt: prompt, request: instruction,
-                                                 tools: tools) ?? ""
-            }
-        } else {
-            answer = await brain.rewrite(system: ChatDraft.system, prompt: prompt, timeout: 90)
+        let ask = ChatDraft.request(in: instruction)
+        guard ChatDraft.wantsLookup(instruction, smallBrain: settings.brainProfile.isSmall)
+                || (!ask.isEmpty && BrainService.needsTools(ask)) else {
+            guard let answer = await brain.rewrite(system: ChatDraft.system, prompt: prompt, timeout: 90),
+                  let message = ChatDraft.clean(answer) else { throw NookError(tr("chats.draft.failed")) }
+            return ChatDraftResult(message: message, actions: [])
         }
-        guard let answer, let message = ChatDraft.clean(answer) else { throw NookError(tr("chats.draft.failed")) }
-        return message
+        let tools = draftTools(onLookup)
+        let box = DraftPlanBox()
+        // The dates of the coming days, so "on Monday" in a reminder is the right Monday.
+        let dated = prompt + "\n\n" + ChatIntent.dateSheet()
+        _ = try await RetrievalLedger.withTimeout(150) { [brain] in
+            box.plan = try await brain.writeInChat(system: ChatDraft.lookupSystem, prompt: dated, request: ask, tools: tools)
+            return ""
+        }
+        guard let plan = box.plan else { throw NookError(tr("chats.draft.failed")) }
+        let steps = planSteps(plan.actions)
+        let actions = zip(plan.actions, steps).map { ChatDraftAction(action: $0.0, step: $0.1) }
+        let message = ChatDraft.message(in: plan.text)
+        guard message != nil || !actions.isEmpty else { throw NookError(tr("chats.draft.failed")) }
+        return ChatDraftResult(message: message, actions: actions)
     }
 
-    /// The read tools Nook may use while it writes a chat message: every source Nook Chat reads, without what the privacy
-    /// level keeps on this Mac, and without the screen. Each reports itself to `onLookup` as it runs.
-    private func draftLookupTools(_ onLookup: @escaping @MainActor (ChatDraft.Lookup) -> Void) -> [ToolSpec] {
+    /// The tools Nook may use in a chat's "@nook …": what Nook Chat may use, without what the privacy level keeps on this
+    /// Mac and without the screen (no taking over, no clicking in apps). Each read tool reports itself to `onLookup` as
+    /// it runs; an action tool only becomes a proposal.
+    private func draftTools(_ onLookup: @escaping @MainActor (ChatDraft.Lookup) -> Void) -> [ToolSpec] {
         let counter = LookupCounter()
+        let excluded: Set<String> = [TakeoverPolicy.toolName, ChatTools.planTool]
         return scopedTools(privacyScope(.automatic), ledger: nil)
-            .filter { $0.kind == .read && SourceCatalog.source(forTool: $0.name) != SourceCatalog.screen }
+            .filter { !excluded.contains($0.name) && SourceCatalog.source(forTool: $0.name) != SourceCatalog.screen }
             .map { spec in
+                guard spec.kind == .read else { return spec }
                 let run = spec.run
                 return ToolSpec(name: spec.name, description: spec.description, schema: spec.schema, kind: spec.kind,
                                 summarize: spec.summarize, tag: spec.tag,
@@ -417,10 +430,17 @@ extension AppModel {
             }
     }
 
+    /// Runs what Nook proposed under a chat's "@nook …", after your click, as a plan in Nook Chat runs: one step after
+    /// another, stopping at the first that fails.
+    func runDraftActions(_ actions: [PlannedAction]) async -> (results: [String], failure: String?) {
+        store.audit(tool: "plan_goedgekeurd", args: planSteps(actions).map(\.text).joined(separator: " | "), result: "")
+        return await perform(actions)
+    }
+
     /// "@nook …" in a card's field: the message Nook writes from the chat the card shows, as the Chats tab does. A card
     /// from Nook itself (an answer, a question back) is that chat's one message, so Nook writes your answer to it.
     func draftCardReply(_ instruction: String, card: NookCard,
-                        onLookup: @escaping @MainActor (ChatDraft.Lookup) -> Void = { _ in }) async throws -> String {
+                        onLookup: @escaping @MainActor (ChatDraft.Lookup) -> Void = { _ in }) async throws -> ChatDraftResult {
         guard case .chat(let bubbles) = card.detail else {
             return try await draftChatMessage(app: "Nook", chat: "Nook", transcript: "Nook: " + card.title, instruction: instruction,
                                               onLookup: onLookup)
@@ -431,6 +451,12 @@ extension AppModel {
         return try await draftChatMessage(app: app, chat: card.title, transcript: transcript, instruction: instruction,
                                           onLookup: onLookup)
     }
+}
+
+/// Holds the plan of a chat's "@nook …" across the timeout that bounds it.
+@MainActor
+private final class DraftPlanBox {
+    var plan: BrainPlan?
 }
 
 /// Numbers the lookups of one draft, shared by its tools.

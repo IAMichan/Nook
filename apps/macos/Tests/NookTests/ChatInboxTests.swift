@@ -180,6 +180,21 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertFalse(ChatDraft.wantsLookup("", smallBrain: false), "@nook alone: the chat says enough")
         XCTAssertFalse(ChatDraft.wantsLookup(ChatDraft.refinement(of: "Check the mail", change: "shorter"), smallBrain: false),
                        "a rewrite of a draft looks nothing up")
+        XCTAssertTrue(ChatDraft.wantsLookup(ChatDraft.refinement(of: "Hi Arjan", change: "add what Gijs said in the mail"),
+                                            smallBrain: false), "a change that points elsewhere is looked up")
+    }
+
+    func testAnAnswerWithoutAMessageOnlyDoesSomething() {
+        XCTAssertNil(ChatDraft.message(in: "NO_MESSAGE"), "only a reminder asked: nothing for the field")
+        XCTAssertNil(ChatDraft.message(in: "  no_message\n"))
+        XCTAssertNil(ChatDraft.message(in: "I proposed the reminder.\n\nNO_MESSAGE"))
+        XCTAssertEqual(ChatDraft.message(in: "\"Top, ik mail ze maandag!\""), "Top, ik mail ze maandag!")
+        XCTAssertTrue(ChatDraft.lookupSystem.contains(ChatDraft.noMessage))
+    }
+
+    func testTheRequestOfARewriteIsItsChange() {
+        XCTAssertEqual(ChatDraft.request(in: " make a reminder for this "), "make a reminder for this")
+        XCTAssertEqual(ChatDraft.request(in: ChatDraft.refinement(of: "Hi", change: "also make a reminder")), "also make a reminder")
     }
 
     func testALookupSaysWhatItLookedFor() {

@@ -2318,6 +2318,7 @@ private struct ChatsDetail: View, Equatable {
                     copyForApp()
                 }
             })
+            .runsActions { await app.runDraftActions($0) }
             .editsLastMessage(abilities.edit && route != nil ? editLastMessage : nil)
             .walksFiles { offset in
                 guard composer.files.count > 1 else { return false }
