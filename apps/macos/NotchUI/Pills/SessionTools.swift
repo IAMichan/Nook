@@ -279,7 +279,8 @@ struct SessionWorkbench<Conversation: View>: View {
     /// Whether the session panel was docked: it docks again only with some room to spare (`PanelLayout.dockHysteresis`),
     /// so dragging a panel near the edge of the room does not make the column come and go.
     @State private var wasDocked = true
-    /// How far the conversation's column still has to go after the session panel opened or closed (`chatColumnSlide`).
+    /// How far the conversation's column still has to go after the session panel opened or closed (`chatColumnSlide`):
+    /// it only moves when the window is too narrow to keep it in its place beside that panel.
     @State private var chatSlide: CGFloat = 0
     /// Whether a panel's tool may take the keyboard: not while the session opens with a panel already open, so you type
     /// in the composer right away; once you open or switch a tool in a panel, it may (`sidePanelTakesFocus`).
@@ -307,6 +308,27 @@ struct SessionWorkbench<Conversation: View>: View {
         shown(.side) == .file ? fileViewer.target?.path : nil
     }
 
+    /// The room a conversation needs to stay beside the side panel.
+    private var conversationRoom: Double { PanelLayout.minimumConversation + PanelSplit.handle }
+
+    /// Too narrow for the conversation beside the side panel: the panel covers the conversation until you close it,
+    /// instead of both squeezing until neither reads.
+    private var tooNarrow: Bool {
+        !PanelSplit.fits(minimum: PanelLayout.minimumPanel + NookTheme.Spacing.sm, available: totalWidth, rest: conversationRoom)
+    }
+
+    private var covering: Bool {
+        shown(.side) != .conversation && (tooNarrow || panelMaximized)
+    }
+
+    /// The width the right panel actually takes (not the one it was dragged to).
+    private var rightRoom: Double {
+        shown(.side) != .conversation && !covering
+            ? SidePanelRoom.of(PanelSplit.width(toolWidth, minimum: PanelLayout.minimumPanel, available: totalWidth,
+                                                rest: conversationRoom))
+            : 0
+    }
+
     var body: some View {
         let side = shown(.side)
         let bottom = shown(.bottom)
@@ -314,18 +336,8 @@ struct SessionWorkbench<Conversation: View>: View {
         let subagentsShown = side == .subagents || bottom == .subagents
         let toolsFresh = (outputs.fresh && !outputsShown) || (outputs.subagentsFresh && !subagentsShown)
         let sideOpen = side != .conversation
-        let conversationRoom = PanelLayout.minimumConversation + PanelSplit.handle
-        // Too narrow for the conversation beside the side panel: the panel covers the conversation until you close it,
-        // instead of both squeezing until neither reads.
-        let tooNarrow = !PanelSplit.fits(minimum: PanelLayout.minimumPanel + NookTheme.Spacing.sm, available: totalWidth, rest: conversationRoom)
-        let covering = sideOpen && (tooNarrow || panelMaximized)
-        // The width the right panel actually takes (not the one it was dragged to) and the room of the conversation's
-        // own panels, so a window that gets narrower gives up the docked column first; under that room it is the branch
-        // button's popover again.
-        let rightRoom = sideOpen && !covering
-            ? SidePanelRoom.of(PanelSplit.width(toolWidth, minimum: PanelLayout.minimumPanel, available: totalWidth,
-                                                rest: conversationRoom))
-            : 0
+        // The room of the conversation's own panels, so a window that gets narrower gives up the docked column first;
+        // under that room it is the branch button's popover again.
         let needed = PanelLayout.sessionPanelRoom + (wasDocked || sessionPanelClosed ? 0 : PanelLayout.dockHysteresis)
         let canDock = dockSessionPanel && !directory.isEmpty && totalWidth - rightRoom >= needed
         let docked = canDock && !sessionPanelClosed
@@ -338,6 +350,7 @@ struct SessionWorkbench<Conversation: View>: View {
                     // which ends at the same spot. So they stay where they are when that panel opens or closes.
                     conversation(docked ? AnyView(EmptyView()) : AnyView(tools))
                         .environment(\.chatColumnSlide, chatSlide)
+                        .environment(\.chatColumnRow, CGFloat(totalWidth))
                         // A pull request link in the conversation opens in the side panel.
                         .environment(\.pullRequestLinksBeside, true)
                         // The conversation hands up what the agent produced, and opens a new plan in the outputs tab.
@@ -570,14 +583,20 @@ struct SessionWorkbench<Conversation: View>: View {
 
     /// Opens or closes the session panel. It opens with the room it needs to stay, not the extra room to dock again:
     /// from the toggle's own width it would otherwise not open, and take its toggle with it.
-    /// The conversation takes its new width at once, but its centered column glides to its new place instead of jumping.
+    /// The conversation takes its new width at once. Its column keeps its place; where the panel leaves too little room
+    /// for that, it glides aside instead of jumping.
     private func toggleSessionPanel() {
         let opening = sessionPanelClosed
         if opening { wasDocked = true }
         sessionPanelClosed.toggle()
         guard !reduceMotion else { return }
-        let moved = CGFloat(SidePanelRoom.of(Double(PanelLayout.sessionPanel))) / 2
-        chatSlide = opening ? moved : -moved
+        let closedRoom = CGFloat(totalWidth - rightRoom)
+        let openRoom = closedRoom - CGFloat(SidePanelRoom.of(Double(PanelLayout.sessionPanel)))
+        let start = { (room: CGFloat) in
+            let column = min(PanelLayout.chatColumn, room)
+            return PanelSplit.columnStart(column: column, room: room, row: CGFloat(totalWidth))
+        }
+        chatSlide = opening ? start(closedRoom) - start(openRoom) : start(openRoom) - start(closedRoom)
     }
 
     /// Closes a tab opened from the conversation, and the panel with it when that was its only tab, so opening and closing
