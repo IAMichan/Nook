@@ -78,11 +78,38 @@ struct ChatMedia: Codable, Equatable, Sendable {
     /// Whether a fetched file is whole: there, not empty, and not written to for `quiet` seconds. An app or a helper
     /// hands a file over the moment it exists, often while it still writes it; a photo decoded then shows (and is
     /// cached) half grey, and a video does not play at all.
+    /// A file Nook knows is whole (`markWhole`) needs no such wait.
     static func isSettled(_ url: URL, quiet: TimeInterval = 1.5, now: Date = Date()) -> Bool {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
               let size = attributes[.size] as? NSNumber, size.intValue > 0 else { return false }
+        if wholeLock.withLock({ wholeFiles.contains(url.path) }) { return true }
         guard let modified = attributes[.modificationDate] as? Date else { return true }
         return now.timeIntervalSince(modified) >= quiet
+    }
+
+    /// How many whole files are remembered; past that they are forgotten, and `isSettled` waits as for any file.
+    private static let wholeLimit = 4_000
+    /// The files known to be whole, by path: read by every bubble, written by every bridge, so behind `wholeLock`.
+    private nonisolated(unsafe) static var wholeFiles: Set<String> = []
+    private static let wholeLock = NSLock()
+
+    /// `path` is complete and stays as it is: written in one go, or handed over finished by its app. Its picture then
+    /// shows right away, instead of `isSettled` waiting for a file nothing writes to any more.
+    static func markWhole(_ path: String) {
+        wholeLock.withLock {
+            if wholeFiles.count >= wholeLimit { wholeFiles.removeAll(keepingCapacity: true) }
+            wholeFiles.insert(path)
+        }
+    }
+
+    /// Writes fetched bytes to `target` in one go, so nothing ever sees half a file. False when it could not. Every
+    /// bridge that fetches its files itself saves them here. Off the main thread, where every caller is: a video is
+    /// megabytes.
+    static func save(_ data: Data, to target: URL) -> Bool {
+        try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard (try? data.write(to: target, options: .atomic)) != nil else { return false }
+        markWhole(target.path)
+        return true
     }
 
     /// The MIME type of a video by its first bytes, for a file whose name does not say (a chat helper's "dbe80cq9", a
@@ -141,6 +168,46 @@ struct ChatMedia: Codable, Equatable, Sendable {
         return files.filter { $0.lastPathComponent.hasPrefix("avatar") }.max { date($0) < date($1) }?.path
     }
 
+    /// The file kept under `key` (see `destination`) by an earlier fetch, on this launch or a former one. It was saved
+    /// in one go, so it is whole.
+    static func kept(key: String) -> URL? {
+        let dir = destination(key: key, name: "file").deletingLastPathComponent()
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        guard let file = files.first(where: { !$0.lastPathComponent.hasPrefix(".") }) else { return nil }
+        markWhole(file.path)
+        return file
+    }
+
+    /// The folders of the keys that start with `prefix`.
+    private static func keptFolders(prefix: String, in folder: URL) -> [URL] {
+        let safe = String(prefix.map { $0.isLetter || $0.isNumber || $0 == "-" ? $0 : "_" })
+        let keys: [URLResourceKey] = [.contentModificationDateKey]
+        let found = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: keys)) ?? []
+        return found.filter { $0.lastPathComponent.hasPrefix(safe) }
+    }
+
+    /// Removes every file kept under a key that starts with `prefix`.
+    static func removeKept(prefix: String, in folder: URL = folder) {
+        for found in keptFolders(prefix: prefix, in: folder) { try? FileManager.default.removeItem(at: found) }
+    }
+
+    /// Keeps the files under keys that start with `prefix` within `limit` bytes, the ones saved longest ago going first.
+    /// For a bridge that fetches on request, whose files would otherwise only grow.
+    static func trimKept(prefix: String, limit: Int, in folder: URL = folder) {
+        let manager = FileManager.default
+        let entries = keptFolders(prefix: prefix, in: folder).map { found -> (url: URL, date: Date, size: Int) in
+            let files = (try? manager.contentsOfDirectory(at: found, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+            let size = files.reduce(0) { $0 + ((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+            let date = (try? found.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return (found, date, size)
+        }
+        var total = entries.reduce(0) { $0 + $1.size }
+        for entry in entries.sorted(by: { $0.date < $1.date }) where total > limit {
+            try? manager.removeItem(at: entry.url)
+            total -= entry.size
+        }
+    }
+
     /// Removes the pictures `key` had before `kept`, once `kept` is its picture.
     static func dropOtherAvatars(key: String, keeping kept: URL) {
         let dir = kept.deletingLastPathComponent()
@@ -154,16 +221,17 @@ struct ChatMedia: Codable, Equatable, Sendable {
 extension ChatMedia {
     /// How many of a read's files a bridge fetches at the same time: a chat with several photos shows them together
     /// instead of one after another, without asking a service for dozens at once.
-    static let parallelFetches = 4
+    static let parallelFetches = 6
 
     /// `messages` with the files `fetch` brought to this Mac (it returns where it put one, nil when it could not), for
-    /// every message whose file is not here yet, `parallelFetches` at a time. The messages keep their order. The same
-    /// for every bridge that fetches its files itself (Slack, the chat helper).
+    /// every message whose file is not here yet, `parallelFetches` at a time, the newest message first: that is what a
+    /// chat shows when it opens. The messages keep their order. The same for every bridge that fetches its files itself
+    /// (Slack, Teams, the chat helper).
     @MainActor
     static func fetchingFiles(_ messages: [InboxMessage], limit: Int = parallelFetches,
                               fetch: @escaping @MainActor (InboxMessage) async -> String?) async -> [InboxMessage] {
         var result = messages
-        let wanted = messages.indices.filter { messages[$0].media != nil && messages[$0].media?.path == nil }
+        let wanted = messages.indices.filter { messages[$0].media != nil && messages[$0].media?.path == nil }.reversed()
         guard !wanted.isEmpty else { return result }
         await withTaskGroup(of: (Int, String?).self) { group in
             var next = wanted.makeIterator()

@@ -25,9 +25,13 @@ protocol ChatBridge: AnyObject {
     /// Reads a database on this Mac, not a service: a read that failed for a passing reason is tried again within
     /// seconds (`ChatBackoff`), not after a minute.
     var readsLocally: Bool { get }
+    /// You are looking at the chat `name`: the files it still waits for go before those of other chats. For an app that
+    /// fetches files in its own queue (Telegram); every other bridge fetches them with the read a chat's opening asks for.
+    func hurryFiles(name: String)
 }
 
 extension ChatBridge {
+    func hurryFiles(name: String) {}
     var bridgeID: String { app }
     var alwaysOn: Bool { false }
     var readsLocally: Bool { false }
@@ -1368,9 +1372,13 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
 
     /// Where a file the helper names is on this Mac: a `file://` one as it is, an `mxc://` one once the helper downloaded
     /// it through its own API (it says where it put it). Nothing is fetched from anywhere but the helper on this Mac.
+    /// The helper moves a file into its media folder before it knows its address, so what it names is whole.
     private func local(_ source: String?, token: String) async -> String? {
         guard let source else { return nil }
-        if let url = URL(string: source), url.isFileURL { return url.path }
+        if let url = URL(string: source), url.isFileURL {
+            ChatMedia.markWhole(url.path)
+            return url.path
+        }
         guard source.hasPrefix("mxc://") || source.hasPrefix("localmxc://") else { return nil }
         if let known = downloaded[source], FileManager.default.fileExists(atPath: known) { return known }
         var request = URLRequest(url: Self.base.appendingPathComponent("v1/assets/download"))
@@ -1382,6 +1390,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
               (answer.1 as? HTTPURLResponse)?.statusCode == 200,
               let local = (ChatJSON.object(answer.0)?["srcURL"] as? String).flatMap({ URL(string: $0) }), local.isFileURL else { return nil }
         downloaded[source] = local.path
+        ChatMedia.markWhole(local.path)
         return local.path
     }
 
@@ -1937,17 +1946,17 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
             guard let media = message.media, let source = media.source,
                   let url = URL(string: source), SlackData.isSlack(url) else { return nil }
             let target = ChatMedia.destination(key: message.id, name: media.name ?? url.lastPathComponent)
-            if FileManager.default.fileExists(atPath: target.path) { return target.path }
+            if FileManager.default.fileExists(atPath: target.path) {
+                ChatMedia.markWhole(target.path)
+                return target.path
+            }
             let request = Self.request(url, auth: auth)
             guard let answer = try? await ConnectorHTTP.session.data(for: request),
                   let response = answer.1 as? HTTPURLResponse, response.statusCode == 200,
                   answer.0.count <= ChatMedia.maxBytes,
                   // Without the right scope Slack answers with its sign-in page instead of the file.
                   !(response.mimeType ?? "").contains("html") else { return nil }
-            let saved = await Task.detached(priority: .utility) { () -> Bool in
-                try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-                return (try? answer.0.write(to: target, options: .atomic)) != nil
-            }.value
+            let saved = await Task.detached(priority: .userInitiated) { ChatMedia.save(answer.0, to: target) }.value
             return saved ? target.path : nil
         }
     }

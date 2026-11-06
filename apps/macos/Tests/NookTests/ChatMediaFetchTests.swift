@@ -30,4 +30,59 @@ final class ChatMediaFetchTests: XCTestCase {
         XCTAssertNil(fetched[4].media?.path, "one that could not be fetched stays without a file")
         XCTAssertEqual(fetched[11].media?.path, "/kept.jpg")
     }
+
+    func testTheNewestFilesAreFetchedFirst() async {
+        var asked: [String] = []
+        _ = await ChatMedia.fetchingFiles((0..<4).map { message("m\($0)") }, limit: 1) { message in
+            asked.append(message.id)
+            return nil
+        }
+        XCTAssertEqual(asked, ["m3", "m2", "m1", "m0"], "a chat opens at its newest message")
+    }
+
+    private func temporaryFolder() throws -> URL {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+        return folder
+    }
+
+    func testASavedFileNeedsNoWaitToSettle() throws {
+        let target = try temporaryFolder().appendingPathComponent("nested/photo.jpg")
+        XCTAssertTrue(ChatMedia.save(Data("whole".utf8), to: target))
+        XCTAssertTrue(ChatMedia.isSettled(target), "written in one go: whole at once")
+
+        let other = target.deletingLastPathComponent().appendingPathComponent("incoming.jpg")
+        try Data("part".utf8).write(to: other)
+        XCTAssertFalse(ChatMedia.isSettled(other), "a file someone else writes still waits")
+    }
+
+    func testAKeptFileIsFoundAgainAndWholeAtOnce() {
+        let key = "wa-test-" + UUID().uuidString
+        XCTAssertNil(ChatMedia.kept(key: key))
+        let target = ChatMedia.destination(key: key, name: "photo.jpg")
+        addTeardownBlock { try? FileManager.default.removeItem(at: target.deletingLastPathComponent()) }
+        XCTAssertTrue(ChatMedia.save(Data("whole".utf8), to: target))
+        XCTAssertEqual(ChatMedia.kept(key: key)?.lastPathComponent, "photo.jpg")
+        XCTAssertTrue(ChatMedia.isSettled(target))
+    }
+
+    func testKeptFilesAreTrimmedOldestFirstAndRemovedByPrefix() throws {
+        let folder = try temporaryFolder()
+        let now = Date()
+        for (index, name) in ["wa-a-old", "wa-a-new", "other-file"].enumerated() {
+            let dir = folder.appendingPathComponent(name, isDirectory: true)
+            XCTAssertTrue(ChatMedia.save(Data(count: 100), to: dir.appendingPathComponent("file")))
+            try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(Double(index) * 60)], ofItemAtPath: dir.path)
+        }
+        ChatMedia.trimKept(prefix: "wa-", limit: 150, in: folder)
+        let exists = { (name: String) in FileManager.default.fileExists(atPath: folder.appendingPathComponent(name).path) }
+        XCTAssertFalse(exists("wa-a-old"), "the oldest goes first")
+        XCTAssertTrue(exists("wa-a-new"))
+        XCTAssertTrue(exists("other-file"), "another prefix is left alone")
+
+        ChatMedia.removeKept(prefix: "wa-a-", in: folder)
+        XCTAssertFalse(exists("wa-a-new"))
+        XCTAssertTrue(exists("other-file"))
+    }
 }
