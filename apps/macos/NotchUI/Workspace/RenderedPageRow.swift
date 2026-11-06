@@ -10,10 +10,10 @@ struct RenderedPageRow: View, Equatable {
     /// The page, read from its file off the main thread; `missing` once that found nothing.
     @State private var html: String?
     @State private var missing = false
-    /// The page's scripts run only while its row is on screen and Nook is not saving energy; otherwise the web view goes,
-    /// so a page that animates or loops costs nothing out of sight.
+    /// The page's scripts run only while its row is on screen; otherwise the web view goes, so a page that animates or
+    /// loops costs nothing out of sight. The energy plan has no say here: a page on screen is something you look at, not
+    /// background work, and a build (when agents show pages) would leave an empty frame for as long as it keeps the Mac busy.
     @State private var onScreen = false
-    @State private var energyPaused = false
 
     static func == (lhs: RenderedPageRow, rhs: RenderedPageRow) -> Bool { lhs.event == rhs.event }
 
@@ -24,7 +24,7 @@ struct RenderedPageRow: View, Equatable {
             }
             .help(tr("ws.page.help"))
             if !hidden, !missing || html != nil {
-                if let html, onScreen, !energyPaused {
+                if let html, onScreen {
                     SandboxedPageView(html: html)
                         .frame(maxWidth: .infinity)
                         .frame(height: RenderedPage.height(of: event))
@@ -47,7 +47,6 @@ struct RenderedPageRow: View, Equatable {
         .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear { onScreen = true }
         .onDisappear { onScreen = false }
-        .onReceive(EnergyMonitor.shared.$plan.map { $0.pace == .paused }.removeDuplicates()) { energyPaused = $0 }
         .task(id: event.detail) {
             let path = event.detail
             let base = NookPaths.supportDirectory
@@ -98,6 +97,12 @@ private struct SandboxedPageView: NSViewRepresentable {
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
             let url = navigationAction.request.url?.absoluteString ?? ""
             return url == "about:blank" || url == "about:srcdoc" ? .allow : .cancel
+        }
+
+        /// macOS can end the page's process (memory pressure, a crash); the frame would stay empty until the row is rebuilt.
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            guard let loaded else { return }
+            webView.loadHTMLString(RenderedPage.hostPage(loaded), baseURL: nil)
         }
     }
 }
