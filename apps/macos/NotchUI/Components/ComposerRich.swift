@@ -535,13 +535,19 @@ struct ComposerContextRing: View {
 /// How much of its subscription the session's account has used, among the choices of the composer, right after the effort: a
 /// small ring filled to the window that runs out first, with its percentage beside it, amber from 75 % and coral from 90 %. Click for every window as one line each (`UsageLimitRows`, reset and pace in their tooltips) and "All limits",
 /// the usage limits modal with every account (`UsageModal`). Every agent that reports limits gets it.
-struct ComposerUsageRing: View {
-    @EnvironmentObject private var app: AppModel
+///
+/// Equatable, and without the app model of its own: composers redraw for every change of the workspace, and this one only
+/// has to when the limits do.
+struct ComposerUsageRing: View, Equatable {
     let limits: [QuotaLimit]
     let account: String
     @State private var open = false
     @State private var hovering = false
     private static let shownLimits = 6
+
+    static func == (a: ComposerUsageRing, b: ComposerUsageRing) -> Bool {
+        a.limits == b.limits && a.account == b.account
+    }
 
     /// The ring for an account, in every session composer and from the first percent, working or not: nothing only for an
     /// agent that reports no limits. Built in the caller's body rather than as a view of its own, so the percentage follows
@@ -551,7 +557,7 @@ struct ComposerUsageRing: View {
         if let profile {
             let limits = app.quota.limits(for: profile)
             if !limits.isEmpty {
-                ComposerUsageRing(limits: limits, account: AccountLabel.name(profile, app: app))
+                ComposerUsageRing(limits: limits, account: AccountLabel.name(profile, app: app)).equatable()
             }
         }
     }
@@ -593,7 +599,7 @@ struct ComposerUsageRing: View {
         .fixedSize()
         .help(help)
         .accessibilityLabel(help)
-        .popover(isPresented: $open, arrowEdge: .top) { panel }
+        .popover(isPresented: $open, arrowEdge: .top) { ComposerUsagePanel(limits: shown, account: account, open: $open) }
     }
 
     private func ring(tint: Color) -> some View {
@@ -606,8 +612,16 @@ struct ComposerUsageRing: View {
         .frame(width: 11, height: 11)
     }
 
-    /// The title with the account, a line per window, and the way to every account's limits.
-    private var panel: some View {
+}
+
+/// The title with the account, a line per window, and the way to every account's limits.
+private struct ComposerUsagePanel: View {
+    @EnvironmentObject private var app: AppModel
+    let limits: [QuotaLimit]
+    let account: String
+    @Binding var open: Bool
+
+    var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(tr("limits.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
@@ -615,7 +629,7 @@ struct ComposerUsageRing: View {
             }
             .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
             TimelineView(.nookTicks(every: 60)) { context in
-                UsageLimitRows(limits: shown, now: context.date)
+                UsageLimitRows(limits: limits, now: context.date)
             }
             SmallGhostButton(title: tr("limits.all")) {
                 open = false

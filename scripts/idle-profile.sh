@@ -13,7 +13,8 @@
 set -euo pipefail
 
 seconds="${1:-5}"
-pid="${2:-$(pgrep -f 'Nook\.app/Contents/MacOS/Nook( |$)' | head -1 || true)}"
+# -a: pgrep leaves out its own ancestors, and from an agent session inside Nook that is Nook itself.
+pid="${2:-$(pgrep -a -f 'Nook\.app/Contents/MacOS/Nook( |$)' | head -1 || true)}"
 [ -n "$pid" ] || { echo "Nook is not running." >&2; exit 1; }
 
 cpu_seconds() {  # $1 = "[[dd-]hh:]mm:ss.ss" → seconds
@@ -34,7 +35,8 @@ main_after=$(cpu_seconds "$(main_cpu)")
 printf 'Nook %s, %s s\n' "$pid" "$seconds"
 awk -v a="$before" -v b="$after" -v s="$seconds" 'BEGIN { printf "  CPU (process):     %5.1f%%\n", (b - a) / s * 100 }'
 awk -v a="$main_before" -v b="$main_after" -v s="$seconds" 'BEGIN { printf "  CPU (main thread): %5.1f%%   (user time)\n", (b - a) / s * 100 }'
-footprint "$pid" 2>/dev/null | awk '/Footprint:/ { sub(/.*Footprint: /, ""); sub(/ \(.*/, ""); print "  Footprint:         " $0; exit }'
+# The whole output is read: an awk that exits early would end footprint with SIGPIPE, and pipefail would end this script.
+footprint "$pid" 2>/dev/null | awk '/Footprint:/ && !seen { seen = 1; sub(/.*Footprint: /, ""); sub(/ \(.*/, ""); print "  Footprint:         " $0 }'
 
 models="$(lsof -p "$pid" 2>/dev/null | grep -iE '\.(gguf|safetensors)$' | awk '{ print $NF }' | sed 's|.*/||' | sort -u || true)"
 echo "  Models mapped in:  ${models:-none}" | sed '2,$s/^/                     /'

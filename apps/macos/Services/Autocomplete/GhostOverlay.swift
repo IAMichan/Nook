@@ -367,13 +367,27 @@ enum AutocompleteTypos {
     /// Dutch with an English dictionary would mark every word. Otherwise (short texts, mixed languages) its likely languages and
     /// the ones set in macOS, so a short message is checked too instead of not at all.
     @MainActor static func languages(of text: String) -> [String] {
+        // The finished words decide: this runs with every key, more than once, and a letter more changes nothing.
+        let recent = text.suffix(400)
+        let finished = recent.lastIndex(where: \.isWhitespace).map { recent[..<$0] } ?? recent
+        let sample = String(finished.isEmpty ? recent : finished)
+        if let last = lastLanguages, last.sample == sample { return last.languages }
+        let languages = recognizedLanguages(of: sample)
+        lastLanguages = (sample, languages)
+        return languages
+    }
+
+    /// The text last looked at, and its languages.
+    @MainActor private static var lastLanguages: (sample: String, languages: [String])?
+
+    @MainActor private static func recognizedLanguages(of text: String) -> [String] {
         let checker = NSSpellChecker.shared
         let available = checker.availableLanguages
         func match(_ code: String) -> String? {
             available.first { $0 == code } ?? available.first { $0.hasPrefix(code + "_") || $0.hasPrefix(code + "-") }
         }
         let recognizer = NLLanguageRecognizer()
-        recognizer.processString(String(text.suffix(400)))
+        recognizer.processString(text)
         let hypotheses = recognizer.languageHypotheses(withMaximum: 3).sorted { $0.value > $1.value }
         if let (code, confidence) = hypotheses.first, confidence > 0.75, let language = match(code.rawValue) { return [language] }
         var result: [String] = []

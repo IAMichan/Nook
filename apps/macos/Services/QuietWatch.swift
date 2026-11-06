@@ -8,13 +8,14 @@ import CoreGraphics
 /// window list and the audio process list are system round trips, and the timer reads them on a background queue.
 enum QuietWatch {
     /// What is going on right now.
+    /// - Parameter microphoneInterval: how old the list of apps with the microphone open may be (see `recentMicrophoneApps`).
     static func situation(events: [CalEvent], useCalendar: Bool, recording: Bool, countScreenshots: Bool = true,
-                          now: Date = Date()) -> QuietSituation {
+                          microphoneInterval: TimeInterval = 0, now: Date = Date()) -> QuietSituation {
         let windows = onScreenWindows()
         var meeting = QuietPolicy.MeetingSignals(now: now)
         meeting.events = events.map { QuietPolicy.Event(start: $0.start, end: $0.end) }
         meeting.useCalendar = useCalendar
-        meeting.microphoneApps = microphoneApps()
+        meeting.microphoneApps = recentMicrophoneApps(within: microphoneInterval, now: now)
         meeting.windowNames = windows.map(\.name).filter { !$0.isEmpty }
         meeting.recording = recording
         return QuietSituation(sharing: QuietPolicy.isSharing(windows, countSystemCapture: countScreenshots), meeting: QuietPolicy.isMeeting(meeting))
@@ -51,6 +52,25 @@ enum QuietWatch {
                                       name: info[kCGWindowName as String] as? String ?? "",
                                       height: Double(bounds?["Height"] ?? 0))
         }
+    }
+
+    private nonisolated(unsafe) static var lastMicrophoneApps: (at: Date, apps: [String])?
+
+    /// The window list is read every two seconds so a share never shows Nook for longer. A meeting has no such promise, and
+    /// this read is a call to coreaudiod per audio process, so it may come less often.
+    private static func recentMicrophoneApps(within interval: TimeInterval, now: Date) -> [String] {
+        bundleLock.lock()
+        let last = lastMicrophoneApps
+        bundleLock.unlock()
+        // A clock that went backwards counts as due.
+        if let last, now >= last.at, now.timeIntervalSince(last.at) < interval {
+            return last.apps
+        }
+        let apps = microphoneApps()
+        bundleLock.lock()
+        lastMicrophoneApps = (now, apps)
+        bundleLock.unlock()
+        return apps
     }
 
     /// Bundle IDs of the apps that have the microphone open right now, Nook itself left out.

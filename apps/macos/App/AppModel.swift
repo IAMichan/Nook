@@ -370,14 +370,13 @@ final class AppModel: ObservableObject {
         // Load agents, accounts and past sessions up front and keep them fresh in the background, so the Agents tab is
         // already filled the moment the notch opens instead of loading only then.
         history.refresh(minimumInterval: 0)
-        // Pre-warm the search everything index in the background so ⌘K search opens instantly.
-        SearchCenter.shared.load(self)
-        Timer.scheduledCoalesced(withTimeInterval: 30) { [weak self] _ in
+        Timer.scheduledCoalesced(withTimeInterval: 60) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                // Away from the Mac or saving power, the scan of every agent's session files (seconds of disk work) can
-                // wait; opening the panel or Settings still refreshes right away.
-                guard Date().timeIntervalSince(self.lastHistoryRefresh) >= 30 * EnergyMonitor.shared.plan.slowdown - 5 else { return }
+                // The scan of every agent's session files is seconds of disk work, and a session at work changes a file
+                // every time, so all of it is built again. With the panel and Settings closed nobody sees it: they refresh
+                // right away when opened, and the Agents tab keeps doing so every 30 seconds while it is open.
+                guard Date().timeIntervalSince(self.lastHistoryRefresh) >= 120 * EnergyMonitor.shared.plan.slowdown - 5 else { return }
                 self.lastHistoryRefresh = Date()
                 self.adoptAccounts()
                 self.history.refresh(showsProgress: false)
