@@ -832,6 +832,7 @@ struct AgentRunPanel: View {
             }
             // You sent something: it is the newest thing and shows again, also when you had scrolled up.
             .onChange(of: sentCount) { _, _ in settleAtEnd(proxy) }
+            .onChange(of: scroll.anchorMessageID) { _, id in if id == nil { pinRoom.release() } }
             .onChange(of: events.last(where: { $0.kind == .user })?.id) { old, new in
                 // A message that came in at the end stands near the top with the reply under it. The timeline loading
                 // or going back to an earlier message only lands at the end.
