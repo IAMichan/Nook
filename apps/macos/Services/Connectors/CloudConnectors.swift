@@ -2332,13 +2332,14 @@ enum GitHubPullRequests {
             let state = merged ? "merged" : ((pull["state"] as? String) == "open" ? "open" : "closed")
             var checks = ""
             var failed: [String] = []
+            var checksKnown = false
             if let sha = (pull["head"] as? [String: Any])?["sha"] as? String,
-               let runs = (await get("/commits/\(sha)/check-runs?per_page=100") as? [String: Any])?["check_runs"] as? [[String: Any]],
-               !runs.isEmpty {
+               let runs = (await get("/commits/\(sha)/check-runs?per_page=100") as? [String: Any])?["check_runs"] as? [[String: Any]] {
+                checksKnown = true
                 failed = runs.filter { ["failure", "timed_out", "cancelled", "action_required"].contains(($0["conclusion"] as? String) ?? "") }
                     .compactMap { $0["name"] as? String }
                 let pending = runs.contains { ($0["status"] as? String) != "completed" }
-                checks = !failed.isEmpty ? "failure" : pending ? "pending" : "success"
+                checks = !failed.isEmpty ? "failure" : pending ? "pending" : runs.isEmpty ? "" : "success"
             }
             func author(_ item: [String: Any]) -> String { ((item["user"] as? [String: Any])?["login"] as? String) ?? "?" }
             let reviews = ((await get("/pulls/\(number)/reviews?per_page=100")) as? [[String: Any]] ?? [])
@@ -2356,7 +2357,8 @@ enum GitHubPullRequests {
             return PullRequestSnapshot(state: state, checks: checks, failedChecks: failed, reviews: reviews, comments: comments,
                                        draft: (pull["draft"] as? Bool) ?? false,
                                        conflicted: PullRequestMergeability.githubConflicted(pull),
-                                       mergeabilityKnown: PullRequestMergeability.githubKnown(pull))
+                                       mergeabilityKnown: PullRequestMergeability.githubKnown(pull),
+                                       checksKnown: checksKnown)
         }
         return nil
     }
