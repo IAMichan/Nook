@@ -204,6 +204,8 @@ final class WorkspaceManager: ObservableObject {
     /// A watched pull request as it is now (GitHub, with your connected accounts).
     var pullRequestSnapshot: ((URL) async -> PullRequestSnapshot?)?
     var watchesInFlight: Set<UUID> = []
+    /// Sessions whose queue waits for a fresh look at a pull request before its next message goes out.
+    var queueLooks: Set<UUID> = []
     /// Codex's subagents per session: the thread each runs on, and the timeline event that stands for it.
     var codexSubagents: [UUID: [String: UUID]] = [:]
     /// Comments on a session's diff, waiting to go to the agent together.
@@ -1167,10 +1169,10 @@ final class WorkspaceManager: ObservableObject {
     }
 
     /// Keeps a message for when the current turn is done: you keep typing while the agent works.
-    func enqueue(_ id: UUID, text: String) {
+    func enqueue(_ id: UUID, text: String, pullRequest: PullRequestNotice? = nil) {
         guard run(id) != nil else { return }
         var queue = queued[id] ?? MessageQueue()
-        queue.enqueue(text)
+        queue.enqueue(text, pullRequest: pullRequest)
         queued[id] = queue.isEmpty ? nil : queue
     }
 
@@ -1270,11 +1272,30 @@ final class WorkspaceManager: ObservableObject {
     }
 
     /// The turn ended well and the process is gone: send the next queued message. After a failure or a stop the queue
-    /// waits for you, so nothing goes out on top of a problem.
-    func sendQueued(_ id: UUID) {
+    /// waits for you, so nothing goes out on top of a problem. News about a pull request gets a fresh look first: the turn
+    /// that just ended may well have fixed it. `looked` says that look was just taken.
+    func sendQueued(_ id: UUID, looked: Bool = false) {
         // Not while the snapshot of the finished turn is still being made: the next turn's edits must not end up in it.
         guard processes[id] == nil, !checkpointing.contains(id), let run = run(id), run.status == .completed,
               var queue = queued[id], let next = queue.next() else { return }
+        if !looked, let notice = next.pullRequest, let fetch = pullRequestSnapshot, let url = URL(string: notice.url) {
+            guard queueLooks.insert(id).inserted else { return }
+            Task { [weak self] in
+                let snapshot = await fetch(url)
+                guard let self else { return }
+                self.queueLooks.remove(id)
+                if let snapshot {
+                    if let watch = self.run(id)?.prWatch, watch.url == notice.url {
+                        // Through the watch, so that it remembers this look and a next failure still counts as news.
+                        self.pullRequestChanged(id, old: watch, new: snapshot)
+                    } else {
+                        self.settleQueuedNews(id, url: notice.url, with: snapshot)
+                    }
+                }
+                self.sendQueued(id, looked: true)
+            }
+            return
+        }
         store(queue, for: id)
         send(id, text: next.text)
     }
@@ -1947,15 +1968,28 @@ final class WorkspaceManager: ObservableObject {
         if let url = URL(string: old.url) { PullRequestStatusStore.shared.record(url: url, snapshot: new, at: now) }
         // The first look only sets what counts as seen, but for a conflict that is already there.
         let first = old.checkedAt == nil
-        let lines = first ? PullRequestNews.firstLook(new) : PullRequestNews.lines(old: old, new: new)
+        let news = first ? PullRequestNews.firstLook(new) : PullRequestNews.lines(old: old, new: new)
+        let lines = news.map(\.text)
         let wake = old.wakeAgent && (first ? !lines.isEmpty : PullRequestNews.needsAgent(old: old, new: new))
         update(id) { $0.prWatch = PullRequestNews.updated(old, with: new, at: now) }
+        settleQueuedNews(id, url: old.url, with: new)
         guard !lines.isEmpty else { return }
         append(id, RunEvent(kind: .system, text: tr("ws.prwatch.news") + "\n" + lines.joined(separator: "\n"), tool: "prwatch"))
         guard wake, let run = run(id) else { return }
         let message = PullRequestNews.message(url: old.url, lines: lines)
         // The news line above already shows it: the agent gets it without a bubble of yours.
-        if run.canContinue && processes[id] == nil { sendHidden(id, text: message) } else { enqueue(id, text: message) }
+        if run.canContinue && processes[id] == nil {
+            sendHidden(id, text: message)
+        } else {
+            enqueue(id, text: message, pullRequest: PullRequestNotice(url: old.url, lines: news))
+        }
+    }
+
+    /// Waiting news about this pull request that is out of date leaves the queue.
+    private func settleQueuedNews(_ id: UUID, url: String, with snapshot: PullRequestSnapshot) {
+        guard var queue = queued[id] else { return }
+        queue.settleNews(url: url, with: snapshot)
+        if queue != queued[id] { store(queue, for: id) }
     }
 
     /// Removes a session from Nook. The directory or worktree is preserved (removed separately); never allows deleting an active session.
