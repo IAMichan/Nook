@@ -128,24 +128,6 @@ struct PullRequestBreakdownCard: View {
     }
 }
 
-/// Auto-merge turned on, in the place of the merge button.
-struct PullRequestAutoMergeBadge: View {
-    let method: PullRequestMergeMethod?
-
-    var body: some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
-            Image(systemName: "bolt.fill").font(NookTheme.font(10, .semibold))
-            Text(tr("agents.pr.status.autoMerge")).lineLimit(1)
-        }
-        .font(NookTheme.TextStyle.caption)
-        .foregroundStyle(NookTheme.mint)
-        .padding(.horizontal, NookTheme.Spacing.sm)
-        .frame(height: 22)
-        .background(Capsule().fill(NookTheme.mint.opacity(0.14)))
-        .help(method.map { tr($0.titleKey) } ?? tr("agents.pr.status.autoMerge"))
-    }
-}
-
 /// Content with a pencil beside it under the pointer, for what can be edited in place: the title, the description.
 struct PullRequestEditableLine<Content: View>: View {
     let help: String

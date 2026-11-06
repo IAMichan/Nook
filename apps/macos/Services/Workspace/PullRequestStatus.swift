@@ -1,11 +1,75 @@
 import Foundation
 
-/// How one pull request looks, as the newest read anywhere in Nook said: its state and its checks.
+/// What a host says about merging a pull request, read along with its state.
+struct PullRequestMergeFacts: Equatable, Sendable {
+    /// GitHub's words, which every forge translates to: "clean", "blocked", "behind", "unstable", "dirty", "unknown".
+    var state: String
+    var autoMerge = false
+    var baseBranch = ""
+}
+
+/// The one answer to "can this be merged?", for the badge above the composer, the hover card and the merge bar.
+enum PullRequestMergeStatus: Equatable, Sendable {
+    /// Open, and nothing is known about merging it.
+    case open
+    case ready, checking, checksRunning, checksFailing, blocked, autoMerge, conflict, draft, merged, closed
+    case behind(base: String)
+
+    init(_ glyph: PullRequestBadge.Glyph) {
+        switch glyph {
+        case .open, .stack: self = .open
+        case .draft: self = .draft
+        case .conflict: self = .conflict
+        case .merged: self = .merged
+        case .closed: self = .closed
+        }
+    }
+
+    /// Failing and running checks go before "blocked": GitHub also blocks on required checks, and the checks are the
+    /// reason worth naming then.
+    init(glyph: PullRequestBadge.Glyph, checks: String?, merge: PullRequestMergeFacts?) {
+        self.init(glyph)
+        guard self == .open, let merge else { return }
+        if merge.autoMerge {
+            self = .autoMerge
+        } else if checks == "failure" || (merge.state == "unstable" && checks != "pending") {
+            self = .checksFailing
+        } else if checks == "pending" {
+            self = .checksRunning
+        } else if merge.state == "blocked" {
+            self = .blocked
+        } else if merge.state == "behind" {
+            self = .behind(base: merge.baseBranch)
+        } else if merge.state == "clean" || merge.state == "has_hooks" {
+            self = .ready
+        }
+    }
+
+    /// The whole reason as a key for `tr`, where the badge's word needs one.
+    var noteKey: String? {
+        switch self {
+        case .checking: return "agents.pr.note.checking"
+        case .checksRunning: return "agents.pr.note.checksRunning"
+        case .checksFailing: return "agents.pr.note.unstable"
+        case .blocked: return "agents.pr.note.blocked"
+        case .behind: return "agents.pr.note.behind"
+        case .conflict: return "agents.pr.note.conflict"
+        case .draft: return "agents.pr.note.draft"
+        case .open, .ready, .autoMerge, .merged, .closed: return nil
+        }
+    }
+}
+
+/// How one pull request looks, as the newest read anywhere in Nook said: its state, its checks and how merging stands.
 struct PullRequestStatus: Equatable, Sendable {
     /// Draft, open, conflict, merged or closed (never `.stack`).
     var glyph: PullRequestBadge.Glyph
     /// "success", "failure", "pending", or empty when there are no checks; nil while no read has said.
     var checks: String?
+    /// Nil while no read has said.
+    var merge: PullRequestMergeFacts? = nil
+
+    var mergeStatus: PullRequestMergeStatus { PullRequestMergeStatus(glyph: glyph, checks: checks, merge: merge) }
 
     /// The glyph a request in this state shows: a conflict only while it is unresolved, and over a draft.
     static func glyph(state: PullRequestState, conflicted: Bool) -> PullRequestBadge.Glyph {
@@ -68,11 +132,11 @@ final class PullRequestStatusStore: ObservableObject {
 
     // MARK: Recording reads
 
-    /// `checks` nil: this read does not know them, so the last known ones stay.
-    func record(key: String?, glyph: PullRequestBadge.Glyph, checks: String?, at date: Date = Date()) {
+    /// `checks` or `merge` nil: this read does not know them, so the last known ones stay.
+    func record(key: String?, glyph: PullRequestBadge.Glyph, checks: String?, merge: PullRequestMergeFacts? = nil, at date: Date = Date()) {
         guard let key, glyph != .stack, date >= readAt[key] ?? .distantPast else { return }
         readAt[key] = date
-        let next = PullRequestStatus(glyph: glyph, checks: checks ?? statuses[key]?.checks)
+        let next = PullRequestStatus(glyph: glyph, checks: checks ?? statuses[key]?.checks, merge: merge ?? statuses[key]?.merge)
         if statuses[key] != next { statuses[key] = next }
     }
 
@@ -80,7 +144,7 @@ final class PullRequestStatusStore: ObservableObject {
         let state: PullRequestState = snapshot.state == "merged" ? .merged : snapshot.state == "closed" ? .closed
             : snapshot.draft ? .draft : .open
         record(key: Self.key(url), glyph: PullRequestStatus.glyph(state: state, conflicted: snapshot.conflicted),
-               checks: snapshot.checks, at: date)
+               checks: snapshot.checks, merge: snapshot.merge, at: date)
     }
 
     /// What the branch sync found: state and conflict, without checks.
@@ -95,7 +159,7 @@ final class PullRequestStatusStore: ObservableObject {
         let state = PullRequestState(rawValue: detail.state.rawValue) ?? .open
         let key = detail.url.flatMap(Self.key) ?? Self.key(repo: detail.repo, number: detail.number)
         record(key: key, glyph: PullRequestStatus.glyph(state: state, conflicted: detail.conflicted),
-               checks: PullRequestStatus.checks(detail.checks), at: date)
+               checks: PullRequestStatus.checks(detail.checks), merge: detail.mergeFacts, at: date)
     }
 
     /// What Nook kept from before this launch, shown until the first read of each request: the store starts empty, and a

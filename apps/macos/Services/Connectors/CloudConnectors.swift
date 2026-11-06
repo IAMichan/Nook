@@ -2357,6 +2357,9 @@ enum GitHubPullRequests {
             return PullRequestSnapshot(state: state, checks: checks, failedChecks: failed, reviews: reviews, comments: comments,
                                        draft: (pull["draft"] as? Bool) ?? false,
                                        conflicted: PullRequestMergeability.githubConflicted(pull),
+                                       merge: PullRequestMergeFacts(state: ((pull["mergeable_state"] as? String) ?? "unknown").lowercased(),
+                                                                    autoMerge: pull["auto_merge"] is [String: Any],
+                                                                    baseBranch: ((pull["base"] as? [String: Any])?["ref"] as? String) ?? ""),
                                        mergeabilityKnown: PullRequestMergeability.githubKnown(pull),
                                        checksKnown: checksKnown)
         }

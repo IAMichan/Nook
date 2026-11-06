@@ -141,6 +141,9 @@ enum GitLabAPI {
         return PullRequestSnapshot(state: state, checks: checks, failedChecks: failedJobs.compactMap { $0["name"] as? String },
                                    reviews: reviews, comments: comments, draft: self.state(mergeRequest) == .draft,
                                    conflicted: PullRequestMergeability.gitlabConflicted(mergeRequest),
+                                   merge: PullRequestMergeFacts(state: GitLabPullRequestForge.mergeState(mergeRequest),
+                                                                autoMerge: (mergeRequest["auto_merge_enabled"] as? Bool) ?? (mergeRequest["merge_when_pipeline_succeeds"] as? Bool) ?? false,
+                                                                baseBranch: (mergeRequest["target_branch"] as? String) ?? ""),
                                    mergeabilityKnown: PullRequestMergeability.gitlabKnown(mergeRequest))
     }
 }

@@ -518,7 +518,7 @@ struct PullRequestWatchStrip: View {
     }
 
     /// The width of the state column when a session lists several branches (`BranchTrayRow` uses it too).
-    static let stateColumn: CGFloat = 124
+    static let stateColumn: CGFloat = 176
 
     /// The title in the row's own voice, its branch after it in the quiet monospace of a name.
     @ViewBuilder

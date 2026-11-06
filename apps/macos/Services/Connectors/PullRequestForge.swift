@@ -221,6 +221,7 @@ extension PullRequestForges {
         let state = detail.state == .merged ? "merged" : detail.state == .closed ? "closed" : "open"
         return PullRequestSnapshot(state: state, checks: checks, failedChecks: detail.checks.filter { $0.outcome == .failing }.map(\.name),
                                    reviews: conversation.filter(\.review).map(\.note), comments: conversation.filter { !$0.review }.map(\.note),
-                                   draft: detail.state == .draft, conflicted: detail.conflicted, mergeabilityKnown: detail.mergeable != nil)
+                                   draft: detail.state == .draft, conflicted: detail.conflicted, merge: detail.mergeFacts,
+                                   mergeabilityKnown: detail.mergeable != nil)
     }
 }
