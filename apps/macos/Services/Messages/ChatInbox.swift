@@ -1336,6 +1336,15 @@ struct ChatInbox: Codable, Equatable, Sendable {
         threads[id] = thread
     }
 
+    /// Until when the chat counts as read in Nook now: what passing the read on tells the app. A chat with nothing new
+    /// has read all it holds, also when its own mark is older (the rest was read on the phone, which moves no mark here):
+    /// counting from that mark would make what you read new again.
+    func readMark(_ id: String) -> Date? {
+        guard let thread = threads[id] else { return nil }
+        guard thread.unread == 0 else { return thread.readInNook }
+        return [thread.readInNook, thread.newestIncoming].compactMap { $0 }.max()
+    }
+
     /// The other threads that hold the same chat as `id` (an app that names one chat twice, as a chat without a topic
     /// named after whoever wrote last): the Chats tab shows one of them (`ChatsEntry.all`), so reading it reads them all,
     /// or the badge would keep counting the one it hides.
