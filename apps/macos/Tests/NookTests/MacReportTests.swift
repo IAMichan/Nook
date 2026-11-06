@@ -25,4 +25,13 @@ final class MacReportTests: XCTestCase {
         XCTAssertTrue(text.contains("Xcode 80% CPU, 4.0 GB"), text)
         XCTAssertTrue(MacReport(cpu: 12, memoryPressure: 1, thermal: 0).text.contains("Nothing unusual"))
     }
+
+    func testNetworkReport() {
+        XCTAssertEqual(NetworkReport.parsePublicAddress("fl=1\nip=203.0.113.7\nts=1"), "203.0.113.7")
+        XCTAssertNil(NetworkReport.parsePublicAddress("ip="))
+        let text = NetworkReport(addresses: [.init(interface: "en0", address: "192.168.1.20")], publicAddress: "203.0.113.7").text
+        XCTAssertTrue(text.contains("203.0.113.7"), text)
+        XCTAssertTrue(text.contains("en0: 192.168.1.20"), text)
+        XCTAssertTrue(NetworkReport().text.contains("could not be read"))
+    }
 }

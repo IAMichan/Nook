@@ -124,6 +124,7 @@ final class AppModel: ObservableObject {
             // "Maak hem korter": the new version takes the place of the draft that was still open.
             self?.chat.supersedeMails(by: mail)
         },
+        mailAddress: { await ContactDirectory.mailAddress(for: $0) },
         // Only an answer in the chat holds a plan: a notch card or thinking along has no message for it.
         onPlan: { [weak self] steps in
             guard let self, let id = self.replyTarget else { return }

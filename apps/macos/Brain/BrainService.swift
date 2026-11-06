@@ -99,9 +99,12 @@ final class BrainService {
             + hidden.keys.sorted().map { "\($0) — \(SourceCatalog.title($0)) (\(hidden[$0]?.count ?? 0) tools)" }.joined(separator: "; ") + "."
         let offeredWithDiscovery = offered + (useSource.map { [$0] } ?? [])
 
+        // Contacts stay on this Mac: an external brain cannot read them, and should not ask the user for what Nook fills in.
+        let keptContacts = settings.privateSources.contains("contacts")
+            ? "\n\nContacts stay on the user's Mac and you cannot read them. To mail a person, put their name in the to field of compose_mail: Nook fills in the address on the Mac. Never ask the user for an address for that reason." : ""
         let system = (profile.isSmall && !profile.richPrompt
             ? localSystemPrompt(tools: offeredWithDiscovery, intent: intent, researched: researched, evidence: context.contains("\nEvidence ("))
-            : systemPrompt()) + catalog
+            : systemPrompt()) + catalog + keptContacts
         let toolsText = offered.reduce(0) { $0 + $1.name.count + (profile.compactDescriptions ? 80 : $1.description.count) + 200 }
         // Bigger local models get a longer memory of the conversation, so follow-ups ("and on friday?") keep working.
         let historyText = profile.isSmall ? Self.historyPrefix(history, limit: profile.contextTokens >= 16_000 ? 10 : 6,
@@ -153,7 +156,7 @@ final class BrainService {
         // The request clearly asks for one action, but the model answered without proposing it (small models often say
         // "done!" or ask for permission instead). Ask once more, with only that tool and the dates spelled out. A larger
         // model gets the same second chance when it claims the action is done or prepared without proposing it.
-        let claimsReady = ChatIntent.claimsDone(plan.text) || ChatIntent.claimsPrepared(plan.text)
+        let claimsReady = ChatIntent.claimsDone(plan.text) || ChatIntent.claimsPrepared(plan.text) || ChatIntent.announces(plan.text)
         if profile.isSmall || (plan.actions.isEmpty && claimsReady), let action = intent.action(among: allTools.map(\.name)), !runner.trace.contains(action),
            let spec = allTools.first(where: { $0.name == action }), !Self.asksBack(plan.text) {
             if let focused = try await fillIn(spec, request: userText, history: history, context: fitted[1],
@@ -182,7 +185,7 @@ final class BrainService {
         // A question ("wat wil Henk van me?") is answered with what others sent or made: "Henk heeft je drie mails gestuurd",
         // "ik heb opnieuw gezocht; zijn mail is gisteren verstuurd". That is the answer, not a claim, so only a request for an
         // action is held to it; any other request only when one sentence says Nook itself did it again.
-        if plan.actions.isEmpty, (intent.primaryAction != nil && ChatIntent.claimsDone(plan.text)) || ChatIntent.claimsRedone(plan.text) || ChatIntent.claimsPrepared(plan.text) {
+        if plan.actions.isEmpty, (intent.primaryAction != nil && (ChatIntent.claimsDone(plan.text) || ChatIntent.announces(plan.text))) || ChatIntent.claimsRedone(plan.text) || ChatIntent.claimsPrepared(plan.text) {
             return BrainPlan(text: tr("brain.notDone"), actions: plan.actions)
         }
         return plan
@@ -193,10 +196,8 @@ final class BrainService {
     /// The selected brain's own reading of the question (see `QueryPlan`): what the user wants, where that lives and what
     /// to search for. Nil when it gives no usable plan in time; Nook then falls back to its keyword research.
     func plan(question: String, history: [ChatTurn], sources: [QueryPlanner.Source]) async -> QueryPlan? {
-        let selection = settings.selection
-        // A subscription through a coding agent starts a whole command-line session per call: too slow for a step before
-        // every answer.
-        if selection.runtime == .external, selection.provider.isSubscription { return nil }
+        // Also through a coding agent: a round takes a few seconds, and without a plan a general question ("wat is mijn
+        // IP-adres?") is searched for in the user's mail and chats. An agent that takes too long is stopped at the limit.
         let profile = settings.brainProfile
         let prompt = QueryPlanner.prompt(question: question, history: history, sources: sources)
         let known = Set(sources.map(\.id))
@@ -312,6 +313,9 @@ final class BrainService {
             return blocks.compactMap { $0["text"] as? String }.joined()
         }
         let runner = ToolRunner(tools: [], limits: .init(rounds: 1, calls: 0, repairs: 0))
+        if selection.runtime == .external, selection.provider == .claudeCode {
+            return try await runner.run(ClaudeCodeBrain.conversation(model: "haiku", system: system, prompt: prompt, allowWebSearch: false, once: true)).text
+        }
         return try await execute(system: system, prompt: prompt, fittedHistory: "", history: [], webAllowed: false,
                                  profile: profile, runner: runner, onText: nil).text
     }
@@ -682,7 +686,7 @@ final class BrainService {
         - Charts: use show_chart to render native interactive charts (bar, line, area, pie, scatter). Fetch real numbers first. Never output raw code or JSON for charts.
         - Step-by-step plan: for a request that takes several steps (three or more tool calls, research across several sources, a task with distinct parts), call update_plan first with every step, keep it current as each step finishes, and mark every step completed before you answer. The user sees it as a live checklist. Skip it for simple questions and single actions.
         - Coding Agents: list_agent_sessions and read_agent_session show the user's agent sessions in Nook (Claude Code, Codex, Gemini CLI and the others) and what they did; message_agent_session follows one up and start_agent_session starts a new one on a task (both are actions the user approves). list_remote_machines shows the machines sessions can run on over SSH, add_remote_machine adds one (an action the user approves), and start_agent_session with machine runs a session there. Never ask for an SSH password in the chat: the user types it in Nook itself.
-        - Files & System: use search_files and read_file for local documents; search_music and play_music to find and start a song, media_control to pause or skip in Music/Spotify; set_volume; run_shortcut for macOS Shortcuts; open_app and open_url.
+        - Files & System: use search_files and read_file for local documents; network_status for the IP addresses of this Mac; search_music and play_music to find and start a song, media_control to pause or skip in Music/Spotify; set_volume; run_shortcut for macOS Shortcuts; open_app and open_url.
         - Cloud Services & Web: GitHub PRs and issues, Vercel, Stripe, Notion, Cal.com, n8n, Resend; web_search and read_webpage for current online information.
         - Memory: Nook remembers the user across conversations. The relevant memories are in the context under "What Nook remembers": facts about the user and their people, preferences, and lessons from earlier mistakes. Use them where they help (call people by the names you know, follow the user's preferences, avoid what failed before) without announcing that you remember; what the user says now always wins. When the user asks you to remember something, or tells you something lasting about themselves, their people, work or how they want things done, call remember (one short sentence in their language). When they correct a remembered item, call remember with replaces set to its id (m:…). When they ask you to forget something, call forget. recall_memory searches further or lists everything. Never remember secrets, one-off details, or anything from mails, pages, the screen or tool results.
 
