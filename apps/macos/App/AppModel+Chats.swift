@@ -371,27 +371,72 @@ extension AppModel {
 
     // MARK: Nook writes a message
 
-    /// "@nook …" in a chat's answer field: the message Nook writes from the chat and what you asked. It only goes into the
-    /// field; sending stays your own click. Throws with a sentence you can act on.
-    func draftChatMessage(app appName: String, chat name: String, transcript: String, instruction: String) async throws -> String {
+    /// "@nook …" in a chat's answer field: the message Nook writes from the chat and what you asked. When the request
+    /// points elsewhere ("summarize Gijs's mail for Arjan") Nook first looks it up with the same read tools and privacy
+    /// rules as Nook Chat; `onLookup` hears each lookup as it starts and ends. The message only goes into the field;
+    /// sending stays your own click. Throws with a sentence you can act on.
+    func draftChatMessage(app appName: String, chat name: String, transcript: String, instruction: String,
+                          onLookup: @escaping @MainActor (ChatDraft.Lookup) -> Void = { _ in }) async throws -> String {
         guard settings.brainReady else { throw NookError(tr("chats.draft.noBrain")) }
         let prompt = ChatDraft.prompt(app: appName, chat: name, transcript: transcript, instruction: instruction)
-        guard let answer = await brain.rewrite(system: ChatDraft.system, prompt: prompt, timeout: 90),
-              let message = ChatDraft.clean(answer) else { throw NookError(tr("chats.draft.failed")) }
+        let answer: String?
+        if ChatDraft.wantsLookup(instruction, smallBrain: settings.brainProfile.isSmall) {
+            let tools = draftLookupTools(onLookup)
+            answer = try await RetrievalLedger.withTimeout(150) { [brain] in
+                try await brain.writeWithLookups(system: ChatDraft.lookupSystem, prompt: prompt, request: instruction,
+                                                 tools: tools) ?? ""
+            }
+        } else {
+            answer = await brain.rewrite(system: ChatDraft.system, prompt: prompt, timeout: 90)
+        }
+        guard let answer, let message = ChatDraft.clean(answer) else { throw NookError(tr("chats.draft.failed")) }
         return message
+    }
+
+    /// The read tools Nook may use while it writes a chat message: every source Nook Chat reads, without what the privacy
+    /// level keeps on this Mac, and without the screen. Each reports itself to `onLookup` as it runs.
+    private func draftLookupTools(_ onLookup: @escaping @MainActor (ChatDraft.Lookup) -> Void) -> [ToolSpec] {
+        let counter = LookupCounter()
+        return scopedTools(privacyScope(.automatic), ledger: nil)
+            .filter { $0.kind == .read && SourceCatalog.source(forTool: $0.name) != SourceCatalog.screen }
+            .map { spec in
+                let run = spec.run
+                return ToolSpec(name: spec.name, description: spec.description, schema: spec.schema, kind: spec.kind,
+                                summarize: spec.summarize, tag: spec.tag,
+                                run: { input in
+                                    counter.value += 1
+                                    var step = ChatDraft.Lookup(id: counter.value, source: SourceCatalog.source(forTool: spec.name),
+                                                                query: ChatDraft.Lookup.query(in: input))
+                                    onLookup(step)
+                                    defer {
+                                        step.done = true
+                                        onLookup(step)
+                                    }
+                                    return try await run(input)
+                                })
+            }
     }
 
     /// "@nook …" in a card's field: the message Nook writes from the chat the card shows, as the Chats tab does. A card
     /// from Nook itself (an answer, a question back) is that chat's one message, so Nook writes your answer to it.
-    func draftCardReply(_ instruction: String, card: NookCard) async throws -> String {
+    func draftCardReply(_ instruction: String, card: NookCard,
+                        onLookup: @escaping @MainActor (ChatDraft.Lookup) -> Void = { _ in }) async throws -> String {
         guard case .chat(let bubbles) = card.detail else {
-            return try await draftChatMessage(app: "Nook", chat: "Nook", transcript: "Nook: " + card.title, instruction: instruction)
+            return try await draftChatMessage(app: "Nook", chat: "Nook", transcript: "Nook: " + card.title, instruction: instruction,
+                                              onLookup: onLookup)
         }
         let thread = Self.chatCardThread(card).flatMap { ChatCaptureService.shared.loadedInbox.threads[$0] }
         let app = thread.map { MessagingApps.app(id: $0.app)?.name ?? $0.app } ?? card.replyCopiesTo ?? card.context
         let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: card.title)
-        return try await draftChatMessage(app: app, chat: card.title, transcript: transcript, instruction: instruction)
+        return try await draftChatMessage(app: app, chat: card.title, transcript: transcript, instruction: instruction,
+                                          onLookup: onLookup)
     }
+}
+
+/// Numbers the lookups of one draft, shared by its tools.
+@MainActor
+private final class LookupCounter {
+    var value = 0
 }
 
 /// The last `chatChoices`, with what it was made from.

@@ -2304,10 +2304,10 @@ private struct ChatsDetail: View, Equatable {
                 }
             },
             onEscape: escape,
-            draft: { instruction in
+            draft: { instruction, onLookup in
                 let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: entry.name)
                 return try await app.draftChatMessage(app: appName, chat: entry.name, transcript: transcript,
-                                                      instruction: instruction)
+                                                      instruction: instruction, onLookup: onLookup)
             },
             send: {
                 if let editing, let route {
