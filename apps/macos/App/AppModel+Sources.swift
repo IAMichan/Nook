@@ -56,11 +56,11 @@ extension AppModel {
         ask(question)
     }
 
-    /// Select a file to attach to context (analogous to dropping onto Shelf).
+    /// Select a file or folder to attach to context (analogous to dropping onto Shelf).
     func attachFile() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
-        panel.canChooseDirectories = false
+        panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
         NSApp.activate(ignoringOtherApps: true)

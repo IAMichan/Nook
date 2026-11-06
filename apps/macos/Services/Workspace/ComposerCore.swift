@@ -386,6 +386,83 @@ enum ComposerAttachments {
     }
 }
 
+// MARK: Paths in the box
+
+/// A path that lands in the box as text (dropped on the focused field, which writes it in itself, or pasted from "Copy as
+/// Pathname") is an attachment like any other: it leaves the text and becomes a tile.
+enum PastedPaths {
+    /// More text than this is not a list of paths.
+    static let maxLength = 16 * 1024
+
+    /// The box without the path, and what it pointed at, when the change put nothing but existing paths at the end of the
+    /// words. A path you paste into the middle of a sentence stays where you put it, and keys you type never count: this
+    /// looks at one insertion of several characters.
+    static func attaching(old: String, new: String,
+                          exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> (body: String, urls: [URL])? {
+        // Runs on every key: one more character can never be a paste, so stop before comparing the texts.
+        guard new.count - old.count >= 2, new.utf8.count - old.utf8.count <= maxLength,
+              let parts = PasteRule.split(old: old, new: new),
+              parts.suffix.allSatisfy(\.isWhitespace), parts.prefix.last?.isWhitespace != false,
+              let urls = urls(in: parts.inserted, exists: exists) else { return nil }
+        return (parts.prefix, urls)
+    }
+
+    /// The files and folders a text names, or nil when any part of it is not one. Tried whole first (a path may hold
+    /// spaces), then per line, then as shell words (`/a\ b "/c d"`, what Terminal and a multiple drop write).
+    static func urls(in text: String, exists: (String) -> Bool) -> [URL]? {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = clean.first, "/~'\"f".contains(first) else { return nil }
+        if let whole = url(clean, exists: exists) { return [whole] }
+        let lines = clean.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        for parts in [lines, words(clean)] where parts.count > 1 {
+            let found = parts.compactMap { url($0, exists: exists) }
+            if found.count == parts.count { return found }
+        }
+        if let word = words(clean).first, words(clean).count == 1 { return url(word, exists: exists).map { [$0] } }
+        return nil
+    }
+
+    private static func url(_ text: String, exists: (String) -> Bool) -> URL? {
+        var path = text
+        if path.count > 1, let quote = path.first, "'\"".contains(quote), path.last == quote { path = String(path.dropFirst().dropLast()) }
+        if path.hasPrefix("file://") {
+            guard let url = URL(string: path), url.isFileURL else { return nil }
+            path = url.path
+        }
+        path = (path as NSString).expandingTildeInPath
+        guard path.hasPrefix("/"), path.count > 1, exists(path) else { return nil }
+        return URL(fileURLWithPath: path).standardizedFileURL
+    }
+
+    /// The text split on spaces, with quotes and backslashes read the way a shell does.
+    private static func words(_ text: String) -> [String] {
+        var words: [String] = [], word = "", quote: Character?, escaped = false, started = false
+        for character in text {
+            if escaped {
+                word.append(character)
+                escaped = false
+            } else if character == "\\", quote != "'" {
+                escaped = true
+                started = true
+            } else if let open = quote {
+                if character == open { quote = nil } else { word.append(character) }
+            } else if character == "'" || character == "\"" {
+                quote = character
+                started = true
+            } else if character.isWhitespace {
+                if started { words.append(word) }
+                word = ""
+                started = false
+            } else {
+                word.append(character)
+                started = true
+            }
+        }
+        if started { words.append(word) }
+        return words
+    }
+}
+
 // MARK: Files in an answer
 
 /// Files you attach to your own answer to an agent's question. A question's answer goes back as plain text (Claude

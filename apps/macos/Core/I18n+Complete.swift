@@ -193,7 +193,7 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "chat.error.details": "Details",
         "chat.error.hideDetails": "Verberg details",
         "chat.more": "Meer opties",
-        "chat.attachShort": "Bestand toevoegen",
+        "chat.attachShort": "Bestand of map toevoegen",
         "chat.contextShort": "Wat Nook meestuurt…",
     ],
     .en: [
@@ -385,7 +385,7 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "chat.error.details": "Details",
         "chat.error.hideDetails": "Hide details",
         "chat.more": "More options",
-        "chat.attachShort": "Add a file",
+        "chat.attachShort": "Add a file or folder",
         "chat.contextShort": "What Nook sends…",
     ],
     .de: [
@@ -854,7 +854,7 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "chat.error.details": "Details",
         "chat.error.hideDetails": "Details ausblenden",
         "chat.more": "Mehr Optionen",
-        "chat.attachShort": "Datei hinzufügen",
+        "chat.attachShort": "Datei oder Ordner hinzufügen",
         "chat.contextShort": "Was Nook mitsendet…",
     ]
 ]
