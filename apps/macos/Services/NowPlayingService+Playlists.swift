@@ -21,7 +21,13 @@ enum MusicPlaylistPrompt: Identifiable, Equatable {
 extension NowPlayingService {
     /// The player whose playlists the tab shows: the playing one, else the one that runs, else Spotify when connected.
     var playlistSourceApp: String? {
-        current?.app ?? NowPlayingService.runningPlayerName() ?? (SpotifySignIn.shared.isSignedIn ? "Spotify" : nil)
+        current?.app ?? (SpotifySignIn.shared.isSignedIn ? "Spotify" : NowPlayingService.runningPlayerName())
+    }
+
+    /// The player a search goes to, also with nothing playing: the playing one, Spotify once connected, the one that
+    /// runs, else Music (started hidden when it is searched).
+    var searchApp: String {
+        current?.app ?? (SpotifySignIn.shared.isSignedIn ? "Spotify" : NowPlayingService.runningPlayerName() ?? "Music")
     }
 
     /// Playlists the user may add `track` to: those of the player the track plays in, that the user may edit.
@@ -138,13 +144,14 @@ extension NowPlayingService {
         if app == "Spotify" {
             guard SpotifyResponses.playlistID(playlist.id) != nil else { return }
             let shuffle = shuffled.map { "set shuffling to \($0)\n" } ?? ""
-            runAndRefresh("\(shuffle)play track \(MusicScriptOutput.quoted(playlist.id))", app: app)
+            let script = Self.playerScript("\(shuffle)play track \(MusicScriptOutput.quoted(playlist.id))", app: app)
+            Task { @MainActor [weak self] in
+                if let shuffled, SpotifySignIn.shared.isSignedIn { try? await SpotifyWebAPI.setShuffle(shuffled) }
+                self?.playInBackground(app: app, spotify: .context(playlist.id), script: script)
+            }
         } else {
             guard Self.isPersistentID(playlist.id) else { return }
-            queue.async { [weak self] in
-                _ = NowPlayingService.runPlayerScript(MusicScriptOutput.playPlaylistScript(playlist.id, shuffle: shuffled))
-                self?.afterPlaying()
-            }
+            playInBackground(app: app, spotify: nil, script: MusicScriptOutput.playPlaylistScript(playlist.id, shuffle: shuffled))
         }
     }
 
@@ -152,27 +159,10 @@ extension NowPlayingService {
     func play(_ track: MusicTrack, in playlist: MusicPlaylist) {
         guard let app = playlistsApp, Self.canPlay(track, in: app) else { return }
         if app == "Spotify" {
-            runAndRefresh("play track \(MusicScriptOutput.quoted(track.id)) in context \(MusicScriptOutput.quoted(playlist.id))", app: app)
+            let verb = "play track \(MusicScriptOutput.quoted(track.id)) in context \(MusicScriptOutput.quoted(playlist.id))"
+            playInBackground(app: app, spotify: .context(playlist.id, offset: track.id), script: Self.playerScript(verb, app: app), shown: track)
         } else {
-            queue.async { [weak self] in
-                _ = NowPlayingService.runPlayerScript(MusicScriptOutput.playPlaylistScript(playlist.id, track: track.id))
-                self?.afterPlaying()
-            }
-        }
-    }
-
-    private func runAndRefresh(_ body: String, app: String) {
-        queue.async { [weak self] in
-            _ = NowPlayingService.runPlayerScript("with timeout of 6 seconds\ntell application \"\(app)\"\n\(body)\nend tell\nend timeout")
-            self?.afterPlaying()
-        }
-    }
-
-    private nonisolated func afterPlaying() {
-        Thread.sleep(forTimeInterval: 0.4)
-        Task { @MainActor [weak self] in
-            self?.poll()
-            self?.refreshUpNext()
+            playInBackground(app: app, spotify: nil, script: MusicScriptOutput.playPlaylistScript(playlist.id, track: track.id), shown: track)
         }
     }
 

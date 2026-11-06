@@ -194,7 +194,7 @@ enum LyricsParser {
 
 /// A track in Up Next, a playlist or the recent list. `id` is what the player plays it by: a Music persistent ID or a
 /// Spotify URI (`spotify:track:…`).
-struct MusicTrack: Equatable, Identifiable {
+struct MusicTrack: Codable, Equatable, Identifiable {
     var id: String
     var title: String
     var artist: String
@@ -471,6 +471,58 @@ enum MusicScriptOutput {
         """
     }
 
+    /// The tracks Music played most: id, title, artist, duration, album and play count. A `whose` filter leaves the
+    /// few hundred most played, so a library of tens of thousands of tracks stays quick. Music has no play dates per
+    /// play, so these are all-time numbers.
+    static func libraryTopScript(limit: Int = 300) -> String {
+        """
+        with timeout of 8 seconds
+        tell application "Music"
+            set rs to character id 30
+            set fs to character id 31
+            set found to {}
+            repeat with least in {50, 20, 10, 5, 2, 1}
+                set found to (every track of library playlist 1 whose played count > (least - 1))
+                if (count of found) > 39 then exit repeat
+            end repeat
+            set n to count of found
+            if n > \(limit) then set n to \(limit)
+            set out to ""
+            repeat with i from 1 to n
+                try
+                    set tr to item i of found
+                    set entry to (persistent ID of tr) & fs & (name of tr) & fs & (artist of tr) & fs & ((duration of tr) as text) & fs & (album of tr) & fs & ((played count of tr) as text)
+                    if out is "" then
+                        set out to entry
+                    else
+                        set out to out & rs & entry
+                    end if
+                end try
+            end repeat
+            return out
+        end tell
+        end timeout
+        """
+    }
+
+    /// `libraryTopScript`'s answer: the most played tracks with their counts, and the artists they add up to.
+    static func libraryTop(_ raw: String, limit: Int = 10) -> MusicPlayerStats {
+        guard !raw.isEmpty else { return MusicPlayerStats(app: "Music", state: .done) }
+        let counted = records(raw).compactMap { fields -> (track: MusicTrack, plays: Int)? in
+            guard let track = track(fields), fields.count >= 6 else { return nil }
+            return (track, Int(value(fields[5])) ?? 0)
+        }
+        .sorted { $0.plays > $1.plays }
+        var artists: [String: Int] = [:]
+        for entry in counted where !entry.track.artist.isEmpty { artists[entry.track.artist, default: 0] += entry.plays }
+        let topArtists = artists.sorted { ($0.value, $1.key) > ($1.value, $0.key) }.prefix(limit)
+        return MusicPlayerStats(
+            app: "Music", tracks: counted.prefix(limit).map(\.track),
+            artists: topArtists.map { MusicPlayerStats.Artist(name: $0.key, plays: $0.value) },
+            plays: Dictionary(counted.prefix(limit).map { ($0.track.id, $0.plays) }, uniquingKeysWith: max), state: .done
+        )
+    }
+
     /// Escapes text for an AppleScript string literal.
     static func quoted(_ text: String) -> String {
         "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
@@ -486,8 +538,8 @@ struct MusicSearchResult: Equatable {
     var tracks: [MusicTrack] = []
 }
 
-/// Tracks played before the current one, newest first, each once.
-struct RecentTracks: Equatable {
+/// The tracks played last, the playing one first, each once. Kept across launches in `MusicHistory`.
+struct RecentTracks: Codable, Equatable {
     static let limit = 30
     private(set) var tracks: [MusicTrack] = []
 
@@ -658,6 +710,69 @@ enum SpotifyResponses {
     /// Spotify allows at most 10 search results per page for apps in development mode, so a longer list is asked for
     /// page by page with `offset`.
     static let searchPageSize = 10
+
+    // MARK: Playing and listening history
+
+    /// What to start through `PUT /me/player/play`: tracks one after the other, or a playlist (from `offset`, a track).
+    enum PlayTarget: Equatable {
+        case tracks([String])
+        case context(String, offset: String? = nil)
+    }
+
+    /// The most tracks one play request carries.
+    static let playTrackLimit = 50
+
+    /// Starts playback through the Web API, which never brings the Spotify window forward.
+    static func playRequest(_ target: PlayTarget, token: String) -> URLRequest? {
+        guard let url = URL(string: "https://api.spotify.com/v1/me/player/play") else { return nil }
+        var body: [String: Any]
+        switch target {
+        case .tracks(let uris):
+            body = ["uris": Array(uris.prefix(playTrackLimit))]
+        case .context(let uri, let offset):
+            body = ["context_uri": uri]
+            if let offset { body["offset"] = ["uri": offset] }
+        }
+        return request(url, method: "PUT", json: body, token: token)
+    }
+
+    /// The plays in `GET /me/player/recently-played`, oldest first. Spotify says when a track ended, not how long it was
+    /// listened to; it only lists tracks played for 30 seconds or more. Only the first artist counts, as in the player.
+    static func recentPlays(from data: Data) -> [MusicPlay] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = json["items"] as? [[String: Any]] else { return [] }
+        let plain = ISO8601DateFormatter()
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return items.compactMap { item -> MusicPlay? in
+            guard let object = item["track"] as? [String: Any], let track = track(object),
+                  let stamp = item["played_at"] as? String,
+                  let date = fractional.date(from: stamp) ?? plain.date(from: stamp) else { return nil }
+            let first = (object["artists"] as? [[String: Any]])?.first?["name"] as? String
+            return MusicPlay(id: track.id, title: track.title, artist: first ?? track.artist, album: track.album, app: "Spotify",
+                             artworkURL: track.artworkURL, duration: track.duration, listened: track.duration, playedAt: date)
+        }
+        .sorted { $0.playedAt < $1.playedAt }
+    }
+
+    /// The tracks in `GET /me/top/tracks`, most played first.
+    static func topTracks(from data: Data) -> [MusicTrack] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = json["items"] as? [Any] else { return [] }
+        return items.compactMap { ($0 as? [String: Any]).flatMap(track) }
+    }
+
+    /// The artists in `GET /me/top/artists`, most played first.
+    static func topArtists(from data: Data) -> [MusicPlayerStats.Artist] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = json["items"] as? [[String: Any]] else { return [] }
+        return items.compactMap { item in
+            guard let name = item["name"] as? String, !name.isEmpty else { return nil }
+            let images = item["images"] as? [[String: Any]] ?? []
+            let image = images.last { (($0["width"] as? Int) ?? 0) >= 160 } ?? images.first
+            return MusicPlayerStats.Artist(name: name, artworkURL: (image?["url"] as? String).flatMap(URL.init(string:)))
+        }
+    }
 
     /// `GET /search` for tracks.
     static func searchRequest(query: String, offset: Int, token: String) -> URLRequest? {

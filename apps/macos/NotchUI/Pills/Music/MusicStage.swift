@@ -1,7 +1,7 @@
 import SwiftUI
 
-// What the Music tab shows above the player bar: lyrics, Up Next, playlists, recent tracks or a search, over the full
-// width.
+// What the Music tab shows above the player bar: lyrics, Up Next and a search, over the full width. Home is in
+// MusicHome.swift, the statistics in MusicStats.swift.
 
 // MARK: Lyrics
 
@@ -177,7 +177,7 @@ private struct PlainLyrics: View {
     }
 }
 
-// MARK: Up Next, recent (playlists are in MusicPlaylists.swift)
+// MARK: Up Next (playlists are in MusicPlaylists.swift)
 
 struct MusicUpNextView: View {
     let info: NowPlayingInfo
@@ -237,75 +237,103 @@ struct MusicUpNextView: View {
     }
 }
 
-struct MusicRecentView: View {
-    let info: NowPlayingInfo
-    @ObservedObject var service: NowPlayingService
-
-    private var items: [MusicCoverItem] {
-        service.recent.tracks.enumerated().map { index, track in
-            MusicCoverItem(
-                id: "\(index)|\(track.id)|\(track.title)", title: track.title, subtitle: track.artist,
-                artworkURL: track.artworkURL, help: tr("music.play"),
-                secondary: .enqueue(track, in: service), track: track
-            ) { service.play(track, fromQueue: false) }
-        }
-    }
-
-    var body: some View {
-        if service.recent.tracks.isEmpty {
-            MusicPlaceholder(
-                symbol: "clock.arrow.circlepath", title: tr("music.recent.empty"),
-                detail: info.app == "Spotify" ? tr("music.spotifyNote", tr("settings.section.connections")) : nil
-            )
-        } else {
-            MusicShelf(sections: [.init(
-                id: "recent",
-                note: info.app == "Spotify" ? tr("music.spotifyNote", tr("settings.section.connections")) : tr("music.recent.hint"),
-                noteSymbol: info.app == "Spotify" ? "info.circle" : nil,
-                items: items
-            )], service: service)
-        }
-    }
-}
-
-/// Search the playing player: Music's library, or Spotify once it is connected. A found track plays on click, and goes
-/// in the queue from the button on its cover or its context menu, like everywhere else in the tab.
+/// Search the player: Music's library, or Spotify once it is connected. Before typing it shows what was searched and
+/// played last. A list reads quicker than covers here: the best match on top, Return plays it, a click plays any row
+/// and the rest of the list after it.
 struct MusicSearchView: View {
-    let info: NowPlayingInfo
     @ObservedObject var service: NowPlayingService
+    @EnvironmentObject private var app: AppModel
     @State private var text = ""
     @FocusState private var focused: Bool
 
-    private var isSpotify: Bool { info.app == "Spotify" }
+    private var isSpotify: Bool { service.searchApp == "Spotify" }
+    private var query: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             NookSearchField(prompt: isSpotify ? tr("music.search.promptSpotify") : tr("music.search.promptMusic"),
-                            text: $text, focus: $focused, onSubmit: { service.search(for: text) })
+                            text: $text, focus: $focused, onSubmit: submit)
                 .focusOnAppear($focused)
                 .padding(.horizontal, NookTheme.Spacing.xs)
-            results
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Group {
+                if query.isEmpty { idle } else { results }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear { text = service.searchResult.query }
         .onChange(of: text) { service.search(for: text) }
         // Another player started: what was found in the other one cannot play here.
-        .onChange(of: info.app) {
+        .onChange(of: service.searchApp) {
             service.search(for: "")
             service.search(for: text)
         }
     }
+
+    /// Return plays the best match, once the list on screen belongs to what was typed.
+    private func submit() {
+        let result = service.searchResult
+        guard result.query == query, result.state == .done, !result.tracks.isEmpty else {
+            service.search(for: text)
+            return
+        }
+        play(0, of: result)
+    }
+
+    private func play(_ index: Int, of result: MusicSearchResult) {
+        service.rememberSearch(result.query)
+        service.play(result.tracks[index], fromQueue: false, following: Array(result.tracks.dropFirst(index + 1).prefix(SpotifyResponses.playTrackLimit - 1)))
+    }
+
+    // MARK: Before typing
+
+    @ViewBuilder
+    private var idle: some View {
+        let searches = service.history.searches
+        let recent = service.recent.tracks
+        if searches.isEmpty, recent.isEmpty {
+            MusicPlaceholder(symbol: "magnifyingglass", title: isSpotify ? tr("music.search.idleSpotify") : tr("music.search.idleMusic"),
+                             detail: tr("music.search.idleDetail"))
+        } else {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
+                    if !searches.isEmpty {
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                            MusicGroupTitle(title: tr("music.search.recent"))
+                            FlowingChips(searches: searches, onPick: { text = $0 }, onForget: { service.forgetSearch($0) })
+                        }
+                    }
+                    if !recent.isEmpty {
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                            MusicGroupTitle(title: tr("music.recent.title"))
+                            LazyVStack(spacing: 0) {
+                                ForEach(Array(recent.enumerated()), id: \.offset) { index, track in
+                                    MusicTrackRow(track: track, playing: service.current?.trackID == track.id, service: service) {
+                                        service.play(track, fromQueue: false, following: Array(recent.dropFirst(index + 1).prefix(SpotifyResponses.playTrackLimit - 1)))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, NookTheme.Spacing.xs)
+                .padding(.bottom, NookTheme.Spacing.xl)
+            }
+        }
+    }
+
+    // MARK: Results
 
     @ViewBuilder
     private var results: some View {
         let result = service.searchResult
         switch result.state {
         case .idle:
-            MusicPlaceholder(symbol: "magnifyingglass", title: isSpotify ? tr("music.search.idleSpotify") : tr("music.search.idleMusic"),
-                             detail: tr("music.search.idleDetail"))
+            MusicPlaceholder(symbol: "magnifyingglass", title: tr("music.search.loading"), loading: true)
         case .connectSpotify, .reconnectSpotify:
             MusicPlaceholder(symbol: "link", title: tr("music.search.connectSpotify"),
-                             detail: tr("music.search.connectSpotifyDetail", tr("settings.section.connections")))
+                             detail: tr("music.search.connectSpotifyDetail", tr("settings.section.connections"))) {
+                SmallPrimaryButton(title: tr("music.playlists.openConnections")) { app.openSettings(section: .connections) }
+            }
         case .failed(let message):
             MusicPlaceholder(symbol: "exclamationmark.triangle", title: tr("music.search.failed"), detail: message) {
                 SmallGhostButton(title: tr("music.lyrics.retry")) {
@@ -320,10 +348,33 @@ struct MusicSearchView: View {
                 MusicPlaceholder(symbol: "music.note", title: tr("music.search.empty", result.query),
                                  detail: isSpotify ? nil : tr("music.search.emptyMusicDetail"))
             } else {
-                MusicShelf(sections: [.init(id: "search", note: note(result), noteSymbol: "magnifyingglass", items: items(result))], service: service)
+                list(result)
                     .opacity(result.state == .loading ? 0.6 : 1)
                     .animation(NookTheme.hover, value: result.state)
             }
+        }
+    }
+
+    private func list(_ result: MusicSearchResult) -> some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                MusicGroupTitle(title: tr("music.search.best"))
+                MusicBestMatch(track: result.tracks[0], playing: service.current?.trackID == result.tracks[0].id, service: service) {
+                    play(0, of: result)
+                }
+                if result.tracks.count > 1 {
+                    MusicGroupTitle(title: note(result)).padding(.top, NookTheme.Spacing.md)
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(result.tracks.enumerated().dropFirst()), id: \.offset) { index, track in
+                            MusicTrackRow(track: track, playing: service.current?.trackID == track.id, service: service) {
+                                play(index, of: result)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, NookTheme.Spacing.xs)
+            .padding(.bottom, NookTheme.Spacing.xl)
         }
     }
 
@@ -331,15 +382,118 @@ struct MusicSearchView: View {
         let count = result.tracks.count
         return isSpotify ? tr("music.search.countSpotify", count) : tr("music.search.countMusic", count)
     }
+}
 
-    private func items(_ result: MusicSearchResult) -> [MusicCoverItem] {
-        result.tracks.enumerated().map { index, track in
-            MusicCoverItem(
-                id: "\(index)|\(track.id)", title: track.title, subtitle: track.artist,
-                artworkURL: track.artworkURL, help: tr("music.play"),
-                secondary: .enqueue(track, in: service), track: track
-            ) { service.play(track, fromQueue: false) }
+/// The name of a group on the Music page.
+struct MusicGroupTitle: View {
+    let title: String
+    var showAll: (() -> Void)? = nil
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            Text(title)
+                .font(NookTheme.TextStyle.title)
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(1)
+            Spacer(minLength: NookTheme.Spacing.md)
+            if let showAll { MusicShowAllButton(action: showAll) }
         }
+    }
+}
+
+/// Recent searches: click to search again, the cross to forget one.
+private struct FlowingChips: View {
+    let searches: [String]
+    let onPick: (String) -> Void
+    let onForget: (String) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                ForEach(searches, id: \.self) { search in
+                    RecentSearchChip(text: search, onPick: { onPick(search) }, onForget: { onForget(search) })
+                }
+            }
+        }
+    }
+}
+
+private struct RecentSearchChip: View {
+    let text: String
+    let onPick: () -> Void
+    let onForget: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            Button(action: onPick) {
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    Image(systemName: "clock.arrow.circlepath").font(NookTheme.font(10, .semibold))
+                    Text(text).font(NookTheme.TextStyle.label).lineLimit(1)
+                }
+                .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            ToolbarIconButton("xmark", tr("music.search.forget"), height: 18, width: 18, onForget)
+                .opacity(hovering ? 1 : 0.4)
+        }
+        .padding(.leading, NookTheme.Spacing.md)
+        .padding(.trailing, NookTheme.Spacing.xs)
+        .padding(.vertical, NookTheme.Spacing.xs)
+        .background(Capsule().fill(hovering ? NookTheme.smoke : NookTheme.graphite))
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+    }
+}
+
+/// The search's best match: a large row with its own play button.
+private struct MusicBestMatch: View {
+    let track: MusicTrack
+    let playing: Bool
+    @ObservedObject var service: NowPlayingService
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: NookTheme.Spacing.xl) {
+                MusicArtwork(url: track.artworkURL, seed: track.title, cornerRadius: NookTheme.Radius.card)
+                    .frame(width: 72, height: 72)
+                    .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                    Text(track.title)
+                        .font(NookTheme.TextStyle.heading)
+                        .foregroundStyle(playing ? NookTheme.music : NookTheme.paper)
+                        .lineLimit(1)
+                    Text([track.artist, track.album].filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "play.fill")
+                    .font(NookTheme.font(14, .bold))
+                    .foregroundStyle(NookTheme.ink)
+                    .frame(width: 38, height: 38)
+                    .background(Circle().fill(NookTheme.paper))
+                    .opacity(hovering ? 1 : 0.85)
+            }
+            .padding(NookTheme.Spacing.lg)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(hovering ? NookTheme.smoke : NookTheme.graphite))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+        .help(tr("music.play"))
+        .contextMenu {
+            Button(tr("music.play"), action: action)
+            Button(tr("music.queue.add")) { service.enqueue(track) }
+            MusicAddToPlaylistMenu(track: track, service: service)
+        }
+        .accessibilityLabel(track.artist.isEmpty ? track.title : "\(track.title), \(track.artist)")
+        .accessibilityHint(tr("music.play"))
     }
 }
 
@@ -364,6 +518,8 @@ struct MusicCoverItem: Identifiable {
     var destructive: Secondary? = nil
     /// The track the item is, for "Add to playlist" in its context menu.
     var track: MusicTrack? = nil
+    /// This is what plays now.
+    var playing = false
     let action: () -> Void
 
     struct Secondary {
@@ -437,7 +593,7 @@ struct MusicShelf: View {
     }
 }
 
-private struct MusicCoverCard: View {
+struct MusicCoverCard: View {
     let item: MusicCoverItem
     let service: NowPlayingService?
     @State private var hovering = false
@@ -458,6 +614,16 @@ private struct MusicCoverCard: View {
                                 .frame(width: 20, height: 20)
                                 .background(Circle().fill(Color.black.opacity(0.6)))
                                 .padding(8)
+                        }
+                    }
+                    .overlay(alignment: .bottomLeading) {
+                        if item.playing {
+                            EqualizerBars(color: NookTheme.music, height: 10, isPlaying: service?.current?.isPlaying ?? false)
+                                .scaleEffect(0.7, anchor: .leading)
+                                .padding(NookTheme.Spacing.sm)
+                                .background(Capsule().fill(Color.black.opacity(0.6)))
+                                .padding(NookTheme.Spacing.sm)
+                                .accessibilityHidden(true)
                         }
                     }
                     .overlay {
@@ -484,7 +650,7 @@ private struct MusicCoverCard: View {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(item.title)
                         .font(NookTheme.TextStyle.strong)
-                        .foregroundStyle(NookTheme.paper)
+                        .foregroundStyle(item.playing ? NookTheme.music : NookTheme.paper)
                         .lineLimit(1)
                     if !item.subtitle.isEmpty {
                         Text(item.subtitle)

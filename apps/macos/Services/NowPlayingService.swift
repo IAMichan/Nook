@@ -53,9 +53,8 @@ final class NowPlayingService: ObservableObject {
     @Published private(set) var current: NowPlayingInfo? {
         didSet {
             scheduleQueueAdvance()
-            // Remember the track that just ended for Recent.
+            noteListening(previous: oldValue)
             guard let old = oldValue, old.trackKey != current?.trackKey else { return }
-            recent.add(MusicTrack(id: old.trackID, title: old.title, artist: old.artist, duration: old.duration, artworkURL: old.artworkURL))
             queueTrackChanged(from: old, to: current)
         }
     }
@@ -65,8 +64,19 @@ final class NowPlayingService: ObservableObject {
     var queueAdvanceTask: Task<Void, Never>?
     /// When Nook last started a queued track, so the track change that follows is not taken for the player moving on.
     var queueStartedAt = Date.distantPast
-    /// Tracks played before the current one, this session.
-    @Published private(set) var recent = RecentTracks()
+    /// Recent, recent searches and the plays the statistics come from (see `NowPlayingService+History`).
+    @Published var history = MusicHistory()
+    var recent: RecentTracks { history.recent }
+    /// How long the playing track has really sounded.
+    var listening = MusicListening()
+    var historySaveTask: Task<Void, Never>?
+    var historyLoaded = false
+    /// The player's own top lists.
+    @Published var playerStats = MusicPlayerStats()
+    var playerStatsLoadedAt = Date.distantPast
+    /// The track Nook just started, shown until the player reports it or `startingUntil` passes.
+    private var startingKey: String?
+    private var startingUntil = Date.distantPast
     /// Music: what comes next in the playlist it plays from. `nil` until loaded, or for Spotify.
     @Published var upNext: MusicQueue?
     /// The user's playlists in Music, or on Spotify once it is connected (see `NowPlayingService+Playlists`).
@@ -125,6 +135,7 @@ final class NowPlayingService: ObservableObject {
                 Task { @MainActor in self?.pollSoon() }
             }
         }
+        loadHistory()
         timer = Timer.scheduledCoalesced(withTimeInterval: 2.0) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
@@ -178,6 +189,24 @@ final class NowPlayingService: ObservableObject {
             Thread.sleep(forTimeInterval: 0.35)
             Task { @MainActor in self?.poll() }
         }
+    }
+
+    /// Shows a track that was just started, before the player says so; a poll that still reports the old one is ignored
+    /// until `deadline`, so the bar does not flick back.
+    func showStarting(_ track: MusicTrack, app: String, until deadline: Date) {
+        var info = NowPlayingInfo(title: track.title, artist: track.artist, app: app, album: track.album, trackID: track.id,
+                                  position: 0, duration: track.duration, isPlaying: true, artworkURL: track.artworkURL)
+        info.shuffle = current?.shuffle ?? false
+        info.repeating = current?.repeating ?? false
+        info.volume = current?.volume
+        localGeneration += 1
+        startingKey = info.trackKey
+        startingUntil = deadline
+        current = info
+    }
+
+    func clearStarting() {
+        startingKey = nil
     }
 
     /// Seeks to a position in the track, in seconds.
@@ -279,6 +308,13 @@ final class NowPlayingService: ObservableObject {
     /// Avoids firing @Published every poll when the same track is playing and `estimatedPosition(at:)` already
     /// interpolates within 1.8 seconds of the polled position.
     private func shouldPublish(newInfo: NowPlayingInfo?) -> Bool {
+        if let startingKey {
+            if newInfo?.trackKey == startingKey || Date() > startingUntil {
+                self.startingKey = nil
+            } else {
+                return false
+            }
+        }
         guard let old = current, let new = newInfo else {
             return current != newInfo
         }

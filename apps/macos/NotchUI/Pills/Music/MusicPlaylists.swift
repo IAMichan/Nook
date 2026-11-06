@@ -242,37 +242,36 @@ private struct MusicPlaylistDetailView: View {
     }
 }
 
-/// One track in an open playlist: its number (or the equalizer while it plays), cover, title and artist, album, length,
-/// and under the pointer: add to queue and take out of the playlist. Click to play it within the playlist.
-private struct MusicTrackRow: View {
-    let number: Int
+/// One track in a list (an open playlist, a search, Recent, a top list): its number when the list has an order, or the
+/// equalizer while it plays, cover, title and artist, album, length or a `note`, and under the pointer: add to queue and
+/// take out of the playlist. Click to play it.
+struct MusicTrackRow: View {
+    var number: Int? = nil
     let track: MusicTrack
     let playing: Bool
     @ObservedObject var service: NowPlayingService
-    let onRemove: (() -> Void)?
+    var onRemove: (() -> Void)? = nil
+    /// Instead of the length: how often it played.
+    var note: String? = nil
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.md) {
-                ZStack {
-                    if hovering {
-                        Image(systemName: "play.fill")
-                            .font(NookTheme.font(10, .bold))
-                            .foregroundStyle(NookTheme.paper)
-                    } else if playing {
-                        EqualizerBars(color: NookTheme.music, height: 10, isPlaying: service.current?.isPlaying ?? false)
-                            .scaleEffect(0.7)
-                    } else {
-                        Text("\(number)")
-                            .font(NookTheme.font(11, .medium).monospacedDigit())
-                            .foregroundStyle(NookTheme.textTertiary)
-                    }
+                if let number {
+                    marker(number: number).frame(width: 26)
                 }
-                .frame(width: 26)
                 MusicArtwork(url: track.artworkURL, seed: track.album.isEmpty ? track.title : track.album, cornerRadius: NookTheme.Radius.chip)
                     .frame(width: 34, height: 34)
+                    .overlay {
+                        if number == nil, hovering || playing {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(Color.black.opacity(0.5))
+                                marker(number: nil)
+                            }
+                        }
+                    }
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(track.title)
                         .font(NookTheme.TextStyle.strong)
@@ -295,10 +294,11 @@ private struct MusicTrackRow: View {
                     Color.clear.frame(width: 0)
                 }
                 actions
-                Text(track.duration > 0 ? musicClock(Double(track.duration)) : "")
+                Text(note ?? (track.duration > 0 ? musicClock(Double(track.duration)) : ""))
                     .font(NookTheme.font(11, .medium).monospacedDigit())
                     .foregroundStyle(NookTheme.textTertiary)
-                    .frame(width: 40, alignment: .trailing)
+                    .lineLimit(1)
+                    .frame(minWidth: 40, alignment: .trailing)
             }
             .padding(.horizontal, NookTheme.Spacing.sm)
             .padding(.vertical, NookTheme.Spacing.xs)
@@ -321,6 +321,23 @@ private struct MusicTrackRow: View {
         }
         .accessibilityLabel(track.artist.isEmpty ? track.title : "\(track.title), \(track.artist)")
         .accessibilityHint(tr("music.play"))
+    }
+
+    /// The play symbol under the pointer, the bars while it plays, otherwise the number.
+    @ViewBuilder
+    private func marker(number: Int?) -> some View {
+        if hovering {
+            Image(systemName: "play.fill")
+                .font(NookTheme.font(10, .bold))
+                .foregroundStyle(NookTheme.paper)
+        } else if playing {
+            EqualizerBars(color: NookTheme.music, height: 10, isPlaying: service.current?.isPlaying ?? false)
+                .scaleEffect(0.7)
+        } else if let number {
+            Text("\(number)")
+                .font(NookTheme.font(11, .medium).monospacedDigit())
+                .foregroundStyle(NookTheme.textTertiary)
+        }
     }
 
     private var actions: some View {
