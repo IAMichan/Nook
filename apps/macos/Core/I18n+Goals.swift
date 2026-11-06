@@ -5,6 +5,7 @@ import Foundation
 
 let goalTranslations: [AppLanguage: [String: String]] = [
     .en: [
+        "sim.android.startFailed": "The emulator did not start: %@",
         "sched.error.webhookRights": "A webhook only reaches a session that asks before it acts.",
         "sim.android.title": "Android devices",
         "sim.android.show": "Show",
@@ -34,6 +35,7 @@ let goalTranslations: [AppLanguage: [String: String]] = [
         "ws.goal.failed": "The goal could not be changed: %@",
     ],
     .nl: [
+        "sim.android.startFailed": "De emulator startte niet: %@",
         "sched.error.webhookRights": "Een webhook bereikt alleen een sessie die eerst vraagt voordat die iets doet.",
         "sim.android.title": "Android-toestellen",
         "sim.android.show": "Toon",
@@ -63,6 +65,7 @@ let goalTranslations: [AppLanguage: [String: String]] = [
         "ws.goal.failed": "Het doel kon niet worden gewijzigd: %@",
     ],
     .de: [
+        "sim.android.startFailed": "Der Emulator wurde nicht gestartet: %@",
         "sched.error.webhookRights": "Ein Webhook erreicht nur eine Sitzung, die vor dem Handeln fragt.",
         "sim.android.title": "Android-Geräte",
         "sim.android.show": "Anzeigen",
@@ -92,6 +95,7 @@ let goalTranslations: [AppLanguage: [String: String]] = [
         "ws.goal.failed": "Das Ziel konnte nicht geändert werden: %@",
     ],
     .fr: [
+        "sim.android.startFailed": "L’émulateur n’a pas démarré : %@",
         "sched.error.webhookRights": "Un webhook n’atteint qu’une session qui demande avant d’agir.",
         "sim.android.title": "Appareils Android",
         "sim.android.show": "Afficher",
@@ -121,6 +125,7 @@ let goalTranslations: [AppLanguage: [String: String]] = [
         "ws.goal.failed": "L’objectif n’a pas pu être modifié : %@",
     ],
     .es: [
+        "sim.android.startFailed": "El emulador no se inició: %@",
         "sched.error.webhookRights": "Un webhook solo llega a una sesión que pregunta antes de actuar.",
         "sim.android.title": "Dispositivos Android",
         "sim.android.show": "Mostrar",

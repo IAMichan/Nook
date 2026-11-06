@@ -40,7 +40,14 @@ extension WorkspaceManager {
 
     /// Puts Nook's MCP server on the machine, once per run of Nook.
     func prepareRemoteBridge(_ remote: RemoteTarget) async {
-        guard bridgeLaunch() != nil, remoteHomes[remote.machineID] == nil, !remoteBridgeInstalling.contains(remote.machineID) else { return }
+        guard bridgeLaunch() != nil, remoteHomes[remote.machineID] == nil else { return }
+        // Another session is installing it: this one starts with the tools too, within what that install may take.
+        if remoteBridgeInstalling.contains(remote.machineID) {
+            for _ in 0..<260 where remoteBridgeInstalling.contains(remote.machineID) {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            return
+        }
         remoteBridgeInstalling.insert(remote.machineID)
         let home = await Task.detached(priority: .userInitiated) {
             RemoteShell.installBridge(remote, script: WorkspaceBridgeScript.contents)

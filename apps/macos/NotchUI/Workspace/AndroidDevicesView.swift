@@ -6,6 +6,7 @@ struct AndroidDevicesView: View {
     @State private var devices: [AndroidDevice] = []
     @State private var chosen: String?
     @State private var picture: NSImage?
+    @State private var startError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
@@ -19,11 +20,17 @@ struct AndroidDevicesView: View {
                             Button(tr("sim.android.show")) { chosen = device.serial }.controlSize(.small)
                         } else {
                             Button(tr("sim.android.start")) {
-                                try? AndroidDevices.boot(avd: String(device.id.dropFirst(AndroidDevices.idPrefix.count + 5)))
+                                do {
+                                    startError = nil
+                                    try AndroidDevices.boot(avd: String(device.id.dropFirst(AndroidDevices.idPrefix.count + 5)))
+                                } catch {
+                                    startError = tr("sim.android.startFailed", error.localizedDescription)
+                                }
                             }.controlSize(.small)
                         }
                     }
                 }
+                if let startError { SettingNote(startError, tone: .warning) }
                 if let picture {
                     Image(nsImage: picture).resizable().scaledToFit().frame(maxHeight: 420)
                         .accessibilityLabel(tr("sim.android.screen"))
