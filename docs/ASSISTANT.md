@@ -138,6 +138,14 @@ With an external brain and the screen kept on this Mac, everything that reads th
 
 Every other question still goes to the external brain, and answers that read the screen stay out of its history (`NookChat.withoutPrivate`). Autocomplete always runs on this Mac and is not affected. Tested in `ScreenBrainTests`.
 
+The same section can make the screen brain a go-between for chat (`AppSettings.screenBrainRelays`, off by default): instead of answering a question from the list above, it reads the screen and the sources kept on this Mac and writes a note of what the question needs (`PrivateBrief`), and the external brain answers from that note with its own tools. So a small model no longer has to write the answer or the mail.
+
+- `PrivateBrief.sealed` always filters the note at the Strict level, whatever the privacy level, before it is cut to length, and `AppModel.writeBrief` refuses to run on anything but a model on this Mac.
+- The note is what leaves the Mac, and the answer shows it word for word (`ChatMessage.privateBrief`, `PrivateBriefDisclosure`). It travels as untrusted context.
+- Mail addresses stay here: the external brain puts a name in `compose_mail`, and Nook fills in the address from Contacts or else from what the model read, when exactly one fits (`PrivateBrief.address`).
+- With no note (nothing to read, the model failed or timed out), nothing left the Mac and the screen brain answers itself.
+- A question for a phone number or address, one with pictures, and work already on the screen brain (Think Along, Double Tap, a takeover) stay as they were: see `ScreenBrain.relays`. Tested in `PrivateBriefTests`.
+
 ### Privacy Level & Apps Nook Never Reads
 
 `AppSettings.privacyLevel` (**Settings › Privacy and access › Privacy level**) sets how tightly Nook filters what it gathers before it goes to an external brain. `AppSettings.shielded` applies `PrivacyFilter` (`Core/PrivacyLevel.swift`, tested in `PrivacyFilterTests`) to the context and screen text in `BrainService.run`, to evidence documents, and to every read-tool result in `ToolRunner.shield`. What the user types is never changed, and with a brain on this Mac nothing is filtered because nothing leaves it.
