@@ -21,6 +21,21 @@ final class ScrollModelTests: XCTestCase {
         XCTAssertEqual(pin.room(in: ScrollFrame(offset: 0, content: 1900, container: 580, insetBottom: 120), current: 0), 0)
     }
 
+    func testNoPinRoomForAMessagePastTheEnd() {
+        // The height of a long conversation dropped as its rows were measured: the message seems far below the end.
+        let pin = TurnPin(messageTop: 134_000)
+        let shrunk = ScrollFrame(offset: 57_000, content: 72_000, container: 580)
+        XCTAssertEqual(pin.room(in: shrunk, current: 0), 0)
+        // The spacer itself is off screen and no longer counted in the height: this must not feed itself.
+        XCTAssertEqual(pin.room(in: shrunk, current: 30_000_000), 0)
+    }
+
+    func testPinRoomNeverExceedsTheView() {
+        let pin = TurnPin(messageTop: 1000)
+        let frame = ScrollFrame(offset: 0, content: 1000, container: 580)
+        XCTAssertLessThanOrEqual(pin.room(in: frame, current: 0), frame.container)
+    }
+
     func testAwayFromEndWhileAMessageIsPinned() {
         var m = ScrollModel()
         XCTAssertFalse(m.awayFromEnd)
