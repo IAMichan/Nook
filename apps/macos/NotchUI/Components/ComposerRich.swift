@@ -414,13 +414,13 @@ struct ComposerPlusMenu<Extra: View>: View {
     }
 }
 
-/// A file you pick for a message to an agent: it becomes a reference in the text, the agent reads it itself.
+/// A file or folder you pick for a message to an agent: it becomes a reference in the text, the agent reads it itself.
 @MainActor
 enum ComposerFilePicker {
     static func pick(startingIn folder: String) -> ContextRef? {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
-        panel.canChooseDirectories = false
+        panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.directoryURL = URL(fileURLWithPath: folder, isDirectory: true)
         guard panel.runAboveNotch() == .OK, let url = panel.url else { return nil }

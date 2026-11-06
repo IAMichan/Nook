@@ -175,16 +175,7 @@ struct ImageAttachment: Identifiable, Equatable {
                         DispatchQueue.main.async { loadImage(from: provider, into: images) }
                         return
                     }
-                    guard isImageFile(url) else {
-                        DispatchQueue.main.async { file(url) }
-                        return
-                    }
-                    encoder.async {
-                        let image = ImageAttachment(url: url)
-                        DispatchQueue.main.async {
-                            if let image { images([image]) } else { file(url) }
-                        }
-                    }
+                    DispatchQueue.main.async { take(url, images: images, file: file) }
                 }
             } else if provider.canLoadObject(ofClass: NSImage.self) {
                 handled = true
@@ -192,6 +183,17 @@ struct ImageAttachment: Identifiable, Equatable {
             }
         }
         return handled
+    }
+
+    /// One file on this Mac: a picture goes to `images` once encoded, anything else (a folder too) to `file`.
+    static func take(_ url: URL, images: @escaping ([ImageAttachment]) -> Void, file: @escaping (URL) -> Void) {
+        guard isImageFile(url) else { return file(url) }
+        encoder.async {
+            let image = ImageAttachment(url: url)
+            DispatchQueue.main.async {
+                if let image { images([image]) } else { file(url) }
+            }
+        }
     }
 
     private static func loadImage(from provider: NSItemProvider, into images: @escaping ([ImageAttachment]) -> Void) {
@@ -444,14 +446,16 @@ struct ImageAttachmentStrip: View {
     }
 }
 
-/// A file going out with a message: its preview (a picture, a document's first page, else the Finder icon), dimmed, with
-/// its type ("PDF", "JPG", "TXT") across it like a watermark.
+/// A file or folder going out with a message: its preview (a picture, a document's first page, else the Finder icon),
+/// dimmed, with its type ("PDF", "JPG", "FOLDER") across it like a watermark.
 private struct ComposerFileTile: View {
     let file: ContextRefs.Found
     let url: URL?
     @State private var preview: NSImage?
+    @State private var isFolder = false
 
     private var type: String {
+        if isFolder { return tr("compose.folder.type") }
         let ext = URL(fileURLWithPath: file.label).pathExtension
         if file.kind == .paste || ext.isEmpty { return file.kind == .paste ? "TXT" : tr("compose.file.type") }
         return String(ext.uppercased().prefix(5))
@@ -482,7 +486,11 @@ private struct ComposerFileTile: View {
         .accessibilityLabel(file.label)
         .task(id: url) {
             guard let url else { return }
-            if let image = await ChatFileThumbnails.shared.image(url, kind: .file) {
+            let kind = try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+            isFolder = kind?.isDirectory == true && kind?.isPackage != true
+            if isFolder {
+                preview = NSWorkspace.shared.icon(forFile: url.path)
+            } else if let image = await ChatFileThumbnails.shared.image(url, kind: .file) {
                 preview = image
             } else if FileManager.default.fileExists(atPath: url.path) {
                 preview = NSWorkspace.shared.icon(forFile: url.path)
