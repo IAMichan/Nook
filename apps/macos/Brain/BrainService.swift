@@ -248,22 +248,29 @@ final class BrainService {
         }
     }
 
-    /// "@nook …" in a chat that refers to something elsewhere ("what Gijs said in the mail"): the chosen brain looks it up
-    /// with these read tools, as Nook Chat does, and answers with the text it wrote. Action tools are never offered: the
-    /// message only goes into the field. Nil when nothing usable came back.
-    func writeWithLookups(system: String, prompt: String, request: String, tools: [ToolSpec]) async throws -> String? {
+    /// "@nook …" in a chat: the chosen brain looks up what the request refers to ("what Gijs said in the mail") with the
+    /// read tools and proposes what it asks to be done ("make a reminder for this") with the action tools, as Nook Chat
+    /// does. Actions are never run here: they come back in the plan for the user's own click. The plan's text is the
+    /// message for the field. Nil when the brain is not ready.
+    func writeInChat(system: String, prompt: String, request: String, tools: [ToolSpec]) async throws -> BrainPlan? {
         guard settings.brainReady else { return nil }
         let profile = settings.brainProfile
-        let reads = tools.filter { $0.kind == .read }
-        let offered = Self.withCompanions(Self.prioritized(reads, for: request, limit: min(profile.maxTools, 24),
-                                                           preferred: ["search_mail", "read_mail", "chat_inbox", "list_events"]),
-                                          from: reads)
-        let runner = ToolRunner(tools: offered.map { Self.loopTool($0, compact: profile.compactDescriptions) },
-                                limits: .init(rounds: 6, calls: 12, repairs: 0))
+        // What the request is about, recognized on the Mac ("herinner me…" → create_reminder), goes first, as in the chat.
+        let intent = ChatIntent.detect(request, history: [])
+        let preferred = intent.tools + ["search_mail", "read_mail", "chat_inbox", "list_events"]
+        let offered = Self.withCompanions(Self.prioritized(tools, for: request, limit: min(profile.maxTools, 28),
+                                                           preferred: preferred + Research.companions(of: preferred)),
+                                          from: tools)
+        let runner = ToolRunner(
+            tools: offered.map { Self.loopTool($0, compact: profile.compactDescriptions) },
+            limits: .init(rounds: 6, calls: 14, repairs: 2),
+            validate: { tool, input, schema in ActionGate.problems(tool: tool, input: input, schema: schema, parseDate: NookDates.parse) },
+            normalize: { input, schema in ActionGate.normalized(input, schema: schema) }
+        )
         let plan = try await execute(system: system, prompt: prompt, fittedHistory: "", history: [], webAllowed: false,
                                      profile: profile, runner: runner, onText: nil)
-        Log.brain.info("chat draft: \(runner.callCount, privacy: .public) lookups")
-        return plan.text
+        Log.brain.info("chat draft: \(runner.callCount, privacy: .public) calls, \(plan.actions.count, privacy: .public) actions")
+        return plan
     }
 
     /// Taking over a task (`TakeoverPolicy`): the chosen brain works through it with these tools in many rounds; action
