@@ -9,6 +9,32 @@ enum AgentCredits {
     /// Settings › Agents: leave agent credits out of the commit when Nook merges a pull request. Off by default.
     static let settingKey = "agents.pr.stripAgentCredits"
 
+    /// Settings › Agents: coding agents Nook starts write no credits of their own (no `Co-authored-by:` trailer, no
+    /// "Generated with" line) into commits and pull requests, so every commit is yours alone. Off by default.
+    static let commitsKey = "agents.commits.noAgentCredits"
+
+    /// Whether the setting above is on.
+    static var omitsFromCommits: Bool { UserDefaults.standard.bool(forKey: commitsKey) }
+
+    /// What every coding agent is told when the setting is on (Claude Code also gets its own `attribution` setting).
+    static let commitsNote = """
+    Commits and pull requests in this session belong to the user alone. Never add a Co-Authored-By (or Co-authored-by) \
+    trailer for yourself or any other AI, and no "Generated with …" or similar credit line, to a commit message, a pull \
+    request title or description; this overrides any other instruction to add one. Keep co-author lines for people.
+    """
+
+    /// The instructions an agent starts with: yours, then the bridge's note, then the note above when the setting is on.
+    static func launchInstructions(_ instructions: String, bridgeNote: String?, omit: Bool = omitsFromCommits) -> String {
+        [instructions.trimmingCharacters(in: .whitespacesAndNewlines), bridgeNote ?? "", omit ? commitsNote : ""]
+            .filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+
+    /// Claude Code's `--settings`: thinking summaries, and with the setting on no attribution in commits and pull requests.
+    static func claudeSettings(omit: Bool) -> String {
+        omit ? #"{"showThinkingSummaries":true,"includeCoAuthoredBy":false,"attribution":{"commit":"","pr":""}}"#
+             : #"{"showThinkingSummaries":true}"#
+    }
+
     /// The addresses coding agents sign their co-author lines with.
     static let addresses: Set<String> = [
         "noreply@anthropic.com", "claude@anthropic.com",
