@@ -48,6 +48,22 @@ Everything the side panel hands to a session (Explain, Ask, Fix, Resolve on a pu
 browser, a remark on a file's line) goes through `ComposerInbox` into the draft, as text from `SessionPrompts`. Both
 composers take it (`AgentRunPanel`, `AgentSessionDetail`), so every coding agent gets it alike and none is left out.
 
+## A session's pull requests in the side panel
+
+The list at the top of the side panel's Pull request tab (`LinkedPullRequests`, `PullRequestSync.linked`) holds every forge
+`SourceForge` reads, for every coding agent: it is built from a session's branch and has no agent-specific part. What a
+member cannot do:
+
+- GitHub has its own path; every other forge is a `PullRequestForgeClient` (`PullRequestForge*.swift`) with `PullRequestForgeFeatures`, so the page shows only what the forge offers. GitLab uses its token from Settings; the others use **Settings › Pull requests › Other code hosts** (`ForgeCredentials`; `user:token` for Bitbucket and Azure DevOps).
+- GitLab: no emoji (a request per note) and no revert. Request changes is a plain note. A multi-line comment anchors on its last line. A review with line comments is not atomic.
+- Gitea, Forgejo: no emoji, auto-merge or revert; a thread cannot be resolved through the API, only read as resolved. A reply is a one-comment review. Draft uses the `WIP:` title prefix.
+- Bitbucket Cloud only (bitbucket.org): no labels, emoji, auto-merge, branch update, revert or draft actions; reopen does not exist.
+- Azure DevOps (dev.azure.com only): no patch API, so Code lists names without diffs or line counts; no commit view, labels picker, reviewer requests, emoji, branch update or revert; checks come from `/statuses`, not branch policies; editing your own comment is off because the viewer is not resolved.
+- GitCafe: no line comments (its draft flow), emoji, auto-merge, branch update, revert, commit view or branch deletion; editing your own comment is off because the viewer is not resolved.
+- GitHub's own stacks (`/repos/{repo}/stacks`) and their asynchronous merge are github.com only.
+- The other platform apps (`apps/tauri`, `apps/ios`, `apps/android`, `apps/windows`, `apps/linux`) have no session side
+  panel with a pull request tab, so there is nothing there to change.
+
 ## Chat feature matrix
 
 `✓` = shown, `–` = the app does not say it (left out on purpose), `?` = not checked yet.

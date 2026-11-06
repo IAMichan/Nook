@@ -19,7 +19,10 @@ struct PullRequestSummarySection<Content: View, Accessory: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+        // A section of the Summary's lazy stack, whose pinned headers keep this heading in sight.
+        Section {
+            if open { content() }
+        } header: {
             HStack(spacing: NookTheme.Spacing.sm) {
                 Button {
                     withAnimation(NookTheme.reveal) { open.toggle() }
@@ -39,7 +42,8 @@ struct PullRequestSummarySection<Content: View, Accessory: View>: View {
                 accessory().foregroundStyle(NookTheme.textTertiary).lineLimit(1)
             }
             .padding(.horizontal, NookTheme.Spacing.xs)
-            if open { content() }
+            .padding(.vertical, NookTheme.Spacing.xs)
+            .background(NookTheme.canvas)
         }
     }
 }

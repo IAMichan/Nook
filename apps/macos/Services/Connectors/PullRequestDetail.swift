@@ -60,6 +60,16 @@ struct PullRequestDetail: Equatable, Sendable {
     var labelColors: [String: String] = [:]
     /// GitHub's node id, for the actions only GraphQL offers (marking a draft ready for review).
     var nodeID = ""
+    /// The repository the head branch lives in ("ada/app" for a fork); nil when the fork was deleted.
+    var headRepository: String? = nil
+    /// Whether the base repository's maintainers may push to this fork's branch.
+    var maintainerEdits = false
+    /// What the page offers on this pull request's forge.
+    var features = PullRequestForgeFeatures.github
+    /// The emoji on the description.
+    var reactions: [PullRequestReaction] = []
+    /// Whether the repository lets GitHub merge by itself once a pull request may go.
+    var autoMergeAllowed = false
     /// GitHub's own counts, so the lists can be read page by page at once and a tab can say how many before they load.
     var commitCount: Int? = nil
     var commentCount: Int? = nil
@@ -72,6 +82,13 @@ struct PullRequestDetail: Equatable, Sendable {
 
     var id: String { "\(repo)#\(number)" }
     var isOpen: Bool { state == .open || state == .draft }
+    /// Someone deleted the head branch, so there is nothing left to delete.
+    var branchDeleted: Bool {
+        events.contains { event in
+            if case .activity("head_ref_deleted", _) = event.kind { return true }
+            return false
+        }
+    }
 
     /// The timeline, commits and files of a later read, on top of this summary.
     mutating func apply(_ activity: PullRequestActivity) {
@@ -79,6 +96,7 @@ struct PullRequestDetail: Equatable, Sendable {
         commits = activity.commits
         files = activity.files
         linkedIssues = activity.issues
+        reactions = activity.reactions
         activityLoaded = true
     }
 
@@ -96,7 +114,7 @@ struct PullRequestDetail: Equatable, Sendable {
     func keepingActivity(of old: PullRequestDetail?) -> PullRequestDetail {
         guard !activityLoaded, let old, old.activityLoaded else { return self }
         var result = self
-        result.apply(PullRequestActivity(events: old.events, commits: old.commits, files: old.files, issues: old.linkedIssues))
+        result.apply(PullRequestActivity(reactions: old.reactions, events: old.events, commits: old.commits, files: old.files, issues: old.linkedIssues))
         return result
     }
 
@@ -172,6 +190,8 @@ struct PullRequestAutoMerge: Equatable, Sendable {
 
 /// The part of a pull request that takes the most requests to read: the timeline, the commits and the files.
 struct PullRequestActivity: Equatable, Sendable {
+    /// The emoji on the description.
+    var reactions: [PullRequestReaction] = []
     var events: [PullRequestEvent] = []
     var commits: [PullRequestCommit] = []
     var files: [PullRequestFile] = []
@@ -294,12 +314,40 @@ struct PullRequestEvent: Identifiable, Equatable, Sendable {
     var resolved = false
     /// The emoji people answered with, in GitHub's order.
     var reactions: [PullRequestReaction] = []
+    /// The thread a line comment is part of, in GraphQL's ids, to resolve it.
+    var threadID: String? = nil
+    /// The text as its author wrote it, for editing: `body` has GitHub's HTML turned into markdown.
+    var rawBody: String? = nil
+
+    /// GitHub's number of a comment, and whether it is a line comment: what its REST address needs.
+    var restComment: (id: Int, lineComment: Bool)? {
+        let parts = id.split(separator: "-", maxSplits: 1).map(String.init)
+        guard parts.count == 2, let number = Int(parts[1]) else { return nil }
+        switch parts[0] {
+        case "comment": return (number, false)
+        case "line": return (number, true)
+        default: return nil
+        }
+    }
+
+    /// The address of its emoji; nil where GitHub has none (a review).
+    var reactionPath: String? {
+        if id.hasPrefix("description-") { return "issues/" + id.dropFirst("description-".count) + "/reactions" }
+        return restComment.map { "\($0.lineComment ? "pulls" : "issues")/comments/\($0.id)/reactions" }
+    }
+
+    /// Line comments of one file, as the Code tab shows them.
+    func isOn(path wanted: String) -> Bool {
+        if case .lineComment(let path, _) = kind { return path == wanted }
+        return false
+    }
 }
 
 /// Whether a thread on a line was resolved, and whether a push moved the code under it.
 struct PullRequestThreadState: Equatable, Sendable {
     let resolved: Bool
     let outdated: Bool
+    var id: String? = nil
 }
 
 /// One emoji on a comment and how many people chose it.
@@ -416,6 +464,9 @@ enum PullRequestDetailParser {
         detail.labels = ((pull["labels"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
         detail.labelColors = PullRequestGraphQL.labelColors((pull["labels"] as? [[String: Any]]) ?? [])
         detail.nodeID = (pull["node_id"] as? String) ?? ""
+        detail.headRepository = (head["repo"] as? [String: Any])?["full_name"] as? String
+        detail.maintainerEdits = (pull["maintainer_can_modify"] as? Bool) == true
+        detail.autoMergeAllowed = (repository?["allow_auto_merge"] as? Bool) == true
         detail.commitCount = int(pull["commits"])
         detail.commentCount = int(pull["comments"])
         detail.lineCommentCount = int(pull["review_comments"])
@@ -514,6 +565,7 @@ enum PullRequestDetailParser {
                                          date: date(comment["created_at"]),
                                          url: (comment["html_url"] as? String).flatMap(URL.init(string:)))
             event.reactions = reactions(comment["reactions"])
+            event.rawBody = comment["body"] as? String
             result.append(event)
         }
         for comment in lineComments {
@@ -529,6 +581,7 @@ enum PullRequestDetailParser {
             event.outdated = (comment["subject_type"] as? String) != "file"
                 && int(comment["line"]) == nil && int(comment["position"]) == nil
             event.reactions = reactions(comment["reactions"])
+            event.rawBody = comment["body"] as? String
             result.append(event)
         }
         return result.enumerated().sorted {
@@ -554,7 +607,7 @@ enum PullRequestDetailParser {
         query($owner: String!, $name: String!, $number: Int!) {
           repository(owner: $owner, name: $name) {
             pullRequest(number: $number) {
-              reviewThreads(first: 100) { nodes { isResolved isOutdated comments(first: 1) { nodes { databaseId } } } }
+              reviewThreads(first: 100) { nodes { id isResolved isOutdated comments(first: 1) { nodes { databaseId } } } }
             }
           }
         }
@@ -608,7 +661,8 @@ enum PullRequestDetailParser {
             let first = ((node["comments"] as? [String: Any])?["nodes"] as? [[String: Any]])?.first
             guard let id = int(first?["databaseId"]) else { continue }
             result["line-\(id)"] = PullRequestThreadState(resolved: (node["isResolved"] as? Bool) == true,
-                                                          outdated: (node["isOutdated"] as? Bool) == true)
+                                                          outdated: (node["isOutdated"] as? Bool) == true,
+                                                          id: node["id"] as? String)
         }
         return result
     }
@@ -621,6 +675,7 @@ enum PullRequestDetailParser {
             guard let state = threads[event.replyTo ?? event.id] else { return event }
             var event = event
             if event.replyTo == nil { event.resolved = state.resolved }
+            event.threadID = state.id
             event.outdated = event.outdated || state.outdated
             return event
         }

@@ -54,6 +54,22 @@ extension PullRequestDetail {
     }
 
     var failingCheckNames: [String] { checks.filter { $0.outcome == .failing }.map(\.name) }
+
+    /// The comments still open that ask for something: not a bot's, not a finished conversation's, not an approval.
+    var sessionFindings: [SessionPrompts.Finding] {
+        PullRequestConversation.filtered(PullRequestConversation.items(events), bots: false, finished: false).compactMap { item in
+            let root = item.root
+            guard !root.body.isEmpty else { return nil }
+            switch root.kind {
+            case .lineComment(let path, let line):
+                return SessionPrompts.Finding(author: root.author, path: path, line: line, text: root.body)
+            case .review(let state) where state != "APPROVED":
+                return SessionPrompts.Finding(author: root.author, path: nil, line: nil, text: root.body)
+            default:
+                return nil
+            }
+        }
+    }
 }
 
 extension EnvironmentValues {
