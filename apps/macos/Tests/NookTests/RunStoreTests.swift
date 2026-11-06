@@ -146,6 +146,22 @@ final class UsageReportTests: XCTestCase {
         XCTAssertEqual(UsageReport.displayModel(run), "claude-sonnet-4-5")
     }
 
+    func testPeekReadsTheTimelineWithoutChangingWhatSavesCompareWith() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("peek-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let id = UUID()
+        var event = RunEvent(kind: .assistant, text: "first")
+        try RunStore(directory: folder).saveEvents(id, [event])
+
+        // A new launch: this store has seen nothing of the timeline.
+        let store = RunStore(directory: folder)
+        XCTAssertEqual(store.peekEvents(id).map(\.text), ["first"])
+        event.text = "second"
+        try store.saveEvents(id, [event])
+        XCTAssertEqual(store.peekEvents(id).map(\.text), ["second"])
+        XCTAssertEqual(store.loadEvents(id).map(\.id), [event.id])
+    }
+
     func testAFailedWriteOfTheSessionListIsReported() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("runs-\(UUID().uuidString)")
         let store = RunStore(directory: folder)

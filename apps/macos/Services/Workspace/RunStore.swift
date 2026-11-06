@@ -86,9 +86,16 @@ final class RunStore: @unchecked Sendable {
     }
 
     func loadEvents(_ id: UUID) -> [RunEvent] {
-        lock.lock()
-        defer { lock.unlock() }
-        var events = readTimeline(id)
+        Self.settled(readTimeline(id, remember: true))
+    }
+
+    /// The timeline for a one-time read (a search over every session): keeps nothing of it, and never compacts.
+    func peekEvents(_ id: UUID) -> [RunEvent] {
+        Self.settled(readTimeline(id, remember: false))
+    }
+
+    private static func settled(_ timeline: [RunEvent]) -> [RunEvent] {
+        var events = timeline
         // A tool or approval still running when Nook stopped is no longer running.
         for index in events.indices where events[index].state == .running || events[index].state == .pending {
             events[index].state = events[index].kind == .approval ? .expired : .failed
@@ -226,14 +233,27 @@ final class RunStore: @unchecked Sendable {
         if !done { SafeStorage.report("Importing the JSON timelines into runs.sqlite failed; trying again next launch") }
     }
 
-    /// Replays the session's rows, compacting a log that grew much longer than its timeline. Call with the lock held.
-    private func readTimeline(_ id: UUID) -> [RunEvent] {
-        guard let log = openLog() else { return [] }
-        let rows = log.rows(id)
+    /// Replays the session's rows, compacting a log that grew much longer than its timeline.
+    ///
+    /// Decoding a long timeline takes a while and happens outside the lock: the main thread takes it to write an event, and
+    /// must not wait for a session being read in the background.
+    private func readTimeline(_ id: UUID, remember: Bool) -> [RunEvent] {
+        lock.lock()
+        let opened = openLog()
+        let rows = opened?.rows(id) ?? []
+        lock.unlock()
+        guard let log = opened else { return [] }
         let result = RunEventFold.fold(rows, decoder: Self.decoder)
-        written[id] = WrittenTimeline(result.events)
-        // Unreadable rows (a newer version's) are left alone: compacting would drop them.
-        if result.unreadableRows == 0, rows.count >= Self.compactionMinimumRows, result.supersededRows >= result.events.count {
+        guard remember else { return result.events }
+        lock.lock()
+        defer { lock.unlock() }
+        guard !deleted.contains(id) else { return result.events }
+        // Already known: a save got here first, and what it noted is newer than these rows.
+        if written[id] == nil { written[id] = WrittenTimeline(result.events) }
+        // Unreadable rows (a newer version's) are left alone: compacting would drop them. So are rows written since the
+        // read: the snapshot would replace them with a timeline that does not have them.
+        if result.unreadableRows == 0, rows.count >= Self.compactionMinimumRows, result.supersededRows >= result.events.count,
+           log.lastSequence(id) == rows.last?.seq {
             try? writeSnapshot(id, result.events, log: log)
         }
         return result.events
