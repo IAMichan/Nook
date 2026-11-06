@@ -4,8 +4,9 @@ import Foundation
 /// it (approve, request changes, comment), write in its conversation, close or reopen it, edit its title and
 /// description, ask people for a review, bring its branch up to date with the base, add or remove a label, mark a draft
 /// ready for review or turn it back into a draft, and point it at another base branch (when the pull request under it in a
-/// stack was merged). Each is one GitHub call (REST, or GraphQL for the draft state), asked after your own click, and
-/// written to the action log. Foundation only, so
+/// stack was merged), answer on a thread, resolve it, edit a comment, delete the head branch, open a revert, allow
+/// maintainers' edits, and turn auto-merge on or off. Each is one GitHub call (REST, or GraphQL for what only it offers),
+/// asked after your own click, and written to the action log. Foundation only, so
 /// the requests are tested on their own.
 enum PullRequestAction: Equatable, Sendable {
     enum Verdict: String, CaseIterable, Sendable {
@@ -42,6 +43,53 @@ enum PullRequestAction: Equatable, Sendable {
     case changeBase(String)
     /// Lets the workflow run of a contributor start; GitHub holds those until someone with write access approves.
     case approveWorkflow(runID: Int)
+    /// A review with comments on lines, written on the Code tab and sent together.
+    case reviewWithComments(Verdict, body: String, commit: String, comments: [LineComment])
+    /// An answer on a thread on a line, by the id of the thread's first comment.
+    case reply(to: Int, body: String)
+    /// A thread on a line done with, or opened again. GraphQL only.
+    case setThreadResolved(threadID: String, resolved: Bool)
+    /// Your own comment rewritten; `lineComment` says which list it is in.
+    case editComment(id: Int, lineComment: Bool, body: String)
+    /// Rebases the branch on its base, only when it is still at `headSHA`. GraphQL only.
+    case rebaseBranch(nodeID: String, headSHA: String)
+    /// Deletes the merged or closed branch from the repository it lives in, which is a fork's for a fork.
+    case deleteBranch(repository: String, branch: String)
+    /// Opens a pull request that undoes this merged one. GraphQL only.
+    case revert(nodeID: String)
+    /// Whether the base repository's maintainers may push to this fork's branch.
+    case setMaintainerEdits(Bool)
+    /// GitHub merges by itself once the checks and reviews allow it. GraphQL only.
+    case enableAutoMerge(nodeID: String, method: PullRequestMergeMethod)
+    case disableAutoMerge(nodeID: String)
+
+    /// One comment on a line of a review: `side` is GitHub's RIGHT (the new file) or LEFT (a removed line).
+    struct LineComment: Equatable, Sendable {
+        var path: String
+        var line: Int
+        var side: String
+        var body: String
+        /// The first line of a comment on several lines.
+        var startLine: Int? = nil
+        var startSide: String? = nil
+    }
+
+    static let setThreadResolvedMutation = "mutation NookThread($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { isResolved } } }"
+    static let setThreadOpenMutation = "mutation NookThread($id: ID!) { unresolveReviewThread(input: {threadId: $id}) { thread { isResolved } } }"
+    static let rebaseBranchMutation = """
+    mutation NookRebase($id: ID!, $head: GitObjectID) {
+      updatePullRequestBranch(input: {pullRequestId: $id, expectedHeadOid: $head, updateMethod: REBASE}) { pullRequest { id } }
+    }
+    """
+    static let revertMutation = """
+    mutation NookRevert($id: ID!) { revertPullRequest(input: {pullRequestId: $id}) { revertPullRequest { url } } }
+    """
+    static let enableAutoMergeMutation = """
+    mutation NookAutoMerge($id: ID!, $method: PullRequestMergeMethod!) {
+      enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: $method}) { pullRequest { id } }
+    }
+    """
+    static let disableAutoMergeMutation = "mutation NookNoAutoMerge($id: ID!) { disablePullRequestAutoMerge(input: {pullRequestId: $id}) { pullRequest { id } } }"
 
     static let markReadyMutation =
         "mutation NookMarkReady($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { isDraft } } }"
@@ -104,7 +152,63 @@ enum PullRequestAction: Equatable, Sendable {
             return Request(method: "PATCH", path: pull, body: ["base": name])
         case .approveWorkflow(let runID):
             return Request(method: "POST", path: "/repos/\(repo)/actions/runs/\(runID)/approve", body: nil)
+        case .reviewWithComments(let verdict, let body, let commit, let comments):
+            let text = body.trimmingCharacters(in: .whitespacesAndNewlines)
+            // The comments are the words a review needs: an approval or a remark with only those is fine.
+            guard !comments.isEmpty else { return PullRequestAction.review(verdict, body: body).request(repo: repo, number: number) }
+            var payload: [String: AnyHashable] = ["event": verdict.event]
+            if !text.isEmpty { payload["body"] = text }
+            if !commit.isEmpty { payload["commit_id"] = commit }
+            let lines: [AnyHashable] = comments.map { (comment: LineComment) -> AnyHashable in
+                var line: [String: AnyHashable] = ["path": comment.path, "line": comment.line, "side": comment.side, "body": comment.body]
+                if let start = comment.startLine, start != comment.line {
+                    line["start_line"] = start
+                    line["start_side"] = comment.startSide ?? comment.side
+                }
+                return line
+            }
+            payload["comments"] = lines
+            return Request(method: "POST", path: pull + "/reviews", body: payload)
+        case .reply(let id, let body):
+            let text = body.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            return Request(method: "POST", path: pull + "/comments/\(id)/replies", body: ["body": text])
+        case .setThreadResolved(let threadID, let resolved):
+            guard !threadID.isEmpty else { return nil }
+            return Self.graphQL(resolved ? Self.setThreadResolvedMutation : Self.setThreadOpenMutation, ["id": threadID])
+        case .editComment(let id, let lineComment, let body):
+            let text = body.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            return Request(method: "PATCH", path: "/repos/\(repo)/\(lineComment ? "pulls" : "issues")/comments/\(id)", body: ["body": text])
+        case .rebaseBranch(let nodeID, let headSHA):
+            guard !nodeID.isEmpty else { return nil }
+            return Self.graphQL(Self.rebaseBranchMutation, headSHA.isEmpty ? ["id": nodeID] : ["id": nodeID, "head": headSHA])
+        case .deleteBranch(let repository, let branch):
+            guard !repository.isEmpty, !branch.isEmpty,
+                  let escaped = branch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return nil }
+            return Request(method: "DELETE", path: "/repos/\(repository)/git/refs/heads/" + escaped, body: nil)
+        case .revert(let nodeID):
+            guard !nodeID.isEmpty else { return nil }
+            return Self.graphQL(Self.revertMutation, ["id": nodeID])
+        case .setMaintainerEdits(let allowed):
+            return Request(method: "PATCH", path: pull, body: ["maintainer_can_modify": allowed])
+        case .enableAutoMerge(let nodeID, let method):
+            guard !nodeID.isEmpty else { return nil }
+            return Self.graphQL(Self.enableAutoMergeMutation, ["id": nodeID, "method": method.rawValue.uppercased()])
+        case .disableAutoMerge(let nodeID):
+            guard !nodeID.isEmpty else { return nil }
+            return Self.graphQL(Self.disableAutoMergeMutation, ["id": nodeID])
         }
+    }
+
+    private static func graphQL(_ query: String, _ variables: [String: String]) -> Request {
+        Request(method: "POST", path: "/graphql", body: ["query": query, "variables": variables])
+    }
+
+    /// The link of the pull request a revert opened, from GitHub's answer; nil for every other answer.
+    static func revertURL(_ object: [String: Any]) -> String? {
+        let data = (object["data"] as? [String: Any])?["revertPullRequest"] as? [String: Any]
+        return (data?["revertPullRequest"] as? [String: Any])?["url"] as? String
     }
 
     /// The tool name in the action log, the same names as the brain's GitHub tools.
@@ -122,6 +226,15 @@ enum PullRequestAction: Equatable, Sendable {
         case .markDraft: return "github_draft_pr"
         case .changeBase: return "github_change_base"
         case .approveWorkflow: return "github_approve_workflow"
+        case .reviewWithComments: return "github_review_pr"
+        case .reply: return "github_comment_pr"
+        case .setThreadResolved: return "github_resolve_thread"
+        case .editComment: return "github_edit_comment"
+        case .rebaseBranch: return "github_update_branch"
+        case .deleteBranch: return "github_delete_branch"
+        case .revert: return "github_revert_pr"
+        case .setMaintainerEdits: return "github_edit_pr"
+        case .enableAutoMerge, .disableAutoMerge: return "github_auto_merge"
         }
     }
 
@@ -142,6 +255,16 @@ enum PullRequestAction: Equatable, Sendable {
         case .markDraft: return "\(target) convert to draft"
         case .changeBase(let branch): return "\(target) base: \(branch)"
         case .approveWorkflow(let runID): return "\(target) approve workflow run \(runID)"
+        case .reviewWithComments(let verdict, _, _, let comments): return "\(target) \(verdict.event) with \(comments.count) line comments"
+        case .reply(let id, let body): return "\(target) reply to \(id) (\(body.count) characters)"
+        case .setThreadResolved(_, let resolved): return "\(target) thread \(resolved ? "resolved" : "reopened")"
+        case .editComment(let id, _, let body): return "\(target) edit comment \(id) (\(body.count) characters)"
+        case .rebaseBranch: return "\(target) rebase branch"
+        case .deleteBranch(let repository, let branch): return "\(repository) delete \(branch)"
+        case .revert: return "\(target) revert"
+        case .setMaintainerEdits(let allowed): return "\(target) maintainer edits \(allowed ? "on" : "off")"
+        case .enableAutoMerge(_, let method): return "\(target) auto-merge \(method.rawValue)"
+        case .disableAutoMerge: return "\(target) auto-merge off"
         }
     }
 

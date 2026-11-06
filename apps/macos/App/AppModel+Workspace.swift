@@ -282,9 +282,11 @@ extension AppModel {
         workspace.openBuiltInTerminal = { [weak self] folder in self?.openTerminal(in: folder) }
         // The git button finds and opens pull requests through the GitHub connector, when it is set up.
         // GitHub, or a GitLab merge request (with its token from Settings).
+        ForgeEnvironment.install()
         workspace.pullRequestSnapshot = { url in
             if GitHubPullRequests.parse(url) != nil { return await GitHubPullRequests.snapshot(url: url) }
-            return await GitLabMergeRequests.snapshot(url: url)
+            if url.absoluteString.contains("/-/merge_requests/") { return await GitLabMergeRequests.snapshot(url: url) }
+            return await PullRequestForges.snapshot(url: url)
         }
         // The tray above the composer reads its pull request with the same accounts, into the one shared status.
         PullRequestStatusStore.shared.fetch = workspace.pullRequestSnapshot

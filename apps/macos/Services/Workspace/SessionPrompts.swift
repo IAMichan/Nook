@@ -58,9 +58,45 @@ enum SessionPrompts {
     }
 
     static func fixComment(_ pull: SessionPullRequestRef, author: String, path: String?, line: Int?, text: String) -> String {
-        let place = path.map { path in " on \(path)" + (line.map { ":\($0)" } ?? "") } ?? ""
-        return "@\(author) commented\(place) on \(describe(pull)). Decide whether it is right and, if so, fix it:\n\n"
+        "@\(author) commented\(place(path, line)) on \(describe(pull)). Decide whether it is right and, if so, fix it:\n\n"
             + untrusted("review_comment", text)
+    }
+
+    /// Only points at a comment, with its pull request: what to do about it is yours to write.
+    static func comment(_ pull: SessionPullRequestRef, author: String, path: String?, line: Int?, text: String) -> String {
+        "@\(author) commented\(place(path, line)) on \(describe(pull)):\n\n" + untrusted("review_comment", text)
+    }
+
+    /// A session started on a pull request on another machine; a push goes to its branch, not the session's own.
+    static func checkedOut(_ pull: SessionPullRequestRef) -> String {
+        "This session is on \(describe(pull)). Say in a few lines what it changes, then wait for what I ask. "
+            + "To update the pull request, push to \(pull.headBranch).\n\n" + title(pull)
+    }
+
+    /// A stop of the review guide, for a question you write yourself.
+    static func guideStop(_ pull: SessionPullRequestRef, title: String, summary: String, files: [String]) -> String {
+        let where_ = files.isEmpty ? "" : "\nFiles: " + files.joined(separator: ", ")
+        return "About this part of \(describe(pull)):\(where_)\n\n" + untrusted("guide_stop", title + "\n" + summary)
+    }
+
+    /// A comment that asks for something, for `fixFindings`.
+    struct Finding: Equatable, Sendable {
+        var author: String
+        var path: String?
+        var line: Int?
+        var text: String
+    }
+
+    /// Everything still open on a pull request at once: the comments that ask for something and the failing checks.
+    static func fixFindings(_ pull: SessionPullRequestRef, comments: [Finding], failing: [String]) -> String {
+        var blocks = comments.map { "@\($0.author)\(place($0.path, $0.line)):\n" + untrusted("review_comment", $0.text) }
+        if !failing.isEmpty { blocks.append(untrusted("failing_checks", failing.map { "- " + $0 }.joined(separator: "\n"))) }
+        return "These findings are open on \(describe(pull)). Decide for each whether it is right and fix the ones that are:\n\n"
+            + blocks.joined(separator: "\n\n")
+    }
+
+    private static func place(_ path: String?, _ line: Int?) -> String {
+        path.map { path in " on \(path)" + (line.map { ":\($0)" } ?? "") } ?? ""
     }
 
     /// A remark on one line of a file you read in the side panel.

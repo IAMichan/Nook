@@ -12,7 +12,8 @@ extension PullRequestDetailView {
         let total = PullRequestConversation.commentCount(conversation)
         let hidden = total - PullRequestConversation.commentCount(
             PullRequestConversation.filtered(conversation, bots: showBotComments, finished: showFinishedComments))
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+        // Lazy for the pinned headings alone: each section's heading stays at the top while its section scrolls under it.
+        return LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.lg, pinnedViews: .sectionHeaders) {
             // A few quiet lines: where it stands, who reviews, which labels. The rest folds below.
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 if let readiness = PullRequestReadiness(detail) {
@@ -33,11 +34,14 @@ extension PullRequestDetailView {
                 if !detail.assignees.isEmpty {
                     metaRow(symbol: "person.crop.circle", title: tr("agents.pr.status.assignees")) { people(detail.assignees) }
                 }
-                if !detail.labels.isEmpty {
+                if !detail.labels.isEmpty || (detail.isOpen && detail.canPush != false && detail.features.labels) {
                     metaRow(symbol: "tag", title: tr("agents.pr.status.labels")) {
                         ChipFlow(spacing: NookTheme.Spacing.xs) {
                             ForEach(detail.labels, id: \.self) { label in
                                 LabelChip(name: label, color: detail.labelColors[label])
+                            }
+                            if detail.isOpen, detail.canPush != false, detail.features.labels {
+                                ToolbarIconButton("plus", tr("agents.pr.action.labels"), height: 20, width: 20) { actions.open(.labels, detail: detail) }
                             }
                         }
                     }
@@ -66,15 +70,28 @@ extension PullRequestDetailView {
                     if detail.body.isEmpty {
                         Text(tr("agents.pr.noDescription")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textTertiary)
                     } else {
-                        PullRequestDescription(text: detail.body, editable: detail.canPush != false) { line, checked in
-                            guard let body = MarkdownTasks.setting(checked, line: line, in: detail.body) else { return }
-                            actions.close()
-                            actions.pending = .edit(title: detail.title, body: body)
+                        PullRequestEditableLine(help: tr("agents.pr.editDescription"), enabled: canEdit) {
+                            actions.open(.edit, detail: detail)
+                        } content: {
+                            PullRequestDescription(text: detail.body, editable: detail.canPush != false) { line, checked in
+                                guard let body = MarkdownTasks.setting(checked, line: line, in: detail.body) else { return }
+                                actions.close()
+                                actions.pending = .edit(title: detail.title, body: body)
+                            }
                         }
                     }
                 }
                 .padding(.horizontal, NookTheme.Spacing.xs)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // Emoji on the description: as on a comment, with an event that stands for it.
+                let description = PullRequestEvent.description(detail)
+                if detail.features.reactions {
+                    HStack(spacing: NookTheme.Spacing.xs) {
+                        if !description.reactions.isEmpty { PullRequestReactionBar(event: description) }
+                        PullRequestReactionPicker(event: description)
+                    }
+                    .padding(.horizontal, NookTheme.Spacing.xs)
+                }
             }
 
             PullRequestSummarySection(title: tr("agents.pr.status.checks"), open: $checksOpen) {
@@ -278,19 +295,22 @@ extension PullRequestDetailView {
                     ProgressView().controlSize(.mini)
                 }
             } else {
-                ForEach(verdicts, id: \.author) { verdict in
-                    reviewer(verdict.author, ring: PullRequestIcon.tint(verdict.approved ? PullRequestIcon.Review.approved : .changesRequested),
-                             help: tr(verdict.approved ? "agents.pr.reviews.approved" : "agents.pr.reviews.changes", "@" + verdict.author))
-                }
-                ForEach(waiting, id: \.self) { login in
-                    if detail.requestedTeams.contains(login) {
-                        team(login)
-                    } else {
-                        reviewer(login, ring: NookTheme.line2, help: tr("agents.pr.reviews.waiting", "@" + login))
+                // Overlapping, so a long list of reviewers keeps to one line.
+                HStack(spacing: -NookTheme.Spacing.xs) {
+                    ForEach(verdicts, id: \.author) { verdict in
+                        reviewer(verdict.author, ring: PullRequestIcon.tint(verdict.approved ? PullRequestIcon.Review.approved : .changesRequested),
+                                 help: tr(verdict.approved ? "agents.pr.reviews.approved" : "agents.pr.reviews.changes", "@" + verdict.author))
+                    }
+                    ForEach(waiting, id: \.self) { login in
+                        if detail.requestedTeams.contains(login) {
+                            team(login)
+                        } else {
+                            reviewer(login, ring: NookTheme.line2, help: tr("agents.pr.reviews.waiting", "@" + login))
+                        }
                     }
                 }
             }
-            if detail.isOpen {
+            if detail.isOpen, detail.features.reviewers {
                 ToolbarIconButton("person.badge.plus", tr("agents.pr.action.requestReviewers")) {
                     actions.open(.reviewers, detail: detail)
                 }
@@ -468,5 +488,14 @@ extension PullRequestDetailView {
             }
         }
         .disabled(!readsHere && check.url == nil)
+    }
+}
+
+extension PullRequestEvent {
+    /// The description as something emoji can be put on.
+    static func description(_ detail: PullRequestDetail) -> PullRequestEvent {
+        var event = PullRequestEvent(id: "description-\(detail.number)", kind: .comment, author: detail.author, body: "", date: nil, url: nil)
+        event.reactions = detail.reactions
+        return event
     }
 }
