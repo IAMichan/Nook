@@ -529,6 +529,8 @@ struct PullRequestSnapshot: Equatable, Sendable {
     var draft = false
     /// Open and in conflict with its base branch.
     var conflicted = false
+    /// How merging stands; nil when this read does not say.
+    var merge: PullRequestMergeFacts? = nil
     /// Whether `conflicted` is the forge's answer: GitHub works it out lazily after a push, and says nothing until then.
     var mergeabilityKnown = true
     /// Whether `checks` is the forge's answer. Empty `checks` then means there are none on this commit (yet, right after a

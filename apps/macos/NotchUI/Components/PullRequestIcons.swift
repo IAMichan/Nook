@@ -86,6 +86,57 @@ enum PullRequestIcon {
     static let blockerTint = NookTheme.amber
 }
 
+extension PullRequestIcon {
+    // MARK: Merge status
+
+    /// A merge status wears the mark of what it stands for: a state's own, a check's, or what holds the merge back.
+    static func symbol(status: PullRequestMergeStatus) -> String {
+        switch status {
+        case .open, .ready: return symbol(PullRequestBadge.Glyph.open)
+        case .draft: return symbol(PullRequestBadge.Glyph.draft)
+        case .conflict: return symbol(PullRequestBadge.Glyph.conflict)
+        case .merged: return symbol(PullRequestBadge.Glyph.merged)
+        case .closed: return symbol(PullRequestBadge.Glyph.closed)
+        case .checking, .checksRunning: return symbol(PullRequestCheck.Outcome.pending)
+        case .checksFailing: return symbol(PullRequestCheck.Outcome.failing)
+        case .blocked: return blocked
+        case .behind: return behind
+        case .autoMerge: return "bolt.fill"
+        }
+    }
+
+    static func tint(status: PullRequestMergeStatus) -> Color {
+        switch status {
+        case .open, .ready, .autoMerge: return NookTheme.mint
+        case .draft, .checking, .checksRunning: return NookTheme.textSecondary
+        case .blocked, .behind: return blockerTint
+        case .conflict, .checksFailing: return NookTheme.coral
+        case .merged: return NookTheme.violet
+        case .closed: return NookTheme.coralSoft
+        }
+    }
+}
+
+extension PullRequestMergeStatus {
+    /// A few words ("Ready to merge", "Behind main", "Checks failing").
+    var word: String {
+        switch self {
+        case .open: return tr("agents.pr.state.open")
+        case .ready: return tr("agents.pr.status.ready")
+        case .checking: return tr("agents.pr.blocker.checking")
+        case .checksRunning: return tr("agents.pr.blocker.checksRunning")
+        case .checksFailing: return tr("agents.pr.blocker.unstable")
+        case .blocked: return tr("agents.pr.blocker.blocked")
+        case .behind(let base): return tr("agents.pr.blocker.behind", base)
+        case .autoMerge: return tr("agents.pr.status.autoMerge")
+        case .conflict: return tr("inbox.pr.state.conflict")
+        case .draft: return tr("agents.pr.state.draft")
+        case .merged: return tr("agents.pr.state.merged")
+        case .closed: return tr("agents.pr.state.closed")
+        }
+    }
+}
+
 extension PullRequestBadge.Glyph {
     /// The mark for a pull request page's state: an open one that conflicts with its base wears the conflict mark.
     init(_ state: PullRequestDetail.State, conflicted: Bool) {
