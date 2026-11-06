@@ -1,5 +1,32 @@
 import SwiftUI
 
+/// The session's menu for its files and terminals, where the Mac offers them.
+struct SessionWorkspaceMenu: ViewModifier {
+    @EnvironmentObject private var client: CompanionClient
+    let sessionID: String
+    @State private var showsFiles = false
+    @State private var showsTerminals = false
+
+    func body(content: Content) -> some View {
+        content
+            .toolbar {
+                if client.can(CompanionFeature.workspace) {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu {
+                            Button { showsFiles = true } label: { Label("Files", systemImage: "folder") }
+                            Button { showsTerminals = true } label: { Label("Terminals", systemImage: "terminal") }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                        .accessibilityLabel("Files and terminals")
+                    }
+                }
+            }
+            .navigationDestination(isPresented: $showsFiles) { SessionFilesView(sessionID: sessionID) }
+            .navigationDestination(isPresented: $showsTerminals) { SessionTerminalsView(sessionID: sessionID) }
+    }
+}
+
 /// A session's folder on the phone, to read. The Mac leaves out secrets by their name.
 struct SessionFilesView: View {
     @EnvironmentObject private var client: CompanionClient
