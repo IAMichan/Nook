@@ -4,7 +4,7 @@ import Foundation
 
 let agentToolsTranslations: [AppLanguage: [String: String]] = [
     .nl: [
-        "ws.question.attach": "Bestand toevoegen",
+        "ws.question.attach": "Bestand of map toevoegen",
         "ws.question.attachHelp": "Voeg bestanden of afbeeldingen toe aan je antwoord (of plak of sleep ze hierheen); de agent krijgt hun paden",
         "ws.question.answeredBy": "Beantwoord door %@",
         "bridge.approval.organize": "%@ wil de sessie “%@” in je lijst aanpassen",
@@ -21,7 +21,7 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "ws.page.gone": "Deze pagina is er niet meer.",
     ],
     .en: [
-        "ws.question.attach": "Attach a file",
+        "ws.question.attach": "Attach a file or folder",
         "ws.question.attachHelp": "Attach files or pictures to your answer (or paste or drop them here); the agent gets their paths",
         "ws.question.answeredBy": "Answered by %@",
         "bridge.approval.organize": "%@ wants to change the session “%@” in your list",
@@ -38,7 +38,7 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "ws.page.gone": "This page is no longer there.",
     ],
     .de: [
-        "ws.question.attach": "Datei anhängen",
+        "ws.question.attach": "Datei oder Ordner anhängen",
         "ws.question.attachHelp": "Dateien oder Bilder an deine Antwort anhängen (oder hier einfügen oder ablegen); der Agent bekommt ihre Pfade",
         "ws.question.answeredBy": "Beantwortet von %@",
         "bridge.approval.organize": "%@ möchte die Sitzung „%@“ in deiner Liste ändern",
@@ -55,7 +55,7 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "ws.page.gone": "Diese Seite gibt es nicht mehr.",
     ],
     .fr: [
-        "ws.question.attach": "Joindre un fichier",
+        "ws.question.attach": "Joindre un fichier ou un dossier",
         "ws.question.attachHelp": "Joignez des fichiers ou des images à votre réponse (ou collez-les ou déposez-les ici) ; l’agent reçoit leurs chemins",
         "ws.question.answeredBy": "Répondu par %@",
         "bridge.approval.organize": "%@ veut modifier la session « %@ » dans votre liste",
@@ -72,7 +72,7 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "ws.page.gone": "Cette page n’existe plus.",
     ],
     .es: [
-        "ws.question.attach": "Adjuntar un archivo",
+        "ws.question.attach": "Adjuntar un archivo o una carpeta",
         "ws.question.attachHelp": "Adjunta archivos o imágenes a tu respuesta (o pégalos o suéltalos aquí); el agente recibe sus rutas",
         "ws.question.answeredBy": "Respondida por %@",
         "bridge.approval.organize": "%@ quiere cambiar la sesión “%@” en tu lista",

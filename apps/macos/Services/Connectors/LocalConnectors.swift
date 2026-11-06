@@ -1111,6 +1111,14 @@ enum FileText {
         return text
     }
 
+    /// A folder as text: where it is and the files in it (not what they say), without build output and hidden folders.
+    static func folder(_ url: URL, limit: Int = 500) throws -> String {
+        let files = FileSearch.list(root: url.path, scanLimit: limit + 1)
+        guard !files.isEmpty else { throw NookError("I found no files in \(url.lastPathComponent).") }
+        let more = files.count > limit ? "\n…" : ""
+        return "Folder \(url.path)\n\n" + files.prefix(limit).joined(separator: "\n") + more
+    }
+
     /// Only files in your own home folder, not in hidden folders or Library (keys, passwords, settings).
     static func isAllowed(_ url: URL) -> Bool {
         let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path

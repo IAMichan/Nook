@@ -236,6 +236,12 @@ struct SessionComposer<Controls: View>: View {
             return
         }
         extras.model.history.stopWalking()
+        if imagesBinding != nil, let found = PastedPaths.attaching(old: old, new: new) {
+            assign(ComposerAttachments.replacingBody(of: newText, with: found.body))
+            extras.model.close()
+            found.urls.forEach(receive)
+            return
+        }
         // A line break after a list item starts the next item (or ends the list after an empty one).
         if let continued = ComposerLists.continued(old: old, new: new) {
             assign(ComposerAttachments.replacingBody(of: newText, with: continued))
@@ -538,6 +544,11 @@ struct SessionComposer<Controls: View>: View {
             text = typed
             imagesBinding.wrappedValue = pictures
         }
+    }
+
+    /// A file or folder named as a path: the same as dropping it.
+    private func receive(_ url: URL) {
+        ImageAttachment.take(url, images: { imagesBinding?.wrappedValue += $0 }, file: dropFile)
     }
 
     /// Another file that is dropped or pasted: handed to the caller, or a tile for a rich composer, or its path in the text.

@@ -149,6 +149,15 @@ struct RunQuestionPanel: View {
         }
     }
 
+    /// A path written into the field (a drop, "Copy as Pathname") attaches like the file itself.
+    private func attachPastedPaths(old: String, new: String) {
+        guard let found = PastedPaths.attaching(old: old, new: new) else { return }
+        own = found.body
+        for url in found.urls {
+            ImageAttachment.take(url, images: { pictures += $0 }, file: { attach(path: $0.path, label: $0.lastPathComponent) })
+        }
+    }
+
     private func receiveDrop(_ providers: [NSItemProvider]) -> Bool {
         ImageAttachment.receive(providers, images: { pictures += $0 }, file: { url in
             attach(path: url.standardizedFileURL.path, label: url.lastPathComponent)
@@ -168,6 +177,7 @@ struct RunQuestionPanel: View {
                 .focused($ownFocused)
                 .onSubmit { if !mentionModel.isOpen { submitOwn(item) } }
                 .mentions(mentionModel, text: $own, config: .mentions())
+                .onChange(of: own) { old, new in attachPastedPaths(old: old, new: new) }
 
             ToolbarIconButton("paperclip", tr("ws.question.attach")) { attachFile() }
                 .help(tr("ws.question.attachHelp"))

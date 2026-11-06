@@ -165,6 +165,31 @@ final class ComposerCoreTests: XCTestCase {
         XCTAssertEqual(ComposerAttachments.split(only).body, "")
     }
 
+    // MARK: Paths in the box
+
+    func testAPathInTheBoxBecomesAnAttachment() {
+        let known: Set<String> = ["/Users/me/Downloads/site", "/Users/me/My Docs/a.pdf", "/tmp/b.txt"]
+        let exists = { known.contains($0) }
+        let attached = { (old: String, new: String) in PastedPaths.attaching(old: old, new: new, exists: exists) }
+
+        let pasted = attached("", "/Users/me/Downloads/site")
+        XCTAssertEqual(pasted?.body, "")
+        XCTAssertEqual(pasted?.urls.map(\.path), ["/Users/me/Downloads/site"])
+        XCTAssertEqual(attached("Look at ", "Look at /Users/me/My Docs/a.pdf ")?.body, "Look at ", "a space in the path, words kept")
+        XCTAssertEqual(attached("", "'/Users/me/My Docs/a.pdf'")?.urls.count, 1, "quoted")
+        XCTAssertEqual(attached("", "file:///Users/me/My%20Docs/a.pdf")?.urls.first?.path, "/Users/me/My Docs/a.pdf")
+        XCTAssertEqual(attached("", "/Users/me/My\\ Docs/a.pdf /tmp/b.txt")?.urls.map(\.lastPathComponent), ["a.pdf", "b.txt"])
+        XCTAssertEqual(attached("", "/tmp/b.txt\n/Users/me/My Docs/a.pdf\n")?.urls.count, 2, "one per line")
+
+        XCTAssertNil(attached("", "/Users/me/nothing"), "a path that does not exist stays text")
+        XCTAssertNil(attached("", "/tmp/b.txt /Users/me/nothing"), "all of it must be paths")
+        XCTAssertNil(attached("see  please", "see /tmp/b.txt please"), "in the middle of a sentence it stays")
+        XCTAssertNil(attached("src", "src/tmp/b.txt"), "glued to a word it stays")
+        XCTAssertNil(attached("/tmp/b.tx", "/tmp/b.txt"), "typing is not a paste")
+        XCTAssertNil(PastedPaths.attaching(old: "", new: "/", exists: { _ in true }), "a slash starts a command")
+        XCTAssertNil(attached("", "/review this"), "a command")
+    }
+
     // MARK: Files in an answer
 
     func testAnAnswerCarriesItsFilesAsPaths() {
