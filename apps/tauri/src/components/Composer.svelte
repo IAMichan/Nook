@@ -100,8 +100,8 @@
   class:compact
   class:dragging
   role="group"
-  ondragover={(e) => { e.preventDefault(); dragging = true; }}
-  ondragleave={() => (dragging = false)}
+  ondragover={(e) => { e.preventDefault(); dragging = e.dataTransfer?.types.includes("Files") ?? false; }}
+  ondragleave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) dragging = false; }}
   ondrop={(e) => {
     e.preventDefault();
     dragging = false;
@@ -109,7 +109,7 @@
   }}
 >
   {#if listening.active}<Listening onclose={() => listening.stop()} />{/if}
-  {#if draft.images.length || draft.attachment || draft.reading}
+  {#if draft.images.length || draft.attachment || draft.reading || dragging}
     <div class="thumbs">
       {#each draft.images as img, i (img.url)}
         <button class="thumb" title={tr("Afbeelding weghalen", "Remove image")} aria-label={tr("Afbeelding weghalen", "Remove image")} onclick={() => (draft.images = draft.images.filter((_, j) => j !== i))}>
@@ -122,6 +122,7 @@
           📄 {draft.attachment.name} <span class="faint">· {draft.attachment.text.length.toLocaleString(english() ? "en-GB" : "nl-NL")} {tr("tekens", "characters")} ×</span>
         </button>
       {/if}
+      {#if dragging}<span class="slot" aria-hidden="true">+</span>{/if}
     </div>
   {/if}
   {#if draft.fileError}<p class="err">{draft.fileError}</p>{/if}
@@ -198,6 +199,7 @@
   .thumbs { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
   .thumb { padding: 0; width: 46px; height: 46px; overflow: hidden; border-radius: 8px; }
   .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .slot { display: grid; place-items: center; width: 46px; height: 46px; box-sizing: border-box; border: 1.5px dashed var(--iris); border-radius: 8px; color: var(--iris); background: color-mix(in srgb, var(--iris) 12%, transparent); font-size: 18px; pointer-events: none; }
   .file { max-width: 100%; overflow-wrap: anywhere; text-align: left; font-size: 12px; padding: 4px 10px; border-radius: 8px; }
   .err { color: var(--coral); font-size: 12px; margin: 0 0 6px; }
   textarea:focus-visible { box-shadow: none; }

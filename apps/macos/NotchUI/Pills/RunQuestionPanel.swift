@@ -26,7 +26,7 @@ struct RunQuestionPanel: View {
     @State private var pictures: [ImageAttachment] = []
     @State private var attached = ""
     @State private var encodingPictures = 0
-    @State private var dropTargeted = false
+    @State private var drop = ComposerDrop()
     @State private var pasteMonitor = PasteMonitor()
     /// `@` in your own answer: people from your chats by name.
     @StateObject private var mentionModel = ComposerModel()
@@ -84,12 +84,18 @@ struct RunQuestionPanel: View {
 
                 if item.allowsOther {
                     MentionSuggestions(model: mentionModel, text: $own, config: .mentions(), focus: $ownFocused)
-                    if hasAttachments {
-                        ImageAttachmentStrip(images: pictures, files: attachedFiles, fileRoot: folder,
-                                             remove: { picture in pictures.removeAll { $0.id == picture.id } },
-                                             removeFile: { attached = ComposerAttachments.removing(at: $0, from: attached) })
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                        if hasAttachments || drop.open {
+                            ImageAttachmentStrip(images: pictures, files: attachedFiles, fileRoot: folder,
+                                                 dropSlot: drop.hovering ? NookTheme.amber : nil,
+                                                 remove: { picture in pictures.removeAll { $0.id == picture.id } },
+                                                 removeFile: { attached = ComposerAttachments.removing(at: $0, from: attached) })
+                                .transition(.opacity)
+                        }
+                        ownAnswerField(item)
                     }
-                    ownAnswerField(item)
+                    .animation(NookTheme.reveal, value: drop)
+                    .composerDrop(of: [UTType.fileURL, UTType.image], $drop) { receiveDrop($0) }
                 }
 
                 if item.multiSelect, !picks.isEmpty {
@@ -209,10 +215,9 @@ struct RunQuestionPanel: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .stroke(ownFocused || dropTargeted ? NookTheme.amber.opacity(0.55) : Color.white.opacity(0.04),
-                        style: StrokeStyle(lineWidth: 1, dash: dropTargeted ? [5, 4] : []))
+                .stroke(ownFocused || drop.hovering ? NookTheme.amber.opacity(0.55) : Color.white.opacity(0.04),
+                        style: StrokeStyle(lineWidth: 1, dash: drop.hovering ? [5, 4] : []))
         )
-        .onDrop(of: [UTType.fileURL, UTType.image], isTargeted: $dropTargeted) { receiveDrop($0) }
         .animation(NookTheme.hover, value: ownFocused)
         .animation(NookTheme.reveal, value: canSendOwn)
     }
