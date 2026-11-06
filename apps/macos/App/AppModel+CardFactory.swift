@@ -23,7 +23,12 @@ extension AppModel {
             return
         }
         do {
-            let text = try FileText.read(url)
+            let isFolder = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            guard !isFolder || FileText.isAllowed(url) else {
+                viewModel.show(.card(errorCard(tr("chat.attach.notAllowed"))))
+                return
+            }
+            let text = isFolder ? try FileText.folder(url) : try FileText.read(url)
             attachment = (url.lastPathComponent, text, Date())
             var message = ChatMessage(role: .nook, text: tr("app.file.read", url.lastPathComponent))
             message.sources = ["Bestand"]
