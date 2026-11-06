@@ -1742,9 +1742,15 @@ enum ChatDraft {
     /// enough); a capable brain decides itself for anything else, a small one only when the request names something
     /// outside the chat, which keeps a plain "say yes" fast on this Mac.
     static func wantsLookup(_ instruction: String, smallBrain: Bool) -> Bool {
-        let ask = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !ask.isEmpty, !ask.hasPrefix(refinementOpening) else { return false }
-        guard smallBrain else { return true }
+        var ask = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ask.isEmpty else { return false }
+        // A change to a draft ("shorter") needs nothing looked up, unless the change itself points elsewhere ("add what
+        // Gijs said about the price").
+        let refines = ask.hasPrefix(refinementOpening)
+        if refines, let change = ask.range(of: refinementChange, options: .backwards) {
+            ask = String(ask[change.upperBound...])
+        }
+        guard smallBrain || refines else { return true }
         let elsewhere = #"\bmail|e-mail|agenda|calendar|kalender|calendrier|calendario|notitie|note|notiz|bestand|file|datei|fichier|archivo|zei\b|zegt|schreef|said|wrote|sagte|schrieb|a dit|dijo|escribi|samenvat|vat .* samen|summar|zusammenfass|résum|resum|kijk|zoek|look|find|check|such|cherche|busca|whatsapp|telegram|slack|teams|signal|messages|imessage|afspraak|meeting|termin|rendez|reuni"#
         return ask.range(of: elsewhere, options: [.regularExpression, .caseInsensitive]) != nil
     }
@@ -1788,8 +1794,9 @@ enum ChatDraft {
         }
     }
 
-    /// What `refinement` starts with: a rewrite of a draft, which needs nothing looked up.
+    /// What `refinement` starts with, and what comes before the change it asks for.
     static let refinementOpening = "Rewrite this message, which the user is about to send."
+    static let refinementChange = "The change: "
 
     /// The brain's answer as a message: without quotes around it or a "Message:" in front; nil when nothing is left.
     static func clean(_ answer: String) -> String? {
@@ -1844,7 +1851,7 @@ extension ChatDraft {
         <<<
         \(draft.trimmingCharacters(in: .whitespacesAndNewlines))
         >>>
-        The change: \(ask.isEmpty ? Tweak.again.request : ask)
+        \(refinementChange)\(ask.isEmpty ? Tweak.again.request : ask)
         """
     }
 }
