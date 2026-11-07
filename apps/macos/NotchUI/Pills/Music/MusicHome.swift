@@ -59,7 +59,8 @@ struct MusicHomeContent: View {
     /// the tabs, it stands here. Under it what you listened to, one click from the statistics.
     @ViewBuilder
     private var header: some View {
-        let hasWeek = week?.isEmpty == false
+        // While the week is summed up, the line keeps its room when there are plays, so nothing below moves once it shows.
+        let hasWeek = week.map { !$0.isEmpty } ?? !service.history.plays.isEmpty
         if sidebar == nil || hasWeek {
             Button { onOpen(.stats) } label: {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -68,8 +69,8 @@ struct MusicHomeContent: View {
                             .font(NookTheme.TextStyle.display)
                             .foregroundStyle(NookTheme.paper)
                     }
-                    if let week, !week.isEmpty {
-                        Text(tr("music.home.thisWeek", musicListeningTime(week.seconds)))
+                    if hasWeek {
+                        Text(week.map { tr("music.home.thisWeek", musicListeningTime($0.seconds)) } ?? " ")
                             .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textSecondary)
                     }
@@ -177,7 +178,8 @@ private struct MusicCoverRow: View {
                 ForEach(items) { item in
                     MusicCoverCard(item: item, service: service)
                         .containerRelativeFrame(.horizontal) { width, _ in
-                            let count = max(2, ((width + Self.gap) / (MusicLayout.cover + Self.gap)).rounded(.down))
+                            // One cover in a very narrow pane, so it never gets smaller than intended.
+                            let count = max(1, ((width + Self.gap) / (MusicLayout.cover + Self.gap)).rounded(.down))
                             return (width - Self.gap * (count - 1)) / count
                         }
                 }
