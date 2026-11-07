@@ -63,7 +63,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         let names: [String]
         switch self {
         case .notifications: names = ["how", "apps"]
-        case .sessions: names = ["new", "openIn", "behavior", "tidy"]
+        case .sessions: names = ["new", "openIn", "behavior", "tidy", "tokens"]
         case .privacy: names = ["level", "access", "local", "log"]
         default: names = []
         }

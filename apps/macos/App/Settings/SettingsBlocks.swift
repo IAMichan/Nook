@@ -444,6 +444,7 @@ struct WorkspaceSettingsSection: View {
             openIn
             commitStyle
         case .sessions(2): behavior
+        case .sessions(4): TokenSettingsSection()
         case .sessions: tidying
         case .automation:
             // What runs by itself, then what agents may use; the raw traffic log is folded away last.

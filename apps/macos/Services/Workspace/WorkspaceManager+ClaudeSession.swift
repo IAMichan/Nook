@@ -176,11 +176,11 @@ extension WorkspaceManager {
     func probeClaudeFlags(_ executable: String) {
         claudeThinkingDisplay[executable] = false
         Task { [weak self] in
-            let known = await Task.detached(priority: .utility) {
+            let help = await Task.detached(priority: .utility) {
                 let environment = AgentCommand.environment(base: ProcessInfo.processInfo.environment, executable: executable, extra: [:])
-                return (try? ProcessRunner.run(executable, ["--help"], environment: environment, timeout: 15))?.stdout.contains("--thinking-display") == true
+                return (try? ProcessRunner.run(executable, ["--help"], environment: environment, timeout: 15))?.stdout ?? ""
             }.value
-            self?.claudeThinkingDisplay[executable] = known
+            self?.claudeThinkingDisplay[executable] = help.contains("--thinking-display")
         }
     }
 }

@@ -676,32 +676,32 @@ struct BridgeLaunch: Equatable, Sendable {
     /// The note this agent gets.
     var note: String { remote == nil ? Self.instructions : RemoteBridge.instructions }
 
-    /// The note for the agent, after any instructions of your own.
+    /// What the server says about itself when an agent connects. A session Nook started already has the note in its own
+    /// instructions (`note`, passed at launch to every agent), so it gets nothing here: the agent would otherwise carry
+    /// the same text twice in every request. An agent you connected yourself (`~/.nook/nook-mcp`) gets the note here, and
+    /// so does Codex: `codex exec` gives the note only with the first prompt of a conversation Nook started, so a
+    /// conversation Nook took over from Codex would otherwise never get it.
+    static func serverInstructions(startedByNook: Bool, remote: Bool, agent: String = "") -> String? {
+        let note = remote ? RemoteBridge.instructions : instructions
+        guard startedByNook else { return note }
+        return agent == RunProvider.codex.rawValue ? note : nil
+    }
+
+    /// The note for the agent, after any instructions of your own. It goes with every request of the session, so it says
+    /// which tool is for what and the few rules the tools cannot say themselves; each tool's description has the rest.
+    /// `BridgeBudgetTests` keeps it (and the tool list) from growing back.
     static let instructions = """
-    You are running inside Nook, a Mac app the user is watching while you work. Nook's workspace is available through the \
-    `nook` MCP tools: start long-running processes such as dev servers or watchers with terminal_run (the user sees them in \
-    Nook's terminal; check their output with terminal_read), open local or https pages in Nook's browser with browser_open \
-    and verify them with browser_read or browser_screenshot, and when the work is committed and ready, propose a pull request \
-    with pull_request_create (the user approves it in Nook). Always open pull requests that way, never with `gh pr create \
-    --web` or by opening GitHub's page in the user's browser; when `gh` reports a rate limit, call pull_request_create, \
-    which uses GitHub's API instead. Short commands whose output you need right away can still run \
-    in your own shell. For work that can run on its own (research, a review, a side task) you can hand it to another agent \
-    session with delegate_task: it sees only the brief you write, never has more rights than you, and its result comes back \
-    through task_status (or Nook tells you when it has finished). For an iOS app, device_open shows an iOS Simulator in \
-    Nook (the user watches it live) and gives you the agent-device command to drive it; device_screenshot shows you the screen. \
-    For an Android app the same tools take the android ids from device_list, and you drive the device with adb. \
-    In Nook's browser, browser_snapshot lists the elements with refs for browser_click and browser_type. After opening a pull \
-    request, watch_pull_request tells you when checks fail or pass, a merge conflict appears, reviews arrive or it is merged. schedule_task proposes \
-    recurring work (the user approves it), and request_secret asks the user for an API key by name instead of you asking \
-    them to paste it into the chat. Nook's own apps and connectors are yours too: nook_tools lists them and nook_use runs \
-    one, so you can send a message in the user's chat apps, search and play music, or add an event (actions wait for the \
-    user's approval in Nook). nook_chat_list, nook_chat_read and nook_chat_send let you read and follow up a conversation \
-    the user had with Nook Chat, Nook's assistant. When a task needs the user's own apps on screen, take_over_screen asks \
-    them for their screen; with their yes you read and use apps through nook_use (read_ui, look_ui, control_ui). The \
-    user's other sessions are within reach too: session_search finds earlier work in them, session_questions lists the \
-    questions they wait on (and answers one of a task you delegated), and session_organize pins, settles, snoozes or \
-    archives one. To show the user a chart, a diagram or a mock-up right in your session, call render_page with a \
-    self-contained HTML page.
+    You are running inside Nook, a Mac app the user watches while you work. Its `nook` MCP tools: terminal_run and \
+    terminal_read for dev servers and watchers (the user sees them; short commands still run in your own shell); \
+    browser_open, browser_snapshot (refs for browser_click and browser_type), browser_read and browser_screenshot for \
+    Nook's browser; pull_request_create once the work is committed (the user approves it; never `gh pr create --web` or \
+    GitHub in the user's browser, and use it when `gh` is rate limited), then watch_pull_request; delegate_task to hand \
+    side work to another agent (it sees only your brief; results via task_status); device_open, device_list and \
+    device_screenshot for an iOS Simulator or Android device (drive Android with adb); schedule_task for recurring work; \
+    request_secret for an API key, never ask for one in chat; nook_tools and nook_use for Nook's apps and connectors \
+    (actions wait for approval); nook_chat_list, nook_chat_read and nook_chat_send for Nook Chat; take_over_screen for \
+    the user's own apps, then nook_use (read_ui, look_ui, control_ui); session_search, session_questions and \
+    session_organize for the user's other sessions; render_page to show a chart, diagram or mock-up as HTML.
     """
 
     /// Claude Code: the server as `--mcp-config` (next to the user's own servers) and its tools allowed up front, because
@@ -787,7 +787,7 @@ enum BridgeRPC {
     }
 
     /// The answer to one message, or nil for a notification (no id), which gets none.
-    static func response(to message: [String: Any], instructions: String = BridgeLaunch.instructions,
+    static func response(to message: [String: Any], instructions: String? = BridgeLaunch.instructions,
                          call: (BridgeTool, [String: Any]) async -> ToolResult) async -> [String: Any]? {
         guard let id = message["id"], !(id is NSNull) else { return nil }
         let method = (message["method"] as? String) ?? ""
@@ -799,12 +799,13 @@ enum BridgeRPC {
         switch method {
         case "initialize":
             let requested = (params["protocolVersion"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? protocolVersion
-            return result([
+            var answer: [String: Any] = [
                 "protocolVersion": requested,
                 "capabilities": ["tools": ["listChanged": false]],
-                "serverInfo": ["name": BridgeTool.serverName, "title": "Nook workspace", "version": "1"],
-                "instructions": instructions
-            ])
+                "serverInfo": ["name": BridgeTool.serverName, "title": "Nook workspace", "version": "1"]
+            ]
+            if let instructions, !instructions.isEmpty { answer["instructions"] = instructions }
+            return result(answer)
         case "ping":
             return result([:])
         case "tools/list":
