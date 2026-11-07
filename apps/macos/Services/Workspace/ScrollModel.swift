@@ -107,9 +107,7 @@ struct TurnPin: Equatable, Sendable {
     }
 }
 
-/// Where a scroll view stands, for a rail that takes the place of its scroll bar: the part in view as a thumb, and the
-/// offset a point on the rail scrolls to. Places on the rail run from 0 (the top of the content) to 1 (its end), as the
-/// marks of your messages do (`PromptMark.position`), so dragging over a mark brings that message to the top.
+/// Where a scroll view stands: its offset, the height of its content and of its container, and the room around it.
 struct ScrollFrame: Equatable, Sendable {
     var offset = 0.0
     var content = 0.0
@@ -120,37 +118,6 @@ struct ScrollFrame: Equatable, Sendable {
 
     var minOffset: Double { -insetTop }
     var maxOffset: Double { max(minOffset, content + insetBottom - container) }
-
-    /// The part in view, from 0 to 1: where it starts and how much of the content it covers.
-    var thumb: (start: Double, length: Double) {
-        guard content > 0 else { return (0, 1) }
-        let length = min(1, max(0, container / content))
-        let start = min(1 - length, max(0, (offset - minOffset) / content))
-        return (start, length)
-    }
-
-    /// The offset that puts the place `fraction` along the content at the top, as far as the content can scroll.
-    func offset(at fraction: Double) -> Double {
-        min(maxOffset, max(minOffset, minOffset + min(1, max(0, fraction)) * content))
-    }
-
-    /// `offset(at:)` for a drag on the rail, over the content's height as it was when the drag began (`start`). The
-    /// conversation lays out only what is on screen, so its height changes as the drag passes rows it had not measured
-    /// yet; mapping the rail onto that moving height made the conversation jump back and forth under the pointer. The
-    /// end of the rail is still the end, also when the content grew during the drag.
-    func offset(at fraction: Double, over start: ScrollFrame) -> Double {
-        let target = start.offset(at: fraction)
-        if target >= start.maxOffset { return maxOffset }
-        return min(maxOffset, max(minOffset, target))
-    }
-
-    /// This frame measured over `start`'s content height: the thumb a drag that began at `start` shows, so it stays
-    /// under the pointer.
-    func measured(over start: ScrollFrame) -> ScrollFrame {
-        var frame = self
-        frame.content = start.content
-        return frame
-    }
 }
 
 /// Where a session's timeline was left, per session id; bounded so it cannot grow forever.

@@ -38,7 +38,7 @@ struct TranscriptConversation: View {
     @State private var overflows = false
     /// Read only by the handlers: as state, each start and stop of a scroll drew every row of the conversation again.
     @State private var scrollPhase = Unobserved(ScrollPhase.idle)
-    /// Where the conversation is scrolled, for the rail, and the position the rail scrolls it to when you drag it.
+    /// Where the conversation is scrolled, and the position that keeps a message you sent in place.
     @State private var viewport = TimelineViewport()
     @State private var position = ScrollPosition()
     /// Where you left this conversation last time (TimelineVisitStore), read as it opens.
@@ -148,14 +148,11 @@ struct TranscriptConversation: View {
                 .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
                     overflows = now
                 }
-                .overlay(alignment: .trailing) {
+                .overlay(alignment: .leading) {
                     if overflows, !derived.marks.isEmpty {
-                        TranscriptPromptRail(marks: derived.marks, viewport: viewport) { mark in
+                        TranscriptPromptRail(marks: derived.marks) { mark in
                             scroll.userScrolled()
                             withAnimation(NookTheme.scroll) { proxy.scrollTo(mark.row, anchor: .top) }
-                        } onScrub: { offset in
-                            if !scroll.isFreeAfterUserScroll { scroll.userScrolled() }
-                            position.scrollTo(y: offset)
                         }
                         .padding(.vertical, NookTheme.Spacing.md)
                         .transition(.opacity)
@@ -566,127 +563,62 @@ private final class TranscriptDerived {
     }
 }
 
-/// Where the conversation is scrolled, for the rail beside it. Kept out of the timeline's own state: it changes on
-/// every scroll, and only the rail draws from it.
+/// Where the conversation is scrolled, for the handlers that keep a sent message in place. Kept out of the timeline's
+/// own state: it changes on every scroll, and no view draws from it.
 @Observable
 @MainActor
 final class TimelineViewport {
     var frame = ScrollFrame()
 }
 
-/// Your messages as short marks along the edge of the conversation, where a scroll bar would be: each sits about where
-/// the message is, a click scrolls to it, and hovering shows the prompt you wrote. The rail is the scroll bar too: the
-/// part in view shows as a thumb, and pressing or dragging anywhere on it scrolls the whole conversation along. The rail
-/// itself only shows while the pointer is over it or you drag it.
+/// Your messages as a ladder of short marks along the leading edge of the conversation, always in sight: one per
+/// message, in order and the same distance apart, however far apart the messages are. A click scrolls to the
+/// message and hovering shows the prompt you wrote. There is no scroll bar: the conversation scrolls on its own. When
+/// there are more messages than marks fit, the newest ones show.
 struct TranscriptPromptRail: View {
     let marks: [PromptMark]
-    let viewport: TimelineViewport
     let onSelect: (PromptMark) -> Void
-    /// A place on the rail was pressed or dragged to: the offset to scroll the conversation to.
-    let onScrub: (Double) -> Void
     @State private var hovered: String?
-    /// The pointer is over the rail: only then it shows, with a background so the marks stand out over the text.
-    @State private var overRail = false
-    @GestureState private var dragging = false
-    /// Where the conversation stood when the drag began: the drag maps onto its height then
-    /// (`ScrollFrame.offset(at:over:)`), so the conversation follows the pointer smoothly.
-    @State private var dragStart: ScrollFrame?
 
-    private static let width: CGFloat = 28
-    /// The height each mark can be clicked over.
-    private static let target: CGFloat = 16
-
-    private var shown: Bool { overRail || dragging }
+    private static let width: CGFloat = 20
+    /// The height each mark takes, and so the distance between two marks.
+    private static let pitch: CGFloat = NookTheme.Spacing.md
 
     var body: some View {
         GeometryReader { geometry in
-            let travel = max(0, geometry.size.height - Self.target)
-            ZStack(alignment: .topLeading) {
-                // A fully transparent view is not hit-tested, so this layer keeps the hidden rail hoverable.
-                Color.clear.contentShape(Rectangle())
-                Group {
-                    // Its own view, and only while the rail shows: it reads where the conversation is scrolled, which
-                    // changes on every frame of a scroll, and that should not redraw the marks or the rest of the rail.
-                    if shown {
-                        RailThumb(viewport: viewport, dragStart: dragStart, dragging: dragging, travel: travel,
-                                  target: Self.target, width: Self.width)
-                    }
-                    marksLayer(travel: travel)
-                }
-                .opacity(shown ? 1 : 0)
+            let fit = max(1, Int(geometry.size.height / Self.pitch))
+            VStack(spacing: 0) {
+                ForEach(marks.suffix(fit)) { mark in markButton(mark) }
             }
             .frame(width: Self.width, height: geometry.size.height)
-            // Alongside the marks' own clicks, so a drag that starts on a mark scrolls as well.
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 0)
-                    .updating($dragging) { _, state, _ in state = true }
-                    .onChanged { drag in
-                        guard travel > 0 else { return }
-                        let start = dragStart ?? viewport.frame
-                        if dragStart == nil { dragStart = start }
-                        onScrub(viewport.frame.offset(at: Double((drag.location.y - Self.target / 2) / travel), over: start))
-                    }
-            )
         }
         .frame(width: Self.width)
-        // Also when the drag is cancelled, which calls no `onEnded`.
-        .onChange(of: dragging) { _, now in
-            if !now { dragStart = nil }
-        }
-        .background(
-            RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(DropdownStyle.panel)
-                .opacity(shown ? 0.92 : 0)
-        )
-        .onHover { overRail = $0 }
         .animation(NookTheme.hover, value: hovered)
-        .animation(NookTheme.hover, value: shown)
     }
 
-    private func marksLayer(travel: CGFloat) -> some View {
-        ForEach(marks) { mark in
-            let lit = hovered == mark.id
-            Button { onSelect(mark) } label: {
-                Capsule()
-                    .fill(lit ? NookTheme.paper : NookTheme.textTertiary)
-                    .frame(width: lit ? 12 : 8, height: 2)
-                    .frame(width: Self.width, height: Self.target)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .hoverCard { PromptCard(text: Self.prompt(mark.text)) }
-            .onHover { inside in
-                if inside { hovered = mark.id } else if hovered == mark.id { hovered = nil }
-            }
-            .position(x: Self.width / 2, y: Self.target / 2 + mark.position * travel)
+    private func markButton(_ mark: PromptMark) -> some View {
+        let lit = hovered == mark.id
+        return Button { onSelect(mark) } label: {
+            Capsule()
+                .fill(lit ? NookTheme.paper : NookTheme.textTertiary)
+                .frame(width: lit ? 12 : 8, height: 1.5)
+                .padding(.leading, NookTheme.Spacing.xs)
+                .frame(width: Self.width, height: Self.pitch, alignment: .leading)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .frame(width: Self.width, height: Self.pitch)
+        .hoverCard { PromptCard(text: Self.prompt(mark.text)) }
+        .onHover { inside in
+            if inside { hovered = mark.id } else if hovered == mark.id { hovered = nil }
+        }
+        .accessibilityLabel(Self.prompt(mark.text))
     }
 
     /// What you wrote, without the pictures sent along, cut when it is too long for a card.
     private static func prompt(_ text: String) -> String {
         let words = ImageAttachment.splittingPaths(from: text).text.trimmingCharacters(in: .whitespacesAndNewlines)
         return words.count > 600 ? String(words.prefix(599)) + "…" : words
-    }
-}
-
-/// The part of the conversation in view, behind the rail's marks.
-private struct RailThumb: View {
-    let viewport: TimelineViewport
-    let dragStart: ScrollFrame?
-    let dragging: Bool
-    let travel: CGFloat
-    let target: CGFloat
-    let width: CGFloat
-
-    var body: some View {
-        let part = (dragStart.map { viewport.frame.measured(over: $0) } ?? viewport.frame).thumb
-        let height = max(target, CGFloat(part.length) * travel)
-        let top = min(target / 2 + CGFloat(part.start) * travel, target / 2 + travel - height)
-        RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-            .fill(NookTheme.textTertiary.opacity(dragging ? 0.32 : 0.18))
-            .frame(width: width - NookTheme.Spacing.sm * 2, height: height)
-            .offset(x: NookTheme.Spacing.sm, y: max(0, top))
-            .allowsHitTesting(false)
     }
 }
 
