@@ -33,7 +33,7 @@ struct MusicStatsView: View {
                 }
                 playerSection
             }
-            .padding(.horizontal, NookTheme.Spacing.xs)
+            .padding(.horizontal, MusicLayout.edge)
             .padding(.bottom, NookTheme.Spacing.xl)
         }
         // Off the main thread, and only when the period or the plays changed.
@@ -58,7 +58,8 @@ struct MusicStatsView: View {
 
     @ViewBuilder
     private func content(_ stats: MusicStats) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: NookTheme.Spacing.md)], spacing: NookTheme.Spacing.md) {
+        // Four across on a page, two in a narrow tab: never a row with a hole in it.
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 196), spacing: NookTheme.Spacing.md)], spacing: NookTheme.Spacing.md) {
             NookStatTile(title: tr("music.stats.time"), value: musicListeningTime(stats.seconds), detail: changeText(stats), symbol: "headphones")
             NookStatTile(title: tr("music.stats.plays"), value: stats.plays.formatted(),
                          detail: tr("music.stats.uniqueTracks", stats.uniqueTracks), symbol: "play.circle")
@@ -73,9 +74,15 @@ struct MusicStatsView: View {
                       detail: Self.fullLabel(bucket.start, byDay: stats.period.byDay), seconds: bucket.seconds)
             })
         }
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: NookTheme.Spacing.md, alignment: .top)], spacing: NookTheme.Spacing.md) {
+        MusicStatsPairs {
             MusicStatsCard(title: tr("music.stats.topArtists")) {
-                MusicArtistRanks(ranks: Array(stats.topArtists.prefix(5)))
+                VStack(spacing: 0) {
+                    let most = max(1, stats.topArtists.first?.seconds ?? 1)
+                    ForEach(Array(stats.topArtists.prefix(5).enumerated()), id: \.element.id) { index, rank in
+                        MusicArtistRow(number: index + 1, name: rank.name, artworkURL: rank.artworkURL, note: musicListeningTime(rank.seconds),
+                                       share: Double(rank.seconds) / Double(most))
+                    }
+                }
             }
             MusicStatsCard(title: tr("music.stats.topTracks")) {
                 VStack(spacing: 0) {
@@ -84,13 +91,15 @@ struct MusicStatsView: View {
                                       service: service, note: tr("music.stats.timesPlayed", rank.plays)) {
                             service.play(rank.track, fromQueue: false)
                         }
+                        .musicRowBleed()
                     }
                 }
             }
+        } second: {
             MusicStatsCard(title: tr("music.stats.whenTitle")) {
                 MusicBars(bars: stats.hours.indices.map { hour in
                     .init(id: String(format: "%02d", hour), detail: String(format: "%02d:00", hour), seconds: stats.hours[hour])
-                }, height: 110, labelEvery: 6)
+                }, height: 150, labelEvery: 6)
             }
             MusicStatsCard(title: tr("music.stats.factsTitle")) {
                 facts(stats)
@@ -135,8 +144,8 @@ struct MusicStatsView: View {
         HStack(spacing: NookTheme.Spacing.lg) {
             Image(systemName: symbol)
                 .font(NookTheme.font(13, .semibold))
-                .foregroundStyle(NookTheme.music)
-                .frame(width: 20)
+                .foregroundStyle(NookTheme.textTertiary)
+                .frame(width: 22)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(title).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper).lineLimit(1)
@@ -154,25 +163,13 @@ struct MusicStatsView: View {
         case .done where !top.tracks.isEmpty || !top.artists.isEmpty:
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 MusicGroupTitle(title: top.app == "Spotify" ? tr("music.stats.fromSpotify") : tr("music.stats.fromMusic"))
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: NookTheme.Spacing.md, alignment: .top)], spacing: NookTheme.Spacing.md) {
+                    .padding(.top, NookTheme.Spacing.lg)
+                MusicStatsPairs {
                     MusicStatsCard(title: tr("music.stats.topArtists")) {
-                        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                        VStack(spacing: 0) {
                             ForEach(Array(top.artists.prefix(5).enumerated()), id: \.element.id) { index, artist in
-                                HStack(spacing: NookTheme.Spacing.md) {
-                                    Text("\(index + 1)")
-                                        .font(NookTheme.font(11, .medium).monospacedDigit())
-                                        .foregroundStyle(NookTheme.textTertiary)
-                                        .frame(width: 18)
-                                    MusicArtwork(url: artist.artworkURL, seed: artist.name, symbol: "music.mic", cornerRadius: NookTheme.Radius.chip)
-                                        .frame(width: 30, height: 30)
-                                    Text(artist.name).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper).lineLimit(1)
-                                    Spacer(minLength: 0)
-                                    if let plays = artist.plays {
-                                        Text(tr("music.stats.timesPlayed", plays))
-                                            .font(NookTheme.TextStyle.detail)
-                                            .foregroundStyle(NookTheme.textTertiary)
-                                    }
-                                }
+                                MusicArtistRow(number: index + 1, name: artist.name, artworkURL: artist.artworkURL,
+                                               note: artist.plays.map { tr("music.stats.timesPlayed", $0) })
                             }
                         }
                     }
@@ -183,6 +180,7 @@ struct MusicStatsView: View {
                                               note: top.plays[track.id].map { tr("music.stats.timesPlayed", $0) }) {
                                     service.play(track, fromQueue: false, app: top.app)
                                 }
+                                .musicRowBleed()
                             }
                         }
                     }
@@ -231,12 +229,84 @@ private struct MusicStatsCard<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            Text(title).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.textSecondary)
+            Text(title)
+                .font(NookTheme.TextStyle.strong)
+                .foregroundStyle(NookTheme.textStrong)
+                .accessibilityAddTraits(.isHeader)
             content()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(NookTheme.Spacing.lg)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(NookTheme.Spacing.xl)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.surface))
+    }
+}
+
+/// Cards two by two, each pair as tall as its taller card; one under the other in a narrow tab.
+private struct MusicStatsPairs<First: View, Second: View>: View {
+    @ViewBuilder var first: () -> First
+    @ViewBuilder var second: () -> Second
+
+    init(@ViewBuilder _ first: @escaping () -> First, @ViewBuilder second: @escaping () -> Second = { EmptyView() }) {
+        self.first = first
+        self.second = second
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            Grid(horizontalSpacing: NookTheme.Spacing.md, verticalSpacing: NookTheme.Spacing.md) {
+                GridRow { first() }
+                if Second.self != EmptyView.self { GridRow { second() } }
+            }
+            .frame(minWidth: 620)
+            VStack(spacing: NookTheme.Spacing.md) {
+                first()
+                second()
+            }
+        }
+    }
+}
+
+/// An artist in a top list, as tall as a track's row beside it: number, picture, name, and how much, with a thin bar
+/// for its share of the first when there is one.
+private struct MusicArtistRow: View {
+    let number: Int
+    let name: String
+    let artworkURL: URL?
+    let note: String?
+    var share: Double? = nil
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            Text("\(number)")
+                .font(NookTheme.font(11, .medium).monospacedDigit())
+                .foregroundStyle(NookTheme.textTertiary)
+                .frame(width: 22)
+            MusicArtwork(url: artworkURL, seed: name, symbol: "music.mic", cornerRadius: MusicLayout.rowArtwork / 2)
+                .frame(width: MusicLayout.rowArtwork, height: MusicLayout.rowArtwork)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                HStack(spacing: NookTheme.Spacing.md) {
+                    Text(name).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper).lineLimit(1)
+                    Spacer(minLength: 0)
+                    if let note {
+                        Text(note)
+                            .font(NookTheme.font(11, .medium).monospacedDigit())
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .lineLimit(1)
+                    }
+                }
+                if let share {
+                    GeometryReader { geo in
+                        Capsule()
+                            .fill(NookTheme.music.opacity(0.85))
+                            .frame(width: max(4, geo.size.width * share))
+                    }
+                    .frame(height: 3)
+                }
+            }
+        }
+        .frame(height: MusicLayout.rowHeight)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(note.map { "\(name), \($0)" } ?? name)
     }
 }
 
@@ -306,40 +376,6 @@ private struct MusicBars: View {
             .frame(height: height)
             .accessibilityElement()
             .accessibilityLabel(bars.filter { $0.seconds > 0 }.map { "\($0.detail): \(musicListeningTime($0.seconds))" }.joined(separator: ", "))
-        }
-    }
-}
-
-/// The top artists as ranked bars on one baseline, largest first.
-private struct MusicArtistRanks: View {
-    let ranks: [MusicStats.ArtistRank]
-
-    var body: some View {
-        let most = max(1, ranks.first?.seconds ?? 1)
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            ForEach(ranks) { rank in
-                HStack(spacing: NookTheme.Spacing.md) {
-                    MusicArtwork(url: rank.artworkURL, seed: rank.name, symbol: "music.mic", cornerRadius: NookTheme.Radius.chip)
-                        .frame(width: 30, height: 30)
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-                        HStack(spacing: NookTheme.Spacing.md) {
-                            Text(rank.name).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper).lineLimit(1)
-                            Spacer(minLength: 0)
-                            Text(musicListeningTime(rank.seconds))
-                                .font(NookTheme.TextStyle.caption.monospacedDigit())
-                                .foregroundStyle(NookTheme.textTertiary)
-                        }
-                        GeometryReader { geo in
-                            Capsule()
-                                .fill(NookTheme.music)
-                                .frame(width: max(4, geo.size.width * CGFloat(rank.seconds) / CGFloat(most)))
-                        }
-                        .frame(height: 4)
-                    }
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(rank.name), \(musicListeningTime(rank.seconds))")
-            }
         }
     }
 }
