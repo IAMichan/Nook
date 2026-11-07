@@ -65,6 +65,9 @@ struct MusicArtwork: View {
         .task(id: url) {
             guard let url else { image = nil; return }
             if let cached = MusicArtworkStore.shared.cached(url) { image = cached; return }
+            // A view that now shows another track (a row that moved, a queue that changed) drops the old cover at once
+            // instead of showing it until the new one has loaded.
+            image = nil
             let loaded = await MusicArtworkStore.shared.image(for: url)
             withAnimation(NookTheme.reveal) { image = loaded }
         }
