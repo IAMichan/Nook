@@ -36,14 +36,13 @@ final class ScrollModelTests: XCTestCase {
         XCTAssertLessThanOrEqual(pin.room(in: frame, current: 0), frame.container)
     }
 
-    func testAwayFromEndWhileAMessageIsPinned() {
+    func testNoToEndPillWhileAMessageIsPinned() {
         var m = ScrollModel()
-        XCTAssertFalse(m.awayFromEnd)
         m.sent(messageID: UUID())
-        XCTAssertTrue(m.awayFromEnd)
         XCTAssertFalse(m.shouldFollowEnd)
+        XCTAssertFalse(m.showsToEndPill(atEnd: false))
         m.jumpedToEnd()
-        XCTAssertFalse(m.awayFromEnd)
+        XCTAssertTrue(m.shouldFollowEnd)
     }
 
     func testStartsFollowing() {
@@ -125,6 +124,20 @@ final class ScrollModelTests: XCTestCase {
         XCTAssertTrue(m.jumpPill(awayFor: 0.15))
         m.reachedEnd()
         XCTAssertFalse(m.jumpPill(awayFor: 5))
+    }
+
+    func testToEndPillOnlyAfterScrollingAwayFromTheEnd() {
+        var m = ScrollModel()
+        XCTAssertFalse(m.showsToEndPill(atEnd: false))
+        // A sent message held near the top is not you scrolling away.
+        m.sent(messageID: UUID())
+        XCTAssertFalse(m.showsToEndPill(atEnd: false))
+        m.userScrolled()
+        XCTAssertTrue(m.showsToEndPill(atEnd: false))
+        // At the end it never shows, even before following resumes.
+        XCTAssertFalse(m.showsToEndPill(atEnd: true))
+        m.findStarted()
+        XCTAssertFalse(m.showsToEndPill(atEnd: false))
     }
 
     func testMemoryRemembersReplacesAndBounds() {
