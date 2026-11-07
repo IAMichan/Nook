@@ -488,6 +488,7 @@ targets:
       - path: Services/Workspace/RunEventLog.swift
       - path: Services/Workspace/AgentProcess.swift
       - path: Services/Workspace/TokenSavings.swift
+      - path: Services/Workspace/AgentTuning.swift
       - path: Services/Workspace/ProcessGroups.swift
       - path: Services/Workspace/ProviderTransport.swift
       - path: Services/AgentTranscript.swift

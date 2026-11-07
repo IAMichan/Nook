@@ -444,6 +444,7 @@ struct WorkspaceSettingsSection: View {
             openIn
             commitStyle
         case .sessions(2): behavior
+        case .sessions(4): TokenSettingsSection()
         case .sessions: tidying
         case .automation:
             // What runs by itself, then what agents may use; the raw traffic log is folded away last.
@@ -786,8 +787,6 @@ struct WorkspaceSettingsSection: View {
                       prompt: Text(tr("settings.ws.titleInstructions.placeholder")), axis: .vertical)
                 .lineLimit(1...4)
             Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
-            Toggle(tr("settings.ws.idleCompaction"), isOn: $ws.idleCompaction)
-                .help(tr("settings.ws.idleCompaction.help"))
             // How the session list is laid out belongs with how sessions behave, not with tidying up.
             Toggle(tr("settings.ws.inboxProjects"), isOn: $inbox.groupByProject)
             Toggle(tr("settings.ws.inboxWorking"), isOn: $inbox.showWorking)
