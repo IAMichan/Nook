@@ -56,11 +56,39 @@ struct MusicArtwork: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        // A faint edge, so a dark cover keeps its shape on the black canvas.
+        .overlay {
+            if cornerRadius > 0 {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).strokeBorder(NookTheme.paper.opacity(0.08), lineWidth: 1)
+            }
+        }
         .task(id: url) {
             guard let url else { image = nil; return }
             if let cached = MusicArtworkStore.shared.cached(url) { image = cached; return }
             let loaded = await MusicArtworkStore.shared.image(for: url)
             withAnimation(NookTheme.reveal) { image = loaded }
+        }
+    }
+}
+
+/// Over a cover in a row: the play symbol under the pointer, the bars while the track plays, nothing otherwise.
+struct MusicArtworkState: View {
+    let hovering: Bool
+    let playing: Bool
+    let isPlaying: Bool
+    var cornerRadius = NookTheme.Radius.chip
+
+    var body: some View {
+        if hovering || playing {
+            ZStack {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(Color.black.opacity(0.5))
+                if hovering {
+                    Image(systemName: "play.fill").font(NookTheme.font(12, .bold)).foregroundStyle(NookTheme.paper)
+                } else {
+                    EqualizerBars(color: NookTheme.music, height: 10, isPlaying: isPlaying)
+                        .scaleEffect(0.7)
+                }
+            }
         }
     }
 }
@@ -101,23 +129,22 @@ struct MusicTransport: View {
     var large = false
 
     var body: some View {
-        HStack(spacing: large ? 16 : 8) {
-            MusicToggleButton(systemName: "shuffle", label: tr("music.shuffle"), isOn: info.shuffle, size: large ? 36 : 30) {
+        HStack(spacing: large ? NookTheme.Spacing.lg : NookTheme.Spacing.xs) {
+            MusicToggleButton(systemName: "shuffle", label: tr("music.shuffle"), isOn: info.shuffle, size: large ? 34 : 28) {
                 service.setShuffle(!info.shuffle)
             }
-            NookIconButton(systemName: "backward.fill", label: tr("music.previous"), size: large ? 38 : 30) { service.control(.previous) }
+            NookIconButton(systemName: "backward.fill", label: tr("music.previous"), size: large ? 36 : 28) { service.control(.previous) }
                 .help(tr("music.previous"))
             NookIconButton(
                 systemName: info.isPlaying ? "pause.fill" : "play.fill",
                 label: info.isPlaying ? tr("music.pause") : tr("music.play"),
                 filled: true,
-                size: large ? 52 : 36
+                size: large ? 48 : 32
             ) { service.control(.playPause) }
-                .shadow(color: .black.opacity(large ? 0.4 : 0), radius: 10, y: 5)
                 .help(info.isPlaying ? tr("music.pause") : tr("music.play"))
-            NookIconButton(systemName: "forward.fill", label: tr("music.next"), size: large ? 38 : 30) { service.control(.next) }
+            NookIconButton(systemName: "forward.fill", label: tr("music.next"), size: large ? 36 : 28) { service.control(.next) }
                 .help(tr("music.next"))
-            MusicToggleButton(systemName: "repeat", label: tr("music.repeat"), isOn: info.repeating, size: large ? 36 : 30) {
+            MusicToggleButton(systemName: "repeat", label: tr("music.repeat"), isOn: info.repeating, size: large ? 34 : 28) {
                 service.setRepeat(!info.repeating)
             }
         }
@@ -153,17 +180,17 @@ struct MusicScrubBar: View {
             let remaining = Text(duration > 0 ? "-" + musicClock(duration - position) : "–:––")
             switch style {
             case .inline:
-                HStack(spacing: 10) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     elapsed.frame(width: 34, alignment: .trailing)
                     bar(fraction: fraction, duration: duration)
                     remaining.frame(width: 38, alignment: .leading)
                 }
             case .stacked:
-                VStack(spacing: 5) {
+                VStack(spacing: NookTheme.Spacing.xxs) {
                     bar(fraction: fraction, duration: duration)
                     HStack {
                         elapsed
-                        Spacer(minLength: 8)
+                        Spacer(minLength: NookTheme.Spacing.md)
                         remaining
                     }
                 }
@@ -176,12 +203,12 @@ struct MusicScrubBar: View {
     private func bar(fraction: Double, duration: Double) -> some View {
         let enabled = duration > 0
         let active = enabled && (hovering || dragFraction != nil)
-        let thickness: CGFloat = style == .inline ? (active ? 5 : 3) : (active ? 7 : 5)
+        let thickness: CGFloat = style == .inline ? (active ? 5 : 3) : (active ? 6 : 4)
         return GeometryReader { geo in
             let width = max(1, geo.size.width)
             let filled = width * CGFloat(fraction)
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.white.opacity(0.12)).frame(height: thickness)
+                Capsule().fill(NookTheme.line2).frame(height: thickness)
                 Capsule()
                     .fill(active ? NookTheme.music : NookTheme.paper)
                     .frame(width: filled, height: thickness)
@@ -189,7 +216,6 @@ struct MusicScrubBar: View {
                     Circle()
                         .fill(NookTheme.paper)
                         .frame(width: 11, height: 11)
-                        .shadow(color: .black.opacity(0.4), radius: 2)
                         .offset(x: min(max(0, filled - 5.5), width - 11))
                 }
             }
@@ -273,7 +299,7 @@ struct MusicVolumeControl: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: NookTheme.Spacing.md) {
             Button {
                 if shown > 0 {
                     beforeMute = shown
@@ -297,7 +323,7 @@ struct MusicVolumeControl: View {
                 let filled = width * CGFloat(shown) / 100
                 let thickness: CGFloat = (hovering || dragValue != nil) ? 5 : 3
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.12)).frame(height: thickness)
+                    Capsule().fill(NookTheme.line2).frame(height: thickness)
                     Capsule().fill(NookTheme.paper).frame(width: filled, height: thickness)
                 }
                 .frame(width: width, height: geo.size.height)

@@ -65,7 +65,7 @@ private struct SyncedLyrics: View, Equatable {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 8) {
+                VStack(spacing: NookTheme.Spacing.md) {
                     Color.clear.frame(height: 80)
                     ForEach(lines) { line in
                         LyricRow(line: line, state: state(of: line)) {
@@ -75,8 +75,8 @@ private struct SyncedLyrics: View, Equatable {
                     }
                     Color.clear.frame(height: 120)
                 }
-                // Room for the current line's 1.24 scale: on a narrow stage it stays inside instead of cut at the edges.
-                .containerRelativeFrame(.horizontal) { width, _ in width / 1.24 }
+                // Room for the current line's larger scale: on a narrow stage it stays inside instead of cut at the edges.
+                .containerRelativeFrame(.horizontal) { width, _ in width / LyricRow.currentScale }
                 .frame(maxWidth: .infinity)
             }
             .mask(fade)
@@ -97,7 +97,7 @@ private struct SyncedLyrics: View, Equatable {
         guard let active else { return }
         let anchor = UnitPoint(x: 0.5, y: 0.42)
         if animated {
-            withAnimation(.spring(duration: 0.5, bounce: 0.08)) { proxy.scrollTo(active, anchor: anchor) }
+            withAnimation(NookTheme.scroll) { proxy.scrollTo(active, anchor: anchor) }
         } else {
             proxy.scrollTo(active, anchor: anchor)
         }
@@ -115,6 +115,8 @@ private struct SyncedLyrics: View, Equatable {
 
 private struct LyricRow: View {
     enum State { case past, current, upcoming }
+    /// The current line, a step larger than the rest.
+    static let currentScale: CGFloat = 1.16
     let line: LyricLine
     let state: State
     let action: () -> Void
@@ -123,32 +125,34 @@ private struct LyricRow: View {
     var body: some View {
         Button(action: action) {
             Text(line.text.isEmpty ? "♪" : line.text)
-                .font(NookTheme.font(18, state == .current ? .bold : .semibold))
+                .font(NookTheme.TextStyle.heading)
                 .foregroundStyle(color)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 // Narrow enough that the enlarged current line still fits the stage.
-                .frame(maxWidth: 520)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.paper.opacity(hovering && state != .current ? 0.04 : 0)))
-                .scaleEffect(state == .current ? 1.24 : 1)
-                .padding(.vertical, state == .current ? 5 : 0)
+                .frame(maxWidth: 540)
+                .padding(.horizontal, NookTheme.Spacing.lg)
+                .padding(.vertical, NookTheme.Spacing.xs)
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                    .fill(hovering && state != .current ? NookTheme.rowHover : Color.clear))
+                .scaleEffect(state == .current ? Self.currentScale : 1)
+                .padding(.vertical, state == .current ? NookTheme.Spacing.xs : 0)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .animation(.spring(duration: 0.45, bounce: 0.1), value: state)
+        .animation(NookTheme.open, value: state)
         .animation(NookTheme.hover, value: hovering)
         .help(tr("music.lyrics.seekHint"))
     }
 
+    /// The current line bright, what comes still readable, what passed further back.
     private var color: Color {
-        if hovering && state != .current { return NookTheme.paper.opacity(0.75) }
+        if hovering && state != .current { return NookTheme.textStrong }
         switch state {
         case .current: return NookTheme.paper
-        case .past: return NookTheme.paper.opacity(0.14)
-        case .upcoming: return NookTheme.paper.opacity(0.28)
+        case .past: return NookTheme.paper.opacity(0.24)
+        case .upcoming: return NookTheme.paper.opacity(0.42)
         }
     }
 }
@@ -161,8 +165,8 @@ private struct PlainLyrics: View {
             VStack(spacing: NookTheme.Spacing.sm) {
                 ForEach(lines) { line in
                     Text(line.text.isEmpty ? " " : line.text)
-                        .font(NookTheme.font(15, .medium))
-                        .foregroundStyle(NookTheme.textSecondary)
+                        .font(NookTheme.TextStyle.body)
+                        .foregroundStyle(NookTheme.textStrong)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: 560)
@@ -187,13 +191,46 @@ struct MusicUpNextView: View {
     private var showsPlayerQueue: Bool { info.app == "Music" || SpotifySignIn.shared.isSignedIn }
 
     var body: some View {
-        let queued = queuedSection
-        if let queue = service.upNext, showsPlayerQueue, !queue.tracks.isEmpty {
-            MusicShelf(sections: (queued.map { [$0] } ?? []) + [MusicShelf.Section(
-                id: "upNext", note: note(queue), noteSymbol: info.shuffle ? "shuffle" : nil, items: items(queue)
-            )], service: service)
-        } else if let queued {
-            MusicShelf(sections: [queued], service: service)
+        let queued = service.playQueue.entries
+        let upcoming = showsPlayerQueue ? service.upNext?.tracks ?? [] : []
+        if !queued.isEmpty || !upcoming.isEmpty {
+            // A queue is an order, so it reads as a numbered list, as in an open playlist.
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxxl) {
+                    if !queued.isEmpty {
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                            MusicGroupTitle(title: tr("music.queue.count", queued.count), detail: tr("music.queue.note"),
+                                            trailing: (tr("music.queue.clear"), { service.clearQueue() }))
+                            LazyVStack(spacing: 0) {
+                                ForEach(Array(queued.enumerated()), id: \.element.id) { index, entry in
+                                    MusicTrackRow(number: index + 1, track: entry.track, playing: false, service: service,
+                                                  onRemove: { service.removeFromQueue(entry.id) }, removeLabel: tr("music.queue.remove"),
+                                                  queues: false) {
+                                        service.playFromQueue(entry.id)
+                                    }
+                                }
+                            }
+                            .musicRowBleed()
+                        }
+                    }
+                    if !upcoming.isEmpty, let queue = service.upNext {
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                            MusicGroupTitle(title: queue.playlist.isEmpty ? tr("music.section.upNext") : tr("music.upNext.from", queue.playlist),
+                                            detail: info.shuffle ? tr("music.upNext.shuffleNote") : nil)
+                            LazyVStack(spacing: 0) {
+                                ForEach(Array(upcoming.enumerated()), id: \.offset) { index, track in
+                                    MusicTrackRow(number: index + 1, track: track, playing: false, service: service) {
+                                        service.play(track, fromQueue: true)
+                                    }
+                                }
+                            }
+                            .musicRowBleed()
+                        }
+                    }
+                }
+                .padding(.horizontal, MusicLayout.edge)
+                .padding(.bottom, NookTheme.Spacing.xl)
+            }
         } else if showsPlayerQueue, service.upNext == nil, service.libraryLoading {
             MusicPlaceholder(symbol: "list.bullet", title: tr("music.upNext.loading"), loading: true)
         } else if showsPlayerQueue {
@@ -202,38 +239,6 @@ struct MusicUpNextView: View {
             MusicPlaceholder(symbol: "text.line.last.and.arrowtriangle.forward", title: tr("music.queue.empty"),
                              detail: tr("music.queue.emptyDetail") + " " + tr("music.queue.connectSpotify", tr("settings.section.connections")))
         }
-    }
-
-    /// What the user queued in Nook, ahead of the player's own Up Next.
-    private var queuedSection: MusicShelf.Section? {
-        guard !service.playQueue.isEmpty else { return nil }
-        let items = service.playQueue.entries.enumerated().map { index, entry in
-            MusicCoverItem(
-                id: entry.id.uuidString, title: entry.track.title, subtitle: entry.track.artist,
-                artworkURL: entry.track.artworkURL, number: index + 1, help: tr("music.play"),
-                secondary: .init(symbol: "minus", label: tr("music.queue.remove")) { service.removeFromQueue(entry.id) },
-                track: entry.track
-            ) { service.playFromQueue(entry.id) }
-        }
-        return MusicShelf.Section(
-            id: "queue", note: tr("music.queue.note"), noteSymbol: "text.line.last.and.arrowtriangle.forward",
-            items: items, trailing: .init(title: tr("music.queue.clear")) { service.clearQueue() }
-        )
-    }
-
-    private func items(_ queue: MusicQueue) -> [MusicCoverItem] {
-        queue.tracks.enumerated().map { index, track in
-            MusicCoverItem(
-                id: "\(index)|\(track.id)|\(track.title)", title: track.title, subtitle: track.artist,
-                artworkURL: track.artworkURL, number: index + 1, help: tr("music.play"),
-                secondary: .enqueue(track, in: service), track: track
-            ) { service.play(track, fromQueue: true) }
-        }
-    }
-
-    private func note(_ queue: MusicQueue) -> String {
-        let from = queue.playlist.isEmpty ? tr("music.section.upNext") : tr("music.upNext.from", queue.playlist)
-        return info.shuffle ? from + " · " + tr("music.upNext.shuffleNote") : from
     }
 }
 
@@ -254,7 +259,7 @@ struct MusicSearchView: View {
             NookSearchField(prompt: isSpotify ? tr("music.search.promptSpotify") : tr("music.search.promptMusic"),
                             text: $text, focus: $focused, onSubmit: submit)
                 .focusOnAppear($focused)
-                .padding(.horizontal, NookTheme.Spacing.xs)
+                .padding(.horizontal, MusicLayout.edge)
             Group {
                 if query.isEmpty { idle } else { results }
             }
@@ -307,17 +312,16 @@ struct MusicSearchView: View {
                             MusicGroupTitle(title: tr("music.recent.title"))
                             LazyVStack(spacing: 0) {
                                 ForEach(Array(recent.enumerated()), id: \.offset) { index, track in
-                                    if index > 0 { NookDivider(inset: 52) }
                                     MusicTrackRow(track: track, playing: service.current?.trackID == track.id, service: service) {
                                         service.play(track, fromQueue: false, following: Array(recent.dropFirst(index + 1).prefix(SpotifyResponses.playTrackLimit - 1)))
                                     }
                                 }
                             }
-                            .panelCard()
+                            .musicRowBleed()
                         }
                     }
                 }
-                .padding(.horizontal, NookTheme.Spacing.xs)
+                .padding(.horizontal, MusicLayout.edge)
                 .padding(.bottom, NookTheme.Spacing.xl)
             }
         }
@@ -364,20 +368,20 @@ struct MusicSearchView: View {
                 MusicBestMatch(track: result.tracks[0], playing: service.current?.trackID == result.tracks[0].id, service: service) {
                     play(0, of: result)
                 }
+                .musicRowBleed()
                 if result.tracks.count > 1 {
-                    MusicGroupTitle(title: note(result)).padding(.top, NookTheme.Spacing.md)
+                    MusicGroupTitle(title: note(result)).padding(.top, NookTheme.Spacing.xl)
                     LazyVStack(spacing: 0) {
                         ForEach(Array(result.tracks.enumerated().dropFirst()), id: \.offset) { index, track in
-                            if index > 1 { NookDivider(inset: 52) }
                             MusicTrackRow(track: track, playing: service.current?.trackID == track.id, service: service) {
                                 play(index, of: result)
                             }
                         }
                     }
-                    .panelCard()
+                    .musicRowBleed()
                 }
             }
-            .padding(.horizontal, NookTheme.Spacing.xs)
+            .padding(.horizontal, MusicLayout.edge)
             .padding(.bottom, NookTheme.Spacing.xl)
         }
     }
@@ -388,19 +392,36 @@ struct MusicSearchView: View {
     }
 }
 
-/// The name of a group on the Music page: quiet and balanced beneath the page's top header.
+/// The name of a group on a Music page: a title, a line under it when it needs one, and on the right "Show all" or a
+/// small action (Clear).
 struct MusicGroupTitle: View {
     let title: String
+    var detail: String? = nil
     var showAll: (() -> Void)? = nil
+    var trailing: (title: String, action: () -> Void)? = nil
 
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            Text(title)
-                .font(NookTheme.TextStyle.strong)
-                .foregroundStyle(NookTheme.textSecondary)
-                .lineLimit(1)
+        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                Text(title)
+                    .font(NookTheme.TextStyle.title)
+                    .foregroundStyle(NookTheme.paper)
+                    .lineLimit(1)
+                    .accessibilityAddTraits(.isHeader)
+                if let detail {
+                    Text(detail)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(1)
+                        .help(detail)
+                }
+            }
             Spacer(minLength: NookTheme.Spacing.md)
             if let showAll { MusicShowAllButton(action: showAll) }
+            if let trailing {
+                SmallGhostButton(title: trailing.title, action: trailing.action)
+                    .padding(.trailing, -NookTheme.Spacing.md)
+            }
         }
     }
 }
@@ -462,9 +483,8 @@ private struct MusicBestMatch: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.xl) {
-                MusicArtwork(url: track.artworkURL, seed: track.title, cornerRadius: NookTheme.Radius.card)
-                    .frame(width: 64, height: 64)
-                    .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+                MusicArtwork(url: track.artworkURL, seed: track.title, cornerRadius: NookTheme.Radius.control)
+                    .frame(width: 72, height: 72)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                     Text(track.title)
                         .font(NookTheme.TextStyle.heading)
@@ -479,12 +499,13 @@ private struct MusicBestMatch: View {
                 Image(systemName: "play.fill")
                     .font(NookTheme.font(13, .bold))
                     .foregroundStyle(NookTheme.ink)
-                    .frame(width: 34, height: 34)
+                    .frame(width: 36, height: 36)
                     .background(Circle().fill(NookTheme.paper))
-                    .opacity(hovering ? 1 : 0.85)
+                    .padding(.trailing, NookTheme.Spacing.md)
             }
-            .padding(NookTheme.Spacing.lg)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(hovering ? NookTheme.graphite : NookTheme.field))
+            .padding(MusicLayout.rowBleed)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
+                .fill(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear)))
             .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -508,8 +529,6 @@ struct MusicCoverItem: Identifiable {
     let subtitle: String
     var artworkURL: URL? = nil
     var symbol = "music.note"
-    /// The position in Up Next.
-    var number: Int? = nil
     let help: String
     /// What the cover shows under the pointer: what a click does.
     var hoverSymbol = "play.fill"
@@ -539,60 +558,28 @@ struct MusicCoverItem: Identifiable {
     }
 }
 
-/// One or more groups of covers, each under a short note, in a grid that wraps to the stage's width and scrolls when
-/// there are more.
+/// Covers in a grid that wraps to the page's width, under a short note, and scrolls when there are more.
 struct MusicShelf: View {
-    struct Section: Identifiable {
-        let id: String
-        let note: String
-        var noteSymbol: String? = nil
-        let items: [MusicCoverItem]
-        /// A small text button at the end of the note (Clear).
-        var trailing: Trailing? = nil
-    }
-
-    struct Trailing {
-        let title: String
-        let action: () -> Void
-    }
-
-    let sections: [Section]
+    let note: String
+    let items: [MusicCoverItem]
     /// For "Add to playlist" in the context menu of the tracks.
     var service: NowPlayingService? = nil
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
-                ForEach(sections) { section in
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-                        header(section)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 108, maximum: 136), spacing: NookTheme.Spacing.xl, alignment: .top)],
-                                  alignment: .leading, spacing: NookTheme.Spacing.xl + NookTheme.Spacing.xs) {
-                            ForEach(section.items) { MusicCoverCard(item: $0, service: service) }
-                        }
-                    }
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                Text(note)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(1)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: MusicLayout.cover), spacing: NookTheme.Spacing.xl, alignment: .top)],
+                          alignment: .leading, spacing: NookTheme.Spacing.xxl) {
+                    ForEach(items) { MusicCoverCard(item: $0, service: service) }
                 }
             }
+            .padding(.horizontal, MusicLayout.edge)
             .padding(.bottom, NookTheme.Spacing.xl)
         }
-        .padding(.horizontal, NookTheme.Spacing.xs)
-    }
-
-    private func header(_ section: Section) -> some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
-            if let symbol = section.noteSymbol {
-                Image(systemName: symbol).font(NookTheme.font(10.5, .semibold))
-            }
-            Text(section.note).lineLimit(1).truncationMode(.tail)
-            if let trailing = section.trailing {
-                Spacer(minLength: NookTheme.Spacing.md)
-                SmallGhostButton(title: trailing.title, action: trailing.action)
-            }
-        }
-        .font(NookTheme.TextStyle.detail)
-        .foregroundStyle(NookTheme.textTertiary)
-        .help(section.note)
-        .padding(.top, NookTheme.Spacing.xs)
     }
 }
 
@@ -603,21 +590,11 @@ struct MusicCoverCard: View {
 
     var body: some View {
         Button(action: item.action) {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 Color.clear
                     .aspectRatio(1, contentMode: .fit)
                     .overlay {
-                        MusicArtwork(url: item.artworkURL, seed: item.title, symbol: item.symbol, cornerRadius: NookTheme.Radius.panel)
-                    }
-                    .overlay(alignment: .topLeading) {
-                        if let number = item.number {
-                            Text("\(number)")
-                                .font(NookTheme.font(10.5, .bold).monospacedDigit())
-                                .foregroundStyle(NookTheme.paper)
-                                .frame(width: 20, height: 20)
-                                .background(Circle().fill(Color.black.opacity(0.6)))
-                                .padding(8)
-                        }
+                        MusicArtwork(url: item.artworkURL, seed: item.title, symbol: item.symbol, cornerRadius: NookTheme.Radius.card)
                     }
                     .overlay(alignment: .bottomLeading) {
                         if item.playing {
@@ -630,26 +607,27 @@ struct MusicCoverCard: View {
                         }
                     }
                     .overlay {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(Color.black.opacity(0.35))
-                            Image(systemName: item.hoverSymbol)
-                                .font(NookTheme.font(14, .bold))
-                                .foregroundStyle(NookTheme.ink)
-                                .frame(width: 38, height: 38)
-                                .background(Circle().fill(NookTheme.paper))
-                        }
-                        .opacity(hovering ? 1 : 0)
+                        // Under the pointer: a soft shade and what a click does, in the corner.
+                        RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                            .fill(Color.black.opacity(0.25))
+                            .overlay(alignment: .bottomTrailing) {
+                                Image(systemName: item.hoverSymbol)
+                                    .font(NookTheme.font(13, .bold))
+                                    .foregroundStyle(NookTheme.ink)
+                                    .frame(width: 36, height: 36)
+                                    .background(Circle().fill(NookTheme.paper))
+                                    .padding(NookTheme.Spacing.md)
+                            }
+                            .opacity(hovering ? 1 : 0)
                     }
                     .overlay(alignment: .topTrailing) {
                         if let secondary = item.secondary {
-                            NookIconButton(systemName: secondary.symbol, label: secondary.label, filled: true, size: 26, action: secondary.action)
-                                .padding(6)
+                            NookIconButton(systemName: secondary.symbol, label: secondary.label, size: 26, action: secondary.action)
+                                .background(Circle().fill(Color.black.opacity(0.5)))
+                                .padding(NookTheme.Spacing.sm)
                                 .opacity(hovering ? 1 : 0)
                         }
                     }
-                    // A soft shadow and a small lift: the cover reads as something to press, without jumping.
-                    .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
-                    .offset(y: hovering ? -2 : 0)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(item.title)
                         .font(NookTheme.TextStyle.strong)
@@ -699,27 +677,31 @@ struct MusicPlaceholder<Actions: View>: View {
     @ViewBuilder var actions: () -> Actions
 
     var body: some View {
+        // The same empty state as the rest of the panel (`WSEmptyState`), with room for a spinner and several buttons.
         VStack(spacing: NookTheme.Spacing.md) {
             if loading {
                 ProgressView().controlSize(.small)
             } else {
                 Image(systemName: symbol)
-                    .font(NookTheme.font(22, .light))
+                    .font(NookTheme.font(26, .light))
                     .foregroundStyle(NookTheme.textTertiary)
             }
             Text(title)
-                .font(NookTheme.TextStyle.strong)
-                .foregroundStyle(NookTheme.textSecondary)
+                .font(NookTheme.TextStyle.title)
+                .foregroundStyle(NookTheme.paper)
                 .multilineTextAlignment(.center)
             if let detail {
                 Text(detail)
                     .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textTertiary)
+                    .foregroundStyle(NookTheme.textSecondary)
                     .multilineTextAlignment(.center)
-                    .frame(maxWidth: 340)
+                    .frame(maxWidth: 380)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             actions()
+                .padding(.top, NookTheme.Spacing.xs)
         }
+        .padding(NookTheme.Spacing.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

@@ -47,7 +47,7 @@ enum MusicSection: String, CaseIterable, Identifiable {
     /// Where the page and the sidebar keep what shows.
     static let storageKey = "musicPage"
     static let expandedKey = "musicPlayerExpanded"
-    static let fold = Animation.spring(duration: 0.45, bounce: 0.12)
+    static let fold = NookTheme.open
 
     var symbol: String {
         switch self {
@@ -77,7 +77,26 @@ enum MusicSection: String, CaseIterable, Identifiable {
     }
 }
 
-private struct MusicPageView: View {
+/// The one grid of the Music pages, so the header, what scrolls and the player bar keep the same two edges.
+enum MusicLayout {
+    /// From the page's column to the titles, covers and the player bar.
+    static let edge = NookTheme.Spacing.md
+    /// How far a flat row's hover fill reaches past that edge, so its cover and text stay on it at rest.
+    static let rowBleed = NookTheme.Spacing.sm
+    /// The narrowest a cover gets, in a shelf and in a row on Home.
+    static let cover: CGFloat = 132
+    /// A cover in a row of tracks.
+    static let rowArtwork: CGFloat = 36
+    /// The height of a rank (a track or an artist) on the statistics page.
+    static let rowHeight: CGFloat = 44
+}
+
+extension View {
+    /// A flat row of a Music list: its hover fill runs past the page's edge, what it shows stays on it.
+    func musicRowBleed() -> some View { padding(.horizontal, -MusicLayout.rowBleed) }
+}
+
+struct MusicPageView: View {
     let info: NowPlayingInfo?
     @ObservedObject var service: NowPlayingService
     @ObservedObject private var lyrics = LyricsService.shared
@@ -99,6 +118,7 @@ private struct MusicPageView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             sectionBar
+                .padding(.horizontal, MusicLayout.edge)
                 .conversationHeaderBackground()
             ZStack(alignment: .bottom) {
                 if !showsFullPlayer {
@@ -115,13 +135,15 @@ private struct MusicPageView: View {
                         service: service,
                         expanded: expanded,
                         onExpand: { setExpanded(true) },
-                        onCollapse: { setExpanded(false) },
                         onShowAll: { select($0) }
                     )
+                    .padding(.horizontal, MusicLayout.edge)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The full player's glow stops at the page: it never runs into the sidebar.
+            .clipped()
         }
         .pageColumn()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -196,13 +218,17 @@ private struct MusicPageView: View {
     /// every other page; in the notch or split view, it holds the section tabs.
     private var sectionBar: some View {
         HStack(spacing: NookTheme.Spacing.md) {
+            if showsOpenPlaylist {
+                NookIconButton(systemName: "chevron.left", label: tr("music.playlists.back"), size: 26) { service.closePlaylist() }
+                    .transition(.opacity)
+            }
             if sidebar == nil {
                 NookTabBar(items: sections.map { NookTabBar<MusicSection?>.Item(value: $0, title: $0.title) },
                            selected: showsFullPlayer ? nil : section) { picked in
                     if let picked { select(picked) }
                 }
             } else {
-                Text(showsFullPlayer ? tr("tab.music") : section.title)
+                Text(bandTitle)
                     .font(NookTheme.TextStyle.title)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
@@ -211,13 +237,23 @@ private struct MusicPageView: View {
             sectionTrailing
         }
         .frame(height: 30)
-        .padding(.horizontal, NookTheme.Spacing.xs)
         .animation(NookTheme.reveal, value: showsFullPlayer)
+        .animation(NookTheme.reveal, value: showsOpenPlaylist)
+    }
+
+    private var showsOpenPlaylist: Bool { !showsFullPlayer && section == .playlists && service.playlistDetail != nil }
+
+    /// The one title of the page: Home greets, the rest names what shows.
+    private var bandTitle: String {
+        if showsFullPlayer { return tr("tab.music") }
+        return section == .home ? musicGreeting() : section.title
     }
 
     @ViewBuilder
     private var sectionTrailing: some View {
-        if !showsFullPlayer {
+        if showsFullPlayer {
+            NookIconButton(systemName: "chevron.down", label: tr("music.collapse"), size: 30) { setExpanded(false) }
+        } else {
             switch section {
             case .lyrics:
                 if let info, let source = MusicLyricsView.source(of: lyrics, for: info) {
