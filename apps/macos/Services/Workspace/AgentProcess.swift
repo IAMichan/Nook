@@ -51,6 +51,8 @@ enum AgentCommand {
         var thinkingDisplay = false
         /// Claude Code's `ENABLE_TOOL_SEARCH` as Nook sets it (`ClaudeToolSearch`); nil leaves yours.
         var toolSearch: String? = nil
+        /// The token suggestions you applied to Nook's sessions (Settings › Sessions › Tokens).
+        var tuning = AgentTuning.Applied()
         /// Claude Code's reasoning effort (`--effort`); nil leaves the agent's own default.
         var effort: String? = nil
         /// An ACP agent you added: its command, run by `executable` (your login shell).
@@ -76,7 +78,8 @@ enum AgentCommand {
                 // Newer models leave their thinking empty unless summaries are asked for; with Settings › Agents also no
                 // Co-Authored-By trailer or "Generated with" line in commits and pull requests.
                 "--settings", AgentCredits.claudeSettings(omit: input.omitAgentCredits,
-                                                          env: input.toolSearch.map { ["ENABLE_TOOL_SEARCH": $0] } ?? [:])
+                                                          env: input.toolSearch.map { ["ENABLE_TOOL_SEARCH": $0] } ?? [:],
+                                                          extra: input.tuning.claudeSettings)
             ]
             if input.thinkingDisplay { arguments += ["--thinking-display", "summarized"] }
             if !input.model.isEmpty { arguments += ["--model", input.model] }

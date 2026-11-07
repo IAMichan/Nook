@@ -1463,6 +1463,7 @@ final class WorkspaceManager: ObservableObject {
             bridge: bridge(for: id),
             thinkingDisplay: run.provider == .claude && claudeThinkingDisplay[executable] == true,
             toolSearch: claudeToolSearch(run),
+            tuning: AgentTuning.Applied.load(),
             effort: run.provider == .claude ? run.effort : nil
         )
         // The flag probe runs Claude Code on this Mac: not for a session on another machine.
@@ -1520,7 +1521,7 @@ final class WorkspaceManager: ObservableObject {
                 instructions: run.instructions, workingDirectory: run.workingDirectory, resumeSessionID: run.providerSessionID,
                 accountEnvironment: accountEnvironment(run.profileID), runID: id, bridge: bridge(for: id),
                 thinkingDisplay: claudeThinkingDisplay[executable] == true,
-                toolSearch: claudeToolSearch(run),
+                toolSearch: claudeToolSearch(run), tuning: AgentTuning.Applied.load(),
                 effort: run.effort)), for: run)
             spec.initialInput = []
             let process = AgentProcess(spec: spec)

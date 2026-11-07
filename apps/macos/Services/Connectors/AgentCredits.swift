@@ -31,9 +31,11 @@ enum AgentCredits {
 
     /// Claude Code's `--settings`: thinking summaries, with the setting on no attribution in commits and pull requests, and
     /// the environment Nook sets for it (`ENABLE_TOOL_SEARCH`, see `ClaudeToolSearch`). Settings given this way beat the
-    /// `env` of your own settings files, which in turn beats the process environment.
-    static func claudeSettings(omit: Bool, env: [String: String] = [:]) -> String {
-        var settings: [String: Any] = ["showThinkingSummaries": true]
+    /// `env` of your own settings files, which in turn beats the process environment. `extra` holds the token
+    /// suggestions you applied to Nook's sessions (`AgentTuning.Applied.claudeSettings`).
+    static func claudeSettings(omit: Bool, env: [String: String] = [:], extra: [String: Any] = [:]) -> String {
+        var settings: [String: Any] = extra
+        settings["showThinkingSummaries"] = true
         if omit {
             settings["includeCoAuthoredBy"] = false
             settings["attribution"] = ["commit": "", "pr": ""]
