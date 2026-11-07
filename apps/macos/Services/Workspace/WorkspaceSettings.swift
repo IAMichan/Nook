@@ -146,6 +146,11 @@ final class WorkspaceSettings: ObservableObject {
     @Published var autoResumeLimited: Bool {
         didSet { defaults.set(autoResumeLimited, forKey: "ws.autoResumeLimited") }
     }
+    /// A long idle session is summarized shortly before its prompt cache expires, so your next message does not pay to
+    /// write its whole history to the cache again (`IdleCompaction`). On by default.
+    @Published var idleCompaction: Bool {
+        didSet { defaults.set(idleCompaction, forKey: IdleCompaction.settingKey) }
+    }
     /// A session that a restart of Nook cut off gets "Continue where you left off." once.
     @Published var continueAfterRelaunch: Bool {
         didSet { defaults.set(continueAfterRelaunch, forKey: "ws.continueAfterRelaunch") }
@@ -224,6 +229,7 @@ final class WorkspaceSettings: ObservableObject {
         commitStyle = CommitStyle(rawValue: defaults.string(forKey: CommitStyle.defaultsKey) ?? "") ?? .standard
         commitInstructions = defaults.string(forKey: CommitStyle.instructionsKey) ?? ""
         autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? false
+        idleCompaction = defaults.object(forKey: IdleCompaction.settingKey) as? Bool ?? true
         continueAfterRelaunch = defaults.object(forKey: "ws.continueAfterRelaunch") as? Bool ?? false
         steerByDefault = defaults.object(forKey: "ws.steerByDefault") as? Bool ?? false
         scheduledTasksEnabled = defaults.object(forKey: "ws.scheduledTasksEnabled") as? Bool ?? false

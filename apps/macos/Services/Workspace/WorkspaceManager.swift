@@ -234,6 +234,10 @@ final class WorkspaceManager: ObservableObject {
     var limitedTurns: [UUID: Date?] = [:]
     /// Whether a Claude Code executable knows `--thinking-display` (asked once with `--help`, in the background).
     var claudeThinkingDisplay: [String: Bool] = [:]
+    /// The summary Nook sends a long idle session before its prompt cache expires, per session (`IdleCompaction`).
+    var idleCompactionTimers: [UUID: Task<Void, Never>] = [:]
+    /// Sessions whose running turn is such a summary: it ends quietly, without a notification or a snapshot.
+    var idleCompacting: Set<UUID> = []
     /// A message sent while the session was still warming up: it goes out as soon as the connection is open.
     var warmPrompts: [UUID: String] = [:]
     /// A message you sent while the previous turn's snapshot was still being made: shown at once, sent right after it.
@@ -394,6 +398,11 @@ final class WorkspaceManager: ObservableObject {
         var limitWindows: [String: Date?] = [:]
         /// A turn the agent started by itself after background work, with no message of yours to answer.
         var unprompted = false
+        /// Claude Code: when the turn's latest request started, the cache lifetime it reported, and whether the
+        /// conversation was compacted during the turn (see `PromptCacheWindow`).
+        var lastRequestAt: Date?
+        var cacheTTL: TimeInterval?
+        var compacted = false
     }
 
     init(store: RunStore = RunStore(directory: NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true))) {
@@ -1113,9 +1122,16 @@ final class WorkspaceManager: ObservableObject {
             clearContinuations(id)
             if run.pendingHandoff != nil { update(id) { $0.pendingHandoff = nil } }
         }
+        // A summary Nook asked for while you were away ends quietly: no notification, no result for a delegating
+        // session, and no snapshot (it changed no files). What you sent meanwhile goes on.
+        if idleCompacting.remove(id) != nil {
+            sendQueued(id)
+            return
+        }
         onTurnFinished?(run)
         deliverDelegatedResult(id)
         captureCheckpoint(id)
+        scheduleIdleCompaction(id)
     }
 
     /// A snapshot after each turn, for every session in a repository: it shows what each turn changed. Putting files back
@@ -1397,6 +1413,7 @@ final class WorkspaceManager: ObservableObject {
     }
 
     func launchTurn(_ id: UUID, prompt: String, executable: String, showPrompt: Bool = true) {
+        cancelIdleCompaction(id)
         guard processes[id] == nil else { return }
         // A new turn brings a chat you settled back, also when the Agents list is not on screen to see it work.
         if let run = run(id) { FinishedSessions.shared.reopen(FinishedSessions.key(run: run)) }
@@ -1445,6 +1462,7 @@ final class WorkspaceManager: ObservableObject {
             runID: id,
             bridge: bridge(for: id),
             thinkingDisplay: run.provider == .claude && claudeThinkingDisplay[executable] == true,
+            toolSearch: claudeToolSearch(run),
             effort: run.provider == .claude ? run.effort : nil
         )
         // The flag probe runs Claude Code on this Mac: not for a session on another machine.
@@ -1501,7 +1519,9 @@ final class WorkspaceManager: ObservableObject {
                 provider: .claude, executable: executable, prompt: "", model: run.model, mode: run.mode, permission: run.permission,
                 instructions: run.instructions, workingDirectory: run.workingDirectory, resumeSessionID: run.providerSessionID,
                 accountEnvironment: accountEnvironment(run.profileID), runID: id, bridge: bridge(for: id),
-                thinkingDisplay: claudeThinkingDisplay[executable] == true, effort: run.effort)), for: run)
+                thinkingDisplay: claudeThinkingDisplay[executable] == true,
+                toolSearch: claudeToolSearch(run),
+                effort: run.effort)), for: run)
             spec.initialInput = []
             let process = AgentProcess(spec: spec)
             process.onLines = { [weak self, weak process] lines in
@@ -1615,6 +1635,9 @@ final class WorkspaceManager: ObservableObject {
             feed(id, .thinkingDelta(text))
         case .blockStopped:
             feed(id, .thinkingEnded)
+        case .requestStarted(let ttl):
+            turns[id]?.lastRequestAt = Date()
+            if let ttl { turns[id]?.cacheTTL = ttl }
         case .thinking(let text):
             feed(id, .thinking(text))
         case .toolUse(let callID, let name, let input, let nested):
@@ -1634,6 +1657,7 @@ final class WorkspaceManager: ObservableObject {
         case .subagentStep(let parent, let step):
             noteSubagentStep(id, parent: parent, step)
         case .usage(let messageID, let tokens, let model):
+            if let ttl = tokens.cacheTTL { turns[id]?.cacheTTL = ttl }
             turns[id]?.messageUsage[messageID] = tokens
             turns[id]?.lastContext = tokens.context + tokens.output
             if let model, !model.isEmpty, run(id)?.resolvedModel == nil { update(id) { $0.resolvedModel = model } }
@@ -1707,6 +1731,7 @@ final class WorkspaceManager: ObservableObject {
             update(id) { run in
                 for segment in state?.steeredUsage ?? [] { run.usage.add(segment) }
                 run.usage.add(usage)
+                if let cache = Self.promptCache(after: state, previous: run.promptCache) { run.promptCache = cache }
                 if let session = result.sessionID { run.providerSessionID = session }
                 if stopping {
                     run.move(to: .stopped)
@@ -1736,7 +1761,10 @@ final class WorkspaceManager: ObservableObject {
             // Turn finished: keep Claude Code waiting for the next message instead of closing it.
             parkClaudeProcess(id, stopping: stopping)
         case .notice(let text):
-            if text == "compact" { append(id, RunEvent(kind: .system, text: tr("ws.event.compacted"))) }
+            if text == "compact" {
+                turns[id]?.compacted = true
+                append(id, RunEvent(kind: .system, text: tr("ws.event.compacted")))
+            }
         case .rateLimits(let event):
             onRateLimits?()
             if let event { noteClaudeLimit(id, event) }

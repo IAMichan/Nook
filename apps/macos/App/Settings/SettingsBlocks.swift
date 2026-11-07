@@ -786,6 +786,8 @@ struct WorkspaceSettingsSection: View {
                       prompt: Text(tr("settings.ws.titleInstructions.placeholder")), axis: .vertical)
                 .lineLimit(1...4)
             Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
+            Toggle(tr("settings.ws.idleCompaction"), isOn: $ws.idleCompaction)
+                .help(tr("settings.ws.idleCompaction.help"))
             // How the session list is laid out belongs with how sessions behave, not with tidying up.
             Toggle(tr("settings.ws.inboxProjects"), isOn: $inbox.groupByProject)
             Toggle(tr("settings.ws.inboxWorking"), isOn: $inbox.showWorking)
