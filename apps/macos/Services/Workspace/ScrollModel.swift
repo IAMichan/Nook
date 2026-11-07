@@ -26,8 +26,6 @@ struct ScrollModel: Equatable, Sendable {
     private(set) var cancelQueuedScrolls = false
 
     var shouldFollowEnd: Bool { mode == .following }
-    /// The conversation does not follow its end by itself: the "Scroll to end" pill is the way back there.
-    var awayFromEnd: Bool { mode != .following }
     /// `userScrolled()` would change nothing now. A view that reports every frame of a scroll (or every step of a drag
     /// on the rail) checks this first, so it writes its state once instead of drawing the whole conversation again for
     /// each frame, which made scrolling stutter.
@@ -71,6 +69,13 @@ struct ScrollModel: Equatable, Sendable {
     /// The reader scrolled back to the end: following resumes, except while finding (the find owns the position).
     mutating func reachedEnd() {
         if mode == .free, !isFinding { mode = .following }
+    }
+
+    /// The "Scroll to end" pill shows only once you scrolled away yourself and the end is out of view. Not while a
+    /// message you sent is held near the top (the reply grows under it and following takes over by itself), and not
+    /// while you are at the end: there it showed over a conversation that was already at its last line.
+    func showsToEndPill(atEnd: Bool) -> Bool {
+        mode == .free && !isFinding && !atEnd
     }
 
     func jumpPill(awayFor: TimeInterval) -> Bool {
