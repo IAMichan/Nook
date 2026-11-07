@@ -678,9 +678,13 @@ struct BridgeLaunch: Equatable, Sendable {
 
     /// What the server says about itself when an agent connects. A session Nook started already has the note in its own
     /// instructions (`note`, passed at launch to every agent), so it gets nothing here: the agent would otherwise carry
-    /// the same text twice in every request. An agent you connected yourself (`~/.nook/nook-mcp`) gets the note here.
-    static func serverInstructions(startedByNook: Bool, remote: Bool) -> String? {
-        startedByNook ? nil : (remote ? RemoteBridge.instructions : instructions)
+    /// the same text twice in every request. An agent you connected yourself (`~/.nook/nook-mcp`) gets the note here, and
+    /// so does Codex: `codex exec` gives the note only with the first prompt of a conversation Nook started, so a
+    /// conversation Nook took over from Codex would otherwise never get it.
+    static func serverInstructions(startedByNook: Bool, remote: Bool, agent: String = "") -> String? {
+        let note = remote ? RemoteBridge.instructions : instructions
+        guard startedByNook else { return note }
+        return agent == RunProvider.codex.rawValue ? note : nil
     }
 
     /// The note for the agent, after any instructions of your own. It goes with every request of the session, so it says

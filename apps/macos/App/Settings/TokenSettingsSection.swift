@@ -24,6 +24,14 @@ final class AgentTuningModel: ObservableObject {
 
     func isApplied(_ item: TuningAdvice) -> Bool { applied.isApplied(item) }
 
+    /// The suggestions, plus what you applied earlier and no scan suggests now (a plugin you used since): it stays
+    /// listed, so it can be turned off again.
+    var rows: [TuningAdvice] {
+        AgentTuning.withApplied(advice, applied: applied,
+                                settingsFile: FileManager.default.homeDirectoryForCurrentUser
+                                    .appendingPathComponent(".claude/settings.json").path)
+    }
+
     func setApplied(_ item: TuningAdvice, _ on: Bool) {
         applied.set(item, on: on)
         applied.save()
@@ -31,6 +39,7 @@ final class AgentTuningModel: ObservableObject {
 }
 
 struct TokenSettingsSection: View {
+    @EnvironmentObject private var app: AppModel
     @ObservedObject private var ws = WorkspaceSettings.shared
     @StateObject private var model = AgentTuningModel()
 
@@ -38,6 +47,7 @@ struct TokenSettingsSection: View {
         Section {
             Toggle(tr("settings.ws.idleCompaction"), isOn: $ws.idleCompaction)
                 .help(tr("settings.ws.idleCompaction.help"))
+                .onChange(of: ws.idleCompaction) { _, _ in app.workspace.idleCompactionSettingChanged() }
             SettingNote(tr("tuning.nookDoes"))
         } header: {
             SettingsSectionTitle(tr("tuning.nook.title"))
@@ -45,12 +55,17 @@ struct TokenSettingsSection: View {
         Section {
             if model.scanning && !model.scanned {
                 SettingNote(tr("tuning.checking"))
-            } else if model.advice.isEmpty {
-                SettingNote(tr("tuning.none"), tone: .success)
+            } else if model.rows.isEmpty {
+                SettingNote(tr("tuning.none"))
             }
-            ForEach(model.advice) { item in
-                TuningAdviceRow(item: item, applied: Binding(get: { model.isApplied(item) }, set: { model.setApplied(item, $0) }))
+            ForEach(model.rows) { item in
+                TuningAdviceRow(item: item, applied: Binding(get: { model.isApplied(item) }, set: { on in
+                    model.setApplied(item, on)
+                    app.store.audit(tool: "token_tuning", args: "\(item.provider.displayName) · \(item.kind.rawValue) · "
+                                    + item.items.joined(separator: ", "), result: on ? "applied in Nook sessions" : "removed")
+                }))
             }
+            SettingNote(tr("tuning.limits"))
             HStack {
                 Spacer()
                 SmallGhostButton(title: tr(model.scanning ? "tuning.checking" : "tuning.recheck")) { model.scan() }

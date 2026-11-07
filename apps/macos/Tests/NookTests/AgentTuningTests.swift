@@ -75,6 +75,26 @@ final class AgentTuningTests: XCTestCase {
         XCTAssertTrue(connectors.location.hasPrefix("https://claude.ai/"))
     }
 
+    func testAPluginSyncedTwiceIsCountedOnce() throws {
+        try claudeHome(connectorUsed: false)
+        try write(".claude/plugins/synced/acct2/manifest.json", #"{"plugins":[{"name":"sales"}]}"#)
+        try write(".claude/plugins/synced/acct2/sales/skills/forecast/SKILL.md", skill("forecast", "Write the forecast narrative."))
+        let plugins = try XCTUnwrap(AgentTuning.claude(home: home, now: now).first { $0.kind == .unusedPlugins })
+        XCTAssertEqual(plugins.items, ["sales@inline"])
+    }
+
+    func testWhatYouAppliedStaysListed() {
+        var applied = AgentTuning.Applied()
+        applied.claudePlugins = ["sales@inline", "marketing@inline"]
+        applied.claudeNoConnectors = true
+        let now = [TuningAdvice(provider: .claude, kind: .unusedPlugins, items: ["sales@inline"], location: "", appliesInNook: true)]
+        let rows = AgentTuning.withApplied(now, applied: applied, settingsFile: "/s")
+        XCTAssertEqual(rows.filter { $0.kind == .unusedPlugins }.map(\.items), [["sales@inline"], ["marketing@inline"]],
+                       "marketing was used since, but is still off in Nook's sessions until you turn it on")
+        XCTAssertTrue(rows.allSatisfy(applied.isApplied))
+        XCTAssertEqual(Set(rows.map(\.id)).count, rows.count)
+    }
+
     func testAppliedSuggestionsReachClaudesSettings() throws {
         var applied = AgentTuning.Applied()
         let plugins = TuningAdvice(provider: .claude, kind: .unusedPlugins, items: ["sales@inline"], location: "", appliesInNook: true)
@@ -97,7 +117,7 @@ final class AgentTuningTests: XCTestCase {
     func testCodexServers() throws {
         try write(".codex/config.toml", """
         model = "gpt-5"
-        [mcp_servers.github]
+        [mcp_servers.github] # the work one
         command = "gh-mcp"
         [mcp_servers.github.env]
         TOKEN = "x"
@@ -105,14 +125,20 @@ final class AgentTuningTests: XCTestCase {
         command = "a"
         [mcp_servers.off]
         command = "b"
-        enabled = false
+        enabled	=	false # not now
+        [mcp_servers."büro"]
+        command = "c"
         [projects."/tmp"]
         trust_level = "trusted"
         """)
         let advice = try XCTUnwrap(AgentTuning.codex(home: home).first)
         XCTAssertEqual(advice.kind, .servers)
-        XCTAssertEqual(advice.items, ["github", "my server"])
-        XCTAssertTrue(advice.snippet?.contains("[mcp_servers.\"my server\"]\nenabled = false") == true, advice.snippet ?? "")
+        XCTAssertEqual(advice.items, ["büro", "github", "my server"], "a comment after a header or a value is no part of it")
+        let snippet = try XCTUnwrap(advice.snippet)
+        XCTAssertFalse(snippet.contains("\n[mcp_servers"), "a table named twice makes the file invalid")
+        XCTAssertTrue(snippet.contains("[mcp_servers.\"my server\"] table, add:\nenabled = false"), snippet)
+        XCTAssertTrue(snippet.contains("[mcp_servers.\"büro\"]"), "a bare key is ASCII only")
+        XCTAssertEqual(CodexConfig.key("github-2"), "github-2")
         XCTAssertFalse(advice.appliesInNook)
     }
 

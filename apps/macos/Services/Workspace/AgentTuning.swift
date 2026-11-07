@@ -40,7 +40,7 @@ struct TuningAdvice: Identifiable, Equatable, Sendable {
     /// Nook can apply it to the sessions it starts itself (`AgentTuning.Applied`).
     var appliesInNook = false
 
-    var id: String { provider.rawValue + "." + kind.rawValue }
+    var id: String { provider.rawValue + "." + kind.rawValue + "." + items.joined(separator: ",") }
     /// About this many tokens per request (four characters to a token).
     var tokens: Int? { characters.map { max(1, $0 / 4) } }
 }
@@ -95,6 +95,21 @@ enum AgentTuning {
             case .unusedServers, .servers, .longInstructions, .autoCompactOff: break
             }
         }
+    }
+
+    /// `advice` plus a row for what you applied and no suggestion covers any more, so it can be undone.
+    static func withApplied(_ advice: [TuningAdvice], applied: Applied, settingsFile: String) -> [TuningAdvice] {
+        var rows = advice
+        let suggested = Set(advice.filter { $0.kind == .unusedPlugins }.flatMap(\.items))
+        let leftover = applied.claudePlugins.filter { !suggested.contains($0) }
+        if !leftover.isEmpty {
+            rows.append(TuningAdvice(provider: .claude, kind: .unusedPlugins, items: leftover, location: settingsFile, appliesInNook: true))
+        }
+        if applied.claudeNoConnectors, !advice.contains(where: { $0.kind == .cloudConnectors && $0.appliesInNook }) {
+            rows.removeAll { $0.kind == .cloudConnectors }
+            rows.append(TuningAdvice(provider: .claude, kind: .cloudConnectors, items: [], location: settingsFile, appliesInNook: true))
+        }
+        return rows
     }
 
     // MARK: Reading the agents
@@ -184,7 +199,7 @@ enum AgentTuning {
             let on = CodexConfig.enabledServers(text)
             if !on.isEmpty {
                 advice.append(TuningAdvice(provider: .codex, kind: .servers, items: on, location: file.path,
-                                           snippet: on.map { "[mcp_servers.\(CodexConfig.key($0))]\nenabled = false" }.joined(separator: "\n\n")))
+                                           snippet: CodexConfig.disableSnippet(on)))
             }
         }
         return advice + instructions(.codex, file: home.appendingPathComponent(".codex/AGENTS.md"))
@@ -292,7 +307,9 @@ enum ClaudePlugins {
             let name = String(id.prefix { $0 != "@" })
             plugins.append(Plugin(id: id, characters: listingCharacters(URL(fileURLWithPath: path), plugin: name)))
         }
-        return plugins.sorted { $0.id < $1.id }
+        // One plugin can be synced through more than one account folder: count it once.
+        var seen = Set<String>()
+        return plugins.sorted { $0.id < $1.id }.filter { seen.insert($0.id).inserted }
     }
 
     /// Used within the period: the plugin itself (`pluginUsage`, also its synced twin) or one of its skills (`skillUsage`).
@@ -422,16 +439,16 @@ enum CodexConfig {
     static func enabledServers(_ toml: String) -> [String] {
         var servers: [(name: String, enabled: Bool)] = []
         for raw in toml.split(separator: "\n") {
-            let line = raw.trimmingCharacters(in: .whitespaces)
+            let line = withoutComment(String(raw)).trimmingCharacters(in: .whitespaces)
             if line.hasPrefix("[") {
-                let header = line.trimmingCharacters(in: CharacterSet(charactersIn: "[] "))
+                let header = line.trimmingCharacters(in: CharacterSet(charactersIn: "[] \t"))
                 if header.hasPrefix("mcp_servers."), let name = name(String(header.dropFirst("mcp_servers.".count))) {
                     servers.append((name, true))
                 } else {
                     servers.append(("", false))
                 }
             } else if let last = servers.last, !last.name.isEmpty,
-                      line.replacingOccurrences(of: " ", with: "").hasPrefix("enabled=false") {
+                      line.filter({ !$0.isWhitespace }) == "enabled=false" {
                 servers[servers.count - 1].enabled = false
             }
         }
@@ -449,9 +466,28 @@ enum CodexConfig {
         return rest.contains(".") ? nil : rest
     }
 
-    /// A table key: bare when it can be, quoted otherwise.
+    /// A table key: bare when TOML allows it (ASCII letters, digits, `_` and `-`), quoted otherwise.
     static func key(_ name: String) -> String {
-        name.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" } ? name : BridgeLaunch.toml(name)
+        let bare = !name.isEmpty && name.unicodeScalars.allSatisfy {
+            ("a"..."z").contains($0) || ("A"..."Z").contains($0) || ("0"..."9").contains($0) || $0 == "_" || $0 == "-"
+        }
+        return bare ? name : BridgeLaunch.toml(name)
+    }
+
+    /// What to add to each server's existing table. A table named twice makes the whole file invalid, so this says where
+    /// the line goes instead of repeating the header.
+    static func disableSnippet(_ servers: [String]) -> String {
+        servers.map { "# In the existing [mcp_servers.\(key($0))] table, add:\nenabled = false" }.joined(separator: "\n\n")
+    }
+
+    /// The line without a `#` comment (a `#` inside a quoted string stays).
+    static func withoutComment(_ line: String) -> String {
+        var inString = false
+        for (index, char) in zip(line.indices, line) {
+            if char == "\"" { inString.toggle() }
+            if char == "#", !inString { return String(line[..<index]) }
+        }
+        return line
     }
 }
 

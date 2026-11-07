@@ -141,6 +141,9 @@ final class TokenSavingsTests: XCTestCase {
     func testASessionNookStartedGetsTheNoteOnce() {
         XCTAssertNil(BridgeLaunch.serverInstructions(startedByNook: true, remote: false), "it has the note from its launch")
         XCTAssertNil(BridgeLaunch.serverInstructions(startedByNook: true, remote: true))
+        XCTAssertEqual(BridgeLaunch.serverInstructions(startedByNook: true, remote: false, agent: "codex"), BridgeLaunch.instructions,
+                       "a conversation taken over from Codex has no note of its own")
+        XCTAssertNil(BridgeLaunch.serverInstructions(startedByNook: true, remote: false, agent: "claude"))
         XCTAssertEqual(BridgeLaunch.serverInstructions(startedByNook: false, remote: false), BridgeLaunch.instructions)
         XCTAssertEqual(BridgeLaunch.serverInstructions(startedByNook: false, remote: true), RemoteBridge.instructions)
     }
