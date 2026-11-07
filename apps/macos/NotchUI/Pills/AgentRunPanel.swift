@@ -48,7 +48,7 @@ struct AgentRunPanel: View {
     /// Counts the messages you sent from the composer (also those that steer or wait in line): each brings the
     /// conversation down to its end, wherever you had scrolled.
     @State private var sentCount = 0
-    /// Where the timeline is scrolled, for the rail, and the position the rail scrolls it to when you drag it.
+    /// Where the timeline is scrolled, and the position that keeps a message you sent in place.
     @State private var viewport = TimelineViewport()
     @State private var position = ScrollPosition()
     /// The timeline is taller than the view: only then the rail with your messages shows.
@@ -786,16 +786,13 @@ struct AgentRunPanel: View {
                         .padding(.top, NookTheme.Spacing.xs)
                 }
             }
-            // A mark per message of yours along the edge, as in an agent's own transcript: it jumps and scrolls.
-            .overlay(alignment: .trailing) {
+            // A mark per message of yours on the leading edge, as in an agent's own transcript: a click jumps to it.
+            .overlay(alignment: .leading) {
                 if overflows, !finding, !memo.marks.isEmpty {
-                    TranscriptPromptRail(marks: memo.marks, viewport: viewport) { mark in
+                    TranscriptPromptRail(marks: memo.marks) { mark in
                         scroll.userScrolled()
                         guard let id = UUID(uuidString: mark.row) else { return }
                         withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
-                    } onScrub: { offset in
-                        if !scroll.isFreeAfterUserScroll { scroll.userScrolled() }
-                        position.scrollTo(y: offset)
                     }
                     .padding(.vertical, NookTheme.Spacing.md)
                     .transition(.opacity)

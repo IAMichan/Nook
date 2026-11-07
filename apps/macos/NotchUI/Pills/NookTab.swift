@@ -45,7 +45,6 @@ struct NookChatView: View {
     @State private var scrollPhase = Unobserved(ScrollPhase.idle)
     /// Where the conversation is scrolled, for the rail beside it that takes the place of a scroll bar.
     @State private var viewport = TimelineViewport()
-    @State private var position = ScrollPosition()
     @State private var overflows = false
     @State private var marks = NookChatMarks()
     @State private var renaming = false
@@ -396,7 +395,6 @@ struct NookChatView: View {
                 .padding(.bottom, NookTheme.Spacing.xs)
                 .animation(NookTheme.reveal, value: chat.messages.count)
             }
-            .scrollPosition($position)
             // No system scroll bar, as in an agent's transcript: the rows are laid out only as they come into view, so
             // its knob jumped while dragged. The rail beside the conversation is the scroll bar instead. `.never`,
             // because `.hidden` still shows one when the system shows scroll bars always (a mouse connected).
@@ -465,17 +463,14 @@ struct NookChatView: View {
                     .frame(height: 10)
                     .allowsHitTesting(false)
             }
-            // A mark per question of yours along the edge, as in an agent's transcript: it jumps and scrolls.
-            .overlay(alignment: .trailing) {
+            // A mark per question of yours on the leading edge, as in an agent's transcript: a click jumps to it.
+            .overlay(alignment: .leading) {
                 let shown = marks.update(chat.messages)
                 if overflows, !shown.isEmpty {
-                    TranscriptPromptRail(marks: shown, viewport: viewport) { mark in
+                    TranscriptPromptRail(marks: shown) { mark in
                         scroll.userScrolled()
                         guard let id = UUID(uuidString: mark.row) else { return }
                         withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
-                    } onScrub: { offset in
-                        if !scroll.isFreeAfterUserScroll { scroll.userScrolled() }
-                        position.scrollTo(y: offset)
                     }
                     .padding(.vertical, NookTheme.Spacing.md)
                     .transition(.opacity)
