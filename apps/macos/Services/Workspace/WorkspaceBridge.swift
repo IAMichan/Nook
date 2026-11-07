@@ -162,7 +162,9 @@ final class WorkspaceBridge: ObservableObject {
         }
         Task { @MainActor [weak self] in
             guard let self else { connection.reply(nil); return }
-            let response = await BridgeRPC.response(to: message) { tool, arguments in
+            let startedByNook = ((context.env["NOOK_RUN_ID"] as? String) ?? "").isEmpty == false
+            let instructions = BridgeLaunch.serverInstructions(startedByNook: startedByNook, remote: remote)
+            let response = await BridgeRPC.response(to: message, instructions: instructions) { tool, arguments in
                 await self.call(tool, arguments, context)
             }
             guard let response, let reply = try? JSONSerialization.data(withJSONObject: response) else {

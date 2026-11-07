@@ -29,10 +29,18 @@ enum AgentCredits {
             .filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
 
-    /// Claude Code's `--settings`: thinking summaries, and with the setting on no attribution in commits and pull requests.
-    static func claudeSettings(omit: Bool) -> String {
-        omit ? #"{"showThinkingSummaries":true,"includeCoAuthoredBy":false,"attribution":{"commit":"","pr":""}}"#
-             : #"{"showThinkingSummaries":true}"#
+    /// Claude Code's `--settings`: thinking summaries, with the setting on no attribution in commits and pull requests, and
+    /// the environment Nook sets for it (`ENABLE_TOOL_SEARCH`, see `ClaudeToolSearch`). Settings given this way beat the
+    /// `env` of your own settings files, which in turn beats the process environment.
+    static func claudeSettings(omit: Bool, env: [String: String] = [:]) -> String {
+        var settings: [String: Any] = ["showThinkingSummaries": true]
+        if omit {
+            settings["includeCoAuthoredBy"] = false
+            settings["attribution"] = ["commit": "", "pr": ""]
+        }
+        if !env.isEmpty { settings["env"] = env }
+        let data = (try? JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()
+        return String(decoding: data, as: UTF8.self)
     }
 
     /// The addresses coding agents sign their co-author lines with.
