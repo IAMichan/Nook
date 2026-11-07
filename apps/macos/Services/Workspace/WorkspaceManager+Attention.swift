@@ -40,6 +40,7 @@ extension WorkspaceManager {
     }
 
     func unsnooze(_ id: UUID) {
+        defer { scheduleIdleCompaction(id) }
         update(id) {
             $0.snoozedAt = nil
             $0.snoozedUntil = nil

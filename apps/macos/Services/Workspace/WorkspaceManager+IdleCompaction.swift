@@ -39,8 +39,10 @@ extension WorkspaceManager {
 
     func idleCandidate(_ run: WorkspaceRun) -> IdleCompaction.Candidate {
         let id = run.id
+        // A process still attached is not a hold: Claude Code's stays until it is parked, just after the turn ends. A
+        // running turn shows in `status`, and `send` refuses while a process works.
         let holds = !(approvals[id] ?? []).isEmpty || !(questions[id] ?? []).isEmpty || !(queued[id]?.isEmpty ?? true)
-            || backgroundWork.contains(id) || processes[id] != nil || run.pendingHandoff != nil || run.pendingRollback != nil
+            || backgroundWork.contains(id) || run.pendingHandoff != nil || run.pendingRollback != nil
             || awaitingCheckpoint[id] != nil
         return IdleCompaction.Candidate(
             agentReportsCacheLifetime: run.provider.capabilities.reportsPromptCacheLifetime,
@@ -50,17 +52,28 @@ extension WorkspaceManager {
             holdsForYou: holds, isRemote: run.isRemote)
     }
 
-    /// The moment came: if nothing changed, the agent summarizes the conversation while its history is still cached.
+    /// The moment came: if nothing changed, the agent summarizes the conversation while its history is still cached. It
+    /// stays with the session's own agent and account (no Auto move, see `send`), and the timeline says so only once
+    /// the agent reports the compaction (`.notice("compact")`). Logged like Nook's other automatic actions.
     private func compactIdle(_ id: UUID) {
         idleCompactionTimers[id] = nil
         let now = Date()
         guard settings.idleCompaction, let run = run(id), IdleCompaction.fireDate(idleCandidate(run), now: now) != nil else { return }
         idleCompacting.insert(id)
-        guard sendHidden(id, text: "/compact") else {
-            idleCompacting.remove(id)
-            return
+        let sent = sendHidden(id, text: "/compact")
+        if !sent { idleCompacting.remove(id) }
+        onAudit?("idle_compaction", "\(run.provider.displayName) · \(run.title) · \(run.usage.contextTokens ?? 0) tokens",
+                 sent ? "sent" : "not sent")
+    }
+
+    /// The setting changed: plan every session again, or drop what was planned.
+    func idleCompactionSettingChanged() {
+        if settings.idleCompaction {
+            scheduleIdleCompactions()
+        } else {
+            for (_, timer) in idleCompactionTimers { timer.cancel() }
+            idleCompactionTimers.removeAll()
         }
-        append(id, RunEvent(kind: .system, text: tr("ws.event.idleCompaction")))
     }
 
     // MARK: Claude Code settings
@@ -68,6 +81,13 @@ extension WorkspaceManager {
     /// `ENABLE_TOOL_SEARCH` for this session's Claude Code: on, unless your settings say otherwise (`ClaudeToolSearch`).
     /// A session on another machine keeps that machine's settings. The other agents have no such setting (their MCP
     /// tools always go with every request; see docs/INTEGRATIONS.md).
+    /// The token suggestions you applied (Settings › Sessions › Tokens) were made from this Mac's own Claude Code account,
+    /// so they go only to sessions of that account here: another account or machine has its own plugins and connectors.
+    func appliedTuning(_ run: WorkspaceRun) -> AgentTuning.Applied {
+        guard !run.isRemote, (accountEnvironment(run.profileID)["CLAUDE_CONFIG_DIR"] ?? "").isEmpty else { return AgentTuning.Applied() }
+        return AgentTuning.Applied.load()
+    }
+
     func claudeToolSearch(_ run: WorkspaceRun) -> String? {
         switch run.provider {
         case .claude: break
