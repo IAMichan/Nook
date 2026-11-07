@@ -172,7 +172,7 @@ struct TranscriptConversation: View {
                 // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
                 .composerInset(spacing: bottomBar == nil ? 0 : NookTheme.Spacing.xxxl) {
                     (bottomBar ?? AnyView(Color.clear.frame(height: 0)))
-                        .toEndPill(scroll.awayFromEnd && !atEnd && !shown.isEmpty) {
+                        .toEndPill(scroll.showsToEndPill(atEnd: atEnd) && !shown.isEmpty) {
                             scroll.jumpedToEnd()
                             withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
                         }

@@ -453,7 +453,7 @@ struct NookChatView: View {
             // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
             .composerInset {
                 inputBar
-                    .toEndPill(scroll.mode == .free && !atEnd) {
+                    .toEndPill(scroll.showsToEndPill(atEnd: atEnd)) {
                         scroll.jumpedToEnd()
                         withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
                     }

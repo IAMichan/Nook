@@ -746,7 +746,7 @@ struct AgentRunPanel: View {
             // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
             .composerInset {
                 VStack(spacing: NookTheme.Spacing.lg) { bottomBar(run) }
-                    .toEndPill(scroll.awayFromEnd && !atEnd && !finding) {
+                    .toEndPill(scroll.showsToEndPill(atEnd: atEnd) && !finding) {
                         scroll.jumpedToEnd()
                         withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
                     }
