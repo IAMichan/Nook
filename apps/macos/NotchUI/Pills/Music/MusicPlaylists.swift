@@ -60,7 +60,7 @@ struct MusicPlaylistsView: View {
                 } else if shown.isEmpty {
                     MusicPlaceholder(symbol: "magnifyingglass", title: tr("music.search.empty", filter))
                 } else {
-                    MusicShelf(sections: [.init(id: "playlists", note: note, items: shown.map(item))], service: service)
+                    MusicShelf(note: note, items: shown.map(item), service: service)
                 }
             }
         }
@@ -79,7 +79,7 @@ struct MusicPlaylistsView: View {
                     .help(tr("music.playlists.new"))
             }
         }
-        .padding(.horizontal, NookTheme.Spacing.xs)
+        .padding(.horizontal, MusicLayout.edge)
     }
 
     private var shown: [MusicPlaylist] {
@@ -124,72 +124,79 @@ private struct MusicPlaylistDetailView: View {
     private var playlist: MusicPlaylist { detail.playlist }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            header
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // One scroll: the playlist's head goes up with its tracks, so a long playlist gets the whole page.
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                header
+                    .padding(.bottom, NookTheme.Spacing.xxl)
+                content
+            }
+            .padding(.horizontal, MusicLayout.edge)
+            .padding(.bottom, NookTheme.Spacing.xl)
         }
         .onChange(of: playlist.id) { filter = "" }
     }
 
+    /// The cover, the name large with what it holds under it, and its buttons in one row: no card around it, as the
+    /// head of a page. Back is in the page's header band.
     private var header: some View {
-        HStack(alignment: .center, spacing: NookTheme.Spacing.lg) {
-            NookIconButton(systemName: "chevron.left", label: tr("music.playlists.back"), size: 30) { service.closePlaylist() }
+        HStack(alignment: .bottom, spacing: NookTheme.Spacing.xl) {
             MusicArtwork(url: playlist.artworkURL ?? detail.tracks.first?.artworkURL, seed: playlist.name,
-                         symbol: "music.note.list", cornerRadius: NookTheme.Radius.card)
-                .frame(width: 52, height: 52)
-                .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                         symbol: "music.note.list", cornerRadius: NookTheme.Radius.panel)
+                .frame(width: 136, height: 136)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 Text(playlist.name)
-                    .font(NookTheme.TextStyle.heading)
+                    .font(NookTheme.TextStyle.display)
                     .foregroundStyle(NookTheme.paper)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(summary)
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textSecondary)
                     .lineLimit(1)
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    NookIconButton(systemName: "play.fill", label: tr("music.playlists.play", playlist.name), filled: true, size: 36) {
+                        service.play(playlist, shuffled: false)
+                    }
+                    NookIconButton(systemName: "shuffle", label: tr("music.playlists.shuffle"), size: 32) {
+                        service.play(playlist, shuffled: true)
+                    }
+                    if playlist.editable, let track = service.currentTrack, service.playlistsAccepting(track).contains(where: { $0.id == playlist.id }) {
+                        NookIconButton(systemName: "plus", label: tr("music.playlists.addCurrent", track.title), size: 32) {
+                            service.add(track, to: playlist)
+                        }
+                    }
+                    if playlist.editable { moreMenu }
+                    Spacer(minLength: NookTheme.Spacing.md)
+                    if detail.tracks.count > 10 {
+                        NookSearchField(prompt: tr("music.playlists.filterTracks"), text: $filter)
+                            .frame(maxWidth: 200)
+                    }
+                }
+                .padding(.top, NookTheme.Spacing.md)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            HStack(spacing: NookTheme.Spacing.sm) {
-                if detail.tracks.count > 10 {
-                    NookSearchField(prompt: tr("music.playlists.filterTracks"), text: $filter)
-                        .frame(width: 170)
-                }
-                if playlist.editable, let track = service.currentTrack, service.playlistsAccepting(track).contains(where: { $0.id == playlist.id }) {
-                    NookIconButton(systemName: "plus", label: tr("music.playlists.addCurrent", track.title), size: 30) {
-                        service.add(track, to: playlist)
-                    }
-                }
-                NookIconButton(systemName: "shuffle", label: tr("music.playlists.shuffle"), size: 30) {
-                    service.play(playlist, shuffled: true)
-                }
-                NookIconButton(systemName: "play.fill", label: tr("music.playlists.play", playlist.name), filled: true, size: 34) {
-                    service.play(playlist, shuffled: false)
-                }
-                if playlist.editable {
-                    Menu {
-                        Button(tr("music.playlists.rename")) { service.playlistPrompt = .rename(playlist) }
-                        Button(tr("music.playlists.reload")) { service.reloadPlaylistDetail() }
-                        Divider()
-                        Button(tr("music.playlists.delete"), role: .destructive) { onDelete(playlist) }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(NookTheme.font(13, .semibold))
-                            .foregroundStyle(NookTheme.textSecondary)
-                            .frame(width: 30, height: 30)
-                            .contentShape(Rectangle())
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .help(tr("music.playlists.more"))
-                    .accessibilityLabel(tr("music.playlists.more"))
-                }
-            }
         }
-        .padding(NookTheme.Spacing.md)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.surface))
-        .padding(.horizontal, NookTheme.Spacing.xs)
+    }
+
+    private var moreMenu: some View {
+        Menu {
+            Button(tr("music.playlists.rename")) { service.playlistPrompt = .rename(playlist) }
+            Button(tr("music.playlists.reload")) { service.reloadPlaylistDetail() }
+            Divider()
+            Button(tr("music.playlists.delete"), role: .destructive) { onDelete(playlist) }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(NookTheme.font(13, .semibold))
+                .foregroundStyle(NookTheme.textSecondary)
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(tr("music.playlists.more"))
+        .accessibilityLabel(tr("music.playlists.more"))
     }
 
     private var summary: String {
@@ -200,49 +207,43 @@ private struct MusicPlaylistDetailView: View {
         return parts.joined(separator: " · ")
     }
 
+    /// What the playlist holds: its tracks, or why there are none to show, with room enough to read under the head.
     @ViewBuilder
     private var content: some View {
         switch detail.state {
         case .loading where detail.tracks.isEmpty, .idle:
-            PatientSpinner()
+            PatientSpinner().frame(maxWidth: .infinity, minHeight: 200)
         case .reconnectSpotify:
             MusicPlaceholder(symbol: "arrow.triangle.2.circlepath", title: tr("music.playlists.reconnect"),
                              detail: tr("music.playlists.reconnectDetail", tr("settings.section.connections")))
+                .frame(minHeight: 240)
         case .failed(let message) where detail.tracks.isEmpty:
             MusicPlaceholder(symbol: "exclamationmark.triangle", title: tr("music.playlists.loadFailed"), detail: message) {
                 SmallGhostButton(title: tr("music.lyrics.retry")) { service.reloadPlaylistDetail() }
             }
+            .frame(minHeight: 240)
         default:
             if detail.tracks.isEmpty {
                 MusicPlaceholder(symbol: "music.note", title: tr("music.playlists.emptyPlaylist"),
                                  detail: playlist.editable ? tr("music.playlists.emptyPlaylistDetail") : nil)
+                    .frame(minHeight: 240)
             } else {
                 let rows = detail.tracks(matching: filter)
                 if rows.isEmpty {
                     MusicPlaceholder(symbol: "magnifyingglass", title: tr("music.search.empty", filter))
+                        .frame(minHeight: 240)
                 } else {
-                    trackList(rows)
+                    ForEach(rows) { row in
+                        MusicTrackRow(
+                            number: row.index + 1, track: row.track, playing: isPlaying(row.track),
+                            service: service,
+                            onRemove: playlist.editable ? { service.removeFromOpenPlaylist(at: row.index) } : nil
+                        ) { service.play(row.track, in: playlist) }
+                        .musicRowBleed()
+                    }
                 }
             }
         }
-    }
-
-    private func trackList(_ rows: [MusicPlaylistDetail.Row]) -> some View {
-        ScrollView(.vertical, showsIndicators: true) {
-            LazyVStack(spacing: 0) {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { position, row in
-                    if position > 0 { NookDivider(inset: 78) }
-                    MusicTrackRow(
-                        number: row.index + 1, track: row.track, playing: isPlaying(row.track),
-                        service: service,
-                        onRemove: playlist.editable ? { service.removeFromOpenPlaylist(at: row.index) } : nil
-                    ) { service.play(row.track, in: playlist) }
-                }
-            }
-            .panelCard()
-            .padding(.bottom, NookTheme.Spacing.xl)
-        }
-        .padding(.horizontal, NookTheme.Spacing.xs)
     }
 
     private func isPlaying(_ track: MusicTrack) -> Bool {
@@ -260,6 +261,10 @@ struct MusicTrackRow: View {
     let playing: Bool
     @ObservedObject var service: NowPlayingService
     var onRemove: (() -> Void)? = nil
+    /// What taking it out means here (out of the playlist, out of the queue).
+    var removeLabel: String? = nil
+    /// Offers "Add to queue": not for what is in the queue already.
+    var queues = true
     /// Instead of the length: how often it played.
     var note: String? = nil
     let action: () -> Void
@@ -269,16 +274,13 @@ struct MusicTrackRow: View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.md) {
                 if let number {
-                    marker(number: number).frame(width: 26)
+                    marker(number: number).frame(width: 22)
                 }
                 MusicArtwork(url: track.artworkURL, seed: track.album.isEmpty ? track.title : track.album, cornerRadius: NookTheme.Radius.chip)
-                    .frame(width: 34, height: 34)
+                    .frame(width: MusicLayout.rowArtwork, height: MusicLayout.rowArtwork)
                     .overlay {
-                        if number == nil, hovering || playing {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(Color.black.opacity(0.5))
-                                marker(number: nil)
-                            }
+                        if number == nil {
+                            MusicArtworkState(hovering: hovering, playing: playing, isPlaying: service.current?.isPlaying ?? false)
                         }
                     }
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -299,7 +301,7 @@ struct MusicTrackRow: View {
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
-                        .frame(width: 180, alignment: .leading)
+                        .frame(width: 200, alignment: .leading)
                     Color.clear.frame(width: 0)
                 }
                 actions
@@ -309,9 +311,9 @@ struct MusicTrackRow: View {
                     .lineLimit(1)
                     .frame(minWidth: 40, alignment: .trailing)
             }
-            .padding(.horizontal, NookTheme.Spacing.sm)
-            .padding(.vertical, NookTheme.Spacing.xs)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+            .padding(.horizontal, MusicLayout.rowBleed)
+            .frame(height: MusicLayout.rowHeight)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
                 .fill(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear)))
             .contentShape(Rectangle())
         }
@@ -321,11 +323,13 @@ struct MusicTrackRow: View {
         .help(tr("music.play"))
         .contextMenu {
             Button(tr("music.play"), action: action)
-            Button(tr("music.queue.add")) { service.enqueue(track) }
+            if queues {
+                Button(tr("music.queue.add")) { service.enqueue(track) }
+            }
             MusicAddToPlaylistMenu(track: track, service: service)
             if let onRemove {
                 Divider()
-                Button(tr("music.playlists.removeTrack"), role: .destructive, action: onRemove)
+                Button(removeLabel ?? tr("music.playlists.removeTrack"), role: .destructive, action: onRemove)
             }
         }
         .accessibilityLabel(track.artist.isEmpty ? track.title : "\(track.title), \(track.artist)")
@@ -351,9 +355,11 @@ struct MusicTrackRow: View {
 
     private var actions: some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
-            ToolbarIconButton("text.line.last.and.arrowtriangle.forward", tr("music.queue.add")) { service.enqueue(track) }
+            if queues {
+                ToolbarIconButton("text.line.last.and.arrowtriangle.forward", tr("music.queue.add")) { service.enqueue(track) }
+            }
             if let onRemove {
-                ToolbarIconButton("minus.circle", tr("music.playlists.removeTrack"), onRemove)
+                ToolbarIconButton("minus.circle", removeLabel ?? tr("music.playlists.removeTrack"), onRemove)
             }
         }
         .opacity(hovering ? 1 : 0)

@@ -117,25 +117,19 @@ private struct MusicSidebarPlaylistRow: View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.md) {
                 MusicArtwork(url: playlist.artworkURL, seed: playlist.name, symbol: "music.note.list", cornerRadius: NookTheme.Radius.chip)
-                    .frame(width: 28, height: 28)
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    Text(playlist.name)
-                        .font(NookTheme.TextStyle.control)
-                        .foregroundStyle(selected ? NookTheme.paper : NookTheme.textStrong)
-                        .lineLimit(1)
-                    Text(tr("music.playlists.count", playlist.trackCount))
-                        .font(NookTheme.TextStyle.caption)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .lineLimit(1)
-                }
+                    .frame(width: 22, height: 22)
+                Text(playlist.name)
+                    .font(NookTheme.TextStyle.control)
+                    .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
+                    .lineLimit(1)
                 Spacer(minLength: 0)
-                NookIconButton(systemName: "play.fill", label: tr("music.playlists.play", playlist.name), size: 24) {
+                NookIconButton(systemName: "play.fill", label: tr("music.playlists.play", playlist.name), size: 22) {
                     service.play(playlist)
                 }
                 .opacity(hovering ? 1 : 0)
             }
             .padding(.horizontal, NookTheme.Spacing.md)
-            .padding(.vertical, NookTheme.Spacing.xs)
+            .frame(height: PanelSidebarMetrics.row)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
                 .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
             .selectionMark(selected)

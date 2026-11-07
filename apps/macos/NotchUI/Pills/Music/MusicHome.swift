@@ -19,6 +19,7 @@ struct MusicHomeContent: View {
     let onOpen: (MusicSection) -> Void
     @State private var week: MusicStats?
     @State private var allRecent = false
+    @Environment(\.panelSidebar) private var sidebar
 
     private static let quickCount = 6
 
@@ -33,7 +34,7 @@ struct MusicHomeContent: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxl) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxxl) {
                 header
                 if showsConnect { connectCard }
                 if !recent.isEmpty { recentGroup }
@@ -41,7 +42,7 @@ struct MusicHomeContent: View {
                 if let week, week.topTracks.count >= 3 { topGroup(week) }
                 if recent.isEmpty, service.playlists.isEmpty { emptyHint }
             }
-            .padding(.horizontal, NookTheme.Spacing.xs)
+            .padding(.horizontal, MusicLayout.edge)
             .padding(.bottom, NookTheme.Spacing.xl)
         }
         // The sums go over thousands of plays: off the main thread, and only when a play was added.
@@ -54,31 +55,32 @@ struct MusicHomeContent: View {
 
     // MARK: Header
 
+    /// In the main window the greeting is the page's title in the band above; beside another tab, where the band holds
+    /// the tabs, it stands here. Under it what you listened to, one click from the statistics.
+    @ViewBuilder
     private var header: some View {
-        Button { onOpen(.stats) } label: {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(greeting)
-                    .font(NookTheme.TextStyle.display)
-                    .foregroundStyle(NookTheme.paper)
-                if let week, !week.isEmpty {
-                    Text(tr("music.home.thisWeek", musicListeningTime(week.seconds)))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
+        // While the week is summed up, the line keeps its room when there are plays, so nothing below moves once it shows.
+        let hasWeek = week.map { !$0.isEmpty } ?? !service.history.plays.isEmpty
+        if sidebar == nil || hasWeek {
+            Button { onOpen(.stats) } label: {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    if sidebar == nil {
+                        Text(musicGreeting())
+                            .font(NookTheme.TextStyle.display)
+                            .foregroundStyle(NookTheme.paper)
+                    }
+                    if hasWeek {
+                        Text(week.map { tr("music.home.thisWeek", musicListeningTime($0.seconds)) } ?? " ")
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(tr("music.section.stats"))
-    }
-
-    private var greeting: String {
-        switch MusicListenerType(hour: Calendar.current.component(.hour, from: Date())) {
-        case .morning: return tr("music.home.morning")
-        case .afternoon: return tr("music.home.afternoon")
-        case .evening: return tr("music.home.evening")
-        case .night: return tr("music.home.night")
+            .buttonStyle(.plain)
+            .help(tr("music.section.stats"))
+            .padding(.bottom, -NookTheme.Spacing.md)
         }
     }
 
@@ -88,7 +90,7 @@ struct MusicHomeContent: View {
             HStack(spacing: NookTheme.Spacing.lg) {
                 Image(systemName: "link")
                     .font(NookTheme.font(13, .semibold))
-                    .foregroundStyle(NookTheme.music)
+                    .foregroundStyle(NookTheme.textTertiary)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(tr("music.home.connectTitle"))
                         .font(NookTheme.TextStyle.strong)
@@ -112,13 +114,16 @@ struct MusicHomeContent: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             MusicGroupTitle(title: tr("music.recent.title"),
                             showAll: !allRecent && recent.count > Self.quickCount ? { allRecent = true } : nil)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: NookTheme.Spacing.md)], spacing: NookTheme.Spacing.md) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: NookTheme.Spacing.md), count: sidebar == nil ? 2 : 3),
+                      spacing: NookTheme.Spacing.xs) {
                 ForEach(Array(recent.prefix(allRecent ? recent.count : Self.quickCount).enumerated()), id: \.offset) { index, track in
-                    MusicQuickTile(track: track, playing: track.id == currentID, service: service) {
+                    MusicTrackTile(track: track, playing: track.id == currentID,
+                                   secondary: track.id.isEmpty ? nil : (tr("music.queue.add"), { service.enqueue(track) }), service: service) {
                         service.play(track, fromQueue: false, following: Array(recent.dropFirst(index + 1).prefix(SpotifyResponses.playTrackLimit - 1)))
                     }
                 }
             }
+            .musicRowBleed()
         }
     }
 
@@ -160,48 +165,49 @@ struct MusicHomeContent: View {
     }
 }
 
-/// Covers side by side, scrolling sideways.
+/// Covers side by side that fit the page exactly and scroll sideways a whole cover at a time, so none is cut off at the edge.
 private struct MusicCoverRow: View {
     let items: [MusicCoverItem]
     let service: NowPlayingService
 
+    private static let gap = NookTheme.Spacing.xl
+
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(alignment: .top, spacing: NookTheme.Spacing.lg) {
-                ForEach(items) { MusicCoverCard(item: $0, service: service).frame(width: 124) }
+            LazyHStack(alignment: .top, spacing: Self.gap) {
+                ForEach(items) { item in
+                    MusicCoverCard(item: item, service: service)
+                        .containerRelativeFrame(.horizontal) { width, _ in
+                            // One cover in a very narrow pane, so it never gets smaller than intended.
+                            let count = max(1, ((width + Self.gap) / (MusicLayout.cover + Self.gap)).rounded(.down))
+                            return (width - Self.gap * (count - 1)) / count
+                        }
+                }
             }
-            // Room for the cover's lift and shadow.
-            .padding(.top, NookTheme.Spacing.xs)
+            .scrollTargetLayout()
         }
+        .scrollTargetBehavior(.viewAligned)
     }
 }
 
-/// A small tile for where you left off: cover and title, one click plays.
-private struct MusicQuickTile: View {
+/// A track in a small tile, where you left off and what comes next: cover and title, one click plays.
+struct MusicTrackTile: View {
     let track: MusicTrack
-    let playing: Bool
+    var playing = false
+    /// Queued in Nook: marked with the queue symbol.
+    var queued = false
+    /// Add to or remove from the queue, in the context menu.
+    var secondary: (label: String, action: () -> Void)? = nil
     @ObservedObject var service: NowPlayingService
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: NookTheme.Spacing.md) {
+            HStack(spacing: NookTheme.Spacing.lg) {
                 MusicArtwork(url: track.artworkURL, seed: track.title, cornerRadius: NookTheme.Radius.chip)
-                    .frame(width: 40, height: 40)
-                    .overlay {
-                        if hovering || playing {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(Color.black.opacity(0.5))
-                                if hovering {
-                                    Image(systemName: "play.fill").font(NookTheme.font(12, .bold)).foregroundStyle(NookTheme.paper)
-                                } else {
-                                    EqualizerBars(color: NookTheme.music, height: 10, isPlaying: service.current?.isPlaying ?? false)
-                                        .scaleEffect(0.7)
-                                }
-                            }
-                        }
-                    }
+                    .frame(width: 44, height: 44)
+                    .overlay { MusicArtworkState(hovering: hovering, playing: playing, isPlaying: service.current?.isPlaying ?? false) }
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(track.title)
                         .font(NookTheme.TextStyle.strong)
@@ -215,10 +221,19 @@ private struct MusicQuickTile: View {
                     }
                 }
                 Spacer(minLength: 0)
+                if queued {
+                    Image(systemName: "text.line.last.and.arrowtriangle.forward")
+                        .font(NookTheme.font(10, .semibold))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .help(tr("music.queue.queued"))
+                        .accessibilityLabel(tr("music.queue.queued"))
+                }
             }
-            .padding(NookTheme.Spacing.sm)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(hovering ? NookTheme.graphite : NookTheme.field))
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+            .padding(.horizontal, MusicLayout.rowBleed)
+            .padding(.vertical, NookTheme.Spacing.xs)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                .fill(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear)))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -226,11 +241,23 @@ private struct MusicQuickTile: View {
         .help(tr("music.play"))
         .contextMenu {
             Button(tr("music.play"), action: action)
-            Button(tr("music.queue.add")) { service.enqueue(track) }
+            if let secondary {
+                Button(secondary.label, action: secondary.action)
+            }
             MusicAddToPlaylistMenu(track: track, service: service)
         }
         .accessibilityLabel(track.artist.isEmpty ? track.title : "\(track.title), \(track.artist)")
         .accessibilityHint(tr("music.play"))
+    }
+}
+
+/// Home's greeting, by the hour.
+func musicGreeting() -> String {
+    switch MusicListenerType(hour: Calendar.current.component(.hour, from: Date())) {
+    case .morning: return tr("music.home.morning")
+    case .afternoon: return tr("music.home.afternoon")
+    case .evening: return tr("music.home.evening")
+    case .night: return tr("music.home.night")
     }
 }
 
