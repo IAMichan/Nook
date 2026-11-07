@@ -196,9 +196,22 @@ private struct PinProbe: ViewModifier {
 
 extension View {
     /// The "scroll to end" pill just above this view (a composer over a conversation), without taking room from it.
+    /// Centered on the conversation's column, as the composer is: the bar under it can be wider than that column (the
+    /// column keeps its place in the row it shares with the side panels), and centering on the bar put the pill off to
+    /// one side of the composer.
     func toEndPill(_ shown: Bool, action: @escaping () -> Void) -> some View {
-        outside(.top, spacing: NookTheme.Spacing.md) {
-            if shown { TimelineToEndPill(action: action) }
+        overlay(alignment: .top) {
+            Color.clear
+                .frame(height: 0)
+                .overlay(alignment: .bottom) {
+                    if shown {
+                        TimelineToEndPill(action: action)
+                            .fixedSize()
+                            .frame(maxWidth: .infinity)
+                            .chatColumn()
+                            .padding(.bottom, NookTheme.Spacing.md)
+                    }
+                }
         }
     }
 }
