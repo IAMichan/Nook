@@ -7,6 +7,7 @@ import SwiftUI
 struct MusicPlaylistsView: View {
     @ObservedObject var service: NowPlayingService
     @EnvironmentObject private var app: AppModel
+    @Environment(\.panelSidebar) private var sidebar
     @State private var filter = ""
     @State private var deleting: MusicPlaylist?
 
@@ -49,7 +50,9 @@ struct MusicPlaylistsView: View {
             PatientSpinner()
         default:
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                toolbar
+                if service.playlists.count > 6 || sidebar == nil {
+                    toolbar
+                }
                 if service.playlists.isEmpty {
                     MusicPlaceholder(symbol: "music.note.list", title: tr("music.playlists.empty"), detail: tr("music.playlists.emptyDetail")) {
                         SmallPrimaryButton(title: tr("music.playlists.new")) { service.playlistPrompt = .create(adding: nil) }
@@ -63,7 +66,7 @@ struct MusicPlaylistsView: View {
         }
     }
 
-    /// Filter on the left (once there are enough to look for one), a new playlist on the right.
+    /// Filter on the left (once there are enough to look for one), a new playlist on the right when not already in the page header.
     private var toolbar: some View {
         HStack(spacing: NookTheme.Spacing.md) {
             if service.playlists.count > 6 {
@@ -71,8 +74,10 @@ struct MusicPlaylistsView: View {
                     .frame(maxWidth: 280)
             }
             Spacer(minLength: 0)
-            SmallGhostButton(title: "+ " + tr("music.playlists.new")) { service.playlistPrompt = .create(adding: nil) }
-                .help(tr("music.playlists.new"))
+            if sidebar == nil {
+                SmallGhostButton(title: "+ " + tr("music.playlists.new")) { service.playlistPrompt = .create(adding: nil) }
+                    .help(tr("music.playlists.new"))
+            }
         }
         .padding(.horizontal, NookTheme.Spacing.xs)
     }
@@ -132,7 +137,7 @@ private struct MusicPlaylistDetailView: View {
             NookIconButton(systemName: "chevron.left", label: tr("music.playlists.back"), size: 30) { service.closePlaylist() }
             MusicArtwork(url: playlist.artworkURL ?? detail.tracks.first?.artworkURL, seed: playlist.name,
                          symbol: "music.note.list", cornerRadius: NookTheme.Radius.card)
-                .frame(width: 56, height: 56)
+                .frame(width: 52, height: 52)
                 .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(playlist.name)
@@ -182,6 +187,8 @@ private struct MusicPlaylistDetailView: View {
                 }
             }
         }
+        .padding(NookTheme.Spacing.md)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.surface))
         .padding(.horizontal, NookTheme.Spacing.xs)
     }
 
@@ -223,7 +230,8 @@ private struct MusicPlaylistDetailView: View {
     private func trackList(_ rows: [MusicPlaylistDetail.Row]) -> some View {
         ScrollView(.vertical, showsIndicators: true) {
             LazyVStack(spacing: 0) {
-                ForEach(rows) { row in
+                ForEach(Array(rows.enumerated()), id: \.element.id) { position, row in
+                    if position > 0 { NookDivider(inset: 78) }
                     MusicTrackRow(
                         number: row.index + 1, track: row.track, playing: isPlaying(row.track),
                         service: service,
@@ -231,6 +239,7 @@ private struct MusicPlaylistDetailView: View {
                     ) { service.play(row.track, in: playlist) }
                 }
             }
+            .panelCard()
             .padding(.bottom, NookTheme.Spacing.xl)
         }
         .padding(.horizontal, NookTheme.Spacing.xs)

@@ -31,7 +31,6 @@ struct MusicSidebar: View {
                     }
                     if service.playlistsApp != nil, !service.playlists.isEmpty { playlists }
                 }
-                .padding(.vertical, NookTheme.Spacing.xs)
             }
         }
     }
@@ -118,7 +117,7 @@ private struct MusicSidebarPlaylistRow: View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.md) {
                 MusicArtwork(url: playlist.artworkURL, seed: playlist.name, symbol: "music.note.list", cornerRadius: NookTheme.Radius.chip)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 28, height: 28)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(playlist.name)
                         .font(NookTheme.TextStyle.control)
@@ -135,7 +134,7 @@ private struct MusicSidebarPlaylistRow: View {
                 }
                 .opacity(hovering ? 1 : 0)
             }
-            .padding(.horizontal, NookTheme.Spacing.xs)
+            .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.xs)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
                 .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))

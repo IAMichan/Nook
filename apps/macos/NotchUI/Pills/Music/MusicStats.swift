@@ -7,6 +7,7 @@ import SwiftUI
 struct MusicStatsView: View {
     @ObservedObject var service: NowPlayingService
     @EnvironmentObject private var app: AppModel
+    @Environment(\.panelSidebar) private var sidebar
     @AppStorage("musicStatsPeriod") private var storedPeriod = MusicStatsPeriod.week.rawValue
     @State private var stats: MusicStats?
 
@@ -15,8 +16,10 @@ struct MusicStatsView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
-                NookTabBar(items: MusicStatsPeriod.allCases.map { .init(value: $0, title: title(of: $0)) },
-                           selected: period, onSelect: { storedPeriod = $0.rawValue }, segmented: true)
+                if sidebar == nil {
+                    NookTabBar(items: MusicStatsPeriod.allCases.map { .init(value: $0, title: Self.title(of: $0)) },
+                               selected: period, onSelect: { storedPeriod = $0.rawValue }, segmented: true)
+                }
                 if !AppSettings.shared.musicHistory {
                     MusicPlaceholder(symbol: "chart.bar", title: tr("music.stats.off"), detail: tr("music.stats.offDetail", tr("settings.section.connections")))
                         .frame(minHeight: 160)
@@ -42,7 +45,7 @@ struct MusicStatsView: View {
         }
     }
 
-    private func title(of period: MusicStatsPeriod) -> String {
+    static func title(of period: MusicStatsPeriod) -> String {
         switch period {
         case .week: return tr("music.stats.week")
         case .month: return tr("music.stats.month")
@@ -96,7 +99,7 @@ struct MusicStatsView: View {
     }
 
     private func changeText(_ stats: MusicStats) -> String {
-        guard let change = stats.change else { return title(of: stats.period) }
+        guard let change = stats.change else { return Self.title(of: stats.period) }
         if change == 0 { return tr("music.stats.same") }
         return change > 0 ? tr("music.stats.up", change) : tr("music.stats.down", abs(change))
     }
@@ -195,13 +198,13 @@ struct MusicStatsView: View {
     }
 
     private func playerNotice(_ title: String, detail: String) -> some View {
-        HStack(spacing: NookTheme.Spacing.lg) {
+        AdaptiveActionRow(spacing: NookTheme.Spacing.lg) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(title).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
                 Text(detail).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        } actions: {
             SmallGhostButton(title: tr("music.playlists.openConnections")) { app.openSettings(section: .connections) }
         }
         .padding(NookTheme.Spacing.lg)
@@ -228,7 +231,7 @@ private struct MusicStatsCard<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            Text(title).font(NookTheme.TextStyle.title).foregroundStyle(NookTheme.paper)
+            Text(title).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.textSecondary)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
