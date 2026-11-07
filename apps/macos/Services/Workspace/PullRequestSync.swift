@@ -335,6 +335,7 @@ final class PullRequestSync: ObservableObject {
                 links[id] = next
                 changed = true
             }
+            workspace.carryFinishedWatch(id, links: found)
         case .earlier(let id, let branch):
             earlierChecked[Self.folderKey(path: id.uuidString, branch: branch)] = now
             // A branch with no work left (an empty or removed worktree) has no pull request to find: its row goes.

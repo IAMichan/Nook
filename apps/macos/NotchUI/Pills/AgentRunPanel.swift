@@ -1329,7 +1329,7 @@ struct AgentRunPanel: View {
             // The pull request it watches and the messages waiting in line sit in a tray tucked above the box, the
             // same tray a new session shows its folder and branch in under the box.
             VStack(spacing: 0) {
-                aboveBox(watch: run.prWatch, waiting: workspace.queued[runID] ?? MessageQueue())
+                aboveBox(watches: run.prWatches, waiting: workspace.queued[runID] ?? MessageQueue())
                 SessionComposer(
                     text: $composerState.draft,
                     prompt: active ? (steers ? tr("agents.run.steerPrompt", run.provider.kind.shortName)
@@ -1372,11 +1372,14 @@ struct AgentRunPanel: View {
 
     /// The tray above the box, when there is something to show in it.
     @ViewBuilder
-    private func aboveBox(watch: PullRequestWatch?, waiting: MessageQueue) -> some View {
-        // The watched pull request, the session's open one you stopped watching (or never watched), else the one that
-        // merged or closed: its state stays in view. Only one that can still change can be watched.
+    private func aboveBox(watches: [PullRequestWatch], waiting: MessageQueue) -> some View {
+        // The watched pull request while it can still change, else the session's open one, else the one that merged or
+        // closed: its state stays in view. A watch that ended never hides a newer open one. Only one that can still change
+        // can be watched.
         let watchable = watchablePullRequest()
-        let pullRequest = watch.flatMap { URL(string: $0.url) } ?? watchable ?? PullRequestLink.shown(in: pullRequestSync.links[runID] ?? [])
+        let pullRequest = SessionBranches.trayPullRequest(watch: watches.first, open: watchable,
+                                                          links: pullRequestSync.links[runID] ?? [])
+        let watch = pullRequest.flatMap { url in watches.first { $0.url == url.absoluteString } }
         let canWatch = watch != nil || watchable != nil
         // A session that worked on more than one branch lists each, with the state of its pull request.
         let branches = workspace.run(runID).map { run in
@@ -1395,10 +1398,10 @@ struct AgentRunPanel: View {
                         if hasPullRequests || !waiting.isEmpty { ComposerTrayDivider() }
                     }
                     if !branches.isEmpty {
-                        branchList(branches, watch: watch, canWatchCurrent: watchable != nil)
+                        branchList(branches, watches: watches, canWatchCurrent: watchable != nil)
                     } else if let pullRequest {
                         PullRequestWatchStrip(url: pullRequest, watch: watch, toggle: canWatch ? {
-                            workspace.watchPullRequest(runID, url: watch == nil ? pullRequest : nil)
+                            if watch == nil { workspace.watchPullRequest(runID, url: pullRequest) } else { workspace.stopWatchingPullRequest(runID, url: pullRequest) }
                         } : nil)
                     }
                     if let pending { PullRequestPendingRow(step: pending) }
@@ -1432,7 +1435,7 @@ struct AgentRunPanel: View {
     /// The session's branches in the tray, oldest first and the current one last, their names in one column so the pull
     /// requests line up. A chat with many keeps the newest ones open and folds the older ones behind one row.
     @ViewBuilder
-    private func branchList(_ rows: [SessionBranches.Row], watch: PullRequestWatch?, canWatchCurrent: Bool) -> some View {
+    private func branchList(_ rows: [SessionBranches.Row], watches: [PullRequestWatch], canWatchCurrent: Bool) -> some View {
         let folded = SessionBranches.folded(rows, open: showsOlderBranches)
         let titles = Dictionary(((pullRequestSync.earlier[runID] ?? []) + (pullRequestSync.links[runID] ?? []))
             .compactMap { link in link.title.map { (link.url, $0) } }, uniquingKeysWith: { _, newer in newer })
@@ -1456,7 +1459,7 @@ struct AgentRunPanel: View {
             .padding(.vertical, NookTheme.Spacing.xxs)
         }
         ForEach(folded.shown) { row in
-            branchRow(row, watch: watch, title: row.pullRequest.flatMap { titles[$0.absoluteString] }, canWatchCurrent: canWatchCurrent)
+            branchRow(row, watch: row.pullRequest.flatMap { url in watches.first { $0.url == url.absoluteString } }, title: row.pullRequest.flatMap { titles[$0.absoluteString] }, canWatchCurrent: canWatchCurrent)
         }
     }
 
@@ -1466,10 +1469,10 @@ struct AgentRunPanel: View {
     @ViewBuilder
     private func branchRow(_ row: SessionBranches.Row, watch: PullRequestWatch?, title: String?, canWatchCurrent: Bool) -> some View {
         if let url = row.pullRequest {
-            let watched = watch.flatMap { URL(string: $0.url) } == url
-            PullRequestWatchStrip(url: url, watch: watched ? watch : nil, branch: row.branch, isCurrent: row.isCurrent,
+            let watched = watch != nil
+            PullRequestWatchStrip(url: url, watch: watch, branch: row.branch, isCurrent: row.isCurrent,
                                   title: title, toggle: watched || !row.isCurrent || canWatchCurrent ? {
-                workspace.watchPullRequest(runID, url: watched ? nil : url)
+                if watched { workspace.stopWatchingPullRequest(runID, url: url) } else { workspace.watchPullRequest(runID, url: url) }
             } : nil)
         } else if let branch = row.branch {
             BranchTrayRow(branch: branch, isCurrent: row.isCurrent)

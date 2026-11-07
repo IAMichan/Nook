@@ -509,6 +509,22 @@ struct PullRequestWatch: Codable, Equatable, Sendable {
     /// Send news to the agent as a message (otherwise it only shows in the timeline).
     var wakeAgent: Bool = true
     var checkedAt: Date? = nil
+
+    /// A watch that ended (its pull request merged or closed) moves to a newer open pull request of the same branch: the
+    /// session went on with a new pull request from that branch, which is the one to follow now. `links` are the branch's
+    /// pull requests as the forge reads them. Returns the finished watch and the request to watch instead, or nil.
+    static func carried(_ watches: [PullRequestWatch], links: [PullRequestLink]) -> (from: PullRequestWatch, to: URL)? {
+        let watched = Set(watches.map(\.url))
+        for watch in watches {
+            guard let link = links.first(where: { $0.url == watch.url }),
+                  watch.state != "open" || !link.state.isOpen else { continue }
+            let next = links.filter { $0.state.isOpen && $0.number > link.number && !watched.contains($0.url)
+                && $0.headBranch == link.headBranch && $0.repository == link.repository }
+                .min { $0.number < $1.number }
+            if let next, let url = URL(string: next.url), canWatch(url) { return (watch, url) }
+        }
+        return nil
+    }
 }
 
 /// How a pull request looks right now, as fetched for a watch.
