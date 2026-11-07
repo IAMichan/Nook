@@ -1982,6 +1982,15 @@ final class WorkspaceManager: ObservableObject {
         run(id)?.prWatches.contains { $0.url == url.absoluteString } ?? false
     }
 
+    /// A watch on a pull request that merged or closed moves to the newer open one the session opened from the same branch
+    /// (see `PullRequestWatch.carried`), keeping whether news wakes the agent.
+    func carryFinishedWatch(_ id: UUID, links: [PullRequestLink]) {
+        guard let run = run(id), let carry = PullRequestWatch.carried(run.prWatches, links: links),
+              let old = URL(string: carry.from.url) else { return }
+        stopWatchingPullRequest(id, url: old)
+        watchPullRequest(id, url: carry.to, wakeAgent: carry.from.wakeAgent)
+    }
+
     /// Ends the watch on one pull request; the next one takes the tray's place.
     func stopWatchingPullRequest(_ id: UUID, url: URL) {
         update(id) { run in
