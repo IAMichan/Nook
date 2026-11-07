@@ -223,21 +223,16 @@ struct PanelView: View {
     /// The sidebar of Music, whose page has no list of its own: the head, the tabs, where to go in Music and the
     /// playlists, and the footer at the bottom, as wide as the Agents list.
     private var sidebarColumn: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                PanelSidebarTop()
-                MusicSidebar(service: app.nowPlaying)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() }, history: app.history)
-            }
-            .panelSidebarColumn()
-            .padding(.trailing, PanelSidebarMetrics.inset)
-            // Never narrower than its head, with the inset on both sides.
-            .frame(width: max(agentsListWidth, Double(PanelSidebarMetrics.headWidth + PanelSidebarMetrics.inset * 2)))
-            NookDivider(vertical: true)
-                .bleedsVertically(lineBleed)
-                .padding(.trailing, NookTheme.Spacing.xl)
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            PanelSidebarTop()
+            MusicSidebar(service: app.nowPlaying)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() }, history: app.history)
         }
+        .panelSidebarColumn()
+        .listPanel(stacked: false, width: $agentsListWidth, defaultWidth: PanelLayout.agentsList,
+                   available: splitAvailable, rest: PanelLayout.minimumConversation + PanelSplit.handle)
+        .padding(.trailing, 10)
     }
 
     /// Agents, the chat and Chats show the footer under their own list instead of along the bottom.

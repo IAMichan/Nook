@@ -303,15 +303,17 @@ struct MusicSearchView: View {
                         }
                     }
                     if !recent.isEmpty {
-                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                             MusicGroupTitle(title: tr("music.recent.title"))
                             LazyVStack(spacing: 0) {
                                 ForEach(Array(recent.enumerated()), id: \.offset) { index, track in
+                                    if index > 0 { NookDivider(inset: 52) }
                                     MusicTrackRow(track: track, playing: service.current?.trackID == track.id, service: service) {
                                         service.play(track, fromQueue: false, following: Array(recent.dropFirst(index + 1).prefix(SpotifyResponses.playTrackLimit - 1)))
                                     }
                                 }
                             }
+                            .panelCard()
                         }
                     }
                 }
@@ -366,11 +368,13 @@ struct MusicSearchView: View {
                     MusicGroupTitle(title: note(result)).padding(.top, NookTheme.Spacing.md)
                     LazyVStack(spacing: 0) {
                         ForEach(Array(result.tracks.enumerated().dropFirst()), id: \.offset) { index, track in
+                            if index > 1 { NookDivider(inset: 52) }
                             MusicTrackRow(track: track, playing: service.current?.trackID == track.id, service: service) {
                                 play(index, of: result)
                             }
                         }
                     }
+                    .panelCard()
                 }
             }
             .padding(.horizontal, NookTheme.Spacing.xs)
@@ -384,7 +388,7 @@ struct MusicSearchView: View {
     }
 }
 
-/// The name of a group on the Music page.
+/// The name of a group on the Music page: quiet and balanced beneath the page's top header.
 struct MusicGroupTitle: View {
     let title: String
     var showAll: (() -> Void)? = nil
@@ -392,8 +396,8 @@ struct MusicGroupTitle: View {
     var body: some View {
         HStack(spacing: NookTheme.Spacing.md) {
             Text(title)
-                .font(NookTheme.TextStyle.title)
-                .foregroundStyle(NookTheme.paper)
+                .font(NookTheme.TextStyle.strong)
+                .foregroundStyle(NookTheme.textSecondary)
                 .lineLimit(1)
             Spacer(minLength: NookTheme.Spacing.md)
             if let showAll { MusicShowAllButton(action: showAll) }
@@ -441,7 +445,7 @@ private struct RecentSearchChip: View {
         .padding(.leading, NookTheme.Spacing.md)
         .padding(.trailing, NookTheme.Spacing.xs)
         .padding(.vertical, NookTheme.Spacing.xs)
-        .background(Capsule().fill(hovering ? NookTheme.smoke : NookTheme.graphite))
+        .background(Capsule().fill(hovering ? NookTheme.graphite : NookTheme.surface))
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
     }
@@ -459,7 +463,7 @@ private struct MusicBestMatch: View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.xl) {
                 MusicArtwork(url: track.artworkURL, seed: track.title, cornerRadius: NookTheme.Radius.card)
-                    .frame(width: 72, height: 72)
+                    .frame(width: 64, height: 64)
                     .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                     Text(track.title)
@@ -473,15 +477,15 @@ private struct MusicBestMatch: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "play.fill")
-                    .font(NookTheme.font(14, .bold))
+                    .font(NookTheme.font(13, .bold))
                     .foregroundStyle(NookTheme.ink)
-                    .frame(width: 38, height: 38)
+                    .frame(width: 34, height: 34)
                     .background(Circle().fill(NookTheme.paper))
                     .opacity(hovering ? 1 : 0.85)
             }
             .padding(NookTheme.Spacing.lg)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(hovering ? NookTheme.smoke : NookTheme.graphite))
-            .contentShape(Rectangle())
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(hovering ? NookTheme.graphite : NookTheme.field))
+            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -571,7 +575,6 @@ struct MusicShelf: View {
             }
             .padding(.bottom, NookTheme.Spacing.xl)
         }
-        .mask(LinearGradient(stops: [.init(color: .black, location: 0.86), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
         .padding(.horizontal, NookTheme.Spacing.xs)
     }
 
