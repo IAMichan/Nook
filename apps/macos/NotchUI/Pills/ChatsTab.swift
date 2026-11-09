@@ -1026,12 +1026,13 @@ struct ChatsTab: View {
         }
     }
 
-    /// The chosen app's chats, the status updates of its contacts and its channels, as tabs: they never mix.
+    /// The chosen app's chats, the status updates of its contacts and its channels, as tabs: they never mix. Each tab
+    /// says how many of its chats have something new, the same count the sidebar gives the app.
     private var kindTabs: some View {
         let newChats = shownAccount.map { newByAccount[$0] ?? 0 } ?? filter.flatMap { newByApp[$0] } ?? 0
         let items = listKinds.map { kind in
             NookTabBar<ChatsListKind>.Item(value: kind, title: kind.title,
-                                           fresh: kind == .chats ? newChats > 0 : (counts.newByKind[kind] ?? 0) > 0)
+                                           count: kind == .chats ? newChats : counts.newByKind[kind] ?? 0)
         }
         return NookTabBar(items: items, selected: shownListKind, onSelect: { kind in
             withAnimation(NookTheme.swap) { listKind = kind }
