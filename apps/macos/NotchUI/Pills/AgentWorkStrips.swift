@@ -464,8 +464,8 @@ private struct SubagentToolLine: View {
 
 /// One pull request in the tray above the composer, as one quiet line: its state, what it is (title, then its branch
 /// dimmed) and on the right small marks for CI, reviews and watching. Only what needs you gets words (failing CI); the
-/// rest says itself on hover. The state badge opens it, as the arrow on hover does; the eye watches it (CI, reviews and
-/// comments wake the agent) or stops.
+/// rest says itself on hover. A click anywhere on the row opens it, as the arrow on hover does; the eye watches it (CI,
+/// reviews and comments wake the agent) or stops.
 struct PullRequestWatchStrip: View {
     let url: URL
     /// nil while the session's pull request is not watched.
@@ -512,6 +512,11 @@ struct PullRequestWatchStrip: View {
         .frame(minHeight: 26)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
             .fill(hovering ? NookTheme.rowHover : Color.clear))
+        // The whole row opens the pull request (in the session's side panel); the checks and the eye keep their own click.
+        .contentShape(Rectangle())
+        .onTapGesture(perform: open)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: tr("ws.prwatch.open"), open)
         .opacity(isCurrent ? 1 : 0.72)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
