@@ -714,7 +714,7 @@ private struct ChatBubbleView: View, Equatable {
         // is asked of its app as the bubble comes into view, and again a few times while it stays there.
         .task(id: near && bubble.file == nil && bubble.attachment != nil ? bubble.id : nil) {
             guard near, bubble.file == nil, bubble.attachment != nil, let fetchFile else { return }
-            for wait in [0.0, 4, 12, 30] {
+            for wait in [0.0, 2, 6, 15, 30] {
                 if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
                 if Task.isCancelled { return }
                 await fetchFile(bubble.id)
