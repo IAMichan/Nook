@@ -32,7 +32,7 @@ struct ModelPickerPlace: Hashable {
     /// The agent or service's name: the column's title, and what picks its logo.
     let name: String
     /// The badge on the logo: whose account it runs under, or an API key.
-    var account: AccountKind? = nil
+    var account: AccountTag? = nil
     /// The line under the column's title: the account's name when an agent shows once per account.
     var detail: String? = nil
     /// This Mac's own models, drawn as a laptop instead of a logo.

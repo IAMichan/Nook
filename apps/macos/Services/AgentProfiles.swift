@@ -14,6 +14,9 @@ struct AgentProfile: Codable, Identifiable, Hashable {
     var home: String?
     /// How this account authenticates. Nil: via the agent itself (subscription/OAuth in terminal).
     var auth: AgentAuthMethod? = nil
+    /// The color you gave this account (0xRRGGBB), shown on its badge everywhere the agent's logo appears, so two accounts
+    /// of the same agent are told apart at a glance. Nil: the badge keeps its personal/work/key color.
+    var accent: UInt32? = nil
 
     /// Authenticate with an API key instead of subscription.
     var usesAPIKey: Bool { auth == .apiKey }
@@ -276,6 +279,15 @@ final class AgentProfileStore: ObservableObject {
         dismissed.insert(AgentProfile.normalize(profile.homeURL.path))
         Keychain.write("", account: profile.keychainAccount)
         if preferred[profile.kind] == id { preferred[profile.kind] = nil }
+        save()
+    }
+
+    /// Gives an account its own color, or takes it away with nil. Writes only when it changed.
+    func setAccent(_ id: String, _ hex: UInt32?) {
+        guard let index = all.firstIndex(where: { $0.id == id }) else { return }
+        let value = hex.map { $0 & 0xFFFFFF }
+        guard all[index].accent != value else { return }
+        all[index].accent = value
         save()
     }
 

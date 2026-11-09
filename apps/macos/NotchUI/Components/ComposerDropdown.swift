@@ -96,7 +96,7 @@ struct DropdownDivider: View {
 struct DropdownRow: View {
     var symbol: String? = nil
     var agent: String? = nil
-    var account: AccountKind? = nil
+    var account: AccountTag? = nil
     var brand: BrandLogo? = nil
     let title: String
     var detail: String? = nil
@@ -438,8 +438,8 @@ struct AgentModelPicker: View {
         return accounts.first(where: { $0.id == id }) ?? accounts.first
     }
 
-    private func account(of place: Place) -> AccountKind? {
-        profile(of: place).map { AccountKind.of($0, app: app) }
+    private func account(of place: Place) -> AccountTag? {
+        profile(of: place).map { AccountTag.of($0, app: app) }
     }
 
     /// The account whose models the list shows: an ACP agent you added has models of its own.
