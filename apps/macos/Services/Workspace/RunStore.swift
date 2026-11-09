@@ -126,8 +126,18 @@ final class RunStore: @unchecked Sendable {
         if current != before {
             guard let fresh = TimelineChange.between(current, events) else { return }
             try write(fresh, payloads: Self.payloads(for: fresh, events), of: id, log: log)
+            index(fresh, events, of: id, log: log)
         } else {
             try write(change, payloads: payloads, of: id, log: log)
+            index(change, events, of: id, log: log)
+        }
+    }
+
+    /// Keeps the search index in step with what was written. Call with the lock held.
+    private func index(_ change: TimelineChange, _ events: [RunEvent], of id: UUID, log: RunEventLog) {
+        switch change {
+        case .snapshot: log.reindex(id, TimelineSearchText.entries(events))
+        case .rows(let rows, _): log.index(id, TimelineSearchText.entries(rows.map(\.1)))
         }
     }
 
@@ -171,6 +181,7 @@ final class RunStore: @unchecked Sendable {
         var timeline = writtenTimeline(id, log: log)
         // Already written (an event appended twice): the next save notices any change.
         guard timeline.fingerprints[event.id] == nil, log.append(id, .event, payload) != nil else { return }
+        log.index(id, TimelineSearchText.entries([event]))
         timeline.add(event.id, Self.fingerprint(event))
         written[id] = timeline
     }
@@ -192,6 +203,7 @@ final class RunStore: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         openLog()?.delete(id)
+        log?.removeIndex(id)
         written[id] = nil
         deleted.insert(id)
         try? fileManager.removeItem(at: eventsURL(id))
@@ -212,6 +224,9 @@ final class RunStore: @unchecked Sendable {
         if let log {
             importJSONTimelines(into: log)
             reader = RunEventLog(url: databaseURL, readOnly: true)
+            if log.searchAvailable, log.meta(Self.indexedKey) == nil {
+                ioQueue.async { [weak self] in self?.buildSearchIndex() }
+            }
         } else {
             SafeStorage.report("runs.sqlite could not be opened; timelines are not saved this launch")
         }
@@ -219,6 +234,35 @@ final class RunStore: @unchecked Sendable {
     }
 
     private static let importedKey = "json_timelines_imported"
+    private static let indexedKey = "search_index_built"
+
+    /// Indexes every session written before the index existed, once, in the background. One session at a time under the
+    /// lock, so saves and reads go on in between; a session saved meanwhile is indexed by that save as well.
+    private func buildSearchIndex() {
+        lock.lock()
+        let ids = log?.runIDs() ?? []
+        lock.unlock()
+        for id in ids {
+            lock.lock()
+            if let log, !deleted.contains(id) {
+                let events = RunEventFold.fold(log.rows(id), decoder: Self.decoder).events
+                log.reindex(id, TimelineSearchText.entries(events))
+            }
+            lock.unlock()
+        }
+        lock.lock()
+        log?.setMeta(Self.indexedKey, ISO8601DateFormatter().string(from: Date()))
+        lock.unlock()
+    }
+
+    /// The sessions whose timelines mention `query`, newest match first; nil when the index cannot answer (no FTS5, a
+    /// query under three characters, or the index still being built), so the caller reads the timelines itself.
+    func sessions(mentioning query: String) -> [UUID]? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let log = openLog(), log.meta(Self.indexedKey) != nil else { return nil }
+        return log.sessions(mentioning: query)
+    }
 
     /// Copies each `events/<id>.json` into the log as a snapshot, once. The files stay where they are, as a backup.
     private func importJSONTimelines(into log: RunEventLog) {
