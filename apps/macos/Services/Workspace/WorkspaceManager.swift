@@ -443,6 +443,7 @@ final class WorkspaceManager: ObservableObject {
         customAgentModels = AgentModelStore(url: Self.customModelStoreURL).loadRaw()
         agentEfforts = AgentModelStore(url: Self.effortStoreURL).loadRaw()
         modelManifest = ModelManifest.preferred(bundled: .bundled(), cached: ModelManifestStore(url: Self.manifestStoreURL).load())
+        ModelRates.use(modelManifest)
         // The session list can be long: read it off the main thread so launching Nook does not wait for it.
         Task.detached(priority: .userInitiated) { [weak self] in
             let loaded = store.loadRuns()

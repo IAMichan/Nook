@@ -50,6 +50,14 @@ only the bundled list is used and nothing goes online for it.
 **Adding a model** is a JSON edit: add the entry, set `adapter.<agent>.minVersion` when it needs a newer CLI, and bump
 `updatedAt`. `ModelManifestTests.testTheBundledManifestValidates` checks the file.
 
+**Prices.** The manifest's optional `pricing` list holds the public list prices (USD per million tokens) the usage
+page uses for its API-equivalent estimate: per model id `prefix`, `input` and `output`, and `cacheRead` / `cacheWrite`
+when they differ from a tenth and 1.25× the input rate. `ModelManifest.validate` checks each prefix is a model id, listed
+once, with finite rates of zero or more. `ModelRates.use` takes the prices of the manifest in use (a manifest without
+them keeps the bundled manifest's), so a price changes between releases with a JSON edit, like a model. A price you set
+yourself (`PriceTable`) still wins. `ModelManifestTests.testTheBundledManifestPricesTheModelsItLists` checks every
+current Claude model has one.
+
 ## Still open
 
 - **Compatibility ranges** per agent: which CLI versions are supported, degraded or broken, with a recommended range, so
