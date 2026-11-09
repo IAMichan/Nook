@@ -238,6 +238,8 @@ final class WorkspaceManager: ObservableObject {
     var idleCompactionTimers: [UUID: Task<Void, Never>] = [:]
     /// Sessions whose running turn is such a summary: it ends quietly, without a notification or a snapshot.
     var idleCompacting: Set<UUID> = []
+    /// The part of `idleCompacting` that Nook started because the context grew past your limit (`SizeCompaction`).
+    var sizeCompacting: Set<UUID> = []
     /// A message sent while the session was still warming up: it goes out as soon as the connection is open.
     var warmPrompts: [UUID: String] = [:]
     /// A message you sent while the previous turn's snapshot was still being made: shown at once, sent right after it.
@@ -1044,7 +1046,10 @@ final class WorkspaceManager: ObservableObject {
         guard !clean.isEmpty, var run = run(id) else { return false }
         // Anything but Nook's own summary ends a summary that never reported back (it failed to start, or stopped).
         let idleSummary = shown && clean == "/compact" && idleCompacting.contains(id)
-        if !idleSummary { idleCompacting.remove(id) }
+        if !idleSummary {
+            idleCompacting.remove(id)
+            sizeCompacting.remove(id)
+        }
         // You carry on yourself: whatever waited behind a failure or a stop goes on after this turn.
         if var held = queued[id], held.isHeld { held.resume(); queued[id] = held }
         // Its worktree is being made again for an earlier message: this one follows that turn.
@@ -1130,6 +1135,7 @@ final class WorkspaceManager: ObservableObject {
         // A summary Nook asked for while you were away ends quietly: no notification, no result for a delegating
         // session, and no snapshot (it changed no files). What you sent meanwhile goes on.
         if idleCompacting.remove(id) != nil {
+            sizeCompacting.remove(id)
             sendQueued(id)
             return
         }
@@ -1137,6 +1143,7 @@ final class WorkspaceManager: ObservableObject {
         deliverDelegatedResult(id)
         captureCheckpoint(id)
         scheduleIdleCompaction(id)
+        compactForSize(id)
     }
 
     /// A snapshot after each turn, for every session in a repository: it shows what each turn changed. Putting files back
@@ -1769,7 +1776,7 @@ final class WorkspaceManager: ObservableObject {
         case .notice(let text):
             if text == "compact" {
                 turns[id]?.compacted = true
-                append(id, RunEvent(kind: .system, text: tr(idleCompacting.contains(id) ? "ws.event.idleCompaction" : "ws.event.compacted")))
+                append(id, RunEvent(kind: .system, text: tr(sizeCompacting.contains(id) ? "ws.event.sizeCompaction" : idleCompacting.contains(id) ? "ws.event.idleCompaction" : "ws.event.compacted")))
             }
         case .rateLimits(let event):
             onRateLimits?()
