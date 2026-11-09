@@ -275,14 +275,17 @@ struct AgentRunPanel: View {
                         renaming = true
                     }
                     .help(tr("ws.title.renameHelp"))
-                Menu { sessionActions(run) } label: {
+                // Nook's own dropdown panel, not a system menu: a system submenu (Connectors) closed under the pointer
+                // whenever the running session redrew the header.
+                ComposerDropdown(width: 248) {
                     Image(systemName: "chevron.down")
                         .font(NookTheme.font(9, .bold))
                         .foregroundStyle(NookTheme.textTertiary)
                         .frame(width: 20, height: 20)
                         .contentShape(Rectangle())
+                } content: {
+                    sessionActions(run)
                 }
-                .composerMenu()
                 .help(tr("chat.more"))
                 .accessibilityLabel(tr("chat.more"))
             }
@@ -334,90 +337,95 @@ struct AgentRunPanel: View {
         }
     }
 
-    /// Everything you can do with this session itself: retry, rename, fork, export, archive, delete.
+    /// Everything you can do with this session itself: retry, rename, fork, export, archive, delete. Rows that do not
+    /// apply to this session are left out; the ones that wait for the agent to stop say so.
     @ViewBuilder
     private func sessionActions(_ run: WorkspaceRun) -> some View {
-        let idle = !run.status.isActive
-            Button(tr("agents.run.details")) { app.viewModel.open(.details(runID)) }
-        Divider()
-        if run.status.isActive {
-            Button(tr("ws.action.stop")) { workspace.stop(runID) }
-        } else if run.status == .failed || run.status == .stopped {
-            Button(tr("ws.action.retry")) { workspace.retry(runID) }
-        }
+        let busy = run.status.isActive ? tr("ws.session.stopFirst") : nil
         let finishKey = FinishedSessions.key(run: run)
         let isFinished = finishedMarks.contains(finishKey)
-        Button(isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark")) {
+        DropdownRow(symbol: "info.circle", title: tr("agents.run.details")) { app.viewModel.open(.details(runID)) }
+        if run.status.isActive {
+            DropdownRow(symbol: "stop.circle", title: tr("ws.action.stop")) { workspace.stop(runID) }
+        } else if run.status == .failed || run.status == .stopped {
+            DropdownRow(symbol: "arrow.clockwise", title: tr("ws.action.retry")) { workspace.retry(runID) }
+        }
+        DropdownRow(symbol: isFinished ? "arrow.uturn.backward.circle" : "checkmark.circle",
+                    title: isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark"), disabledReason: busy) {
             if isFinished { finishedMarks.reopenByUser(finishKey) } else { finishedMarks.mark(finishKey) }
         }
-        .disabled(run.status.isActive)
-        Button(tr("agents.run.rename")) {
+        DropdownDivider()
+        DropdownRow(symbol: "pencil", title: tr("agents.run.rename")) {
             titleDraft = run.title
             renaming = true
         }
         // A new written title from the first message and the latest ones, with your title rules.
-        Button(tr("ws.title.regenerate")) { workspace.regenerateTitle(runID) }
+        DropdownRow(symbol: "sparkles", title: tr("ws.title.regenerate")) { workspace.regenerateTitle(runID) }
         // A fork starts from this session; switching moves it to another agent with a summary of what happened.
-        Button(tr("agents.fork")) {
-            if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
+        if workspace.canTransfer(runID) {
+            DropdownRow(symbol: "arrow.triangle.branch", title: tr("agents.fork")) {
+                if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
+            }
         }
-        .disabled(!workspace.canTransfer(runID))
-        // Ends the agent's process; the next message resumes the conversation with new skills, plugins and MCP servers.
-        Button(tr("agents.restartAgent")) { workspace.restartAgent(runID) }
-            .disabled(!workspace.canRestartAgent(runID))
-            .help(tr("agents.restartAgent.help"))
-        Button(tr("ws.side.new")) {
-            if let id = workspace.openSideChat(runID, question: "") { app.viewModel.selectedAgentID = "run:" + id.uuidString }
+        if workspace.canOpenSideChat(runID) {
+            DropdownRow(symbol: "bubble.left.and.text.bubble.right", title: tr("ws.side.new")) {
+                if let id = workspace.openSideChat(runID, question: "") { app.viewModel.selectedAgentID = "run:" + id.uuidString }
+            }
         }
-        .disabled(!workspace.canOpenSideChat(runID))
-        if let lineage = run.lineage, lineage.bringsBack {
-            Button(tr(lineage.kind == .side ? "ws.side.bringBack" : "agents.mergeBack")) {
+        if let lineage = run.lineage, lineage.bringsBack, workspace.canTransfer(runID) {
+            DropdownRow(symbol: "arrow.uturn.left", title: tr(lineage.kind == .side ? "ws.side.bringBack" : "agents.mergeBack")) {
                 if workspace.mergeBack(runID), let parent = run.lineage?.parentID {
                     app.viewModel.selectedAgentID = "run:" + parent.uuidString
                 }
             }
-            .disabled(!workspace.canTransfer(runID))
+        }
+        // Ends the agent's process; the next message resumes the conversation with new skills, plugins and MCP servers.
+        if workspace.canRestartAgent(runID) {
+            DropdownRow(symbol: "arrow.triangle.2.circlepath", title: tr("agents.restartAgent")) { workspace.restartAgent(runID) }
         }
         // PR watch: CI, reviews and comments on the session's pull request wake the agent.
         if run.prWatch != nil {
-            Button(tr("ws.prwatch.stop")) { workspace.watchPullRequest(runID, url: nil) }
-        } else {
-            let watchable = watchablePullRequest()
-            Button(tr("ws.prwatch.start")) { workspace.watchPullRequest(runID, url: watchable) }
-                .disabled(watchable == nil)
+            DropdownRow(symbol: "eye.slash", title: tr("ws.prwatch.stop")) { workspace.watchPullRequest(runID, url: nil) }
+        } else if let watchable = watchablePullRequest() {
+            DropdownRow(symbol: "eye", title: tr("ws.prwatch.start")) { workspace.watchPullRequest(runID, url: watchable) }
         }
-        // Connectors the agent cannot use until you sign in, also the ones you hid above the composer.
+        // Connectors the agent cannot use until you sign in, also the ones you hid above the composer: a group of
+        // their own in the panel, so there is no submenu to lose under the pointer.
         if let connectors = workspace.connectorSignIns[runID], !connectors.isEmpty {
-            Menu(tr("ws.connector.menu")) {
-                ForEach(connectors) { connector in
-                    Button(connector.waiting ? tr("ws.connector.waiting", connector.title) : tr("ws.connector.signInTo", connector.title)) {
-                        workspace.signInConnector(runID, name: connector.name)
-                    }
-                    .disabled(connector.waiting)
+            DropdownDivider()
+            DropdownHeader(title: tr("ws.connector.menu"))
+            ForEach(connectors) { connector in
+                DropdownRow(symbol: connector.waiting ? "hourglass" : "person.badge.key",
+                            title: connector.waiting ? tr("ws.connector.waiting", connector.title) : tr("ws.connector.signInTo", connector.title),
+                            disabledReason: connector.waiting ? tr("ws.connector.waitingHelp") : nil) {
+                    workspace.signInConnector(runID, name: connector.name)
                 }
             }
         }
+        DropdownDivider()
         // Kept local: copy it, or save it where you want.
-        Button(tr("ws.export.copy")) {
+        DropdownRow(symbol: "doc.on.doc", title: tr("ws.export.copy")) {
             Pasteboard.copy(SessionExport.markdown(run, events: workspace.timeline(runID)))
         }
-        Button(tr("ws.export.save")) { saveMarkdown(run) }
-        Button(tr("button.openFolder")) {
-            NSWorkspace.shared.open(URL(fileURLWithPath: run.workingDirectory, isDirectory: true))
+        DropdownRow(symbol: "square.and.arrow.down", title: tr("ws.export.save")) { saveMarkdown(run) }
+        if !run.isRemote {
+            DropdownRow(symbol: "folder", title: tr("button.openFolder")) {
+                NSWorkspace.shared.open(URL(fileURLWithPath: run.workingDirectory, isDirectory: true))
+            }
         }
-        .disabled(run.isRemote)
-        Button(tr("agents.run.changes")) {
-            if headerAccessory != nil { app.viewModel.sessionTool = .changes } else { app.viewModel.open(.changes(runID, file: nil)) }
+        if run.repoRoot != nil {
+            DropdownRow(symbol: "plusminus", title: tr("agents.run.changes")) {
+                if headerAccessory != nil { app.viewModel.sessionTool = .changes } else { app.viewModel.open(.changes(runID, file: nil)) }
+            }
         }
-        .disabled(run.repoRoot == nil)
-        Divider()
-        Button(tr("agents.run.archive")) {
+        DropdownDivider()
+        DropdownRow(symbol: "archivebox", title: tr("agents.run.archive"), disabledReason: busy) {
             workspace.setArchived(runID, true)
             app.viewModel.selectedAgentID = ""
         }
-        .disabled(!idle)
-        Button(tr("agents.run.delete"), role: .destructive) { confirmDelete = true }
-            .disabled(!idle)
+        DropdownRow(symbol: "trash", title: tr("agents.run.delete"), tint: NookTheme.coral, disabledReason: busy) {
+            confirmDelete = true
+        }
     }
 
     /// The session's machine when it logs in with a password that was not typed in this run of Nook yet.
