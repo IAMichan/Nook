@@ -83,7 +83,7 @@ extension WorkspaceManager {
         let installed = agentVersions[provider]
         var menu = AgentModelMenu(provider: provider, manifest: modelManifest, offered: offered,
                                   offeredEfforts: agentEfforts[key] ?? [], installed: installed,
-                                  custom: settings.customModels(for: provider), favorites: settings.favoriteModels(for: provider))
+                                  custom: settings.customModels(for: provider) + (profileID.map(accountModels) ?? []), favorites: settings.favoriteModels(for: provider))
         if let memo = modelChoiceMemo[key], memo.installed == installed, memo.offered == offered, memo.manifest == modelManifest {
             menu.knownChoices = memo.choices
         } else {

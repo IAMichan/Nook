@@ -206,6 +206,7 @@ targets:
       - path: Core/I18n+Takeover.swift
       - path: Core/I18n+Harness.swift
       - path: Core/I18n+DiffReview.swift
+      - path: Core/I18n+AccountOptions.swift
       - path: Core/I18n+Goals.swift
       - path: Core/I18n+ChatMedia.swift
       - path: Core/I18n+ChatRead.swift
@@ -471,6 +472,7 @@ targets:
       - path: Services/Workspace/CodexAppServer.swift
       - path: Services/Workspace/AcpAgent.swift
       - path: Services/Workspace/AgentModelCatalog.swift
+      - path: Services/AccountVariable.swift
       - path: Services/Workspace/AgentModelMenu.swift
       - path: Services/Workspace/AutoModel.swift
       - path: Services/Workspace/ModelManifest.swift

@@ -271,6 +271,18 @@ final class WorkspaceManager: ObservableObject {
     /// Agent executable path (from AgentHistory) and account environment; configured by AppModel.
     var executable: (RunProvider) -> String? = { _ in nil }
     var accountEnvironment: (String) -> [String: String] = { _ in [:] }
+    /// The program an account runs instead of the agent's (Settings › Agents › account › Program), by profile id.
+    var accountExecutable: (String) -> String? = { _ in nil }
+    /// Arguments an account adds to every launch (Settings › Agents › account › Extra arguments), by profile id.
+    var accountArguments: (String) -> [String] = { _ in [] }
+    /// Models an account adds to its menus (Settings › Agents › account › Custom models), by profile id.
+    var accountModels: (String) -> [String] = { _ in [] }
+
+    /// The program for an agent under an account: the one that account names, else the agent's.
+    func executable(_ provider: RunProvider, profileID: String?) -> String? {
+        if let profileID, !profileID.isEmpty, let own = accountExecutable(profileID) { return own }
+        return executable(provider)
+    }
     /// The folder an account keeps its login in; two accounts with the same folder share conversations.
     var accountHome: (String) -> String? = { $0 }
     /// The usage windows of an account, for "Auto" to pick a model by (see `AutoModel`); configured by AppModel.
@@ -677,7 +689,7 @@ final class WorkspaceManager: ObservableObject {
         let projectPath = WorkspacePathPolicy.normalize(config.projectPath)
         let verdict = WorkspacePathPolicy.verdict(for: projectPath)
         guard verdict == .ok else { throw StartError.workspace(verdict) }
-        guard let executable = executable(config.provider) else { throw StartError.noExecutable(config.provider) }
+        guard let executable = executable(config.provider, profileID: config.profileID) else { throw StartError.noExecutable(config.provider) }
 
         let id = UUID()
         var workingDirectory = projectPath

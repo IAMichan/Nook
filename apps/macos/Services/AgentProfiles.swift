@@ -17,6 +17,22 @@ struct AgentProfile: Codable, Identifiable, Hashable {
     /// The color you gave this account (0xRRGGBB), shown on its badge everywhere the agent's logo appears, so two accounts
     /// of the same agent are told apart at a glance. Nil: the badge keeps its personal/work/key color.
     var accent: UInt32? = nil
+    /// True once you switched this account off (as t3code's enable switch): Nook then leaves it out of every list, menu and
+    /// "Auto" pick, but keeps its folder, login and settings. Nil: on.
+    var disabled: Bool? = nil
+    /// The agent program this account runs instead of the one Nook found (a path, or a name the login shell finds). Nil: Nook's.
+    var executablePath: String? = nil
+    /// Arguments added to every launch of the agent under this account, one per entry, after Nook's own.
+    var extraArguments: [String]? = nil
+    /// Environment variables set for every launch under this account (t3code's per-account environment).
+    var variables: [AccountVariable]? = nil
+    /// Models of this account that no list offers (a gateway's, an early-access one), added to its model menus.
+    var customModels: [String]? = nil
+
+    var isEnabled: Bool { disabled != true }
+
+    /// The variables that are set, in the order you gave them.
+    var activeVariables: [AccountVariable] { variables ?? [] }
 
     /// Authenticate with an API key instead of subscription.
     var usesAPIKey: Bool { auth == .apiKey }
@@ -34,6 +50,17 @@ struct AgentProfile: Codable, Identifiable, Hashable {
     var environment: [String: String] {
         guard let home, let variable = kind.homeVariable else { return [:] }
         return [variable: kind.homeValue(home)]
+    }
+
+    /// The program to start for this account, or nil for the one Nook found: the path you set, `~` expanded.
+    var executableOverride: String? {
+        let path = (executablePath ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return path.isEmpty ? nil : (path as NSString).expandingTildeInPath
+    }
+
+    /// The extra arguments without empty entries.
+    var launchArguments: [String] {
+        (extraArguments ?? []).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
 
     /// "CLAUDE_CONFIG_DIR=~/.claude-work " prefix for terminal commands; empty for primary account.
@@ -278,6 +305,7 @@ final class AgentProfileStore: ObservableObject {
         all.removeAll { $0.id == id }
         dismissed.insert(AgentProfile.normalize(profile.homeURL.path))
         Keychain.write("", account: profile.keychainAccount)
+        for variable in profile.activeVariables where variable.sensitive { Keychain.write("", account: variableAccount(variable.name, profile)) }
         if preferred[profile.kind] == id { preferred[profile.kind] = nil }
         save()
     }
@@ -289,6 +317,73 @@ final class AgentProfileStore: ObservableObject {
         guard all[index].accent != value else { return }
         all[index].accent = value
         save()
+    }
+
+    /// Switches an account on or off. The primary account of an agent can be switched off too: it only leaves the lists.
+    func setEnabled(_ id: String, _ enabled: Bool) {
+        update(id) { $0.disabled = enabled ? nil : true }
+        if !enabled, let profile = profile(id: id), preferred[profile.kind] == id,
+           let other = profiles(for: profile.kind).first(where: { $0.isEnabled }) {
+            preferred[profile.kind] = other.id
+            save()
+        }
+    }
+
+    func setExecutablePath(_ id: String, _ path: String) {
+        let clean = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        update(id) { $0.executablePath = clean.isEmpty ? nil : clean }
+    }
+
+    func setExtraArguments(_ id: String, _ arguments: [String]) {
+        let clean = arguments.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        update(id) { $0.extraArguments = clean.isEmpty ? nil : clean }
+    }
+
+    func setCustomModels(_ id: String, _ models: [String]) {
+        var seen = Set<String>()
+        let clean = models.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && seen.insert($0).inserted }
+        update(id) { $0.customModels = clean.isEmpty ? nil : clean }
+    }
+
+    /// Keychain name for a sensitive variable of an account.
+    private func variableAccount(_ name: String, _ profile: AgentProfile) -> String { "agent.env." + profile.id + "." + name }
+
+    /// The value of a variable: as typed, or from the Keychain for a sensitive one.
+    func value(of variable: AccountVariable, for profile: AgentProfile) -> String {
+        variable.sensitive ? (Keychain.read(variableAccount(variable.name, profile)) ?? "") : variable.value
+    }
+
+    /// Replaces an account's variables. `values` holds what was typed per name; a sensitive value goes to the Keychain,
+    /// and the Keychain entries of variables that are gone are emptied. Names that are not valid or repeat are dropped.
+    func setVariables(_ id: String, _ variables: [AccountVariable]) {
+        guard let profile = profile(id: id) else { return }
+        var seen = Set<String>()
+        let clean = variables.compactMap { variable -> AccountVariable? in
+            let name = variable.name.trimmingCharacters(in: .whitespaces)
+            guard AccountVariable.isValidName(name), seen.insert(name).inserted else { return nil }
+            return AccountVariable(name: name, value: variable.value, sensitive: variable.sensitive)
+        }
+        for old in profile.activeVariables where old.sensitive && !clean.contains(where: { $0.name == old.name && $0.sensitive }) {
+            Keychain.write("", account: variableAccount(old.name, profile))
+        }
+        var stored: [AccountVariable] = []
+        for variable in clean {
+            if variable.sensitive {
+                // An empty sensitive value keeps what the Keychain holds: the field is never filled back in.
+                if !variable.value.isEmpty { Keychain.write(variable.value, account: variableAccount(variable.name, profile)) }
+                stored.append(AccountVariable(name: variable.name, value: "", sensitive: true))
+            } else {
+                stored.append(variable)
+            }
+        }
+        update(id) { $0.variables = stored.isEmpty ? nil : stored }
+    }
+
+    private func update(_ id: String, _ change: (inout AgentProfile) -> Void) {
+        guard let index = all.firstIndex(where: { $0.id == id }) else { return }
+        let before = all[index]
+        change(&all[index])
+        if all[index] != before { save() }
     }
 
     func setAuth(_ id: String, _ method: AgentAuthMethod) {
@@ -311,7 +406,10 @@ final class AgentProfileStore: ObservableObject {
     /// Environment variables for launched sessions, including API key if using key-based auth.
     /// Passed directly to process; never logged or written to disk.
     func launchEnvironment(_ profile: AgentProfile) -> [String: String] {
-        var env = profile.environment
+        // Your variables first: the account's own folder variable and its key win over a same-named one.
+        var env: [String: String] = [:]
+        for variable in profile.activeVariables { env[variable.name] = value(of: variable, for: profile) }
+        env.merge(profile.environment) { _, folder in folder }
         if profile.kind == .claude, profile.usesAPIKey, let key = Keychain.read(profile.keychainAccount), !key.isEmpty {
             env["ANTHROPIC_API_KEY"] = key
         }

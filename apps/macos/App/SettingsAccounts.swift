@@ -106,6 +106,7 @@ private struct AgentAccountCardRow: View {
 
     private var health: ConnectionHealth {
         if busy { return .busy }
+        if !profile.isEnabled { return .off }
         if antigravitySignedOut { return .needsYou }
         if account != nil { return .working }
         if app.history.executables[profile.kind] == nil { return .notLinked }
@@ -155,6 +156,7 @@ private struct AgentAccountCardRow: View {
 
     private var healthText: String? {
         if let progress = app.agentConnect[profile.id], progress.isBusy { return progress.text }
+        if !profile.isEnabled { return tr("accounts.off") }
         if antigravitySignedOut { return tr("agents.notLoggedIn") }
         if account != nil { return tr("connect.status.connected") }
         if app.history.executables[profile.kind] == nil { return tr("agents.notInstalled") }
@@ -233,6 +235,7 @@ private struct ManageAccountSheet: View {
             if profile.kind == .antigravity {
                 SheetPart(tr("accounts.method")) { antigravitySignInView }
             }
+            AccountOptionsSection(profile: current)
             if let error {
                 SettingNote(error, tone: .error)
             }
