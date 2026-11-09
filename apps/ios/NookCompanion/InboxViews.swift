@@ -135,7 +135,10 @@ struct InboxAvatar: View {
     let app: String
     var size: CGFloat = 40
 
-    private var initials: String {
+    private var initials: String { Self.initials(name) }
+
+    /// Up to two initials of a name ("#" when it has no letters), for a face without a photo.
+    static func initials(_ name: String) -> String {
         let words = name.split(whereSeparator: { $0 == " " || $0 == "-" }).prefix(2)
         let letters = words.compactMap { $0.first(where: { $0.isLetter || $0.isNumber }) }.map(String.init).joined()
         return letters.isEmpty ? "#" : letters.uppercased()
