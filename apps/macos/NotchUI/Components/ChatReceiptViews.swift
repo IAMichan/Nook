@@ -151,3 +151,29 @@ struct ChatPersonBadge: View {
             .accessibilityHidden(true)
     }
 }
+
+/// Who wrote a group message, beside its bubble: their photo in Contacts, else their initials on their own tint (the
+/// color of their name above the bubble). The same for every chat app, since each names a group message's sender. It
+/// watches the photos itself, so one that comes in redraws the faces only, not the bubbles.
+struct ChatSenderFace: View {
+    let name: String
+    var size: CGFloat = 28
+    @ObservedObject private var photos = ContactPhotos.shared
+
+    var body: some View {
+        Group {
+            if let photo = photos.photo(handle: nil, name: name) {
+                Image(nsImage: photo)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFill()
+                    .frame(width: size, height: size)
+                    .clipShape(Circle())
+            } else {
+                ChatInitialsFace(name: name, initials: WAJID.initials(name), size: size)
+            }
+        }
+        .help(name)
+        .accessibilityHidden(true)
+    }
+}

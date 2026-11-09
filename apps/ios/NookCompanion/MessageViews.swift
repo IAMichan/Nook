@@ -179,11 +179,25 @@ struct ChatBubbleView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(alignment: .top, spacing: Theme.Spacing.sm) {
             if line.fromMe { Spacer(minLength: Self.inset) }
+            // In a group, who wrote it shows beside each of their messages, as on the Mac.
+            if !line.fromMe, !line.sender.isEmpty {
+                ChatInitialsFace(name: line.sender, initials: InboxAvatar.initials(line.sender), size: 28)
+                    .accessibilityHidden(true)
+            }
             VStack(alignment: line.fromMe ? .trailing : .leading, spacing: Theme.Spacing.xxs) {
                 bubble.opacity(pending ? 0.6 : 1)
-                if !line.reactions.isEmpty { reactions }
+                    // Over the bubble's bottom edge at its leading side, clear of the time at its trailing side.
+                    .overlay(alignment: .bottomLeading) {
+                        if !line.reactions.isEmpty {
+                            reactions.alignmentGuide(.bottom) { $0[.top] + Theme.Spacing.sm }
+                        }
+                    }
+                if !line.reactions.isEmpty {
+                    // The room the pill takes under the bubble.
+                    reactions.hidden().frame(width: 0).padding(.top, -Theme.Spacing.sm).accessibilityHidden(true)
+                }
             }
             if !line.fromMe { Spacer(minLength: Self.inset) }
         }
@@ -264,20 +278,35 @@ struct ChatBubbleView: View {
         .fixedSize()
     }
 
-    /// The emoji under a bubble, one chip each.
+    /// The emoji on a message as one pill over the bubble's bottom edge, as on the Mac: each emoji once, the first three,
+    /// and how many reacted in all.
     private var reactions: some View {
-        HStack(spacing: Theme.Spacing.xs) {
-            ForEach(Array(line.reactions.enumerated()), id: \.offset) { _, emoji in
-                Text(verbatim: emoji)
-                    .font(Theme.font(15))
-                    .padding(.horizontal, Theme.Spacing.sm)
-                    .padding(.vertical, Theme.Spacing.xxs)
-                    .background(Theme.surface, in: Capsule())
-                    .overlay(Capsule().strokeBorder(Theme.canvas, lineWidth: 2))
+        // The Mac sends each emoji with its count when more than one put it there: "👍 3".
+        let parts = line.reactions.map { reaction -> (emoji: String, count: Int) in
+            let words = reaction.split(separator: " ")
+            guard words.count == 2, let count = Int(words[1]) else { return (reaction, 1) }
+            return (String(words[0]), count)
+        }
+        let total = parts.reduce(0) { $0 + $1.count }
+        return HStack(spacing: Theme.Spacing.xxs) {
+            HStack(spacing: 0) {
+                ForEach(Array(parts.prefix(3).enumerated()), id: \.offset) { _, part in
+                    Text(verbatim: part.emoji).font(Theme.font(14))
+                }
+            }
+            if total > 1 {
+                Text(verbatim: "\(total)")
+                    .font(Theme.TextStyle.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.textSecondary)
             }
         }
-        .padding(line.fromMe ? .trailing : .leading, ChatBubbleShape.tail + Theme.Spacing.sm)
-        .padding(.top, -Theme.Spacing.sm)
+        .fixedSize()
+        .padding(.horizontal, Theme.Spacing.sm)
+        .padding(.vertical, Theme.Spacing.xxs)
+        .background(Theme.chatTheirs, in: Capsule())
+        .overlay(Capsule().strokeBorder(Theme.canvas, lineWidth: 2))
+        .padding(.leading, ChatBubbleShape.tail + Theme.Spacing.sm)
     }
 }
 
