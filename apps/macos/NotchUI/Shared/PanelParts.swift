@@ -221,7 +221,7 @@ struct StatusBadgeLabel<Mark: View>: View {
 }
 
 /// The header of a shelf of rows that folds: its name on the left, its count and a chevron on the right. `accessory`
-/// sits before the count (what a drop here would do, on the Mac).
+/// sits before the count.
 struct NookShelfHeader<Accessory: View>: View {
     let title: String
     var count: Int? = nil

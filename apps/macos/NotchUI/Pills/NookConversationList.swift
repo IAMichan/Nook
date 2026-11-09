@@ -352,7 +352,6 @@ private struct NookRow: View, Equatable {
         .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(background))
-        .selectionMark(selected)
         .contentShape(Rectangle())
     }
 
