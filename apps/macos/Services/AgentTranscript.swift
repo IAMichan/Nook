@@ -161,10 +161,13 @@ enum AgentTranscript {
     }
 
     private static func weight(_ message: AgentChatMessage) -> Int {
-        message.text.utf8.count + 160 + message.steps.reduce(0) { total, step in
-            total + 200 + step.summary.utf8.count + (step.output?.utf8.count ?? 0) + (step.patch?.utf8.count ?? 0)
-                + (step.input?.utf8.count ?? 0) + (step.plan?.utf8.count ?? 0) + (step.command?.utf8.count ?? 0)
+        var total = message.text.utf8.count + 160
+        for step in message.steps {
+            let fields = (step.output?.utf8.count ?? 0) + (step.patch?.utf8.count ?? 0) + (step.input?.utf8.count ?? 0)
+            let extras = (step.plan?.utf8.count ?? 0) + (step.command?.utf8.count ?? 0)
+            total += 200 + step.summary.utf8.count + fields + extras
         }
+        return total
     }
 
     /// `remember: false` reads without keeping the result (search reads every earlier session once, which would push the
