@@ -322,6 +322,7 @@ targets:
       - path: Services/NoticePacer.swift
       - path: Services/AgentStatusNotice.swift
       - path: Core/NookError.swift
+      - path: Core/MemoryPressure.swift
       - path: Core/NookPaths.swift
       - path: Core/SafeStorage.swift
       - path: Core/Accounts.swift

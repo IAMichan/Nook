@@ -180,7 +180,6 @@ final class AutocompleteController: ObservableObject {
     private var appliedPower = CompletionPower.full
     private var appObserver: NSObjectProtocol?
     private var wakeObservers: [NSObjectProtocol] = []
-    private var pressure: DispatchSourceMemoryPressure?
     private var trustTask: Task<Void, Never>?
     private var idleTask: Task<Void, Never>?
 
@@ -350,10 +349,7 @@ final class AutocompleteController: ObservableObject {
                 MainActor.assumeIsolated { self?.scheduleWarm(after: 1) }
             }
         }
-        let pressure = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
-        pressure.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.unload() } }
-        pressure.resume()
-        self.pressure = pressure
+        MemoryPressure.shared.register("autocomplete") { [weak self] _ in MainActor.assumeIsolated { self?.unload() } }
         if let app = frontApp { readQueue.async { AutocompleteField.wake(app) } }
         fieldObserver.watch(frontApp?.processIdentifier)
         // What is on the clipboard now was copied before autocomplete started: not recent.
@@ -383,11 +379,10 @@ final class AutocompleteController: ObservableObject {
         if let appObserver { NSWorkspace.shared.notificationCenter.removeObserver(appObserver) }
         wakeObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
         wakeObservers = []
-        pressure?.cancel()
+        MemoryPressure.shared.unregister("autocomplete")
         fieldObserver.stop()
         keyTap = nil
         appObserver = nil
-        pressure = nil
         unload()
     }
 
