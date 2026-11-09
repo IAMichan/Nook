@@ -264,6 +264,21 @@ enum InboxLayout {
         return result
     }
 
+    /// Where "Move Up" or "Move Down" puts a row of Pinned or Active: the final index (for `InboxState.reorder`) of the
+    /// nearest row in that direction it can trade places with, or nil when there is none. Only top-level rows move,
+    /// since a nested one follows its parent; in Active the rows are sorted by attention first, so a row only moves among
+    /// those with the same attention.
+    static func moveTarget(_ id: String, up: Bool, in section: InboxSection) -> Int? {
+        guard section.kind == .pinned || section.kind == .active,
+              let from = section.rows.firstIndex(where: { $0.id == id }), section.rows[from].depth == 0 else { return nil }
+        let row = section.rows[from].row
+        let candidates = up ? Array((0..<from).reversed()) : Array((from + 1)..<section.rows.count)
+        return candidates.first { index in
+            let other = section.rows[index]
+            return other.depth == 0 && (section.kind == .pinned || other.row.effectiveAttention == row.effectiveAttention)
+        }
+    }
+
     /// The Working and Active rows per project. The projects keep a fixed place (by name), so activity in one never
     /// moves the whole folder; inside a project the session with the newest activity comes first, with the sessions it
     /// started still right under it. Pinned, snoozed and settled sessions keep their own sections.
