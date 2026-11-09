@@ -1810,8 +1810,9 @@ enum WAGOWA {
     }
 
     /// `./whatsapp rest` for Nook's "Start GOWA automatically": on this Mac only, on the
-    /// URL's port, and media not downloaded on arrival: only a file Nook asks for (one the
-    /// notch card shows, one you open) is fetched.
+    /// URL's port, and media not downloaded on arrival by GOWA itself: Nook asks for the files
+    /// it shows (a new photo, sticker or voice message at once, `WhatsAppLink.fetchesOnArrival`;
+    /// a video or a document when its bubble comes into view or you open it).
     static func launchArguments(for url: URL) -> [String] {
         ["rest", "--host=127.0.0.1", "--port=\(url.port ?? 3000)", "--auto-download-media=false"]
     }

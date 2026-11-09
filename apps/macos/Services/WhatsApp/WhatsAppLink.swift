@@ -871,6 +871,7 @@ final class WhatsAppLink: ObservableObject {
         // it brings is already here, and every write to the published inbox redraws the panel.
         var next = inbox
         var keys: [String] = []
+        var files: [(id: String, chat: String)] = []
         for message in messages {
             let key = WAJID.normalized(message.chat)
             // Their message is here: they stopped typing it.
@@ -880,10 +881,46 @@ final class WhatsAppLink: ObservableObject {
             let outcome = next.add(message, filters: filters, quietBefore: quietBefore)
             if !keys.contains(key) { keys.append(key) }
             if outcome == .notify, !message.fromMe { fresh = key }
+            if outcome == .notify || outcome == .quiet, message.date >= quietBefore,
+               Self.fetchesOnArrival(message.media), WAJID.kind(key) != .status {
+                files.append((message.id, key))
+            }
         }
         if next != inbox { inbox = next }
         for key in keys { nameGroupIfNeeded(key) }
         if announce, let fresh { onMessage?(chatKey(fresh)) }
+        for (chat, ids) in Dictionary(grouping: files, by: \.chat) { fetchOnArrival(ids.map(\.id), chat: chat) }
+    }
+
+    /// Whether a message's file is fetched the moment it comes in, as every other chat bridge fetches its files with
+    /// the read that brings them: a photo, a sticker or a voice message, small and shown in the chat as itself. A
+    /// video or a document (megabytes, often never opened) is still fetched when its bubble comes into view.
+    nonisolated static func fetchesOnArrival(_ media: WAMedia) -> Bool {
+        switch media {
+        case .image, .sticker, .voice: return true
+        case .none, .video, .audio, .document, .location, .contact, .other: return false
+        }
+    }
+
+    /// The waits between the tries of a file fetched on arrival: the gateway may not have stored a message yet the
+    /// moment its webhook says it is there, so a first refusal is tried again soon instead of at the bubble's next turn.
+    private static let arrivalWaits: [Double] = [0, 1, 3, 8]
+
+    /// Fetches these new messages' files now, so the chat (and its card) shows the photo with the message rather than
+    /// a placeholder until its bubble asks for it.
+    private func fetchOnArrival(_ ids: [String], chat: String) {
+        let gen = generation
+        Task { [weak self] in
+            for wait in Self.arrivalWaits {
+                if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+                guard let self, gen == self.generation else { return }
+                let missing = ids.filter { self.previews[$0] == nil }
+                if missing.isEmpty { return }
+                // A refusal a moment ago does not hold these back: they are new, and the gateway may just have stored them.
+                for id in missing { self.previewFailed[id] = nil }
+                _ = await self.loadPreviews(missing, chat: chat)
+            }
+        }
     }
 
     /// Groups arrive under their id (GOWA's webhook carries no group name): asked once.
@@ -1178,7 +1215,7 @@ final class WhatsAppLink: ObservableObject {
     /// and are found again without the gateway when a chat asks for them.
     static let previewLimit = 1_000
     /// How long a preview that failed waits before it is tried again.
-    static let previewRetry: TimeInterval = 10
+    static let previewRetry: TimeInterval = 3
 
     /// A file already fetched for the notch card.
     func preview(_ id: String) -> WAPreview? { previews[id] }
