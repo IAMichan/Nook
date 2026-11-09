@@ -118,7 +118,7 @@ private struct AgentAccountCardRow: View {
                       removal: removal, startsOpen: startsOpen) {
             // The account's own color as a badge on the agent's logo, as everywhere the logo shows (`AccountTag`).
             AgentLogo(profile.kind, size: 22)
-                .accountBadge(profile.accent == nil ? nil : AccountTag.of(profile, app: app), size: 22, ring: NookTheme.rowRest)
+                .accountBadge(profile.hasOwnBadge ? AccountTag.of(profile, app: app) : nil, size: 22, ring: NookTheme.rowRest)
         } menu: {
             if antigravitySignedOut {
                 // Antigravity signs in right here, in your browser.
@@ -196,7 +196,7 @@ private struct ManageAccountSheet: View {
             title: profile.kind.name,
             subtitle: subtitle
         ) {
-            AgentMark(agent: profile.kind.name, account: current.accent == nil ? nil : AccountTag.of(current, app: app), size: 44)
+            AgentMark(agent: profile.kind.name, account: current.hasOwnBadge ? AccountTag.of(current, app: app) : nil, size: 44)
         } content: {
             // The same parts as every sheet for something linked: the account, how it signs in, then its place in Nook.
             SheetPart(tr("agents.name")) {
@@ -213,6 +213,12 @@ private struct ManageAccountSheet: View {
                 AccountColorPicker(accent: Binding(get: { current.accent },
                                                    set: { app.profiles.setAccent(profile.id, $0) }))
                 SettingNote(tr("accounts.color.help"))
+            }
+            // Its own icon, centered on that badge instead of the first letter of its name.
+            SheetPart(tr("accounts.icon")) {
+                AccountIconPicker(icon: Binding(get: { current.icon }, set: { app.profiles.setIcon(profile.id, $0) }),
+                                  tag: AccountTag.of(current, app: app))
+                SettingNote(tr("accounts.icon.help"))
             }
             if profile.kind != .gemini && profile.kind != .antigravity {
                 // Signing in with the agent's own login is the way; a key is only for whoever needs one, folded away.
@@ -404,6 +410,49 @@ private struct AccountColorPicker: View {
         .help(tr(name))
         .accessibilityLabel(tr(name))
         .accessibilityHint(tr("accounts.color"))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// The icons an account can have on its badge: none (the first letter of its name, or the personal/work/key symbol) or
+/// one of `AccountTag.symbols`, each shown on the account's own badge so you see the result before you pick it.
+private struct AccountIconPicker: View {
+    @Binding var icon: String?
+    /// The account's badge as it is now; each option shows it with that option's icon.
+    let tag: AccountTag
+
+    private let columns = [GridItem(.adaptive(minimum: 32, maximum: 36), spacing: NookTheme.Spacing.xs)]
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: NookTheme.Spacing.xs) {
+            option(nil, name: "accounts.icon.none")
+            ForEach(AccountTag.symbols, id: \.symbol) { option($0.symbol, name: $0.name) }
+        }
+    }
+
+    private func option(_ symbol: String?, name: String) -> some View {
+        let selected = icon == symbol
+        var shown = tag
+        shown.icon = symbol
+        return Button { icon = symbol } label: {
+            Group {
+                if symbol == nil {
+                    // No icon: an empty ring with a slash, as "no color".
+                    Circle().stroke(NookTheme.line2, lineWidth: 1.5)
+                        .overlay(Image(systemName: "slash.circle").font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary))
+                        .frame(width: 20, height: 20)
+                } else {
+                    AccountBadge(kind: shown, size: 20, ring: .clear)
+                }
+            }
+            .padding(NookTheme.Spacing.xs)
+            .overlay(Circle().stroke(selected ? NookTheme.paper : Color.clear, lineWidth: 1.5))
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(tr(name))
+        .accessibilityLabel(tr(name))
+        .accessibilityHint(tr("accounts.icon"))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
