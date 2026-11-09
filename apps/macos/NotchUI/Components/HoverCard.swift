@@ -24,9 +24,11 @@ struct HoverCard<Content: View>: View {
     }
 }
 
-/// A line of a hover card that does something: lit under the pointer, as wide as the card, and a click closes the card.
+/// A line of a hover card that does something: lit under the pointer, as wide as the card, and a click closes the card
+/// unless `closes` is off (an action that shows its progress or asks a question in the card itself).
 struct HoverCardButton<Label: View>: View {
     let help: String
+    var closes = true
     let action: () -> Void
     @ViewBuilder let label: Label
     @State private var hovering = false
@@ -34,7 +36,7 @@ struct HoverCardButton<Label: View>: View {
 
     var body: some View {
         Button {
-            dismiss()
+            if closes { dismiss() }
             action()
         } label: {
             label
