@@ -15,7 +15,6 @@ copying it again.
 | `NookTheme.mint`, `amber`, `coral`, `violet`, `iris` | State: done, waiting on you, error, merged, Nook itself |
 | `NookTheme.Syntax.keyword`, `string`, `comment`, `number`, `type`, `property`, `tag`, `attribute` | Syntax colors of code in a diff (`DiffText`, via `DiffSyntaxStyle`) and in the file viewer (`FileViewer`), muted under the diff's own tints; each has a dark and a light value. Only for code, never for state |
 | `NookTheme.rowRest`, `rowHover`, `rowSelected`, `rowFill(selected:hovering:rest:)` | List rows and cards at rest, under the pointer, and selected |
-| `.selectionMark(_:)` | The accent bar at the leading edge of the selected row of a list (Agents, Chats, pull requests), on top of `rowSelected`, so where you are never depends on the fill alone |
 | `NookTheme.TextStyle.caption`, `detail`, `label`, `body`, `strong`, `title`, `heading`, `display`, `code` | The type scale: the same kind of text is the same size everywhere. `detail` is the line under a title (a setting's explanation, a hint, an error); `heading` heads a sheet or a setup step. Never SwiftUI's own `.caption`, `.callout`, or `.headline` |
 | `NookTheme.font(_:_:)`, `mono(_:_:)`, `rounded(_:_:)` | A size the scale does not cover (an icon, a numeral); never `Font.system(size:)` inline |
 | `NookTheme.Radius.chip`, `control`, `card`, `panel`, `sheet`, `pill` | Corner radii: 6, 8, 10, 12, 14, 20. Name the element, not the number |
@@ -40,7 +39,7 @@ informs without shouting; motion settles without overshoot. When you add a view:
 The dark theme reads calm because it uses so little: a pure grey ramp (a pure black canvas `#000000`, raised surfaces about 4–8 % lighter, no blue cast), separation by tonal steps,
 faint white fills and one light grey `border` between columns instead of grey panels, and color only where it carries meaning. Calm never costs
 clarity: every text color, `textTertiary` included, reads at WCAG AA (4.5:1 or more) on every surface up to `smoke`,
-and a selected row stands a full step above a hovered one with a `selectionMark` at its edge. In practice:
+and a selected row stands a full step above a hovered one. In practice:
 
 - **Color means state, nothing else.** A status mark and its word, an error, a diff's `+`/`−` in the diff itself, and
   links (`NookTheme.blue`, no underline). Headers, composer controls, menus, bubbles, tool rows and counters stay grey.

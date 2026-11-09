@@ -40,8 +40,8 @@ extension Color {
 /// Color is kept for state (a status mark and its word, errors, diff +/−) and for links; everything else is neutral.
 ///
 /// Clear before calm: every text color reads at WCAG AA (4.5:1 or more) on every surface up to `smoke`, so even the
-/// quietest metadata (`textTertiary`) is legible at a glance, and a selected row stands a full step above a hovered one
-/// (with `selectionMark` at its edge), so where you are never depends on a shade you can barely see.
+/// quietest metadata (`textTertiary`) is legible at a glance, and a selected row stands a full step above a hovered one,
+/// so where you are never depends on a shade you can barely see.
 enum NookTheme {
     // Colors: the surface ramp, darkest to lightest.
     static let notch = Color.black
@@ -155,10 +155,6 @@ enum NookTheme {
     static func rowFill(selected: Bool, hovering: Bool, rest: Color = rowRest) -> Color {
         selected ? rowSelected : (hovering ? rowHover : rest)
     }
-
-    /// The bar at the leading edge of a selected list row, in Nook's accent. With `rowSelected` it marks where you are
-    /// in a list without relying on the fill alone (`View.selectionMark`).
-    static let selectionMarkWidth: CGFloat = 3
 
     /// Corner radii. Pick the token that names the element, not the number: a chip inside a card is always rounder
     /// than a hairline and flatter than the card.
@@ -295,36 +291,7 @@ private struct HoverLift: ViewModifier {
     }
 }
 
-/// The accent bar at the leading edge of a selected row (see `View.selectionMark`).
-private struct SelectionMark: ViewModifier {
-    var selected: Bool
-
-    func body(content: Content) -> some View {
-        content.overlay(alignment: .leading) {
-            // Animated on its own, so the row's content does not move with the mark.
-            ZStack {
-                if selected {
-                    Capsule()
-                        .fill(NookTheme.iris)
-                        .frame(width: NookTheme.selectionMarkWidth)
-                        .padding(.vertical, NookTheme.Spacing.md)
-                        .transition(.opacity)
-                }
-            }
-            .animation(NookTheme.reveal, value: selected)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
-    }
-}
-
 extension View {
-    /// Marks the selected row of a list with a short accent bar at its leading edge, on top of `rowSelected`, so the
-    /// selection reads at a glance in every list (Agents, Chats, pull requests) in the same way.
-    func selectionMark(_ selected: Bool) -> some View {
-        modifier(SelectionMark(selected: selected))
-    }
-
     /// The shared hover state of Nook's buttons and chips: a slight lift with `NookTheme.hover`, none with Reduce Motion.
     func hoverLift(_ hovering: Bool, scale: CGFloat = 1.01) -> some View {
         modifier(HoverLift(hovering: hovering, scale: scale))

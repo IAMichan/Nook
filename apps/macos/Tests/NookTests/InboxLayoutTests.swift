@@ -224,6 +224,29 @@ final class InboxLayoutTests: XCTestCase {
         XCTAssertTrue(st.pinned.isEmpty)
     }
 
+    func testMoveTargetStaysAmongRowsWithTheSameAttention() {
+        let rows = [row("a", .input), row("b", age: 100), row("c", age: 200), row("d", age: 300)]
+        let active = sections(rows).first { $0.kind == .active }!
+        XCTAssertEqual(active.rows.map(\.id), ["a", "b", "c", "d"])
+        // "a" needs you and sorts first by attention: it cannot trade places with the idle rows.
+        XCTAssertNil(InboxLayout.moveTarget("a", up: false, in: active))
+        XCTAssertNil(InboxLayout.moveTarget("b", up: true, in: active))
+        XCTAssertNil(InboxLayout.moveTarget("d", up: false, in: active))
+        XCTAssertEqual(InboxLayout.moveTarget("c", up: true, in: active), 1)
+        XCTAssertEqual(InboxLayout.moveTarget("b", up: false, in: active), 2)
+
+        var state = InboxState()
+        state.reorder("b", toIndex: InboxLayout.moveTarget("b", up: false, in: active)!, within: active)
+        XCTAssertEqual(ids(sections(rows, state), .active), ["a", "c", "b", "d"])
+    }
+
+    func testMoveTargetInPinnedIgnoresAttention() {
+        let rows = [row("a", .input), row("b")]
+        let pinned = sections(rows, InboxState(pinned: ["a", "b"])).first { $0.kind == .pinned }!
+        XCTAssertEqual(InboxLayout.moveTarget("b", up: true, in: pinned), 0)
+        XCTAssertEqual(InboxLayout.moveTarget("a", up: false, in: pinned), 1)
+    }
+
     func testReorderWithinActiveAndPinned() {
         let rows = [row("a"), row("b"), row("c")]
         var st = InboxState(pinned: ["p", "q"])
@@ -251,46 +274,6 @@ final class InboxLayoutTests: XCTestCase {
         XCTAssertTrue(st.settled.isEmpty)
         let back = try JSONDecoder().decode(InboxState.self, from: JSONEncoder().encode(InboxState(pinned: ["x"], settled: ["y"])))
         XCTAssertEqual(back, InboxState(pinned: ["x"], settled: ["y"]))
-    }
-
-    // MARK: Drops
-
-    func testDropDecisions() {
-        let r = row("a")
-        typealias D = InboxDrop
-        XCTAssertEqual(D.decide(row: r, from: .active, to: .pinned), .pin)
-        XCTAssertEqual(D.decide(row: r, from: .pinned, to: .active), .unpin)
-        XCTAssertEqual(D.decide(row: r, from: .active, to: .settled), .settle)
-        XCTAssertEqual(D.decide(row: r, from: .pinned, to: .settled), .settle)
-        XCTAssertEqual(D.decide(row: r, from: .settled, to: .active), .unsettle)
-        XCTAssertEqual(D.decide(row: r, from: .snoozed, to: .active), .wake)
-        XCTAssertEqual(D.decide(row: r, from: .snoozed, to: .settled), .settle)
-        XCTAssertEqual(D.decide(row: r, from: .active, to: .snoozed), .rejected(.needsTime))
-        XCTAssertEqual(D.decide(row: r, from: .settled, to: .snoozed), .rejected(.needsTime))
-        XCTAssertEqual(D.decide(row: r, from: .snoozed, to: .snoozed), .rejected(.needsTime))
-        XCTAssertEqual(D.decide(row: r, from: .active, to: .working), .rejected(.automatic))
-        XCTAssertEqual(D.decide(row: r, from: .working, to: .active), .rejected(.automatic))
-        XCTAssertEqual(D.decide(row: r, from: .active, to: .active), .reorder)
-        XCTAssertEqual(D.decide(row: r, from: .pinned, to: .pinned), .reorder)
-        XCTAssertEqual(D.decide(row: r, from: .settled, to: .settled), .rejected(.notReorderable))
-    }
-
-    func testDropLabelKeys() {
-        XCTAssertEqual(InboxDrop.DropResult.pin.labelKey, "inbox.drop.pin")
-        XCTAssertEqual(InboxDrop.DropResult.settle.labelKey, "inbox.drop.settle")
-        XCTAssertEqual(InboxDrop.DropResult.wake.labelKey, "inbox.drop.wake")
-        XCTAssertEqual(InboxDrop.DropResult.rejected(.needsTime).labelKey, "inbox.drop.needsTime")
-        XCTAssertNil(InboxDrop.DropResult.reorder.labelKey)
-    }
-
-    func testReorderTarget() {
-        let ids = ["a", "b", "c", "d"]
-        XCTAssertNil(InboxDrop.reorderTarget(ids: ids, dragged: "b", gap: 1))
-        XCTAssertNil(InboxDrop.reorderTarget(ids: ids, dragged: "b", gap: 2))
-        XCTAssertEqual(InboxDrop.reorderTarget(ids: ids, dragged: "b", gap: 4), 3)
-        XCTAssertEqual(InboxDrop.reorderTarget(ids: ids, dragged: "c", gap: 0), 0)
-        XCTAssertEqual(InboxDrop.reorderTarget(ids: ids, dragged: "a", gap: 3), 2)
-        XCTAssertNil(InboxDrop.reorderTarget(ids: ids, dragged: "zz", gap: 1))
     }
 
     // MARK: Search

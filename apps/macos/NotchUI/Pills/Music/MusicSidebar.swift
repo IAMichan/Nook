@@ -99,7 +99,6 @@ private struct MusicSidebarRow: View {
             .frame(height: PanelSidebarMetrics.row)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
                 .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
-            .selectionMark(selected)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -136,7 +135,6 @@ private struct MusicSidebarPlaylistRow: View {
             .frame(height: PanelSidebarMetrics.row)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
                 .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
-            .selectionMark(selected)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

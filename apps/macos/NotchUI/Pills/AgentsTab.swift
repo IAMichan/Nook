@@ -799,7 +799,6 @@ struct AgentListRow: View, Equatable {
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(background))
         // Only whether it is narrow is kept, so resizing the list redraws a row only when that flips.
         .onGeometryChange(for: Bool.self) { $0.size.width < Self.narrowWidth } action: { narrow = $0 }
-        .selectionMark(selected)
         .contentShape(Rectangle())
         .opacity(restOpacity)
     }

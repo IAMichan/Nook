@@ -1,7 +1,7 @@
 import Foundation
 
 /// What you arranged in the Agents list: pins and their order, what the list folds away, the auto-settle rules and the
-/// one-line undo. The decisions are in `InboxLayout`, `InboxDrop`, `UndoLog` and `AutoSettlePolicy`; this
+/// one-line undo. The decisions are in `InboxLayout`, `UndoLog` and `AutoSettlePolicy`; this
 /// keeps their state across launches and applies a drop or an undo to the places that hold the result: the pins here, the
 /// "finished" marks in `FinishedSessions`, the snooze and archive on the sessions themselves.
 @MainActor
