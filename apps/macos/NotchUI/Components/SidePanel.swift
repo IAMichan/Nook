@@ -305,6 +305,8 @@ struct SessionSideLink {
     var shownFile: String? = nil
     /// Whether the tool panel is open on the right: a file that opens by itself leaves it be.
     var panelOpen = false
+    /// Whether the conversation sits beside a side panel at all: `showFile` does nothing where it does not.
+    var hasPanel = false
     var showFile: (String) -> Void = { _ in }
     var openDiff: (TurnDiffSelection) -> Void = { _ in }
     /// Opens the command in the Terminal tab, or puts it away when that tab shows it already.

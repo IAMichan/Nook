@@ -358,7 +358,7 @@ struct SessionWorkbench<Conversation: View>: View {
                                                                           subagentsShown: subagentsShown, openSubagents: openSubagents))
                         .environment(\.sessionPanelDocked, docked)
                         // A diff or file the conversation opens is a tab of the side panel.
-                        .environment(\.sessionSide, SessionSideLink(shownFile: shownFile, panelOpen: sideOpen, showFile: showFile, openDiff: openDiff,
+                        .environment(\.sessionSide, SessionSideLink(shownFile: shownFile, panelOpen: sideOpen, hasPanel: true, showFile: showFile, openDiff: openDiff,
                                                                      toggleConsole: toggleConsole))
                         .onPreferenceChange(SessionOutputsReport.self) { outputs = $0 }
                         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
