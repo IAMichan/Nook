@@ -337,6 +337,9 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var lastChangeAt: Date?
     /// Number of changed files at last Git check, for list display.
     var changedFiles: Int?
+    /// Lines added and removed over those files at the last Git check: the list shows "+12 −3" like a hooked session.
+    var changedLinesAdded: Int? = nil
+    var changedLinesRemoved: Int? = nil
     /// Snapshots of the worktree, before the first turn and after every turn: "back to here".
     var checkpoints: [RunCheckpoint]? = nil
     /// The agent's own conversation as Nook follows it (turns, Claude Code's last message), and a rollback of it that
