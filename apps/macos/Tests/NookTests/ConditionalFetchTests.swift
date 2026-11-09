@@ -102,5 +102,15 @@ final class ConditionalFetchTests: XCTestCase {
         XCTAssertNotNil(cache.entry("a"))
         cache.store("d", etag: "4", body: Data(count: 7))
         XCTAssertNil(cache.entry("d"), "too large to keep")
+        XCTAssertLessThanOrEqual(cache.size, 10)
+    }
+
+    func testMemoryPressureEmptiesTheCache() {
+        let cache = ConditionalCache()
+        cache.store("a", etag: "1", body: Data(count: 100))
+        XCTAssertEqual(cache.size, 100)
+        cache.removeAll()
+        XCTAssertNil(cache.entry("a"))
+        XCTAssertEqual(cache.size, 0)
     }
 }
