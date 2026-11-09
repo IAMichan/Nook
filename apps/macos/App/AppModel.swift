@@ -446,6 +446,13 @@ final class AppModel: ObservableObject {
                 if let bundleID { AudioLevelMonitor.shared.start(bundleID: bundleID) } else { AudioLevelMonitor.shared.stop() }
             }
             .store(in: &bag)
+        // Nobody looks (display asleep, screen locked, away): the tap stops, and the bars hold still (`EqualizerBars`).
+        EnergyMonitor.shared.$plan
+            .map(\.nobodyLooks)
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { AudioLevelMonitor.shared.setSuspended($0) }
+            .store(in: &bag)
 
         // Track change: notch temporarily shows currently playing track.
         nowPlaying.$current

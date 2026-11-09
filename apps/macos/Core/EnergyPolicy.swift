@@ -178,13 +178,17 @@ struct EnergyPlan: Equatable {
     /// still shows them moving, slowly: held still halfway, they read as stuck, and a build or a test run (exactly when an
     /// agent works) keeps every core busy.
     func progressFrameRate(attended: ViewAttention) -> Double {
-        if unseen || reasons.contains(.away) { return 0 }
+        if nobodyLooks { return 0 }
         let fps = pace == .paused ? min(ambientFrameRate, unattendedFrameRate) : ambientFrameRate
         return frameRate(fps, attended: attended)
     }
 
     /// The displays sleep or the screen is locked: nothing on screen is seen, so work that only feeds it can wait.
     var unseen: Bool { reasons.contains(.displayAsleep) || reasons.contains(.locked) }
+
+    /// Nothing on screen is seen or nobody is at the Mac: what only moves for the eye (the equalizer, a working dot) holds
+    /// still, and what only feeds it (the audio tap behind the equalizer) stops.
+    var nobodyLooks: Bool { unseen || reasons.contains(.away) }
 
     /// The first reason, for a short status line; nil at full speed.
     var mainReason: EnergyReason? { reasons.first }
