@@ -269,6 +269,17 @@ final class WorkspaceBridge: ObservableObject {
            !RemoteBridge.mayRead(arguments["session_id"] as? String, caller: own) {
             return .error(RemoteBridge.refusal)
         }
+        // A group of tools the user switched off for this agent: refused before anything else.
+        let agentKey: String
+        if case .run(let id) = caller.kind, let run = app?.workspace.run(id) {
+            agentKey = run.provider.rawValue
+        } else {
+            agentKey = BridgeAccess.agentKey(forClient: context.agentID)
+        }
+        guard WorkspaceSettings.shared.bridgeAccess.allows(tool, agent: agentKey) else {
+            audit(tool, caller, Self.summary(arguments), "geweigerd: tools off for this agent")
+            return .error(BridgeAccess.refusal(tool, agent: caller.agent))
+        }
         if !tool.asksInHandler, let refused = await centralGate(tool, arguments, caller, context) { return refused }
         do {
             switch tool {

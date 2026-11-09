@@ -912,7 +912,7 @@ struct WorkspaceSettingsSection: View {
         }
     }
 
-    private var bridge: some View {
+    @ViewBuilder private var bridge: some View {
         Section {
             Toggle(tr("settings.bridge.enabled"), isOn: $ws.agentTools)
             LabeledContent(tr("settings.bridge.outside")) {
@@ -926,6 +926,35 @@ struct WorkspaceSettingsSection: View {
         } header: {
             SettingsSectionTitle(tr("settings.bridge.title"), info: tr("settings.bridge.footer"))
         }
+        Section {
+            ForEach(RunProvider.allCases) { provider in
+                LabeledContent {
+                    Menu(accessSummary(provider)) {
+                        ForEach(BridgeCapability.allCases) { capability in
+                            Toggle(tr("bridge.capability." + capability.rawValue), isOn: accessBinding(capability, provider))
+                        }
+                    }
+                    .fixedSize()
+                } label: {
+                    AgentName(provider.kind, name: provider.displayName)
+                }
+            }
+        } header: {
+            SettingsSectionTitle(tr("settings.bridge.perAgent"), info: tr("settings.bridge.perAgent.info"))
+        }
+        .disabled(!ws.agentTools)
+    }
+
+    /// "All tools", or how many groups are on, for one agent.
+    private func accessSummary(_ provider: RunProvider) -> String {
+        let on = BridgeCapability.allCases.filter { ws.bridgeAccess.isOn($0, agent: provider.rawValue) }.count
+        let all = BridgeCapability.allCases.count
+        return on == all ? tr("settings.bridge.access.all") : tr("settings.bridge.access.some", on, all)
+    }
+
+    private func accessBinding(_ capability: BridgeCapability, _ provider: RunProvider) -> Binding<Bool> {
+        Binding(get: { ws.bridgeAccess.isOn(capability, agent: provider.rawValue) },
+                set: { ws.bridgeAccess.set(capability, on: $0, agent: provider.rawValue) })
     }
 
     /// Registers the bridge with the agent's own configuration, typed in a visible terminal so you see exactly what runs.
