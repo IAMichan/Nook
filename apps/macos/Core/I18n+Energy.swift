@@ -1,6 +1,6 @@
 import Foundation
 
-// Texts for how much Nook does by himself when the Mac is on battery, hot or busy (Settings › General › Energy), and the
+// Texts for how much Nook does by himself when the Mac is on battery, hot or busy (Settings › Maintenance › Energy), and the
 // lines in Settings › Assistant that say what the screen reading is doing right now.
 
 let energyTranslations: [AppLanguage: [String: String]] = [

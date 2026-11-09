@@ -16,7 +16,7 @@ extension SettingsView {
                 }
                 if !permissions.isGranted(.screen) {
                     SettingsLinkRow(title: tr("settings.assistant.managePermissions"), section: .privacy, state: .warning) {
-                        app.openSettings(section: .privacy, tab: 1)
+                        app.openSettings(section: .permissions)
                     }
                 }
             }
@@ -37,13 +37,17 @@ extension SettingsView {
             }
             doubleTapSection
             // The same choice as in the chat's composer and the Double Tap field (⇧Tab there).
-            Section(tr("nookAccess.title")) {
-                Picker(tr("nookAccess.title"), selection: $settings.nookAccess) {
+            Section {
+                Picker(selection: $settings.nookAccess) {
                     ForEach(NookAccess.allCases) { level in Text(level.short).tag(level) }
+                } label: {
+                    SettingText("nookAccess.title")
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 SettingNote(settings.nookAccess.detail + " " + tr("nookAccess.always"))
+            } header: {
+                SettingText("nookAccess.title")
             }
         }
     }
@@ -54,7 +58,7 @@ extension SettingsView {
     private var doubleTapSection: some View {
         Section {
             // What a double tap can do takes four paragraphs; they show on hover, so the section stays short.
-            Toggle(tr("doubletap.settings.enable"), isOn: $doubleTap.enabled)
+            Toggle(isOn: $doubleTap.enabled) { SettingText("doubletap.settings.enable") }
                 .help(doubleTapHelp)
             Picker(tr("doubletap.settings.key"), selection: $doubleTap.key) {
                 ForEach(FlowKey.allCases) { key in
@@ -66,7 +70,7 @@ extension SettingsView {
                 .disabled(!doubleTap.enabled)
                 .help(tr("takeover.settings.onTapDetail", doubleTap.key.symbol))
         } header: {
-            Text(tr("doubletap.settings.title"))
+            SettingText("doubletap.settings.title")
         } footer: {
             // Only a conflict is worth reading here.
             if doubleTap.enabled && doubleTap.conflictsWithFlow {
@@ -104,7 +108,7 @@ extension SettingsView {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .opacity(settings.buddyMoments ? 1 : 0.5)
-            LabeledContent(tr("settings.buddy.birthday")) {
+            LabeledContent {
                 HStack(spacing: NookTheme.Spacing.sm) {
                     Picker(tr("settings.buddy.birthdayDay"), selection: birthdayPart(\.day)) {
                         Text(verbatim: "–").tag(0)
@@ -119,13 +123,15 @@ extension SettingsView {
                     .labelsHidden()
                     .frame(width: 130)
                 }
+            } label: {
+                SettingText("settings.buddy.birthday")
             }
             HStack {
                 Button(tr("settings.buddy.breatheNow")) { app.breatheAlong() }
                 Spacer()
             }
         } header: {
-            Text(tr("settings.buddy.title"))
+            SettingText("settings.buddy.title")
         }
     }
 

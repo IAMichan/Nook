@@ -400,7 +400,7 @@ struct AddMCPServerWizardSheet: View {
                     if preset?.requiredEnv.isEmpty == true {
                         SettingNote(tr("mcp.wizard.ready"), tone: .success)
                     }
-                    DisclosureGroup(tr("settings.display.advanced")) {
+                    DisclosureGroup(tr("mcp.nameAndCommand")) {
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) { nameAndCommand }
                             .padding(.top, NookTheme.Spacing.sm)
                     }

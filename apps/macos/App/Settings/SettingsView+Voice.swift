@@ -10,17 +10,19 @@ extension SettingsView {
     var soundSection: some View {
         Group {
             Section {
-                Toggle(tr("settings.voice.agentSound"), isOn: $settings.sounds)
-                LabeledContent(tr("settings.voice.customSounds")) {
+                Toggle(isOn: $settings.sounds) { SettingText("settings.voice.agentSound") }
+                LabeledContent {
                     Button(tr("button.openFolder")) { NookSound.openFolder() }
+                } label: {
+                    SettingText("settings.voice.customSounds")
                 }
                 .disabled(!settings.sounds)
             } header: {
                 SettingsSectionTitle(tr("settings.voice.sounds"), info: tr("settings.voice.customSoundsHint"))
             }
             Section {
-                Toggle(tr("settings.voice.speakAnswers"), isOn: $settings.speakAnswers)
-                Toggle(tr("settings.voice.wakeWord"), isOn: $settings.wakeWord)
+                Toggle(isOn: $settings.speakAnswers) { SettingText("settings.voice.speakAnswers") }
+                Toggle(isOn: $settings.wakeWord) { SettingText("settings.voice.wakeWord") }
                     .disabled(!WakeWordService.supported)
             } header: {
                 SettingsSectionTitle(tr("settings.voice.speaking"), info: tr("settings.voice.wakeWordFooter"))
@@ -59,7 +61,7 @@ extension SettingsView {
             .onAppear { app.quietViewers += 1; app.quietTick() }
             .onDisappear { app.quietViewers = max(0, app.quietViewers - 1) }
         } header: {
-            Text(tr("quiet.title"))
+            SettingText("quiet.title")
         }
     }
 }

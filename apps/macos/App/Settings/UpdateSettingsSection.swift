@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Settings › General › Updates: which build this is, whether main (or, for a downloaded build, GitHub Releases) has
+/// Settings › Maintenance › Updates: which build this is, whether main (or, for a downloaded build, GitHub Releases) has
 /// something newer, checking now, and whether Nook checks by itself. Installing happens from the button in the panel
 /// footer, which this opens.
 struct UpdateSettingsSection: View {

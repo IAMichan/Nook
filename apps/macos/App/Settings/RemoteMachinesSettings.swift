@@ -203,9 +203,9 @@ private struct AddMachineSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            Text(tr("remote.addTitle")).font(NookTheme.TextStyle.heading)
-            Text(tr("remote.addSubtitle")).foregroundStyle(NookTheme.textSecondary)
+        SetupSheet(title: tr("remote.addTitle"), subtitle: tr("remote.addSubtitle"), width: 460) {
+            SettingsTile(.machines, size: 40)
+        } content: {
             if !suggestions.isEmpty {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                     Text(tr("remote.found"))
@@ -223,15 +223,17 @@ private struct AddMachineSheet: View {
                     .frame(maxHeight: 150)
                 }
             }
-            TextField(tr("remote.host"), text: $host, prompt: Text("me@buildbox.local")).textFieldStyle(.roundedBorder)
+            Text(tr("remote.host")).font(NookTheme.TextStyle.strong)
+            TextField("", text: $host, prompt: Text("me@buildbox.local")).textFieldStyle(.roundedBorder)
                 .font(NookTheme.TextStyle.code)
                 .onChange(of: host) { _, value in
                     guard !namedByHand, value != filledHost else { return }
                     name = RemoteMachines.suggestedName(for: value.trimmingCharacters(in: .whitespaces))
                 }
-            TextField(tr("remote.name"), text: Binding(get: { name }, set: { name = $0; namedByHand = true }),
+            Text(tr("remote.name")).font(NookTheme.TextStyle.strong)
+            TextField("", text: Binding(get: { name }, set: { name = $0; namedByHand = true }),
                       prompt: Text("buildbox")).textFieldStyle(.roundedBorder)
-            DisclosureGroup(tr("settings.display.advanced")) {
+            DisclosureGroup(tr("remote.portAndKey")) {
                 VStack(spacing: NookTheme.Spacing.sm) {
                     TextField(tr("remote.port"), text: $port, prompt: Text("22")).textFieldStyle(.roundedBorder)
                     TextField(tr("remote.keyFile"), text: $identityFile, prompt: Text("~/.ssh/id_ed25519")).textFieldStyle(.roundedBorder)
@@ -245,22 +247,23 @@ private struct AddMachineSheet: View {
             if !cleanIdentityFile.isEmpty, !RemoteMachines.isValidIdentityFile(cleanIdentityFile) {
                 SettingNote(tr("remote.badKeyFile"), tone: .warning)
             }
-            HStack {
-                Spacer()
-                Button(tr("button.cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(tr("remote.add")) {
-                    let cleanHost = host.trimmingCharacters(in: .whitespaces)
-                    let cleanName = name.trimmingCharacters(in: .whitespaces)
-                    add(RemoteMachine(name: cleanName.isEmpty ? cleanHost : cleanName, host: cleanHost, port: portNumber,
-                                      identityFile: cleanIdentityFile.isEmpty ? nil : cleanIdentityFile))
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(!canAdd)
+        } footer: {
+            Spacer()
+            Button(tr("button.cancel")) { dismiss() }
+                .keyboardShortcut(.cancelAction)
+                .controlSize(.large)
+            Button(tr("remote.add")) {
+                let cleanHost = host.trimmingCharacters(in: .whitespaces)
+                let cleanName = name.trimmingCharacters(in: .whitespaces)
+                add(RemoteMachine(name: cleanName.isEmpty ? cleanHost : cleanName, host: cleanHost, port: portNumber,
+                                  identityFile: cleanIdentityFile.isEmpty ? nil : cleanIdentityFile))
+                dismiss()
             }
+            .keyboardShortcut(.defaultAction)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(!canAdd)
         }
-        .padding(NookTheme.Spacing.xxl)
-        .frame(width: 460)
         .onAppear { if let start { fill(start) } }
         .task {
             let existing = RemoteMachines.load()

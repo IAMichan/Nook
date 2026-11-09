@@ -22,7 +22,7 @@ struct CompanionSettingsRows: View {
         // Three sections instead of one long row: the phone and its pairing, push notifications, and the key push
         // needs from Apple (only while push is on).
         Section {
-            Toggle(tr("companion.enable"), isOn: Binding(get: { store.enabled }, set: { store.enabled = $0; server.apply() }))
+            Toggle(isOn: Binding(get: { store.enabled }, set: { store.enabled = $0; server.apply() })) { SettingText("companion.enable") }
             SettingNote(tr("companion.hint"))
             if store.enabled {
                 status
@@ -58,7 +58,7 @@ struct CompanionSettingsRows: View {
                 }
             }
         } header: {
-            Text(tr("settings.devices.iphone"))
+            SettingText("settings.devices.iphone")
         }
         // The window closes by itself; also when a phone completes it.
         .onChange(of: store.devices) { _, _ in link = nil }
@@ -98,9 +98,9 @@ struct CompanionSettingsRows: View {
             .padding(.leading, NookTheme.Spacing.lg)
             Toggle(tr("companion.push.onlyAway"), isOn: $store.push.onlyWhenAway)
             Toggle(tr("companion.push.titles"), isOn: $store.push.includeTitle)
-            Toggle(tr("companion.push.quiet"), isOn: Binding(
+            Toggle(isOn: Binding(
                 get: { store.push.quietFrom != nil },
-                set: { on in store.push.quietFrom = on ? 22 : nil; store.push.quietTo = on ? 7 : nil }))
+                set: { on in store.push.quietFrom = on ? 22 : nil; store.push.quietTo = on ? 7 : nil })) { SettingText("companion.push.quiet") }
             if store.push.quietFrom != nil {
                 HStack {
                     Stepper(tr("companion.push.from", store.push.quietFrom ?? 22), value: hourBinding(\.quietFrom), in: 0...23)

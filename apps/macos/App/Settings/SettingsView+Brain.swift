@@ -93,27 +93,29 @@ extension SettingsView {
                 // Step 2: the models Nook advises for this Mac; every other model and runtime is folded away.
                 Section {
                     adviceRows
-                    DisclosureGroup(tr("brain.local.all")) {
-                        Picker(tr("settings.brain.localRuntime"), selection: localRuntime) {
-                            Text(tr("settings.brain.builtIn")).tag(LocalRuntime.builtIn)
-                            Text("Ollama").tag(LocalRuntime.ollama)
-                            Text("LM Studio").tag(LocalRuntime.lmstudio)
-                        }
-                        .pickerStyle(.segmented)
-                        if settings.useLocal {
-                            localFields
-                        } else {
-                            providerSignIn
-                            providerModel
-                        }
-                    }
                 } header: {
                     stepTitle(2, tr("brain.step.model"))
+                }
+                // Every other model and runtime: a folded group under the advice, with the runtime in use beside it.
+                SettingsFold(tr("brain.local.all"), summary: settings.useLocal ? tr("settings.brain.builtIn") : settings.provider.title,
+                             keys: ["settings.brain.localModelTitle"]) {
+                    Picker(tr("settings.brain.localRuntime"), selection: localRuntime) {
+                        Text(tr("settings.brain.builtIn")).tag(LocalRuntime.builtIn)
+                        Text("Ollama").tag(LocalRuntime.ollama)
+                        Text("LM Studio").tag(LocalRuntime.lmstudio)
+                    }
+                    .pickerStyle(.segmented)
+                    if settings.useLocal {
+                        localFields
+                    } else {
+                        providerSignIn
+                        providerModel
+                    }
                 }
             } else {
                 // Step 2: which service, step 3: signing in to it, step 4: its model.
                 Section {
-                    Picker(tr("settings.brain.provider"), selection: externalProvider) {
+                    Picker(selection: externalProvider) {
                         // Signing in with your own account comes first: your subscription needs no key at all.
                         Section(tr("brain.service.withAccount")) {
                             ForEach(AIProvider.allCases.filter(\.isSubscription)) { provider in
@@ -127,6 +129,8 @@ extension SettingsView {
                                     .tag(provider)
                             }
                         }
+                    } label: {
+                        SettingText("settings.brain.provider")
                     }
                     .help(brainExplanation)
                 } header: {
@@ -233,7 +237,7 @@ extension SettingsView {
             } else if settings.provider == .openrouter {
                 // OpenRouter signs in on its own page and hands Nook a key itself; pasting one is folded away.
                 openRouterSignIn
-                DisclosureGroup(tr("settings.display.advanced")) {
+                DisclosureGroup(tr("settings.fold.keyInstead")) {
                     keyFields.padding(.top, NookTheme.Spacing.xs)
                 }
             } else if settings.provider.needsKey {

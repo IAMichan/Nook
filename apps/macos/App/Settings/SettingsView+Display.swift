@@ -1,7 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Settings › General: the languages, how much Nook does on its own, and updates. Settings › Notch & windows: where
+/// Settings › General: the languages, how the session list is laid out, and what Nook asks before it acts
+/// General has its sidebar and confirmations. How much Nook does on its own and updates are under Maintenance. Settings › Notch & windows: where
 /// Nook shows (the notch and the main window) and how it behaves in meetings and while you share your screen. The look is
 /// under Appearance; the language dictation is translated to is with dictation.
 extension SettingsView {
@@ -10,25 +11,22 @@ extension SettingsView {
     var generalSection: some View {
         Group {
             Section {
-                Picker(tr("settings.overview.appLanguage"), selection: $settings.appLanguage) {
+                Picker(selection: $settings.appLanguage) {
                     ForEach(AppLanguage.allCases) { lang in
                         Text(lang.displayName).tag(lang)
                     }
+                } label: {
+                    SettingText("settings.overview.appLanguage")
                 }
-                Picker(tr("settings.brain.answerLanguage"), selection: $settings.language) {
+                Picker(selection: $settings.language) {
                     ForEach(AppSettings.languages, id: \.code) { Text($0.name).tag($0.code) }
+                } label: {
+                    SettingText("settings.brain.answerLanguage")
                 }
             } header: {
                 Text(tr("settings.overview.languageSection"))
             }
-            energySection
-            UpdateSettingsSection()
-            // Rarely needed: folded away at the end, like on every page.
-            Section {
-                DisclosureGroup(tr("settings.display.advanced")) {
-                    Toggle(tr("settings.notch.demoData"), isOn: $app.demoMode)
-                }
-            }
+            GeneralListAndConfirmations()
         }
     }
 
@@ -39,9 +37,11 @@ extension SettingsView {
             // The notch and the main window: everywhere Nook shows, in one group.
             Section(tr("settings.general.where")) {
                 SettingToggle(tr("settings.notch.show"), detail: tr("settings.notch.showDetail"), isOn: $settings.showNotch)
-                Picker(tr("settings.notch.placement"), selection: $settings.placement) {
+                Picker(selection: $settings.placement) {
                     Text(tr("settings.notch.placementNotch")).tag("notch")
                     Text(tr("settings.notch.placementFloating")).tag("floating")
+                } label: {
+                    SettingText("settings.notch.placement")
                 }
                 if settings.placement == "floating" {
                     SettingNote(tr("settings.notch.placementHint"))
@@ -62,11 +62,11 @@ extension SettingsView {
                     }
                 }
                 .disabled(settings.placement == "notch" && settings.notchOnAllScreens)
-                Toggle(tr("settings.notch.hideWhenIdle"), isOn: $settings.hideWhenIdle)
-                Toggle(tr("settings.notch.openOnHover"), isOn: Binding(
+                Toggle(isOn: $settings.hideWhenIdle) { SettingText("settings.notch.hideWhenIdle") }
+                Toggle(isOn: Binding(
                     get: { app.viewModel.openOnHover },
                     set: { app.viewModel.openOnHover = $0; refreshTick += 1 }
-                ))
+                )) { SettingText("settings.notch.openOnHover") }
                 SettingToggle(tr("settings.window.openAtLaunch"), detail: tr("settings.window.openAtLaunchDetail"),
                               isOn: $settings.openWindowAtLaunch)
             }
@@ -77,14 +77,14 @@ extension SettingsView {
     // MARK: Energy
 
     /// How much Nook does by himself on battery, a hot or busy Mac: one choice, what it means, and what he does right now.
-    private var energySection: some View {
+    var energySection: some View {
         Section {
             Picker(selection: $settings.energyMode) {
                 ForEach(EnergyMode.allCases) { mode in
                     Text(tr(mode.titleKey)).tag(mode)
                 }
             } label: {
-                Text(tr("settings.energy.mode"))
+                SettingText("settings.energy.mode")
             }
             .pickerStyle(.segmented)
             .help(tr("settings.energy.modeDetail"))
@@ -97,7 +97,7 @@ extension SettingsView {
                 }
             }
         } header: {
-            Text(tr("settings.energy.title"))
+            SettingText("settings.energy.title")
         }
     }
 
@@ -119,5 +119,40 @@ extension NSColor {
         let g = UInt32((c.greenComponent * 255).rounded())
         let b = UInt32((c.blueComponent * 255).rounded())
         return (r << 16) | (g << 8) | b
+    }
+}
+
+/// The session list's layout and the confirmations on General, with the defaults "Restore defaults" in the bar puts back.
+struct GeneralListAndConfirmations: View {
+    @ObservedObject private var inbox = InboxStore.shared
+    @AppStorage(AppDelegate.confirmQuitKey) private var confirmQuit = true
+
+    var body: some View {
+        Section {
+            Toggle(isOn: $inbox.groupByProject) { SettingText("settings.ws.inboxProjects") }
+            Toggle(tr("settings.ws.inboxWorking"), isOn: $inbox.showWorking)
+                .disabled(inbox.groupByProject)
+        } header: {
+            SettingText("settings.general.sessionList")
+        }
+        Section {
+            Toggle(isOn: $confirmQuit) { SettingText("settings.ws.confirmQuit") }
+        } header: {
+            SettingText("settings.general.confirmations")
+        }
+    }
+
+    /// Whether any of General's own settings differs from its default, so "Restore defaults" has something to do.
+    @MainActor static var changed: Bool {
+        let inbox = InboxStore.shared
+        return !inbox.groupByProject || !inbox.showWorking
+            || UserDefaults.standard.object(forKey: AppDelegate.confirmQuitKey) as? Bool == false
+    }
+
+    /// Puts General's own settings back to how Nook ships. The languages stay: they are yours, not a default.
+    @MainActor static func restoreDefaults() {
+        InboxStore.shared.groupByProject = true
+        InboxStore.shared.showWorking = true
+        UserDefaults.standard.removeObject(forKey: AppDelegate.confirmQuitKey)
     }
 }

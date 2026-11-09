@@ -44,7 +44,7 @@ struct AcpAgentsSection: View {
         } header: {
             HStack(spacing: NookTheme.Spacing.md) {
                 AgentLogo(.acp, size: 16)
-                Text(tr("acp.title"))
+                SettingText("acp.title")
                 SettingsInfoButton(text: tr("acp.footer"))
             }
         }
@@ -106,37 +106,26 @@ private struct AcpRegistrySheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            Text(tr("acp.registry.title")).font(NookTheme.TextStyle.heading)
-            Text(tr("acp.registry.subtitle")).foregroundStyle(NookTheme.textSecondary)
-            TextField(tr("acp.registry.search"), text: $query).textFieldStyle(.roundedBorder)
-            Group {
-                if loading {
-                    PatientSpinner()
-                } else if let error {
-                    Text(error).foregroundStyle(NookTheme.textSecondary).frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    List(shown, selection: Binding<String?>(get: { chosen?.id }, set: { id in chosen = entries.first { $0.id == id } })) { entry in
-                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                            HStack {
-                                Text(entry.name).font(NookTheme.TextStyle.strong)
-                                Text(entry.version).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
-                                if entry.command == nil, entry.binary != nil {
-                                    Text(tr("acp.registry.download")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
-                                } else if !entry.isSupported {
-                                    SettingNote(tr("acp.registry.unavailable"), tone: .warning)
-                                }
-                            }
-                            if !entry.description.isEmpty {
-                                Text(entry.description).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).lineLimit(2)
-                            }
+        // The one sheet shape: what this is on top, the searchable list in the middle, Cancel and Add below.
+        SetupSheet(title: tr("acp.registry.title"), subtitle: tr("acp.registry.subtitle")) {
+            SettingsTile(.agents, size: 40)
+        } content: {
+            NookSearchField(prompt: tr("acp.registry.search"), text: $query, style: .inline)
+            if loading {
+                PatientSpinner().frame(maxWidth: .infinity, minHeight: 200)
+            } else if let error {
+                SettingNote(error, tone: .warning)
+            } else {
+                VStack(spacing: NookTheme.Spacing.xxs) {
+                    ForEach(shown) { entry in
+                        SettingsPickRow(title: entry.name, detail: registryDetail(entry), selected: chosen?.id == entry.id) {
+                            chosen = entry
                         }
-                        .tag(entry.id)
+                        .disabled(!entry.isSupported)
                         .opacity(entry.isSupported ? 1 : 0.5)
                     }
                 }
             }
-            .frame(minHeight: 280)
             if let chosen, let command = chosen.command {
                 // What will run, before you add it: the agent is a program from the internet.
                 Text(tr("acp.registry.runs", ([command] + chosen.arguments).joined(separator: " ")))
@@ -152,20 +141,21 @@ private struct AcpRegistrySheet: View {
             if let installError {
                 SettingNote(installError, tone: .warning)
             }
-            HStack {
-                if installing {
-                    ProgressView().controlSize(.small)
-                    Text(tr("acp.install.busy")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
-                }
-                Spacer()
-                Button(tr("button.cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(chosen?.command == nil && chosen?.binary != nil ? tr("acp.install") : tr("acp.add")) { confirm() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!(chosen?.isSupported ?? false) || installing)
+        } footer: {
+            if installing {
+                ProgressView().controlSize(.small)
+                Text(tr("acp.install.busy")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
             }
+            Spacer()
+            Button(tr("button.cancel")) { dismiss() }
+                .keyboardShortcut(.cancelAction)
+                .controlSize(.large)
+            Button(chosen?.command == nil && chosen?.binary != nil ? tr("acp.install") : tr("acp.add")) { confirm() }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(!(chosen?.isSupported ?? false) || installing)
         }
-        .padding(NookTheme.Spacing.xxl)
-        .frame(width: 520, height: 520)
         .interactiveDismissDisabled(installing)
         .task {
             do {
@@ -176,6 +166,18 @@ private struct AcpRegistrySheet: View {
             }
             loading = false
         }
+    }
+
+    /// The line under an agent in the list: its version, how it comes, and what it does.
+    private func registryDetail(_ entry: AcpRegistry.Entry) -> String {
+        var parts = [entry.version]
+        if entry.command == nil, entry.binary != nil {
+            parts.append(tr("acp.registry.download"))
+        } else if !entry.isSupported {
+            parts.append(tr("acp.registry.unavailable"))
+        }
+        if !entry.description.isEmpty { parts.append(entry.description) }
+        return parts.joined(separator: " · ")
     }
 
     /// npx and uvx agents are added at once; a download is installed first, and the sheet stays until that is done.
@@ -212,28 +214,36 @@ private struct AcpManualSheet: View {
     private var canAdd: Bool { !name.trimmingCharacters(in: .whitespaces).isEmpty && parsed != nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            Text(tr("acp.manual.title")).font(NookTheme.TextStyle.heading)
-            Text(tr("acp.manual.subtitle")).foregroundStyle(NookTheme.textSecondary)
-            TextField(tr("acp.manual.name"), text: $name).textFieldStyle(.roundedBorder)
-            TextField(tr("acp.manual.command"), text: $command, prompt: Text("npx -y @vendor/agent-acp@1.0.0"))
-                .textFieldStyle(.roundedBorder)
-                .font(NookTheme.TextStyle.code)
+        SetupSheet(title: tr("acp.manual.title"), subtitle: tr("acp.manual.subtitle"), width: 460) {
+            SettingsTile(.agents, size: 40)
+        } content: {
+            // Each field with its name above it, as every form sheet in Settings has.
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                Text(tr("acp.manual.name")).font(NookTheme.TextStyle.strong)
+                TextField("", text: $name, prompt: Text(tr("acp.manual.namePlaceholder"))).textFieldStyle(.roundedBorder)
+            }
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                Text(tr("acp.manual.command")).font(NookTheme.TextStyle.strong)
+                TextField("", text: $command, prompt: Text("npx -y @vendor/agent-acp@1.0.0"))
+                    .textFieldStyle(.roundedBorder)
+                    .font(NookTheme.TextStyle.code)
+            }
             if !command.isEmpty, parsed == nil {
                 SettingNote(tr("acp.manual.badCommand"), tone: .warning)
             }
-            HStack {
-                Spacer()
-                Button(tr("button.cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(tr("acp.add")) {
-                    if let parsed { add(name.trimmingCharacters(in: .whitespaces), parsed.command, parsed.arguments) }
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(!canAdd)
+        } footer: {
+            Spacer()
+            Button(tr("button.cancel")) { dismiss() }
+                .keyboardShortcut(.cancelAction)
+                .controlSize(.large)
+            Button(tr("acp.add")) {
+                if let parsed { add(name.trimmingCharacters(in: .whitespaces), parsed.command, parsed.arguments) }
+                dismiss()
             }
+            .keyboardShortcut(.defaultAction)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(!canAdd)
         }
-        .padding(NookTheme.Spacing.xxl)
-        .frame(width: 460)
     }
 }
