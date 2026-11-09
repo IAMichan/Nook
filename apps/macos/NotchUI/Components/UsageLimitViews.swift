@@ -83,9 +83,10 @@ struct UsageLimitRows: View {
         }
     }
 
-    /// A window's percentage used, rounded as it is shown.
+    /// A window's percentage used, the complement of what is left as the pool rounds it, so 38.5 % used reads as 62 %
+    /// left here and in the modal alike.
     static func used(_ limit: QuotaLimit) -> Int {
-        Int(max(0, min(100, limit.percent)).rounded())
+        100 - LimitPool.left(limit.percent)
     }
 
     /// "5 hours: 62% left", "Resets in 2h 14m · 17:30", "Ahead of pace".
@@ -632,7 +633,7 @@ private struct LimitWindowCard: View {
                     }
                 }
                 if window.columns.count > 1, let refill = window.nextRefill {
-                    Text("↻ +\(refill.restores)%")
+                    Text(tr("limits.refill", refill.restores))
                         .font(NookTheme.TextStyle.label.monospacedDigit())
                         .foregroundStyle(NookTheme.paper)
                 }
