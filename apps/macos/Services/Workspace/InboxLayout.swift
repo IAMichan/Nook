@@ -82,7 +82,7 @@ struct InboxState: Codable, Equatable, Sendable {
 
     mutating func dismissWoke(_ id: String) { dismissedWoke.insert(id) }
 
-    /// Moves `id` to `toIndex` (a final index, see `InboxDrop.reorderTarget`) inside the section as it is shown.
+    /// Moves `id` to `toIndex` (a final index) inside the section as it is shown.
     /// Only Pinned and Active have a manual order. Ids hidden from the section keep their relative place after it.
     mutating func reorder(_ id: String, toIndex: Int, within section: InboxSection) {
         guard section.kind == .pinned || section.kind == .active else { return }
@@ -264,6 +264,21 @@ enum InboxLayout {
         return result
     }
 
+    /// Where "Move Up" or "Move Down" puts a row of Pinned or Active: the final index (for `InboxState.reorder`) of the
+    /// nearest row in that direction it can trade places with, or nil when there is none. Only top-level rows move,
+    /// since a nested one follows its parent; in Active the rows are sorted by attention first, so a row only moves among
+    /// those with the same attention.
+    static func moveTarget(_ id: String, up: Bool, in section: InboxSection) -> Int? {
+        guard section.kind == .pinned || section.kind == .active,
+              let from = section.rows.firstIndex(where: { $0.id == id }), section.rows[from].depth == 0 else { return nil }
+        let row = section.rows[from].row
+        let candidates = up ? Array((0..<from).reversed()) : Array((from + 1)..<section.rows.count)
+        return candidates.first { index in
+            let other = section.rows[index]
+            return other.depth == 0 && (section.kind == .pinned || other.row.effectiveAttention == row.effectiveAttention)
+        }
+    }
+
     /// The Working and Active rows per project. The projects keep a fixed place (by name), so activity in one never
     /// moves the whole folder; inside a project the session with the newest activity comes first, with the sessions it
     /// started still right under it. Pinned, snoozed and settled sessions keep their own sections.
@@ -338,65 +353,6 @@ enum InboxLayout {
         if row.attention == .working || (row.hasBackgroundWork && !row.needsYou) { return true }
         if row.attention == .ready || row.attention == .approval { return !row.unread && !woke }
         return false
-    }
-}
-
-/// What dropping a row on a section does (docs/user/thread-sidebar.md).
-enum InboxDrop {
-    enum Reason: String, Equatable, Sendable {
-        /// Snoozing needs a wake time, so a drop cannot do it.
-        case needsTime
-        /// The Working shelf is derived from what the agent is doing.
-        case automatic
-        case notReorderable
-    }
-
-    enum DropResult: Equatable, Sendable {
-        case pin, unpin, settle, unsettle, wake
-        /// Same section, Pinned or Active: only the order changes.
-        case reorder
-        case rejected(Reason)
-
-        /// Drag-ghost label (i18n key); nil when the drop shows no badge.
-        var labelKey: String? {
-            switch self {
-            case .pin: return "inbox.drop.pin"
-            case .unpin: return "inbox.drop.unpin"
-            case .settle: return "inbox.drop.settle"
-            case .unsettle: return "inbox.drop.unsettle"
-            case .wake: return "inbox.drop.wake"
-            case .reorder: return nil
-            case .rejected(let reason): return "inbox.drop.\(reason.rawValue)"
-            }
-        }
-    }
-
-    static func decide(row: InboxRow, from: InboxSection.Kind, to: InboxSection.Kind) -> DropResult {
-        if from == to {
-            return from == .pinned || from == .active ? .reorder : .rejected(from == .snoozed ? .needsTime : .notReorderable)
-        }
-        switch to {
-        case .snoozed: return .rejected(.needsTime)
-        case .working: return .rejected(.automatic)
-        case .pinned: return row.pinned && from != .pinned ? .reorder : .pin
-        case .settled: return .settle
-        case .active:
-            switch from {
-            case .pinned: return .unpin
-            case .settled: return .unsettle
-            case .snoozed: return .wake
-            case .working: return .rejected(.automatic)
-            case .active: return .reorder
-            }
-        }
-    }
-
-    /// Insertion gap (0...count, before the dragged row is taken out) to the final index; nil when nothing moves.
-    static func reorderTarget(ids: [String], dragged: String, gap: Int) -> Int? {
-        guard let from = ids.firstIndex(of: dragged) else { return nil }
-        let clamped = min(max(gap, 0), ids.count)
-        let to = clamped > from ? clamped - 1 : clamped
-        return to == from ? nil : to
     }
 }
 
