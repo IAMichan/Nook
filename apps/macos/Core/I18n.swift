@@ -390,20 +390,8 @@ private let translations: [AppLanguage: [String: String]] = [
         "connect.refresh": "Ververs",
 
         // MARK: Settings - Sidebar
-        "settings.section.general": "Overzicht",
-        "settings.section.general.sub": "Wat werkt er al, en wat nog niet",
-        "settings.section.brain": "Brein",
-        "settings.section.brain.sub": "Met welke AI Nook denkt",
-        "settings.section.assistant": "Assistent",
-        "settings.section.assistant.sub": "Wat Nook ziet en hoe hij zich gedraagt",
-        "settings.section.connections": "Koppelingen",
-        "settings.section.connections.sub": "Agenda, mail, browser en je diensten",
-        "settings.section.agents": "Agents",
-        "settings.section.agents.sub": "Claude Code, Codex, Cursor en meer",
         "settings.section.voice": "Stem en geluid",
         "settings.section.voice.sub": "Praten, voorlezen en geluiden",
-        "settings.section.privacy": "Privacy en toegang",
-        "settings.section.privacy.sub": "Machtigingen en wat er je Mac verlaat",
 
         // MARK: Settings - Overview
         "settings.overview.countOf": "%d van %d",
@@ -641,10 +629,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "agents.viewAccountUsage": "Gebruik, limieten en eerdere sessies van %@",
         "agents.viewUsage": "Bekijk gebruik en eerdere sessies",
         "agents.you": "Jij",
-        "agents.reply.continue": "Ga verder met deze sessie…",
-        "agents.reply.fork": "Stuur een bericht (start een kopie van de sessie)…",
         "agents.reply.copy": "Typ een bericht (wordt gekopieerd naar de terminal)…",
-        "agents.reply.forkHint": "De sessie is nog bezig: je bericht opent een kopie van het gesprek in een nieuw Terminal-venster, zodat ze elkaar niet storen.",
         "agents.reply.working": "%@ is bezig…",
 
         // MARK: Additional connector and settings keys
@@ -1173,20 +1158,8 @@ private let translations: [AppLanguage: [String: String]] = [
         "connect.refresh": "Refresh",
 
         // MARK: Settings - Sidebar
-        "settings.section.general": "Overview",
-        "settings.section.general.sub": "What works and what doesn't yet",
-        "settings.section.brain": "Brain",
-        "settings.section.brain.sub": "Which AI Nook thinks with",
-        "settings.section.assistant": "Assistant",
-        "settings.section.assistant.sub": "What Nook sees and how it behaves",
-        "settings.section.connections": "Connections",
-        "settings.section.connections.sub": "Calendar, mail, browser, and your services",
-        "settings.section.agents": "Agents",
-        "settings.section.agents.sub": "Claude Code, Codex, Cursor, and more",
         "settings.section.voice": "Voice and sound",
         "settings.section.voice.sub": "Speaking, read-aloud, and sounds",
-        "settings.section.privacy": "Privacy and access",
-        "settings.section.privacy.sub": "Permissions and what leaves your Mac",
 
         // MARK: Settings - Overview
         "settings.overview.countOf": "%d of %d",
@@ -1424,10 +1397,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "agents.viewAccountUsage": "Usage, limits and past sessions of %@",
         "agents.viewUsage": "View usage and past sessions",
         "agents.you": "You",
-        "agents.reply.continue": "Continue this session…",
-        "agents.reply.fork": "Send a message (starts a copy of the session)…",
         "agents.reply.copy": "Type a message (copied to the terminal)…",
-        "agents.reply.forkHint": "The session is still working: your message opens a copy of the conversation in a new Terminal window, so they don't interfere.",
         "agents.reply.working": "%@ is working…",
 
         // MARK: Additional connector and settings keys
@@ -1956,20 +1926,8 @@ private let translations: [AppLanguage: [String: String]] = [
         "connect.refresh": "Aktualisieren",
 
         // MARK: Settings - Sidebar
-        "settings.section.general": "Übersicht",
-        "settings.section.general.sub": "Was bereits funktioniert und was noch nicht",
-        "settings.section.brain": "Gehirn",
-        "settings.section.brain.sub": "Mit welcher KI Nook denkt",
-        "settings.section.assistant": "Assistent",
-        "settings.section.assistant.sub": "Was Nook sieht und wie es sich verhält",
-        "settings.section.connections": "Verbindungen",
-        "settings.section.connections.sub": "Kalender, Mail, Browser und deine Dienste",
-        "settings.section.agents": "Agents",
-        "settings.section.agents.sub": "Claude Code, Codex, Cursor und mehr",
         "settings.section.voice": "Stimme und Ton",
         "settings.section.voice.sub": "Sprechen, Vorlesen und Töne",
-        "settings.section.privacy": "Datenschutz und Zugriff",
-        "settings.section.privacy.sub": "Berechtigungen und was deinen Mac verlässt",
 
         // MARK: Settings - Overview
         "settings.overview.countOf": "%d von %d",

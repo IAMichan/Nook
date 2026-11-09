@@ -4,8 +4,6 @@ import Foundation
 
 let autocompleteTranslations: [AppLanguage: [String: String]] = [
     .nl: [
-        "settings.section.autocomplete": "Aanvullen",
-        "settings.section.autocomplete.sub": "Zinnen aanvullen terwijl je typt, in elke app",
         "autocomplete.hero.title": "Typ minder, in elke app",
         "autocomplete.hero.detail": "Een model op je Mac stelt voor hoe je zin verdergaat, als grijze tekst bij je cursor. Geen abonnement, niets verlaat je Mac.",
         "autocomplete.enable": "Zinnen aanvullen terwijl je typt",
@@ -253,8 +251,6 @@ let autocompleteTranslations: [AppLanguage: [String: String]] = [
         "autocomplete.download.notGGUF": "Het gedownloade bestand is geen GGUF-model en is weggegooid."
     ],
     .en: [
-        "settings.section.autocomplete": "Autocomplete",
-        "settings.section.autocomplete.sub": "Complete sentences as you type, in any app",
         "autocomplete.hero.title": "Type less, in any app",
         "autocomplete.hero.detail": "A model on your Mac suggests how your sentence goes on, as grey text at your cursor. No subscription, nothing leaves your Mac.",
         "autocomplete.enable": "Complete sentences as you type",
@@ -502,8 +498,6 @@ let autocompleteTranslations: [AppLanguage: [String: String]] = [
         "autocomplete.download.notGGUF": "The downloaded file is not a GGUF model and was discarded."
     ],
     .de: [
-        "settings.section.autocomplete": "Vervollständigen",
-        "settings.section.autocomplete.sub": "Sätze beim Tippen vervollständigen, in jeder App",
         "autocomplete.hero.title": "Weniger tippen, in jeder App",
         "autocomplete.hero.detail": "Ein Modell auf deinem Mac schlägt vor, wie dein Satz weitergeht, als graue Schrift am Cursor. Kein Abo, nichts verlässt deinen Mac.",
         "autocomplete.enable": "Sätze beim Tippen vervollständigen",
@@ -751,8 +745,6 @@ let autocompleteTranslations: [AppLanguage: [String: String]] = [
         "autocomplete.download.notGGUF": "Die geladene Datei ist kein GGUF-Modell und wurde verworfen."
     ],
     .fr: [
-        "settings.section.autocomplete": "Complétion",
-        "settings.section.autocomplete.sub": "Compléter vos phrases pendant que vous tapez, dans toute app",
         "autocomplete.hero.title": "Tapez moins, dans toute app",
         "autocomplete.hero.detail": "Un modèle sur votre Mac propose la suite de votre phrase, en gris au curseur. Sans abonnement, rien ne quitte votre Mac.",
         "autocomplete.enable": "Compléter les phrases pendant la frappe",
@@ -1000,8 +992,6 @@ let autocompleteTranslations: [AppLanguage: [String: String]] = [
         "autocomplete.download.notGGUF": "Le fichier téléchargé n’est pas un modèle GGUF et a été supprimé."
     ],
     .es: [
-        "settings.section.autocomplete": "Autocompletar",
-        "settings.section.autocomplete.sub": "Completa frases mientras escribes, en cualquier app",
         "autocomplete.hero.title": "Escribe menos, en cualquier app",
         "autocomplete.hero.detail": "Un modelo en tu Mac sugiere cómo sigue tu frase, en gris junto al cursor. Sin suscripción, nada sale de tu Mac.",
         "autocomplete.enable": "Completar frases mientras escribes",

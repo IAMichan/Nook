@@ -139,6 +139,11 @@ struct UsageView: View {
         }
     }
 
+    /// The agents with sessions in the report, in the fixed order of `RunProvider`.
+    private func providers(_ report: UsageReport) -> [RunProvider] {
+        RunProvider.allCases.filter { provider in report.days.contains { $0.provider == provider } }
+    }
+
     private func chart(_ report: UsageReport) -> some View {
         Chart(report.days) { day in
             BarMark(
@@ -148,14 +153,9 @@ struct UsageView: View {
             .foregroundStyle(by: .value(tr("ws.usage.provider"), day.provider.displayName))
             .cornerRadius(2)
         }
-        .chartForegroundStyleScale([
-            RunProvider.claude.displayName: RunProvider.claude.color,
-            RunProvider.codex.displayName: RunProvider.codex.color,
-            RunProvider.gemini.displayName: RunProvider.gemini.color,
-            RunProvider.opencode.displayName: RunProvider.opencode.color,
-            RunProvider.cursor.displayName: RunProvider.cursor.color,
-            RunProvider.grok.displayName: RunProvider.grok.color
-        ])
+        // Every coding agent that ran in the period, each in its own color: none falls out of the legend, and an
+        // agent without sessions does not crowd it.
+        .chartForegroundStyleScale(domain: providers(report).map(\.displayName), range: providers(report).map(\.color))
         .chartYAxis {
             AxisMarks { value in
                 AxisGridLine().foregroundStyle(NookTheme.line2.opacity(0.6))
@@ -179,7 +179,7 @@ struct UsageView: View {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         Text(row.model == "default" ? tr("ws.model.default") : row.model)
                             .lineLimit(1)
-                        Text("\(row.provider.displayName) · \(row.sessions) \(tr("ws.usage.sessions").lowercased())")
+                        Text("\(row.provider.displayName) · \(row.sessions == 1 ? tr("ws.usage.sessions.one") : tr("usage.sessions", row.sessions))")
                             .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textSecondary)
                             .lineLimit(1)

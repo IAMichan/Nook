@@ -5,8 +5,6 @@ import Foundation
 
 let memoryTranslations: [AppLanguage: [String: String]] = [
     .nl: [
-        "settings.section.memory": "Geheugen",
-        "settings.section.memory.sub": "Wat Nook over je weet en hoe hij leert",
         "memory.hero.title": "Nook onthoudt en leert",
         "memory.hero.detail": "Ingebouwd. Nook onthoudt wat je vertelt en leert van je correcties, dus weet de volgende keer nog wie Lisa is. Blijft op deze Mac.",
         "memory.settings.how": "Hoe Nook onthoudt",
@@ -70,8 +68,6 @@ let memoryTranslations: [AppLanguage: [String: String]] = [
         "memory.notice.learned": "Onthouden: %@ (beheer bij Instellingen › Assistent)"
     ],
     .en: [
-        "settings.section.memory": "Memory",
-        "settings.section.memory.sub": "What Nook knows about you and how it learns",
         "memory.hero.title": "Nook remembers and learns",
         "memory.hero.detail": "Built in. Nook remembers what you tell it and learns from your corrections, so it still knows who Lisa is next time. Stays on this Mac.",
         "memory.settings.how": "How Nook remembers",
@@ -135,8 +131,6 @@ let memoryTranslations: [AppLanguage: [String: String]] = [
         "memory.notice.learned": "Remembered: %@ (manage in Settings › Assistant)"
     ],
     .de: [
-        "settings.section.memory": "Gedächtnis",
-        "settings.section.memory.sub": "Was Nook über dich weiß und wie er lernt",
         "memory.hero.title": "Nook merkt sich Dinge und lernt",
         "memory.hero.detail": "Eingebaut. Nook merkt sich, was du sagst, und lernt aus Korrekturen, also weiß es nächstes Mal noch, wer Lisa ist. Bleibt auf diesem Mac.",
         "memory.settings.how": "Wie Nook sich erinnert",

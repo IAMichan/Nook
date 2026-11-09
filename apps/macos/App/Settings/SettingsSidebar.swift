@@ -201,7 +201,7 @@ struct SettingsSidebarRow: View {
 }
 
 /// The bar over a page: where you are (Settings › group › page), the ⓘ that explains the page, and on the
-/// right the page's main step, always in sight however long the page (`SettingsPageAction`).
+/// right Restore defaults. Adding sits in the header of the list it adds to ("+ Add machine"), not here.
 struct SettingsPageBar: View {
     let section: SettingsSection
     /// Watched so "Restore defaults" dims the moment nothing on the page differs from the defaults any more.
@@ -233,15 +233,6 @@ struct SettingsPageBar: View {
                 }
                 .controlSize(.small)
                 .disabled(!restore.changed)
-            }
-            if let action = SettingsPageAction.button(for: section) {
-                Button {
-                    SettingsPageAction.shared.requested = section
-                } label: {
-                    Label(action.title, systemImage: action.symbol)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
             }
         }
         .font(NookTheme.TextStyle.strong)
