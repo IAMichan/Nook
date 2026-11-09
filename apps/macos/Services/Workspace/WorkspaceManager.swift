@@ -1493,7 +1493,7 @@ final class WorkspaceManager: ObservableObject {
             model: run.model,
             mode: run.mode,
             permission: run.permission,
-            instructions: run.instructions,
+            instructions: launchInstructions(run),
             workingDirectory: run.workingDirectory,
             resumeSessionID: rollback?.resumeSession ?? run.providerSessionID,
             forkSession: forkNext.contains(id) || rollback != nil,
@@ -1559,7 +1559,7 @@ final class WorkspaceManager: ObservableObject {
             if !run.isRemote, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
             var spec = placed(AgentCommand.spec(AgentCommand.Input(
                 provider: .claude, executable: executable, prompt: "", model: run.model, mode: run.mode, permission: run.permission,
-                instructions: run.instructions, workingDirectory: run.workingDirectory, resumeSessionID: run.providerSessionID,
+                instructions: launchInstructions(run), workingDirectory: run.workingDirectory, resumeSessionID: run.providerSessionID,
                 accountEnvironment: accountEnvironment(run.profileID), runID: id, bridge: bridge(for: id),
                 thinkingDisplay: claudeThinkingDisplay[executable] == true,
                 toolSearch: claudeToolSearch(run), tuning: appliedTuning(run),
@@ -2152,6 +2152,14 @@ final class WorkspaceManager: ObservableObject {
         if let leftWorktree {
             cleanUpWorktreeAfterDelete(repo: leftWorktree.repo, path: leftWorktree.path, branch: run.branch)
         }
+    }
+
+    /// What the agent is told at launch: the project's instructions for every agent, then the session's own. Read at every
+    /// launch, so a change in Settings reaches a session from its next process on.
+    func launchInstructions(_ run: WorkspaceRun) -> String {
+        let folder = run.projectPath.isEmpty ? run.workingDirectory : run.projectPath
+        return ProjectSettings.instructions(project: settings.sessionDefaults(for: folder).agentInstructions,
+                                            session: run.instructions)
     }
 
     /// Everything Nook keeps for one session while it runs, gone at once: its processes and connections closed, its

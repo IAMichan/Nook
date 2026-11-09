@@ -150,6 +150,10 @@ final class WorkspaceSettings: ObservableObject {
     @Published var titleInstructions: String {
         didSet { defaults.set(titleInstructions, forKey: "ws.titleInstructions") }
     }
+    /// Instructions every agent gets in every project, unless a project sets its own (`ProjectSettingKey.agentInstructions`).
+    @Published var agentInstructions: String {
+        didSet { defaults.set(agentInstructions, forKey: "ws.agentInstructions") }
+    }
     /// A session stopped by a usage limit goes on by itself once the limit resets.
     @Published var autoResumeLimited: Bool {
         didSet { defaults.set(autoResumeLimited, forKey: "ws.autoResumeLimited") }
@@ -241,6 +245,7 @@ final class WorkspaceSettings: ObservableObject {
         providerTrafficLog = defaults.bool(forKey: ProviderTrafficLog.enabledKey)
         autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
         titleInstructions = defaults.string(forKey: "ws.titleInstructions") ?? ""
+        agentInstructions = defaults.string(forKey: "ws.agentInstructions") ?? ""
         commitStyle = CommitStyle(rawValue: defaults.string(forKey: CommitStyle.defaultsKey) ?? "") ?? .standard
         commitInstructions = defaults.string(forKey: CommitStyle.instructionsKey) ?? ""
         autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? false
@@ -361,7 +366,8 @@ final class WorkspaceSettings: ObservableObject {
     var globalDefaults: SessionDefaults {
         SessionDefaults(provider: defaultProvider, models: defaultModels, permission: defaultPermission,
                         isolation: defaultIsolation, branchPrefix: WorktreeNaming.normalizedBranchPrefix(branchPrefix),
-                        titleInstructions: titleInstructions, browserSignIns: browserSignInPolicy)
+                        titleInstructions: titleInstructions, agentInstructions: agentInstructions,
+                        browserSignIns: browserSignInPolicy)
     }
 
     /// What a new session in this folder starts with: the folder's own overrides, the global values for the rest.

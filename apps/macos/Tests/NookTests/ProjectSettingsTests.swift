@@ -282,4 +282,29 @@ final class ProjectSettingsTests: XCTestCase {
         store.forget("/repo/")
         XCTAssertNil(store.choices(for: "/repo"))
     }
+
+    // MARK: Instructions for every agent
+
+    func testAProjectsInstructionsReachEveryAgentBeforeTheSessionsOwn() {
+        var withGlobal = global
+        withGlobal.agentInstructions = "Write in English."
+        var overrides = ProjectOverrides()
+        XCTAssertEqual(ProjectSettings.resolve(global: withGlobal, overrides: overrides, folder: "/repo").agentInstructions,
+                       "Write in English.", "a project without its own gets the ones for all projects")
+        overrides.set(.agentInstructions, .string("Run ./scripts/core-tests.sh before you commit."), for: "/repo")
+        XCTAssertEqual(ProjectSettings.resolve(global: withGlobal, overrides: overrides, folder: "/repo/sub").agentInstructions,
+                       "Run ./scripts/core-tests.sh before you commit.", "a subfolder or worktree inside it gets the project's")
+        XCTAssertEqual(ProjectSettings.resolve(global: withGlobal, overrides: overrides, folder: "/other").agentInstructions,
+                       "Write in English.")
+    }
+
+    func testLaunchInstructionsPutTheProjectsFirst() {
+        XCTAssertEqual(ProjectSettings.instructions(project: "", session: "  Be brief. "), "Be brief.")
+        XCTAssertEqual(ProjectSettings.instructions(project: " ", session: ""), "")
+        let both = ProjectSettings.instructions(project: "Use pnpm.", session: "Be brief.")
+        XCTAssertTrue(both.hasPrefix("Instructions for this project"))
+        XCTAssertTrue(both.contains("Use pnpm."))
+        XCTAssertTrue(both.hasSuffix("\n\nBe brief."), "the session's own instructions come last, so they win")
+        XCTAssertFalse(ProjectSettings.instructions(project: "Use pnpm.", session: "").hasSuffix("\n\n"))
+    }
 }

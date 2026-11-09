@@ -620,6 +620,14 @@ struct WorkspaceSettingsSection: View {
                       prompt: Text(tr("settings.ws.titleInstructions.placeholder")), axis: .vertical)
                 .lineLimit(1...4)
         }
+        inheritable(.agentInstructions, path) {
+            TextField(tr("settings.ws.agentInstructions"), text: Binding(
+                get: { overrideText(.agentInstructions, path) ?? resolved.agentInstructions },
+                set: { ws.setOverride(.agentInstructions, $0, for: path) }),
+                      prompt: Text(tr("settings.ws.agentInstructions.placeholder")), axis: .vertical)
+                .lineLimit(2...8)
+                .help(tr("settings.ws.agentInstructions.help"))
+        }
     }
 
     /// A per-project row: its control, then "Inherited" or the button that goes back to the value for all projects.
@@ -804,6 +812,11 @@ struct WorkspaceSettingsSection: View {
             TextField(tr("settings.ws.titleInstructions"), text: $ws.titleInstructions,
                       prompt: Text(tr("settings.ws.titleInstructions.placeholder")), axis: .vertical)
                 .lineLimit(1...4)
+            // Every agent gets these at launch, in every project that does not set its own.
+            TextField(tr("settings.ws.agentInstructions"), text: $ws.agentInstructions,
+                      prompt: Text(tr("settings.ws.agentInstructions.placeholder")), axis: .vertical)
+                .lineLimit(2...8)
+                .help(tr("settings.ws.agentInstructions.help"))
             Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
         }
         // How the session list is laid out and confirming quit are on General, as t3code has its sidebar and confirmations.
