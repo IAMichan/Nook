@@ -888,3 +888,76 @@ enum BridgeIdentity {
         return accepts(id, (env["NOOK_BRIDGE_TOKEN"] as? String) ?? "") ? id : nil
     }
 }
+
+/// What an agent can do with Nook, in groups the user switches per agent (Settings › Automation › Tools per agent).
+/// Every bridge tool belongs to one group, except `workspace_info`, which only describes the bridge.
+enum BridgeCapability: String, CaseIterable, Codable, Sendable, Identifiable {
+    case terminal, browser, pullRequests, delegation, sessions, devices, scheduling, secrets, nookApps, screen, pages
+
+    var id: String { rawValue }
+}
+
+extension BridgeTool {
+    /// The group the user switches this tool with; nil for a tool every agent always has.
+    var capability: BridgeCapability? {
+        switch self {
+        case .workspaceInfo: return nil
+        case .terminalRun, .terminalRead, .terminalList, .terminalStop: return .terminal
+        case .browserOpen, .browserRead, .browserScreenshot, .browserSnapshot, .browserClick, .browserType, .browserWaitFor:
+            return .browser
+        case .pullRequestCreate, .watchPullRequest, .getPullRequestStatus: return .pullRequests
+        case .orchestratorCapabilities, .delegateTask, .taskStatus, .taskWait, .taskCancel: return .delegation
+        case .sessionRead, .sessionList, .sessionSend, .sessionStart, .sessionSearch, .sessionOrganize, .sessionQuestions:
+            return .sessions
+        case .deviceList, .deviceOpen, .deviceScreenshot, .deviceClose: return .devices
+        case .scheduleTask, .listScheduledTasks, .updateScheduledTask, .runScheduledTaskNow: return .scheduling
+        case .requestSecret: return .secrets
+        case .nookTools, .nookUse, .nookChatList, .nookChatRead, .nookChatSend: return .nookApps
+        case .takeOverScreen: return .screen
+        case .renderPage: return .pages
+        }
+    }
+}
+
+/// Which groups of Nook's tools each agent may use. Stored as the groups switched off, per agent, so a new group is on
+/// for everyone until the user switches it off. The same for a session Nook runs and an agent linked in a terminal.
+struct BridgeAccess: Equatable, Sendable {
+    /// Agent key (`RunProvider.rawValue`) → groups switched off.
+    var disabled: [String: Set<BridgeCapability>] = [:]
+
+    func allows(_ tool: BridgeTool, agent: String) -> Bool {
+        guard let capability = tool.capability else { return true }
+        return !(disabled[agent]?.contains(capability) ?? false)
+    }
+
+    func isOn(_ capability: BridgeCapability, agent: String) -> Bool {
+        !(disabled[agent]?.contains(capability) ?? false)
+    }
+
+    mutating func set(_ capability: BridgeCapability, on: Bool, agent: String) {
+        var off = disabled[agent] ?? []
+        if on { off.remove(capability) } else { off.insert(capability) }
+        disabled[agent] = off.isEmpty ? nil : off
+    }
+
+    /// The agent key for the name an agent gives the bridge (`--agent claude-code`, `codex`, an ACP agent's provider).
+    static func agentKey(forClient id: String) -> String {
+        let lower = id.lowercased()
+        if lower == "claude-code" || lower == "claude" { return RunProvider.claude.rawValue }
+        return RunProvider(rawValue: lower)?.rawValue ?? lower
+    }
+
+    /// As stored in the defaults: agent → group names.
+    var stored: [String: [String]] { disabled.mapValues { $0.map(\.rawValue).sorted() } }
+
+    init(disabled: [String: Set<BridgeCapability>] = [:]) { self.disabled = disabled }
+
+    init(stored: [String: [String]]) {
+        disabled = stored.mapValues { Set($0.compactMap(BridgeCapability.init(rawValue:))) }.filter { !$0.value.isEmpty }
+    }
+
+    /// The answer an agent gets for a tool the user switched off for it.
+    static func refusal(_ tool: BridgeTool, agent: String) -> String {
+        "The user switched off Nook's \(tool.capability?.rawValue ?? tool.rawValue) tools for \(agent) (Settings › Automation › Tools per agent). Do this another way or ask the user."
+    }
+}

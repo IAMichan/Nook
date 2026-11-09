@@ -129,6 +129,10 @@ final class WorkspaceSettings: ObservableObject {
     @Published var agentTools: Bool {
         didSet { defaults.set(agentTools, forKey: "ws.agentTools") }
     }
+    /// Which groups of the bridge's tools each agent may use (`BridgeAccess`): Settings › Automation › Tools per agent.
+    @Published var bridgeAccess: BridgeAccess {
+        didSet { if bridgeAccess != oldValue { defaults.set(bridgeAccess.stored, forKey: "ws.bridgeDisabled") } }
+    }
     /// How commit messages and pull requests are written (`CommitStyle`).
     @Published var commitStyle: CommitStyle {
         didSet { defaults.set(commitStyle.rawValue, forKey: CommitStyle.defaultsKey) }
@@ -232,6 +236,7 @@ final class WorkspaceSettings: ObservableObject {
         buildLeftoverCleanup = defaults.object(forKey: "ws.buildLeftoverCleanup") as? Bool ?? true
         showCost = defaults.object(forKey: "ws.showCost") as? Bool ?? true
         agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true
+        bridgeAccess = BridgeAccess(stored: defaults.dictionary(forKey: "ws.bridgeDisabled") as? [String: [String]] ?? [:])
         codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true
         providerTrafficLog = defaults.bool(forKey: ProviderTrafficLog.enabledKey)
         autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
