@@ -9,6 +9,8 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "Jij",
         "chat.message.edited": "Bewerkt",
+        "chat.message.deletedTag": "Verwijderd",
+        "chat.message.deletedKept": "Verwijderd door wie het schreef. Nook laat zien wat er stond.",
         "chat.message.deleted": "Dit bericht is verwijderd",
         "chat.message.deletedMine": "Je hebt dit bericht verwijderd",
         "chat.moreActions": "Meer acties",
@@ -410,6 +412,8 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "You",
         "chat.message.edited": "Edited",
+        "chat.message.deletedTag": "Deleted",
+        "chat.message.deletedKept": "Deleted by whoever wrote it. Nook still shows what it said.",
         "chat.message.deleted": "This message was deleted",
         "chat.message.deletedMine": "You deleted this message",
         "chat.moreActions": "More actions",
@@ -811,6 +815,8 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "Du",
         "chat.message.edited": "Bearbeitet",
+        "chat.message.deletedTag": "Gelöscht",
+        "chat.message.deletedKept": "Von der Person gelöscht, die sie geschrieben hat. Nook zeigt weiter, was darin stand.",
         "chat.message.deleted": "Diese Nachricht wurde gelöscht",
         "chat.message.deletedMine": "Du hast diese Nachricht gelöscht",
         "chat.moreActions": "Weitere Aktionen",
@@ -1212,6 +1218,8 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "Vous",
         "chat.message.edited": "Modifié",
+        "chat.message.deletedTag": "Supprimé",
+        "chat.message.deletedKept": "Supprimé par la personne qui l’a écrit. Nook montre encore ce qu’il disait.",
         "chat.message.deleted": "Ce message a été supprimé",
         "chat.message.deletedMine": "Vous avez supprimé ce message",
         "chat.moreActions": "Plus d’actions",
@@ -1613,6 +1621,8 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "Tú",
         "chat.message.edited": "Editado",
+        "chat.message.deletedTag": "Eliminado",
+        "chat.message.deletedKept": "Eliminado por quien lo escribió. Nook sigue mostrando lo que decía.",
         "chat.message.deleted": "Se eliminó este mensaje",
         "chat.message.deletedMine": "Eliminaste este mensaje",
         "chat.moreActions": "Más acciones",
