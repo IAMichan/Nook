@@ -5,6 +5,10 @@ import Foundation
 
 let bridgeTranslations: [AppLanguage: [String: String]] = [
     .en: [
+        "settings.ws.maxWorking": "Sessions working at once",
+        "settings.ws.maxWorking.none": "No limit",
+        "settings.ws.maxWorking.help": "At most this many sessions work at the same time; a new turn past it waits and starts as soon as another session's turn ends.",
+        "ws.capacity.waiting": "Waiting: %ld sessions are already working. This turn starts as soon as one of them is done (Settings › Agents › Sessions).",
         "settings.ws.agentInstructions": "Instructions for every agent",
         "settings.ws.agentInstructions.placeholder": "Rules every agent follows here, e.g. “Run the tests before you commit.”",
         "settings.ws.agentInstructions.help": "Nook gives these to every coding agent at launch, before the session's own instructions, also to agents that read no CLAUDE.md or AGENTS.md. A change counts from an agent's next start.",
@@ -63,6 +67,10 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.screen.working": "%@ is using your screen"
     ],
     .nl: [
+        "settings.ws.maxWorking": "Sessies tegelijk aan het werk",
+        "settings.ws.maxWorking.none": "Geen limiet",
+        "settings.ws.maxWorking.help": "Hooguit zoveel sessies werken tegelijk; een nieuwe beurt daarboven wacht en start zodra de beurt van een andere sessie klaar is.",
+        "ws.capacity.waiting": "Wacht: er werken al %ld sessies. Deze beurt start zodra er een klaar is (Instellingen › Agents › Sessies).",
         "settings.ws.agentInstructions": "Instructies voor elke agent",
         "settings.ws.agentInstructions.placeholder": "Regels die elke agent hier volgt, bijv. “Draai de tests voor je commit.”",
         "settings.ws.agentInstructions.help": "Nook geeft ze bij de start aan elke coding agent, voor de eigen instructies van de sessie, ook aan agents die geen CLAUDE.md of AGENTS.md lezen. Een wijziging telt vanaf de volgende start van een agent.",
@@ -121,6 +129,10 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.screen.working": "%@ gebruikt je scherm"
     ],
     .de: [
+        "settings.ws.maxWorking": "Gleichzeitig arbeitende Sitzungen",
+        "settings.ws.maxWorking.none": "Keine Grenze",
+        "settings.ws.maxWorking.help": "Höchstens so viele Sitzungen arbeiten gleichzeitig; ein neuer Durchgang darüber wartet und startet, sobald der Durchgang einer anderen Sitzung endet.",
+        "ws.capacity.waiting": "Wartet: Es arbeiten bereits %ld Sitzungen. Dieser Durchgang startet, sobald eine fertig ist (Einstellungen › Agenten › Sitzungen).",
         "settings.ws.agentInstructions": "Anweisungen für jeden Agenten",
         "settings.ws.agentInstructions.placeholder": "Regeln, die hier jeder Agent befolgt, z. B. „Führe vor dem Commit die Tests aus.“",
         "settings.ws.agentInstructions.help": "Nook gibt sie jedem Coding-Agenten beim Start, vor den eigenen Anweisungen der Sitzung, auch Agenten, die keine CLAUDE.md oder AGENTS.md lesen. Eine Änderung gilt ab dem nächsten Start eines Agenten.",
@@ -179,6 +191,10 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.screen.working": "%@ benutzt deinen Bildschirm"
     ],
     .fr: [
+        "settings.ws.maxWorking": "Sessions actives en même temps",
+        "settings.ws.maxWorking.none": "Aucune limite",
+        "settings.ws.maxWorking.help": "Au plus ce nombre de sessions travaillent en même temps ; un nouveau tour au-delà attend et démarre dès que le tour d’une autre session se termine.",
+        "ws.capacity.waiting": "En attente : %ld sessions travaillent déjà. Ce tour démarre dès que l’une d’elles a fini (Réglages › Agents › Sessions).",
         "settings.ws.agentInstructions": "Instructions pour chaque agent",
         "settings.ws.agentInstructions.placeholder": "Règles que chaque agent suit ici, p. ex. « Lance les tests avant de committer. »",
         "settings.ws.agentInstructions.help": "Nook les donne à chaque agent de code au démarrage, avant les instructions de la session, même aux agents qui ne lisent ni CLAUDE.md ni AGENTS.md. Un changement compte dès le prochain démarrage d’un agent.",
@@ -237,6 +253,10 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.screen.working": "%@ utilise votre écran"
     ],
     .es: [
+        "settings.ws.maxWorking": "Sesiones trabajando a la vez",
+        "settings.ws.maxWorking.none": "Sin límite",
+        "settings.ws.maxWorking.help": "Como mucho trabajan a la vez estas sesiones; un turno nuevo por encima espera y empieza en cuanto termina el turno de otra sesión.",
+        "ws.capacity.waiting": "En espera: ya trabajan %ld sesiones. Este turno empieza en cuanto una termine (Ajustes › Agentes › Sesiones).",
         "settings.ws.agentInstructions": "Instrucciones para cada agente",
         "settings.ws.agentInstructions.placeholder": "Reglas que cada agente sigue aquí, p. ej. “Ejecuta las pruebas antes de hacer commit.”",
         "settings.ws.agentInstructions.help": "Nook se las da a cada agente de código al iniciar, antes de las instrucciones propias de la sesión, también a agentes que no leen CLAUDE.md ni AGENTS.md. Un cambio cuenta desde el próximo inicio de un agente.",

@@ -320,6 +320,9 @@ final class WorkspaceManager: ObservableObject {
     /// The week recap: sessions Nook runs itself count too, not only the ones in a terminal.
     var recap: RecapStore?
 
+    /// Turns waiting for a free place (`SessionCapacity`), with what they start with; `capacityOrder` keeps who came first.
+    var capacityWaiting: [UUID: (prompt: String, executable: String)] = [:]
+    var capacityOrder: [UUID] = []
     var processes: [UUID: AgentProcess] = [:]
     var turns: [UUID: TurnState] = [:]
     private var saveTask: Task<Void, Never>?
@@ -1416,6 +1419,7 @@ final class WorkspaceManager: ObservableObject {
     /// Stops the active turn. Claude Code receives a polite interrupt request first, followed by SIGINT.
     func stop(_ id: UUID) {
         stopDelegatedChildren(of: id)
+        if cancelWaitingTurn(id) { return }
         if let task = prepareTasks.removeValue(forKey: id) {
             task.cancel()
             awaitingCheckpoint[id] = nil
@@ -1466,6 +1470,7 @@ final class WorkspaceManager: ObservableObject {
     func launchTurn(_ id: UUID, prompt: String, executable: String, showPrompt: Bool = true) {
         cancelIdleCompaction(id)
         guard processes[id] == nil else { return }
+        if waitForCapacity(id, prompt: prompt, executable: executable, showPrompt: showPrompt) { return }
         // A new turn brings a chat you settled back, also when the Agents list is not on screen to see it work.
         if let run = run(id) { FinishedSessions.shared.reopen(FinishedSessions.key(run: run)) }
         // A new turn ends any wait for a usage limit (yours or the automatic one).
@@ -2165,6 +2170,50 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
+    // MARK: Sessions working at once
+
+    /// Sessions working now, apart from `id` and from the turns that wait for a free place themselves.
+    private func othersWorking(than id: UUID) -> Int {
+        runs.filter { $0.id != id && $0.status.isActive && capacityWaiting[$0.id] == nil }.count
+    }
+
+    /// A new turn past the limit waits for a free place: your message shows at once and the session says why it waits.
+    /// True when it waits. A turn of a session that already works (a fallback to another transport) never waits.
+    private func waitForCapacity(_ id: UUID, prompt: String, executable: String, showPrompt: Bool) -> Bool {
+        let limit = settings.maxWorkingSessions
+        guard capacityWaiting[id] == nil, let run = run(id), !(run.status.isActive && run.status != .preparing),
+              SessionCapacity.mustWait(limit: limit, othersWorking: othersWorking(than: id)) else { return false }
+        loadTimeline(id)
+        if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
+        capacityWaiting[id] = (prompt, executable)
+        capacityOrder.append(id)
+        update(id) { $0.move(to: .preparing, detail: tr("ws.capacity.waiting", limit)) }
+        append(id, RunEvent(kind: .system, text: tr("ws.capacity.waiting", limit)))
+        return true
+    }
+
+    /// Starts the turns that waited, oldest first, as far as there is room now. Called when a turn ends, when a waiting
+    /// one is stopped, and when the limit changes.
+    func startWaitingTurns() {
+        capacityOrder.removeAll { capacityWaiting[$0] == nil || run($0) == nil }
+        let working = runs.filter { $0.status.isActive && capacityWaiting[$0.id] == nil }.count
+        let count = SessionCapacity.startable(limit: settings.maxWorkingSessions, working: working, waiting: capacityOrder.count)
+        for id in capacityOrder.prefix(count) {
+            guard let waiting = capacityWaiting.removeValue(forKey: id) else { continue }
+            capacityOrder.removeAll { $0 == id }
+            launchTurn(id, prompt: waiting.prompt, executable: waiting.executable, showPrompt: false)
+        }
+    }
+
+    /// Stop on a turn that still waits for a free place: it never starts.
+    func cancelWaitingTurn(_ id: UUID) -> Bool {
+        guard capacityWaiting.removeValue(forKey: id) != nil else { return false }
+        capacityOrder.removeAll { $0 == id }
+        update(id) { $0.move(to: .stopped) }
+        append(id, RunEvent(kind: .system, text: tr("ws.event.stopped")))
+        return true
+    }
+
     /// What the agent is told at launch: the project's instructions for every agent, then the session's own. Read at every
     /// launch, so a change in Settings reaches a session from its next process on.
     func launchInstructions(_ run: WorkspaceRun) -> String {
@@ -2243,6 +2292,8 @@ final class WorkspaceManager: ObservableObject {
         forkLaunched.remove(id)
         displayPrompt[id] = nil
         reopeningWorktrees.remove(id)
+        capacityWaiting[id] = nil
+        capacityOrder.removeAll { $0 == id }
         runPositions = nil
     }
 
@@ -2629,9 +2680,14 @@ final class WorkspaceManager: ObservableObject {
         var run = runs[index]
         change(&run)
         guard run != runs[index] else { return }
+        let freedPlace = runs[index].status.isActive && !run.status.isActive
         run.updatedAt = max(run.updatedAt, runs[index].updatedAt)
         runs[index] = run
         if save { scheduleSave() }
+        // However a turn ended (done, failed, stopped, its process gone), a turn that waited for a free place may start.
+        if freedPlace, !capacityOrder.isEmpty {
+            Task { @MainActor [weak self] in self?.startWaitingTurns() }
+        }
     }
 
     func append(_ id: UUID, _ event: RunEvent) {

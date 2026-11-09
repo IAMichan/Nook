@@ -150,6 +150,10 @@ final class WorkspaceSettings: ObservableObject {
     @Published var titleInstructions: String {
         didSet { defaults.set(titleInstructions, forKey: "ws.titleInstructions") }
     }
+    /// At most this many sessions work at once; a turn past it waits for a free place (`SessionCapacity`). 0: no limit.
+    @Published var maxWorkingSessions: Int {
+        didSet { defaults.set(maxWorkingSessions, forKey: "ws.maxWorkingSessions") }
+    }
     /// Instructions every agent gets in every project, unless a project sets its own (`ProjectSettingKey.agentInstructions`).
     @Published var agentInstructions: String {
         didSet { defaults.set(agentInstructions, forKey: "ws.agentInstructions") }
@@ -246,6 +250,7 @@ final class WorkspaceSettings: ObservableObject {
         autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
         titleInstructions = defaults.string(forKey: "ws.titleInstructions") ?? ""
         agentInstructions = defaults.string(forKey: "ws.agentInstructions") ?? ""
+        maxWorkingSessions = defaults.object(forKey: "ws.maxWorkingSessions") as? Int ?? 0
         commitStyle = CommitStyle(rawValue: defaults.string(forKey: CommitStyle.defaultsKey) ?? "") ?? .standard
         commitInstructions = defaults.string(forKey: CommitStyle.instructionsKey) ?? ""
         autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? false
