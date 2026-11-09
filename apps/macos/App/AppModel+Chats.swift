@@ -27,7 +27,10 @@ extension AppModel {
         // ticks show in it, not only what was there when it came up.
         capture.$inbox
             .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
-            .sink { [weak self] inbox in self?.refreshChatCards(inbox) }
+            .sink { [weak self] inbox in
+                self?.refreshChatCards(inbox)
+                self?.withdrawReadChatNotifications(inbox)
+            }
             .store(in: &bag)
         capture.start()
     }
@@ -46,6 +49,58 @@ extension AppModel {
     }
 
     static let chatCardPrefix = "chatnotice-"
+
+    /// The chats with a macOS notification up that were seen unread since it came.
+    private static var unreadWithNotification: Set<String> = []
+
+    /// A chat read anywhere (in Nook, by answering it, in its app or on the phone): its macOS notification goes, as
+    /// it does in the chat app itself. Only once the chat was seen unread with it up, so an app that counts nothing
+    /// unread never loses its notification at once.
+    private func withdrawReadChatNotifications(_ inbox: ChatInbox) {
+        let live = SystemNotifier.shared.live.filter { $0.hasPrefix(Self.chatCardPrefix) }
+        let ids = Set(live.map { String($0.dropFirst(Self.chatCardPrefix.count)) })
+        Self.unreadWithNotification.formIntersection(ids)
+        for id in ids {
+            if inbox.threads[id]?.unread ?? 0 > 0 {
+                Self.unreadWithNotification.insert(id)
+            } else if Self.unreadWithNotification.remove(id) != nil {
+                SystemNotifier.shared.withdraw(Self.chatCardPrefix + id)
+            }
+        }
+    }
+
+    /// Reply typed on a chat's macOS notification: it goes to the chat as on its card, which reads the chat too. When
+    /// it cannot go, the chat's card comes up with the text back in its field and why, so nothing typed is lost.
+    func replyFromNotification(_ id: String, text: String) {
+        let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reply.isEmpty else { return }
+        let token = Self.chatCardPrefix + id
+        let backOnCard: (String?) -> Void = { [weak self] problem in
+            guard let self else { return }
+            self.presentChat(id, asked: true)
+            let shown = self.editShownCard(token) { $0.draft = reply; $0.notice = problem }
+            if !shown, let problem { self.viewModel.present(self.errorCard(problem)) }
+        }
+        // "@nook …" asks Nook to write it, and a chat Nook cannot write in copies the answer: both on the card.
+        guard let thread = ChatCaptureService.shared.loadedInbox.threads[id], let route = chatRoute(for: thread),
+              ChatDraft.instruction(in: reply) == nil else { return backOnCard(nil) }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await self.sendChatText(reply, route: route, chat: thread.name, thread: id)
+                self.viewModel.dismissCard(id: token)
+                self.viewModel.finish(tr("whatsapp.sent", thread.name))
+            } catch {
+                backOnCard(tr("whatsapp.card.notSent", error.localizedDescription))
+            }
+        }
+    }
+
+    /// Mark as read on a chat's macOS notification: as Read on its card.
+    func readChatFromNotification(_ id: String) {
+        readFromCard(id)
+        viewModel.dismissCard(id: Self.chatCardPrefix + id)
+    }
 
     /// The chat a chat card shows, by its id in the shared inbox; nil for any other card.
     static func chatCardThread(_ card: NookCard) -> String? {
@@ -88,6 +143,14 @@ extension AppModel {
                       },
                       open: open,
                       window: { [weak self] in self?.showChats(ChatsFocus(chat: id)) },
+                      // Answered and read on the banner itself, as on the card; a chat Nook cannot write in is
+                      // answered on its card, where the answer is copied for its app.
+                      banner: NoticeBanner(
+                          target: .chat(id),
+                          reply: chatRoute(for: thread) == nil ? nil : { [weak self] text in
+                              self?.replyFromNotification(id, text: text)
+                          },
+                          read: { [weak self] in self?.readChatFromNotification(id) }),
                       // Held back by the pacer (an earlier pop-up a moment ago), it still comes up while the chat is unread.
                       stillNew: {
                           let capture = ChatCaptureService.shared

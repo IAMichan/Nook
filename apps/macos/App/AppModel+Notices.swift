@@ -31,12 +31,15 @@ extension AppModel {
     /// notice the pacer held back pops up once the pacer lets it (`NoticePacer.nextPermitted`, within
     /// `heldNoticeLimit`), if `stillNew` then says it still has news (a chat not read meanwhile), instead of only waiting
     /// in the history: someone who wrote right after an earlier pop-up is still told, a moment later.
+    ///
+    /// `banner` is what its macOS notification adds: where it leads, its buttons (Reply, Mark as read, Open …). Its
+    /// group and how much it may interrupt follow from the source when the banner leaves them out.
     @discardableResult
     func deliverNotice(_ source: NoticeSource, app: String = "", id: String, pace: String? = nil, urgent: Bool = false,
                        title: String, subtitle: String = "",
                        body: String = "", sound: NookSound? = nil, watching: Bool = false, kind: NookToastKind = .info,
                        card: @escaping () -> Void, strip: @escaping () -> Void,
-                       open: (() -> Void)? = nil, window: (() -> Void)? = nil,
+                       open: (() -> Void)? = nil, window: (() -> Void)? = nil, banner: NoticeBanner = NoticeBanner(),
                        stillNew: (() -> Bool)? = nil) -> NoticeDecision {
         let decision = settings.noticeRules.decide(source, app: app, quiet: quiet.silent, watching: watching)
         guard let style = decision.style else { return decision }
@@ -48,7 +51,7 @@ extension AppModel {
                 holdNotice(key: key, stillNew: stillNew) { [weak self] in
                     _ = self?.deliverNotice(source, app: app, id: id, pace: pace, urgent: urgent, title: title, subtitle: subtitle,
                                             body: body, sound: sound, watching: watching, kind: kind, card: card, strip: strip,
-                                            open: open, window: window, stillNew: stillNew)
+                                            open: open, window: window, banner: banner, stillNew: stillNew)
                 }
             }
             return .historyOnly
@@ -68,8 +71,11 @@ extension AppModel {
         case .strip:
             strip()
         case .system:
-            SystemNotifier.shared.notice(id: id, title: title, subtitle: subtitle, body: body, open: open ?? card,
-                                         fallback: card)
+            var banner = banner
+            if banner.target == .nowhere, banner.thread == nil { banner.thread = "nook." + source.rawValue }
+            if banner.level == .active { banner.level = urgent ? .timeSensitive : source == .suggestions ? .passive : .active }
+            SystemNotifier.shared.notice(id: id, title: title, subtitle: subtitle, body: body, banner: banner,
+                                         open: open ?? card, fallback: card)
         }
         return decision
     }
@@ -112,7 +118,23 @@ extension AppModel {
 
     /// Opens what an entry in the history is about.
     func openNotice(_ entry: NoticeEntry) {
-        switch entry.target {
+        openNotice(entry.target)
+    }
+
+    /// Answers a macOS notification Nook holds no handler for any more (it restarted since, or many came after it), by
+    /// where the notification leads: a click opens that, Reply and Mark as read act on its chat or conversation.
+    func answerOrphanNotification(_ target: NoticeEntry.Target, _ response: SystemNotifier.Response) {
+        switch (response, target) {
+        case (.reply(let text), .chat(let id)): replyFromNotification(id, text: text)
+        case (.reply(let text), .conversation(let id)): answerFromNotice(text, conversation: id)
+        case (.read, .chat(let id)): readChatFromNotification(id)
+        default: openNotice(target)
+        }
+    }
+
+    /// Opens what a notice is about.
+    func openNotice(_ target: NoticeEntry.Target) {
+        switch target {
         case .agent(let id):
             viewModel.selectedAgentID = id
             viewModel.show(.panel(.agents))

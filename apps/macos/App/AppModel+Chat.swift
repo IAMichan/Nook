@@ -694,7 +694,10 @@ extension AppModel {
             self.viewModel.present(card)
         }, strip: { [weak self] in
             self?.viewModel.notify(title, button: button, action: open)
-        }, open: open)
+        }, open: open,
+        // An answer from Nook is answered on its banner, as in the card's field.
+        banner: NoticeBanner(target: conversation.map { .conversation($0) } ?? .nowhere,
+                             reply: conversation.map { id in { [weak self] text in self?.answerFromNotice(text, conversation: id) } }))
     }
 
     private static let thinkBlockRegex = try? NSRegularExpression(pattern: #"<think>[\s\S]*?</think>"#)

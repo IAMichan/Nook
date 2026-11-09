@@ -43,6 +43,10 @@ let quietTranslations: [AppLanguage: [String: String]] = [
         "noticeDelivery.question": "%@ heeft een vraag",
         "noticeDelivery.blocked": "macOS staat meldingen van Nook niet toe, dus ze komen nog op de notch.",
         "noticeDelivery.openSettings": "Open Systeeminstellingen",
+        "noticeDelivery.reply": "Antwoord",
+        "noticeDelivery.send": "Verstuur",
+        "noticeDelivery.replyPrompt": "Typ een antwoord…",
+        "noticeDelivery.markRead": "Markeer als gelezen",
     ],
     .en: [
         "quiet.title": "Meetings and screen sharing",
@@ -84,6 +88,10 @@ let quietTranslations: [AppLanguage: [String: String]] = [
         "noticeDelivery.question": "%@ has a question",
         "noticeDelivery.blocked": "macOS does not allow notifications from Nook, so they still appear on the notch.",
         "noticeDelivery.openSettings": "Open System Settings",
+        "noticeDelivery.reply": "Reply",
+        "noticeDelivery.send": "Send",
+        "noticeDelivery.replyPrompt": "Type a reply…",
+        "noticeDelivery.markRead": "Mark as read",
     ],
     .de: [
         "quiet.title": "Meetings und Bildschirmfreigabe",
@@ -125,6 +133,10 @@ let quietTranslations: [AppLanguage: [String: String]] = [
         "noticeDelivery.question": "%@ hat eine Frage",
         "noticeDelivery.blocked": "macOS erlaubt keine Mitteilungen von Nook, daher erscheinen sie weiter auf der Notch.",
         "noticeDelivery.openSettings": "Systemeinstellungen öffnen",
+        "noticeDelivery.reply": "Antworten",
+        "noticeDelivery.send": "Senden",
+        "noticeDelivery.replyPrompt": "Antwort eingeben …",
+        "noticeDelivery.markRead": "Als gelesen markieren",
     ],
     .fr: [
         "quiet.title": "Réunions et partage d'écran",
@@ -166,6 +178,10 @@ let quietTranslations: [AppLanguage: [String: String]] = [
         "noticeDelivery.question": "%@ a une question",
         "noticeDelivery.blocked": "macOS n’autorise pas les notifications de Nook, elles restent donc sur l’encoche.",
         "noticeDelivery.openSettings": "Ouvrir Réglages Système",
+        "noticeDelivery.reply": "Répondre",
+        "noticeDelivery.send": "Envoyer",
+        "noticeDelivery.replyPrompt": "Saisissez une réponse…",
+        "noticeDelivery.markRead": "Marquer comme lu",
     ],
     .es: [
         "quiet.title": "Reuniones y compartir pantalla",
@@ -207,5 +223,9 @@ let quietTranslations: [AppLanguage: [String: String]] = [
         "noticeDelivery.question": "%@ tiene una pregunta",
         "noticeDelivery.blocked": "macOS no permite notificaciones de Nook, así que siguen apareciendo en el notch.",
         "noticeDelivery.openSettings": "Abrir Ajustes del Sistema",
+        "noticeDelivery.reply": "Responder",
+        "noticeDelivery.send": "Enviar",
+        "noticeDelivery.replyPrompt": "Escribe una respuesta…",
+        "noticeDelivery.markRead": "Marcar como leído",
     ],
 ]
