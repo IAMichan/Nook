@@ -436,10 +436,7 @@ final class AgentHistory: ObservableObject {
             }
             apiKeysRead = (profiles.map(\.id), Date(), keys)
         }
-        let homes = profiles.map { profile in
-            ProfileHome(id: profile.id, kind: profile.kind, url: profile.homeURL, isDefault: profile.isDefault,
-                        apiKey: profile.kind == .claude && profile.usesAPIKey && apiKeysRead.keys[profile.id] == true)
-        }
+        let homes = profileHomes
         // Accounts first: the full scan below can take seconds, but who is logged in is known almost instantly.
         // Asked for by someone, it hurries; the background refresh stays out of the way of what you are doing.
         let qos: DispatchQoS.QoSClass = showsProgress ? .userInitiated : .utility
@@ -466,6 +463,25 @@ final class AgentHistory: ObservableObject {
                 if self.executables != result.executables { self.executables = result.executables }
             }
         }
+    }
+
+    /// The accounts as the scanner reads them, with whether an API-key account has its key as last read.
+    private var profileHomes: [ProfileHome] {
+        profiles.map { profile in
+            ProfileHome(id: profile.id, kind: profile.kind, url: profile.homeURL, isDefault: profile.isDefault,
+                        apiKey: profile.kind == .claude && profile.usesAPIKey && apiKeysRead.keys[profile.id] == true)
+        }
+    }
+
+    /// Reads only who is signed in (`HistoryScanner.quickScan`: the login files and the executables at known places), not
+    /// a single transcript: for the loops that wait for a login or logout in a terminal to land. A full `refresh` reads
+    /// every transcript of every agent, which is far too much to repeat every few seconds.
+    func refreshAccounts() async {
+        let homes = profileHomes
+        let scanner = scanner
+        let quick = await Task.detached(priority: .utility) { scanner.quickScan(homes) }.value
+        if profileAccounts != quick.accounts { profileAccounts = quick.accounts }
+        for (kind, path) in quick.executables where executables[kind] == nil { executables[kind] = path }
     }
 
     func sessions(for agent: AgentKind) -> [PastSession] {
