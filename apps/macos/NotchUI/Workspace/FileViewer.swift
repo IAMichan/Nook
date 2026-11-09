@@ -115,6 +115,8 @@ struct FileViewer: View {
     @State private var content: FileViewContent?
     @State private var reloads = 0
     @State private var markdownPreview = false
+    /// A page an agent showed (`RenderedPage`) shows as the page, sandboxed as in the conversation; its source on request.
+    @State private var pageSource = false
     @Environment(\.sessionContextTarget) private var session
     /// The line you are writing a remark about, and the remark.
     @State private var commentLine: Int?
@@ -137,6 +139,8 @@ struct FileViewer: View {
     private var isNotebook: Bool { (target.path as NSString).pathExtension.lowercased() == "ipynb" }
     /// A diagram's source; its picture is one click away.
     private var isMermaid: Bool { ["mmd", "mermaid"].contains((target.path as NSString).pathExtension.lowercased()) }
+    /// A page from an agent's conversation: only from the folder Nook keeps them in, never any HTML file.
+    private var isPage: Bool { RenderedPage.isOwnFile(target.path, base: NookPaths.supportDirectory) }
 
     private func commentBar(_ line: Int, lines: [String]) -> some View {
         let send = {
@@ -170,6 +174,8 @@ struct FileViewer: View {
                 case .text(let lines, let tokens):
                     if editor.editing {
                         FileTextEditor(text: $editor.draft, onSave: { if editor.save() { reloads += 1 } })
+                    } else if isPage && !pageSource {
+                        SandboxedPageView(html: lines.joined(separator: "\n"))
                     } else if isMermaid && markdownPreview {
                         CodeRenderView(language: "mermaid", code: lines.joined(separator: "\n"))
                     } else if (isMarkdown || isNotebook) && markdownPreview {
@@ -231,11 +237,14 @@ struct FileViewer: View {
             if editor.editing {
                 editActions
             } else {
-                if isMarkdown || isNotebook || isMermaid, case .text = content {
+                if isPage, case .text = content {
+                    ToolbarIconButton(pageSource ? "eye" : "chevron.left.forwardslash.chevron.right",
+                                      pageSource ? tr("code.preview") : tr("code.source")) { pageSource.toggle() }
+                } else if isMarkdown || isNotebook || isMermaid, case .text = content {
                     ToolbarIconButton(markdownPreview ? "chevron.left.forwardslash.chevron.right" : "eye",
                                       markdownPreview ? tr("code.source") : tr("code.preview")) { markdownPreview.toggle() }
                 }
-                if case .text = content {
+                if case .text = content, !isPage {
                     ToolbarIconButton("pencil", tr("file.viewer.edit")) { Task { await editor.begin() } }
                 }
                 ToolbarIconButton("arrow.clockwise", tr("file.viewer.reload")) { reloads += 1 }

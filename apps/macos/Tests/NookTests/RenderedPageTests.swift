@@ -55,4 +55,14 @@ final class RenderedPageTests: XCTestCase {
         plan.mode = .plan
         XCTAssertEqual(BridgePolicy.verdict(tool: .renderPage, caller: plan), .refuse(.planMode))
     }
+
+    func testShownHeightFollowsThePageOnceMeasured() {
+        XCTAssertEqual(RenderedPage.shownHeight(asked: 360, measured: nil, fullSize: true), 360, "the agent's height until drawn")
+        XCTAssertEqual(RenderedPage.shownHeight(asked: 360, measured: 200.4, fullSize: false), 201, "no empty room under a short page")
+        XCTAssertEqual(RenderedPage.shownHeight(asked: 360, measured: 900, fullSize: false), 360, "a long page keeps the agent's height")
+        XCTAssertEqual(RenderedPage.shownHeight(asked: 360, measured: 900, fullSize: true), 900, "full size shows the whole page")
+        XCTAssertEqual(RenderedPage.shownHeight(asked: 360, measured: 99_999, fullSize: true), RenderedPage.maxFullHeight)
+        XCTAssertEqual(RenderedPage.shownHeight(asked: 360, measured: 10, fullSize: false), RenderedPage.minHeight)
+        XCTAssertEqual(RenderedPage.shownHeight(asked: 360, measured: .nan, fullSize: true), 360)
+    }
 }
