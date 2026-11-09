@@ -163,7 +163,7 @@ The checklist for a new or changed view:
 - A field where you write words (not a name, a path or a search) gets `@` through `.mentions` and `MentionSuggestions`.
 - A search is a `NookSearchField`, a list's title row a `PanelListHeader` (with `PanelNewButton` when it starts
   something), a group's name a `NookSectionLabel`, a count a `NookCountBadge`, a line a `NookDivider` (between the items of a list a `NookRowSeparator`), and a notice in a
-  tab a `PanelNoticeBar` (`floating:` for what waits for you over the panel's bottom edge, above the toasts). Change one of these and every tab follows.
+  tab a `PanelNoticeBar` (`floating:` for what waits for you over the panel's bottom edge; toasts sit top right). Change one of these and every tab follows.
 - Empty: `WSEmptyState` for a whole panel, `ListEmptyNote` in a list. Loading: a whole panel or pane waiting for its content shows `PatientSpinner()` (nothing for the first 350 ms, so a quick load never flashes a spinner; show what was read last time while reading again where you can); a button or a row that is busy shows `ProgressView().controlSize(.small)`.
   Errors: `coralSoft` text, or a `.cardBackground` notice on `surface` with a coral symbol and a retry.
 
@@ -172,11 +172,14 @@ The checklist for a new or changed view:
 `ToastCenter.shared` is the one way to report a short result, on the Mac and (as `toast` in `src/lib/toast.svelte.ts`) in
 the Tauri app. Use it whenever an action ends and its own view does not stay to show how it went.
 
-- **Where it shows:** on one surface with `.nookToastHost()` (the panel in the notch and the main window, Settings): the
+- **Where it shows:** in the top-right corner, under the header, at most 360 pt wide, sliding in from the right (as in
+  the Tauri app). Up to three show at once as a stack (`NookToastStack`): the newest in front, the older ones a step
+  smaller peeking out under it, spread out into a column while the pointer is on the stack; more wait their turn. On one surface with `.nookToastHost()` (the panel in the notch and the main window, Settings): the
   key window's, else the one opened last. With none on screen, the notch shows it in its confirmation strip
   (`NotchViewModel.showToast`), but never over a card or a question that waits for you. A new window gets
   `.nookToastHost()` once, at its root. What waits for you on that surface (a permission request, an agent's question)
-  floats in the same spot, above the toast, through `.nookToastHost { … }` and `PanelNoticeBar(floating: true)`.
+  floats over the bottom edge instead, just above the composer, through `.nookToastHost { … }` and
+  `PanelNoticeBar(floating: true)`.
 - **Kinds keep the state colors:** `success` mint, `error` coral, `warning` amber, `info` iris. An error stays longest,
   every toast stays while hovered, and an error with a detail can be copied in one click.
 - **Words:** the title says what happened in a few words ("Pushed", "Couldn't remove the worktree", `toast.failed` for
@@ -200,7 +203,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `NookAcknowledgeButton`, `CountdownRing` | `NookButtons.swift` | The white "OK" that closes a notice at once, with a ring counting down until it closes by itself (card `acknowledge` + `countdown`, compact strip) |
 | `NookActionBar` | `NookButtons.swift` | A notice's own actions (`NookNoticeAction`) in one dark bar with thin dividers, next to its OK; drawn by `NookNoticeEnd`, never placed by hand |
 | `NookNoticeActions`, `NookNoticeAction` | `Shared/NookNoticeActions.swift` | The button row at the bottom of every notification (cards, approvals, questions, panel notices): main action and its "not now" in one pill (`NookSplitButton`), muted extras, rarer actions in a "…" menu (`NookMoreMenu`), optional mic. Use it for any new notification instead of loose buttons |
-| `ToastCenter`, `NookToastView`, `.nookToastHost()` | `NookToast.swift` | The one toast for the result of something you did (saved, pushed, failed): `ToastCenter.shared.success(…)`, `.error(…)` (also takes an `Error`, under a title that says what failed), `.warning(…)`, `.info(…)`, with at most one `NookToastAction`. See *Toasts* above |
+| `ToastCenter`, `NookToastView`, `NookToastStack`, `.nookToastHost()` | `NookToast.swift` | The one toast for the result of something you did (saved, pushed, failed): `ToastCenter.shared.success(…)`, `.error(…)` (also takes an `Error`, under a title that says what failed), `.warning(…)`, `.info(…)`, with at most one `NookToastAction`. See *Toasts* above |
 | `NookSearchField` | `PanelBlocks.swift` | The one search field (panel lists, Settings rows, menus, the command palette): magnifying glass, text, a clear button, Escape clears and then calls `onEscape`. `panel`, `inline` (in a Settings form or a menu) and `large` (a palette). Never build a search field by hand |
 | `.focusOnAppear(_:)` | `PanelBlocks.swift` | Puts the keyboard in a palette's field as it opens (⌘K search, the command palette), also when it appears with a transition or the panel takes the keyboard later. Use it instead of `.onAppear { focused = true }` on a field that must take typing at once |
 | `QRCodeView`, `QRCode` | `QRCode.swift` | The one QR code for a phone to scan (linking a chat app, WhatsApp, pairing the companion): crisp pixels on a light card, with a label for VoiceOver. Never draw a QR image by hand |
