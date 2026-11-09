@@ -649,8 +649,8 @@ extension AppModel {
             }
         }
         // The card shows the whole answer; the notice log, the strip and a macOS notification keep the short preview.
-        presentNookNotice(title: title, detail: preview, full: conversation.lastAnswer, button: tr("nooks.view"), mood: .done,
-                          replyTo: id, inNotch: followed) { [weak self] in
+        presentNookNotice(title: title, detail: preview, full: conversation.lastAnswer, answer: conversation.lastNookAnswer,
+                          button: tr("nooks.view"), mood: .done, replyTo: id, inNotch: followed) { [weak self] in
             self?.openConversation(id)
         }
     }
@@ -660,23 +660,31 @@ extension AppModel {
     /// `replyTo`: the conversation the card's field answers, so a question Nook asks back is answered in the notch
     /// (`answerFromNotice`) instead of only through View or Later. `full`: what the card shows instead of `detail` (the
     /// whole answer, where `detail` is its one-line preview). `inNotch`: you asked from the notch and wait for the
-    /// answer there, so it is a card whatever the notice rules say (also in a meeting).
-    func presentNookNotice(title: String, detail: String, full: String = "", button: String, mood: NookMood,
-                           replyTo conversation: UUID? = nil, inNotch: Bool = false, open: @escaping () -> Void) {
+    /// answer there, so it is a card whatever the notice rules say (also in a meeting). `answer`: the whole answer with its
+    /// sources and offers, drawn as the chat draws it (`NookAnswerView`) instead of `full` as plain text.
+    func presentNookNotice(title: String, detail: String, full: String = "", answer: NookAnswer? = nil, button: String,
+                           mood: NookMood, replyTo conversation: UUID? = nil, inNotch: Bool = false, open: @escaping () -> Void) {
         let token = conversation.map { Self.nookReplyCardPrefix + $0.uuidString + "/" + UUID().uuidString }
             ?? "nookdone-" + UUID().uuidString
         let shown = String((full.isEmpty ? (detail.isEmpty ? title : detail) : full).prefix(4000))
-        // Room for the whole text up to nine lines, as an answer card has; a longer one scrolls inside the card.
-        let lines = max(1, min(9, Int(ceil(Double(shown.count) / (shown.count > 140 ? 62.0 : 46.0)))))
+        let field: CGFloat = conversation == nil ? 0 : 50
+        let height: CGFloat
+        if let answer {
+            height = Self.answerCardHeight(answer, field: field)
+        } else {
+            // Room for the whole text up to nine lines, as an answer card has; a longer one scrolls inside the card.
+            let lines = max(1, min(9, Int(ceil(Double(shown.count) / (shown.count > 140 ? 62.0 : 46.0)))))
+            height = min(470, 100 + CGFloat(lines) * (shown.count > 140 ? 21 : 24) + field)
+        }
         let card = NookCard(
             id: token,
             mood: mood,
             context: detail.isEmpty ? "" : title,
-            title: shown,
-            detail: .none,
+            title: answer.map { Citations.sanitize($0.text, valid: []) } ?? shown,
+            detail: answer.map { .answer($0) } ?? .none,
             primary: CardAction(label: button, outcome: .callback("\(token)#open", "")),
             secondary: CardAction(label: tr("nooks.later"), outcome: .dismiss),
-            contentHeight: min(470, 100 + CGFloat(lines) * (shown.count > 140 ? 21 : 24) + (conversation == nil ? 0 : 50)),
+            contentHeight: height,
             input: conversation != nil,
             inputPrompt: tr("nooks.replyPrompt"),
             // A question back ("What should I send Arjan?") takes the keyboard so the answer can be typed at once;
@@ -698,6 +706,32 @@ extension AppModel {
         // An answer from Nook is answered on its banner, as in the card's field.
         banner: NoticeBanner(target: conversation.map { .conversation($0) } ?? .nowhere,
                              reply: conversation.map { id in { [weak self] text in self?.answerFromNotice(text, conversation: id) } }))
+    }
+
+    /// The height of a card with Nook's answer (`CardDetail.answer`): its lines as the card wraps them (a list item, a
+    /// heading and a paragraph each start a line, with room between paragraphs), its source chips and offers, up to the
+    /// tallest card; a longer answer scrolls inside it.
+    static func answerCardHeight(_ answer: NookAnswer, field: CGFloat) -> CGFloat {
+        let perLine = 60.0
+        var height: CGFloat = 0
+        var previousBlank = false
+        for raw in Citations.sanitize(answer.text, valid: []).split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty {
+                // The gap between two paragraphs or a paragraph and a list.
+                if !previousBlank, height > 0 { height += 10 }
+                previousBlank = true
+                continue
+            }
+            previousBlank = false
+            let plain = line.replacingOccurrences(of: "**", with: "")
+            let heading = plain.hasPrefix("#")
+            height += CGFloat(max(1, Int(ceil(Double(plain.count) / perLine)))) * (heading ? 26 : 23) + (heading ? 10 : 4)
+        }
+        if !answer.cited.isEmpty { height += 36 }
+        if !answer.offers.isEmpty { height += 40 }
+        // The header, the buttons and the margins around them.
+        return min(470, max(150, 104 + height + field))
     }
 
     private static let thinkBlockRegex = try? NSRegularExpression(pattern: #"<think>[\s\S]*?</think>"#)

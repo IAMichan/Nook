@@ -195,6 +195,10 @@ enum CardDetail: Equatable {
     /// A quiet line or three under the title: what an agent said last, or what went wrong (`AgentStatusNotice.detail`).
     case summary(String)
     case chat([ChatBubble])
+    /// Nook's answer to a question asked from the notch (Double Tap, a notice's field), as the chat shows it: Markdown,
+    /// citations that open their source, the cited sources and what Nook can do next (`NookAnswerView`). It takes the
+    /// title's place; the title keeps the answer's text for VoiceOver.
+    case answer(NookAnswer)
 }
 
 /// A notification's state in a few words ("Done", "Needs approval"), as a tinted pill at the end of the card's header,

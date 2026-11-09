@@ -131,6 +131,34 @@ final class RetrievalTests: XCTestCase {
         XCTAssertEqual(Citations.used(in: cleaned), [1, 2])
     }
 
+    func testCitationsSplitIntoWordsAndNumbersInARow() {
+        XCTAssertEqual(Citations.split("Ja, 5 chats [2][3] [4, 6]: kijk"),
+                       [.text("Ja, 5 chats"), .citation([2, 3, 4, 6]), .text(": kijk")],
+                       "citations in a row are one, and the space before them goes")
+        XCTAssertEqual(Citations.split("Bright: 52 ongelezen [5]\nLucy [2]."),
+                       [.text("Bright: 52 ongelezen"), .citation([5]), .text("\nLucy"), .citation([2]), .text(".")])
+        XCTAssertEqual(Citations.split("Geen bronnen hier"), [.text("Geen bronnen hier")])
+        XCTAssertEqual(Citations.split("Een [link](https://x.nl) blijft"), [.text("Een [link](https://x.nl) blijft")])
+        XCTAssertTrue(Citations.contains("van gisteren [6]"))
+        XCTAssertFalse(Citations.contains("array[i]"))
+    }
+
+    func testAChatReferenceOpensTheChatAndCannotBeForged() {
+        let link = SourceReference.chatLink(app: "WhatsApp", name: "CONNECT (Veenendaal | Ede) & co?")
+        XCTAssertFalse(link.contains("|"), "a bar would split the reference line")
+        XCTAssertTrue(SourceReference.isOpenable(link))
+        XCTAssertEqual(SourceReference.chat(link)?.app, "WhatsApp")
+        XCTAssertEqual(SourceReference.chat(link)?.name, "CONNECT (Veenendaal | Ede) & co?")
+        XCTAssertFalse(SourceReference.isOpenable("nookchat:open?app=WhatsApp"), "a chat link without a chat opens nothing")
+        XCTAssertNil(SourceReference.chat("https://example.com/?name=x"))
+
+        // Through the reference line only Nook's own tools write: the chat's link survives the parse.
+        let line = ReferenceParser.line(title: "WhatsApp: Bright", url: link, detail: "52 unread")
+        let parsed = ReferenceParser.parse("Bright wrote\n" + line)
+        XCTAssertEqual(parsed.references.first?.url, link)
+        XCTAssertEqual(parsed.references.first?.detail, "52 unread")
+    }
+
     func testOnlySafeSchemesAreOpenable() {
         XCTAssertTrue(SourceReference.isOpenable("https://github.com/a/b"))
         XCTAssertTrue(SourceReference.isOpenable("file:///Users/x/plan.pdf"))

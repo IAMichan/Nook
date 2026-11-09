@@ -10,7 +10,7 @@ struct SourceReference: Codable, Equatable, Identifiable {
     var sourceID: String
     var title: String
     var detail: String = ""
-    /// Only https, file, and message (Mail) schemes are actionable links.
+    /// Only https, file, message (Mail) and Nook's own chat links (`ReferenceParser.chatLink`) are actionable.
     var url: String?
 
     var id: Int { number }
@@ -20,8 +20,30 @@ struct SourceReference: Codable, Equatable, Identifiable {
         switch scheme {
         case "https": return url.host != nil
         case "file", "message": return true
+        case chatScheme: return chat(raw) != nil
         default: return false
         }
+    }
+
+    /// A chat in one of the chat apps Nook reads (WhatsApp, Messages…): opens on that chat in the Chats tab.
+    static let chatScheme = "nookchat"
+
+    /// The app and the chat's name of a chat link, or nil when it is not one.
+    static func chat(_ raw: String?) -> (app: String, name: String)? {
+        guard let raw, let parts = URLComponents(string: raw), parts.scheme?.lowercased() == chatScheme else { return nil }
+        let items = parts.queryItems ?? []
+        guard let name = items.first(where: { $0.name == "name" })?.value, !name.isEmpty else { return nil }
+        return (items.first { $0.name == "app" }?.value ?? "", name)
+    }
+
+    /// The link of a chat in `app` named `name`. Only Nook's own tools write it, through `ReferenceParser.line`.
+    static func chatLink(app: String, name: String) -> String {
+        var parts = URLComponents()
+        parts.scheme = chatScheme
+        parts.path = "open"
+        parts.queryItems = [URLQueryItem(name: "app", value: app), URLQueryItem(name: "name", value: name)]
+        // `|` separates the parts of a reference line: never leave it in the link.
+        return (parts.string ?? "").replacingOccurrences(of: "|", with: "%7C")
     }
 }
 
@@ -307,6 +329,45 @@ enum ReferenceParser {
 /// ensuring an answer never refers to a fabricated source.
 enum Citations {
     private static let pattern = try? NSRegularExpression(pattern: #"\[(\d{1,3}(?:\s*,\s*\d{1,3})*)\](?!\()"#)
+
+    /// A piece of text with citations in it: words, or the numbers of one or more citations in a row.
+    enum Piece: Equatable {
+        case text(String)
+        case citation([Int])
+    }
+
+    /// Whether the text cites anything.
+    static func contains(_ text: String) -> Bool {
+        guard text.contains("["), let pattern else { return false }
+        return pattern.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+    }
+
+    /// The text in words and citations. Citations in a row ("[2][3]", "[2] [3]") are one piece, and the space before
+    /// a citation goes, so its numbers sit against the fact they back ("today [5]." → "today", [5], ".").
+    static func split(_ text: String) -> [Piece] {
+        guard let pattern else { return [.text(text)] }
+        let ns = text as NSString
+        var pieces: [Piece] = []
+        var cursor = 0
+        func addText(_ words: String) {
+            guard !words.isEmpty else { return }
+            if case .text(let before) = pieces.last { pieces[pieces.count - 1] = .text(before + words) } else { pieces.append(.text(words)) }
+        }
+        for match in pattern.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            var between = ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            let numbers = ns.substring(with: match.range(at: 1)).split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+            cursor = match.range.location + match.range.length
+            if between.allSatisfy({ $0 == " " }), case .citation(let earlier) = pieces.last {
+                pieces[pieces.count - 1] = .citation(earlier + numbers)
+                continue
+            }
+            while between.last == " " { between.removeLast() }
+            addText(between)
+            pieces.append(.citation(numbers))
+        }
+        addText(ns.substring(from: cursor))
+        return pieces
+    }
 
     static func used(in text: String) -> Set<Int> {
         guard let pattern else { return [] }

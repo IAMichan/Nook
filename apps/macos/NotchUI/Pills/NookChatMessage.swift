@@ -53,6 +53,8 @@ struct ChatMessageView: View, Equatable {
                     ToolbarIconButton("arrow.clockwise", tr("chat.retry"), height: 22) { app.retryLast() }
                 }
             }
+            // Its citations are raised numbers that open their source, as in the notch's card (`NookAnswerView`).
+            .answerReferences(message.references)
         }
     }
 
@@ -97,13 +99,9 @@ struct ChatMessageView: View, Equatable {
             PlanReview(message: message)
         }
 
-        // What Nook can do next: one click to execute.
-        // Stacked when they do not fit side by side, so a long offer is never cut off.
+        // What Nook can do next: one click to execute, the same chips as in the notch's card.
         if !message.streaming && !message.offers.isEmpty {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: NookTheme.Spacing.sm) { offerChips }
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) { offerChips }
-            }
+            AnswerOfferChips(offers: message.offers) { ask($0) }
         }
 
         if message.streaming && !message.text.isEmpty && !message.status.isEmpty {
@@ -115,13 +113,6 @@ struct ChatMessageView: View, Equatable {
     private var planSteps: [RunTaskStep] {
         guard !message.streaming else { return message.tasks }
         return message.tasks.map { $0.status == .active ? RunTaskStep(text: $0.text, status: .pending) : $0 }
-    }
-
-    @ViewBuilder
-    private var offerChips: some View {
-        ForEach(message.offers, id: \.self) { offer in
-            OfferChip(text: offer) { ask(offer) }
-        }
     }
 
     static func == (a: ChatMessageView, b: ChatMessageView) -> Bool {
@@ -235,35 +226,6 @@ private struct TypingIndicator: View {
         .padding(.vertical, NookTheme.Spacing.xs)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
-    }
-}
-
-/// A next step Nook offers under its answer: one click asks it.
-private struct OfferChip: View {
-    let text: String
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: "arrow.turn.down.right")
-                    .font(NookTheme.font(10, .semibold))
-                    .foregroundStyle(NookTheme.textTertiary)
-                Text(text)
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, NookTheme.Spacing.lg)
-            .frame(height: 28)
-            .background(Capsule().fill(hovering ? NookTheme.smoke : NookTheme.field))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .animation(NookTheme.hover, value: hovering)
-        .accessibilityLabel("Nook: \(text)")
     }
 }
 
