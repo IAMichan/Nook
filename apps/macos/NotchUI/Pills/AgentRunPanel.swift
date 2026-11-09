@@ -126,6 +126,7 @@ struct AgentRunPanel: View {
             .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(
                 outputs: outputs,
                 subagents: derived.allSubagents,
+                commands: derived.allCommands,
                 subagentsFresh: !outputsLink.subagentsShown && seenSubagents.map { $0 != derived.subagentsSignature } == true,
                 turns: turnDiffs(run),
                 pullRequest: derived.createdPullRequest,
@@ -651,7 +652,7 @@ struct AgentRunPanel: View {
             // Redrawn on its own with every keystroke, without the conversation above it; and not for every streamed
             // token, which redraws the conversation (`timelines`) but changes nothing the composer shows.
             RunComposerHost(state: composerState, workspace: workspace, app: app, pullRequests: pullRequestSync,
-                            key: RunComposerHost.Key(run: run, subagents: derived.subagents, skills: skills,
+                            key: RunComposerHost.Key(run: run, subagents: derived.subagents, commands: derived.commands, skills: skills,
                                                      repository: repository, shownSubagents: outputsLink.subagentsShown)) {
                 composer(run)
             }
@@ -1343,6 +1344,11 @@ struct AgentRunPanel: View {
             if !subagents.isEmpty {
                 SubagentBar(agents: subagents) { outputsLink.openSubagents() }
             }
+            // The commands it left running in the background (a dev server, a watcher): the session is not done yet.
+            let commands = derived.commands
+            if !commands.isEmpty {
+                BackgroundCommandBar(commands: commands) { outputsLink.openSubagents() }
+            }
             // While the agent works its list shows in the timeline; one it left unfinished waits here.
             if let tasks = run.tasks, !tasks.isEmpty, !TaskChecklist.showsInline(tasks, active: run.status.isActive) {
                 TasksStrip(steps: tasks)
@@ -1615,16 +1621,19 @@ struct RunComposerHost<Content: View>: View, Equatable {
     struct Key: Equatable {
         var run: WorkspaceRun
         var subagents: [SubagentInfo]
+        var commands: [BackgroundCommandInfo]
         var skills: [Skill]
         var repository: String?
         var shownSubagents: Bool
 
-        init(run: WorkspaceRun, subagents: [SubagentInfo], skills: [Skill], repository: String?, shownSubagents: Bool) {
+        init(run: WorkspaceRun, subagents: [SubagentInfo], commands: [BackgroundCommandInfo], skills: [Skill], repository: String?,
+             shownSubagents: Bool) {
             // A streaming turn moves `updatedAt` every two seconds; the composer does not show it.
             var run = run
             run.updatedAt = .distantPast
             self.run = run
             self.subagents = subagents
+            self.commands = commands
             self.skills = skills
             self.repository = repository
             self.shownSubagents = shownSubagents
@@ -1673,6 +1682,10 @@ private final class RunTimelineDerived {
     /// Every subagent of the session, for the Subagents tab of the side panel, and their `Subagents.signature`.
     private(set) var allSubagents: [SubagentInfo] = []
     private(set) var subagentsSignature = ""
+    /// The commands it left running in the background since your last message while it works or any still runs, for the
+    /// bar above the composer; and all of them, for the Subagents tab (`BackgroundCommands`).
+    private(set) var commands: [BackgroundCommandInfo] = []
+    private(set) var allCommands: [BackgroundCommandInfo] = []
     /// The last pull request the agent reported with `<pr-created>`, for the tray above the composer.
     private(set) var createdPullRequest: URL?
 
@@ -1735,9 +1748,12 @@ private final class RunTimelineDerived {
         outputs = SessionOutputs.collect(all, tasks: run.tasks, directory: run.workingDirectory)
         outputSignatures = outputs.map(SessionOutputs.signature)
         allSubagents = Subagents.list(all)
-        subagentsSignature = Subagents.signature(allSubagents)
+        allCommands = BackgroundCommands.list(all)
+        subagentsSignature = Subagents.signature(allSubagents) + "|" + BackgroundCommands.signature(allCommands)
         let current = Subagents.current(all)
         subagents = active || current.contains(where: \.isRunning) ? current : []
+        let currentCommands = BackgroundCommands.current(all)
+        commands = active || currentCommands.contains(where: \.isRunning) ? currentCommands : []
         marks = TranscriptPresentation.promptMarks(events: events)
         pullRequestBeforeLast = RunPullRequestLinks.last(in: Array(all.dropLast()))
         createdPullRequest = all.last.flatMap(RunPullRequestLinks.pullRequest(in:)) ?? pullRequestBeforeLast
