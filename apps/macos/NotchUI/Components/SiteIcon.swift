@@ -11,7 +11,10 @@ final class FaviconStore: ObservableObject {
     @Published private(set) var revision = 0
     /// The domain whose icon just came in, so a `SiteIcon` redraws only for its own domain and not for every one.
     let arrived = PassthroughSubject<String, Never>()
+    /// The icons decoded at `maxPixel`, at most `limit` of them: past that they are read back from disk when drawn.
     private var images: [String: NSImage] = [:]
+    private static let limit = 300
+    nonisolated private static let maxPixel: CGFloat = 128
     private var loading: Set<String> = []
     private var missed: Set<String> = []
 
@@ -47,7 +50,7 @@ final class FaviconStore: ObservableObject {
         Task { [weak self] in
             // The copy on disk first, read off the main thread: this starts from a view's first draw.
             let kept = await Task.detached(priority: .utility) { try? Data(contentsOf: file) }.value
-            let onDisk = kept.flatMap(NSImage.init(data:))
+            let onDisk = kept.flatMap { DecodedImage.image($0, maxPixel: Self.maxPixel) }
             var found: (Data, NSImage)?
             if let kept, let onDisk { found = (kept, onDisk) }
             let candidates = found != nil ? [] : ["https://\(key)/apple-touch-icon.png", "https://\(key)/favicon.ico", "https://www.\(key)/favicon.ico"]
@@ -56,7 +59,7 @@ final class FaviconStore: ObservableObject {
                 guard let (data, response) = try? await ConnectorHTTP.session.data(from: url),
                       (response as? HTTPURLResponse)?.statusCode == 200,
                       data.count > 80, data.count < 600_000,
-                      let image = NSImage(data: data), image.size.width > 0 else { continue }
+                      let image = DecodedImage.image(data, maxPixel: Self.maxPixel), image.size.width > 0 else { continue }
                 found = (data, image)
                 break
             }
@@ -64,6 +67,7 @@ final class FaviconStore: ObservableObject {
             self.loading.remove(key)
             if let (data, image) = found {
                 if onDisk == nil { try? data.write(to: file, options: .atomic) }
+                if self.images.count >= Self.limit { self.images.removeAll(keepingCapacity: true) }
                 self.images[key] = image
                 self.revision += 1
                 self.arrived.send(key)

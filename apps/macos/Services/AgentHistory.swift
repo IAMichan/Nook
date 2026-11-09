@@ -519,11 +519,20 @@ private final class HistoryScanner: @unchecked Sendable {
 
     /// A single token entry, with a key to deduplicate entries across transcripts.
     struct UsageEntry: Codable {
-        var key: String
+        /// A 64-bit hash of the entry's id (`UsageKey`): the same reply copied into a resumed transcript has the same key.
+        /// Tens of thousands of entries are kept for 90 days, and the ids as strings took more memory than the rest.
+        var key: Int64
         var date: Date
         var tokens: TokenTally
         /// The model that answered, for the Usage page's per-model figures and prices.
         var model = ""
+
+        init(key: String, date: Date, tokens: TokenTally, model: String = "") {
+            self.key = UsageKey.hash(key)
+            self.date = date
+            self.tokens = tokens
+            self.model = model
+        }
     }
 
     struct Parsed: Codable {
@@ -555,7 +564,7 @@ private final class HistoryScanner: @unchecked Sendable {
     private static let diskSaveInterval: TimeInterval = 10 * 60
     private static var diskURL: URL { NookPaths.supportDirectory.appendingPathComponent("agent-history-cache.plist") }
     /// Raise when the parsing changes within a build number.
-    private static let diskFormat = 3
+    private static let diskFormat = 4
     private static var diskBuild: String {
         "\(diskFormat)|" + ((Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "")
     }
@@ -565,7 +574,23 @@ private final class HistoryScanner: @unchecked Sendable {
         diskLoaded = true
         guard cache.isEmpty, let data = try? Data(contentsOf: Self.diskURL),
               let stored = try? PropertyListDecoder().decode(DiskCache.self, from: data), stored.build == Self.diskBuild else { return }
-        cache = stored.entries.mapValues { (key: $0.key, parsed: $0.parsed) }
+        cache = stored.entries.mapValues { (key: $0.key, parsed: interned($0.parsed)) }
+    }
+
+    /// The model names of every entry, one string each: decoded or parsed, each entry had its own copy.
+    private var modelNames: [String: String] = [:]
+
+    private func interned(_ parsed: Parsed) -> Parsed {
+        var parsed = parsed
+        for index in parsed.entries.indices {
+            let model = parsed.entries[index].model
+            if let known = modelNames[model] {
+                parsed.entries[index].model = known
+            } else {
+                modelNames[model] = model
+            }
+        }
+        return parsed
     }
 
     private func saveDiskCache() {
@@ -687,6 +712,7 @@ private final class HistoryScanner: @unchecked Sendable {
                         parsed = parseCursor(file.url, chats: chats)
                     case .opencode, .grok, .acp: parsed = Parsed(session: nil, entries: [])
                     }
+                    parsed = interned(parsed)
                 }
                 parsed.session?.profileID = file.profile
                 parsed.session?.path = file.url.path
@@ -720,7 +746,7 @@ private final class HistoryScanner: @unchecked Sendable {
                 for id in [conversation.sessionID] + conversation.earlierIDs { conversationOf[conversation.agent.rawValue + "|" + id] = conversation }
             }
             var chatsByTranscript: [String: UsageLedger.Chat] = [:]
-            var counted = Set<String>()
+            var counted: [AgentKind: Set<Int64>] = [:]
             for entry in parsedAll {
                 var chat: UsageLedger.Chat?
                 if let session = entry.parsed.session {
@@ -737,7 +763,7 @@ private final class HistoryScanner: @unchecked Sendable {
                         chatsByTranscript[transcript] = chat
                     }
                 }
-                for usage in entry.parsed.entries where counted.insert(entry.agent.rawValue + "|" + usage.key).inserted {
+                for usage in entry.parsed.entries where counted[entry.agent, default: []].insert(usage.key).inserted {
                     let tokens = UsageTokens(input: usage.tokens.input, output: usage.tokens.output,
                                              cacheRead: usage.tokens.cacheRead, cacheWrite: usage.tokens.cacheWrite)
                     ledger.add(agent: entry.agent.rawValue, model: usage.model, date: usage.date, tokens: tokens)
@@ -985,7 +1011,7 @@ private final class HistoryScanner: @unchecked Sendable {
         let weekStart = calendar.date(byAdding: .day, value: -6, to: today) ?? today
         var summary = AgentUsageSummary()
         var byDay: [Date: Int] = [:]
-        var seen = Set<String>()
+        var seen = Set<Int64>()
 
         for file in parsed {
             for entry in file.entries where entry.date >= weekStart {
@@ -1375,7 +1401,7 @@ private final class HistoryScanner: @unchecked Sendable {
         /// The title Claude gave the session itself (the Claude app names every session; `/rename` changes it): the latest wins.
         var customTitle = ""
         var entries: [UsageEntry] = []
-        var seenUsage = Set<String>()
+        var seenUsage = Set<Int64>()
         /// For `ResumedConversations`: the session ids the lines were written under, and the first and last message.
         var sessionIDs = Set<String>()
         var firstMessage = ""
@@ -1511,7 +1537,7 @@ private final class HistoryScanner: @unchecked Sendable {
             if let raw = message["usage"] as? [String: Any] {
                 let id = "\((message["id"] as? String) ?? ""):\((object["requestId"] as? String) ?? "")"
                 // Claude Code writes a line per block for each reply, each containing identical usage.
-                guard id == ":" || progress.seenUsage.insert(id).inserted else { return }
+                guard id == ":" || progress.seenUsage.insert(UsageKey.hash(id)).inserted else { return }
                 let tokens = TokenTally(
                     input: Self.int(raw["input_tokens"]),
                     output: Self.int(raw["output_tokens"]),
@@ -1757,5 +1783,19 @@ private final class HistoryScanner: @unchecked Sendable {
             .replacingOccurrences(of: "claude_", with: "")
             .split(whereSeparator: { $0 == "_" || $0 == "-" })
         return words.map { word in word.prefix(1).uppercased() + word.dropFirst() }.joined(separator: " ")
+    }
+}
+
+/// The 64-bit keys usage entries are deduplicated by (FNV-1a over the id's UTF-8): the same on every launch, unlike
+/// `Hasher`, because they are kept on disk. With 64 bits two of a million ids share a key with a chance of about 3 in 10^8,
+/// which would only leave one reply out of the token counts.
+enum UsageKey {
+    static func hash(_ id: String) -> Int64 {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in id.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 0x0000_0100_0000_01b3
+        }
+        return Int64(bitPattern: hash)
     }
 }

@@ -270,6 +270,8 @@ struct SelectableProse: NSViewRepresentable {
     private static let cache: NSCache<NSString, NSAttributedString> = {
         let cache = NSCache<NSString, NSAttributedString>()
         cache.countLimit = 400
+        cache.totalCostLimit = 8 * 1024 * 1024
+        MemoryPressure.shared.register("selectableProse") { [cache] _ in cache.removeAllObjects() }
         return cache
     }()
 
@@ -320,7 +322,8 @@ struct SelectableProse: NSViewRepresentable {
                 break
             }
         }
-        cache.setObject(result, forKey: key)
+        // The key spells the blocks out (UTF-16); the text holds them again with its attributes.
+        cache.setObject(result, forKey: key, cost: key.length * 2 + result.length * 4 + 64)
         return result
     }
 

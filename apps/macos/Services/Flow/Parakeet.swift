@@ -37,15 +37,11 @@ final class Parakeet: ObservableObject {
     /// `idleSeconds` without a transcription, and at once when macOS runs low on memory. Loading again takes a second or
     /// two, and dictation starts it while you speak (`FlowDictation.begin`).
     private var idleTask: Task<Void, Never>?
-    private var pressureSource: DispatchSourceMemoryPressure?
     private static let idleSeconds: UInt64 = 5 * 60
 
     private init() {
         refresh()
-        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
-        source.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.unload() } }
-        source.resume()
-        pressureSource = source
+        MemoryPressure.shared.register("parakeet") { [weak self] _ in MainActor.assumeIsolated { self?.unload() } }
     }
 
     /// Drops the loaded models; a transcription still running keeps its own reference and finishes.

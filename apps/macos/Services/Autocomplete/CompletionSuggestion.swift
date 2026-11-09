@@ -683,7 +683,7 @@ enum CompletionHealing {
     }
 
     /// Whether a token's bytes fit what still has to be written: it spells the start of it, or all of it and more.
-    static func fits(_ piece: [UInt8], _ required: [UInt8]) -> Bool {
+    static func fits<Piece: Collection>(_ piece: Piece, _ required: [UInt8]) -> Bool where Piece.Element == UInt8 {
         guard !piece.isEmpty else { return false }
         return piece.count >= required.count ? piece.starts(with: required) : required.starts(with: piece)
     }
