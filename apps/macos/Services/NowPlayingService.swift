@@ -143,7 +143,7 @@ final class NowPlayingService: ObservableObject {
                 // announced: it keeps following while music plays, also with nobody at the Mac.
                 let queued = !self.playQueue.isEmpty && self.current?.isPlaying == true
                 let signals = EnergyMonitor.shared.signals
-                if self.viewers == 0, signals.displayAsleep || (signals.away && !queued) { return }
+                if self.viewers == 0, signals.unseen || (signals.away && !queued) { return }
                 // Nothing playing: the players' notifications announce a start, so the safety net can be slow. Right after
                 // launch it keeps checking every other tick until a player answers: a player that was still starting (or a cold
                 // first AppleScript run) should not keep the Music tab away for ten seconds.

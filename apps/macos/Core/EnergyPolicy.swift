@@ -34,6 +34,14 @@ struct EnergySignals: Equatable {
     var away = false
     /// The displays are asleep.
     var displayAsleep = false
+    /// The screen is locked: the lock screen is all anyone can see, so it counts as a sleeping display for background work.
+    var screenLocked = false
+
+    /// Nobody can see what Nook shows: the displays sleep or the screen is locked.
+    var unseen: Bool { displayAsleep || screenLocked }
+
+    /// Nobody can see the screen or nobody is at the Mac: background reads that only keep something on screen current wait.
+    var idle: Bool { unseen || away }
 
     /// After this long without input you count as away: nothing on screen is being looked at.
     static let awayAfter: TimeInterval = 300
@@ -53,7 +61,7 @@ struct EnergySignals: Equatable {
 
 /// Why Nook does less than usual right now, in the order the status line names them.
 enum EnergyReason: String, CaseIterable, Equatable {
-    case displayAsleep, hot, lowBattery, lowPowerMode, busy, away, battery, saver
+    case displayAsleep, locked, hot, lowBattery, lowPowerMode, busy, away, battery, saver
 
     var textKey: String { "settings.energy.reason.\(rawValue)" }
 }
@@ -170,10 +178,13 @@ struct EnergyPlan: Equatable {
     /// still shows them moving, slowly: held still halfway, they read as stuck, and a build or a test run (exactly when an
     /// agent works) keeps every core busy.
     func progressFrameRate(attended: ViewAttention) -> Double {
-        if reasons.contains(.displayAsleep) || reasons.contains(.away) { return 0 }
+        if unseen || reasons.contains(.away) { return 0 }
         let fps = pace == .paused ? min(ambientFrameRate, unattendedFrameRate) : ambientFrameRate
         return frameRate(fps, attended: attended)
     }
+
+    /// The displays sleep or the screen is locked: nothing on screen is seen, so work that only feeds it can wait.
+    var unseen: Bool { reasons.contains(.displayAsleep) || reasons.contains(.locked) }
 
     /// The first reason, for a short status line; nil at full speed.
     var mainReason: EnergyReason? { reasons.first }
@@ -189,6 +200,8 @@ enum EnergyPolicy {
 
         // Nobody is looking at the screen: the optional work has nothing to add.
         if signals.displayAsleep { paused.append(.displayAsleep) }
+        // A locked screen is the same for background work: nobody sees what it would keep current.
+        if signals.screenLocked { paused.append(.locked) }
         // A hot Mac gets a break whatever you chose; working on would only keep it hot.
         if signals.hot { paused.append(.hot) }
         // A nearly empty battery: every bit of optional work shortens the time you have left. Full power keeps going, lighter.

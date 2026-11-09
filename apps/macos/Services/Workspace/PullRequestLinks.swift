@@ -382,7 +382,7 @@ enum PullRequestBackgroundRefresh {
     /// Whether a quiet read is due: someone is at the Mac, and the list was not read (by the panel or a quiet read)
     /// within the stretched interval. A clock that went backwards counts as due.
     static func isDue(lastRead: Date, now: Date, plan: EnergyPlan, signals: EnergySignals) -> Bool {
-        guard !signals.away, !signals.displayAsleep else { return false }
+        guard !signals.idle else { return false }
         let elapsed = now.timeIntervalSince(lastRead)
         return elapsed < 0 || elapsed >= wait(plan: plan)
     }

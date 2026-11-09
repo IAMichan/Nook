@@ -246,7 +246,7 @@ final class PullRequestSync: ObservableObject {
     /// Nobody at the Mac or its displays asleep: the first tick back catches up (as `PullRequestBackgroundRefresh`).
     private var nobodyHere: Bool {
         let signals = EnergyMonitor.shared.signals
-        return signals.away || signals.displayAsleep
+        return signals.idle
     }
 
     /// The lane of a folder: the host of its remote, also when that was read a while ago (it hardly ever changes).

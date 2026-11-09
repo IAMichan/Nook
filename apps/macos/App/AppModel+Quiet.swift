@@ -43,7 +43,7 @@ extension AppModel {
         }
         // A sleeping display shares nothing and shows no meeting: reading every window then is for no one. The tick after
         // it wakes reads again.
-        if EnergyMonitor.shared.plan.reasons.contains(.displayAsleep) { return }
+        if EnergyMonitor.shared.plan.unseen { return }
         let interval = settings.quietWhileSharing == .normal ? 2 * EnergyMonitor.shared.plan.slowdown : 2
         guard Date().timeIntervalSince(lastQuietTick) >= interval - 0.5, !quietReading else { return }
         guard !demoMode else { return quietTick() }
