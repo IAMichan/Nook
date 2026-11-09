@@ -9,8 +9,8 @@ import EventKit
 /// lives in exactly one place and each page holds one subject, short enough to take in at once: a page that grew past a
 /// few groups is split into pages of its own (never tabs), and a list that grows with your data can be
 /// searched.
-/// A page whose main step is adding something (a chat app, a connection, a machine) has that button in its header
-/// (`headerAction`).
+/// A page whose main step is adding something (a chat app, a connection, a machine) has that button in the header of
+/// its list.
 enum SettingsSection: String, CaseIterable, Identifiable {
     case start, general, appearance, notch, notifications, notificationApps, sound, shortcuts,
          brain, assistant, memory,
@@ -84,22 +84,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .chat, .add(.chats): return .chats
         default: return .connections
         }
-    }
-}
-
-/// The button in a page's header that does the page's main step (link a chat app, add a connection, add a machine):
-/// always in sight, however long the page. The page that owns the step listens and opens its sheet.
-@MainActor
-final class SettingsPageAction: ObservableObject {
-    static let shared = SettingsPageAction()
-    /// The page whose main step was asked for; the page clears it once it acted.
-    @Published var requested: SettingsSection?
-
-    /// The header button of `section`, if it has one: its title and symbol.
-    /// None any more:, adding sits in the header of the list it adds to ("+ Add machine"), once per page.
-    /// `requested` stays, so a link elsewhere in Nook can still open a page's add sheet.
-    static func button(for section: SettingsSection) -> (title: String, symbol: String)? {
-        nil
     }
 }
 
