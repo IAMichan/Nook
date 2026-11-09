@@ -60,10 +60,18 @@ final class NotchController {
     /// The last meeting and sharing state (`applyQuiet`), combined with the notch turned off in Settings (`applyHiding`).
     private var quiet = QuietState.normal
 
+    /// With the notch turned off, what you call up on a screen (Double Tap) shows on that screen, not the one chosen
+    /// for the notch (`showOnScreenInUse`). Kept a moment after Nook is back at rest: a run's steps follow its prompt.
+    private var summonedScreen: CGRect?
+    private var summonedRelease: DispatchWorkItem?
+
     private var isFloating: Bool { settings.placement == "floating" }
     private var showsOnAllScreens: Bool { !isFloating && settings.notchOnAllScreens }
 
     private func makeGeometry() -> NotchGeometry {
+        if let summonedScreen, let screen = NSScreen.screens.first(where: { $0.frame == summonedScreen }) {
+            return NotchGeometry.make(for: screen, floating: isFloating)
+        }
         let choice = showsOnAllScreens ? "mouse" : settings.screenChoice
         // Two displays of the same model share a name: the one the notch is on already stays, rather than the first.
         let current = NSScreen.screens.first { $0.frame == geometry.screenFrame && $0.localizedName == choice }
@@ -151,6 +159,7 @@ final class NotchController {
                 // Shown first: a hidden notch cannot take the keyboard.
                 self?.updateVisibility()
                 self?.stateChanged(state)
+                self?.releaseSummonedScreenWhenResting(state)
                 if !state.isResting { self?.cancelAnnouncement() }
             }
             .store(in: &cancellables)
@@ -364,6 +373,34 @@ final class NotchController {
         positionPanel()
         refreshMirrors()
         reassertPanels()
+    }
+
+    /// With the notch turned off, Nook has no place of its own on screen: what you call up yourself (Double Tap) opens
+    /// on the screen you work on, so you see it where you asked. With the notch on it stays where you put it.
+    func showOnScreenInUse() {
+        guard !settings.showNotch, let screen = NotchGeometry.screenInUse() else { return }
+        summonedRelease?.cancel()
+        summonedRelease = nil
+        summonedScreen = screen.frame
+        guard screen.frame != geometry.screenFrame else { return }
+        screenChanged()
+    }
+
+    /// Back at rest for a few seconds: the notch returns to its own screen. The pause lets the steps of a run that the
+    /// prompt started show on the same screen.
+    private func releaseSummonedScreenWhenResting(_ state: NotchState) {
+        guard summonedScreen != nil else { return }
+        summonedRelease?.cancel()
+        summonedRelease = nil
+        guard state.isResting else { return }
+        let release = DispatchWorkItem { [weak self] in
+            guard let self, self.viewModel.state.isResting else { return }
+            self.summonedScreen = nil
+            self.summonedRelease = nil
+            self.screenChanged()
+        }
+        summonedRelease = release
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: release)
     }
 
     /// Floating: the shape stays under the pointer while you drag it, also across the edge onto another connected

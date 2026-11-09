@@ -137,7 +137,11 @@ extension AppModel {
             guard let self, case .done(let shown) = self.viewModel.state, shown == last else { return }
             self.viewModel.endWork()
         }
-        doubleTap.onAsk = { [weak self] in self?.presentTakeoverPrompt() }
+        doubleTap.onAsk = { [weak self] in
+            // With the notch off, the prompt opens on the screen where you tapped, not on the notch's own screen.
+            self?.notch.showOnScreenInUse()
+            self?.presentTakeoverPrompt()
+        }
         doubleTap.refresh()
     }
 
