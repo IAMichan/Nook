@@ -7,7 +7,7 @@ extension WorkspaceManager {
     /// The program that starts this session's agent: its path on this Mac, or on another machine just its name (the
     /// remote login shell finds it).
     func launchExecutable(_ run: WorkspaceRun) -> String? {
-        run.remote != nil ? run.provider.kind.command : executable(run.provider)
+        run.remote != nil ? run.provider.kind.command : executable(run.provider, profileID: run.profileID)
     }
 
     /// Nook's tools for the agent. On another machine they wait until the server is there (`prepareRemoteBridge`): a session
@@ -65,6 +65,9 @@ extension WorkspaceManager {
     /// The launch as this session needs it: unchanged here, through ssh for a session on another machine. An ACP agent
     /// you added takes its own variables along; local account folders stay here.
     func placed(_ spec: LaunchSpec, for run: WorkspaceRun) -> LaunchSpec {
+        // The arguments the account adds go on every launch of its agent, here or over ssh.
+        var spec = spec
+        spec.arguments += accountArguments(run.profileID)
         guard let remote = run.remote else { return spec }
         let environment = run.provider == .acp ? (CustomAgents.agent(for: run.profileID)?.environment ?? [:]) : [:]
         let forward = bridge(for: run.id)?.remote.map { RemoteBridge.forward(socket: $0.socket, local: NookPaths.remoteBridgeSocketURL.path) } ?? []

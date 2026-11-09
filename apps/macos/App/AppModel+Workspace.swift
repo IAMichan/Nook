@@ -231,6 +231,9 @@ extension AppModel {
             guard let self, let profile = self.profiles.profile(id: profileID) else { return [:] }
             return self.profiles.launchEnvironment(profile)
         }
+        workspace.accountExecutable = { [weak self] profileID in self?.profiles.profile(id: profileID)?.executableOverride }
+        workspace.accountArguments = { [weak self] profileID in self?.profiles.profile(id: profileID)?.launchArguments ?? [] }
+        workspace.accountModels = { [weak self] profileID in self?.profiles.profile(id: profileID)?.customModels ?? [] }
         workspace.accountHome = { [weak self] profileID in self?.profiles.profile(id: profileID)?.homeURL.path ?? profileID }
         // "Auto" picks among every connected agent and account that Settings › Workspace › Auto model choice allows.
         workspace.autoAccounts = { [weak self] in
