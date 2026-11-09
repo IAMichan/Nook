@@ -36,6 +36,7 @@ struct RemoteMachinesSection: View {
             AddMachineSheet(start: adding.start) { machine in
                 RemoteMachines.upsert(machine)
                 machines = RemoteMachines.load()
+                ToastCenter.shared.success(tr("connection.added", machine.name))
                 test(machine)
             }
         }
@@ -50,58 +51,53 @@ struct RemoteMachinesSection: View {
         }
     }
 
-    /// Every machine with what its last test said, and Lock, Test and Remove.
+    /// Every machine in the one connection row: its address and how its last test went on the line under its name,
+    /// Test and Lock in its "…" menu with Remove last, and its details (key file, password, last use) once opened.
     private var list: some View {
         Section {
             ForEach(machines) { machine in
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                    HStack(spacing: NookTheme.Spacing.md) {
-                        Image(systemName: "server.rack").foregroundStyle(NookTheme.textSecondary)
-                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                            Text(machine.name).font(NookTheme.TextStyle.strong)
-                            Text(machine.host + (machine.port.map { ":\($0)" } ?? ""))
-                                .font(NookTheme.mono(11))
-                                .foregroundStyle(NookTheme.textSecondary)
-                            if let key = machine.identityFile {
-                                Text(tr("remote.keyFile.shown", key))
-                                    .font(NookTheme.mono(11))
-                                    .foregroundStyle(NookTheme.textSecondary)
-                            }
-                            if machine.usesPassword, RemotePasswords.shared.isKept(machine.id) {
-                                Text(tr("remote.password.inKeychain"))
-                                    .font(NookTheme.TextStyle.detail)
-                                    .foregroundStyle(NookTheme.textSecondary)
-                            }
-                            Text(machine.lastUsedAt.map { tr("remote.lastUsed", $0.formatted(.relative(presentation: .named))) }
-                                 ?? tr("remote.neverUsed"))
-                                .font(NookTheme.TextStyle.detail)
-                                .foregroundStyle(NookTheme.textSecondary)
-                            if let result = results[machine.id] {
-                                SettingNote(result.text, tone: result.ok ? .success : .warning)
-                            }
-                        }
-                        Spacer()
-                        if machine.usesPassword, RemotePasswords.shared.password(for: machine.id) != nil {
-                            Button(tr("remote.password.lock")) {
-                                RemotePasswords.shared.set(nil, for: machine.id)
-                                results[machine.id] = nil
-                                machines = RemoteMachines.load()
-                            }
-                            .help(tr("remote.password.lock.help"))
-                        }
-                        if testing.contains(machine.id) {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Button(tr("remote.test")) { test(machine) }
-                        }
-                        ConfirmedButton(symbol: "trash", title: tr("remote.remove"), question: tr("confirm.remove", machine.name),
-                                        detail: tr("confirm.removeMachine.detail")) {
-                            RemoteMachines.remove(id: machine.id)
+                let result = results[machine.id]
+                ConnectionRow(title: machine.name,
+                              status: testing.contains(machine.id) ? .connecting
+                                  : result.map { $0.ok ? .connected : .unreachable } ?? .notLinked,
+                              statusText: testing.contains(machine.id) ? tr("remote.testing")
+                                  : result.map { $0.ok ? tr("remote.reachable") : tr("remote.unreachable") } ?? tr("remote.untested"),
+                              detail: machine.host + (machine.port.map { ":\($0)" } ?? ""),
+                              removal: ConnectionRemoval(title: tr("remote.remove"), question: tr("confirm.remove", machine.name),
+                                                         detail: tr("confirm.removeMachine.detail")) {
+                                  RemoteMachines.remove(id: machine.id)
+                                  RemotePasswords.shared.set(nil, for: machine.id)
+                                  machines = RemoteMachines.load()
+                              },
+                              startsOpen: askPassword.contains(machine.id)) {
+                    Image(systemName: "server.rack")
+                        .font(NookTheme.font(16))
+                        .foregroundStyle(NookTheme.textSecondary)
+                } menu: {
+                    Button(tr("remote.test")) { test(machine) }
+                        .disabled(testing.contains(machine.id))
+                    if machine.usesPassword, RemotePasswords.shared.password(for: machine.id) != nil {
+                        Button(tr("remote.password.lock")) {
                             RemotePasswords.shared.set(nil, for: machine.id)
+                            results[machine.id] = nil
                             machines = RemoteMachines.load()
                         }
-                        .labelled(tr("remote.remove"))
-                        .buttonStyle(.borderless)
+                    }
+                } expanded: {
+                    if let result {
+                        SettingNote(result.text, tone: result.ok ? .success : .warning)
+                    }
+                    if let key = machine.identityFile {
+                        LabeledContent(tr("remote.keyFile")) {
+                            Text(key).font(NookTheme.mono(11)).foregroundStyle(NookTheme.textSecondary)
+                        }
+                    }
+                    if machine.usesPassword, RemotePasswords.shared.isKept(machine.id) {
+                        SettingNote(tr("remote.password.inKeychain"))
+                    }
+                    LabeledContent(tr("remote.lastUsedTitle")) {
+                        Text(machine.lastUsedAt.map { $0.formatted(.relative(presentation: .named)) } ?? tr("remote.neverUsed"))
+                            .foregroundStyle(NookTheme.textSecondary)
                     }
                     if askPassword.contains(machine.id) || !RemotePasswords.shared.isUnlocked(machine) {
                         RemotePasswordField(machine: machine) { _ in
@@ -109,12 +105,12 @@ struct RemoteMachinesSection: View {
                             machines = RemoteMachines.load()
                             test(machine)
                         }
-                        .padding(.leading, NookTheme.Spacing.xxl)
                     }
                 }
             }
         } header: {
-            SettingsSectionTitle(tr("remote.title"), info: tr("remote.footer"))
+            ConnectionListHeader(title: tr("remote.title"), info: tr("remote.footer"),
+                                 add: (tr("remote.add"), { adding = .blank }))
         }
     }
 
@@ -127,7 +123,7 @@ struct RemoteMachinesSection: View {
     /// No machine yet: what one is for, and the ones Nook found on this Mac, each one click from the form filled in.
     private var empty: some View {
         Section {
-            IntroCard(title: tr("remote.empty.title"), text: tr("remote.empty.text"))
+            ConnectionListEmpty(title: tr("remote.empty.title"), detail: tr("remote.empty.text"))
             if !found.isEmpty {
                 Text(tr("remote.found"))
                     .font(NookTheme.TextStyle.detail)
@@ -142,6 +138,9 @@ struct RemoteMachinesSection: View {
                     }
                 }
             }
+        } header: {
+            ConnectionListHeader(title: tr("remote.title"), info: tr("remote.footer"),
+                                 add: (tr("remote.add"), { adding = .blank }))
         }
     }
 

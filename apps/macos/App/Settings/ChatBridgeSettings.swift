@@ -25,11 +25,7 @@ struct TelegramSettingsRows: View {
             if case .failed(let why) = telegram.state {
                 StatusRow(title: tr("chats.telegram.failed"), detail: why, state: .error) { EmptyView() }
             }
-            HStack {
-                SettingLabel(tr("chats.telegram.connect"), detail: tr("chats.telegram.connectDetail"))
-                Spacer()
-                Button(tr("chats.telegram.connect")) { telegram.start() }
-            }
+            StepAction(detail: tr("chats.telegram.connectDetail"), button: tr("chats.telegram.connect")) { telegram.start() }
             TelegramKeysButton(telegram: telegram)
         case .starting:
             HStack(spacing: NookTheme.Spacing.sm) {
@@ -171,19 +167,12 @@ struct TeamsSettingsRows: View {
         if let why = web.problem, !web.isSigningIn {
             StatusRow(title: tr("chats.teams.failed"), detail: why, state: .error) { EmptyView() }
         }
-        HStack {
-            if web.accounts.isEmpty {
-                SettingLabel(tr("chats.teams.web.signIn"), detail: tr("chats.teams.web.signInDetail"))
-                Spacer()
-                Button(tr("chats.teams.signIn")) { signInOnWeb() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(web.isSigningIn)
-            } else {
-                SettingLabel(tr("chats.teams.addAccount"), detail: tr("chats.teams.web.addAccountDetail"))
-                Spacer()
-                Button(tr("chats.teams.addAccount")) { signInOnWeb() }
-                    .disabled(web.isSigningIn)
-            }
+        if web.accounts.isEmpty {
+            StepAction(detail: tr("chats.teams.web.signInDetail"),
+                       button: tr("chats.teams.signIn"), disabled: web.isSigningIn) { signInOnWeb() }
+        } else {
+            StepAction(detail: tr("chats.teams.web.addAccountDetail"), button: tr("chats.teams.addAccount"),
+                       prominent: false, disabled: web.isSigningIn) { signInOnWeb() }
         }
         // With Nook's own app in Microsoft Entra, accounts can also be added through Microsoft Graph with a code.
         if TeamsBridge.clientID != nil {
@@ -221,15 +210,9 @@ struct TeamsSettingsRows: View {
             if case .failed(let why) = teams.state {
                 StatusRow(title: tr("chats.teams.failed"), detail: why, state: .error) { EmptyView() }
             }
-            HStack {
-                if teams.accounts.isEmpty {
-                    SettingLabel(tr("chats.teams.signIn"), detail: tr("chats.teams.signInDetail"))
-                } else {
-                    SettingLabel(tr("chats.teams.addAccount"), detail: tr("chats.teams.addAccountDetail"))
-                }
-                Spacer()
-                Button(teams.accounts.isEmpty ? tr("chats.teams.signIn") : tr("chats.teams.addAccount")) { teams.signIn() }
-            }
+            StepAction(detail: tr(teams.accounts.isEmpty ? "chats.teams.signInDetail" : "chats.teams.addAccountDetail"),
+                       button: teams.accounts.isEmpty ? tr("chats.teams.signIn") : tr("chats.teams.addAccount"),
+                       prominent: false) { teams.signIn() }
         }
     }
 }
@@ -254,13 +237,8 @@ struct SlackSettingsRows: View {
                 ChatLinkedAccountRow(app: capture.slackBridge.app, title: tr("chats.slack.connected"),
                                      detail: tr("chats.slack.connectedDetail"))
             } else if SlackBridge.token == nil {
-                HStack {
-                    SettingLabel(tr("chats.slack.web.signIn"), detail: tr("chats.slack.web.signInDetail"))
-                    Spacer()
-                    Button(tr("chats.slack.signIn")) { signIn() }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(web.isSigningIn)
-                }
+                StepAction(detail: tr("chats.slack.web.signInDetail"),
+                           button: tr("chats.slack.signIn"), disabled: web.isSigningIn) { signIn() }
             }
             if web.auth == nil, showsToken {
                 DisclosureGroup(isExpanded: $usesToken) {

@@ -10,6 +10,8 @@ struct ChatAppNoticeRows: View {
     @ObservedObject private var capture = ChatCaptureService.shared
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var store = ChatNoticeRulesStore.shared
+    /// Opened in its row on Chat apps, where the row's own switch already shows it in Chats.
+    @Environment(\.sheetEmbedded) private var embedded
 
     private var name: String { MessagingApps.app(id: app)?.name ?? app }
 
@@ -20,7 +22,7 @@ struct ChatAppNoticeRows: View {
     var body: some View {
         // A linked phone brings WhatsApp's chats by itself (its own switch, with its accounts): only the others are
         // collected and so have one here.
-        if app != capture.whatsAppGatewayBridge.app {
+        if app != capture.whatsAppGatewayBridge.app, !embedded {
             SettingToggle(tr("chats.apps.showInChats", name), detail: tr("chats.manage.showDetail"),
                           isOn: Binding(get: { capture.enabled && capture.sources.isOn(app) }, set: { on in
                               capture.setSource(app, on: on)

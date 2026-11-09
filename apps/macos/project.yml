@@ -236,6 +236,8 @@ targets:
       - path: Core/I18n+PolishRendering.swift
       - path: Core/I18n+PolishSettings.swift
       - path: Core/I18n+SettingsPages.swift
+      - path: Core/I18n+ConnectionsAgents.swift
+      - path: Core/I18n+ConnectionsDevices.swift
       - path: Core/I18n+AgentTools.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift

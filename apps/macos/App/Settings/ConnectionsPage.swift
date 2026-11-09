@@ -52,8 +52,8 @@ struct ConnectionsPage: View {
     var body: some View {
         let options = ConnectionCatalog.options(app)
         let chats = linkedChats
-        let services = Services(cloud: connectedCloud, remote: linkedRemote,
-                                gitLab: GitLabCredentials.hosts.filter { matches("GitLab " + $0) })
+        // GitLab's tokens for pull requests live with the other code hosts on Code › Pull requests, not here twice.
+        let services = Services(cloud: connectedCloud, remote: linkedRemote)
         let own = mcpStore.servers.filter { $0.serviceID == nil && matches($0.name) }
         let nothingLinked = query.isEmpty && services.isEmpty && own.isEmpty && !spotify.isSignedIn
 
@@ -125,9 +125,8 @@ struct ConnectionsPage: View {
     private struct Services {
         var cloud: [ContextSource]
         var remote: [MCPRemoteService]
-        var gitLab: [String]
 
-        var isEmpty: Bool { cloud.isEmpty && remote.isEmpty && gitLab.isEmpty }
+        var isEmpty: Bool { cloud.isEmpty && remote.isEmpty }
     }
 
     // MARK: Sections
@@ -148,15 +147,20 @@ struct ConnectionsPage: View {
     private func chatsSection(_ chats: [ChatAppState], _ options: [ConnectionOption]) -> some View {
         Section {
             // Nothing linked yet: what the page is for, and the header's button links the first one.
-            if chats.isEmpty { IntroCard(title: tr("hub.empty.title"), text: tr("settings.chats.empty")) }
+            if chats.isEmpty {
+                ConnectionListEmpty(title: tr("hub.empty.title"), detail: tr("connection.emptyChats"))
+            }
             ForEach(chats) { chatRow($0, options) }
         } header: {
-            SettingText("hub.chats")
+            ConnectionListHeader(title: tr("hub.chats"), add: (tr("hub.chats.add"), { sheet = Sheet(category: .chats) }))
         }
     }
 
     private func servicesSection(_ services: Services) -> some View {
         Section {
+            if services.isEmpty {
+                ConnectionListEmpty(title: tr("connection.emptyServices.title"), detail: tr("connection.emptyServices"))
+            }
             ForEach(services.cloud.indices, id: \.self) { index in
                 CloudConnectorViews.row(services.cloud[index], capabilities: capabilityLine(services.cloud[index].id), onChange: refresh)
             }
@@ -164,25 +168,17 @@ struct ConnectionsPage: View {
                 MCPServiceRow(service: service, keyAlternative: cloudSource(service.id),
                               capabilities: capabilityLine(service.id), onChange: refresh)
             }
-            ForEach(services.gitLab, id: \.self) { host in
-                GitLabHostRow(host: host) { refreshTick += 1 }
-            }
         } header: {
-            SettingText("hub.services")
+            ConnectionListHeader(title: tr("hub.services"), add: (tr("hub.add"), { sheet = Sheet() }))
         }
     }
 
     private func ownSection(_ own: [MCPServerConfig]) -> some View {
         Section {
             ForEach(own) { MCPServerCardRow(config: $0) }
-            Button {
-                sheet = Sheet(option: ConnectionCatalog.customServer)
-            } label: {
-                Label(tr("hub.own.add"), systemImage: "plus")
-            }
-            .buttonStyle(.link)
         } header: {
-            SettingsSectionTitle(tr("hub.own"), info: tr("settings2.connections.missingDetail"))
+            ConnectionListHeader(title: tr("hub.own"), info: tr("settings2.connections.missingDetail"),
+                                 add: (tr("hub.own.add"), { sheet = Sheet(option: ConnectionCatalog.customServer) }))
         }
     }
 
@@ -217,27 +213,21 @@ struct ConnectionsPage: View {
 
     // MARK: Rows
 
-    /// A linked chat app: its state, the switch that shows its chats, and Manage (its sheet).
+    /// A linked chat app in the one connection row: the switch shows its chats in Chats (off keeps the link), and opening
+    /// it manages it in place: its accounts, what it does in Nook, troubleshooting.
     private func chatRow(_ state: ChatAppState, _ options: [ConnectionOption]) -> some View {
-        ServiceRowLayout(domain: state.site, symbol: "bubble.left.and.bubble.right.fill", tint: NookTheme.iris, title: state.name,
-                         detail: state.detail, status: state.status, detailIsError: state.detailIsError, source: state.id) {
-            // Says what it switches, beside it: a bare switch in a row of buttons read as "on/off" for the whole app.
-            Toggle(tr("settings.chats.inChats"), isOn: Binding(get: { state.isOn }, set: { on in
-                capture.setSource(state.id, on: on)
-                if on, !capture.enabled { ChatCollecting.set(true) }
-            }))
-            .toggleStyle(.switch)
-            .font(NookTheme.TextStyle.detail)
-            .foregroundStyle(NookTheme.textSecondary)
-            .controlSize(.small)
-            .help(tr("chats.apps.showInChats", state.name))
-            let needsYou = state.status == .expired || state.status == .unreachable
-            Button(needsYou ? tr("settings2.fix") : tr("settings2.manage")) {
-                sheet = Sheet(option: options.first { $0.id == "chat." + state.id })
-            }
-            .buttonStyle(.bordered)
-            .tint(needsYou ? NookTheme.amber : nil)
-            .controlSize(.small)
+        ConnectionRow(title: state.name, status: state.status, detail: state.detail,
+                      isOn: Binding(get: { state.isOn }, set: { on in
+                          capture.setSource(state.id, on: on)
+                          if on, !capture.enabled { ChatCollecting.set(true) }
+                      }),
+                      startsOpen: route.pending.map { if case .chat(state.id) = $0 { return true } else { return false } } ?? false) {
+            ServiceTile(domain: state.site, fallback: "bubble.left.and.bubble.right.fill", tint: NookTheme.iris, size: 28,
+                        source: state.id)
+        } menu: {
+            Button(tr("chats.link.another")) { sheet = Sheet(option: options.first { $0.id == "chat." + state.id }) }
+        } expanded: {
+            ChatAppSheet(app: state.id, setCollecting: { ChatCollecting.set($0) })
         }
     }
 
@@ -296,30 +286,34 @@ struct ConnectionsPage: View {
             .filter { matches($0.title) }
     }
 
+    /// An app on this Mac in the one connection row: the switch lets Nook read it, and opening it says what Nook can do
+    /// with it and when it last looked.
     private func localRow(_ source: ContextSource) -> some View {
         // The clipboard and the chats from every notification are yours to turn on.
         let fallback = source.id != "clipboard" && source.id != ChatInboxConnector.sourceID
-        return Toggle(isOn: Binding(
-            get: { let _ = refreshTick; return ConnectorToggle.isOn(source.id, default: fallback) },
-            set: { on in
-                ConnectorToggle.set(source.id, on)
-                refreshTick += 1
-                app.connectors.refresh(source)
+        let on = ConnectorToggle.isOn(source.id, default: fallback)
+        let _ = refreshTick
+        return ConnectionRow(title: source.title,
+                             status: isFailing(source) ? .unreachable : (on ? .connected : .off),
+                             statusText: isFailing(source) ? tr("settings2.health.broken") : (on ? tr("connection.reads") : nil),
+                             detail: localDetail(source),
+                             isOn: Binding(
+                                 get: { let _ = refreshTick; return ConnectorToggle.isOn(source.id, default: fallback) },
+                                 set: { on in
+                                     ConnectorToggle.set(source.id, on)
+                                     refreshTick += 1
+                                     app.connectors.refresh(source)
+                                 })) {
+            SiteIcon(domain: source.iconDomain, fallback: source.symbol, tint: source.accent, size: 22, source: source.id)
+        } menu: {
+            Button(tr("connector.retry")) { app.connectors.refresh(source) }
+        } expanded: {
+            SheetPart(tr("sheet.part.canDo")) {
+                SettingNote(capabilityLine(source.id).isEmpty ? tr("connection.canDoUnknown") : capabilityLine(source.id))
             }
-        )) {
-            HStack(spacing: NookTheme.Spacing.md) {
-                SiteIcon(domain: source.iconDomain, fallback: source.symbol, tint: source.accent, size: 20, source: source.id)
-                    .frame(width: 22)
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    Text(source.title)
-                    Text(localDetail(source))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(isFailing(source) ? NookTheme.coral : NookTheme.textSecondary)
-                        .lineLimit(1)
-                }
+            if let updated = source.status.updated {
+                SettingNote(tr("context.updated", NookDates.ago(updated)))
             }
-            // The details (what Nook reads, what needs approval) on hover: the list itself stays quiet.
-            .help(capabilityLine(source.id) + (source.status.updated.map { " · " + tr("context.updated", NookDates.ago($0)) } ?? ""))
         }
     }
 
