@@ -179,8 +179,8 @@ struct PanelView: View {
         .keyCommand("search.toggle", enabled: sheet == nil && !app.demoMode) { searching.toggle() }
         // F6 between the window's parts; ⌘W, ⌘D and ⇧⌘D in a terminal.
         .windowKeyCommands()
-        // Short results from anywhere in Nook (saved, approved, failed) show over the panel's bottom edge, and above them
-        // what waits for you there: a permission request, an agent's question, a short note.
+        // Short results from anywhere in Nook (saved, approved, failed) show in the panel's top-right corner; what waits
+        // for you (a permission request, an agent's question, a short note) floats over its bottom edge.
         .nookToastHost {
             if sheet == nil {
                 PanelApprovalBar(viewModel: viewModel, tab: tab, sheet: sheet, hub: app.hub, workspace: app.workspace)
