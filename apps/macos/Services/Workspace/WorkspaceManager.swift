@@ -755,7 +755,8 @@ final class WorkspaceManager: ObservableObject {
         events[id] = []
         settings.rememberProject(repoRoot ?? projectPath)
         selectedRunID = id
-        if visibleTask != config.task { displayPrompt[id] = visibleTask }
+        let shownTask = ContextRefs.timeline(config.task, folder: workingDirectory)
+        if shownTask != config.task { displayPrompt[id] = shownTask }
         if let worktreePath, let root = repoRoot {
             append(id, RunEvent(kind: .system, text: tr("ws.event.worktreeCreated", branch ?? "", AgentPathFormat.tilde(worktreePath))))
             append(id, RunEvent(kind: .user, text: shownPrompt(id, config.task)))
@@ -1078,7 +1079,7 @@ final class WorkspaceManager: ObservableObject {
         // its working state immediately, and the turn goes out right after the snapshot so its edits stay out of it.
         if checkpointing.contains(id) {
             loadTimeline(id)
-            if !shown { append(id, RunEvent(kind: .user, text: ContextRefs.visible(clean))) }
+            if !shown { append(id, RunEvent(kind: .user, text: shownMessage(id, clean))) }
             awaitingCheckpoint[id] = clean
             update(id) { $0.move(to: .preparing) }
             return true
@@ -1097,7 +1098,7 @@ final class WorkspaceManager: ObservableObject {
         }
         // After a fork or a switch of agent the first turn starts with the summary; it stays until a turn ends well.
         // What the timeline shows: your words, without a handoff summary or the context envelope of references.
-        let visible = ContextRefs.visible(clean)
+        let visible = shownMessage(id, clean)
         displayPrompt[id] = run.pendingHandoff == nil && visible == clean ? nil : visible
         // What MCP apps told the agent goes with this turn: Codex over app-server takes it as context of its own, every
         // other agent (Codex over `codex exec` too) ahead of the message.
