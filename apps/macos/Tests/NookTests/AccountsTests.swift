@@ -69,4 +69,21 @@ final class AccountsTests: XCTestCase {
         XCTAssertEqual(AccountRegistry.slug("Café"), "cafe")
         XCTAssertEqual(AccountRegistry.slug("***"), "account")
     }
+
+    // MARK: Agent account options (per-instance settings)
+
+    func testVariableNamesFollowTheShellRule() {
+        XCTAssertTrue(AccountVariable.isValidName("HTTPS_PROXY"))
+        XCTAssertTrue(AccountVariable.isValidName("_x1"))
+        XCTAssertFalse(AccountVariable.isValidName("1X"))
+        XCTAssertFalse(AccountVariable.isValidName("A-B"))
+        XCTAssertFalse(AccountVariable.isValidName(""))
+    }
+
+    func testSensitiveVariableNeverCarriesItsValueInTheStoredForm() throws {
+        let stored = AccountVariable(name: "TOKEN", value: "", sensitive: true)
+        let back = try JSONDecoder().decode(AccountVariable.self, from: JSONEncoder().encode(stored))
+        XCTAssertEqual(back, stored)
+        XCTAssertEqual(back.value, "")
+    }
 }
