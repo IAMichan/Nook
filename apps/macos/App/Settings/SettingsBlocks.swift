@@ -580,10 +580,13 @@ struct WorkspaceSettingsSection: View {
         inheritable(.branchPrefix, path) {
             LabeledContent {
                 HStack {
-                    TextField(resolved.branchPrefix, text: Binding(
+                    TextField("", text: Binding(
                         get: { overrideText(.branchPrefix, path) ?? resolved.branchPrefix },
-                        set: { ws.setOverride(.branchPrefix, $0, for: path) }))
+                        set: { ws.setOverride(.branchPrefix, $0, for: path) }), prompt: Text(resolved.branchPrefix))
                         .textFieldStyle(.roundedBorder)
+                        // The row already has its label: a titled field in a form would show the prefix a second time.
+                        .labelsHidden()
+                        .accessibilityLabel(tr("settings.ws.branchPrefix"))
                         .frame(width: 160)
                     Text(tr("settings.ws.branchPrefix.example", resolved.branchPrefix))
                         .foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
@@ -751,7 +754,7 @@ struct WorkspaceSettingsSection: View {
             Picker(selection: $ws.commitStyle) {
                 ForEach(CommitStyle.allCases) { Text(tr("settings.ws.commitStyle." + $0.rawValue)).tag($0) }
             } label: {
-                SettingText("settings.ws.commitStyle")
+                SettingText("settings.ws.commitStyle.row")
             }
             if ws.commitStyle == .custom {
                 TextField(tr("settings.ws.commitInstructions"), text: $ws.commitInstructions,
@@ -810,8 +813,10 @@ struct WorkspaceSettingsSection: View {
             }
             LabeledContent {
                 HStack {
-                    TextField(WorktreeNaming.defaultBranchPrefix, text: $ws.branchPrefix)
+                    TextField("", text: $ws.branchPrefix, prompt: Text(WorktreeNaming.defaultBranchPrefix))
                         .textFieldStyle(.roundedBorder)
+                        .labelsHidden()
+                        .accessibilityLabel(tr("settings.ws.branchPrefix"))
                         .frame(width: 160)
                         .onSubmit { ws.branchPrefix = WorktreeNaming.normalizedBranchPrefix(ws.branchPrefix) }
                     Text(tr("settings.ws.branchPrefix.example", WorktreeNaming.normalizedBranchPrefix(ws.branchPrefix)))

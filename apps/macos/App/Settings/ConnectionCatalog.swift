@@ -61,7 +61,11 @@ struct ConnectionOption: Identifiable {
 @MainActor
 enum ConnectionCatalog {
     /// The few shown on an empty page, so a first link is one click away.
-    static let featured = ["chat.whatsapp", "chat.telegram", "chat.slack", "service.github", "signin.notion", "signin.linear"]
+    /// The services most people link first, shown on Connections while nothing is linked.
+    static let featuredServices = ["service.github", "signin.notion", "signin.linear", "signin.atlassian", "signin.stripe",
+                                   "signin.vercel"]
+    /// The chat apps most people link first, shown on Chat apps while none is linked: chat apps live on their own page.
+    static let featuredChats = ["chat.whatsapp", "chat.telegram", "chat.slack"]
 
     static func options(_ app: AppModel) -> [ConnectionOption] {
         var options: [ConnectionOption] = []

@@ -5,9 +5,6 @@ import Foundation
 
 let redesignTranslations: [AppLanguage: [String: String]] = [
     .nl: [
-        "settings.group.nook": "Nook",
-        "settings.group.intelligence": "Intelligentie",
-        "settings.group.connect": "Verbinden",
         "settings.group.security": "Beveiliging",
         "settings.section.display": "Weergave",
         "settings.section.display.sub": "Taal en waar Nook op je scherm staat",
@@ -21,7 +18,6 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "settings.agents.tab.accounts": "Accounts",
         "settings.agents.tab.usage": "Gebruik",
         "settings.agents.tab.workspace": "Werkruimte",
-        "settings.section.assistant.sub": "Wat Nook ziet, doet en zegt",
         // Everything in the notch
         "compose.heading": "Wat zullen we bouwen in ",
         "compose.pickProject": "welke map",
@@ -48,8 +44,6 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "appmenu.window": "Venster",
         "appmenu.minimize": "Minimaliseer",
         "appmenu.close": "Sluit venster",
-        "settings.section.usage": "Gebruik",
-        "settings.section.usage.sub": "Limieten van je abonnementen, en tokens en kosten van je agents.",
         "settings.usage.claudeMissing": "nog niet bekend: koppel de Claude-statusregel bij Agents",
         "settings.usage.codexMissing": "niet gevonden",
         "settings.usage.brain": "Brein van Nook",
@@ -200,8 +194,6 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         // Redesigned Settings & MCP
         "settings.section.mcp": "MCP-koppelingen",
         "settings.section.mcp.sub": "Koppel extra apps en tools via Model Context Protocol",
-        "settings.section.connections": "Apps & accounts",
-        "settings.section.connections.sub": "Kalender, Mail, bestanden en al je online diensten",
         "settings2.health.working": "Klaar voor gebruik",
         "settings2.health.busy": "Bezig…",
         "settings2.health.off": "Uitgeschakeld",
@@ -265,7 +257,6 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "mcp.wizard.stepName": "Geef de koppeling een herkenbare naam",
         "mcp.wizard.stepKeys": "Voer eventuele sleutels in",
         "mcp.wizard.getKeySite": "Haal sleutel op",
-        "mcp.wizard.optionalEnv": "Optioneel: Geavanceerde omgevingsvariabelen",
         "mcp.status.ready": "Actief en gereed voor gebruik",
         "mcp.details.view": "Bekijk tools & details",
         "mcp.details.commandTitle": "Opdracht of adres",
@@ -276,9 +267,6 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "button.login": "Inloggen",
     ],
     .en: [
-        "settings.group.nook": "Nook",
-        "settings.group.intelligence": "Intelligence",
-        "settings.group.connect": "Connect",
         "settings.group.security": "Security",
         "settings.section.display": "Display",
         "settings.section.display.sub": "Language and where Nook sits on your screen",
@@ -292,7 +280,6 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "settings.agents.tab.accounts": "Accounts",
         "settings.agents.tab.usage": "Usage",
         "settings.agents.tab.workspace": "Workspace",
-        "settings.section.assistant.sub": "What Nook sees, does and says",
         // Everything in the notch
         "compose.heading": "What should we build in ",
         "compose.pickProject": "which folder",
@@ -319,8 +306,6 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "appmenu.window": "Window",
         "appmenu.minimize": "Minimize",
         "appmenu.close": "Close Window",
-        "settings.section.usage": "Usage",
-        "settings.section.usage.sub": "Your subscriptions' limits, and the tokens and costs of your agents.",
         "settings.usage.claudeMissing": "not known yet: link the Claude status line under Agents",
         "settings.usage.codexMissing": "not found",
         "settings.usage.brain": "Nook's brain",
@@ -467,8 +452,6 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         // Redesigned Settings & MCP
         "settings.section.mcp": "MCP Plugins",
         "settings.section.mcp.sub": "Connect apps and tools via Model Context Protocol",
-        "settings.section.connections": "Apps & Accounts",
-        "settings.section.connections.sub": "Calendar, Mail, files, and your online services",
         "settings2.health.working": "Ready to use",
         "settings2.health.busy": "Busy…",
         "settings2.health.off": "Turned off",
@@ -532,7 +515,6 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "mcp.wizard.stepName": "Give this plugin a friendly name",
         "mcp.wizard.stepKeys": "Enter any required keys",
         "mcp.wizard.getKeySite": "Get API key",
-        "mcp.wizard.optionalEnv": "Optional: Advanced environment variables",
         "mcp.status.ready": "Active and ready to use",
         "mcp.details.view": "View tools & details",
         "mcp.details.commandTitle": "Command or address",
@@ -543,9 +525,6 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "button.login": "Log in",
     ],
     .de: [
-        "settings.group.nook": "Nook",
-        "settings.group.intelligence": "Intelligenz",
-        "settings.group.connect": "Verbinden",
         "settings.group.security": "Sicherheit",
         "settings.section.display": "Darstellung",
         "settings.section.display.sub": "Sprache und wo Nook auf deinem Bildschirm sitzt",
@@ -559,7 +538,6 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "settings.agents.tab.accounts": "Konten",
         "settings.agents.tab.usage": "Nutzung",
         "settings.agents.tab.workspace": "Arbeitsbereich",
-        "settings.section.assistant.sub": "Was Nook sieht, tut und sagt",
         // Everything in the notch
         "compose.heading": "Was bauen wir in ",
         "compose.pickProject": "welchem Ordner",
@@ -586,8 +564,6 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "appmenu.window": "Fenster",
         "appmenu.minimize": "Im Dock ablegen",
         "appmenu.close": "Fenster schließen",
-        "settings.section.usage": "Nutzung",
-        "settings.section.usage.sub": "Limits deiner Abos sowie Tokens und Kosten deiner Agents.",
         "settings.usage.claudeMissing": "noch unbekannt: verbinde die Claude-Statuszeile unter Agents",
         "settings.usage.codexMissing": "nicht gefunden",
         "settings.usage.brain": "Nooks Gehirn",
@@ -734,8 +710,6 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         // Redesigned Settings & MCP
         "settings.section.mcp": "MCP-Plugins",
         "settings.section.mcp.sub": "Zusätzliche Apps und Tools über das Model Context Protocol verbinden",
-        "settings.section.connections": "Apps & Konten",
-        "settings.section.connections.sub": "Kalender, Mail, Dateien und deine Online-Dienste",
         "settings2.health.working": "Bereit zur Nutzung",
         "settings2.health.busy": "Beschäftigt…",
         "settings2.health.off": "Ausgeschaltet",
@@ -799,7 +773,6 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "mcp.wizard.stepName": "Gib diesem Plugin einen verständlichen Namen",
         "mcp.wizard.stepKeys": "Erforderliche Schlüssel eingeben",
         "mcp.wizard.getKeySite": "Schlüssel abrufen",
-        "mcp.wizard.optionalEnv": "Optional: Erweiterte Umgebungsvariablen",
         "mcp.status.ready": "Aktiv und einsatzbereit",
         "mcp.details.view": "Tools & Details anzeigen",
         "mcp.details.commandTitle": "Befehl oder Adresse",

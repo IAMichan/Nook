@@ -19,7 +19,9 @@ extension SettingsView {
                     SettingText("settings.overview.appLanguage")
                 }
                 Picker(selection: $settings.language) {
-                    ForEach(AppSettings.languages, id: \.code) { Text($0.name).tag($0.code) }
+                    ForEach(AppSettings.languages, id: \.code) { language in
+                        Text(language.code == "auto" ? tr("settings.brain.answerLanguage.auto") : language.name).tag(language.code)
+                    }
                 } label: {
                     SettingText("settings.brain.answerLanguage")
                 }

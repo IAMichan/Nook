@@ -64,6 +64,9 @@ struct NookSearchField: View {
     private var field: some View {
         let base = TextField("", text: $text, prompt: Text(prompt).foregroundStyle(NookTheme.textTertiary))
             .textFieldStyle(.plain)
+            // A grouped Settings form lines its fields up to the right; a search reads from the left, as everywhere else.
+            .multilineTextAlignment(.leading)
+            .labelsHidden()
             .font(style == .large ? NookTheme.font(14) : NookTheme.TextStyle.body)
             .foregroundStyle(NookTheme.paper)
             .onSubmit { onSubmit?() }
