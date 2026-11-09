@@ -48,9 +48,6 @@ struct AgentRunPanel: View {
     /// Counts the messages you sent from the composer (also those that steer or wait in line): each brings the
     /// conversation down to its end, wherever you had scrolled.
     @State private var sentCount = 0
-    /// Where the timeline is scrolled, and the position that keeps a message you sent in place.
-    @State private var viewport = TimelineViewport()
-    @State private var position = ScrollPosition()
     /// The timeline is taller than the view: only then the rail with your messages shows.
     @State private var overflows = false
     /// Where you left this session's conversation last time (TimelineVisitStore), read as it opens.
@@ -725,14 +722,14 @@ struct AgentRunPanel: View {
                     if run.status == .failed || run.status == .stopped {
                         recovery(run, events: events, blocks: blocks, proxy: proxy)
                     }
-                    Observing(pinRoom) { Color.clear.frame(height: pinRoom.height) }
+                    TurnPinSpacer(room: pinRoom)
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .scrollTargetLayout()
+                // The conversation's own space, so the room under a message you sent is measured between rows.
+                .coordinateSpace(name: TurnPinRoom.space)
                 .chatColumn()
             }
-            .coordinateSpace(name: TurnPinRoom.space)
-            .scrollPosition($position)
             // The files and lines of every finished turn from git (`countTurns`): again when a turn ends or a snapshot is made.
             .task(id: "\(runID)|\(memo.turns.count)|\(memo.turns.last?.files.count ?? 0)|\(run.checkpoints?.count ?? 0)") {
                 await countTurns(memo.turns, run: run)
@@ -769,7 +766,6 @@ struct AgentRunPanel: View {
                             container: geometry.containerSize.height,
                             insetTop: geometry.contentInsets.top, insetBottom: geometry.contentInsets.bottom)
             } action: { old, frame in
-                viewport.frame = frame
                 pinRoom.update(frame)
                 keepEnd(old, frame, proxy)
             }
@@ -848,14 +844,14 @@ struct AgentRunPanel: View {
     }
 
     /// Brings the message you sent near the top of the view, with room under it for the reply, until you scroll away.
+    /// The room follows once the message is laid out; the view only goes to its end, again while the layout settles.
     private func pinSent(_ id: UUID, _ proxy: ScrollViewProxy) {
-        pinRoom.hold(row: id.uuidString, in: viewport.frame)
+        pinRoom.hold(row: id.uuidString)
         scroll.sent(messageID: id)
-        DispatchQueue.main.async { proxy.scrollTo(id, anchor: .top) }
-        for delay in [0.1, 0.25, 0.4] {
+        for delay in [0.0, 0.1, 0.25, 0.4] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                guard scroll.anchorMessageID == id, let offset = pinRoom.settle(in: viewport.frame) else { return }
-                DispatchQueue.main.async { position.scrollTo(y: offset) }
+                guard scroll.anchorMessageID == id else { return }
+                proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
     }

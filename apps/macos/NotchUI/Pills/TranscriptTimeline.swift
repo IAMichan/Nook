@@ -38,9 +38,6 @@ struct TranscriptConversation: View {
     @State private var overflows = false
     /// Read only by the handlers: as state, each start and stop of a scroll drew every row of the conversation again.
     @State private var scrollPhase = Unobserved(ScrollPhase.idle)
-    /// Where the conversation is scrolled, and the position that keeps a message you sent in place.
-    @State private var viewport = TimelineViewport()
-    @State private var position = ScrollPosition()
     /// Where you left this conversation last time (TimelineVisitStore), read as it opens.
     @State private var visit: TimelineVisit?
     /// The row the "New since your last visit" line sits above; decided once the conversation has loaded.
@@ -113,16 +110,16 @@ struct TranscriptConversation: View {
                                 .foregroundStyle(NookTheme.textTertiary)
                                 .padding(.top, NookTheme.Spacing.xs)
                         }
-                        Observing(pinRoom) { Color.clear.frame(height: pinRoom.height) }
+                        TurnPinSpacer(room: pinRoom)
                         Color.clear.frame(height: 1).id("bottom")
                     }
                     .scrollTargetLayout()
+                    // The conversation's own space, so the room under a message you sent is measured between rows.
+                    .coordinateSpace(name: TurnPinRoom.space)
                     .chatColumn()
                     .padding(.vertical, NookTheme.Spacing.xs)
                 }
                 .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .coordinateSpace(name: TurnPinRoom.space)
-                .scrollPosition($position)
                 // Open at the newest message; the transcript loads after the view appears, so also follow it once it arrives.
                 .defaultScrollAnchor(.bottom, for: .initialOffset)
                 .defaultScrollAnchor(.bottom, for: .alignment)
@@ -135,7 +132,6 @@ struct TranscriptConversation: View {
                                 container: geometry.containerSize.height,
                                 insetTop: geometry.contentInsets.top, insetBottom: geometry.contentInsets.bottom)
                 } action: { old, frame in
-                    viewport.frame = frame
                     pinRoom.update(frame)
                     keepEnd(old, frame, proxy)
                 }
@@ -252,16 +248,16 @@ struct TranscriptConversation: View {
         }
     }
 
-    /// Brings a message near the top of the view, with room under it for the reply, until you scroll away.
+    /// Brings a message near the top of the view, with room under it for the reply, until you scroll away. The room
+    /// follows once the message is laid out; the view only goes to its end, again while the layout settles.
     private func pinSent(_ row: String, _ proxy: ScrollViewProxy) {
         let id = UUID()
-        pinRoom.hold(row: row, in: viewport.frame)
+        pinRoom.hold(row: row)
         scroll.sent(messageID: id)
-        DispatchQueue.main.async { proxy.scrollTo(row, anchor: .top) }
-        for delay in [0.1, 0.25, 0.4] {
+        for delay in [0.0, 0.1, 0.25, 0.4] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                guard scroll.anchorMessageID == id, let offset = pinRoom.settle(in: viewport.frame) else { return }
-                DispatchQueue.main.async { position.scrollTo(y: offset) }
+                guard scroll.anchorMessageID == id else { return }
+                proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
     }
@@ -563,8 +559,8 @@ private final class TranscriptDerived {
     }
 }
 
-/// Where the conversation is scrolled, for the handlers that keep a sent message in place. Kept out of the timeline's
-/// own state: it changes on every scroll, and no view draws from it.
+/// Where a conversation is scrolled, for handlers that read it. Kept out of the view's own state: it changes on every
+/// scroll, and no view draws from it.
 @Observable
 @MainActor
 final class TimelineViewport {
