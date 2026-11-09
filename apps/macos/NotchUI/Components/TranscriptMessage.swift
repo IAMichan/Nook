@@ -9,7 +9,7 @@ import AppKit
 // `TranscriptStyle`, `TranscriptUserBubble`, `transcriptFolded` and `TranscriptTime` are shared with the iPhone
 // (NotchUI/Shared/TranscriptParts.swift).
 
-/// What you wrote: pictures above a soft bubble on the right, a long message folded to its first lines, and on hover
+/// What you wrote: pictures and attached files above a soft bubble on the right, a long message folded to its first lines, and on hover
 /// its time and a copy button under it (and "Edit from here" where the session can go back to before it). Sent while
 /// the agent worked, a quiet "steered" mark sits above it.
 struct TranscriptUserMessage<Attachments: View>: View {
@@ -23,10 +23,12 @@ struct TranscriptUserMessage<Attachments: View>: View {
     @ViewBuilder var attachments: () -> Attachments
     @State private var expanded = false
     @State private var hovering = false
+    @Environment(\.fileLinkBase) private var fileLinkBase
 
     var body: some View {
-        // Pictures sent to an agent arrive as paths below the words: show the pictures above the bubble instead.
-        let parts = ImageAttachment.splittingPaths(from: text)
+        // Pictures, files and folders sent to an agent arrive as paths below the words (an agent's own transcript still
+        // holds the context envelope): show them above the bubble instead.
+        let parts = ImageAttachment.splittingAttachments(from: ContextRefs.timeline(text, folder: fileLinkBase))
         let long = TranscriptStyle.isLong(parts.text)
         VStack(alignment: .trailing, spacing: NookTheme.Spacing.xs) {
             if steered {
@@ -40,6 +42,9 @@ struct TranscriptUserMessage<Attachments: View>: View {
             attachments()
             if !parts.images.isEmpty {
                 MessagePictures(urls: parts.images)
+            }
+            if !parts.files.isEmpty {
+                MessageFiles(urls: parts.files)
             }
             if !parts.text.isEmpty {
                 TranscriptUserBubble {

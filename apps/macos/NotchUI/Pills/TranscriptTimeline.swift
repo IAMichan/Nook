@@ -615,9 +615,9 @@ struct TranscriptPromptRail: View {
         .accessibilityLabel(Self.prompt(mark.text))
     }
 
-    /// What you wrote, without the pictures sent along, cut when it is too long for a card.
+    /// What you wrote, without the pictures and files sent along, cut when it is too long for a card.
     private static func prompt(_ text: String) -> String {
-        let words = ImageAttachment.splittingPaths(from: text).text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = ImageAttachment.splittingAttachments(from: text).text.trimmingCharacters(in: .whitespacesAndNewlines)
         return words.count > 600 ? String(words.prefix(599)) + "…" : words
     }
 }
