@@ -648,7 +648,7 @@ struct ComposerPill: View {
     var dot: Color? = nil
     /// Shows this agent's logo (with the account badge) in front of the text.
     var agent: String? = nil
-    var account: AccountKind? = nil
+    var account: AccountTag? = nil
     /// Shows this brand's mark in front of the text (a model's maker).
     var brand: BrandLogo? = nil
     let text: String

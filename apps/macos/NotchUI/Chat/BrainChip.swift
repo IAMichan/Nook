@@ -31,7 +31,7 @@ struct BrainChip: View {
             let profile = app.profiles.preferredProfile(kind)
             let model = settings.activeProviderModel
             let name = model.isEmpty ? nil : app.modelMenuName(model, for: agent, profileID: profile.id)
-            ComposerPill(agent: agent.displayName, account: AccountKind.of(profile, app: app),
+            ComposerPill(agent: agent.displayName, account: AccountTag.of(profile, app: app),
                          text: [agent.displayName, AccountLabel.name(profile, app: app), name].compactMap { $0 }.joined(separator: " · "),
                          short: name ?? agent.displayName)
         } else if settings.isLocalBrain {

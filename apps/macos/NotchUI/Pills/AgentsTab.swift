@@ -469,9 +469,9 @@ struct AgentsTab: View {
         }.map(\.element)
     }
 
-    private func account(_ profile: AgentProfile?) -> AccountKind? {
+    private func account(_ profile: AgentProfile?) -> AccountTag? {
         guard !app.demoMode, let profile else { return nil }
-        return AccountKind.of(profile, app: app)
+        return AccountTag.of(profile, app: app)
     }
 
     private func accountName(_ profile: AgentProfile?) -> String {
@@ -623,7 +623,7 @@ struct AgentListItem: Identifiable, Equatable {
     let branch: String?
     /// The agent's display name, for its logo.
     let agent: String
-    let account: AccountKind?
+    let account: AccountTag?
     var status: Status
     /// Working or waiting: when it started. Otherwise: when it was last active.
     let started: Date?
