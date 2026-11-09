@@ -586,16 +586,19 @@ struct AgentInboxList: View {
         Button(entry.row.pinned ? tr("inbox.unpin") : tr("inbox.pin")) {
             withAnimation(NookTheme.reveal) { entry.row.pinned ? store.unpin(item.id) : pinAndUnsettle(item, entry) }
         }
-        // Pinned sessions keep the order you give them: one step up or down.
-        if section.kind == .pinned, let index = section.rows.firstIndex(where: { $0.id == entry.id }) {
+        // Pinned and Active sessions keep the order you give them: one step up or down. Grouped by project, Active rows
+        // are ordered by activity inside their project, so there is no order of yours to change.
+        if section.kind == .pinned || (section.kind == .active && !store.groupByProject) {
+            let up = InboxLayout.moveTarget(item.id, up: true, in: section)
+            let down = InboxLayout.moveTarget(item.id, up: false, in: section)
             Button(tr("inbox.moveUp")) {
-                withAnimation(NookTheme.reveal) { store.reorder(item.id, toIndex: index - 1, within: section) }
+                if let up { withAnimation(NookTheme.reveal) { store.reorder(item.id, toIndex: up, within: section) } }
             }
-            .disabled(index == 0)
+            .disabled(up == nil)
             Button(tr("inbox.moveDown")) {
-                withAnimation(NookTheme.reveal) { store.reorder(item.id, toIndex: index + 1, within: section) }
+                if let down { withAnimation(NookTheme.reveal) { store.reorder(item.id, toIndex: down, within: section) } }
             }
-            .disabled(index >= section.rows.count - 1)
+            .disabled(down == nil)
         }
         // With auto-settle on, one session can stay out of it (`AutoSettlePolicy.Settings.perThreadOptOut`).
         if store.autoSettle.enabled, !entry.row.settled {
