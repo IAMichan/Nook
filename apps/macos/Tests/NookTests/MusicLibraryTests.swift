@@ -448,6 +448,24 @@ final class MusicHistoryTests: XCTestCase {
         XCTAssertEqual(stats.streak, 3)
     }
 
+    func testStatsPlaceListeningOnTheWeekGridAndCountNewArtists() {
+        let plays = [
+            play("old", artist: "Z", daysAgo: 40), play("1", artist: "B", listened: 100, daysAgo: 8),
+            play("1", artist: "A", listened: 300, daysAgo: 2, hour: 22), play("2", artist: "B", listened: 60, daysAgo: 0, hour: 9),
+        ]
+        let stats = MusicStats(plays: plays, period: .week, now: now, calendar: calendar)
+        let day = { (daysAgo: Int) -> Int in
+            let date = self.calendar.date(byAdding: .day, value: -daysAgo, to: self.now)!
+            return (self.calendar.component(.weekday, from: date) - self.calendar.firstWeekday + 7) % 7
+        }
+        XCTAssertEqual(stats.weekHours[day(2)][22], 300)
+        XCTAssertEqual(stats.weekHours[day(0)][9], 60)
+        XCTAssertEqual(stats.weekHours.flatMap { $0 }.reduce(0, +), stats.seconds)
+        // B was played before the week, A was not.
+        XCTAssertEqual(stats.newArtists, 1)
+        XCTAssertNil(MusicStats(plays: plays, period: .all, now: now, calendar: calendar).newArtists)
+    }
+
     func testStreakToleratesAnUnplayedToday() {
         let stats = MusicStats(plays: [play("1", daysAgo: 3), play("1", daysAgo: 2), play("1", daysAgo: 1)], period: .all, now: now, calendar: calendar)
         XCTAssertEqual(stats.streak, 3)

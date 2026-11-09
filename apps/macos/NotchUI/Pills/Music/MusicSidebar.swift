@@ -6,7 +6,6 @@ import SwiftUI
 struct MusicSidebar: View {
     @ObservedObject var service: NowPlayingService
     @AppStorage(MusicSection.storageKey) private var storedSection = MusicSection.home.rawValue
-    @AppStorage(MusicSection.expandedKey) private var expanded = false
 
     private var sections: [MusicSection] { MusicSection.available(playing: service.current != nil) }
     private var section: MusicSection {
@@ -15,7 +14,6 @@ struct MusicSidebar: View {
     }
     /// Nook may not talk to the player: the page says so, and there is nowhere to go yet.
     private var blocked: Bool { service.current == nil && service.permissionDenied }
-    private var showsSection: Bool { !(expanded && service.current != nil) }
 
     var body: some View {
         if !blocked {
@@ -24,7 +22,8 @@ struct MusicSidebar: View {
                     VStack(spacing: NookTheme.Spacing.xxs) {
                         ForEach(sections) { item in
                             MusicSidebarRow(title: item.title, symbol: item.symbol,
-                                            selected: showsSection && item == section && !(item == .playlists && service.playlistDetail != nil)) {
+                                            selected: item == section && !(item == .playlists && service.playlistDetail != nil),
+                                            playing: item == .nowPlaying && service.current?.isPlaying == true) {
                                 open(item)
                             }
                         }
@@ -46,7 +45,7 @@ struct MusicSidebar: View {
                 ForEach(service.playlists) { playlist in
                     MusicSidebarPlaylistRow(
                         playlist: playlist, service: service,
-                        selected: showsSection && section == .playlists && service.playlistDetail?.playlist.id == playlist.id
+                        selected: section == .playlists && service.playlistDetail?.playlist.id == playlist.id
                     ) {
                         service.open(playlist)
                         show(.playlists)
@@ -63,10 +62,7 @@ struct MusicSidebar: View {
     }
 
     private func show(_ item: MusicSection) {
-        withAnimation(MusicSection.fold) {
-            storedSection = item.rawValue
-            expanded = false
-        }
+        withAnimation(MusicSection.fold) { storedSection = item.rawValue }
     }
 }
 
@@ -74,6 +70,8 @@ private struct MusicSidebarRow: View {
     let title: String
     let symbol: String
     let selected: Bool
+    /// Now Playing while music plays: a still waveform in the Music colour, so the row says it without an animation.
+    var playing = false
     let action: () -> Void
     @State private var hovering = false
 
@@ -90,6 +88,12 @@ private struct MusicSidebarRow: View {
                     .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
+                if playing {
+                    Image(systemName: "waveform")
+                        .font(NookTheme.font(11, .semibold))
+                        .foregroundStyle(NookTheme.music)
+                        .accessibilityLabel(tr("music.playingNow"))
+                }
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .frame(height: PanelSidebarMetrics.row)
