@@ -88,6 +88,7 @@ struct ChatBubble: Equatable, Identifiable {
     /// Its app says it was changed after it was sent: "Edited" beside its time.
     var edited = false
     /// Deleted for everyone: the bubble keeps its place and says so, and nothing can be done with it but hiding it.
+    /// Someone else's still shows what it said, when Nook had it (`keepsDeleted`).
     var deleted = false
 }
 
@@ -118,6 +119,10 @@ extension ChatBubble {
     /// What a deleted message says in its place: who deleted it, as chat apps word it.
     var deletedLine: String { tr(fromMe ? "chat.message.deletedMine" : "chat.message.deleted") }
 
+    /// Deleted for everyone by whoever wrote it, with what it said still here: it shows as itself, marked "Deleted"
+    /// beside its time as an edited one says "Edited", instead of only the line that it was deleted.
+    var keepsDeleted: Bool { deleted && (!text.isEmpty || attachment != nil || poll != nil) }
+
     /// A conversation as plain text for the pasteboard, one message per line: "[12:04] Anna: See you at eight".
     /// `contact` names the other side of a private chat, where the bubbles carry no sender.
     static func transcript(_ bubbles: [ChatBubble], contact: String) -> String {
@@ -131,7 +136,7 @@ extension ChatBubble {
 
     /// The message's own text, or the file's name when it came without one.
     var copyText: String {
-        if deleted { return deletedLine }
+        if deleted, !keepsDeleted { return deletedLine }
         return text.isEmpty ? (attachment ?? "") : text
     }
 

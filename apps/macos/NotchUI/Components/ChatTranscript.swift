@@ -510,7 +510,9 @@ private struct ChatBubbleView: View, Equatable {
     /// The time (and your ticks) on a picture: light on a dark capsule, so it reads on any photo.
     private var mediaStamp: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            if bubble.edited {
+            if bubble.keepsDeleted {
+                DeletedMark(color: NookTheme.paper)
+            } else if bubble.edited {
                 Text(tr("chat.message.edited"))
                     .font(NookTheme.TextStyle.caption)
                     .foregroundStyle(NookTheme.paper)
@@ -551,7 +553,9 @@ private struct ChatBubbleView: View, Equatable {
     /// When it was sent, and for your own how far it got.
     private var stamp: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            if bubble.edited {
+            if bubble.keepsDeleted {
+                DeletedMark(color: NookTheme.chatStamp)
+            } else if bubble.edited {
                 Text(tr("chat.message.edited"))
                     .font(NookTheme.TextStyle.caption)
                     .foregroundStyle(NookTheme.chatStamp)
@@ -752,7 +756,7 @@ private struct ChatBubbleView: View, Equatable {
                     .foregroundStyle(ChatPersonBadge.tint(for: bubble.sender))
                     .lineLimit(1)
             }
-            if bubble.deleted {
+            if bubble.deleted, !bubble.keepsDeleted {
                 // Deleted for everyone: where it was, what became of it, with its time beside it.
                 HStack(alignment: .lastTextBaseline, spacing: NookTheme.Spacing.md) {
                     Label(bubble.deletedLine, systemImage: "nosign")
@@ -820,7 +824,7 @@ private struct ChatBubbleView: View, Equatable {
                     .padding(.top, NookTheme.Spacing.xxs)
                 if showsStamp { stampSlot }
             }
-            if bubble.text.isEmpty, bubble.attachment == nil, !bubble.deleted {
+            if bubble.text.isEmpty, bubble.attachment == nil, !bubble.deleted || bubble.keepsDeleted {
                 // A poll or an empty message: the time under it, on the right.
                 stampSlot
             }
@@ -1923,3 +1927,16 @@ private struct TranscriptScrollGeometry: Equatable {
     var nearBottom: Bool { content <= container || offset + container >= content - 60 }
 }
 
+/// "Deleted" beside the time of a message its writer deleted for everyone that still shows what it said, as "Edited"
+/// sits there for a changed one.
+private struct DeletedMark: View {
+    let color: Color
+
+    var body: some View {
+        Label(tr("chat.message.deletedTag"), systemImage: "nosign")
+            .labelStyle(.titleAndIcon)
+            .font(NookTheme.TextStyle.caption)
+            .foregroundStyle(color)
+            .help(tr("chat.message.deletedKept"))
+    }
+}
