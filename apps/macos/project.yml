@@ -322,6 +322,8 @@ targets:
       - path: Services/NoticePacer.swift
       - path: Services/AgentStatusNotice.swift
       - path: Core/NookError.swift
+      - path: Core/MemoryPressure.swift
+      - path: Core/ByteBudgetCache.swift
       - path: Core/NookPaths.swift
       - path: Core/SafeStorage.swift
       - path: Core/Accounts.swift
@@ -513,6 +515,7 @@ targets:
       - path: Services/Autocomplete/GGUFReader.swift
       - path: Services/Autocomplete/CompletionModels.swift
       - path: Services/Autocomplete/CompletionSuggestion.swift
+      - path: Services/Autocomplete/TokenPieces.swift
       - path: Services/Autocomplete/CompletionSampling.swift
       - path: Services/Autocomplete/CompletionPreferences.swift
       - path: Services/Autocomplete/CompletionTerminal.swift

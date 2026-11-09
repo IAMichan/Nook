@@ -26,7 +26,6 @@ final class EmbeddedModel: ObservableObject {
     private var loadedID: String?
     private var busy = false
     private var idleTask: Task<Void, Never>?
-    private var pressureSource: DispatchSourceMemoryPressure?
     /// When autocomplete last used the model.
     private var lastAutocomplete: Date?
 
@@ -40,10 +39,7 @@ final class EmbeddedModel: ObservableObject {
         Memory.cacheLimit = 128 * 1024 * 1024
 
         // Under memory pressure, unload the model immediately.
-        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
-        source.setEventHandler { [weak self] in Task { @MainActor in self?.unload() } }
-        source.resume()
-        pressureSource = source
+        MemoryPressure.shared.register("embeddedModel") { [weak self] _ in Task { @MainActor in self?.unload() } }
     }
 
     /// Pre-loads the model in the background (e.g. when opening panel or starting interaction).

@@ -6,12 +6,16 @@ import SwiftUI
 // MARK: Artwork
 
 /// Downloaded covers, kept so the bar, the full player and the glow behind it show the same image without loading or
-/// flickering again when the player unfolds. `NSCache` is thread-safe and drops entries under memory pressure.
+/// flickering again when the player unfolds. `NSCache` is thread-safe and drops entries under memory pressure. Covers
+/// are decoded at `maxPixel` (the full player's cover on a Retina screen), not kept as the downloaded file.
 final class MusicArtworkStore: @unchecked Sendable {
     static let shared = MusicArtworkStore()
+    private static let maxPixel: CGFloat = 640
     private let cache: NSCache<NSURL, NSImage> = {
         let cache = NSCache<NSURL, NSImage>()
         cache.countLimit = 60
+        cache.totalCostLimit = 32 * 1024 * 1024
+        MemoryPressure.shared.register("musicArtwork") { [cache] _ in cache.removeAllObjects() }
         return cache
     }()
 
@@ -19,8 +23,9 @@ final class MusicArtworkStore: @unchecked Sendable {
 
     func image(for url: URL) async -> NSImage? {
         if let image = cached(url) { return image }
-        guard let response = try? await URLSession.shared.data(from: url), let image = NSImage(data: response.0) else { return nil }
-        cache.setObject(image, forKey: url as NSURL)
+        guard let response = try? await URLSession.shared.data(from: url),
+              let image = DecodedImage.image(response.0, maxPixel: Self.maxPixel) else { return nil }
+        cache.setObject(image, forKey: url as NSURL, cost: DecodedImage.cost(image))
         return image
     }
 }
