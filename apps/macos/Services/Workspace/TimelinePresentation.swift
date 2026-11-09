@@ -481,6 +481,85 @@ enum Subagents {
     }
 }
 
+/// A command the agent left running in the background (a dev server, a watcher, a long build): the bar above the
+/// composer and the Subagents side panel show it while it runs, as they show a subagent.
+struct BackgroundCommandInfo: Identifiable, Equatable, Sendable {
+    var id: UUID
+    /// What the agent said it is for ("Start the dev server"), else the command itself.
+    var title: String
+    var command: String
+    var state: RunEvent.State?
+    var output: String?
+    var started: Date
+
+    var isRunning: Bool { state == nil || state == .running || state == .pending }
+    var failed: Bool { state == .failed || state == .denied || state == .expired }
+}
+
+/// Commands an agent leaves running after their call returned: Claude Code's Bash (or PowerShell) started with
+/// `run_in_background`, or any call its `task_started` names (a command it moved to the background, a monitor), and a
+/// command Codex (app-server) still ran when its turn ended. Each stays running, also after its turn, until its own end
+/// arrives (Claude Code's `task_notification`, Codex's `commandFinished`), so the session does not look done while it is
+/// not. Marked on the event (`RunEvent.background`) once Nook knows.
+enum BackgroundCommands {
+    /// The call asks to run in the background (`run_in_background`); a subagent launch is a subagent (`Subagents`).
+    static func asksBackground(_ event: RunEvent) -> Bool {
+        guard event.kind == .tool, !Subagents.isLaunch(event), !event.text.hasPrefix("↳"),
+              let detail = event.detail, detail.contains("run_in_background") else { return false }
+        return (input(event)["run_in_background"] as? Bool) == true
+    }
+
+    /// The event is a command left running in the background, or one that was.
+    static func isCommand(_ event: RunEvent) -> Bool {
+        event.kind == .tool && !Subagents.isLaunch(event) && (event.background == true || asksBackground(event))
+    }
+
+    /// A background command still runs, from any turn.
+    static func running(_ events: [RunEvent]) -> Bool {
+        events.contains { $0.state == .running && isCommand($0) }
+    }
+
+    /// The commands the bar above the composer shows: those started since your last message, and any still running
+    /// from before it (as `Subagents.current`).
+    static func current(_ events: [RunEvent]) -> [BackgroundCommandInfo] {
+        let start = events.lastIndex { $0.kind == .user } ?? events.startIndex
+        let recent = list(Array(events[start...]))
+        let earlier = list(Array(events[..<start])).filter(\.isRunning)
+        return earlier + recent
+    }
+
+    /// The command a background task stands for: by the call that started it, else by the task id its output names
+    /// ("Command running in background with ID: b3k9").
+    static func event(for update: BackgroundTaskUpdate, in events: [RunEvent]) -> RunEvent? {
+        if let call = update.toolUseID,
+           let event = events.last(where: { $0.kind == .tool && $0.callID == call && !Subagents.isLaunch($0) && !$0.text.hasPrefix("↳") }) {
+            return event
+        }
+        guard let task = update.taskID, !task.isEmpty else { return nil }
+        return events.last { isCommand($0) && $0.output?.contains("ID: " + task) == true }
+    }
+
+    /// Changes when the commands do: one starts or ends. For the dot on the Subagents tab.
+    static func signature(_ commands: [BackgroundCommandInfo]) -> String {
+        commands.map { $0.id.uuidString + ($0.isRunning ? "+" : "-") }.joined(separator: ",")
+    }
+
+    static func list(_ events: [RunEvent]) -> [BackgroundCommandInfo] {
+        events.compactMap { event in
+            guard isCommand(event) else { return nil }
+            let command = AgentActivity.command(event) ?? event.detail ?? event.text
+            let description = (input(event)["description"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            return BackgroundCommandInfo(id: event.id, title: description ?? ToolSummary.oneLine(command, 120), command: command,
+                                         state: event.state, output: event.output, started: event.date)
+        }
+    }
+
+    private static func input(_ event: RunEvent) -> [String: Any] {
+        event.detail.flatMap { $0.data(using: .utf8) }
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+    }
+}
+
 /// What one turn changed: the files, from the turn's own edits and file changes, and
 /// the snapshots around it when the session has them.
 enum TurnChanges {
@@ -540,8 +619,8 @@ enum BackgroundWork {
     /// instead of thirty minutes): from the latest turn, a tool still running when it ended, or one started
     /// to run in the background. It ends with a turn the agent woke up for by itself. `before` is what was known.
     static func pending(after events: [RunEvent], before: Bool) -> Bool {
-        // A subagent still working in the background, from this turn or an earlier one.
-        if Subagents.backgroundRunning(events) { return true }
+        // A subagent or command still working in the background, from this turn or an earlier one.
+        if Subagents.backgroundRunning(events) || BackgroundCommands.running(events) { return true }
         guard let turn = TimelinePresentation.split(events).last else { return before }
         let started = turn.contains { event in
             guard event.kind == .tool else { return false }

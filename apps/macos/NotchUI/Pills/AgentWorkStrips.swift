@@ -254,32 +254,58 @@ struct SubagentBar: View {
     }
 }
 
-/// Whether a subagent still runs (a small spinner), finished (a mint check) or failed (a coral cross).
+/// Whether a subagent or background command still runs (a small spinner), finished (a mint check) or failed (a coral
+/// cross).
 struct SubagentStatusMark: View {
-    let agent: SubagentInfo
+    let running: Bool
+    let failed: Bool
     var size: CGFloat = 10
+
+    init(agent: SubagentInfo, size: CGFloat = 10) {
+        running = agent.isRunning
+        failed = agent.failed
+        self.size = size
+    }
+
+    init(command: BackgroundCommandInfo, size: CGFloat = 10) {
+        running = command.isRunning
+        failed = command.failed
+        self.size = size
+    }
 
     var body: some View {
         Group {
-            if agent.isRunning {
+            if running {
                 ProgressView().controlSize(.mini)
             } else {
-                Image(systemName: agent.failed ? "xmark.circle.fill" : "checkmark.circle.fill")
+                Image(systemName: failed ? "xmark.circle.fill" : "checkmark.circle.fill")
                     .font(NookTheme.font(size, .semibold))
-                    .foregroundStyle(agent.failed ? NookTheme.coralSoft : NookTheme.mint)
+                    .foregroundStyle(failed ? NookTheme.coralSoft : NookTheme.mint)
             }
         }
         .frame(width: 12)
     }
 }
 
-/// How long a running subagent has been at it, counting up; nothing once it is done (its row only keeps its outcome).
+/// How long a running subagent or background command has been at it, counting up; nothing once it is done (its row only
+/// keeps its outcome).
 struct SubagentElapsed: View {
-    let agent: SubagentInfo
+    let running: Bool
+    let started: Date
+
+    init(agent: SubagentInfo) {
+        running = agent.isRunning
+        started = agent.started
+    }
+
+    init(command: BackgroundCommandInfo) {
+        running = command.isRunning
+        started = command.started
+    }
 
     var body: some View {
-        if agent.isRunning, agent.started > .distantPast {
-            Text(timerInterval: agent.started...Date.distantFuture, countsDown: false)
+        if running, started > .distantPast {
+            Text(timerInterval: started...Date.distantFuture, countsDown: false)
                 .font(NookTheme.mono(10.5))
                 .foregroundStyle(NookTheme.textTertiary)
                 .monospacedDigit()
@@ -292,16 +318,24 @@ struct SubagentElapsed: View {
 /// files, each with what it was asked, how it went about it and what it answered.
 struct SessionSubagentsPanel: View {
     let agents: [SubagentInfo]
+    /// The commands it left running in the background, above the subagents while any of them runs.
+    var commands: [BackgroundCommandInfo] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            if agents.isEmpty {
+            if agents.isEmpty && commands.isEmpty {
                 WSEmptyState(symbol: SessionTool.subagents.symbol, title: tr("ws.subagents.empty.title"),
                              message: tr("ws.subagents.empty.body"))
             } else {
                 ToolSurface {
                     ScrollView {
-                        SubagentList(agents: agents)
+                        // Commands still at work come first: they are what keeps the session going.
+                        let commandsFirst = commands.contains(where: \.isRunning)
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
+                            if commandsFirst { BackgroundCommandList(commands: commands) }
+                            if !agents.isEmpty { SubagentList(agents: agents) }
+                            if !commandsFirst, !commands.isEmpty { BackgroundCommandList(commands: commands) }
+                        }
                             .padding(NookTheme.Spacing.lg)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -693,3 +727,176 @@ struct PullRequestPendingRow: View {
     }
 }
 
+
+/// "In the background  npm run dev  1 running" with a row per command the agent left running in the background (a dev
+/// server, a watcher, a long build): whether it still runs, the command and how long it has been at it; a row opens to
+/// the end of what it printed. It stays while any of them runs, also after the turn that started them, so the session
+/// does not look done while it is not. The arrow shows them in the side panel (`openPanel`).
+struct BackgroundCommandBar: View {
+    let commands: [BackgroundCommandInfo]
+    var openPanel: (() -> Bool)? = nil
+    @State private var open = false
+    @State private var shown: UUID?
+
+    var body: some View {
+        let running = commands.filter(\.isRunning).count
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            HStack(spacing: NookTheme.Spacing.md) {
+                Button {
+                    withAnimation(NookTheme.reveal) { open.toggle() }
+                } label: {
+                    HStack(spacing: NookTheme.Spacing.md) {
+                        if running > 0 {
+                            ProgressView().controlSize(.mini).frame(width: 12)
+                        } else {
+                            Image(systemName: "terminal").font(NookTheme.font(11, .semibold))
+                        }
+                        Text(tr("ws.background.title")).foregroundStyle(NookTheme.textTertiary)
+                        Text(commands.first(where: \.isRunning)?.title ?? commands.last?.title ?? "")
+                            .foregroundStyle(NookTheme.paper.opacity(0.85))
+                            .lineLimit(1)
+                        Spacer(minLength: 6)
+                        if running > 0 {
+                            Text(tr("ws.subagents.running", running))
+                                .font(NookTheme.TextStyle.caption)
+                                .foregroundStyle(NookTheme.iris)
+                        }
+                        Text(tr("ws.subagents.progress", commands.count - running, commands.count))
+                            .font(NookTheme.mono(11, .medium))
+                            .foregroundStyle(NookTheme.textSecondary)
+                        Image(systemName: "chevron.up")
+                            .font(NookTheme.font(8.5, .bold))
+                            .rotationEffect(.degrees(open ? 180 : 0))
+                            .foregroundStyle(NookTheme.textTertiary)
+                    }
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tr("ws.background.title") + ", " + tr("ws.subagents.running", running))
+                if let openPanel {
+                    ToolbarIconButton("sidebar.right", tr("ws.background.openPanel"), height: 20, width: 20) {
+                        if !openPanel() { withAnimation(NookTheme.reveal) { open = true } }
+                    }
+                    .help(tr("ws.background.openPanel"))
+                }
+            }
+            if open {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    ForEach(commands) { command in row(command) }
+                }
+            }
+        }
+        .padding(.horizontal, NookTheme.Spacing.lg)
+        .padding(.vertical, 7)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
+    }
+
+    private func row(_ command: BackgroundCommandInfo) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+            Button {
+                shown = shown == command.id ? nil : command.id
+            } label: {
+                HStack(spacing: NookTheme.Spacing.md) {
+                    SubagentStatusMark(command: command)
+                    Text(ToolSummary.oneLine(command.command, 160))
+                        .font(NookTheme.mono(10.5, .medium))
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    SubagentElapsed(command: command)
+                }
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if shown == command.id, let output = command.output, !output.isEmpty {
+                Text(BackgroundCommandList.tail(output))
+                    .font(NookTheme.mono(10.5))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .padding(.leading, 20)
+            }
+        }
+    }
+}
+
+/// The commands the agent left running in the background, as the Subagents tab in the side panel shows them: a card each
+/// with its state, what it is for, the command and the end of what it printed, the running ones counting their time.
+struct BackgroundCommandList: View {
+    let commands: [BackgroundCommandInfo]
+
+    /// The last lines a command printed: what says how it is doing.
+    static func tail(_ output: String) -> String {
+        let lines = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")
+        return lines.suffix(12).joined(separator: "\n")
+    }
+
+    var body: some View {
+        let running = commands.filter(\.isRunning).count
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Text(tr("ws.background.title"))
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(NookTheme.textSecondary)
+                if running > 0 {
+                    Text(tr("ws.subagents.running", running))
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.iris)
+                }
+            }
+            // Those still at work first, then the rest, newest first.
+            ForEach(commands.filter(\.isRunning) + commands.filter { !$0.isRunning }.reversed()) { command in
+                card(command)
+            }
+        }
+    }
+
+    private func card(_ command: BackgroundCommandInfo) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            HStack(spacing: NookTheme.Spacing.md) {
+                SubagentStatusMark(command: command, size: 11)
+                Text(command.title)
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(NookTheme.textStrong)
+                    .lineLimit(2)
+                Spacer(minLength: NookTheme.Spacing.sm)
+                SubagentElapsed(command: command)
+            }
+            HStack(spacing: NookTheme.Spacing.sm) {
+                if command.started > .distantPast { Text(command.started, style: .time) }
+                Text("·")
+                Text(tr(command.isRunning ? "ws.background.running" : (command.failed ? "ws.background.failed" : "ws.background.done")))
+                    .foregroundStyle(command.failed ? NookTheme.coralSoft : (command.isRunning ? NookTheme.iris : NookTheme.textTertiary))
+            }
+            .font(NookTheme.TextStyle.caption)
+            .foregroundStyle(NookTheme.textTertiary)
+            .padding(.leading, 20)
+            if command.title != command.command {
+                Text(command.command)
+                    .font(NookTheme.mono(10.5))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(4)
+                    .textSelection(.enabled)
+                    .padding(.leading, 20)
+            }
+            if let output = command.output, !output.isEmpty {
+                Text(Self.tail(output))
+                    .font(NookTheme.mono(10.5))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .padding(.leading, 20)
+            }
+        }
+        .conversationCard(padding: NookTheme.Spacing.lg)
+        .overlay {
+            if command.isRunning {
+                RoundedRectangle(cornerRadius: NookTheme.Radius.conversationCard, style: .continuous)
+                    .strokeBorder(NookTheme.iris.opacity(0.35), lineWidth: 1)
+            }
+        }
+    }
+}

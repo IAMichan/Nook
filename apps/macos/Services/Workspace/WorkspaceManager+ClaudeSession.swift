@@ -76,7 +76,7 @@ extension WorkspaceManager {
         claudeIdle[id] = nil
         processes[id] = idle.process
         turns[id] = TurnState()
-        wakeSubagent[id] = nil
+        wakeLine[id] = nil
         if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
         if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
         run.move(to: .running)
@@ -97,8 +97,8 @@ extension WorkspaceManager {
         claudeIdle[id] = nil
         processes[id] = idle.process
         turns[id] = TurnState()
-        let finished = wakeSubagent.removeValue(forKey: id)
-        append(id, RunEvent(kind: .system, text: finished.map { tr("ws.wake.subagent", $0) } ?? tr("ws.wake.background"), tool: "wake"))
+        let line = wakeLine.removeValue(forKey: id)
+        append(id, RunEvent(kind: .system, text: line ?? tr("ws.wake.background"), tool: "wake"))
         if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
         run.move(to: .running)
         run.turnStartedAt = Date()
@@ -111,37 +111,60 @@ extension WorkspaceManager {
         mutateEvent(id, launch.id) { $0.subagentSteps = SubagentStep.appending(step, to: $0.subagentSteps) }
     }
 
-    /// Claude Code says a subagent it runs in the background started or ended (see `BackgroundTaskUpdate`): its row
-    /// keeps running until then, and then settles with what it answered. The line where the agent picks up its result
-    /// names it.
-    func noteBackgroundSubagent(_ id: UUID, _ update: BackgroundTaskUpdate) {
-        guard let event = Subagents.event(for: update, in: timeline(id)) else { return }
-        defer { noteSubagentsWorking(id) }
-        let title = Subagents.list([event]).first?.title ?? event.text
-        guard let status = update.status else {
-            if event.state != .running { mutateEvent(id, event.id) { $0.state = .running } }
+    /// Claude Code says work it runs in the background (see `BackgroundTaskUpdate`) started or ended: a subagent, or a
+    /// command (`BackgroundCommands`). Its row keeps running until then, and then settles with what it answered. The
+    /// line where the agent picks up its result names it.
+    func noteBackgroundTask(_ id: UUID, _ update: BackgroundTaskUpdate) {
+        let line: String
+        if let event = Subagents.event(for: update, in: timeline(id)) {
+            defer { noteSubagentsWorking(id) }
+            guard let status = update.status else {
+                if event.state != .running { mutateEvent(id, event.id) { $0.state = .running } }
+                return
+            }
+            guard event.state == .running || event.state == nil else { return }
+            mutateEvent(id, event.id) { event in
+                event.state = status == .completed ? .done : .failed
+                if let answer = update.result ?? update.summary, !answer.isEmpty { event.output = RunEvent.clip(answer) }
+            }
+            line = tr("ws.wake.subagent", Subagents.list([event]).first?.title ?? event.text)
+        } else if let event = BackgroundCommands.event(for: update, in: timeline(id)) {
+            defer { noteSubagentsWorking(id) }
+            guard let status = update.status else {
+                // Its call may still be at work: its result keeps it running (see `.toolResult`).
+                mutateEvent(id, event.id) { $0.background = true }
+                if event.state != .running, event.output != nil { mutateEvent(id, event.id) { $0.state = .running } }
+                return
+            }
+            guard event.state == .running || event.state == nil || event.background != true else { return }
+            mutateEvent(id, event.id) { event in
+                event.background = true
+                event.state = status == .failed ? .failed : .done
+                if let summary = update.summary, !summary.isEmpty {
+                    event.output = RunEvent.clip([event.output, summary].compactMap { $0 }.joined(separator: "\n\n"))
+                }
+            }
+            line = tr("ws.wake.command", BackgroundCommands.list([event]).first.map { ToolSummary.oneLine($0.title, 80) } ?? event.text)
+        } else {
             return
-        }
-        guard event.state == .running || event.state == nil else { return }
-        mutateEvent(id, event.id) { event in
-            event.state = status == .completed ? .done : .failed
-            if let answer = update.result ?? update.summary, !answer.isEmpty { event.output = RunEvent.clip(answer) }
         }
         // The agent woke up for it already: its line says which one; otherwise the wake to come does.
         if let wake = TimelinePresentation.lastTurn(timeline(id)).first, wake.kind == .system, wake.tool == "wake",
            wake.text == tr("ws.wake.background"), Date().timeIntervalSince(wake.date) < 30 {
-            mutateEvent(id, wake.id) { $0.text = tr("ws.wake.subagent", title) }
+            mutateEvent(id, wake.id) { $0.text = line }
         } else if processes[id] == nil {
-            wakeSubagent[id] = title
+            wakeLine[id] = line
         }
         if !BackgroundWork.pending(after: timeline(id), before: false) { backgroundWork.remove(id) }
     }
 
-    /// Works out whether the session still has subagents at work in the background. Only while its process lives: the
-    /// subagents end with it, and their rows may keep saying they run (after Nook restarted, say).
+    /// Works out whether the session still has subagents or commands at work in the background. Only while its process
+    /// (or Codex's app-server) lives: they end with it, and their rows may keep saying they run (after Nook restarted, say).
     func noteSubagentsWorking(_ id: UUID) {
         let process = processes[id] ?? claudeIdle[id]?.process
-        let working = process?.isRunning == true && Subagents.backgroundRunning(events[id] ?? [])
+        let alive = process?.isRunning == true || codexServers[id] != nil
+        let list = events[id] ?? []
+        let working = alive && (Subagents.backgroundRunning(list) || BackgroundCommands.running(list))
         guard working != subagentsWorking.contains(id) else { return }
         if working { subagentsWorking.insert(id) } else { subagentsWorking.remove(id) }
     }
@@ -169,6 +192,14 @@ extension WorkspaceManager {
         guard let idle = claudeIdle.removeValue(forKey: id) else { return }
         idle.process.closeInput()
         idle.process.stop(grace: 2)
+        settleBackgroundCommands(id)
+    }
+
+    /// The process that ran the session's background commands ended, and they with it: their rows stop running.
+    func settleBackgroundCommands(_ id: UUID) {
+        for event in timeline(id) where event.state == .running && BackgroundCommands.isCommand(event) {
+            mutateEvent(id, event.id) { $0.state = .done }
+        }
         noteSubagentsWorking(id)
     }
 
