@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Assistant · Nook</title>
+<meta name="description" content="Ask Nook anything about your day. It already knows the context: your screen, calendar, mail, chats and agents, answered on your own Mac.">
+<link rel="stylesheet" href="assets/nook.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="claude" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4M7.5 3.8l9 16.4M16.5 3.8l-9 16.4"/></g></symbol>
+    <symbol id="codex" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5c3 2.5 3 14.5 0 17M3.5 12c2.5-3 14.5-3 17 0"/></g></symbol>
+    <symbol id="gemini" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2c.6 5.4 4.6 9.4 10 10-5.4.6-9.4 4.6-10 10-.6-5.4-4.6-9.4-10-10 5.4-.6 9.4-4.6 10-10Z"/></symbol>
+    <symbol id="cursor" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 2.5 20.5 7v10L12 21.5 3.5 17V7Z"/><path d="M3.5 7 12 12l8.5-5M12 12v9.5"/></g></symbol>
+    <symbol id="folder" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4l2 2h9A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5Z"/></symbol>
+    <symbol id="branch" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="19" r="2"/><path d="M6 7c0 5 6 4 6 10M18 7c0 5-6 4-6 10"/></g></symbol>
+    <symbol id="pr" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v10M18 17V9a3 3 0 0 0-3-3h-4m2-2-2 2 2 2"/></g></symbol>
+  </defs>
+</svg>
+<nav>
+  <div class="wrap">
+    <a class="brand" href="index.html"><span class="mascot" style="--s:26px"><i></i><i></i></span>Nook</a>
+    <div class="links"><a href="agents.html">Agents</a><a href="chats.html">Chats</a><a href="assistant.html">Assistant</a><a href="writing.html">Writing</a><a href="privacy.html">Privacy</a></div>
+    <div class="right">
+      <a class="btn quiet" href="https://github.com/IAMichan/nook"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.7 1.6.2 2.8.1 3.1.8.8 1.2 1.9 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A11.5 11.5 0 0 0 23.5 12C23.5 5.7 18.3.5 12 .5Z"/></svg>GitHub</a>
+      <a class="btn primary" href="download.html">Download</a>
+      <button class="menu-btn" aria-label="Menu"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    </div>
+  </div>
+</nav>
+<style>
+.shortcuts{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;margin-top:64px;background:var(--border);border-radius:var(--r-pill);overflow:hidden;box-shadow:0 0 0 1px var(--border)}
+.shortcuts div{background:var(--canvas);padding:20px 18px;display:flex;flex-direction:column;gap:12px}
+.shortcuts kbd{align-self:flex-start;font-size:12.5px;padding:4px 9px}
+.shortcuts span{font-size:13.5px;color:var(--t3);line-height:1.45}
+.ans .asked{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12.5px;color:var(--t3);margin-bottom:10px;opacity:0;transition:opacity .4s}
+.ans .asked span{font-size:12px;color:var(--t2);background:var(--surface);border-radius:99px;padding:3px 9px}
+.ans sup{font-size:10.5px;color:var(--blue);margin-left:1px}
+.screenwin{position:relative;background:#0b0b0c;border-radius:var(--r-pill);box-shadow:0 0 0 1px rgba(255,255,255,.09),0 40px 100px -40px #000;overflow:hidden}
+.screenwin .tb{height:42px;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid var(--border);font-size:13px;color:var(--t3)}
+.screenwin .tb .lights i{width:11px;height:11px}
+.screenwin .tb b{color:var(--strong);font-weight:500}
+.mailtext{padding:20px 22px 26px;font-size:14px;line-height:1.75;color:var(--t2);position:relative}
+.mailtext mark{background:rgba(143,179,240,.14);color:var(--paper);border-radius:4px;padding:1px 3px;transition:background .4s}
+.scanline{position:absolute;left:0;right:0;height:60px;top:-60px;background:linear-gradient(180deg,transparent,rgba(143,179,240,.12));border-bottom:1px solid rgba(143,179,240,.45);animation:scan 4.5s cubic-bezier(.5,0,.5,1) infinite;pointer-events:none}
+@keyframes scan{to{top:105%}}
+.found{margin:0 16px 16px;border-radius:var(--r-sheet);background:var(--surface);padding:12px 14px;display:flex;align-items:center;gap:12px;font-size:13.5px}
+.found small{display:block;font-size:12px;color:var(--t3)}
+.plan .stepr{display:flex;align-items:flex-start;gap:12px;padding:12px 4px;border-top:1px solid var(--hair);font-size:14px}
+.plan .stepr:first-of-type{border-top:0}
+.plan .chk{width:18px;height:18px;border-radius:5px;background:var(--iris);color:#0b0b0d;display:grid;place-items:center;font-size:11px;font-weight:700;flex:none;margin-top:2px}
+.plan .chk.off{background:var(--graphite);color:transparent;box-shadow:inset 0 0 0 1px var(--sep)}
+.plan .stepr small{display:block;font-size:12.5px;color:var(--t3);margin-top:2px}
+.plan .stepr .edit{margin-top:8px;font-size:13px;color:var(--strong);background:var(--well);border-radius:var(--r-control);padding:8px 10px;box-shadow:inset 0 0 0 1px var(--hair);line-height:1.5}
+.plan .stepr .st{margin-left:auto;flex:none}
+.moods{display:flex;justify-content:center;gap:28px;flex-wrap:wrap;margin-top:56px}
+.moods div{display:flex;flex-direction:column;align-items:center;gap:12px;font-size:13px;color:var(--t3)}
+.moods .ring{border-radius:50%;padding:5px;box-shadow:0 0 0 2px var(--rc,var(--smoke))}
+.moments{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:48px}
+.moment{border-radius:var(--r-pill);background:var(--rowRest);box-shadow:inset 0 0 0 1px var(--hair);padding:20px}
+.moment .bub{background:var(--surface);border-radius:14px 14px 14px 4px;padding:10px 12px;font-size:13.5px;line-height:1.5;color:var(--strong);margin-bottom:14px}
+.moment b{font-size:15px;font-weight:500;display:block}
+.moment span{font-size:13.5px;color:var(--t3);line-height:1.5;display:block;margin-top:4px}
+@media (max-width:1000px){.shortcuts{grid-template-columns:repeat(2,1fr)}.moments{grid-template-columns:1fr 1fr}}
+</style>
+
+<header class="page-hero" style="--tint:rgba(143,179,240,.12)">
+  <div class="wrap">
+    <div class="label rv"><span class="mascot" style="--s:18px"><i></i><i></i></span>Assistant</div>
+    <h1 class="rv d1">Ask anything.<br><span>It already knows the context.</span></h1>
+    <p class="lede rv d2">Your screen, calendar, mail, chats, music and coding agents, in one question. Nook answers on your own Mac by default, shows where it looked, and asks before it does anything.</p>
+    <div class="ctas rv d3"><a class="btn primary lg" href="download.html"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.8 1.2 1.8 2.6 3.1 2.5 1.2 0 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8 0 0-2.6-1-2.6-4.2ZM13.9 4.9c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1.1.1 2.1-.6 2.8-1.4Z"/></svg>Download for Mac</a><a class="btn quiet lg" href="privacy.html">How it stays private</a></div>
+  </div>
+  <div class="wrap">
+    <div class="askbox rv d2" id="askbox"><div class="cbox"><div class="cin typed"><span id="askQ"></span><span class="caret"></span></div>
+      <div class="copts"><span>On this Mac</span><span class="div"></span><span>Everything</span><span class="send"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg></span></div></div></div>
+    <div class="ans" id="askA" style="text-align:left"></div>
+    <div class="qs" id="qs"></div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="shortcuts rv">
+    <div><kbd>⌥⌘Space</kbd><span>Ask from any app</span></div>
+    <div><kbd>⌥Space</kbd><span>Talk to Nook</span></div>
+    <div><kbd>⌥⌘W</kbd><span>Open the full window</span></div>
+    <div><kbd>⌘N</kbd><span>Start a new Nook</span></div>
+    <div><kbd>⌥⌘N</kbd><span>Look Along at this window</span></div>
+    <div><kbd>⌥⌘4</kbd><span>Ask about a screen region</span></div>
+  </div>
+</div>
+
+<!-- screen context -->
+<section>
+  <div class="wrap split">
+    <div class="copy">
+      <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Screen context</div>
+      <h2 class="rv d1">It sees what you see. <span>So you never paste.</span></h2>
+      <p class="sub rv d2">Nook keeps the text of every window up to date with on‑device OCR, across all your displays. Say "put this in my calendar", or press ⌥⌘N, and it pulls the dates, places and promises out of the window in front.</p>
+      <div class="points rv d2">
+        <div class="pt"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4-4"/></svg><div><b>Sources above every answer</b><span>Which windows and services it searched, what came back empty, and numbered citations that open in Mail, Finder or your browser.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6"/></svg><div><b>Drop anything in</b><span>Images, screenshots, PDFs and documents, or a screen region with ⌥⌘4.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h6"/></svg><div><b>You choose the scope</b><span>"Only my calendar and mail", or "not my screen". In plain words.</span></div></div>
+      </div>
+    </div>
+    <div class="rv d2" style="position:relative">
+      <div class="glowbg" style="background:radial-gradient(closest-side,rgba(143,179,240,.35),transparent)"></div>
+      <div class="screenwin">
+        <div class="tb"><div class="lights"><i></i><i></i><i></i></div><b>Your appointment is confirmed</b><span style="margin-left:auto">Mail</span></div>
+        <div class="mailtext"><div class="scanline"></div>
+          Hi Michan,<br><br>
+          This is to confirm your check‑up at <mark>Smile Dental, Keizersgracht 120</mark> on <mark>Thursday 14 November at 10:30</mark>. Please arrive ten minutes early and bring your insurance card.<br><br>
+          If you can't make it, let us know <mark>before Tuesday</mark>.
+        </div>
+        <div class="found"><span class="mascot" style="--s:22px"><i></i><i></i></span><div>Check‑up at Smile Dental<small>Thu 14 Nov · 10:30 · Keizersgracht 120 · reminder on Tuesday</small></div><span class="a y" style="margin-left:auto">Add both</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- plans -->
+<section>
+  <div class="wrap split rev">
+    <div class="copy">
+      <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg>Plans</div>
+      <h2 class="rv d1">Ask for three things. <span>Check them, then Run.</span></h2>
+      <p class="sub rv d2">"Make reminders for the open items and draft an email to Lisa." Nook builds one plan. Turn steps on or off, edit the text, and only then press Run. If a step fails, you see what worked and pick up from there.</p>
+      <div class="points rv d2">
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M5 12l4 4L19 6"/></svg><div><b>Follow-ups and open loops</b><span>One‑click next steps under answers, and the promises you made, kept in the Nook tab.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><div><b>Charts in the chat</b><span>"Chart my meetings per day" draws a real chart from your calendar.</span></div></div>
+      </div>
+    </div>
+    <div class="rv d2" style="position:relative">
+      <div class="glowbg" style="background:radial-gradient(closest-side,rgba(244,244,246,.16),transparent)"></div>
+      <div class="panel plan">
+        <div class="ct-head"><span class="mascot" style="--s:16px"><i></i><i></i></span><b>Plan</b><span style="color:var(--t3)">· 3 steps</span><span class="right"><span class="chip">Nothing runs until you press Run</span></span></div>
+        <div class="pad">
+          <div class="stepr"><span class="chk">✓</span><div>Reminder: send the invoice to Jules<small>Reminders · Work · today 17:00</small></div><span class="st done">Ready</span></div>
+          <div class="stepr"><span class="chk">✓</span><div>Reminder: book the train to Lisbon<small>Reminders · Personal · Friday</small></div><span class="st done">Ready</span></div>
+          <div class="stepr"><span class="chk off">✓</span><div style="flex:1">Email to Lisa<small>Mail · draft, not sent</small><div class="edit">Hi Lisa, the mocks are in. Could we look at them together on Thursday? Michan</div></div></div>
+          <div style="display:flex;justify-content:flex-end;gap:6px;padding-top:12px"><span class="a">Edit</span><span class="a y">Run 2 steps</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- nooks -->
+<section>
+  <div class="wrap split">
+    <div class="copy">
+      <div class="label rv"><span class="mascot" style="--s:18px"><i></i><i></i></span>Nooks</div>
+      <h2 class="rv d1">Many questions at once. <span>Each in its own Nook.</span></h2>
+      <p class="sub rv d2">Every conversation is a Nook that works on one task. Start another with ⌘N while the others keep going. The list shows which one is working, which one waits for you, and which one is done.</p>
+    </div>
+    <div class="rv d2" style="position:relative">
+      <div class="glowbg" style="background:radial-gradient(closest-side,rgba(242,184,102,.25),transparent)"></div>
+      <div class="panel">
+        <div class="ct-head">Nook<svg class="i chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg><b>All Nooks</b></div>
+        <div class="pad ag">
+          <div class="sec" style="padding-top:2px">Today</div>
+          <div class="row sel"><span class="mascot" style="--s:16px"><i></i><i></i></span><div class="grow"><div class="ttl">Find a hotel in Lisbon near the river</div></div><span class="st work">Working</span></div>
+          <div class="row"><span class="mascot" style="--s:16px"><i></i><i></i></span><div class="grow"><div class="ttl">Plan my Monday</div></div><span class="st wait">Waiting on you</span></div>
+          <div class="row"><span class="mascot" style="--s:16px"><i></i><i></i></span><div class="grow"><div class="ttl">Summarize the PR reviews</div></div><span class="st done">Done</span></div>
+          <div class="sec">Earlier</div>
+          <div class="row"><span class="mascot" style="--s:16px"><i></i><i></i></span><div class="grow"><div class="ttl">Weekly recap</div></div><span class="meta">Mon</span></div>
+          <div class="row"><span class="mascot" style="--s:16px"><i></i><i></i></span><div class="grow"><div class="ttl">Gift ideas for Mom</div></div><span class="meta">Sun</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- more -->
+<section>
+  <div class="wrap center">
+    <div class="label rv">And quietly, in the background</div>
+    <h2 class="rv d1">Small things that add up.</h2>
+  </div>
+  <div class="wrap">
+    <div class="fgrid rv d2">
+      <div><svg viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0-6 6c0 2.2 1.2 3.6 2.2 4.6.7.7.8 1.4.8 2.4h6c0-1 .1-1.7.8-2.4 1-1 2.2-2.4 2.2-4.6a6 6 0 0 0-6-6ZM9 20h6"/></svg><b>Memory without setup</b><span>"Remember that Lisa is my wife." It also learns from your corrections. Everything stays in a file on your Mac that you can search, edit or empty.</span></div>
+      <div><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 8v4l2.5 2.5"/></svg><b>Think Along</b><span>Optional. When you focus on something for a while, Nook can quietly offer help, like adding it to your calendar. Mute it per app.</span></div>
+      <div><svg viewBox="0 0 24 24"><path d="M5 3l14 9-7 1.5L9 20Z"/></svg><b>Nook takes over</b><span>Tap right ⌘ and say what to do: fill in a form, order the coffee filters. A card waits for your yes before anything that pays, sends, deletes or books.</span></div>
+      <div><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><b>Talk to it</b><span>⌥Space for on‑device speech, or the local "Hey Nook" wake word, with spoken answers if you like.</span></div>
+      <div><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><b>Call notes</b><span>Records a call on your Mac, tells the speakers apart, and gives you a transcript, a summary and the action items.</span></div>
+      <div><svg viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg><b>Easy on your battery</b><span>Background work slows down on battery and pauses when your Mac is hot, busy or asleep. What you ask for always runs at full speed.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- music and your day -->
+<section>
+  <div class="wrap split rev">
+    <div class="copy">
+      <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></svg>Music and your day</div>
+      <h2 class="rv d1">The soundtrack and the schedule. <span>Right next to the work.</span></h2>
+      <p class="sub rv d2">Spotify and Apple Music with artwork, synced lyrics, Up Next and playlists. Your next meeting and today's reminders beside it. "Next track" or "volume 30" happens at once, without waiting for a model.</p>
+    </div>
+    <div class="rv d2" style="position:relative">
+      <div class="glowbg" style="background:radial-gradient(closest-side,rgba(240,147,106,.3),transparent)"></div>
+      <div class="panel" style="padding-bottom:16px">
+        <div class="ct-head">Music<svg class="i chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg><b>Playing</b><span class="right"><span class="chip"><span style="width:7px;height:7px;border-radius:50%;background:#1DB954"></span>Spotify</span></span></div>
+        <div class="nowp" style="margin:16px 16px 0">
+          <div class="cover"></div>
+          <div style="flex:1;min-width:0">
+            <div class="kick"><span class="eq"><i></i><i></i><i></i></span>Playing on Spotify</div>
+            <h4>Slow Motion Summer</h4>
+            <p>The Harbour Lights · Second Coast</p>
+            <div class="lyr">“We drove until the streetlights ran out”</div>
+            <div class="ctrls"><span>⇄</span><span>⏮</span><span class="pp">❚❚</span><span>⏭</span><span>↻</span></div>
+          </div>
+        </div>
+        <div class="duo" style="margin:12px 16px 0">
+          <div class="card"><h5>Up next</h5>
+            <div class="ev"><i style="background:var(--mint)"></i><div>Design review with Lotte<small>14:00 · in 10 min · Zoom</small></div></div>
+            <div class="ev"><i></i><div>Dinner with Sam<small>20:00 · Luca's</small></div></div>
+          </div>
+          <div class="card"><h5>Reminders</h5>
+            <div class="ev"><i style="background:var(--amber)"></i><div>Send the invoice to Jules<small>today 17:00</small></div></div>
+            <div class="ev"><i></i><div>Book the train to Lisbon<small>Friday</small></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- buddy -->
+<section>
+  <div class="wrap center">
+    <div class="label rv"><span class="mascot" style="--s:18px"><i></i><i></i></span>A buddy, not a tool</div>
+    <h2 class="rv d1">It has a face. <span>And good timing.</span></h2>
+    <p class="sub rv d2">Nook looks at your cursor, nods when a task is done, and wears a ring that shows what's going on: white for working, amber for waiting on you, coral for a problem, mint for done.</p>
+    <div class="moods rv d2">
+      <div><span class="ring" style="--rc:var(--paper)"><span class="mascot" style="--s:56px"><i></i><i></i></span></span>Working</div>
+      <div><span class="ring" style="--rc:var(--amber)"><span class="mascot" style="--s:56px"><i></i><i></i></span></span>Waiting on you</div>
+      <div><span class="ring" style="--rc:var(--coral)"><span class="mascot" style="--s:56px"><i></i><i></i></span></span>Needs a look</div>
+      <div><span class="ring" style="--rc:var(--mint)"><span class="mascot" style="--s:56px"><i></i><i></i></span></span>Done</div>
+    </div>
+    <div class="moments">
+      <div class="moment rv"><div class="bub">Good morning! Three meetings today, the first at 10:00.</div><b>Good morning</b><span>Your day in one line.</span></div>
+      <div class="moment rv d1"><div class="bub">Welcome back. Claude finished the refactor while you were out.</div><b>Welcome back</b><span>What finished while you were away.</span></div>
+      <div class="moment rv d2"><div class="bub">You've been at it for 90 minutes. Breathe along for a minute?</div><b>A short break</b><span>With a minute of breathing along.</span></div>
+      <div class="moment rv d3"><div class="bub">That's your 100th merged pull request. Nice work.</div><b>Milestones</b><span>Celebrated once, quietly.</span></div>
+    </div>
+    <p class="sub rv" style="font-size:15px;margin-top:28px">Little moments are optional (Settings › Appearance): at most four a day, never during a meeting or a call, and all on your Mac.</p>
+  </div>
+</section>
+
+<div class="wrap">
+  <div class="band rv">
+    <span class="mascot" style="--s:72px;box-shadow:0 0 80px rgba(255,255,255,.2)"><i></i><i></i></span>
+    <h2 style="margin-top:32px">Ask your first question.<br><span>It's free, and it stays on your Mac.</span></h2>
+    <div class="ctas"><a class="btn primary lg" href="download.html"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.8 1.2 1.8 2.6 3.1 2.5 1.2 0 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8 0 0-2.6-1-2.6-4.2ZM13.9 4.9c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1.1.1 2.1-.6 2.8-1.4Z"/></svg>Download for Mac</a><a class="btn quiet lg" href="writing.html">Next: Writing</a></div>
+  </div>
+</div>
+
+<footer class="foot">
+  <div class="wrap">
+    <div><a class="brand" href="index.html" style="font-size:16px"><span class="mascot" style="--s:22px"><i></i><i></i></span>Nook</a>
+      <p>The one calm place for everything that needs you: people, coding agents, music and your day.</p></div>
+    <div><h6>Product</h6><ul><li><a href="agents.html">Agents</a></li><li><a href="chats.html">Chats</a></li><li><a href="assistant.html">Assistant</a></li><li><a href="writing.html">Writing</a></li></ul></div>
+    <div><h6>Trust</h6><ul><li><a href="privacy.html">Privacy</a></li><li><a href="https://github.com/IAMichan/nook/blob/main/SECURITY.md">Security</a></li><li><a href="https://github.com/IAMichan/nook/blob/main/LICENSE">MIT License</a></li></ul></div>
+    <div><h6>Get Nook</h6><ul><li><a href="download.html">Download</a></li><li><a href="https://github.com/IAMichan/nook">GitHub</a></li><li><a href="https://github.com/IAMichan/nook/tree/main/docs">Documentation</a></li><li><a href="https://github.com/IAMichan/nook/blob/main/CHANGELOG.md">Changelog</a></li></ul></div>
+    <div class="base"><span>Free and open source</span><span>Made for people who like a calm screen</span></div>
+  </div>
+</footer>
+<script src="assets/nook.js"></script>
+<script>
+/* Ask demo: the question types itself, then the answer arrives with its sources above it. */
+(function(){
+  const QA=[
+    ["What needs me before 14:00?","Three things. <b>Claude Code</b> is waiting to push the dark mode toggle<sup>1</sup>, <b>Lotte</b> wants your eyes on the mocks before the review<sup>2</sup>, and <b>Sam</b> asked if dinner can be at eight<sup>3</sup>.",["Agents","Slack","WhatsApp","Calendar"]],
+    ["When is my dentist appointment?","<b>Thursday 14 November at 10:30</b>, at Smile Dental on Keizersgracht 120<sup>1</sup>. They asked you to cancel before Tuesday if you can't make it. Shall I add it to your calendar with a reminder?",["Screen · Mail","Calendar"]],
+    ["Play something calm and tell Sam I'm late","I'll put on <b>Deep Focus</b> and send Sam: <i>“Running 15 minutes late, sorry! See you at Luca's.”</i> Shall I do both?",["Spotify","WhatsApp"]],
+  ];
+  const qs=$('#qs'),Q=$('#askQ'),A=$('#askA');let qi=0,qT;
+  QA.forEach((q,i)=>{const b=document.createElement('button');b.textContent=q[0];b.onclick=()=>ask(i);qs.appendChild(b)});
+  function ask(i){qi=i;clearTimeout(qT);[...qs.children].forEach((b,k)=>b.classList.toggle('on',k===i));
+    const[q,a,s]=QA[i];Q.textContent='';A.innerHTML='';let n=0;
+    (function t(){Q.textContent=q.slice(0,++n);if(n<q.length)qT=setTimeout(t,30);else qT=setTimeout(()=>{
+      A.innerHTML=`<div style="display:flex;gap:14px"><span class="mascot" style="--s:24px;margin-top:3px"><i></i><i></i></span><div><div class="asked">Looked at ${s.map(x=>`<span>${x}</span>`).join('')}</div><div class="txt" style="opacity:0;transition:opacity .5s">${a}</div></div></div>`;
+      requestAnimationFrame(()=>{A.querySelector('.asked').style.opacity=1;setTimeout(()=>{const t=A.querySelector('.txt');if(t)t.style.opacity=1},350)});
+      qT=setTimeout(()=>ask((qi+1)%QA.length),7500)},450)})();}
+  whenVisible($('#askbox'),()=>ask(0),.1);
+})();
+</script>
+</body>
+</html>

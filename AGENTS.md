@@ -2,6 +2,19 @@
 
 This file provides instructions for all AI coding agents (Claude Code, Codex, Antigravity, Cursor, Gemini CLI, Copilot, OpenCode, Amp, Hermes, etc.) working in the **Nook** repository.
 
+## What Nook Is
+
+Nook is **not "the thing in the notch."** It is the user's buddy: the one calm place that gathers everything that asks for their attention, so they keep the overview and can steer instead of chase. People (every chat app and mail account), coding agents (the harness that runs, follows, and gates them), music, the calendar, reminders, pull requests, and connected services all flow into one overview. Nook sorts what really needs the user, says it once and quietly, answers questions across all of it, and acts only after the user says yes.
+
+Nook's home is its main window, with the iPhone and Android companion and the top bar on Windows and Linux beside it. The notch is an **optional extra**: a nice glance for people who like it (`AppSettings.showNotch`, *Settings › Notch › Nook in the notch*), never a requirement. Keep that in mind when you build or write anything:
+
+- **Everything works with the notch off.** Every feature is complete in the main window and reachable from the shortcut and the menu bar. The notch may show a feature in brief, but never as the only place to see or do it.
+- **Think in attention, not surfaces.** A new feature answers "what does the user need to know or decide, and when?" before "where does it go?" Put it in the shared `PanelView` so every surface gets it.
+- **Everything is a stream into one overview.** People, agents, music, and the day are equals. A new source feeds the same attention flow (waiting on you, done, error) instead of building its own corner.
+- **Calm by default.** Interrupt only for what truly needs the user; group, summarize, and let the rest wait. Idle Nook costs nothing and says nothing.
+- **The user steers, Nook carries.** Nook proposes, drafts, and prepares; every side effect goes through the approval card and the audit log.
+- **In copy and docs** (README, release notes, the website, store text, videos), describe Nook as the assistant that keeps the overview of people, agents, and the rest of the day. Show the main window first; mention the notch as an optional extra you can turn on, not as what Nook is.
+
 ## 1. Language Policy (Strict English Default)
 
 Nook is an open-source project. **English is the default language across the entire repository:**
