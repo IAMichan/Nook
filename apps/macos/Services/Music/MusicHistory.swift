@@ -204,6 +204,10 @@ struct MusicStats: Equatable {
     var buckets: [Bucket] = []
     /// Seconds per hour of the day, 0 to 23.
     var hours = [Int](repeating: 0, count: 24)
+    /// Seconds per day of the week and hour: seven rows from the calendar's first weekday, 24 hours each.
+    var weekHours = [[Int]](repeating: [Int](repeating: 0, count: 24), count: 7)
+    /// Artists in this period that were never played before it. `nil` for all time, which has no before.
+    var newArtists: Int?
     var topTracks: [TrackRank] = []
     var topArtists: [ArtistRank] = []
     /// Days in a row with music, up to today or yesterday.
@@ -241,12 +245,17 @@ struct MusicStats: Equatable {
         var tracks: [String: TrackRank] = [:]
         var artists: [String: ArtistRank] = [:]
         for play in shown {
-            let parts = calendar.dateComponents([.year, .month, .day, .hour], from: play.playedAt)
+            let parts = calendar.dateComponents([.year, .month, .day, .hour, .weekday], from: play.playedAt)
             let day = calendar.date(from: DateComponents(year: parts.year, month: parts.month, day: parts.day)) ?? play.playedAt
             days[day, default: 0] += play.listened
             let bucket = period.byDay ? day : calendar.date(from: DateComponents(year: parts.year, month: parts.month)) ?? day
             if let index = bucketIndex[bucket] { buckets[index].seconds += play.listened }
-            if let hour = parts.hour, hours.indices.contains(hour) { hours[hour] += play.listened }
+            if let hour = parts.hour, hours.indices.contains(hour) {
+                hours[hour] += play.listened
+                if let weekday = parts.weekday {
+                    weekHours[(weekday - calendar.firstWeekday + 7) % 7][hour] += play.listened
+                }
+            }
 
             var rank = tracks[play.key] ?? TrackRank(track: play.track, plays: 0, seconds: 0)
             rank.plays += 1
@@ -263,6 +272,10 @@ struct MusicStats: Equatable {
         }
         uniqueTracks = tracks.count
         uniqueArtists = artists.count
+        if let start {
+            let known = Set(all.lazy.filter { $0.playedAt < start }.map(\.artist))
+            newArtists = artists.keys.filter { !known.contains($0) }.count
+        }
         topTracks = Array(tracks.values.sorted { ($0.plays, $0.seconds, $1.track.title) > ($1.plays, $1.seconds, $0.track.title) }.prefix(Self.rankLimit))
         topArtists = Array(artists.values.sorted { ($0.seconds, $1.name) > ($1.seconds, $0.name) }.prefix(Self.rankLimit))
         bestDay = days.max { ($0.value, $1.key) < ($1.value, $0.key) }.map { Bucket(start: $0.key, seconds: $0.value) }
