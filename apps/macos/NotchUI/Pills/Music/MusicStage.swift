@@ -543,6 +543,8 @@ struct MusicCoverItem: Identifiable {
     var track: MusicTrack? = nil
     /// This is what plays now.
     var playing = false
+    /// A person (an artist): a round picture.
+    var round = false
     let action: () -> Void
 
     struct Secondary {
@@ -594,8 +596,15 @@ struct MusicCoverCard: View {
                 Color.clear
                     .aspectRatio(1, contentMode: .fit)
                     .overlay {
-                        MusicArtwork(url: item.artworkURL, seed: item.title, symbol: item.symbol, cornerRadius: NookTheme.Radius.card)
+                        if item.round {
+                            MusicArtwork(url: item.artworkURL, seed: item.title, symbol: item.symbol, cornerRadius: 0)
+                                .clipShape(Circle())
+                                .overlay(Circle().strokeBorder(NookTheme.paper.opacity(0.08), lineWidth: 1))
+                        } else {
+                            MusicArtwork(url: item.artworkURL, seed: item.title, symbol: item.symbol, cornerRadius: NookTheme.Radius.card)
+                        }
                     }
+                    .shadow(color: .black.opacity(hovering ? 0.45 : 0.3), radius: hovering ? 14 : 8, y: hovering ? 8 : 4)
                     .overlay(alignment: .bottomLeading) {
                         if item.playing {
                             EqualizerBars(color: NookTheme.music, height: 10, isPlaying: service?.current?.isPlaying ?? false)
@@ -608,14 +617,16 @@ struct MusicCoverCard: View {
                     }
                     .overlay {
                         // Under the pointer: a soft shade and what a click does, in the corner.
-                        RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                        (item.round ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)))
                             .fill(Color.black.opacity(0.25))
-                            .overlay(alignment: .bottomTrailing) {
+                            .overlay(alignment: item.round ? .center : .bottomTrailing) {
                                 Image(systemName: item.hoverSymbol)
                                     .font(NookTheme.font(13, .bold))
                                     .foregroundStyle(NookTheme.ink)
                                     .frame(width: 36, height: 36)
-                                    .background(Circle().fill(NookTheme.paper))
+                                    .background(Circle().fill(item.hoverSymbol == "play.fill" ? NookTheme.music : NookTheme.paper))
+                                    .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+                                    .offset(y: hovering ? 0 : 6)
                                     .padding(NookTheme.Spacing.md)
                             }
                             .opacity(hovering ? 1 : 0)

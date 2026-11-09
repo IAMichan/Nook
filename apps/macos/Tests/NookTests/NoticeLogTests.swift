@@ -80,4 +80,25 @@ final class NoticeLogTests: XCTestCase {
         XCTAssertEqual(log.entries.map(\.key), ["a"])
         XCTAssertEqual(log.unseen, 1)
     }
+
+    /// A macOS notification keeps where it leads, so a click on one from before a restart still opens it.
+    func testTargetSurvivesInANotification() {
+        let run = UUID()
+        let targets: [NoticeEntry.Target] = [.agent("cc-1"), .run(run), .agents, .conversation(UUID()),
+                                             .chat("telegram|anna"), .nowhere]
+        for target in targets {
+            let stored: [AnyHashable: Any] = target.stored
+            XCTAssertEqual(NoticeEntry.Target(stored: stored), target)
+        }
+        XCTAssertEqual(NoticeEntry.Target(stored: [:]), .nowhere)
+        XCTAssertEqual(NoticeEntry.Target(stored: ["target": "run", "id": "garbage"]), .agents)
+    }
+
+    /// One group per chat and per session; a session Nook runs groups as its agent notice names it ("run:<id>").
+    func testNotificationsGroupPerChatAndSession() {
+        let run = UUID()
+        XCTAssertEqual(NoticeEntry.Target.chat("whatsapp#jan").thread, "chat:whatsapp#jan")
+        XCTAssertEqual(NoticeEntry.Target.run(run).thread, NoticeEntry.Target.agent("run:" + run.uuidString).thread)
+        XCTAssertNotEqual(NoticeEntry.Target.chat("a").thread, NoticeEntry.Target.chat("b").thread)
+    }
 }

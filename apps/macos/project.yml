@@ -184,6 +184,7 @@ targets:
       - path: Core/I18n+Memory.swift
       - path: Core/I18n+Music.swift
       - path: Core/I18n+MusicPage.swift
+      - path: Core/I18n+MusicRedesign.swift
       - path: Core/I18n+Permissions.swift
       - path: Core/I18n+Redesign.swift
       - path: Core/I18n+Selection.swift
