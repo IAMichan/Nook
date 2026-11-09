@@ -126,3 +126,140 @@ enum PullRequestViewer {
         if !AppModel.shared.openPullRequestLink(url, beside: true) { BrowserStore.show(url) }
     }
 }
+
+/// The git step a finished session's hover card offers: the one its branch needs (commit, push, pull request) with the
+/// other way to go under it, as the session panel's commit row. A session Nook runs goes through its workspace, one it
+/// only sees (a terminal, another app) through its folder, so every coding agent gets it. Nothing shows while there is
+/// nothing to do. Clicks keep the card open: it shows the step under way and asks before pushing to the default branch.
+struct HoverCardGitAction: View {
+    @ObservedObject private var workspace = AppModel.shared.workspace
+    let runID: UUID?
+    let directory: String
+    @State private var state: GitQuickState?
+    /// The repository root of a session Nook only sees.
+    @State private var root: String?
+    @State private var confirmDefault: GitQuickAction?
+
+    /// The step under way, kept by the workspace so the row, the panel and this card show the same.
+    private var progress: String? {
+        if let runID { return workspace.quickGitProgress(runID)?.step }
+        return workspace.quickGitProgress(folder: root ?? directory)?.step
+    }
+
+    private var active: Bool { runID.flatMap { workspace.run($0)?.status.isActive } ?? false }
+
+    var body: some View {
+        Group {
+            if let progress {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                    NookDivider()
+                    HStack(spacing: NookTheme.Spacing.md) {
+                        ProgressView().controlSize(.mini).frame(width: 16)
+                        Text(progress).lineLimit(1)
+                    }
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                }
+            } else if let state, !active, case .success(let action) = GitQuickResolver.resolve(state) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                    NookDivider()
+                    if let confirmDefault {
+                        confirmation(confirmDefault, branch: state.branch ?? "")
+                    } else {
+                        line(action, primary: true)
+                        if let key = GitQuickResolver.destinationKey(state, action: action) {
+                            Text(tr(key))
+                                .font(NookTheme.TextStyle.caption)
+                                .foregroundStyle(NookTheme.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        ForEach(GitQuickResolver.alternatives(state), id: \.labelKey) { other in
+                            line(other, primary: false)
+                        }
+                    }
+                }
+            }
+        }
+        // Read when the card opens, and again whenever the workspace reads the session's git.
+        .task(id: runID.flatMap { workspace.git[$0]?.updated }) { await load() }
+    }
+
+    private func line(_ action: GitQuickAction, primary: Bool) -> some View {
+        HoverCardButton(help: primary ? tr("ws.quick.help") : tr("ws.quick.newBranchHint"), closes: false,
+                        action: { start(action) }) {
+            HStack(spacing: NookTheme.Spacing.md) {
+                Image(systemName: Self.symbol(action))
+                    .font(NookTheme.font(11, .medium))
+                    .foregroundStyle(primary ? NookTheme.iris : NookTheme.textTertiary)
+                    .frame(width: 16)
+                Text(tr(action.labelKey))
+                    .lineLimit(1)
+            }
+            .font(primary ? NookTheme.TextStyle.strong : NookTheme.TextStyle.detail)
+            .foregroundStyle(primary ? NookTheme.paper : NookTheme.textSecondary)
+        }
+    }
+
+    /// Pushing to the default branch asks first, in the card.
+    private func confirmation(_ action: GitQuickAction, branch: String) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            Text(tr("ws.quick.defaultMessage", branch))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.amber)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Spacer(minLength: 0)
+                SmallGhostButton(title: tr("button.cancel")) { confirmDefault = nil }
+                SmallPrimaryButton(title: tr("ws.quick.confirm")) { perform(action) }
+            }
+        }
+    }
+
+    private static func symbol(_ action: GitQuickAction) -> String {
+        switch action {
+        case .commit: return "checkmark.circle"
+        case .commitPush, .push: return "arrow.up.circle"
+        case .commitPushPR, .pushPR, .createPR: return PullRequestIcon.generic
+        case .branchCommitPushPR, .branchPushPR: return "arrow.triangle.branch"
+        case .pull: return "arrow.down.circle"
+        }
+    }
+
+    private func load() async {
+        if let runID {
+            // Not read yet (a session nobody opened since launch): the workspace reads it, and this runs again then.
+            guard workspace.git[runID]?.status != nil else { return workspace.refreshGit(runID, quiet: true) }
+            state = await workspace.quickGitState(runID)
+        } else {
+            let model = FolderGitModel(directory: directory)
+            await model.refresh()
+            guard let found = model.root, let status = model.status else { state = nil; return }
+            root = found
+            state = await workspace.quickGitState(folder: found, status: status)
+        }
+    }
+
+    private func start(_ action: GitQuickAction) {
+        // A new branch never lands on the default one, so it needs no confirmation.
+        if state?.isDefaultBranch == true && action.pushes && !action.startsBranch { confirmDefault = action } else { perform(action) }
+    }
+
+    private func perform(_ action: GitQuickAction) {
+        confirmDefault = nil
+        let folder = root ?? directory
+        Task {
+            do {
+                let link: URL?
+                if let runID {
+                    link = try await workspace.performQuickGit(runID, action, progress: { _ in })
+                } else {
+                    link = try await workspace.performQuickGit(folder: folder, action, progress: { _ in })
+                }
+                ToastCenter.shared.gitQuick(action, result: .success(link))
+            } catch {
+                ToastCenter.shared.gitQuick(action, result: .failure(error))
+            }
+            await load()
+        }
+    }
+}
