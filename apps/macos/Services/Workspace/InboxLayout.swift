@@ -82,7 +82,7 @@ struct InboxState: Codable, Equatable, Sendable {
 
     mutating func dismissWoke(_ id: String) { dismissedWoke.insert(id) }
 
-    /// Moves `id` to `toIndex` (a final index, see `InboxDrop.reorderTarget`) inside the section as it is shown.
+    /// Moves `id` to `toIndex` (a final index) inside the section as it is shown.
     /// Only Pinned and Active have a manual order. Ids hidden from the section keep their relative place after it.
     mutating func reorder(_ id: String, toIndex: Int, within section: InboxSection) {
         guard section.kind == .pinned || section.kind == .active else { return }

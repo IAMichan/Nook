@@ -238,6 +238,9 @@ struct NookChatView: View {
                     .panelCard()
                 }
 
+                homeSection(tr("home.section.glance"))
+                HomeGlance(openAgent: openAgent, openMusic: { viewModel.show(.panel(.music)) })
+
                 homeSection(tr("home.section.start"))
                 suggestions
             }
@@ -258,13 +261,18 @@ struct NookChatView: View {
         return line.prefix(1).uppercased() + line.dropFirst()
     }
 
+    /// Opens Agents on a session, or on its list when there is none.
+    private func openAgent(_ id: String?) {
+        if let id { viewModel.selectedAgentID = id }
+        if compact { viewModel.show(.panel(.agents)) } else { app.openWorkspace() }
+    }
+
     private func open(_ item: TodayItem) {
         switch item.target {
         case .card(let scene):
             viewModel.show(.card(DemoContent.card(for: scene)))
         case .agent(let id):
-            viewModel.selectedAgentID = id
-            if compact { viewModel.show(.panel(.agents)) } else { app.openWorkspace() }
+            openAgent(id)
         case .action(let run):
             run()
         case .none:
