@@ -50,6 +50,10 @@ final class WorkspaceSettings: ObservableObject {
     @Published var defaultMode: ExecutionMode {
         didSet { defaults.set(defaultMode.rawValue, forKey: "ws.defaultMode") }
     }
+    /// What browsers do with sign-ins in every project that does not set its own, and in Nook's own browser.
+    @Published var browserSignInPolicy: BrowserSignInPolicy {
+        didSet { defaults.set(browserSignInPolicy.stored, forKey: "ws.browserSignIns") }
+    }
     @Published var defaultIsolation: IsolationMode {
         didSet { defaults.set(defaultIsolation.rawValue, forKey: "ws.defaultIsolation") }
     }
@@ -205,6 +209,7 @@ final class WorkspaceSettings: ObservableObject {
         onlineModelList = defaults.object(forKey: "ws.onlineModelList") as? Bool ?? true
         defaultMode = ExecutionMode(rawValue: defaults.string(forKey: "ws.defaultMode") ?? "") ?? .agent
         defaultIsolation = IsolationMode(rawValue: defaults.string(forKey: "ws.defaultIsolation") ?? "") ?? .worktree
+        browserSignInPolicy = BrowserSignInPolicy(stored: defaults.string(forKey: "ws.browserSignIns") ?? "") ?? .ask
         defaultPermission = PermissionPolicy(rawValue: defaults.string(forKey: "ws.defaultPermission") ?? "") ?? .acceptEdits
         worktreeRoot = defaults.string(forKey: "ws.worktreeRoot").flatMap { $0.isEmpty ? nil : $0 } ?? Self.standardWorktreeRoot
         branchPrefix = defaults.string(forKey: WorktreeNaming.branchPrefixKey) ?? WorktreeNaming.defaultBranchPrefix
@@ -345,7 +350,7 @@ final class WorkspaceSettings: ObservableObject {
     var globalDefaults: SessionDefaults {
         SessionDefaults(provider: defaultProvider, models: defaultModels, permission: defaultPermission,
                         isolation: defaultIsolation, branchPrefix: WorktreeNaming.normalizedBranchPrefix(branchPrefix),
-                        titleInstructions: titleInstructions)
+                        titleInstructions: titleInstructions, browserSignIns: browserSignInPolicy)
     }
 
     /// What a new session in this folder starts with: the folder's own overrides, the global values for the rest.

@@ -41,6 +41,9 @@ final class BrowserStore: ObservableObject {
     private var watchers: [UUID: AnyCancellable] = [:]
     /// The session this browser belongs to; nil for Nook's own browser.
     let session: BrowserSession.Key?
+    /// The site you just signed in to while this browser still asks whether to keep sign-ins (`BrowserProfiles`): the
+    /// browser asks above the page until you answer.
+    @Published private(set) var signInQuestion: String?
 
     /// One website data store for all tabs of this browser: see `BrowserProfiles`.
     private let dataStore: WKWebsiteDataStore
@@ -164,6 +167,19 @@ final class BrowserStore: ObservableObject {
 
     /// The session's tabs are done with: its pages go and their web views stop.
     func discard() { pages.forEach { $0.discard() } }
+
+    /// A page of this browser was signed in to: ask once whether to keep sign-ins, while nobody answered yet.
+    func signedIn(to host: String) {
+        guard signInQuestion == nil, BrowserProfiles.policy(for: session) == .ask else { return }
+        signInQuestion = host.isEmpty ? (page.webView.url?.host ?? "") : host
+    }
+
+    /// Your answer to the question: stored for good (Settings › Browser or the project's own row), or nil for "later",
+    /// which asks again at the next sign-in.
+    func answerSignIns(keep: Bool?) {
+        signInQuestion = nil
+        if let keep { BrowserProfiles.answer(session, keep) }
+    }
 
     /// Shows a page you asked for (a pull request Nook made, say) in the browser of the session in view when its browser
     /// shows, otherwise in Nook's own browser: the small window beside where you are, unless a browser page is already in view.
@@ -312,6 +328,11 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
         configuration.websiteDataStore = dataStore
         configuration.userContentController.addUserScript(
             WKUserScript(source: Self.consoleCapture, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        configuration.userContentController.addUserScript(
+            WKUserScript(source: BrowserSignInScript.source, injectionTime: .atDocumentEnd, forMainFrameOnly: false,
+                         in: .defaultClient))
+        let signIns = SignInMessages()
+        configuration.userContentController.add(signIns, contentWorld: .defaultClient, name: BrowserSignInScript.handlerName)
         if !BrowserStore.hasPasskeyEntitlement {
             configuration.userContentController.addUserScript(
                 WKUserScript(source: BrowserStore.hidePasskeys, injectionTime: .atDocumentStart, forMainFrameOnly: false))
@@ -323,6 +344,17 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
         super.init()
         webView.navigationDelegate = self
         webView.allowsBackForwardNavigationGestures = true
+        signIns.page = self
+    }
+
+    /// Hands the sign-in script's message to the page without the web view holding on to the page.
+    private final class SignInMessages: NSObject, WKScriptMessageHandler {
+        weak var page: BrowserPage?
+
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            let host = message.body as? String ?? ""
+            MainActor.assumeIsolated { page?.store?.signedIn(to: host) }
+        }
     }
 
     /// Not in sight any more (the browser went away, or another tab came into view): after `parkSeconds` the page is put away, since a page can
@@ -730,6 +762,7 @@ struct BrowserView: View {
                 .padding(.horizontal, NookTheme.Spacing.lg)
                 .padding(.bottom, NookTheme.Spacing.sm)
             }
+            if let site = store.signInQuestion { signInQuestion(site) }
             if let picked { pickBar(picked) }
             // A line only above a page; the empty browser runs on into the background.
             NookDivider()
@@ -760,6 +793,21 @@ struct BrowserView: View {
             let found = await LocalServers.scan()
             if found != servers { servers = found }
         }
+    }
+
+    /// After the first sign-in while sign-ins are still undecided: keep them after Nook quits, or not. Settings › Browser
+    /// changes the answer later.
+    private func signInQuestion(_ site: String) -> some View {
+        PanelNoticeBar(title: tr("browser.signIns.question"),
+                       detail: tr(store.session == nil ? "browser.signIns.detail" : "browser.signIns.detailProject", site),
+                       symbol: "person.badge.key") {
+            NookNoticeActions(
+                primary: NookNoticeAction(tr("browser.signIns.keep")) { store.answerSignIns(keep: true) },
+                secondary: NookNoticeAction(tr("browser.signIns.forget")) { store.answerSignIns(keep: false) },
+                extra: [NookNoticeAction(tr("browser.signIns.later")) { store.answerSignIns(keep: nil) }])
+        }
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .padding(.bottom, NookTheme.Spacing.sm)
     }
 
     /// The servers running on this Mac: one click opens one.

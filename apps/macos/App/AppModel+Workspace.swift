@@ -323,8 +323,20 @@ extension AppModel {
             guard run?.isRemote != true, !path.isEmpty else { return nil }
             return settings.projectOverrides.project(containing: path) ?? path
         }
-        BrowserProfiles.keepsSignIns = { [weak self] project in
-            self?.workspace.settings.sessionDefaults(for: project).browserSignIns ?? false
+        BrowserProfiles.policy = { [weak self] project in
+            guard let settings = self?.workspace.settings else { return .forget }
+            return project.map { settings.sessionDefaults(for: $0).browserSignIns } ?? settings.browserSignInPolicy
+        }
+        // The answer goes where the question came from: a project that asks of its own keeps it, the rest is for all.
+        BrowserProfiles.answer = { [weak self] key, keep in
+            guard let settings = self?.workspace.settings else { return }
+            let policy: BrowserSignInPolicy = keep ? .keep : .forget
+            if let key, let project = BrowserProfiles.project(key), settings.isOverridden(.browserSignIns, for: project) {
+                settings.setOverride(.browserSignIns, policy.stored, for: project)
+            } else {
+                settings.browserSignInPolicy = policy
+            }
+            if !keep { BrowserProfiles.sweep() }
         }
         BrowserProfiles.sweep()
         startWorkspaceBridge()
