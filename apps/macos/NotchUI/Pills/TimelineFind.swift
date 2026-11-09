@@ -220,6 +220,62 @@ private struct PinProbe: ViewModifier {
 }
 
 extension View {
+    /// Brings a lazy conversation back when it stands still with none of its rows in view. A lazy stack places rows it
+    /// has not measured yet by estimate; after a resize (a side panel opening narrows every row), a jump, or rows that
+    /// turned out shorter than guessed, the scroll view could rest on a stretch where it drew no row at all, and the
+    /// conversation stayed black until you scrolled. `recover` gets the last row that was in view (nil if none was) and
+    /// scrolls there; it runs again, with nil, when the first try left the view blank.
+    func recoversBlankRows<ID: Hashable>(_ type: ID.Type, rows: Int, idle: @escaping () -> Bool,
+                                         recover: @escaping (ID?) -> Void) -> some View {
+        modifier(BlankRowsGuard(rows: rows, idle: idle, recover: recover))
+    }
+}
+
+/// What `BlankRowsGuard` saw; not state any view draws from.
+@MainActor
+private final class BlankRowsWatch<ID: Hashable> {
+    var visible = true
+    var last: ID?
+    var check: Task<Void, Never>?
+}
+
+private struct BlankRowsGuard<ID: Hashable>: ViewModifier {
+    let rows: Int
+    let idle: () -> Bool
+    let recover: (ID?) -> Void
+    @State private var watch = BlankRowsWatch<ID>()
+
+    func body(content: Content) -> some View {
+        content
+            .onScrollTargetVisibilityChange(idType: ID.self, threshold: 0) { ids in
+                watch.visible = !ids.isEmpty
+                if let first = ids.first {
+                    watch.last = first
+                    watch.check?.cancel()
+                    watch.check = nil
+                    return
+                }
+                guard rows > 0, watch.check == nil else { return }
+                watch.check = Task { @MainActor in
+                    // Ended on its own, not replaced: the next blank may start a new check.
+                    defer { if !Task.isCancelled { watch.check = nil } }
+                    var tries = 0
+                    // A fast scroll can pass a moment with no row in view: only a view at rest that stays blank is broken.
+                    for _ in 0..<40 {
+                        try? await Task.sleep(for: .milliseconds(250))
+                        guard !Task.isCancelled, !watch.visible else { return }
+                        guard idle() else { continue }
+                        recover(tries == 0 ? watch.last : nil)
+                        tries += 1
+                        if tries == 3 { return }
+                    }
+                }
+            }
+            .onDisappear { watch.check?.cancel() }
+    }
+}
+
+extension View {
     /// The "scroll to end" pill just above this view (a composer over a conversation), without taking room from it.
     /// Centered on the conversation's column, as the composer is: the bar under it can be wider than that column (the
     /// column keeps its place in the row it shares with the side panels), and centering on the bar put the pill off to
