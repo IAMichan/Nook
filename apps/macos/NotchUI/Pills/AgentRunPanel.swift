@@ -1492,7 +1492,7 @@ struct AgentRunPanel: View {
         let idle = workspace.canTransfer(runID)
         let providers = idle ? app.connectedProviders : [run.provider]
         return ModelPickerDropdown {
-            ComposerPill(agent: run.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
+            ComposerPill(agent: run.provider.displayName, account: profile.map { AccountTag.of($0, app: app) },
                          text: [run.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "),
                          short: model ?? run.provider.displayName)
         } content: {
