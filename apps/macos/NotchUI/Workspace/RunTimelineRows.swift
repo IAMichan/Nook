@@ -22,6 +22,9 @@ struct EventRow: View {
     var shownFile: String? = nil
     /// "Edit from here" under a message of yours; nil where the session cannot go back to before it.
     var onEdit: (() -> Void)? = nil
+    /// Opens a command the agent left running in the background in the bar above the composer, where it goes on; nil
+    /// where there is no such bar.
+    var showBackground: (() -> Void)? = nil
 
     var body: some View {
         switch event.kind {
@@ -56,6 +59,13 @@ struct EventRow: View {
         case .tool where directory != nil && SharedFiles.isShare(event):
             SharedFilesRow(input: AgentActivity.input(event.detail) ?? [:], directory: directory ?? "", showFile: showFile,
                            shownFile: shownFile)
+
+        case .tool where showBackground != nil && BackgroundCommands.isCommand(event):
+            // The same command as the row in the bar above the composer: a line under it says it goes on there.
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                ToolRow(event: event, expanded: expanded, toggle: toggle)
+                BackgroundCommandLink(event: event) { showBackground?() }
+            }
 
         case .tool:
             if let showFile, let file = ToolRow.file(event, in: directory) {
