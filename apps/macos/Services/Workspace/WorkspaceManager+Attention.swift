@@ -19,6 +19,8 @@ extension WorkspaceManager {
             append(run.id, RunEvent(kind: .system, text: tr("ws.event.continueAfterRelaunch")))
             send(run.id, text: RestartContinuation.message)
         }
+        // Summaries planned before Nook quit, for the sessions whose cache is still warm.
+        scheduleIdleCompactions()
     }
 
     /// A turn that ended normally clears the chain of restart continuations.
@@ -38,6 +40,7 @@ extension WorkspaceManager {
     }
 
     func unsnooze(_ id: UUID) {
+        defer { scheduleIdleCompaction(id) }
         update(id) {
             $0.snoozedAt = nil
             $0.snoozedUntil = nil
