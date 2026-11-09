@@ -662,6 +662,7 @@ extension WorkspaceManager {
         turns[id] = nil
         update(id) { $0.move(to: .failed, detail: message) }
         append(id, RunEvent(kind: .error, text: message))
+        noteFailure(id, text: message)
         turnDidFinish(id)
     }
 }

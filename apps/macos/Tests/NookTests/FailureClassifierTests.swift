@@ -80,4 +80,28 @@ final class FailureClassifierTests: XCTestCase {
         let plain = FailureEvidence(resultSubtype: "success", messageText: "compacted", isCompaction: true)
         XCTAssertTrue(FailureClassifier.isFailure(plain))
     }
+
+    func testEveryAgentsWayOfSayingItHitALimit() {
+        let limited = [
+            "[API Error: got status: 429 Too Many Requests. RESOURCE_EXHAUSTED]",
+            "Quota exceeded for quota metric 'Generate Content API requests per minute'",
+            "You've hit your usage limit. Upgrade to Pro or try again at 3:05 PM.",
+            "Error: status 429",
+            "429",
+            "Rate limit exceeded, please retry later",
+        ]
+        for text in limited {
+            guard case .usageLimit = FailureClassifier.classify(FailureEvidence(isError: true, messageText: text)) else {
+                return XCTFail("not seen as a limit: \(text)")
+            }
+        }
+        for text in ["Read 4290 lines", "Error: ENOENT /tmp/1429x", "Version 1.429.0 is required"] {
+            if case .usageLimit = FailureClassifier.classify(FailureEvidence(isError: true, messageText: text)) {
+                XCTFail("a number that only contains 429 is not a limit: \(text)")
+            }
+        }
+        if case .usageLimit = FailureClassifier.classify(FailureEvidence(isError: false, messageText: "You hit your usage limit")) {
+            XCTFail("assistant text is never read as a failure")
+        }
+    }
 }

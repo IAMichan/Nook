@@ -1894,6 +1894,7 @@ final class WorkspaceManager: ObservableObject {
             let detail = Self.cleanError(state.lastError ?? stderr, status: status)
             update(id) { $0.move(to: .failed, detail: detail) }
             append(id, RunEvent(kind: .error, text: detail))
+            noteFailure(id, text: state.lastError ?? stderr)
             turnDidFinish(id)
         }
         scheduleGitRefresh(id, delay: 0.2)

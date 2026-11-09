@@ -16,6 +16,15 @@ extension WorkspaceManager {
         }
     }
 
+    /// A turn of any agent failed with this text: when it says a usage limit stopped it (a 429, "rate limit", a gateway's
+    /// reset time), the session waits for the reset like a Claude Code turn stopped by its own limit event. One classifier
+    /// for every agent (`FailureClassifier`), so "Resume at reset" works for each of them.
+    func noteFailure(_ id: UUID, text: String?) {
+        guard limitedTurns[id] == nil, let text, !text.isEmpty else { return }
+        let evidence = FailureEvidence(isError: true, messageText: text)
+        if case .usageLimit(let resetAt) = FailureClassifier.classify(evidence) { limitedTurns[id] = .some(resetAt) }
+    }
+
     /// After a turn: did a usage limit stop it? Then the session waits for the reset (and goes on then, if set so).
     func checkUsageLimit(_ id: UUID) {
         guard let known = limitedTurns.removeValue(forKey: id) else { return }
