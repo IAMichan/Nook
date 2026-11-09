@@ -22,7 +22,7 @@ for another language; Nook speaks English, Dutch, German, French and Spanish, so
 | `scripts/render.mjs` | Renders a page frame by frame with Playwright, composes the score, mixes and encodes the MP4, renders the cover, makes a storyboard |
 | `scripts/music.py` | The score: pads, soft bass, a lo-fi groove (plucked arpeggio, round kick, snap, a whisper of hi-hat) and sound cues, generated from scratch (numpy only), so it is free to use anywhere |
 | `examples/contributor-reel.html`, `examples/contributor-cover.html` | A complete 25 s Reel on an 80 BPM grid with a cold open, and its cover: copy these to start |
-| `examples/readme-clip.html` | The 1600×900 README clip (`docs/assets/nook-demo.mp4` and `.gif`): the release banner's layout, with the notch's tabs changing per scene |
+| `examples/readme-clip.html` | The 1600×900 README clip (`docs/assets/nook-demo.mp4` and `.gif`): the words on the left, Nook's main window on the right, its tabs (Nook, Agents, Chats, Music) changing per scene |
 
 Needs Node with Playwright (Chromium), `ffmpeg`, and `python3` with `numpy`. On a Mac:
 `brew install ffmpeg node && npm i -g playwright && npx playwright install chromium && pip3 install numpy`.

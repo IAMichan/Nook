@@ -13,17 +13,21 @@
 [![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/IAMichan/Nook?utm_source=oss&utm_medium=github&utm_campaign=IAMichan%2FNook&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 [![Stars](https://img.shields.io/github/stars/IAMichan/nook?style=social)](https://github.com/IAMichan/nook/stargazers)
 
-**Your personal AI assistant and coding-agent command center — in the MacBook notch, at the top of your Windows or Linux screen, and on your phone.**
+**Everything that needs you, in one calm place: your people, your coding agents, your music, and the rest of your day.**
 
 <p align="center">
-  <a href="docs/assets/nook-demo.mp4"><img src="docs/assets/nook-demo.gif" width="100%" alt="Nook in the notch: a coding agent finishes, a chat waits for a reply and a pull request merges; Nook answers a question about your calendar, follows three coding agents, and gathers every chat in one inbox."></a>
+  <a href="docs/assets/nook-demo.mp4"><img src="docs/assets/nook-demo.gif" width="100%" alt="Nook's main window: the Nook tab shows what waits on you and a pull request merges; in Agents you allow a push, checks pass and the pull request merges; in Chats you answer Sam; Music shows what is playing. Local-first, open source, and the notch is optional."></a>
   <br>
-  <sub><a href="docs/assets/nook-demo.mp4">Watch with sound (MP4, 25 s)</a></sub>
+  <sub><a href="docs/assets/nook-demo.mp4">Watch with sound (MP4, 28 s)</a></sub>
 </p>
 
-Nook lives quietly in the notch of your Mac, in a bar at the top of your screen on Windows and Linux (or floats anywhere on any display), and comes along on your iPhone and Android phone. It keeps the text of every window up to date locally via on-device OCR, so any question is answered immediately with what you are looking at—combined with your Calendar, Reminders, Mail, browser tabs, local files, and connected services (**GitHub, Notion, Linear, Stripe, Vercel, Sentry, Cal.com, n8n, Resend, WhatsApp**, custom APIs/webhooks, and **MCP servers**).
+Nook is your buddy on the computer. People waiting for an answer, coding agents waiting for a yes, the song that is playing, and the meeting in ten minutes all flow into one overview. Nook sorts out what really needs you, tells you once and quietly, answers questions across all of it, and acts only after you say yes, so you keep the overview and steer instead of chase.
 
-By default, Nook runs **100% locally on your own computer** (on a Mac via built-in MLX models, Apple Foundation Models, Ollama, or LM Studio; on Windows and Linux via Ollama or LM Studio) at zero cost per query, or connects to external cloud models when you explicitly choose (**Claude, OpenAI, Google Gemini, Grok / xAI, Mistral, Groq, OpenRouter, DeepSeek, Qwen, Moonshot, Claude Code**). It also monitors and orchestrates your **coding agents** (**Claude Code, Codex, Cursor, Gemini CLI, Antigravity, Copilot CLI, Muse, OpenCode, Amp, Hermes**, or any custom agent), complete with live diffs, inline approvals, isolated Git worktrees, a built-in terminal and browser, system-wide inline autocomplete, push-to-talk dictation, call note-taking, and media controls.
+Nook's home is its **main window** on the Mac, with a bar at the top of the screen on Windows and Linux and a companion on your iPhone and Android phone. On a MacBook you can also let Nook live in the **notch** as an optional glance; everything works just as well with the notch off.
+
+Nook keeps the text of every window up to date locally via on-device OCR, so any question is answered with what you are looking at, combined with your Calendar, Reminders, Mail, chats, browser tabs, local files, and connected services (**GitHub, GitLab, Notion, Linear, Stripe, Vercel, Sentry, Cal.com, n8n, Resend**, custom APIs/webhooks, and **MCP servers**).
+
+By default, Nook runs **100% locally on your own computer** (on a Mac via built-in MLX models, Apple Foundation Models, Ollama, or LM Studio; on Windows and Linux via Ollama or LM Studio) at zero cost per query, or connects to cloud models when you explicitly choose (**Claude, OpenAI, Google Gemini, Grok / xAI, Mistral, Groq, OpenRouter, DeepSeek, Qwen, Moonshot**, or your own subscription through **Claude Code, Codex, Gemini CLI, Grok, Kimi Code, or Vibe**). It also runs, follows, and gates your **coding agents** (**Claude Code, Codex, Gemini CLI, Antigravity, OpenCode, Cursor, Grok**, any **ACP agent** you add, and hook-connected **Copilot CLI, Muse Code, Amp, and Hermes**), complete with live diffs, inline approvals, isolated Git worktrees, pull requests and CI, a built-in terminal and browser, system-wide inline autocomplete, push-to-talk dictation, call note-taking, and media controls.
 
 **Nothing runs, sends, or modifies files without your explicit approval.**
 
@@ -31,10 +35,11 @@ By default, Nook runs **100% locally on your own computer** (on a Mac via built-
 
 ## Why Nook?
 
+- **One calm overview.** People, agents, music, and your day are equals in one attention flow: what waits on you, what is working, what is done. Nook interrupts only for what truly needs you.
 - **Local-first and private.** The default brain runs on your own computer. Cloud models are opt-in, per source, and never get data you marked *Only on this Mac*.
-- **Always has context.** Live on-device OCR plus Calendar, Mail, Reminders, browser tabs, files, and your connected services, so you don't have to paste anything.
-- **All your chats in one inbox.** WhatsApp, Telegram, Instagram, Messenger, Snapchat, Signal, Messages, Slack, your mail (every account in the Mail app) and more in one list, answered from the notch.
-- **One place for your coding agents.** See what every agent is doing, review diffs, and approve tool calls from the notch instead of hunting through terminals.
+- **Always has context.** Live on-device OCR plus Calendar, Mail, Reminders, chats, browser tabs, files, and your connected services, so you don't have to paste anything.
+- **All your chats in one inbox.** WhatsApp, Telegram, Instagram, Messenger, Snapchat, Signal, Messages, Slack, Teams, your mail (every account in the Mail app) and more in one list, read and answered in place.
+- **One harness for your coding agents.** Start, follow, and steer every agent, review diffs and pull requests, and approve tool calls in one place instead of hunting through terminals.
 - **You stay in control.** Every side effect goes through an approval card and is written to a local audit log.
 - **One Nook on every platform.** A native macOS app, an iPhone companion, and one Tauri app for Windows, Linux, and Android that follows the Mac app's names and behavior.
 - **Open source (MIT).** Built to be read, hacked on, and translated.
@@ -42,7 +47,7 @@ By default, Nook runs **100% locally on your own computer** (on a Mac via built-
 > [!NOTE]
 > **Project Status (`v0.1`):** Early open-source release. The app compiles and its core test suite passes in CI, but expect rough edges as real-world testing expands.
 >
-> **Languages:** The interface defaults to **English** and supports **Dutch, German, French, and Spanish** (`Settings › General › App language`).
+> **Languages:** The interface defaults to **English** and supports **Dutch, German, French, and Spanish** (**Settings › General**).
 >
 > **Platform status:** macOS is the primary, most complete app and the specification the other apps follow. The iPhone companion and the Tauri app for Windows, Linux, and Android are in earlier stages; see [Platforms](#platforms).
 >
@@ -82,7 +87,7 @@ By default, Nook runs **100% locally on your own computer** (on a Mac via built-
 
 | Platform | App | Where | Status |
 |---|---|---|---|
-| **macOS 15+** | Native app (Swift, SwiftUI/AppKit) in the notch or floating | [`apps/macos`](apps/macos) | Primary, most complete |
+| **macOS 15+** | Native app (Swift, SwiftUI/AppKit): a main window, with the notch or a floating panel as an optional extra | [`apps/macos`](apps/macos) | Primary, most complete |
 | **iPhone** | **Nook Companion**: follow and approve your coding agents | [`apps/ios`](apps/ios) | Companion for Nook on Mac, Windows, or Linux |
 | **Windows** | Tauri app: a bar at the top of the screen or floating, tray, global hotkeys | [`apps/tauri`](apps/tauri) | Early: compiles in CI, not yet run on a real Windows PC |
 | **Linux** | Tauri app: a bar at the top of the screen or floating, tray, global hotkeys (X11) | [`apps/tauri`](apps/tauri) | Early: tested in the app |
@@ -121,32 +126,32 @@ Apple-only features (built-in MLX models, Apple Foundation Models, Apple Calenda
 | **Local-First Brain** | Runs on your Mac by default (built-in MLX models sized to your Mac's unified memory, Apple Foundation Models, Ollama, or LM Studio). Nothing leaves your computer and queries cost nothing. A model chip next to the input bar shows the active brain and opens a dropdown to switch between models on your Mac and every cloud provider you set up (**Claude** with native web search, **OpenAI, Gemini, Grok, Mistral, Groq, OpenRouter, DeepSeek, Qwen, Moonshot, Claude Code**); add a provider's key in **Settings › Brain**. |
 | **Chat Anywhere** | Press `⌥⌘Space` from any app, use the input bar in the **Nook** tab, or open the full window (`⌥⌘W`). Supports multi-turn follow-ups, streaming Markdown responses (headings, lists, tables, code), and context-aware starter prompts tailored to your active app, next calendar event, waiting agents, or time of day. |
 | **Talk to Nook** | Press `⌥Space` (or click the mic button) for on-device speech recognition, or enable the local **"Hey Nook"** wake word and spoken answers in **Settings › Sound & voice**. |
-| **Parallel Threads ("Nooks")** | Every conversation is an independent **Nook** working on a single task. Start a new one with `⌘N` while previous Nooks keep working in the background. A sidebar shows each Nook's status (*working*, *waiting for approval*, or *done*). If a Nook finishes while you are elsewhere, it notifies you in the notch. History is stored locally in `nooks.json`. |
+| **Parallel Threads ("Nooks")** | Every conversation is an independent **Nook** working on a single task. Start a new one with `⌘N` while previous Nooks keep working in the background. A sidebar shows each Nook's status (*working*, *waiting for approval*, or *done*). If a Nook finishes while you are elsewhere, Nook tells you once, quietly. History is stored locally in `nooks.json`. |
 | **Live Multi-Display Screen Context** | Continuously indexes window text across all connected displays using local OCR so answers are ready immediately. Say *"schedule an appointment for this"* or press `⌥⌘N` (**Look Along**) to extract dates, times, locations, promises, or tasks from the frontmost window. Above each answer, Nook shows which windows and sources it consulted. |
-| **Images, Screen Regions & Attachments** | Drag an image, screenshot, PDF, Word, RTF, or text file onto the chat/notch, or press `⌥⌘4` to select a screen region. Vision-capable brains receive the image directly; all brains receive the locally extracted OCR text. |
+| **Images, Screen Regions & Attachments** | Drag an image, screenshot, PDF, Word, RTF, or text file onto the chat, or press `⌥⌘4` to select a screen region. Vision-capable brains receive the image directly; all brains receive the locally extracted OCR text. |
 | **Grounded Sources & Citations** | Automatically selects relevant connectors per question. Above the response, you see which sources were searched, returned nothing, or failed; below the response, numbered citations (`[1]`, `[2]`) open directly in Mail, Finder, or your browser. Restrict sources per query via the source picker or in natural language (*"only my calendar and mail"*, *"not my screen"*). See [`docs/ASSISTANT.md`](docs/ASSISTANT.md). |
 | **Multi-Step Action Plans** | Ask for compound tasks (*"create reminders for open items and draft an email to Lisa"*) and Nook builds a single interactive plan. Inspect parameters, toggle individual steps on or off, or edit text inline before clicking **Run**. If a step fails midway, Nook shows exactly what succeeded and lets you resume without duplicating completed actions. |
 | **Inline Charts** | Ask for a chart (*"chart my meetings per day"*) and Nook renders native bar, line, area, pie, or scatter charts directly in chat from your calendar, services, or web data—automatically converting code, JSON, Mermaid, or Markdown tables into native charts if a smaller model outputs raw markup. |
 | **Built-In Memory** | Zero setup required. Say *"remember that Lisa is my wife"* or *"always keep answers short"*—or *"forget…"* to remove it. Nook also learns automatically from your corrections, facts you share, preferred calendars/lists, and source usage. Everything stays in `nook.sqlite` on your Mac and can be inspected or deleted in **Settings › Assistant** (including 1-click import from an MCP memory server). |
-| **Proactive "Think Along"** | Optional (**Settings › Assistant**). When you focus on something for a while, Nook can quietly suggest help next to the notch (*"Shall I add this to your calendar?"*). Hover to **Run**, **Dismiss**, or **Mute for this app**. Missed suggestions stay available in **Today**. |
-| **Energy-Aware Background Work** | Nook reads your screen, thinks along and looks for running agents in the background so answers are ready at once. One central policy (`EnergyPolicy`) slows that work down on battery and pauses it when the battery runs low, while your Mac is hot, busy, in Low Power Mode, asleep, or while you are away, and trims the GPU and CPU it uses (fewer and smaller window captures, one OCR pass at a time, a 30 fps app mirror, a slower idle animation); anything you ask for always runs at full speed. Pick **Automatic**, **Saver** or **Full power** in **Settings › General › Energy**, where a status line says what Nook is doing right now and why. |
+| **Proactive "Think Along"** | Optional (**Settings › Assistant**). When you focus on something for a while, Nook can quietly suggest help (*"Shall I add this to your calendar?"*). Hover to **Run**, **Dismiss**, or **Mute for this app**. Missed suggestions stay available in **Today**. |
+| **Energy-Aware Background Work** | Nook reads your screen, thinks along and looks for running agents in the background so answers are ready at once. One central policy (`EnergyPolicy`) slows that work down on battery and pauses it when the battery runs low, while your Mac is hot, busy, in Low Power Mode, asleep, or while you are away, and trims the GPU and CPU it uses (fewer and smaller window captures, one OCR pass at a time, a 30 fps app mirror, a slower idle animation); anything you ask for always runs at full speed. Pick **Automatic**, **Saver** or **Full power** in **Settings › Maintenance › Energy**, where a status line says what Nook is doing right now and why. |
 | **Follow-Ups & Open Loops** | Suggests one-click next steps below answers (*"Add to calendar"*, *"Draft a reply"*) and tracks promises and open tasks locally in the **Nook** tab. |
 
 ### Coding Agents & Workspace
 
 | Feature | How It Works |
 |---|---|
-| **Live Agent Hub in the Notch** | Tracks **Claude Code, Codex, Cursor, Gemini CLI, Antigravity, Copilot CLI, Muse, OpenCode, Amp, Hermes**, and any custom tool using `nook_agent` (see [`docs/AGENTS.md`](docs/AGENTS.md)). See who is working (with live `+`/`−` line diffs), who is waiting, and approve tool calls right from the notch (**Allow**, **Always**, **Deny**, or **In Terminal**). Answers in the terminal immediately clear the notch card. Even supports Claude Code multiple-choice questions (`AskUserQuestion`). |
-| **Full Agent Workspace** | Open the **Agents** tab in the notch or the main window (`⌥⌘W`). Launch and supervise coding sessions (`claude -p` with `stream-json` and `codex exec --json`). Press `⌘N` (**New Session**) to pick a folder or clone a repo, enter a prompt, choose the agent, account, model, **Agent** or **Plan** mode, permissions, and whether to run in-place or in an **isolated Git worktree** on its own branch. Stop (`⌘.`), resume, and retry sessions across app restarts. |
-| **Git, Diffs & Pull Requests** | Inspect changed files, diffs, branches, and worktrees alongside each session. **Commit**, **Push**, and create **Pull Requests** (GitHub, GitLab, Gitea, Forgejo, Bitbucket) right from the notch or workspace window—always after your explicit click. **Agents › Pull requests** opens any GitHub pull request in full (description, checks, a full timeline of reviews, comments, commits and events, and every file's diff) and merges it (merge, squash, or rebase) after you confirm. Tick files as viewed (the mark lapses when a push changes the file), and let Claude Code or Codex write a **review guide**: the changes in reading order, what to look at closely, and the questions only a maintainer can answer. Commit messages follow the style you pick: Nook's own, Conventional Commits, the repository's, or your own instructions. |
+| **Live Agent Hub** | Tracks **Claude Code, Codex, Gemini CLI, Antigravity, OpenCode, Cursor, Grok**, your **ACP agents**, **Copilot CLI, Muse Code, Amp, Hermes**, and any custom tool using `nook_agent` (see [`docs/AGENTS.md`](docs/AGENTS.md) and the feature matrix in [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)). See who is working (with live `+`/`−` line counts), who is waiting, and approve tool calls in the **Agents** tab, or at a glance in the notch (**Allow**, **Always**, **Deny**, or **In Terminal**). Answers in the terminal immediately clear the approval card. Even supports Claude Code multiple-choice questions (`AskUserQuestion`). |
+| **Full Agent Workspace** | Open the **Agents** tab in the main window (`⌥⌘W`). Launch and supervise coding sessions with every agent above (Claude Code `stream-json`, Codex app-server, Gemini CLI and the other agents over ACP), each with its own terminal, browser, and side panel for changes, files, and rendered pages. Press `⌘N` (**New Session**) to pick a folder or clone a repo, enter a prompt, choose the agent, account, model, **Agent** or **Plan** mode, permissions, and whether to run in-place or in an **isolated Git worktree** on its own branch. Stop (`⌘.`), resume, and retry sessions across app restarts. A new session remembers your choices per folder, you can cap how many sessions work at once, and sessions can also run on other machines over SSH (**Settings › Machines**). |
+| **Git, Diffs & Pull Requests** | Inspect changed files, diffs, branches, and worktrees alongside each session. **Commit**, **Push**, and create **Pull Requests** (GitHub, GitLab, Gitea, Forgejo, Bitbucket) right from the Agents tab—always after your explicit click. **Agents › Pull requests** opens any GitHub pull request in full (description, checks, a full timeline of reviews, comments, commits and events, and every file's diff) and merges it (merge, squash, or rebase) after you confirm. Tick files as viewed (the mark lapses when a push changes the file), and let Claude Code or Codex write a **review guide**: the changes in reading order, what to look at closely, and the questions only a maintainer can answer. Pull requests a session opens can be watched, so failing CI and new reviews come to you. An **Actions** page lists a repository's GitHub Actions runs with their jobs, steps, and logs, and re-runs or cancels them. Commit messages follow the style you pick: Nook's own, Conventional Commits, the repository's, or your own instructions. |
 | **Built-In Terminal & Browser** | Under **Workspace**, use Nook's integrated terminal (**SwiftTerm**) and ephemeral browser (**WebKit**, zero persistent storage). ⌘-click a path in the terminal or a file link in an agent's answer to open it in your editor at that line. Any command Nook proposes (`run_command`) is gated by `CommandRisk`, blocks destructive commands, and runs visibly in the terminal. |
-| **MCP Workspace for Agents** | Coding agents can use Nook's terminal, browser, and PR flow through a local MCP server (`~/.nook/nook-mcp`): start dev servers (`terminal_run`, `terminal_read`), inspect pages with DOM text, console errors, and screenshots (`browser_open`, `browser_read`, `browser_screenshot`), and propose pull requests (`pull_request_create`). See [`docs/WORKSPACE-AGENTS.md`](docs/WORKSPACE-AGENTS.md). |
-| **Multiple Accounts & Quotas** | Configure multiple accounts per agent (e.g., *Claude Personal* and *Claude Work* with isolated `CLAUDE_CONFIG_DIR` / `CODEX_HOME` directories) and per service (e.g., two GitHub accounts). Track live **5-hour and weekly subscription limits** (Claude Pro/Max & Codex) plus token and cost breakdowns in **Settings › Usage & costs** and the Monday **Weekly Recap**. |
+| **MCP Workspace for Agents** | Coding agents can use Nook's terminal, browser, and PR flow through a local MCP server (`~/.nook/nook-mcp`): start dev servers (`terminal_run`, `terminal_read`), inspect pages with DOM text, console errors, and screenshots (`browser_open`, `browser_read`, `browser_screenshot`), drive an iOS Simulator or Android device, show rendered pages in the side panel, and propose pull requests (`pull_request_create`). Which of Nook's tools each agent gets can be switched off per agent. Scripts reach the same tools through the `nook` command line (`~/.nook/nook`). See [`docs/WORKSPACE-AGENTS.md`](docs/WORKSPACE-AGENTS.md). |
+| **Multiple Accounts & Quotas** | Configure multiple accounts per agent (e.g., *Claude Personal* and *Claude Work* with isolated `CLAUDE_CONFIG_DIR` / `CODEX_HOME` directories) and per service (e.g., two GitHub accounts). Track live **subscription limits** for every coding agent that reports them (such as the 5-hour and weekly limits of Claude Pro/Max and Codex) plus token and cost breakdowns in **Settings › Usage & costs** and the Monday **Weekly Recap**. |
 | **iPhone & Android Companion** | [`apps/ios`](apps/ios) contains **Nook Companion** for iPhone (the Android app in [`apps/tauri`](apps/tauri) has the same Companion tab): view active sessions needing attention, approve low-risk actions, answer questions, send prompts, or stop agents, and on iPhone also start new sessions, follow a session's conversation, and chat with Nook, over local Wi-Fi with end-to-end `ChaCha20-Poly1305` encryption and direct, serverless APNs push notifications. See [`docs/COMPANION.md`](docs/COMPANION.md). |
 
 ### Chats: Every Chat in One Inbox
 
-The **Chats** tab in the notch and the main window shows all your conversations from every chat app in one list, so you can read and answer them without switching apps.
+The **Chats** tab in the main window (and in the notch, when it is on) shows all your conversations from every chat app in one list, so you can read and answer them without switching apps.
 
 | Feature | Details |
 |---|---|
@@ -166,8 +171,8 @@ The **Chats** tab in the notch and the main window shows all your conversations 
 | **Unified Calendars** | Queries Apple Calendar (across all configured accounts), external ICS feeds (Google Calendar, Outlook, iCloud, work calendars under **Other Calendars**), and **Cal.com** simultaneously to find conflicts and free slots. |
 | **Mail, Reminders & Contacts** | Search and summarize unread emails, draft replies in chat (and click **Send** or **Open in Mail**), create Apple Reminders, and resolve contact details locally. |
 | **1-Click OAuth (MCP)** | Connect **Notion, Linear, Stripe, Vercel, and Sentry** with a single click (**Connect** uses OAuth + PKCE against their official MCP servers; tokens live in the macOS Keychain and refresh automatically). |
-| **GitHub, Cal.com, n8n & Resend** | Review, approve, merge, and close GitHub PRs; manage bookings in Cal.com; trigger workflows in n8n; send transactional emails via Resend—all with multi-account support. |
-| **WhatsApp Live** | Pair your phone via a local bridge on your Mac (**Settings › Accounts & Integrations › WhatsApp Live**, scan QR code). Reply to incoming messages from the notch or ask Nook to draft a WhatsApp message (sent only after clicking **Run**). |
+| **GitHub, GitLab, Cal.com, n8n & Resend** | Review, approve, merge, and close pull requests (GitHub, GitLab, Gitea, Forgejo, Bitbucket); manage bookings in Cal.com; trigger workflows in n8n; send transactional emails via Resend—all with multi-account support. |
+| **WhatsApp** | Link your phone via a local bridge on your Mac (**Settings › Chat apps**, scan the QR code). Reply to incoming messages in the **Chats** tab or ask Nook to draft a WhatsApp message (sent only after clicking **Run**). |
 | **Custom APIs, Webhooks & MCP** | Connect almost any HTTPS API or webhook under **Custom Sources** (auto-detects Slack, Discord, Teams, Telegram, Zapier, Make, n8n, Todoist, fetches service icons, and gates outgoing messages behind approval) or attach any **MCP server** (`stdio` or `HTTP`). |
 
 ### System-Wide Autocomplete, Dictation, Notes & Media
@@ -176,12 +181,12 @@ The **Chats** tab in the notch and the main window shows all your conversations 
 |---|---|
 | **Autocomplete Anywhere** | As you type in any macOS app, a local model suggests inline ghost-text completions at your cursor (`Tab` accepts a word, `⇧Tab` accepts all). Powered by your active brain or any local GGUF model via `llama.cpp` (`LlamaSwift`), aware of your screen and memory, with `:emoji` lookup, typo fixes, per-app/per-website instructions, style learning, and strict password-field exclusion (**Settings › Autocomplete**, [`docs/AUTOCOMPLETE.md`](docs/AUTOCOMPLETE.md)). |
 | **Flow Dictation** | Hold a hotkey anywhere on your Mac, speak, and release to paste cleaned text right where you type (double-tap for hands-free, `Esc` to cancel, `⌃⌘V` to paste last dictation). Listens across your languages simultaneously on-device (`MultiDictation`) or offline via **Parakeet** on the Neural Engine (`FluidAudio`), applying your custom dictionary, replacements, and snippets. |
-| **Nook Takes Over** | Tap right `⌘` once: a field in the notch asks what Nook should do ("order new coffee filters", "unsubscribe me from this", "finish this form"). Nook then does it itself in your own apps and logged-in browser: it searches, opens pages, reads each window through the accessibility layer, clicks and types (in the background where it can), with a violet cursor of its own and the current step in one slim line in the notch, with Stop. Before anything that pays, orders, sends, submits, deletes or books, a card shows that exact step and waits for your yes; sign-in and payment details stay with you. The summary lands in the chat. The brain can also propose it from the chat (`take_over`). |
-| **Double Tap** | Tap right `⌘` twice: a small field in the notch asks what Nook should do, and Nook does it once you have typed it. The field is the Nook chat's own composer, with the model and **what Nook may do by itself** (Ask first, Small things right away, More by itself; `⇧Tab` moves on) under the box. The notch stays small while Nook works and shows each step from the moment you send; the answer, a question back or a plan that waits for your click arrives as a card in the notch (with **Run** for a plan, a field to answer, and **View**), also when other notices are set to a line or a macOS notification, and you open the chat yourself when you want it bigger. With the cursor in a form or reply box, type **fill in the form** (optionally with what should go in it): Nook reads the fields through the accessibility layer and fills the empty ones with what it remembers about you and the text on screen (a reply in your tone for a message box). A card in the notch then shows what was filled, with **Undo** and, when the form has a send button, that button to send it once you have checked it; nothing is sent by itself. With the cursor in a document, mail, note or chat, type what Nook should write (**write a cover letter**, **translate this into English**): Nook types it right at the cursor, in Word and in any other app, replacing the selection when there is one (⌘Z takes it back). To change what is already there, just say it (**point 5 should be this**, **make the second paragraph shorter**, **replace Jansen with de Vries**): Nook finds that part in the document, selects it the way you would (through the accessibility layer, else with the mouse, else with the keyboard, with its violet cursor showing where) and types the new text over it; “this” is your selection or what you just copied. Anything else you could do on your Mac yourself, such as changing an option a few screens deep in System Settings, goes to the chat, where Nook takes the task over with mouse and keyboard once you approve it, opening the right System Settings pane straight away. You need no cursor in a text at all: Nook also sees the window that was in front when you tapped, so with a screenshot, mail or page full of dates open, type **put this in my calendar** and Nook reads the window (its text, plus what it reads in the picture) and proposes the events; when the window leaves something open, such as which of several dates or what time, it asks you first. Every step (reading the app, thinking, what Nook is about to type) shows in the notch with **Stop**; click it, or open the notch, and every step of the run is listed under the tabs, with what Nook typed, changed or filled in to check. That list stays once Nook is done (**Steps** on the result opens it) until you close it. Password, payment and identity fields always stay empty, and buttons that pay or delete are never offered. Key and on/off in **Settings › Assistant**. |
+| **Nook Takes Over** | Tap right `⌘` once: a field at the top of the screen asks what Nook should do ("order new coffee filters", "unsubscribe me from this", "finish this form"). Nook then does it itself in your own apps and logged-in browser: it searches, opens pages, reads each window through the accessibility layer, clicks and types (in the background where it can), with a violet cursor of its own and the current step in one slim line in Nook's panel, with Stop. Before anything that pays, orders, sends, submits, deletes or books, a card shows that exact step and waits for your yes; sign-in and payment details stay with you. The summary lands in the chat. The brain can also propose it from the chat (`take_over`). |
+| **Double Tap** | Tap right `⌘` twice: a small field at the top of the screen asks what Nook should do, and Nook does it once you have typed it. The field is the Nook chat's own composer, with the model and **what Nook may do by itself** (Ask first, Small things right away, More by itself; `⇧Tab` moves on) under the box. Nook's panel stays small while Nook works and shows each step from the moment you send; the answer, a question back or a plan that waits for your click arrives as a card in Nook's panel (with **Run** for a plan, a field to answer, and **View**), also when other notices are set to a line or a macOS notification, and you open the chat yourself when you want it bigger. With the cursor in a form or reply box, type **fill in the form** (optionally with what should go in it): Nook reads the fields through the accessibility layer and fills the empty ones with what it remembers about you and the text on screen (a reply in your tone for a message box). A card in Nook's panel then shows what was filled, with **Undo** and, when the form has a send button, that button to send it once you have checked it; nothing is sent by itself. With the cursor in a document, mail, note or chat, type what Nook should write (**write a cover letter**, **translate this into English**): Nook types it right at the cursor, in Word and in any other app, replacing the selection when there is one (⌘Z takes it back). To change what is already there, just say it (**point 5 should be this**, **make the second paragraph shorter**, **replace Jansen with de Vries**): Nook finds that part in the document, selects it the way you would (through the accessibility layer, else with the mouse, else with the keyboard, with its violet cursor showing where) and types the new text over it; “this” is your selection or what you just copied. Anything else you could do on your Mac yourself, such as changing an option a few screens deep in System Settings, goes to the chat, where Nook takes the task over with mouse and keyboard once you approve it, opening the right System Settings pane straight away. You need no cursor in a text at all: Nook also sees the window that was in front when you tapped, so with a screenshot, mail or page full of dates open, type **put this in my calendar** and Nook reads the window (its text, plus what it reads in the picture) and proposes the events; when the window leaves something open, such as which of several dates or what time, it asks you first. Every step (reading the app, thinking, what Nook is about to type) shows in Nook's panel with **Stop**; click it, or open the panel, and every step of the run is listed under the tabs, with what Nook typed, changed or filled in to check. That list stays once Nook is done (**Steps** on the result opens it) until you close it. Password, payment and identity fields always stay empty, and buttons that pay or delete are never offered. Key and on/off in **Settings › Assistant**. |
 | **Call Notetaker** | Records microphone and system audio locally during calls (Zoom, Meet, Teams, browser), separates speakers with on-device diarization, and generates a timestamped transcript, summary, key points, and action items. |
-| **Music & Instant Control** | Live Spotify and Apple Music artwork, audio-reactive equalizer, scrubbing, shuffle/repeat, and volume in the notch, plus synced lyrics (from Music or the open [LRCLIB](https://lrclib.net) database, can be turned off in Settings › Privacy), Up Next and playlists for Apple Music, and a Recent list for both players. Fast local intent recognition handles *"next track"*, *"volume 30"*, *"open Safari"*, Apple Shortcuts, and system toggles immediately without waiting for an LLM. |
+| **Music & Instant Control** | A **Music** tab with a Now Playing view, live Spotify and Apple Music artwork, audio-reactive equalizer, scrubbing, shuffle/repeat, and volume (also in the notch), a music home with listening history and statistics, plus synced lyrics (from Music or the open [LRCLIB](https://lrclib.net) database, can be turned off in Settings › Privacy), Up Next and playlists for Apple Music, and a Recent list for both players. Fast local intent recognition handles *"next track"*, *"volume 30"*, *"open Safari"*, Apple Shortcuts, and system toggles immediately without waiting for an LLM. |
 | **The Nook Character** | An interactive 3D-shaded orb that follows your cursor, bounces when you send a message, nods when tasks complete, blushes on hover, and wears a live **task ring** showing everything Nook and your coding agents are doing (white = working, amber = waiting for you, coral = error, mint = done). |
-| **Nook as a Buddy** | Nook has moods for the friendly moments too (proud, curious, cozy, focused, surprised, caring, sleepy, celebrating, breathing). Optional **little moments** (Settings › Appearance): a good morning with your day, a welcome back with what finished while you were away, a break after 90 minutes with a minute of **breathing along**, and milestones. At most four a day, never during a meeting or call, all on your Mac. |
+| **Nook as a Buddy** | Nook has moods for the friendly moments too (proud, curious, cozy, focused, surprised, caring, sleepy, celebrating, breathing). Optional **little moments** (**Settings › Appearance**): a good morning with your day, a welcome back with what finished while you were away, a break after 90 minutes with a minute of **breathing along**, and milestones. At most four a day, never during a meeting or call, all on your Mac. |
 
 ---
 
@@ -189,7 +194,7 @@ The **Chats** tab in the notch and the main window shows all your conversations 
 
 **macOS app**
 
-- **macOS 15.0 (Sequoia)** or newer (a MacBook with a notch is ideal, or use Floating mode on any Mac / external display)
+- **macOS 15.0 (Sequoia)** or newer (any Mac display works; the notch of a MacBook is an optional extra)
 - **Apple Silicon Mac** (M1 or newer)
 - **Xcode 26** or newer (required by the `mlx-swift-lm` packages for the built-in local model)
 - **[XcodeGen](https://github.com/yonaskolb/XcodeGen)** (`brew install xcodegen`)
@@ -226,7 +231,7 @@ xcodegen
 open Nook.xcodeproj
 ```
 
-Press **`⌘R`** in Xcode to build and run. Nook runs as a menu-bar and notch app (`LSUIElement`) without a Dock icon—look for Nook in your notch and the small Nook icon in the menu bar.
+Press **`⌘R`** in Xcode to build and run. Nook starts as a menu bar app (`LSUIElement`): open the main window with **`⌥⌘W`** or from the small Nook icon in the menu bar. While the main window or Settings is open, Nook also shows in the Dock and in `⌘Tab`.
 
 > [!TIP]
 > **After every `git pull`:** Run `./update.sh` from the repository root. Because `Nook.xcodeproj` is generated from [`apps/macos/project.yml`](apps/macos/project.yml) and not tracked in Git, running `./update.sh` pulls the latest changes and regenerates both the macOS and iOS Xcode projects so new Swift files are always in scope.
@@ -236,9 +241,8 @@ Press **`⌘R`** in Xcode to build and run. Nook runs as a menu-bar and notch ap
 You can also build and run the unit test suite from the command line:
 
 ```sh
-cd apps/macos
-xcodegen
-xcodebuild -project Nook.xcodeproj -scheme Nook -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:NookTests test
+./scripts/xcode.sh build    # regenerates the project and builds into .build/xcode
+./scripts/xcode.sh test     # runs the NookTests unit test suite
 ```
 
 The fast Foundation-only core and localization tests also run on Linux:
@@ -283,7 +287,7 @@ xcodegen
 open NookCompanion.xcodeproj
 ```
 
-Pair it with the QR code in **Settings › Companion** on your Mac, Windows, or Linux computer. See [`apps/ios`](apps/ios/README.md) and [`docs/COMPANION.md`](docs/COMPANION.md).
+Pair it with the QR code in **Settings › iPhone** on your Mac, Windows, or Linux computer. See [`apps/ios`](apps/ios/README.md) and [`docs/COMPANION.md`](docs/COMPANION.md).
 
 More detail on the Tauri app (layout, hotkeys, where to find what): [`apps/tauri/README.md`](apps/tauri/README.md) and [`docs/TAURI.md`](docs/TAURI.md).
 
@@ -295,29 +299,31 @@ On first launch, Nook shows a welcome card. Clicking **Set up** opens an onboard
 
 1. **Brain:** Nook recommends a local model matched to your Mac's unified memory (or detects models already running in Ollama or LM Studio) and installs it with one click. Prefer a cloud provider? Select it in **Settings › Brain**. Nook never switches to the cloud on its own.
 2. **Permissions:** Screen Recording (for local window OCR) and Calendar; Reminders and Microphone are only requested when you first use them.
-3. **Integrations (Optional):** Connect Mail, GitHub, Stripe, Notion, Linear, Vercel, Sentry, MCP servers, and more under **Settings › Accounts & Integrations**.
-4. **Coding Agents (Optional):** In **Settings › Agents**, click **Connect…** next to Claude Code, Codex, Cursor, Gemini CLI, Antigravity, Copilot CLI, Muse, OpenCode, Amp, or Hermes. Nook previews the exact hook configuration diff, creates a timestamped backup (`settings.json.nook-backup-…`), and writes only after your approval.
+3. **Integrations (Optional):** Link your chat apps under **Settings › Chat apps**, and connect Mail, GitHub, GitLab, Stripe, Notion, Linear, Vercel, Sentry, MCP servers, and more under **Settings › Services**.
+4. **Coding Agents (Optional):** In **Settings › Coding agents**, click **Connect…** next to Claude Code, Codex, Gemini CLI, Antigravity, OpenCode, Cursor, Grok, Copilot CLI, Muse Code, Amp, or Hermes, or add an ACP agent. Nook previews the exact hook configuration diff, creates a timestamped backup (`settings.json.nook-backup-…`), and writes only after your approval.
 
-Want to explore Nook with sample data first? Enable **Demo data** in **Settings › General**.
+Want to explore Nook with sample data first? Turn on **Show demo data** in **Settings › Maintenance**.
 
 ### Navigating Nook
 
-- **The Notch** has three main tabs (plus **Music** when audio is playing):
-  - **Nook:** Chat, Today overview, and your parallel Nook threads.
-  - **Agents:** Active coding sessions on the left, live transcript/diff/approvals on the right, and a `+` button to launch new sessions or Git worktrees. Terminals, the browser, and worktrees live with the agents that use them.
+- **The Main Window** (**`⌥⌘W`**, or **Open in Window** from the menu bar) is Nook's home. Its tabs:
+  - **Nook:** Chat, the Today overview, and your parallel Nook threads.
+  - **Agents:** Your coding sessions on the left; the conversation, changes, terminal, browser, and side panel on the right; a `+` to start a new session or Git worktree; plus **Pull requests** and **Actions**.
   - **Chats:** Every chat from WhatsApp, Telegram, Instagram, Messenger, Signal, Messages, Slack, Teams and more in one inbox, to read and answer in place. See [Chats](#chats-every-chat-in-one-inbox).
-- **No Notch / Multiple Displays:**
-  - Prefer a floating widget? Go to **Settings › Notch & windows › Placement** and choose **Floating on screen** to drag Nook anywhere on any display.
-  - Using multiple monitors? Enable **Show notch on every display** so Nook opens on whichever screen your cursor is on.
+  - **Music:** What is playing, your music home, playlists, and listening statistics.
+- **Ask from anywhere:** **`⌥⌘Space`** opens Nook's chat from any app, **`⌥Space`** lets you talk to Nook.
+- **The Notch (optional):** On a MacBook, Nook can also live in the notch as a quick glance at the same tabs. Turn it on or off with **Nook in the notch** in **Settings › Notch & windows**. With it off, Nook stays out of sight until you open it, and only a question that waits on you still comes up.
+  - Prefer a floating panel? Choose **Floating on screen** under **Position** to drag Nook anywhere on any display.
+  - Using multiple monitors? Enable **Show the notch on every screen** so Nook opens on whichever screen your cursor is on.
 - **Search Everything:** Press **`⇧⌘F`** (or the magnifying glass in the panel header) to search your Nook conversations, agent sessions and their transcripts, chats, call notes, memories, notices, settings and actions at once, with typo tolerance and filters such as `in:agents`, `from:me`, `after:7d` and `"exact words"`. See [`docs/SEARCH.md`](docs/SEARCH.md).
 - **Your Own Keys:** The panel's keys (send, find, the command palette, new session, undo…) are rules you can extend in `~/.nook/keybindings.json`; Settings › Shortcuts lists them, the rules it skipped and any conflicts. See [`docs/KEYBINDINGS.md`](docs/KEYBINDINGS.md).
-- **Full Window:** Press **`⌥⌘W`** (or choose **Open in Window** from the menu bar) for the full desktop workspace, and **`⌘,`** for **Settings**.
+- **Settings:** Press **`⌘,`**. Every subject has one page in the sidebar, and the search field finds any setting in your language.
 
 ---
 
 ## Local Brain Quality & Evaluation
 
-Small local models benefit from structured grounding. Under **Settings › Brain › Local Brain Quality**, Nook includes:
+Small local models benefit from structured grounding. Under **Settings › Brain** (local brain quality), Nook includes:
 
 - **Evidence First:** Extracts verbatim quotes from retrieved sources in a narrow first pass before drafting the final answer.
 - **Verify Answers:** Cross-checks every number, time, email address, and URL in a draft answer against the retrieved sources and automatically regenerates the response if an ungrounded value is detected.
@@ -333,12 +339,12 @@ Nook is designed around strict user control and local-first privacy:
 
 - **Explicit Approval Gate:** Nothing is executed without clicking **Run** or **Allow**. Even if you enable the optional *Immediately perform minor actions* setting (for music, volume, opening apps, or reminders you explicitly asked for), emails, messages, webhooks, shell commands, calendar events, and proactive suggestions **always** require confirmation.
 - **Local-First by Default:** With the built-in MLX model, Apple Foundation Models, Ollama, or LM Studio, no data ever leaves your computer. When you choose an external AI provider, only your prompt, recognized window text (toggleable in **Settings › Assistant**), and relevant source snippets are sent upon request—raw screen pixels never leave your Mac.
-- **"Only on This Mac" Source Lock:** In **Settings › Brain**, mark any source as **Only on this Mac**. External cloud providers are completely blocked from receiving context, tools, screen text, or prior answers derived from those sources—even if you ask for them in your prompt.
-- **Adjustable Privacy Level:** In **Settings › Privacy and access**, choose *Open*, *Balanced* (default) or *Strict*. Balanced takes passwords, API keys, card numbers, IBANs and BSNs out of everything Nook gathers before it reaches a cloud model; Strict also removes e-mail addresses and phone numbers and keeps the screen and clipboard on your Mac. You can also pick apps Nook never reads (your bank, a medical app, a private chat).
+- **"Only on This Mac" Source Lock:** In **Settings › Only on this Mac**, mark any source as **Only on this Mac**. External cloud providers are completely blocked from receiving context, tools, screen text, or prior answers derived from those sources—even if you ask for them in your prompt.
+- **Adjustable Privacy Level:** In **Settings › Privacy level**, choose *Open*, *Balanced* (default) or *Strict*. Balanced takes passwords, API keys, card numbers, IBANs and BSNs out of everything Nook gathers before it reaches a cloud model; Strict also removes e-mail addresses and phone numbers and keeps the screen and clipboard on your Mac. You can also pick apps Nook never reads (your bank, a medical app, a private chat).
 - **Prompt-Injection Defenses:** Screen text, calendar titles, emails, web pages, and tool outputs are wrapped as untrusted data with explicit system instructions never to follow commands found inside them. Self-learning memory only learns from your own messages—never from screen text, emails, or web pages.
 - **Password & Secret Exclusion:** Password managers and secure input fields (`AXSecureTextField`) are never read by screen OCR or autocomplete. All API keys, bot tokens, and OAuth tokens managed by Nook are stored exclusively in the macOS **Keychain** (`SecretStore`), Windows **Credential Manager**, or the Linux **Secret Service**; external coding-agent CLIs manage their own session state under their isolated profile directories.
 - **Hardened Runtime & Socket Security:** The Unix domain socket for agent hooks enforces `0600` file permissions and peer UID verification. The Claude Code brain runs in an empty working directory without file or web tools, and `NetworkGuard` blocks private/loopback redirects (SSRF protection).
-- **Full Audit Log & Safe Storage:** Every executed action is recorded in a local SQLite audit log (`nook.sqlite`, `audit` table, searchable in **Settings › Privacy & Security**, retained for 90 days). Unreadable user files are preserved alongside a `.unreadable-<date>.json` backup and never overwritten.
+- **Full Audit Log & Safe Storage:** Every executed action is recorded in a local SQLite audit log (`nook.sqlite`, `audit` table, searchable in **Settings › Activity log**, retained for 90 days). Unreadable user files are preserved alongside a `.unreadable-<date>.json` backup and never overwritten.
 
 Found a security vulnerability? Please report it privately via [SECURITY.md](SECURITY.md).
 
@@ -350,14 +356,19 @@ Found a security vulnerability? Please report it privately via [SECURITY.md](SEC
 |---|---|
 | Assistant, sources & citations | [`docs/ASSISTANT.md`](docs/ASSISTANT.md) |
 | Coding-agent integration (`nook_agent`) | [`docs/AGENTS.md`](docs/AGENTS.md) |
+| Every integration and the coding-agent feature matrix | [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) |
 | Terminal, browser & PR workspace for agents (MCP) | [`docs/WORKSPACE-AGENTS.md`](docs/WORKSPACE-AGENTS.md) |
 | System-wide autocomplete | [`docs/AUTOCOMPLETE.md`](docs/AUTOCOMPLETE.md) |
-| iPhone companion & protocol | [`docs/COMPANION.md`](docs/COMPANION.md) |
+| iPhone companion, protocol & relay | [`docs/COMPANION.md`](docs/COMPANION.md) |
+| Updating Nook (Update button, release builds, rollback) | [`docs/UPDATES.md`](docs/UPDATES.md) |
+| Continuous integration | [`docs/CI.md`](docs/CI.md) |
 | Monorepo structure | [`docs/MONOREPO.md`](docs/MONOREPO.md) |
 | Search everything (query language & ranking) | [`docs/SEARCH.md`](docs/SEARCH.md) |
 | Panel keybindings (`~/.nook/keybindings.json`) | [`docs/KEYBINDINGS.md`](docs/KEYBINDINGS.md) |
 | Shared macOS UI components | [`docs/UI-COMPONENTS.md`](docs/UI-COMPONENTS.md) |
 | Windows, Linux & Android (Tauri) | [`docs/TAURI.md`](docs/TAURI.md) |
+| Chat helper (`nook-chatd`, AGPL-3.0) | [`apps/chatd/README.md`](apps/chatd/README.md) |
+| Website | [`site/README.md`](site/README.md) |
 | Fine-tuning local models | [`scripts/finetune/README.md`](scripts/finetune/README.md) |
 | Model manifest (which models the agent pickers offer) | [`docs/MODEL-MANIFEST.md`](docs/MODEL-MANIFEST.md) |
 | Workspace roadmap | [`docs/ROADMAP.md`](docs/ROADMAP.md) |
@@ -374,14 +385,16 @@ Nook is organized as a multi-platform monorepo (see [`docs/MONOREPO.md`](docs/MO
 nook/
 ├── apps/
 │   ├── macos/               # Native macOS app (Swift, SwiftUI/AppKit, XcodeGen)
-│   │   ├── App/             # Entry point, menu bar, AppModel (+ modular extensions), Settings UI
-│   │   ├── NotchUI/         # Theme, Nook orb & task ring, cards, notch tabs, main window, workspace UI
+│   │   ├── App/             # Entry point, menu bar, AppModel (+ modular extensions), Settings pages
+│   │   ├── NotchUI/         # Theme, Nook orb & task ring, shared PanelView (main window, notch, sheets), workspace UI
 │   │   ├── Services/        # Calendar, music, agent hub, approvals, quotas, workspace, MCP, Flow, Notes, Autocomplete
 │   │   ├── Brain/           # Model runtimes, unified ToolLoop, source scoping, CommandRisk, grounding, ActionGate
 │   │   ├── Core/            # Paths, AppSettings, Keychain (SecretStore), SQLite store, I18n (en/nl/de/fr/es)
 │   │   ├── Demo/            # Sample data for previews and Demo Mode
 │   │   └── Tests/           # Unit test suite (NookTests)
 │   ├── ios/                 # Nook Companion for iPhone (SwiftUI, XcodeGen)
+│   ├── chatd/               # nook-chatd: Nook's chat helper (Go, mautrix bridges, AGPL-3.0)
+│   ├── relay/               # Relay that lets the Companion reach Nook from anywhere
 │   ├── tauri/               # Nook for Windows, Linux & Android (Tauri 2)
 │   │   ├── core/            # nook-core: Rust core without Tauri (brain, connectors, agents, workspace, companion)
 │   │   ├── src-tauri/       # The app: windows, tray, hotkeys, commands, per-platform code
@@ -393,7 +406,8 @@ nook/
 │   ├── protocol/            # Shared Companion protocol, ChaCha20-Poly1305 sealing & webhook security
 │   └── core/                # Cross-platform Foundation-only Swift core package
 ├── docs/                    # Architecture & subsystem documentation
-└── scripts/                 # Helper scripts (CI core tests, local model fine-tuning)
+├── site/                    # The Nook website (static HTML)
+└── scripts/                 # Helper scripts (core tests, Xcode build, UI lint, chat helper, releases, fine-tuning)
 ```
 
 ---
