@@ -38,6 +38,46 @@ struct NoticeEntry: Equatable, Identifiable {
     var seen = false
 }
 
+/// A target as a macOS notification keeps it (`userInfo` holds only property-list values), so a click on a
+/// notification from before Nook restarted still opens what it is about.
+extension NoticeEntry.Target {
+    var stored: [String: String] {
+        switch self {
+        case .agent(let id): return ["target": "agent", "id": id]
+        case .run(let id): return ["target": "run", "id": id.uuidString]
+        case .agents: return ["target": "agents"]
+        case .conversation(let id): return ["target": "conversation", "id": id.uuidString]
+        case .chat(let id): return ["target": "chat", "id": id]
+        case .nowhere: return [:]
+        }
+    }
+
+    init(stored: [AnyHashable: Any]) {
+        let id = stored["id"] as? String ?? ""
+        switch stored["target"] as? String {
+        case "agent" where !id.isEmpty: self = .agent(id)
+        case "run": self = UUID(uuidString: id).map { .run($0) } ?? .agents
+        case "agents": self = .agents
+        case "conversation": self = UUID(uuidString: id).map { .conversation($0) } ?? .nowhere
+        case "chat" where !id.isEmpty: self = .chat(id)
+        default: self = .nowhere
+        }
+    }
+
+    /// The group of its macOS notifications: one per chat, one per agent session (a terminal session and a session
+    /// Nook runs alike, as `AgentStatusNotice.session` names them), one for Nook's own answers.
+    var thread: String {
+        switch self {
+        case .agent(let id): return "agent:" + id
+        case .run(let id): return "agent:run:" + id.uuidString
+        case .agents: return "agents"
+        case .conversation: return "nook"
+        case .chat(let id): return "chat:" + id
+        case .nowhere: return "nook.notice"
+        }
+    }
+}
+
 /// The notices Nook gave, newest first. A bounded list: at most `limit` entries and none older than `maxAge`.
 struct NoticeLog: Equatable {
     static let limit = 100
