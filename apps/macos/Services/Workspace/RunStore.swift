@@ -234,25 +234,47 @@ final class RunStore: @unchecked Sendable {
     }
 
     private static let importedKey = "json_timelines_imported"
-    private static let indexedKey = "search_index_built"
+    /// Set once every session is indexed. The second key: the first index (`run_text`) is dropped and built anew.
+    private static let indexedKey = "search_index_v2_built"
 
-    /// Indexes every session written before the index existed, once, in the background. One session at a time under the
-    /// lock, so saves and reads go on in between; a session saved meanwhile is indexed by that save as well.
+    /// Indexes every session written before the index existed, once, in the background. Rows are read on the read
+    /// connection and folded without the lock; only writing a session's index takes it, so a timeline you open never waits
+    /// for more than one session. A session saved meanwhile is indexed by that save as well. Stopped halfway (a new build
+    /// from Xcode), the next launch starts again, and replacing what is already indexed is cheap.
     private func buildSearchIndex() {
         lock.lock()
+        log?.dropLegacySearchIndex()
         let ids = log?.runIDs() ?? []
+        let reader = reader
         lock.unlock()
         for id in ids {
             lock.lock()
+            let skip = deleted.contains(id)
+            lock.unlock()
+            if skip { continue }
+            guard let rows = reader?.readRows(id) ?? lockedRows(id) else { continue }
+            let entries = TimelineSearchText.entries(RunEventFold.fold(rows, decoder: Self.decoder).events)
+            lock.lock()
             if let log, !deleted.contains(id) {
-                let events = RunEventFold.fold(log.rows(id), decoder: Self.decoder).events
-                log.reindex(id, TimelineSearchText.entries(events))
+                // A row written after the read: its save indexed it already, and these older entries must not undo that.
+                if log.lastSequence(id) == rows.last?.seq {
+                    log.reindex(id, entries)
+                } else {
+                    log.reindex(id, TimelineSearchText.entries(RunEventFold.fold(log.rows(id), decoder: Self.decoder).events))
+                }
             }
             lock.unlock()
         }
         lock.lock()
         log?.setMeta(Self.indexedKey, ISO8601DateFormatter().string(from: Date()))
         lock.unlock()
+    }
+
+    /// A session's rows from the write connection, for when there is no read connection.
+    private func lockedRows(_ id: UUID) -> [RunEventLog.Row]? {
+        lock.lock()
+        defer { lock.unlock() }
+        return log?.readRows(id)
     }
 
     /// The sessions whose timelines mention `query`, newest match first; nil when the index cannot answer (no FTS5, a

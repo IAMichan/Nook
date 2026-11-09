@@ -80,37 +80,73 @@ final class RunEventLog {
     /// Text of every event, for finding the sessions that mention a word without reading every timeline. One row per
     /// event, folded (`TimelineSearchText.fold`) and cut into trigrams, so a match is any piece of text of three or more
     /// characters, as "Find in session" matches. A prefilter: `TimelineSearch` still finds the exact matches.
+    ///
+    /// Which session and event a row belongs to lives in `run_search_keys`, whose `id` is the row's rowid in `run_search`:
+    /// FTS5 cannot look up its own columns, so finding an event's row there scans the whole index. Through the keys every
+    /// replacement is a lookup by rowid, however large the index grows.
     private static let searchSchema = """
-        CREATE VIRTUAL TABLE IF NOT EXISTS run_text USING fts5(run_id UNINDEXED, event_id UNINDEXED, body, tokenize = 'trigram');
+        CREATE VIRTUAL TABLE IF NOT EXISTS run_search USING fts5(body, tokenize = 'trigram');
+        CREATE TABLE IF NOT EXISTS run_search_keys (
+            id INTEGER PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            UNIQUE (run_id, event_id)
+        );
         """
 
     /// The index can be used (FTS5 with the trigram tokenizer is there).
     private(set) var searchAvailable = false
 
-    /// Indexes events of a session: each replaces what was indexed for that event.
+    /// Indexes events of a session: each replaces what was indexed for that event. All of them, or none.
     @discardableResult
     func index(_ runID: UUID, _ entries: [(event: UUID, text: String)]) -> Bool {
         guard searchAvailable else { return false }
-        for entry in entries {
-            guard run("DELETE FROM run_text WHERE run_id = ? AND event_id = ?", [runID.uuidString, entry.event.uuidString]) else { return false }
-            if entry.text.isEmpty { continue }
-            guard run("INSERT INTO run_text (run_id, event_id, body) VALUES (?, ?, ?)",
-                      [runID.uuidString, entry.event.uuidString, entry.text]) else { return false }
+        guard !entries.isEmpty else { return true }
+        let run = runID.uuidString
+        return inSavepoint {
+            for entry in entries {
+                let event = entry.event.uuidString
+                let key = ids("SELECT id FROM run_search_keys WHERE run_id = ? AND event_id = ?", [run, event])?.first
+                if let key {
+                    guard execute("DELETE FROM run_search WHERE rowid = ?", [key]) else { return false }
+                }
+                if entry.text.isEmpty {
+                    if let key, !execute("DELETE FROM run_search_keys WHERE id = ?", [key]) { return false }
+                    continue
+                }
+                let id: Int64
+                if let key {
+                    id = key
+                } else {
+                    guard execute("INSERT INTO run_search_keys (run_id, event_id) VALUES (?, ?)", [run, event]) else { return false }
+                    id = sqlite3_last_insert_rowid(db)
+                }
+                guard execute("INSERT INTO run_search (rowid, body) VALUES (?, ?)", [id, entry.text]) else { return false }
+            }
+            return true
         }
-        return true
     }
 
-    /// Indexes a whole timeline: what was indexed for the session before goes.
+    /// Indexes a whole timeline: what was indexed for the session before goes. All in one transaction.
     @discardableResult
     func reindex(_ runID: UUID, _ entries: [(event: UUID, text: String)]) -> Bool {
-        guard searchAvailable, removeIndex(runID) else { return false }
-        return index(runID, entries)
+        guard searchAvailable else { return false }
+        return inSavepoint { removeIndex(runID) && index(runID, entries) }
     }
 
     @discardableResult
     func removeIndex(_ runID: UUID) -> Bool {
         guard searchAvailable else { return false }
-        return run("DELETE FROM run_text WHERE run_id = ?", [runID.uuidString])
+        return inSavepoint {
+            guard let keys = ids("SELECT id FROM run_search_keys WHERE run_id = ?", [runID.uuidString]) else { return false }
+            for key in keys where !execute("DELETE FROM run_search WHERE rowid = ?", [key]) { return false }
+            return execute("DELETE FROM run_search_keys WHERE run_id = ?", [runID.uuidString])
+        }
+    }
+
+    /// Drops the first version of the index (`run_text`), whose lookups scanned the whole table. Nothing reads it.
+    func dropLegacySearchIndex() {
+        exec("DROP TABLE IF EXISTS run_text;")
     }
 
     /// The sessions whose events contain `query` (folded), newest match first. Nil when the index cannot answer: it is
@@ -120,7 +156,10 @@ final class RunEventLog {
         guard searchAvailable, folded.count >= 3 else { return nil }
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
-        let sql = "SELECT run_id, MAX(rowid) AS last FROM run_text WHERE body MATCH ? GROUP BY run_id ORDER BY last DESC LIMIT ?"
+        let sql = """
+            SELECT k.run_id, MAX(s.rowid) AS last FROM run_search s JOIN run_search_keys k ON k.id = s.rowid
+            WHERE run_search MATCH ? GROUP BY k.run_id ORDER BY last DESC LIMIT ?
+            """
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
         // One phrase: the literal text, quotes doubled, never FTS syntax.
         sqlite3_bind_text(stmt, 1, "\"" + folded.replacingOccurrences(of: "\"", with: "\"\"") + "\"", -1, transient)
@@ -134,13 +173,48 @@ final class RunEventLog {
         return step == SQLITE_DONE ? result : nil
     }
 
-    /// Runs one statement with text arguments.
-    private func run(_ sql: String, _ arguments: [String]) -> Bool {
+    /// Runs `body` in a savepoint: in a transaction of its own, or nested in the one already open.
+    private func inSavepoint(_ body: () -> Bool) -> Bool {
+        guard exec("SAVEPOINT search_index;") else { return false }
+        if body(), exec("RELEASE search_index;") { return true }
+        exec("ROLLBACK TO search_index;")
+        exec("RELEASE search_index;")
+        return false
+    }
+
+    /// Binds text and integer arguments to a prepared statement.
+    private func bind(_ stmt: OpaquePointer?, _ arguments: [Any]) {
+        for (index, argument) in arguments.enumerated() {
+            switch argument {
+            case let value as Int64: sqlite3_bind_int64(stmt, Int32(index + 1), value)
+            case let value as String: sqlite3_bind_text(stmt, Int32(index + 1), value, -1, transient)
+            default: sqlite3_bind_null(stmt, Int32(index + 1))
+            }
+        }
+    }
+
+    /// Runs one statement that returns no rows.
+    private func execute(_ sql: String, _ arguments: [Any]) -> Bool {
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
-        for (index, argument) in arguments.enumerated() { sqlite3_bind_text(stmt, Int32(index + 1), argument, -1, transient) }
+        bind(stmt, arguments)
         return sqlite3_step(stmt) == SQLITE_DONE
+    }
+
+    /// The integers in the first column of a query; nil when it fails.
+    private func ids(_ sql: String, _ arguments: [Any]) -> [Int64]? {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        bind(stmt, arguments)
+        var result: [Int64] = []
+        var step = sqlite3_step(stmt)
+        while step == SQLITE_ROW {
+            result.append(sqlite3_column_int64(stmt, 0))
+            step = sqlite3_step(stmt)
+        }
+        return step == SQLITE_DONE ? result : nil
     }
 
     /// Every session that has rows, for building the index once.

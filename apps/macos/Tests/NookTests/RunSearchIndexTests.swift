@@ -65,4 +65,62 @@ final class RunSearchIndexTests: XCTestCase {
         store.deleteEvents(id)
         XCTAssertEqual(store.sessions(mentioning: "tokenizer"), [])
     }
+
+    func testReplacingOneEventStaysCheapInALargeIndex() throws {
+        let log = try XCTUnwrap(RunEventLog(url: folder.appendingPathComponent("runs.sqlite")))
+        try XCTSkipUnless(log.searchAvailable)
+        // Hundreds of sessions, as on a Mac that used Nook for months.
+        var last = UUID()
+        for _ in 0..<200 {
+            last = UUID()
+            log.reindex(last, TimelineSearchText.entries((0..<50).map { event("Step \($0) of the long migration") }))
+        }
+        var answer = event("Streaming the first words")
+        let started = Date()
+        // A streamed answer saves the same event again and again.
+        for count in 0..<300 {
+            answer.text = "Streaming word \(count)"
+            XCTAssertTrue(log.index(last, TimelineSearchText.entries([answer])))
+        }
+        // Looking an event up by scanning the whole index took seconds here; by its key it takes milliseconds.
+        XCTAssertLessThan(Date().timeIntervalSince(started), 3)
+        XCTAssertEqual(log.sessions(mentioning: "word 299"), [last])
+        XCTAssertEqual(log.sessions(mentioning: "word 298"), [])
+    }
+
+    func testAnEventWhoseTextIsGoneLeavesTheIndex() throws {
+        let log = try XCTUnwrap(RunEventLog(url: folder.appendingPathComponent("runs.sqlite")))
+        try XCTSkipUnless(log.searchAvailable)
+        let id = UUID()
+        var answer = event("Temporary words")
+        log.index(id, TimelineSearchText.entries([answer]))
+        answer.text = ""
+        log.index(id, TimelineSearchText.entries([answer]))
+        XCTAssertEqual(log.sessions(mentioning: "Temporary"), [])
+        answer.text = "Back again"
+        log.index(id, TimelineSearchText.entries([answer]))
+        XCTAssertEqual(log.sessions(mentioning: "back again"), [id])
+    }
+
+    func testTheFirstIndexIsDroppedAndSessionsAreIndexedAnew() throws {
+        let url = folder.appendingPathComponent("runs.sqlite")
+        let id = UUID()
+        do {
+            let log = try XCTUnwrap(RunEventLog(url: url))
+            try XCTSkipUnless(log.searchAvailable)
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let payload = try encoder.encode(event("Written before the new index"))
+            XCTAssertNotNil(log.append(id, .event, payload))
+            // The first index, marked as built by an earlier version.
+            XCTAssertTrue(log.exec("CREATE VIRTUAL TABLE run_text USING fts5(run_id UNINDEXED, event_id UNINDEXED, body, tokenize = 'trigram');"))
+            log.setMeta("search_index_built", "2026-11-01T00:00:00Z")
+        }
+        let store = RunStore(directory: folder)
+        _ = store.loadRuns()
+        store.flush()
+        XCTAssertEqual(store.sessions(mentioning: "before the new"), [id], "the new index is built from the log")
+        let log = try XCTUnwrap(RunEventLog(url: url))
+        XCTAssertFalse(log.exec("SELECT 1 FROM run_text;"), "the first index is gone")
+    }
 }
